@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, Undo2, X } from 'lucide-react'
+import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
@@ -72,12 +72,8 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
           >
             <ReqTimeline r={r} decisions={related} />
           </div>
-          <footer className="pb-safe shrink-0 border-t border-line bg-surface px-4 pt-3 pb-3 sm:px-5">
-            {r.status === 'review' ? (
-              <ReviewComposer key={r.code} r={r} onPassed={onPassed} />
-            ) : (
-              <StatusLine r={r} pending={related.filter((d) => d.status === 'pending').length} onJump={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })} />
-            )}
+          <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
+            <Composer key={r.code} r={r} onPassed={onPassed} pending={related.filter((d) => d.status === 'pending').length} onJump={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })} />
           </footer>
         </>
       )}
@@ -210,19 +206,31 @@ function Brief({ r }: { r: Requirement }) {
   )
 }
 
-// ReviewComposer：底部的验收输入——没写意见时“通过”是主操作；写了意见或贴了图就“退回修改”。
-function ReviewComposer({ r, onPassed }: { r: Requirement; onPassed?: (code: string) => void }) {
-  const { review } = useActions()
+// Composer：底部输入。待验收时——没写意见“通过”是主操作，写了意见或贴了图就“退回修改”；
+// 其它状态——可以随时给 Agent 留言（只送达，不改需求状态）。
+function Composer({ r, onPassed, pending, onJump }: { r: Requirement; onPassed?: (code: string) => void; pending: number; onJump: () => void }) {
+  const { review, note } = useActions()
   const [busy, wrap] = useBusy()
   const [text, setText] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
+  const reviewing = r.status === 'review'
   const dirty = !!text.trim() || files.length > 0
+  const clear = () => {
+    setText('')
+    setFiles([])
+  }
   const revise = () =>
     wrap(async () => {
       if (await review([{ ref: r.code, verdict: 'revise', comment: text, files: files.map((f) => f.id) }])) {
         toast(t.review.revised(r.code))
-        setText('')
-        setFiles([])
+        clear()
+      }
+    })
+  const send = () =>
+    wrap(async () => {
+      if (await note(r.code, text, files.map((f) => f.id))) {
+        toast(t.reqs.noteSent)
+        clear()
       }
     })
   const pass = () =>
@@ -232,51 +240,51 @@ function ReviewComposer({ r, onPassed }: { r: Requirement; onPassed?: (code: str
         else toast.success(t.review.passed(r.code))
       }
     })
+  const hint = pending ? (
+    <button onClick={onJump} className="flex min-w-0 items-center gap-2 text-xs font-medium text-reply transition hover:opacity-80">
+      <span className="kite-tug size-2 shrink-0 rotate-45 rounded-[1.5px] bg-reply" />
+      <span className="truncate">{t.reqs.lineAsk(pending)}</span>
+    </button>
+  ) : (
+    <span className="flex min-w-0 items-center gap-2 text-xs text-fg-3">
+      <span className={cx('size-2 shrink-0 rotate-45 rounded-[1.5px]', statusCls[r.status]?.dot)} />
+      <span className="truncate">{reviewing ? (dirty ? t.review.hintRevise : t.review.hintPass) : (t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
+    </span>
+  )
   return (
     <div
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
-          if (dirty) void revise()
-          else void pass()
+          if (reviewing) void (dirty ? revise() : pass())
+          else if (dirty) void send()
         }
       }}
     >
       <AttachZone value={files} onChange={setFiles} compact>
-        <Textarea minRows={1} value={text} placeholder={t.review.composer} onChange={(e) => setText(e.target.value)} className="pr-10" />
+        <Textarea minRows={1} value={text} placeholder={reviewing ? t.review.composer : t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
       </AttachZone>
       <div className="mt-2.5 flex items-center gap-2">
-        <span className="min-w-0 truncate text-xs text-fg-3 max-sm:hidden">{dirty ? t.review.hintRevise : t.review.hintPass}</span>
-        <span className="ml-auto" />
-        <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy} icon={<Undo2 className="size-4" />} onClick={revise}>
-          {t.review.sendRevise}
-        </Button>
-        <Tip content={dirty ? t.review.passBlocked : undefined}>
-          <span>
-            <Button variant={dirty ? 'secondary' : 'primary'} disabled={dirty} loading={busy && !dirty} icon={<Check className="size-4" />} onClick={pass} className="min-w-24">
-              {t.review.pass}
+        <div className="min-w-0 flex-1">{hint}</div>
+        {reviewing ? (
+          <>
+            <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy} icon={<Undo2 className="size-4" />} onClick={revise}>
+              {t.review.sendRevise}
             </Button>
-          </span>
-        </Tip>
+            <Tip content={dirty ? t.review.passBlocked : undefined}>
+              <span>
+                <Button variant={dirty ? 'secondary' : 'primary'} disabled={dirty} loading={busy && !dirty} icon={<Check className="size-4" />} onClick={pass} className="min-w-24">
+                  {t.review.pass}
+                </Button>
+              </span>
+            </Tip>
+          </>
+        ) : (
+          <Button variant="primary" disabled={!dirty} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>
+            {t.reqs.noteSend}
+          </Button>
+        )}
       </div>
-    </div>
-  )
-}
-
-// StatusLine：不需要你验收时，底部说明现在轮到谁。
-function StatusLine({ r, pending, onJump }: { r: Requirement; pending: number; onJump: () => void }) {
-  if (pending)
-    return (
-      <button onClick={onJump} className="flex min-h-9 w-full items-center gap-2.5 rounded-lg text-left text-sm font-medium text-reply transition hover:opacity-80">
-        <span className="kite-tug size-2 shrink-0 rotate-45 rounded-[1.5px] bg-reply" />
-        <span className="min-w-0 flex-1 truncate">{t.reqs.lineAsk(pending)}</span>
-        <ChevronDown className="size-4" />
-      </button>
-    )
-  return (
-    <div className="flex min-h-9 items-center gap-2.5 text-sm text-fg-2">
-      <span className={cx('size-2 shrink-0 rotate-45 rounded-[1.5px]', statusCls[r.status]?.dot)} />
-      <span className="min-w-0 flex-1 truncate">{t.reqs.line[r.status] ?? t.reqStatus[r.status]}</span>
     </div>
   )
 }

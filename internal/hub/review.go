@@ -105,7 +105,49 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 	return out, nil
 }
 
+// note 给需求留言：任何状态都可以，只送达给关联会话，不改需求状态。
+func (h *Hub) note(ctx context.Context, ref, comment string, fileIDs []string) (store.Decision, error) {
+	r, err := h.store.GetRequirement(ctx, ref)
+	if err != nil {
+		return store.Decision{}, apiErr(err)
+	}
+	files, err := h.store.ResolveFiles(ctx, fileIDs)
+	if err != nil {
+		return store.Decision{}, err
+	}
+	comment = strings.TrimSpace(comment)
+	if comment == "" && len(files) == 0 {
+		return store.Decision{}, huma.Error400BadRequest("请写下留言或附上图片")
+	}
+	d, err := h.store.CreateDecision(ctx, store.Decision{
+		Kind: store.KindNote, SessionKey: h.feedbackTarget(ctx, r), ProjectID: r.ProjectID, RequirementID: r.ID,
+		Question: r.Title, Answer: comment, AnswerFiles: files,
+	})
+	if err != nil {
+		return store.Decision{}, apiErr(err)
+	}
+	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
+		h.pushDecisions(ctx, x.DeviceID)
+	}
+	h.broker.publish("requirements", "decisions", "sessions")
+	return d, nil
+}
+
 func (h *Hub) registerReview(api huma.API) {
+	huma.Register(api, huma.Operation{OperationID: "note-requirement", Method: http.MethodPost, Path: "/api/requirements/{ref}/notes", Tags: []string{"requirements"}, Summary: "给需求留言（只送达，不改状态）"},
+		func(ctx context.Context, in *struct {
+			Ref  string `path:"ref"`
+			Body struct {
+				Comment string   `json:"comment,omitempty"`
+				Files   []string `json:"files,omitempty"`
+			}
+		}) (*decisionOut, error) {
+			d, err := h.note(ctx, in.Ref, in.Body.Comment, in.Body.Files)
+			if err != nil {
+				return nil, err
+			}
+			return &decisionOut{Body: d}, nil
+		})
 	huma.Register(api, huma.Operation{OperationID: "review-requirements", Method: http.MethodPost, Path: "/api/reviews", Tags: []string{"requirements"}, Summary: "验收：逐条通过或提修改意见"},
 		func(ctx context.Context, in *reviewIn) (*reviewOut, error) {
 			if len(in.Body.Items) == 0 {

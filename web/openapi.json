@@ -332,7 +332,8 @@
           "kind": {
             "enum": [
               "decision",
-              "feedback"
+              "feedback",
+              "note"
             ],
             "type": "string"
           },
@@ -806,6 +807,24 @@
         "required": [
           "ok"
         ],
+        "type": "object"
+      },
+      "Note-requirementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "NotifyConfig": {
@@ -1673,7 +1692,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "daede6f-dirty"
+    "version": "883ba64-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3063,6 +3082,57 @@
           }
         },
         "summary": "手动关联会话（D5）",
+        "tags": [
+          "requirements"
+        ]
+      }
+    },
+    "/api/requirements/{ref}/notes": {
+      "post": {
+        "operationId": "note-requirement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Note-requirementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "给需求留言（只送达，不改状态）",
         "tags": [
           "requirements"
         ]

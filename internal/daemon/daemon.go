@@ -511,11 +511,14 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback []protocol.Decision
+	var answers, feedback, notes []protocol.Decision
 	for _, dec := range fresh {
-		if dec.Kind == "feedback" {
+		switch dec.Kind {
+		case "feedback":
 			feedback = append(feedback, dec)
-		} else {
+		case "note":
+			notes = append(notes, dec)
+		default:
 			answers = append(answers, dec)
 		}
 	}
@@ -528,6 +531,12 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	if len(feedback) > 0 {
 		b.WriteString("[Kitestring] 用户验收后退回了以下需求，请按修改意见继续处理，完成后重新提交验收：\n")
 		for _, dec := range feedback {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(notes) > 0 {
+		b.WriteString("[Kitestring] 用户对以下需求留言，请结合当前工作处理（需求状态不变）：\n")
+		for _, dec := range notes {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -549,9 +558,12 @@ func (d *Daemon) injection(ev protocol.Event) string {
 
 // writeItem 写一条答复或修改意见；附件给出本地路径，agent 可直接读取。
 func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
-	if dec.Kind == "feedback" {
+	switch dec.Kind {
+	case "feedback":
 		fmt.Fprintf(b, "- %s「%s」修改意见：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
-	} else {
+	case "note":
+		fmt.Fprintf(b, "- %s「%s」留言：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+	default:
 		fmt.Fprintf(b, "- %s 问题：%s\n  用户答复：%s\n", dec.Code, oneLine(dec.Question), dec.Answer)
 	}
 	for _, f := range dec.Files {

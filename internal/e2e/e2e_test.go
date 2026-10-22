@@ -511,6 +511,22 @@ func TestAttachmentsAndReviewFeedback(t *testing.T) {
 		t.Fatalf("录屏应支持 Range：%v %v", err, resp)
 	}
 
+	// 留言：不改状态，按“留言”单独送达
+	var nd store.Decision
+	e.call("POST", "/api/requirements/"+r.Code+"/notes", map[string]any{"comment": "顺便把按钮颜色统一一下"}, &nd)
+	if nd.Kind != store.KindNote || nd.SessionKey != "claude:f-1" {
+		t.Fatalf("留言结果异常：%+v", nd)
+	}
+	var cur store.Requirement
+	c.Do(context.Background(), "GET", "/agent/requirements/"+r.Code, nil, &cur)
+	if cur.Status != store.ReqInProgress {
+		t.Fatalf("留言不应改状态，得到 %s", cur.Status)
+	}
+	e.waitFor("留言送达", func() bool {
+		out = prompt("p3")
+		return strings.Contains(out, "留言：顺便把按钮颜色统一一下") && strings.Contains(out, "需求状态不变")
+	})
+
 	// 通过：直接完成
 	e.call("POST", "/api/reviews", map[string]any{"items": []map[string]any{{"ref": r.Code, "verdict": "accept"}}}, &rv)
 	if rv.Requirements[0].Status != store.ReqDone {

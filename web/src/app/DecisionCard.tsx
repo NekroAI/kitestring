@@ -277,7 +277,7 @@ export function AnswerBlock({ d }: { d: Decision }) {
   return (
     <div className="space-y-2 rounded-xl border border-line bg-surface-2 px-3 py-2.5">
       <div>
-        <div className="text-xs font-medium text-fg-3">{d.kind === 'feedback' ? t.review.history : t.decision.answer}</div>
+        <div className="text-xs font-medium text-fg-3">{d.kind === 'feedback' ? t.review.history : d.kind === 'note' ? t.timeline.note : t.decision.answer}</div>
         <div className="mt-0.5 text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">{d.answer}</div>
       </div>
       <Thumbs files={d.answer_files} size="sm" />

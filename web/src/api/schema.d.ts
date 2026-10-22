@@ -426,6 +426,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/requirements/{ref}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 给需求留言（只送达，不改状态） */
+        post: operations["note-requirement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reviews": {
         parameters: {
             query?: never;
@@ -629,7 +646,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback";
+            kind: "decision" | "feedback" | "note";
             options: string[] | null;
             origin_session?: string;
             project_id?: string;
@@ -775,6 +792,10 @@ export interface components {
         };
         LoginOutBody: {
             ok: boolean;
+        };
+        "Note-requirementRequest": {
+            comment?: string;
+            files?: string[] | null;
         };
         NotifyConfig: {
             bark?: components["schemas"]["BarkConfig"];
@@ -2006,6 +2027,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "note-requirement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Note-requirementRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
                 };
             };
             /** @description Error */

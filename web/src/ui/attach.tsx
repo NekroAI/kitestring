@@ -307,14 +307,14 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
           )}
         </motion.div>
       </div>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3 pt-safe">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <Dialog.Close asChild>
           <button aria-label={t.common.close} className="pointer-events-auto flex size-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 active:scale-95">
             <X className="size-5" />
           </button>
         </Dialog.Close>
       </motion.div>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-4 pb-safe">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <span>
           {v.s > 1 && (
             <button onClick={() => animate({ s: 1, x: 0, y: 0 })} className="pointer-events-auto rounded-lg bg-black/55 px-3 py-1.5 text-xs text-white tabular backdrop-blur hover:bg-black/75">

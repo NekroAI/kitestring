@@ -167,7 +167,7 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 	if r.Evidence, err = s.ListEvidence(ctx, r.ID); err != nil {
 		return r, err
 	}
-	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind = ? ORDER BY x.seq DESC`, r.ID, KindFeedback)
+	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote)
 	return r, err
 }
 

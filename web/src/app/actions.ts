@@ -29,6 +29,8 @@ export function useActions() {
     closeDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: {} })), ['decisions', 'sessions']),
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
       run(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions']),
+    note: (ref: string, comment: string, files: string[]) =>
+      run(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions']),
     resendDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/resend', { params: { path: { ref } }, body: {} })), ['decisions']),
 
     createReq: (body: ReqFields) => run(() => unwrap(api.POST('/api/requirements', { body })), ['requirements']),

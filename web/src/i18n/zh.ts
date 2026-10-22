@@ -310,6 +310,9 @@ export const zh = {
     stamp: '已验收',
     allReviewed: (project: string) => `${project} 的待验收都处理完了`,
     lineAsk: (n: number) => `有 ${n} 个问题等你回答`,
+    notePlaceholder: '给 Agent 留言：补充要求、提醒或贴图，下次和它对话时送达',
+    noteSend: '留言',
+    noteSent: '已留言，会在你下次和它对话时送达',
     line: {
       draft: '草稿，还没开始',
       ready: '等 Agent 接手',
@@ -372,6 +375,8 @@ export const zh = {
     createdUser: '你创建了这条需求',
     evidence: '提交验收',
     revise: '你退回修改',
+    note: '你留言',
+    ask: '在问你',
     decision: '决策',
     answer: '答复',
     done: '你验收通过',

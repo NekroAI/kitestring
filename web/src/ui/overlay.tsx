@@ -94,7 +94,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
                 </div>
                 {actions}
               </div>
-              <div className="pb-safe flex-1 overflow-y-auto px-5 pb-6">{children}</div>
+              <div className="flex-1 overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">{children}</div>
             </>
           )}
         </Drawer.Content>

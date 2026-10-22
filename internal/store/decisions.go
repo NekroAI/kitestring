@@ -21,10 +21,12 @@ const (
 	DecClosed    = "closed"    // 已关闭（不再注入）
 )
 
-// 决策类型：agent 提出的决策；用户对需求的修改意见（创建即为“已决策待接收”，沿用同一条送达通道）。
+// 决策类型：agent 提出的决策；用户对需求的修改意见、留言（创建即为“已决策待接收”，沿用同一条送达通道）。
+// 修改意见会把需求退回进行中并开启新一轮；留言只送达，不改需求状态。
 const (
 	KindDecision = "decision"
 	KindFeedback = "feedback"
+	KindNote     = "note"
 )
 
 // Decision 是一条待用户决策的问题。
@@ -44,7 +46,7 @@ type Decision struct {
 	Options          []string   `json:"options"`
 	Recommendation   string     `json:"recommendation"`
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback"`
+	Kind             string     `json:"kind" enum:"decision,feedback,note"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
@@ -99,10 +101,10 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			return err
 		}
 		n := now()
-		if d.Kind == KindFeedback {
+		if d.Kind == KindFeedback || d.Kind == KindNote {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
 			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?)`,
-				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, KindFeedback, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)
+				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)
 			return err
 		}
 		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, recommendation, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
