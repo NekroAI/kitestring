@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Send, User, Zap } from 'lucide-react'
+import { Bot, ChevronDown, FolderGit2, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, User, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useProjects, useSessions } from '../api/queries'
 import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from './assign'
 import { t } from '../i18n'
-import { cx, loadPref, savePref } from '../lib/util'
-import { Badge, Button, Card, Input, Textarea, Tip } from '../ui/base'
-import { Menu, Modal, useConfirm, type MenuItem } from '../ui/overlay'
+import { cx, loadPref, savePref, usePref } from '../lib/util'
+import { Badge, Button, Card, Switch, Textarea, Tip } from '../ui/base'
+import { Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
 import { displayState, PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
@@ -182,118 +182,171 @@ export function EditableText({ value, onSave, placeholder, multiline, className 
 }
 
 
+// NewReqModal：新建需求抽屉（桌面右侧、手机底部）。上面写清楚要做什么，下面决定交给谁：
+// “仅新建”只建需求并关联选中的会话（随时可以开工）；“新建并交出”立刻把它交给会话开工。
 export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; onClose: () => void; defaultProject?: string }) {
   const projects = useProjects()
   const sessions = useSessions()
-  const { createReq } = useActions()
+  const { createReq, linkReq } = useActions()
   const assign = useAssign()
   const openReq = useOpenReq()
   const [busy, wrap] = useBusy()
   // 项目默认用上次新建时选的（页面已按项目筛选时以筛选为准），连续新建不用每次切
   const lastProject = () => defaultProject || loadPref<string>('ks.newreq.project', '') || undefined
-  const [f, setF] = useState<ReqFields>({ title: '', status: 'ready', priority: 'P2', project_id: lastProject() })
+  const blank = (): ReqFields => ({ title: '', status: 'ready', priority: 'P2', project_id: lastProject() })
+  const [f, setF] = useState<ReqFields>(blank)
   const [files, setFiles] = useState<FileRef[]>([])
+  const [more, setMore] = usePref('ks.newreq.more', false) // 连续新建：建完清空表单，抽屉不关
   // 交给哪个会话：默认同项目里待命或刚活跃过的会话；手动选过就以你的为准
   const [target, setTarget] = useState<string | null | undefined>(undefined)
   const all = sessions.data?.sessions ?? []
   const to = target === undefined ? defaultTarget(all, f.project_id) : all.find((s) => s.key === target)
   useEffect(() => {
     if (open) {
-      setF({ title: '', status: 'ready', priority: 'P2', project_id: lastProject() })
+      setF(blank())
       setFiles([])
-      setTarget(undefined)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultProject])
-  const submit = () =>
+  const submit = (send: boolean) =>
     wrap(async () => {
+      if (!f.title.trim()) return
       const r = await createReq({ ...f, title: f.title.trim(), files: files.map((x) => x.id) })
-      if (r) {
-        savePref('ks.newreq.project', f.project_id ?? '')
-        if (to) await assign(r.code, to)
-        else toast.success(t.reqs.created(r.code))
+      if (!r) return
+      savePref('ks.newreq.project', f.project_id ?? '')
+      if (to && send) await assign(r.code, to)
+      else {
+        if (to) await linkReq(r.code, to.key)
+        toast.success(to ? t.reqs.createdLinked(r.code, targetLabel(to)) : t.reqs.created(r.code))
+      }
+      if (more) {
+        setF({ ...blank(), project_id: f.project_id, status: f.status, priority: f.priority, kind: f.kind })
+        setFiles([])
+      } else {
         onClose()
         openReq(r.code)
       }
     })
   const proj = projects.data?.projects.find((p) => p.id === f.project_id)
+  const chip = 'inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-2 transition hover:border-line-strong hover:text-fg active:scale-[0.97]'
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t.reqs.newTitle}
-      footer={
-        <>
-          <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" loading={busy} disabled={!f.title.trim()} onClick={submit} icon={to ? <Send className="size-4" /> : undefined}>
-            {to ? t.assign.createAndSend : t.common.create}
+    <Panel open={open} onClose={onClose} wide bare title={t.reqs.newTitle}>
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault()
+            void submit(true)
+          }
+        }}
+      >
+        <div className="flex shrink-0 items-center gap-2 px-5 pt-4 pb-2">
+          <h2 className="font-display text-lg text-fg">{t.reqs.newTitle}</h2>
+          <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-fg-3">
+            <Switch checked={more} onChange={setMore} />
+            {t.reqs.createMore}
+          </label>
+          <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={onClose}>
+            <X className="size-4" />
           </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <Input autoFocus value={f.title} placeholder={t.reqs.titlePlaceholder} onChange={(e) => setF({ ...f, title: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && f.title.trim() && submit()} className="h-11 text-base" />
-        <AttachZone value={files} onChange={setFiles}>
-          <Textarea value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholder} onChange={(e) => setF({ ...f, detail: e.target.value })} />
-        </AttachZone>
-        <div className="flex flex-wrap gap-2">
-          <Menu
-            align="start"
-            trigger={
-              <Button size="sm">
-                {t.reqStatus[f.status ?? 'ready']}
-                <ChevronDown className="size-3 opacity-60" />
-              </Button>
-            }
-            items={allStatuses.map((s) => ({ label: t.reqStatus[s], hint: t.reqStatusHint[s], checked: s === f.status, onSelect: () => setF({ ...f, status: s as ReqFields['status'] }) }))}
-          />
-          <Menu
-            align="start"
-            trigger={
-              <Button size="sm" icon={<PriorityDot p={f.priority ?? 'P2'} />}>
-                {t.priority[f.priority ?? 'P2']}
-              </Button>
-            }
-            items={priorities.map((p) => ({ label: t.priority[p], checked: p === f.priority, icon: <PriorityDot p={p} />, onSelect: () => setF({ ...f, priority: p as ReqFields['priority'] }) }))}
-          />
-          <Menu
-            align="start"
-            trigger={
-              <Button size="sm">
-                <span className="max-w-[160px] truncate">{proj?.name ?? t.reqs.noProject}</span>
-                <ChevronDown className="size-3 opacity-60" />
-              </Button>
-            }
-            items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
-          />
         </div>
-        <button
-          type="button"
-          aria-pressed={f.kind === 'design'}
-          onClick={() => setF({ ...f, kind: f.kind === 'design' ? 'feature' : 'design' })}
-          className={cx('flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition', f.kind === 'design' ? 'border-accent/50 bg-accent-soft text-accent' : 'border-dashed border-line-strong text-fg-3 hover:text-fg')}
-        >
-          <Palette className="size-4 shrink-0" />
-          <span className="flex-1">{t.design.toggle}</span>
-          <span className="text-xs opacity-80">{t.design.makeHint}</span>
-        </button>
-        <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
-          <Send className="size-4 shrink-0 text-fg-3" />
-          <span className="shrink-0 text-[13px] text-fg-3">{t.assign.field}</span>
-          <Menu
-            align="start"
-            width="w-80"
-            trigger={
-              <button className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-fg hover:bg-hover">
-                {to && (targetGroup(to) === 'now' ? <Zap className="size-4 shrink-0 text-accent" /> : <StatusDot state={displayState(to)} />)}
-                <span className="min-w-0 flex-1 truncate">{to ? targetLabel(to) : t.assign.nobody}</span>
-                {to && <span className={cx('shrink-0 text-xs', targetGroup(to) === 'now' ? 'text-accent' : 'text-fg-3')}>{t.assign.when[targetGroup(to)]}</span>}
-                <ChevronDown className="size-3 shrink-0 opacity-60" />
-              </button>
-            }
-            items={[{ label: t.assign.nobody, checked: !to, onSelect: () => setTarget(null) }, { type: 'separator' }, ...targetItems(all, f.project_id, (s) => setTarget(s.key), { checked: to?.key })]}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">
+          <input
+            autoFocus
+            value={f.title}
+            placeholder={t.reqs.titlePlaceholder}
+            onChange={(e) => setF({ ...f, title: e.target.value })}
+            className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3"
           />
+          <div className="flex flex-wrap items-center gap-2">
+            <Menu
+              align="start"
+              trigger={
+                <button className={chip}>
+                  <span className={cx('size-2 rounded-full', statusCls[f.status ?? 'ready'].dot)} />
+                  {t.reqStatus[f.status ?? 'ready']}
+                  <ChevronDown className="size-3 opacity-60" />
+                </button>
+              }
+              items={allStatuses.map((s) => ({ label: t.reqStatus[s], hint: t.reqStatusHint[s], checked: s === f.status, onSelect: () => setF({ ...f, status: s as ReqFields['status'] }) }))}
+            />
+            <Menu
+              align="start"
+              trigger={
+                <button className={chip}>
+                  <PriorityDot p={f.priority ?? 'P2'} />
+                  {t.priority[f.priority ?? 'P2']}
+                  <ChevronDown className="size-3 opacity-60" />
+                </button>
+              }
+              items={priorities.map((p) => ({ label: t.priority[p], checked: p === f.priority, icon: <PriorityDot p={p} />, onSelect: () => setF({ ...f, priority: p as ReqFields['priority'] }) }))}
+            />
+            <Menu
+              align="start"
+              trigger={
+                <button className={chip}>
+                  <FolderGit2 className="size-3.5 opacity-70" />
+                  <span className="truncate">{proj?.name ?? t.reqs.noProject}</span>
+                  <ChevronDown className="size-3 opacity-60" />
+                </button>
+              }
+              items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
+            />
+            <Tip content={t.design.makeHint}>
+              <button aria-pressed={f.kind === 'design'} onClick={() => setF({ ...f, kind: f.kind === 'design' ? 'feature' : 'design' })} className={cx(chip, f.kind === 'design' && 'border-accent/50 bg-accent-soft text-accent hover:text-accent')}>
+                <Palette className="size-3.5" />
+                {t.design.toggle}
+              </button>
+            </Tip>
+          </div>
+          <section>
+            <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
+            <AttachZone value={files} onChange={setFiles}>
+              <Textarea minRows={7} value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholderLong} onChange={(e) => setF({ ...f, detail: e.target.value })} />
+            </AttachZone>
+          </section>
+          <section>
+            <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.acceptance}</h3>
+            <Textarea minRows={3} value={f.acceptance ?? ''} placeholder={t.reqs.acceptancePlaceholder} onChange={(e) => setF({ ...f, acceptance: e.target.value })} />
+          </section>
+        </div>
+        <div className="shrink-0 space-y-3 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
+            <Send className="size-4 shrink-0 text-fg-3" />
+            <span className="shrink-0 text-[13px] text-fg-3">{t.assign.field}</span>
+            <Menu
+              align="start"
+              width="w-80"
+              trigger={
+                <button className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-fg hover:bg-hover">
+                  {to && (targetGroup(to) === 'now' ? <Zap className="size-4 shrink-0 text-accent" /> : <StatusDot state={displayState(to)} />)}
+                  <span className="min-w-0 flex-1 truncate">{to ? targetLabel(to) : t.assign.nobody}</span>
+                  {to && <span className={cx('shrink-0 text-xs', targetGroup(to) === 'now' ? 'text-accent' : 'text-fg-3')}>{t.assign.when[targetGroup(to)]}</span>}
+                  <ChevronDown className="size-3 shrink-0 opacity-60" />
+                </button>
+              }
+              items={[{ label: t.assign.nobody, checked: !to, onSelect: () => setTarget(null) }, { type: 'separator' }, ...targetItems(all, f.project_id, (s) => setTarget(s.key), { checked: to?.key })]}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-xs text-fg-3 max-sm:hidden">{to ? t.reqs.createHintTo : t.reqs.createHint}</span>
+            {to ? (
+              <>
+                <Button className="ml-auto" disabled={!f.title.trim() || busy} onClick={() => void submit(false)}>
+                  {t.reqs.createOnly}
+                </Button>
+                <Button variant="primary" loading={busy} disabled={!f.title.trim()} onClick={() => void submit(true)} icon={<Send className="size-4" />}>
+                  {t.assign.createAndSend}
+                </Button>
+              </>
+            ) : (
+              <Button className="ml-auto" variant="primary" loading={busy} disabled={!f.title.trim()} onClick={() => void submit(false)} icon={<Plus className="size-4" />}>
+                {t.common.create}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
-    </Modal>
+    </Panel>
   )
 }
