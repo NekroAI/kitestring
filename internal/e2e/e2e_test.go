@@ -236,6 +236,28 @@ func TestDecisionLoop(t *testing.T) {
 	e.waitFor("会话结束", func() bool { return e.session("codex:s-1").State == store.StateEnded })
 }
 
+// 会话结束后才作答，同一会话恢复（session_id 不变）时仍应收到（D15）。
+func TestDecisionAfterSessionEndDeliveredOnResume(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	ev := func(name string) map[string]any {
+		return map[string]any{"session_id": "r-1", "cwd": cwd, "hook_event_name": name, "prompt_id": "p-" + name}
+	}
+	hook(t, "claude", ev("UserPromptSubmit"))
+	c := client.New(5 * time.Second)
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", map[string]any{"question": "用哪个方案？", "session_key": "claude:r-1"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	hook(t, "claude", ev("SessionEnd"))
+	e.waitFor("会话结束", func() bool { return e.session("claude:r-1").State == store.StateEnded })
+	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]string{{"ref": "D-1", "answer": "方案 B"}}}, nil)
+	e.waitFor("恢复时注入", func() bool {
+		start := ev("SessionStart")
+		start["source"] = "resume"
+		return strings.Contains(hook(t, "claude", start), "方案 B")
+	})
+}
+
 func TestHookFailsOpenWithoutDaemon(t *testing.T) {
 	t.Setenv("KS_HOME", t.TempDir())
 	start := time.Now()

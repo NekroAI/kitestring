@@ -9,14 +9,16 @@ import (
 )
 
 func runInstall(args []string, uninstall bool) error {
-	fs := flag.NewFlagSet("install", flag.ExitOnError)
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "只打印将要做的改动")
 	claude := fs.Bool("claude", true, "接入 Claude Code")
 	codex := fs.Bool("codex", true, "接入 Codex")
 	daemonSvc := fs.Bool("daemon", true, "注册 daemon 常驻服务")
 	hubSvc := fs.Bool("hub", false, "同时注册 hub 常驻服务（Hub 所在设备使用）")
 	hubAddr := fs.String("hub-addr", "0.0.0.0:7310", "hub 服务监听地址")
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err

@@ -146,7 +146,8 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		return err
 	}
 	projectID := ""
-	if ev.Cwd != "" && (prev == nil || prev.ProjectID == "" || prev.Cwd != ev.Cwd) {
+	if ev.Cwd != "" {
+		// 每次都解析：路径映射有缓存，开销小；remote 后补时可按 D16 重新归并。
 		if projectID, err = h.store.ResolveProject(ctx, dev.ID, ev.Cwd, ev.Git); err != nil {
 			return err
 		}

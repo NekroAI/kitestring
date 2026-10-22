@@ -49,10 +49,12 @@ agent 调用：
   version                打印版本
 所有本机数据位于 ~/.kitestring（可用 KS_HOME 覆盖）。`
 
+// 退出码约定：ks 永远不以 2 退出。Claude Code / Codex 把 hook 的退出码 2 视为“阻止”，
+// hook 配置写错（如子命令不存在）时不能拦住用户的 agent。
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
+		os.Exit(1)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
@@ -83,7 +85,7 @@ func main() {
 		fmt.Println(usage)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
+		os.Exit(1)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "错误：", err)
@@ -115,10 +117,12 @@ func runHub(args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		sub, args = args[0], args[1:]
 	}
-	fs := flag.NewFlagSet("hub", flag.ExitOnError)
+	fs := flag.NewFlagSet("hub", flag.ContinueOnError)
 	addr := fs.String("addr", "0.0.0.0:7310", "监听地址")
 	data := fs.String("data", "", "数据库路径（默认 ~/.kitestring/hub.db）")
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	if sub == "openapi" {
 		b, err := json.MarshalIndent(hub.New(nil, logger()).OpenAPI(), "", "  ")
@@ -180,10 +184,12 @@ func readPassword() (string, error) {
 }
 
 func runLogin(args []string) error {
-	fs := flag.NewFlagSet("login", flag.ExitOnError)
+	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	hubURL := fs.String("hub", "", "Hub 地址，例：http://nexus-mini.local:7310")
 	token := fs.String("token", "", "设备 token（kst_ 开头）")
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	if *hubURL == "" || *token == "" {
 		return fmt.Errorf("用法：ks login --hub <地址> --token <token>")
 	}

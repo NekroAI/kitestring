@@ -222,7 +222,8 @@ func (s *Store) CloseDecision(ctx context.Context, ref string) (Decision, error)
 
 // DecisionsForDevice 返回目标会话位于该设备的待注入决策：“已决策待接收”的全部，
 // 以及 since 之后已接收的（供会话恢复 / 压缩时补注入，D15）。
+// 不排除已结束的会话：同一会话被恢复（resume，session_id 不变）时仍应收到答复。
 func (s *Store) DecisionsForDevice(ctx context.Context, deviceID string, since time.Time) ([]Decision, error) {
-	return s.queryDecs(ctx, decSelect+` WHERE s.device_id = ? AND s.ended_at IS NULL AND (x.status = ? OR (x.status = ? AND x.delivered_at >= ?)) ORDER BY x.seq`,
+	return s.queryDecs(ctx, decSelect+` WHERE s.device_id = ? AND (x.status = ? OR (x.status = ? AND x.delivered_at >= ?)) ORDER BY x.seq`,
 		deviceID, DecAnswered, DecDelivered, ts(since))
 }

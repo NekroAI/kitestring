@@ -48,7 +48,7 @@ func runReq(args []string) error {
 		return fmt.Errorf("用法：ks req list|get|create|status|evidence ...")
 	}
 	sub, args := args[0], args[1:]
-	fs := flag.NewFlagSet("req "+sub, flag.ExitOnError)
+	fs := flag.NewFlagSet("req "+sub, flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	all := fs.Bool("all", false, "list：列出所有项目")
 	title := fs.String("title", "", "create：标题")
@@ -58,7 +58,9 @@ func runReq(args []string) error {
 	priority := fs.String("priority", "", "create：优先级 P0-P3")
 	kind := fs.String("kind", "manual", "evidence：证据类型")
 	link := fs.String("link", "", "evidence：链接")
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	key := cliSession(*session)
 	switch sub {
 	case "list":
@@ -105,7 +107,7 @@ func runDecision(args []string) error {
 	if len(args) < 1 || args[0] != "raise" {
 		return fmt.Errorf("用法：ks decision raise --question <问题> [--option A --option B] [--recommend ...] [--req R-1]")
 	}
-	fs := flag.NewFlagSet("decision raise", flag.ExitOnError)
+	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	question := fs.String("question", "", "问题")
 	ctxText := fs.String("context", "", "背景")
@@ -113,7 +115,9 @@ func runDecision(args []string) error {
 	req := fs.String("req", "", "关联需求")
 	var opts stringList
 	fs.Var(&opts, "option", "选项，可重复")
-	_ = fs.Parse(args[1:])
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
 	if *question == "" {
 		return fmt.Errorf("--question 不能为空")
 	}

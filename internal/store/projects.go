@@ -97,10 +97,36 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 	if key == "" {
 		return "", nil
 	}
-	var pid string
-	err := s.db.QueryRowContext(ctx, `SELECT project_id FROM project_paths WHERE device_id = ? AND path = ?`, deviceID, key).Scan(&pid)
+	var pid, pidRemote string
+	err := s.db.QueryRowContext(ctx, `SELECT p.id, p.remote FROM project_paths pp JOIN projects p ON p.id = pp.project_id WHERE pp.device_id = ? AND pp.path = ?`, deviceID, key).Scan(&pid, &pidRemote)
 	if err == nil {
-		return pid, nil
+		if remote == "" || pidRemote == remote {
+			return pid, nil
+		}
+		// 该路径首次建档时还没有 remote（或 remote 变了），按 D16 重新归并。
+		return pid, s.tx(ctx, func(t *sql.Tx) error {
+			var other string
+			err := t.QueryRowContext(ctx, `SELECT id FROM projects WHERE remote = ?`, remote).Scan(&other)
+			switch {
+			case errors.Is(err, sql.ErrNoRows):
+				if pidRemote == "" {
+					_, err = t.ExecContext(ctx, `UPDATE projects SET remote = ?, name = ? WHERE id = ?`, remote, path.Base(remote), pid)
+					return err
+				}
+				other = protocol.NewID()
+				if _, err := t.ExecContext(ctx, `INSERT INTO projects(id, name, remote, created_at) VALUES(?, ?, ?, ?)`, other, path.Base(remote), remote, now()); err != nil {
+					return err
+				}
+			case err != nil:
+				return err
+			}
+			if _, err := t.ExecContext(ctx, `UPDATE project_paths SET project_id = ? WHERE device_id = ? AND path = ?`, other, deviceID, key); err != nil {
+				return err
+			}
+			_, err = t.ExecContext(ctx, `UPDATE sessions SET project_id = ? WHERE project_id = ? AND device_id = ? AND cwd LIKE ?`, other, pid, deviceID, key+"%")
+			pid = other
+			return err
+		})
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err

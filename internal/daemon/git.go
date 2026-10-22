@@ -80,17 +80,23 @@ func gitCmd(cwd string, timeout time.Duration, args ...string) (string, error) {
 }
 
 func readGitBasics(cwd string) protocol.Git {
-	out, err := gitCmd(cwd, 2*time.Second, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD", "--git-dir", "--git-common-dir")
+	out, err := gitCmd(cwd, 2*time.Second, "rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir")
 	if err != nil {
 		return protocol.Git{}
 	}
 	lines := strings.Split(out, "\n")
-	if len(lines) < 4 {
+	if len(lines) < 3 {
 		return protocol.Git{}
 	}
-	info := protocol.Git{Available: true, Root: lines[0], Branch: lines[1]}
-	gitDir, common := absUnder(cwd, lines[2]), absUnder(cwd, lines[3])
+	info := protocol.Git{Available: true, Root: lines[0]}
+	gitDir, common := absUnder(cwd, lines[1]), absUnder(cwd, lines[2])
 	info.Worktree = gitDir != common
+	// symbolic-ref 在尚无提交的新仓库里也能取到分支名；分离 HEAD 时退回短哈希。
+	if b, err := gitCmd(cwd, 2*time.Second, "symbolic-ref", "--short", "-q", "HEAD"); err == nil && b != "" {
+		info.Branch = b
+	} else if h, err := gitCmd(cwd, 2*time.Second, "rev-parse", "--short", "HEAD"); err == nil {
+		info.Branch = "(" + h + ")"
+	}
 	info.Remote, _ = gitCmd(cwd, 2*time.Second, "config", "--get", "remote.origin.url")
 	if info.Remote == "" {
 		// 没有 origin 时取第一个 remote
