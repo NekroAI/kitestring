@@ -67,6 +67,17 @@ type Decision struct {
 	Answer     string    `json:"answer"`
 	AnsweredAt time.Time `json:"answered_at"`
 	Delivered  bool      `json:"delivered,omitempty"` // 已接收，仅用于恢复 / 压缩时补注入
+	Kind       string    `json:"kind,omitempty"`      // decision | feedback（修改意见）
+	ReqCode    string    `json:"req_code,omitempty"`
+	ReqTitle   string    `json:"req_title,omitempty"`
+	Files      []File    `json:"files,omitempty"` // 答复 / 意见附图
+}
+
+// File 是随决策下行的附图引用；daemon 下载到本地后在送达文字里给出路径。
+type File struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Mime string `json:"mime"`
 }
 
 // WS 消息类型。

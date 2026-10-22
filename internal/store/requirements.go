@@ -49,11 +49,13 @@ type Requirement struct {
 	Source           string     `json:"source"`
 	Acceptance       string     `json:"acceptance"`
 	DocLink          string     `json:"doc_link"`
+	Files            []FileRef  `json:"files"` // 描述里的附图
 	CreatedBy        string     `json:"created_by"`
 	NextActor        string     `json:"next_actor"` // user | agent | none，推导得出
 	PendingDecisions int        `json:"pending_decisions"`
 	Sessions         []string   `json:"sessions"`
 	Evidence         []Evidence `json:"evidence,omitempty"`
+	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -66,6 +68,7 @@ type Evidence struct {
 	Kind          string    `json:"kind"`
 	Summary       string    `json:"summary"`
 	Link          string    `json:"link"`
+	Files         []FileRef `json:"files"`
 	Voided        bool      `json:"voided"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -85,15 +88,16 @@ func parseRef(ref, prefix string) (seq int, isSeq bool) {
 	return 0, false
 }
 
-const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.created_by, r.created_at, r.updated_at,
+const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.files, r.created_by, r.created_at, r.updated_at,
 	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending')
 	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id`
 
 func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var r Requirement
 	var seq int
-	var created, updated string
-	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &r.CreatedBy, &created, &updated, &r.PendingDecisions)
+	var created, updated, files string
+	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.PendingDecisions)
+	r.Files = parseFiles(files)
 	r.Code = reqCode(seq)
 	r.CreatedAt = parseTS(created)
 	r.UpdatedAt = parseTS(updated)
@@ -132,8 +136,8 @@ func (s *Store) CreateRequirement(ctx context.Context, r Requirement) (Requireme
 			return err
 		}
 		n := now()
-		_, err := t.ExecContext(ctx, `INSERT INTO requirements(id, seq, project_id, title, detail, status, priority, source, acceptance, doc_link, created_by, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(r.ProjectID), r.Title, r.Detail, r.Status, r.Priority, r.Source, r.Acceptance, r.DocLink, r.CreatedBy, n, n)
+		_, err := t.ExecContext(ctx, `INSERT INTO requirements(id, seq, project_id, title, detail, status, priority, source, acceptance, doc_link, files, created_by, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(r.ProjectID), r.Title, r.Detail, r.Status, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), r.CreatedBy, n, n)
 		return err
 	})
 	if err != nil {
@@ -160,7 +164,10 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 	if err := s.fillReqSessions(ctx, &r); err != nil {
 		return r, err
 	}
-	r.Evidence, err = s.ListEvidence(ctx, r.ID)
+	if r.Evidence, err = s.ListEvidence(ctx, r.ID); err != nil {
+		return r, err
+	}
+	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind = ? ORDER BY x.seq DESC`, r.ID, KindFeedback)
 	return r, err
 }
 
@@ -228,8 +235,11 @@ func (s *Store) UpdateRequirement(ctx context.Context, r Requirement) (Requireme
 	if r.Priority == "" {
 		r.Priority = cur.Priority
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE requirements SET project_id = ?, title = ?, detail = ?, priority = ?, source = ?, acceptance = ?, doc_link = ?, updated_at = ? WHERE id = ?`,
-		nullStr(r.ProjectID), r.Title, r.Detail, r.Priority, r.Source, r.Acceptance, r.DocLink, now(), cur.ID)
+	if r.Files == nil {
+		r.Files = cur.Files // 未提供附图字段时保持不变
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE requirements SET project_id = ?, title = ?, detail = ?, priority = ?, source = ?, acceptance = ?, doc_link = ?, files = ?, updated_at = ? WHERE id = ?`,
+		nullStr(r.ProjectID), r.Title, r.Detail, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), now(), cur.ID)
 	if err != nil {
 		return r, err
 	}
@@ -304,14 +314,14 @@ func (s *Store) UnlinkSession(ctx context.Context, reqID, sessionKey string) err
 func (s *Store) AddEvidence(ctx context.Context, e Evidence) (Evidence, error) {
 	e.ID = protocol.NewID()
 	e.CreatedAt = time.Now()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, ts(e.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, files, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, filesJSON(e.Files), ts(e.CreatedAt))
 	return e, err
 }
 
 // ListEvidence 列出需求的证据。
 func (s *Store) ListEvidence(ctx context.Context, reqID string) ([]Evidence, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, requirement_id, COALESCE(session_key, ''), kind, summary, link, voided, created_at FROM evidence WHERE requirement_id = ? ORDER BY created_at`, reqID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, voided, created_at FROM evidence WHERE requirement_id = ? ORDER BY created_at`, reqID)
 	if err != nil {
 		return nil, err
 	}
@@ -319,10 +329,11 @@ func (s *Store) ListEvidence(ctx context.Context, reqID string) ([]Evidence, err
 	out := []Evidence{}
 	for rows.Next() {
 		var e Evidence
-		var created string
-		if err := rows.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &e.Voided, &created); err != nil {
+		var created, files string
+		if err := rows.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &e.Voided, &created); err != nil {
 			return nil, err
 		}
+		e.Files = parseFiles(files)
 		e.CreatedAt = parseTS(created)
 		out = append(out, e)
 	}

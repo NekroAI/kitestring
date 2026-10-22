@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -228,6 +229,9 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		}
 	case protocol.MsgDecisions:
 		for _, dec := range e.Decisions {
+			for _, f := range dec.Files {
+				go d.fetchAttachment(f)
+			}
 			if !dec.Delivered {
 				// Hub 认为待接收：若本机已有注入记录但 Hub 未收到回执，保留记录；
 				// 若 Hub 已收到过回执又重新置为待接收（改答 / 重发），则清除记录以便再次注入。
@@ -466,16 +470,30 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	if len(fresh) > 0 {
+	var answers, feedback []protocol.Decision
+	for _, dec := range fresh {
+		if dec.Kind == "feedback" {
+			feedback = append(feedback, dec)
+		} else {
+			answers = append(answers, dec)
+		}
+	}
+	if len(answers) > 0 {
 		b.WriteString("[Kitestring] 用户已对你之前提出的决策作出答复，请据此继续推进：\n")
-		for _, dec := range fresh {
-			fmt.Fprintf(&b, "- %s 问题：%s\n  用户答复：%s\n", dec.Code, oneLine(dec.Question), dec.Answer)
+		for _, dec := range answers {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(feedback) > 0 {
+		b.WriteString("[Kitestring] 用户验收后退回了以下需求，请按修改意见继续处理，完成后重新提交验收：\n")
+		for _, dec := range feedback {
+			d.writeItem(&b, dec)
 		}
 	}
 	if len(again) > 0 {
-		b.WriteString("[Kitestring] 提醒：以下是此前已收到的用户决策（会话恢复或上下文压缩后补充），继续遵循：\n")
+		b.WriteString("[Kitestring] 提醒：以下是此前已收到的用户答复与修改意见（会话恢复或上下文压缩后补充），继续遵循：\n")
 		for _, dec := range again {
-			fmt.Fprintf(&b, "- %s 问题：%s\n  用户答复：%s\n", dec.Code, oneLine(dec.Question), dec.Answer)
+			d.writeItem(&b, dec)
 		}
 	}
 	text := summary.Truncate(b.String(), maxInjectChars)
@@ -486,6 +504,71 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		}
 	}
 	return text
+}
+
+// writeItem 写一条答复或修改意见；附图给出本地路径，agent 可直接读取图片。
+func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
+	if dec.Kind == "feedback" {
+		fmt.Fprintf(b, "- %s「%s」修改意见：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+	} else {
+		fmt.Fprintf(b, "- %s 问题：%s\n  用户答复：%s\n", dec.Code, oneLine(dec.Question), dec.Answer)
+	}
+	for _, f := range dec.Files {
+		p := d.attachmentPath(f)
+		if _, err := os.Stat(p); err != nil {
+			d.fetchAttachment(f) // 送达前仍未下载完成：同步再试一次
+		}
+		if _, err := os.Stat(p); err == nil {
+			fmt.Fprintf(b, "  附图：%s\n", p)
+		} else {
+			fmt.Fprintf(b, "  附图（下载失败，可在 Kitestring 网页查看）：%s\n", f.Name)
+		}
+	}
+}
+
+var mimeExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+
+func (d *Daemon) attachmentPath(f protocol.File) string {
+	return filepath.Join(Home(), "attachments", f.ID+mimeExt[f.Mime])
+}
+
+// fetchAttachment 把附图下载到本机（已存在则跳过）。
+func (d *Daemon) fetchAttachment(f protocol.File) {
+	p := d.attachmentPath(f)
+	if _, err := os.Stat(p); err == nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/files/"+url.PathEscape(f.ID), nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+d.cfg.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		d.log.Warn("下载附图失败", "file", f.ID, "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		d.log.Warn("下载附图失败", "file", f.ID, "status", resp.StatusCode)
+		return
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(p), "dl-*")
+	if err != nil {
+		return
+	}
+	_, err = io.Copy(tmp, io.LimitReader(resp.Body, 12<<20))
+	tmp.Close()
+	if err != nil {
+		os.Remove(tmp.Name())
+		return
+	}
+	_ = os.Rename(tmp.Name(), p)
 }
 
 func oneLine(s string) string { return summary.Truncate(strings.Join(strings.Fields(s), " "), 300) }

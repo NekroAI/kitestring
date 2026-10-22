@@ -138,6 +138,16 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 CREATE INDEX IF NOT EXISTS decisions_status ON decisions(status);
 
+CREATE TABLE IF NOT EXISTS files (
+	id         TEXT PRIMARY KEY,
+	name       TEXT NOT NULL,
+	mime       TEXT NOT NULL,
+	size       INTEGER NOT NULL,
+	sha256     TEXT NOT NULL,
+	uploader   TEXT NOT NULL, -- user | device:<id>
+	created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS evidence (
 	id             TEXT PRIMARY KEY,
 	requirement_id TEXT NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,

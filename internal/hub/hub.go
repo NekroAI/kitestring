@@ -39,11 +39,12 @@ const settingsKey = "hub_settings"
 
 // Hub 是服务端核心。
 type Hub struct {
-	store  *store.Store
-	log    *slog.Logger
-	broker *broker
-	logins *loginLimiter
-	ai     aiGuard
+	store    *store.Store
+	log      *slog.Logger
+	broker   *broker
+	logins   *loginLimiter
+	ai       aiGuard
+	filesDir string
 
 	mu       sync.Mutex
 	conns    map[string]*deviceConn // deviceID → 连接
@@ -217,7 +218,11 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 	}
 	out := make([]protocol.Decision, 0, len(list))
 	for _, d := range list {
-		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: d.Answer, Delivered: d.Status == store.DecDelivered}
+		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: d.Answer, Delivered: d.Status == store.DecDelivered,
+			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle}
+		for _, f := range d.AnswerFiles {
+			pd.Files = append(pd.Files, protocol.File{ID: f.ID, Name: f.Name, Mime: f.Mime})
+		}
 		if d.AnsweredAt != nil {
 			pd.AnsweredAt = *d.AnsweredAt
 		}

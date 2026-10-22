@@ -138,6 +138,11 @@ func runHub(args []string) error {
 	}
 	defer st.Close()
 	h := hub.New(st, logger())
+	dbPath := *data
+	if dbPath == "" {
+		dbPath = filepath.Join(daemon.Home(), "hub.db")
+	}
+	h.SetFilesDir(filepath.Join(filepath.Dir(dbPath), "files"))
 	ctx := signalContext()
 	switch sub {
 	case "serve":

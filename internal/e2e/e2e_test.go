@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +47,7 @@ func setup(t *testing.T) *env {
 	t.Cleanup(func() { st.Close() })
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	h := hub.New(st, log)
+	h.SetFilesDir(dir + "/files")
 	srv := httptest.NewServer(h.Handler(nil))
 	t.Cleanup(srv.Close)
 
@@ -387,5 +390,113 @@ func TestAIFeatures(t *testing.T) {
 	e.call("POST", "/api/recap", map[string]any{"from": now.Add(-time.Hour), "to": now.Add(time.Minute)}, &recap)
 	if !strings.Contains(recap.Markdown, "## 概览") {
 		t.Fatalf("回顾内容异常：%q", recap.Markdown)
+	}
+}
+
+// 1x1 PNG
+var tinyPNG = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0, 0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99, 0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82}
+
+func (e *env) upload(t *testing.T, name string, data []byte) store.FileRef {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, _ := mw.CreateFormFile("file", name)
+	part.Write(data)
+	mw.Close()
+	req, _ := http.NewRequest("POST", e.srv.URL+"/api/files", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := e.web.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		t.Fatalf("上传失败 %d：%s", resp.StatusCode, raw)
+	}
+	var f store.FileRef
+	_ = json.Unmarshal(raw, &f)
+	return f
+}
+
+func TestAttachmentsAndReviewFeedback(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	prompt := func(turn string) string {
+		return hook(t, "claude", map[string]any{"session_id": "f-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "继续", "prompt_id": turn})
+	}
+	prompt("p0")
+	c := client.New(5 * time.Second)
+
+	// 非图片被拒绝
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, _ := mw.CreateFormFile("file", "a.txt")
+	part.Write([]byte("hello"))
+	mw.Close()
+	req, _ := http.NewRequest("POST", e.srv.URL+"/api/files", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if resp, _ := e.web.Do(req); resp.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("非图片应被拒绝，得到 %d", resp.StatusCode)
+	}
+
+	// 决策答复附图 → 注入里给出已下载的本地路径
+	img := e.upload(t, "设计稿.png", tinyPNG)
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", map[string]any{"question": "按钮用哪个样式？", "session_key": "claude:f-1"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": "D-1", "answer": "按附图来", "files": []string{img.ID}}}}, nil)
+	var out string
+	e.waitFor("决策附图送达", func() bool { out = prompt("p1"); return strings.Contains(out, "按附图来") })
+	m := regexp.MustCompile(`附图：(\S+\.png)`).FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("注入应包含本地附图路径：%q", out)
+	}
+	if b, err := os.ReadFile(strings.TrimRight(m[1], `\n"`)); err != nil || !bytes.Equal(b, tinyPNG) {
+		t.Fatalf("附图应已下载到本地：%v", err)
+	}
+
+	// agent 上传截图作为证据，需求进入待验收
+	shot := t.TempDir() + "/shot.png"
+	os.WriteFile(shot, tinyPNG, 0o600)
+	var ref store.FileRef
+	if err := c.Upload(context.Background(), "/agent/files", shot, &ref); err != nil || ref.ID == "" {
+		t.Fatalf("agent 上传失败：%v", err)
+	}
+	var r store.Requirement
+	if err := c.Do(context.Background(), "POST", "/agent/requirements", map[string]any{"title": "登录页样式", "status": "in_progress", "session_key": "claude:f-1"}, &r); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Do(context.Background(), "POST", "/agent/requirements/"+r.Code+"/evidence", map[string]any{"kind": "screenshot", "summary": "改好了", "files": []string{ref.ID}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	c.Do(context.Background(), "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review"}, nil)
+
+	// 用户提修改意见（附图）→ 回到进行中、证据作废、意见送达该会话
+	fb := e.upload(t, "问题.png", tinyPNG)
+	var rv struct {
+		Requirements []store.Requirement `json:"requirements"`
+		Feedback     []store.Decision    `json:"feedback"`
+	}
+	e.call("POST", "/api/reviews", map[string]any{"items": []map[string]any{{"ref": r.Code, "verdict": "revise", "comment": "按钮太小，见附图", "files": []string{fb.ID}}}}, &rv)
+	if rv.Requirements[0].Status != store.ReqInProgress || rv.Feedback[0].SessionKey != "claude:f-1" || rv.Feedback[0].Kind != store.KindFeedback {
+		t.Fatalf("修改意见结果异常：%+v / %+v", rv.Requirements[0].Status, rv.Feedback[0])
+	}
+	e.waitFor("修改意见送达", func() bool {
+		out = prompt("p2")
+		return strings.Contains(out, "按钮太小") && strings.Contains(out, r.Code) && strings.Contains(out, "附图：")
+	})
+	var got store.Requirement
+	if err := c.Do(context.Background(), "GET", "/agent/requirements/"+r.Code, nil, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Feedback) != 1 || !got.Evidence[0].Voided || len(got.Evidence[0].Files) != 1 {
+		t.Fatalf("需求详情应含修改意见，证据已作废并保留截图：%+v", got)
+	}
+
+	// 通过：直接完成
+	e.call("POST", "/api/reviews", map[string]any{"items": []map[string]any{{"ref": r.Code, "verdict": "accept"}}}, &rv)
+	if rv.Requirements[0].Status != store.ReqDone {
+		t.Fatalf("验收通过应为已完成，得到 %s", rv.Requirements[0].Status)
 	}
 }

@@ -28,6 +28,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	publicAPI := humago.New(publicMux, apiConfig())
 	h.registerPublic(publicAPI)
 	h.registerWeb(webAPI)
+	h.registerReview(webAPI)
 	h.registerAgent(agentAPI)
 
 	root := http.NewServeMux()
@@ -35,6 +36,12 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	root.Handle("/api/agent/", h.requireDevice(agentMux))
 	root.Handle("/api/device/ws", h.requireDevice(http.HandlerFunc(h.serveDeviceWS)))
 	root.Handle("/api/stream", h.requireWeb(http.HandlerFunc(h.broker.serve)))
+	webUploader := func(*http.Request) string { return "user" }
+	devUploader := func(r *http.Request) string { d, _ := deviceFrom(r.Context()); return "device:" + d.ID }
+	root.Handle("POST /api/files", h.requireWeb(h.handleUpload(webUploader)))
+	root.Handle("GET /api/files/{id}", h.requireWeb(http.HandlerFunc(h.handleDownload)))
+	root.Handle("POST /api/agent/files", h.requireDevice(h.handleUpload(devUploader)))
+	root.Handle("GET /api/agent/files/{id}", h.requireDevice(http.HandlerFunc(h.handleDownload)))
 	root.Handle("/api/", h.requireWeb(webMux))
 	if web != nil {
 		root.Handle("/", web)
@@ -57,6 +64,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	api := humago.New(mux, apiConfig())
 	h.registerPublic(api)
 	h.registerWeb(api)
+	h.registerReview(api)
 	h.registerAgent(api)
 	return api.OpenAPI()
 }
@@ -258,8 +266,9 @@ type decisionOut struct {
 type answersIn struct {
 	Body struct {
 		Answers []struct {
-			Ref    string `json:"ref"`
-			Answer string `json:"answer"`
+			Ref    string   `json:"ref"`
+			Answer string   `json:"answer"`
+			Files  []string `json:"files,omitempty" doc:"附图 ID"`
 		} `json:"answers" minItems:"1"`
 	}
 }
@@ -285,10 +294,20 @@ type ReqFields struct {
 	Source     string `json:"source,omitempty"`
 	Acceptance string `json:"acceptance,omitempty"`
 	DocLink    string `json:"doc_link,omitempty"`
+	// Files 是描述里的附图 ID；不传表示不修改，传空数组表示清空。
+	Files []string `json:"files,omitempty"`
 }
 
-func (f ReqFields) toReq() store.Requirement {
-	return store.Requirement{ProjectID: f.ProjectID, Title: f.Title, Detail: f.Detail, Status: f.Status, Priority: f.Priority, Source: f.Source, Acceptance: f.Acceptance, DocLink: f.DocLink}
+func (h *Hub) toReq(ctx context.Context, f ReqFields) (store.Requirement, error) {
+	r := store.Requirement{ProjectID: f.ProjectID, Title: f.Title, Detail: f.Detail, Status: f.Status, Priority: f.Priority, Source: f.Source, Acceptance: f.Acceptance, DocLink: f.DocLink}
+	if f.Files != nil {
+		files, err := h.store.ResolveFiles(ctx, f.Files)
+		if err != nil {
+			return r, err
+		}
+		r.Files = files
+	}
+	return r, nil
 }
 
 // SettingsView 是返回给 Web 的配置，隐藏 API key。
@@ -493,7 +512,11 @@ func (h *Hub) registerWeb(api huma.API) {
 			}{Decisions: []store.Decision{}}}
 			devices := map[string]bool{}
 			for _, a := range in.Body.Answers {
-				d, err := h.store.AnswerDecision(ctx, a.Ref, a.Answer)
+				files, err := h.store.ResolveFiles(ctx, a.Files)
+				if err != nil {
+					return nil, err
+				}
+				d, err := h.store.AnswerDecision(ctx, a.Ref, a.Answer, files)
 				if err != nil {
 					return nil, apiErr(err)
 				}
@@ -559,9 +582,12 @@ func (h *Hub) registerWeb(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "create-requirement", Method: http.MethodPost, Path: "/api/requirements", Tags: tag("requirements")},
 		func(ctx context.Context, in *struct{ Body ReqFields }) (*reqOut, error) {
-			r := in.Body.toReq()
+			r, err := h.toReq(ctx, in.Body)
+			if err != nil {
+				return nil, err
+			}
 			r.CreatedBy = "user"
-			r, err := h.store.CreateRequirement(ctx, r)
+			r, err = h.store.CreateRequirement(ctx, r)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -582,7 +608,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			r := in.Body.toReq()
+			r, err := h.toReq(ctx, in.Body)
+			if err != nil {
+				return nil, err
+			}
 			r.ID = cur.ID
 			r, err = h.store.UpdateRequirement(ctx, r)
 			if err != nil {
@@ -761,14 +790,17 @@ func (h *Hub) registerAgent(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-create-requirement", Method: http.MethodPost, Path: "/api/agent/requirements", Tags: tag},
 		func(ctx context.Context, in *agentReqIn) (*reqOut, error) {
-			r := in.Body.toReq()
+			r, err := h.toReq(ctx, in.Body.ReqFields)
+			if err != nil {
+				return nil, err
+			}
 			r.CreatedBy = "agent"
 			if r.ProjectID == "" && in.Body.SessionKey != "" {
 				if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil {
 					r.ProjectID = x.ProjectID
 				}
 			}
-			r, err := h.store.CreateRequirement(ctx, r)
+			r, err = h.store.CreateRequirement(ctx, r)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -807,17 +839,22 @@ func (h *Hub) registerAgent(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body struct {
-				Kind       string `json:"kind" doc:"例：test、screenshot、commit、doc、manual"`
-				Summary    string `json:"summary" minLength:"1"`
-				Link       string `json:"link,omitempty"`
-				SessionKey string `json:"session_key,omitempty"`
+				Kind       string   `json:"kind" doc:"例：test、screenshot、commit、doc、manual"`
+				Summary    string   `json:"summary" minLength:"1"`
+				Link       string   `json:"link,omitempty"`
+				Files      []string `json:"files,omitempty" doc:"截图等附图 ID（先上传到 /api/agent/files）"`
+				SessionKey string   `json:"session_key,omitempty"`
 			}
 		}) (*reqOut, error) {
 			r, err := h.store.GetRequirement(ctx, in.Ref)
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			if _, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: in.Body.SessionKey, Kind: in.Body.Kind, Summary: in.Body.Summary, Link: in.Body.Link}); err != nil {
+			files, err := h.store.ResolveFiles(ctx, in.Body.Files)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: in.Body.SessionKey, Kind: in.Body.Kind, Summary: in.Body.Summary, Link: in.Body.Link, Files: files}); err != nil {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("requirements")

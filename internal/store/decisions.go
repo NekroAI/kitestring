@@ -21,36 +21,45 @@ const (
 	DecClosed    = "closed"    // 已关闭（不再注入）
 )
 
+// 决策类型：agent 提出的决策；用户对需求的修改意见（创建即为“已决策待接收”，沿用同一条送达通道）。
+const (
+	KindDecision = "decision"
+	KindFeedback = "feedback"
+)
+
 // Decision 是一条待用户决策的问题。
 type Decision struct {
-	ID              string     `json:"id"`
-	Code            string     `json:"code"`
-	SessionKey      string     `json:"session_key,omitempty"`
-	OriginSession   string     `json:"origin_session,omitempty"`
-	SessionState    string     `json:"session_state,omitempty"` // 目标会话当前状态
-	DeviceName      string     `json:"device_name,omitempty"`
-	ProjectID       string     `json:"project_id,omitempty"`
-	ProjectName     string     `json:"project_name,omitempty"`
-	RequirementID   string     `json:"requirement_id,omitempty"`
-	RequirementCode string     `json:"requirement_code,omitempty"`
-	Question        string     `json:"question"`
-	Context         string     `json:"context"`
-	Options         []string   `json:"options"`
-	Recommendation  string     `json:"recommendation"`
-	ShortTitle      string     `json:"short_title"` // 模型生成的短标题
-	Status          string     `json:"status"`
-	Answer          string     `json:"answer"`
-	CreatedAt       time.Time  `json:"created_at"`
-	AnsweredAt      *time.Time `json:"answered_at,omitempty"`
-	DeliveredAt     *time.Time `json:"delivered_at,omitempty"`
-	DeliveredTurn   string     `json:"delivered_turn,omitempty"`
+	ID               string     `json:"id"`
+	Code             string     `json:"code"`
+	SessionKey       string     `json:"session_key,omitempty"`
+	OriginSession    string     `json:"origin_session,omitempty"`
+	SessionState     string     `json:"session_state,omitempty"` // 目标会话当前状态
+	DeviceName       string     `json:"device_name,omitempty"`
+	ProjectID        string     `json:"project_id,omitempty"`
+	ProjectName      string     `json:"project_name,omitempty"`
+	RequirementID    string     `json:"requirement_id,omitempty"`
+	RequirementCode  string     `json:"requirement_code,omitempty"`
+	Question         string     `json:"question"`
+	Context          string     `json:"context"`
+	Options          []string   `json:"options"`
+	Recommendation   string     `json:"recommendation"`
+	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
+	Kind             string     `json:"kind" enum:"decision,feedback"`
+	AnswerFiles      []FileRef  `json:"answer_files"`
+	RequirementTitle string     `json:"requirement_title,omitempty"`
+	Status           string     `json:"status"`
+	Answer           string     `json:"answer"`
+	CreatedAt        time.Time  `json:"created_at"`
+	AnsweredAt       *time.Time `json:"answered_at,omitempty"`
+	DeliveredAt      *time.Time `json:"delivered_at,omitempty"`
+	DeliveredTurn    string     `json:"delivered_turn,omitempty"`
 }
 
 func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
-	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0),
-	x.question, x.context, x.options, x.recommendation, x.short_title, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn
+	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
+	x.question, x.context, x.options, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -60,11 +69,12 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var d Decision
 	var seq, rseq int
-	var options, created string
+	var options, created, files string
 	var answered, delivered sql.NullString
-	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq,
-		&d.Question, &d.Context, &options, &d.Recommendation, &d.ShortTitle, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn)
+	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
+		&d.Question, &d.Context, &options, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn)
 	d.Code = decCode(seq)
+	d.AnswerFiles = parseFiles(files)
 	if rseq > 0 {
 		d.RequirementCode = reqCode(rseq)
 	}
@@ -88,8 +98,15 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		if err := t.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) + 1 FROM decisions`).Scan(&seq); err != nil {
 			return err
 		}
+		n := now()
+		if d.Kind == KindFeedback {
+			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
+			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?)`,
+				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, KindFeedback, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)
+			return err
+		}
 		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, recommendation, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, string(opts), d.Recommendation, DecPending, now())
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, string(opts), d.Recommendation, DecPending, n)
 		return err
 	})
 	if err != nil {
@@ -146,7 +163,7 @@ func (s *Store) queryDecs(ctx context.Context, q string, args ...any) ([]Decisio
 }
 
 // AnswerDecision 记录用户答复，状态进入“已决策待接收”。已接收的决策允许改答，会重新进入待接收。
-func (s *Store) AnswerDecision(ctx context.Context, ref, answer string) (Decision, error) {
+func (s *Store) AnswerDecision(ctx context.Context, ref, answer string, files []FileRef) (Decision, error) {
 	d, err := s.GetDecision(ctx, ref)
 	if err != nil {
 		return d, err
@@ -154,10 +171,10 @@ func (s *Store) AnswerDecision(ctx context.Context, ref, answer string) (Decisio
 	if d.Status == DecClosed {
 		return d, fmt.Errorf("%s 已关闭", d.Code)
 	}
-	if strings.TrimSpace(answer) == "" {
+	if strings.TrimSpace(answer) == "" && len(files) == 0 {
 		return d, errors.New("答复不能为空")
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '' WHERE id = ?`, DecAnswered, answer, now(), d.ID)
+	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_files = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '' WHERE id = ?`, DecAnswered, answer, filesJSON(files), now(), d.ID)
 	if err != nil {
 		return d, err
 	}

@@ -4,6 +4,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -88,13 +89,14 @@ type refIn struct {
 }
 
 type reqCreateIn struct {
-	Title      string `json:"title" jsonschema:"需求标题，一句话"`
-	Detail     string `json:"detail,omitempty" jsonschema:"背景与细节"`
-	Acceptance string `json:"acceptance,omitempty" jsonschema:"验收标准"`
-	Status     string `json:"status,omitempty" jsonschema:"初始状态，默认 draft；已明确可做的用 ready，正在做的用 in_progress"`
-	Priority   string `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`
-	Source     string `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
-	DocLink    string `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
+	Title      string   `json:"title" jsonschema:"需求标题，一句话"`
+	Detail     string   `json:"detail,omitempty" jsonschema:"背景与细节"`
+	Acceptance string   `json:"acceptance,omitempty" jsonschema:"验收标准"`
+	Status     string   `json:"status,omitempty" jsonschema:"初始状态，默认 draft；已明确可做的用 ready，正在做的用 in_progress"`
+	Priority   string   `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`
+	Source     string   `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
+	DocLink    string   `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
+	Images     []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，单张不超过 10 MB），如截图"`
 }
 
 type reqStatusIn struct {
@@ -103,10 +105,11 @@ type reqStatusIn struct {
 }
 
 type evidenceIn struct {
-	Ref     string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
-	Kind    string `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
-	Summary string `json:"summary" jsonschema:"证据摘要，例如：单元测试 42 个全部通过"`
-	Link    string `json:"link,omitempty" jsonschema:"链接或文件路径"`
+	Ref     string   `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	Kind    string   `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
+	Summary string   `json:"summary" jsonschema:"证据摘要，例如：单元测试 42 个全部通过"`
+	Link    string   `json:"link,omitempty" jsonschema:"链接或文件路径"`
+	Images  []string `json:"images,omitempty" jsonschema:"本机截图等图片文件路径，用户验收时会直接看到"`
 }
 
 type decisionIn struct {
@@ -138,18 +141,34 @@ func (t *tools) register(s *mcp.Server) {
 			err := t.c.Do(ctx, "GET", "/agent/requirements?"+q.Encode(), nil, &out)
 			return nil, out, err
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_get", Description: "读取一条需求的完整信息，含验收标准、关联会话与证据。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_get", Description: "读取一条需求的完整信息，含验收标准、关联会话、证据，以及用户的修改意见（附图会以图片形式返回）。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in refIn) (*mcp.CallToolResult, any, error) {
 			var out map[string]any
-			err := t.c.Do(ctx, "GET", "/agent/requirements/"+url.PathEscape(in.Ref), nil, &out)
-			return nil, out, err
+			if err := t.c.Do(ctx, "GET", "/agent/requirements/"+url.PathEscape(in.Ref), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			text, _ := json.MarshalIndent(out, "", "  ")
+			res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}
+			for _, id := range imageIDs(out) {
+				if data, mime, err := t.c.Fetch(ctx, "/agent/files/"+url.PathEscape(id), 10<<20); err == nil {
+					res.Content = append(res.Content, &mcp.ImageContent{Data: data, MIMEType: mime})
+				}
+			}
+			return res, nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqCreateIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
+			ids, err := t.upload(ctx, in.Images)
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(ids) > 0 {
+				body["files"] = ids
+			}
 			var out map[string]any
-			err := t.c.Do(ctx, "POST", "/agent/requirements", body, &out)
+			err = t.c.Do(ctx, "POST", "/agent/requirements", body, &out)
 			return nil, out, err
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。"},
@@ -164,8 +183,15 @@ func (t *tools) register(s *mcp.Server) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
+			ids, err := t.upload(ctx, in.Images)
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(ids) > 0 {
+				body["files"] = ids
+			}
 			var out map[string]any
-			err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/evidence", body, &out)
+			err = t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/evidence", body, &out)
 			return nil, out, err
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。"},
@@ -188,6 +214,49 @@ func (t *tools) register(s *mcp.Server) {
 			err := t.c.Do(ctx, "POST", "/agent/sessions/"+url.PathEscape(key)+"/link", map[string]any{"requirement": in.Requirement}, &out)
 			return nil, out, err
 		})
+}
+
+// upload 上传本机图片，返回附件 ID。
+func (t *tools) upload(ctx context.Context, paths []string) ([]string, error) {
+	var ids []string
+	for _, p := range paths {
+		var ref struct {
+			ID string `json:"id"`
+		}
+		if err := t.c.Upload(ctx, "/agent/files", p, &ref); err != nil {
+			return nil, fmt.Errorf("上传图片 %s 失败：%w", p, err)
+		}
+		ids = append(ids, ref.ID)
+	}
+	return ids, nil
+}
+
+// imageIDs 收集需求详情里所有附图：描述、证据（未作废）、修改意见；最多 8 张。
+func imageIDs(r map[string]any) []string {
+	var ids []string
+	add := func(v any) {
+		list, _ := v.([]any)
+		for _, it := range list {
+			if m, ok := it.(map[string]any); ok {
+				if id, ok := m["id"].(string); ok && len(ids) < 8 {
+					ids = append(ids, id)
+				}
+			}
+		}
+	}
+	add(r["files"])
+	for _, key := range []string{"feedback", "evidence"} {
+		list, _ := r[key].([]any)
+		for _, it := range list {
+			m, _ := it.(map[string]any)
+			if m == nil || m["voided"] == true {
+				continue
+			}
+			add(m["answer_files"])
+			add(m["files"])
+		}
+	}
+	return ids
 }
 
 func dropEmpty(m map[string]any) {
