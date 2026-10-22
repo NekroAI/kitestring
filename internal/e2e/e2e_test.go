@@ -617,3 +617,27 @@ func TestAssignWakesParkedSession(t *testing.T) {
 		t.Fatalf("交出后应关联会话并进行中：%s %v", got.Status, got.Sessions)
 	}
 }
+
+func TestDecisionOptionImages(t *testing.T) {
+	setup(t)
+	cwd, _ := os.Getwd()
+	hook(t, "claude", map[string]any{"session_id": "o-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "出方案", "prompt_id": "p0"})
+	c := client.New(10 * time.Second)
+	dir := t.TempDir()
+	var ids []string
+	for _, n := range []string{"a.png", "b.png"} {
+		os.WriteFile(dir+"/"+n, tinyPNG, 0o600)
+		var ref store.FileRef
+		if err := c.Upload(context.Background(), "/agent/files", dir+"/"+n, &ref); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, ref.ID)
+	}
+	var d store.Decision
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", map[string]any{"question": "用哪个布局？", "options": []string{"A", "B", "都不对"}, "option_images": []string{ids[0], ids[1], ""}, "session_key": "claude:o-1"}, &d); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.OptionFiles) != 3 || len(d.OptionFiles[0]) != 1 || len(d.OptionFiles[1]) != 1 || len(d.OptionFiles[2]) != 0 || d.OptionFiles[1][0].ID != ids[1] {
+		t.Fatalf("选项效果图应与选项一一对应：%+v", d.OptionFiles)
+	}
+}

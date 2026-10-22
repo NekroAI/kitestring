@@ -769,6 +769,7 @@ type agentDecisionIn struct {
 		Question       string   `json:"question" minLength:"1"`
 		Context        string   `json:"context,omitempty"`
 		Options        []string `json:"options,omitempty"`
+		OptionImages   []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
 		Recommendation string   `json:"recommendation,omitempty"`
 		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
 	}
@@ -892,6 +893,20 @@ func (h *Hub) registerAgent(api huma.API) {
 			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation}
 			if d.Options == nil {
 				d.Options = []string{}
+			}
+			if len(b.OptionImages) > 0 {
+				// 方案对比：每个选项最多一张效果图
+				d.OptionFiles = make([][]store.FileRef, len(d.Options))
+				for i := range d.Options {
+					d.OptionFiles[i] = []store.FileRef{}
+					if i < len(b.OptionImages) && b.OptionImages[i] != "" {
+						fs, err := h.store.ResolveFiles(ctx, []string{b.OptionImages[i]})
+						if err != nil {
+							return nil, err
+						}
+						d.OptionFiles[i] = fs
+					}
+				}
 			}
 			if b.SessionKey != "" {
 				if x, err := h.store.GetSession(ctx, b.SessionKey); err == nil {

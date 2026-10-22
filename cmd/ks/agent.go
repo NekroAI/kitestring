@@ -163,8 +163,9 @@ func runDecision(args []string) error {
 	ctxText := fs.String("context", "", "背景")
 	rec := fs.String("recommend", "", "推荐")
 	req := fs.String("req", "", "关联需求")
-	var opts stringList
+	var opts, optImgs stringList
 	fs.Var(&opts, "option", "选项，可重复")
+	fs.Var(&optImgs, "option-image", "选项的效果图路径，按 --option 的顺序一一对应，可重复")
 	if err := parseAnywhere(fs, args[1:]); err != nil {
 		return err
 	}
@@ -174,6 +175,13 @@ func runDecision(args []string) error {
 	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "session_key": cliSession(*session)}
 	if len(opts) > 0 {
 		body["options"] = []string(opts)
+	}
+	if len(optImgs) > 0 {
+		var tmp map[string]any = map[string]any{}
+		if err := attachFiles(tmp, optImgs); err != nil {
+			return err
+		}
+		body["option_images"] = tmp["files"]
 	}
 	return agentCall("POST", "/agent/decisions", compact(body))
 }

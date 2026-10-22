@@ -98,6 +98,16 @@
           "context": {
             "type": "string"
           },
+          "option_images": {
+            "description": "每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "options": {
             "items": {
               "type": "string"
@@ -354,6 +364,21 @@
             ],
             "type": "string"
           },
+          "option_files": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/FileRef"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "options": {
             "items": {
               "type": "string"
@@ -406,6 +431,7 @@
           "question",
           "context",
           "options",
+          "option_files",
           "recommendation",
           "short_title",
           "kind",
@@ -1756,7 +1782,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "5dbe348-dirty"
+    "version": "4241893-dirty"
   },
   "openapi": "3.1.0",
   "paths": {

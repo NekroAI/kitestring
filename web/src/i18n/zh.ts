@@ -241,6 +241,7 @@ export const zh = {
   },
 
   decision: {
+    noImage: '没有效果图',
     recommended: '推荐',
     recommendation: '建议',
     other: '其他回答',
@@ -352,6 +353,7 @@ export const zh = {
     drop: '松开以添加',
     remove: '移除',
     original: '查看原图',
+    zoom: '放大看',
     originalFile: '查看原文件',
     zoomReset: (pct: number) => `${pct}% · 复原`,
     failed: '上传失败',

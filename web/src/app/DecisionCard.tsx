@@ -8,7 +8,7 @@ import { cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
-import { AttachZone, Thumbs } from '../ui/attach'
+import { AttachZone, fileUrl, Thumbs, ZoomButton } from '../ui/attach'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
 import { useOpenReq, useOpenSession } from './nav'
@@ -83,6 +83,8 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   const free = options.length === 0 || draft.choice === 'other'
   const note = !free && (draft.noteOpen || !!draft.note)
   const title = d.short_title || d.question
+  // 方案对比：任一选项带效果图时，选项改为看图点选的卡片
+  const visual = (d.option_files ?? []).some((f) => f?.length)
 
   useEffect(() => {
     if (draft.choice === 'other' || draft.noteOpen) noteRef.current?.focus()
@@ -121,9 +123,50 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
         </div>
         {d.context && <Context text={d.context} />}
 
-        {options.length > 0 && (
-          <div className="space-y-1.5" role="radiogroup">
+        {options.length > 0 && visual && (
+          <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2" role="radiogroup">
             {options.map((o, i) => {
+              const on = draft.choice === i
+              const img = d.option_files?.[i]?.[0]
+              if (!img) return null // 没有效果图的选项放到下面的列表里
+              return (
+                <div
+                  key={i}
+                  role="radio"
+                  aria-checked={on}
+                  tabIndex={0}
+                  onClick={() => choose(i)}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), choose(i))}
+                  className={cx(
+                    'group/opt flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-surface text-left transition-[border,box-shadow,transform] duration-150 active:scale-[0.99]',
+                    on ? 'border-accent shadow-xs ring-2 ring-accent/30' : 'border-line hover:border-line-strong hover:shadow-xs',
+                  )}
+                >
+                  <div className="relative aspect-[16/10] overflow-hidden border-b border-line bg-sunken">
+                    <img src={fileUrl(img.id)} alt={o} loading="lazy" className="size-full object-cover object-top transition-transform duration-300 group-hover/opt:scale-[1.02]" />
+                    <span className="absolute top-2 right-2 opacity-0 transition group-hover/opt:opacity-100 pointer-coarse:opacity-100" onClick={(e) => e.stopPropagation()}>
+                      <ZoomButton f={img} />
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2.5 px-3 py-2.5 text-sm">
+                    <span className={cx('mt-px flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular transition-colors', on ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong text-fg-3')}>{i + 1}</span>
+                    <span className="min-w-0 flex-1 leading-relaxed break-words">{o}</span>
+                    {i === ri && (
+                      <Badge tone="accent" icon={<Sparkles className="size-3" />}>
+                        {t.decision.recommended}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {options.length > 0 && (
+          <div className="space-y-1.5" role={visual ? undefined : 'radiogroup'}>
+            {options.map((o, i) => {
+              if (visual && d.option_files?.[i]?.length) return null
               const on = draft.choice === i
               return (
                 <button

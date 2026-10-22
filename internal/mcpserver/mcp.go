@@ -118,6 +118,7 @@ type decisionIn struct {
 	Question       string   `json:"question" jsonschema:"需要用户决策的问题，单独成立、无需上下文也能看懂"`
 	Context        string   `json:"context,omitempty" jsonschema:"背景：为什么需要决策、各选项的取舍"`
 	Options        []string `json:"options,omitempty" jsonschema:"候选选项"`
+	OptionImages   []string `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
 	Recommendation string   `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
 	Requirement    string   `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
 }
@@ -200,6 +201,20 @@ func (t *tools) register(s *mcp.Server) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
+			if len(in.OptionImages) > 0 {
+				ids := make([]string, len(in.OptionImages))
+				for i, p := range in.OptionImages {
+					if strings.TrimSpace(p) == "" {
+						continue
+					}
+					up, err := t.upload(ctx, []string{p})
+					if err != nil {
+						return nil, nil, err
+					}
+					ids[i] = up[0]
+				}
+				body["option_images"] = ids
+			}
 			var out map[string]any
 			if err := t.c.Do(ctx, "POST", "/agent/decisions", body, &out); err != nil {
 				return nil, nil, err

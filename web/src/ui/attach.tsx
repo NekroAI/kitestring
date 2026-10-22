@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Dialog } from 'radix-ui'
-import { ImagePlus, Loader2, Play, X } from 'lucide-react'
+import { ImagePlus, Loader2, Maximize2, Play, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
@@ -327,6 +327,17 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
         </a>
       </motion.div>
     </>
+  )
+}
+
+// ZoomButton：放大查看某张图（用于方案对比卡等不想显示缩略图的地方）。
+export function ZoomButton({ f, className }: { f: FileRef; className?: string }) {
+  return (
+    <Lightbox f={f}>
+      <button aria-label={t.attach.zoom} className={cx('flex size-8 items-center justify-center rounded-lg bg-black/45 text-white backdrop-blur transition hover:bg-black/65 active:scale-95 pointer-coarse:size-10', className)}>
+        <Maximize2 className="size-4" />
+      </button>
+    </Lightbox>
   )
 }
 

@@ -621,6 +621,8 @@ export interface components {
         };
         AgentDecisionInBody: {
             context?: string;
+            /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
+            option_images?: string[] | null;
             options?: string[] | null;
             question: string;
             recommendation?: string;
@@ -685,6 +687,7 @@ export interface components {
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign";
+            option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
             project_id?: string;
