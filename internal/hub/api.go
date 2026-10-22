@@ -47,6 +47,7 @@ func apiConfig() huma.Config {
 	c.DocsPath = ""
 	c.OpenAPIPath = ""
 	c.SchemasPath = ""
+	c.CreateHooks = nil // 不在响应里附加 $schema 链接
 	return c
 }
 

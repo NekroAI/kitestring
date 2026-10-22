@@ -4,15 +4,6 @@
       "Agent-attach-evidenceRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Agent-attach-evidenceRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "kind": {
             "description": "例：test、screenshot、commit、doc、manual",
             "type": "string"
@@ -37,15 +28,6 @@
       "Agent-link-sessionRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Agent-link-sessionRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "requirement": {
             "type": "string"
           }
@@ -58,15 +40,6 @@
       "Agent-update-statusRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Agent-update-statusRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "session_key": {
             "type": "string"
           },
@@ -91,15 +64,6 @@
       "AgentDecisionInBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/AgentDecisionInBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "context": {
             "type": "string"
           },
@@ -136,15 +100,6 @@
       "AgentReqInBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/AgentReqInBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "acceptance": {
             "type": "string"
           },
@@ -197,15 +152,6 @@
       "AnswersInBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/AnswersInBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "answers": {
             "items": {
               "$ref": "#/components/schemas/Item"
@@ -225,15 +171,6 @@
       "Auth-loginRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Auth-loginRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "password": {
             "type": "string"
           }
@@ -246,15 +183,6 @@
       "AuthStatusBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/AuthStatusBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "initialized": {
             "type": "boolean"
           },
@@ -291,15 +219,6 @@
       "Change-passwordRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Change-passwordRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "new": {
             "minLength": 8,
             "type": "string"
@@ -317,15 +236,6 @@
       "Create-deviceRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Create-deviceRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "name": {
             "maxLength": 64,
             "minLength": 1,
@@ -340,15 +250,6 @@
       "Decision": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Decision.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "answer": {
             "type": "string"
           },
@@ -435,15 +336,6 @@
       "DecisionsOutBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/DecisionsOutBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "decisions": {
             "items": {
               "$ref": "#/components/schemas/Decision"
@@ -507,15 +399,6 @@
       "DeviceCreatedBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/DeviceCreatedBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "device": {
             "$ref": "#/components/schemas/Device"
           },
@@ -532,15 +415,6 @@
       "DevicesOutBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/DevicesOutBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "devices": {
             "items": {
               "$ref": "#/components/schemas/Device"
@@ -576,15 +450,6 @@
       "ErrorModel": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/ErrorModel.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "detail": {
             "description": "A human-readable explanation specific to this occurrence of the problem.",
             "examples": [
@@ -796,15 +661,6 @@
       "Link-requirementRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Link-requirementRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "session_key": {
             "type": "string"
           },
@@ -820,15 +676,6 @@
       "LoginOutBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/LoginOutBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "ok": {
             "type": "boolean"
           }
@@ -841,15 +688,6 @@
       "NotifyConfig": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/NotifyConfig.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "bark": {
             "$ref": "#/components/schemas/BarkConfig"
           },
@@ -871,15 +709,6 @@
       "OkBodyBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/OkBodyBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "ok": {
             "type": "boolean"
           }
@@ -892,15 +721,6 @@
       "PasswordInBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/PasswordInBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "password": {
             "minLength": 8,
             "type": "string"
@@ -946,15 +766,6 @@
       "ProjectInBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/ProjectInBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "doc_root": {
             "type": "string"
           },
@@ -975,15 +786,6 @@
       "ProjectsOutBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/ProjectsOutBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "projects": {
             "items": {
               "$ref": "#/components/schemas/Project"
@@ -1012,15 +814,6 @@
       "ReqFields": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/ReqFields.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "acceptance": {
             "type": "string"
           },
@@ -1070,15 +863,6 @@
       "ReqsOutBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/ReqsOutBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/Requirement"
@@ -1107,15 +891,6 @@
       "Requirement": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Requirement.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "acceptance": {
             "type": "string"
           },
@@ -1332,15 +1107,6 @@
       "SessionDetailOutBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/SessionDetailOutBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/Event"
@@ -1363,15 +1129,6 @@
       "SessionsOutBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/SessionsOutBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "devices": {
             "items": {
               "$ref": "#/components/schemas/Device"
@@ -1400,15 +1157,6 @@
       "SettingsInBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/SettingsInBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "notify_default": {
             "$ref": "#/components/schemas/NotifyConfig"
           },
@@ -1446,15 +1194,6 @@
       "SettingsView": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/SettingsView.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "notify_default": {
             "$ref": "#/components/schemas/NotifyConfig"
           },
@@ -1502,15 +1241,6 @@
       "Test-summaryResponse": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Test-summaryResponse.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "summary": {
             "type": "string"
           }
@@ -1523,15 +1253,6 @@
       "Update-workspaceRequest": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Update-workspaceRequest.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "name": {
             "minLength": 1,
             "type": "string"
@@ -1561,15 +1282,6 @@
       "Workspace": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/Workspace.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -1595,15 +1307,6 @@
       "WorkspaceInBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/WorkspaceInBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "name": {
             "minLength": 1,
             "type": "string"
@@ -1622,7 +1325,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "5a8256f-dirty"
+    "version": "dev"
   },
   "openapi": "3.1.0",
   "paths": {
