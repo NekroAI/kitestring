@@ -113,7 +113,7 @@ export function useWorkbench() {
       const g = group(projectOf(s), s.project_name ?? "")
       if (s.last_active_at > g.lastActive) g.lastActive = s.last_active_at
       if (threads.has(s.key)) continue
-      if (s.state === 'ended') g.ended.push(s)
+      if (s.state === 'ended' || displayState(s) === 'done') g.ended.push(s)
       else g.active.push(s)
     }
     for (const th of threads.values()) {

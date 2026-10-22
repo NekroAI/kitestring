@@ -809,6 +809,18 @@
         ],
         "type": "object"
       },
+      "Mark-session-doneRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "done"
+        ],
+        "type": "object"
+      },
       "Note-requirementRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1335,6 +1347,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "done_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "ended_at": {
             "format": "date-time",
             "type": "string"
@@ -1692,7 +1708,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "883ba64-dirty"
+    "version": "7374e2d-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3244,6 +3260,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{key}/done": {
+      "post": {
+        "operationId": "mark-session-done",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Mark-session-doneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDetailOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "手动标记 / 取消“已完成”（你再给它发消息时自动取消）",
         "tags": [
           "sessions"
         ]

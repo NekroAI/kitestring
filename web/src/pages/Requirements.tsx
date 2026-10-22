@@ -4,6 +4,8 @@ import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
 import { ReqView } from '../app/reqDrawer'
+import { Ctx } from '../ui/contextMenu'
+import { useReqMenu } from '../app/menus'
 import { Collapse, Item, List as MotionList } from '../ui/motion'
 import { cx, relTime, useNow, usePref } from '../lib/util'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
@@ -92,8 +94,10 @@ function StatusSection({ status, items, onDrop }: { status: string; items: Requi
 // 列表视图：按项目分组，组内按状态；点开就地展开详情。
 function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boolean; onToggle: () => void }) {
   const now = useNow()
+  const menu = useReqMenu()
   return (
     <div className={cx('rounded-xl transition-colors', expanded ? 'bg-surface shadow-card ring-1 ring-line' : 'hover:bg-hover/60')}>
+      <Ctx items={menu(r)} className="rounded-xl">
       <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
         <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', expanded && 'rotate-90')} />
         <span onClick={(e) => e.stopPropagation()}>
@@ -119,6 +123,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         )}
         <span className="hidden w-20 shrink-0 text-right text-xs text-fg-3 sm:block">{relTime(r.updated_at, now)}</span>
       </div>
+      </Ctx>
       <Collapse show={expanded}>
         <div className="flex max-h-[min(680px,78dvh)] flex-col border-t border-line">
           <ReqView refId={r.code} />

@@ -11,6 +11,8 @@ import { PriorityDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
+import { Ctx } from '../ui/contextMenu'
+import { useReqMenu } from './menus'
 
 export const boardStatuses = ['draft', 'ready', 'in_progress', 'blocked', 'review'] as const
 export const closedStatuses = ['done', 'shelved'] as const
@@ -102,8 +104,10 @@ export function StatusMenu({ r, size = 'sm' }: { r: Requirement; size?: 'sm' | '
 export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggable?: boolean; onDragStart?: (e: React.DragEvent) => void }) {
   const open = useOpenReq()
   const setStatus = useSetStatus()
+  const menu = useReqMenu()
   const actor = t.nextActor[r.next_actor]
   return (
+    <Ctx items={menu(r)} className="h-full rounded-xl">
     <Card
       role="button"
       tabIndex={0}
@@ -153,7 +157,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
           </Tip>
         )}
       </div>
-    </Card>
+    </Card></Ctx>
   )
 }
 

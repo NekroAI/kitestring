@@ -12,6 +12,8 @@ import { Collapse, Item, List } from '../ui/motion'
 import { ReviewList } from './review'
 import { Callout, ReqCount, sessionTitle, toolIcon } from './SessionCard'
 import { Ticker } from './liveFeed'
+import { useSessionMenu } from './menus'
+import { Ctx } from '../ui/contextMenu'
 
 // SessionLine：会话在做什么的一行描述（摘要 → 最后动作 → 你最后说的话）。
 function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean } | null {
@@ -29,10 +31,12 @@ function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean }
 // SessionRow：不需要你处理的会话，一行展示。
 export function SessionRow({ s, now, showProject }: { s: Session; now: number; showProject?: boolean }) {
   const open = useOpenSession()
+  const menu = useSessionMenu()
   const ds = displayState(s)
   const a = activity(s)
   const ended = s.state === 'ended'
   return (
+    <Ctx items={menu(s)} className="rounded-xl">
     <button
       onClick={() => open(s.key)}
       className={cx('group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-hover/70', ended && 'opacity-60 hover:opacity-100')}
@@ -61,6 +65,7 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
       <Sparkline data={s.activity} state={ds} className="hidden @lg:flex" />
       <span className="shrink-0">{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} />}</span>
     </button>
+    </Ctx>
   )
 }
 
@@ -83,6 +88,7 @@ function Part({ id, icon, title, count, children }: { id: string; icon: ReactNod
 // ThreadCard：一个需要你处理的对话，汇集它所有在等你的事。
 export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now: number; projectName: string; sessions: Session[] }) {
   const open = useOpenSession()
+  const menu = useSessionMenu()
   const s = th.s
   const ds = s ? displayState(s) : 'idle'
   const st = stateStyle[ds] ?? stateStyle.idle
@@ -90,6 +96,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
   return (
     <Card className={cx('paper-fold overflow-hidden rounded-tr-md', st.ring, s?.state === 'running' && 'live-edge')}>
       {s ? (
+        <Ctx items={menu(s)} className="rounded-none">
         <div
           role="button"
           tabIndex={0}
@@ -128,6 +135,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
           )}
           <Callout s={s} />
         </div>
+        </Ctx>
       ) : (
         <div className="flex items-center gap-2 px-4 pt-4 text-[15px] font-semibold text-fg">{projectName || t.thread.noSession}</div>
       )}

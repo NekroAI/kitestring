@@ -147,3 +147,18 @@ func TestOnlyLatestTerminalDrivesState(t *testing.T) {
 		t.Fatalf("最近发消息的终端应成为最新：%+v", cur)
 	}
 }
+
+func TestNewPromptClearsDone(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Stop", Time: t0})
+	done := t0.Add(time.Minute)
+	cur.DoneAt = &done
+	cur = applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Notification", NotifType: "idle_prompt", Time: t0.Add(2 * time.Minute)})
+	if cur.DoneAt == nil {
+		t.Fatal("没有新消息时应保持已完成")
+	}
+	cur = applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Prompt: "再改一下", Time: t0.Add(3 * time.Minute)})
+	if cur.DoneAt != nil {
+		t.Fatal("你再发消息后应自动取消已完成")
+	}
+}

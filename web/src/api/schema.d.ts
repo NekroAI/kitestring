@@ -492,6 +492,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{key}/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手动标记 / 取消“已完成”（你再给它发消息时自动取消） */
+        post: operations["mark-session-done"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -793,6 +810,9 @@ export interface components {
         LoginOutBody: {
             ok: boolean;
         };
+        "Mark-session-doneRequest": {
+            done: boolean;
+        };
         "Note-requirementRequest": {
             comment?: string;
             files?: string[] | null;
@@ -914,6 +934,8 @@ export interface components {
             digest_done: string;
             /** Format: int64 */
             dirty: number;
+            /** Format: date-time */
+            done_at?: string;
             /** Format: date-time */
             ended_at?: string;
             key: string;
@@ -2147,6 +2169,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionDetailOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "mark-session-done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Mark-session-doneRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

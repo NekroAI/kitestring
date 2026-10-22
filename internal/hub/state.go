@@ -59,6 +59,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	switch ev.Name {
 	case "SessionStart":
 		x.EndedAt = nil
+		x.DoneAt = nil // 恢复了对话，不再算已完成
 		x.State, x.StateDetail = store.StateIdle, ""
 	case "UserPromptSubmit":
 		x.EndedAt = nil
@@ -68,6 +69,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		}
 		x.Turns++
 		x.TurnTools = 0
+		x.DoneAt = nil // 你又给它发了消息，不再算已完成
 		if ev.Prompt != "" {
 			x.LastPrompt = ev.Prompt
 		}

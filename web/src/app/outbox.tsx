@@ -13,7 +13,7 @@ import type { FileRef } from '../ui/attach'
 export type Draft = { choice: number | 'other' | null; note: string; noteOpen?: boolean; files?: FileRef[] }
 export const emptyDraft: Draft = { choice: null, note: '' }
 const DRAFTS_KEY = 'ks.drafts.v2'
-export const UNDO_MS = 4000
+export const UNDO_MS = 1800
 
 // composeAnswer 把草稿合成为最终答复文本；返回空串表示还不能发送。
 export function composeAnswer(d: Draft | undefined, options: string[]): string {

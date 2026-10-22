@@ -33,6 +33,8 @@ import { Menu } from '../ui/overlay'
 import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer } from './DecisionCard'
 import { LiveFeed } from './liveFeed'
+import { useSessionMenu } from './menus'
+import { Ctx } from '../ui/contextMenu'
 import { useOpenReq, useOpenSession } from './nav'
 
 // 工具名 → 图标。
@@ -162,6 +164,7 @@ function ActionLine({ s, now }: { s: Session; now: number }) {
 // - wide（要你处理）：附带提问 / 授权请求 / 回复要点，并就地回答待决策。
 export const SessionCard = memo(function SessionCard({ s, now, decisions = [], wide }: { s: Session; now: number; decisions?: Decision[]; wide?: boolean }) {
   const open = useOpenSession()
+  const menu = useSessionMenu()
   const ds = displayState(s)
   const st = stateStyle[ds] ?? stateStyle.idle
   const ended = s.state === 'ended'
@@ -279,9 +282,11 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
     // 有待决策：上方会话信息，下方就地作答（宽屏两列）。
     return (
       <Card className={cx('overflow-hidden', st.ring)}>
-        <div {...clickable} className="cursor-pointer p-4 transition-colors hover:bg-hover/40 sm:p-5">
-          {body}
-        </div>
+        <Ctx items={menu(s)} className="rounded-none">
+          <div {...clickable} className="cursor-pointer p-4 transition-colors hover:bg-hover/40 sm:p-5">
+            {body}
+          </div>
+        </Ctx>
         <div className={cx('@container border-t border-line bg-surface-2/60 p-3 sm:p-4')}>
           <List className={cx('grid grid-cols-1 items-start gap-x-3', decisions.length > 1 && '@3xl:grid-cols-2')} space={12}>
             {decisions.map((d) => (
@@ -296,12 +301,14 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
   }
 
   return (
+    <Ctx items={menu(s)} className="h-full">
     <Card
       {...clickable}
       className={cx('flex h-full cursor-pointer flex-col p-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-65 hover:opacity-100', s.state === 'running' && 'live-edge')}
     >
       {body}
     </Card>
+    </Ctx>
   )
 })
 

@@ -75,6 +75,7 @@ export const zh = {
     idle: '空闲',
     ended: '已结束',
     lost: '失联',
+    done: '已完成',
   } as Record<string, string>,
   stateSince: (label: string, dur: string, at: string) => `${label} ${dur}（自 ${at}）`,
   phase: {
@@ -369,6 +370,21 @@ export const zh = {
     build: '构建',
     deploy: '部署',
   } as Record<string, string>,
+  menu: {
+    openSession: '打开会话详情',
+    openReq: '打开需求',
+    markDone: '标记为已完成',
+    markDoneHint: '收到底部；你再给它发消息会自动恢复',
+    markedDone: '已标记为已完成',
+    undoDone: '取消已完成',
+    reqs: (n: number) => `关联需求（${n}）`,
+    copyResume: '复制恢复命令',
+    copySessionId: '复制会话 ID',
+    status: '改状态',
+    priority: '改优先级',
+    copyCode: '复制编号',
+    copyLink: '复制链接',
+  },
   timeline: {
     title: '进展',
     createdAgent: 'Agent 记下这条需求',
@@ -388,7 +404,7 @@ export const zh = {
     reviews: '待验收',
     noSession: '未关联会话',
     ended: (x: number) => `已结束 ${x}`,
-    endedTitle: '已结束',
+    endedTitle: '已完成 · 已结束',
     noProject: '未识别的项目',
   },
 

@@ -12,11 +12,14 @@ export const stateStyle: Record<string, { dot: string; pill: string; ring?: stri
   waiting_reply: { dot: 'bg-reply', pill: 'bg-reply-soft text-reply', ring: 'ring-1 ring-reply/30 border-reply/30' },
   idle: { dot: 'bg-idle', pill: 'bg-idle-soft text-idle' },
   ended: { dot: 'bg-fg-3/60', pill: 'bg-sunken text-fg-3' },
+  done: { dot: 'bg-run', pill: 'bg-run-soft text-run' },
   lost: { dot: 'bg-danger', pill: 'bg-danger-soft text-danger' },
 }
 
 // displayState 把后端状态映射成界面状态（区分“等你回复”和“等你回答问题”）。
-export function displayState(s: { state: string; state_detail?: string }): string {
+export function displayState(s: { state: string; state_detail?: string; done_at?: string | null }): string {
+  // 你手动标为已完成：除非它又在干活，否则按“已完成”展示
+  if (s.done_at && s.state !== 'running' && s.state !== 'background' && s.state !== 'ended') return 'done'
   if (s.state === 'waiting_reply' && /^(AskUserQuestion|ExitPlanMode|request_user_input)\b/.test(s.state_detail ?? '')) return 'waiting_answer'
   return s.state
 }

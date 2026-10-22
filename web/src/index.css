@@ -301,7 +301,7 @@
   animation: ks-fade-out 0.15s ease-in forwards;
 }
 .menu-pop {
-  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-context-menu-content-transform-origin));
 }
 [data-state='open'].menu-pop {
   animation: ks-menu-in 0.16s cubic-bezier(0.22, 1, 0.36, 1);
@@ -442,5 +442,16 @@ html [data-sonner-toaster] [data-close-button] {
   }
   to {
     background-position: 140% 0;
+  }
+}
+
+/* 长按菜单的触发区：不弹出系统的文字选择 / 图片保存气泡 */
+.ctx-target {
+  -webkit-touch-callout: none;
+}
+@media (pointer: coarse) {
+  .ctx-target {
+    -webkit-user-select: none;
+    user-select: none;
   }
 }

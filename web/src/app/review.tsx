@@ -10,6 +10,8 @@ import { AttachZone, Thumbs, type FileRef } from '../ui/attach'
 import { Collapse, Item, List } from '../ui/motion'
 import { useActions, useBusy } from './actions'
 import { useOpenReq } from './nav'
+import { useReqMenu } from './menus'
+import { Ctx } from '../ui/contextMenu'
 
 // evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
 export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
@@ -44,7 +46,9 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
   // 整行可点开需求详情（按钮、改意见区除外）；嵌在需求详情里时不需要。
   const clickable = !hideTitle
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
+  const menu = useReqMenu()
   return (
+    <Ctx items={clickable ? menu(r) : []} className="rounded-xl">
     <div
       role={clickable ? 'link' : undefined}
       tabIndex={clickable ? 0 : undefined}
@@ -115,6 +119,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
         </div>
       </Collapse>
     </div>
+    </Ctx>
   )
 }
 

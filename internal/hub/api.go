@@ -392,6 +392,24 @@ func (h *Hub) registerWeb(api huma.API) {
 			return out, err
 		})
 
+	huma.Register(api, huma.Operation{OperationID: "mark-session-done", Method: http.MethodPost, Path: "/api/sessions/{key}/done", Tags: tag("sessions"), Summary: "手动标记 / 取消“已完成”（你再给它发消息时自动取消）"},
+		func(ctx context.Context, in *struct {
+			Key  string `path:"key"`
+			Body struct {
+				Done bool `json:"done"`
+			}
+		}) (*sessionDetailOut, error) {
+			if err := h.store.SetSessionDone(ctx, in.Key, in.Body.Done); err != nil {
+				return nil, apiErr(err)
+			}
+			h.broker.publish("sessions")
+			out := &sessionDetailOut{}
+			var err error
+			out.Body.Session, err = h.store.GetSession(ctx, in.Key)
+			out.Body.Events = []protocol.Event{}
+			return out, apiErr(err)
+		})
+
 	// 设备
 	huma.Register(api, huma.Operation{OperationID: "list-devices", Method: http.MethodGet, Path: "/api/devices", Tags: tag("devices")},
 		func(ctx context.Context, _ *empty) (*devicesOut, error) {

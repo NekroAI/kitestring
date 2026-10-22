@@ -59,6 +59,7 @@ type Session struct {
 	Instance         string           `json:"-"`              // 最新的终端（agent 进程）；同一对话可能在多个终端同时打开
 	PrevInstance     string           `json:"-"`              // 被取代、可能仍开着的较早终端
 	OtherTerminal    bool             `json:"other_terminal"` // 另有一个较早的终端也开着这个对话
+	DoneAt           *time.Time       `json:"done_at,omitempty"` // 你手动标为已完成；你再给它发消息时自动清除
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
 }
@@ -74,18 +75,18 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance,
+	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt string
+	var started, active, since, toolAt, doneAt string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance,
+		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
@@ -95,6 +96,10 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	}
 	x.Activity = []int{}
 	x.OtherTerminal = x.PrevInstance != ""
+	if doneAt != "" {
+		t := parseTS(doneAt)
+		x.DoneAt = &t
+	}
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
 	x.Requirements = []RequirementRef{}
@@ -181,20 +186,40 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 	if !x.StateSince.IsZero() {
 		since = ts(x.StateSince)
 	}
+	doneAt := ""
+	if x.DoneAt != nil {
+		doneAt = ts(*x.DoneAt)
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, last_prompt, summary,
-			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, started_at, last_active_at, ended_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, started_at, last_active_at, ended_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, model = excluded.model,
 			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail,
 			last_prompt = excluded.last_prompt, summary = excluded.summary, state_since = excluded.state_since, turns = excluded.turns,
 			turn_tools = excluded.turn_tools, last_tool = excluded.last_tool, last_tool_at = excluded.last_tool_at, subagents = excluded.subagents,
 			perm_mode = excluded.perm_mode, compactions = excluded.compactions, worktree = excluded.worktree,
-			instance = excluded.instance, prev_instance = excluded.prev_instance,
+			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at,
 			last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
 		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail,
 		x.LastPrompt, x.Summary, since, x.Turns, x.TurnTools, x.LastTool, toolAt, x.Subagents, x.PermMode, x.Compactions, x.Worktree,
-		x.Instance, x.PrevInstance, ts(x.StartedAt), ts(x.LastActiveAt), ended)
+		x.Instance, x.PrevInstance, doneAt, ts(x.StartedAt), ts(x.LastActiveAt), ended)
 	return err
+}
+
+// SetSessionDone 手动标记 / 取消“已完成”。
+func (s *Store) SetSessionDone(ctx context.Context, key string, done bool) error {
+	v := ""
+	if done {
+		v = now()
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET done_at = ? WHERE key = ?`, v, key)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SessionAI 是模型生成的会话信息；空字段表示不修改。
