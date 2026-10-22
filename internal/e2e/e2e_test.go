@@ -269,3 +269,34 @@ func TestHookFailsOpenWithoutDaemon(t *testing.T) {
 		t.Fatalf("daemon 不在时应立即返回，耗时 %v", time.Since(start))
 	}
 }
+
+// 公网加固：同一来源 IP 连续输错 5 次后锁定，正确密码也会被拒；其他 IP 不受影响。
+func TestLoginLockout(t *testing.T) {
+	e := setup(t)
+	login := func(pw, ip string) int {
+		req, _ := http.NewRequest("POST", e.srv.URL+"/api/auth/login", strings.NewReader(`{"password":"`+pw+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Real-IP", ip) // httptest 来自 127.0.0.1，视为本机反向代理
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for i := 1; i <= 5; i++ {
+		want := http.StatusUnauthorized
+		if i == 5 {
+			want = http.StatusTooManyRequests // 第 5 次失败即进入锁定并提示
+		}
+		if code := login("wrong-password", "203.0.113.9"); code != want {
+			t.Fatalf("第 %d 次错误密码应返回 %d，得到 %d", i, want, code)
+		}
+	}
+	if code := login("password123", "203.0.113.9"); code != http.StatusTooManyRequests {
+		t.Fatalf("锁定期间正确密码也应被拒（429），得到 %d", code)
+	}
+	if code := login("password123", "198.51.100.7"); code != http.StatusOK {
+		t.Fatalf("其他 IP 应能正常登录，得到 %d", code)
+	}
+}

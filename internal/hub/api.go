@@ -39,7 +39,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	if web != nil {
 		root.Handle("/", web)
 	}
-	return root
+	return withClient(root)
 }
 
 func apiConfig() huma.Config {
@@ -151,9 +151,8 @@ func (h *Hub) registerPublic(api huma.API) {
 				Password string `json:"password"`
 			}
 		}) (*loginOut, error) {
-			if !h.checkPassword(ctx, in.Body.Password) {
-				time.Sleep(600 * time.Millisecond) // 简单减缓暴力尝试
-				return nil, huma.Error401Unauthorized("密码错误")
+			if err := h.verifyPassword(ctx, in.Body.Password); err != nil {
+				return nil, err
 			}
 			return h.loginOK(ctx)
 		})
@@ -339,7 +338,11 @@ func (h *Hub) registerWeb(api huma.API) {
 				New string `json:"new" minLength:"8"`
 			}
 		}) (*loginOut, error) {
-			if !h.checkPassword(ctx, in.Body.Old) {
+			if err := h.verifyPassword(ctx, in.Body.Old); err != nil {
+				var se huma.StatusError
+				if errors.As(err, &se) && se.GetStatus() == http.StatusTooManyRequests {
+					return nil, err
+				}
 				return nil, huma.Error400BadRequest("原密码错误")
 			}
 			if err := h.SetPassword(ctx, in.Body.New); err != nil {

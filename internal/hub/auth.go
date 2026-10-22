@@ -7,10 +7,12 @@ import (
 	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/NekroAI/kitestring/internal/store"
@@ -88,6 +90,24 @@ func (h *Hub) webAuthed(r *http.Request) bool {
 	}
 	ok, err := h.store.ValidWebSession(r.Context(), HashToken(c.Value))
 	return err == nil && ok
+}
+
+// verifyPassword 校验密码并按客户端 IP 限流（D18 公网加固）。
+func (h *Hub) verifyPassword(ctx context.Context, password string) error {
+	ip := clientFrom(ctx).IP
+	if d := h.logins.attempt(ip); d > 0 {
+		return huma.Error429TooManyRequests(fmt.Sprintf("密码错误次数过多，请 %d 分钟后再试", int(d.Minutes())+1))
+	}
+	if h.checkPassword(ctx, password) {
+		h.logins.success(ip)
+		return nil
+	}
+	time.Sleep(600 * time.Millisecond)
+	if h.logins.failed(ip) {
+		h.log.Warn("登录失败次数过多，已锁定", "ip", ip, "minutes", int(loginLockFor.Minutes()))
+		return huma.Error429TooManyRequests(fmt.Sprintf("密码错误次数过多，请 %d 分钟后再试", int(loginLockFor.Minutes())))
+	}
+	return huma.Error401Unauthorized("密码错误")
 }
 
 // requireWeb 要求有效的 Web 登录会话。

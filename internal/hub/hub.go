@@ -41,6 +41,7 @@ type Hub struct {
 	store  *store.Store
 	log    *slog.Logger
 	broker *broker
+	logins *loginLimiter
 
 	mu       sync.Mutex
 	conns    map[string]*deviceConn // deviceID → 连接
@@ -54,6 +55,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		store:    st,
 		log:      log,
 		broker:   newBroker(),
+		logins:   newLoginLimiter(),
 		conns:    map[string]*deviceConn{},
 		lostTmr:  map[string]*time.Timer{},
 		notified: map[string]time.Time{},
