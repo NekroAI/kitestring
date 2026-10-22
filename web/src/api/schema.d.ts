@@ -717,6 +717,7 @@ export interface components {
             cwd?: string;
             git?: components["schemas"]["Git"];
             id: string;
+            instance?: string;
             last_reply?: string;
             model?: string;
             name: string;
@@ -902,6 +903,7 @@ export interface components {
             /** Format: date-time */
             last_tool_at?: string;
             model: string;
+            other_terminal: boolean;
             /** Format: int64 */
             pending_decisions: number;
             permission_mode: string;

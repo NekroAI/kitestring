@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, CheckCheck, FileCheck2, PenLine } from 'lucide-react'
+import { Check, CheckCheck, ChevronRight, FileCheck2, PenLine } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Requirement } from '../api/client'
 import { useRequirement } from '../api/queries'
@@ -7,6 +7,7 @@ import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
 import { Button, Textarea } from '../ui/base'
 import { AttachZone, Thumbs, type FileRef } from '../ui/attach'
+import { Collapse, Item, List } from '../ui/motion'
 import { useActions, useBusy } from './actions'
 import { useOpenReq } from './nav'
 
@@ -37,8 +38,20 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
       }
     })
 
+  // 整行可点开需求详情（按钮、改意见区除外）；嵌在需求详情里时不需要。
+  const clickable = !hideTitle
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation()
   return (
-    <div className="rise rounded-xl border border-line bg-surface p-3 sm:p-3.5">
+    <div
+      role={clickable ? 'link' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? () => openReq(r.code) : undefined}
+      onKeyDown={clickable ? (e) => e.key === 'Enter' && e.target === e.currentTarget && openReq(r.code) : undefined}
+      className={cx(
+        'group/review rounded-xl border border-line bg-surface p-3 transition-[background,border,box-shadow,transform] duration-150 sm:p-3.5',
+        clickable && 'cursor-pointer hover:border-line-strong hover:bg-hover/50 hover:shadow-xs active:scale-[0.995]',
+      )}
+    >
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-reply-soft text-reply">
           <FileCheck2 className="size-4" />
@@ -47,10 +60,11 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
           {hideTitle ? (
             <div className="text-sm font-medium text-reply">{t.reqs.reviewBanner}</div>
           ) : (
-            <button onClick={() => openReq(r.code)} className="flex max-w-full items-baseline gap-2 text-left hover:text-accent">
+            <div className="flex max-w-full items-center gap-2">
               <span className="shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
-              <span className="truncate text-sm font-medium text-fg">{r.title}</span>
-            </button>
+              <span className="truncate text-sm font-medium text-fg transition-colors group-hover/review:text-accent">{r.title}</span>
+              <ChevronRight className="size-3.5 shrink-0 text-fg-3 transition-transform group-hover/review:translate-x-0.5 group-hover/review:text-accent" />
+            </div>
           )}
           {evidence.length ? (
             <ul className="mt-1.5 space-y-1.5">
@@ -60,7 +74,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
                   {e.summary}
                   <span className="ml-1.5 text-xs text-fg-3">{relTime(e.created_at, now)}</span>
                   {!!e.files?.length && (
-                    <div className="mt-1.5">
+                    <div className="mt-1.5 w-fit" onClick={stop} onKeyDown={stop}>
                       <Thumbs files={e.files} size="sm" />
                     </div>
                   )}
@@ -72,7 +86,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
           )}
         </div>
         {!editing && (
-          <div className="flex shrink-0 gap-1.5">
+          <div className="flex shrink-0 gap-1.5" onClick={stop} onKeyDown={stop}>
             <Button size="sm" variant="ghost" icon={<PenLine className="size-3.5" />} disabled={busy} onClick={() => setEditing(true)}>
               <span className="max-sm:hidden">{t.review.revise}</span>
             </Button>
@@ -82,8 +96,8 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
           </div>
         )}
       </div>
-      {editing && (
-        <div className="rise mt-3 space-y-2 sm:pl-10">
+      <Collapse show={editing}>
+        <div className="space-y-2 pt-3 sm:pl-10" onClick={stop} onKeyDown={stop}>
           <AttachZone value={files} onChange={setFiles} compact>
             <Textarea autoFocus minRows={3} value={comment} placeholder={t.review.revisePlaceholder} onChange={(e) => setComment(e.target.value)} className="pr-10" />
           </AttachZone>
@@ -96,7 +110,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
             </Button>
           </div>
         </div>
-      )}
+      </Collapse>
     </div>
   )
 }
@@ -108,10 +122,14 @@ export function ReviewList({ items, className, scroll }: { items: Requirement[];
   if (!items.length) return null
   return (
     <div className={cx('space-y-2', className)}>
-      <div className={cx('space-y-2', scroll && 'max-h-[420px] overflow-y-auto overscroll-contain pr-1')}>
-        {items.map((r) => (
-          <ReviewRow key={r.id} r={r} />
-        ))}
+      <div className={cx(scroll && 'max-h-[420px] overflow-y-auto overscroll-contain pr-1')}>
+        <List space={8}>
+          {items.map((r) => (
+            <Item key={r.id} space={8}>
+              <ReviewRow r={r} />
+            </Item>
+          ))}
+        </List>
       </div>
       {items.length > 1 && (
         <div className="flex justify-end pt-1">

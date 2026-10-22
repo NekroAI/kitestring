@@ -2,6 +2,7 @@ import { memo, type ReactNode } from 'react'
 import {
   Bot,
   CheckCircle2,
+  ChevronDown,
   Hourglass,
   ListTodo,
   Eye,
@@ -25,8 +26,10 @@ import {
 } from 'lucide-react'
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
+import { Item, List } from '../ui/motion'
 import { cx, relTime, shortPath } from '../lib/util'
 import { Card, Tip } from '../ui/base'
+import { Menu } from '../ui/overlay'
 import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer } from './DecisionCard'
 import { useOpenReq, useOpenSession } from './nav'
@@ -270,13 +273,13 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
           {body}
         </div>
         <div className={cx('@container border-t border-line bg-surface-2/60 p-3 sm:p-4')}>
-          <div className={cx('grid grid-cols-1 items-start gap-3', decisions.length > 1 && '@3xl:grid-cols-2')}>
+          <List className={cx('grid grid-cols-1 items-start gap-x-3', decisions.length > 1 && '@3xl:grid-cols-2')} space={12}>
             {decisions.map((d) => (
-              <div key={d.id} className="min-w-0">
+              <Item key={d.id} space={12} layout>
                 <DecisionComposer d={d} embedded />
-              </div>
+              </Item>
             ))}
-          </div>
+          </List>
         </div>
       </Card>
     )
@@ -297,29 +300,21 @@ export function ReqCount({ s }: { s: Session }) {
   const openReq = useOpenReq()
   const open = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
   if (!open.length) return null
-  return (
-    <Tip
-      content={
-        <div className="space-y-0.5">
-          {open.map((r) => (
-            <div key={r.id} className="truncate">
-              <span className="mr-1.5 font-mono opacity-70">{r.code}</span>
-              {r.title}
-            </div>
-          ))}
-        </div>
-      }
+  const chip = (
+    <button
+      onClick={(e) => {
+        e.stopPropagation()
+        if (open.length === 1) openReq(open[0].code)
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="inline-flex items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-xs text-accent transition hover:brightness-95 active:scale-95 pointer-coarse:py-1"
     >
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          if (open.length === 1) openReq(open[0].code)
-        }}
-        className="inline-flex items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-xs text-accent hover:brightness-95"
-      >
-        <ListTodo className="size-3.5" />
-        <span className="tabular">{t.thread.reqs(open.length)}</span>
-      </button>
-    </Tip>
+      <ListTodo className="size-3.5" />
+      <span className="tabular">{t.thread.reqs(open.length)}</span>
+      {open.length > 1 && <ChevronDown className="size-3 opacity-70" />}
+    </button>
   )
+  // 一个需求：点了直接打开；多个：点开菜单选（触屏上没有悬停提示，也能用）。
+  if (open.length === 1) return <Tip content={`${open[0].code} ${open[0].title}`}>{chip}</Tip>
+  return <Menu align="start" width="w-72" trigger={chip} items={open.map((r) => ({ label: r.title, hint: r.code, icon: <ListTodo />, onSelect: () => openReq(r.code) }))} />
 }

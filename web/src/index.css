@@ -354,6 +354,68 @@
 .kite-sway {
   animation: ks-kite-sway 3.2s ease-in-out infinite;
 }
+.kite-slow {
+  animation-duration: 5.5s;
+}
 .kite-tug {
   animation: ks-kite-tug 1.8s cubic-bezier(0.3, 0.7, 0.3, 1) infinite;
+}
+
+/* ---------- 通知（sonner）：跟随主题令牌，暗色下不再是白底 ---------- */
+html [data-sonner-toaster][data-sonner-theme] {
+  --normal-bg: var(--surface);
+  --normal-border: var(--line);
+  --normal-text: var(--fg);
+  --success-bg: var(--surface);
+  --success-border: color-mix(in srgb, var(--run) 35%, var(--line));
+  --success-text: var(--run);
+  --info-bg: var(--surface);
+  --info-border: color-mix(in srgb, var(--accent) 35%, var(--line));
+  --info-text: var(--accent);
+  --warning-bg: var(--surface);
+  --warning-border: color-mix(in srgb, var(--wait) 35%, var(--line));
+  --warning-text: var(--wait);
+  --error-bg: var(--surface);
+  --error-border: color-mix(in srgb, var(--danger) 35%, var(--line));
+  --error-text: var(--danger);
+  --border-radius: 12px;
+}
+html [data-sonner-toaster] [data-sonner-toast] {
+  box-shadow: var(--shadow-lg);
+}
+html [data-sonner-toaster] [data-close-button] {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--fg-2);
+}
+
+/* 实时同步：呼吸灯 */
+@keyframes ks-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--run) 45%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--run) 0%, transparent);
+  }
+}
+.breathe {
+  animation: ks-breathe 2.8s ease-in-out infinite;
+}
+/* 数字变化时轻轻弹一下 */
+@keyframes ks-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.pop {
+  animation: ks-pop 0.36s cubic-bezier(0.3, 1.4, 0.5, 1) both;
 }

@@ -1,4 +1,4 @@
-import { forwardRef, useLayoutEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
+import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { Switch as RSwitch, Tooltip } from 'radix-ui'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { cx } from '../lib/util'
@@ -18,11 +18,11 @@ const variants: Record<Variant, string> = {
   soft: 'bg-accent-soft text-accent hover:brightness-95 dark:hover:brightness-110',
 }
 const sizes: Record<Size, string> = {
-  sm: 'h-8 px-2.5 text-[13px] gap-1.5 rounded-lg',
+  sm: 'h-8 px-2.5 text-[13px] gap-1.5 rounded-lg pointer-coarse:h-9',
   md: 'h-9 px-3.5 text-sm gap-2 rounded-lg',
   lg: 'h-11 px-5 text-[15px] gap-2 rounded-xl',
   icon: 'h-9 w-9 rounded-lg',
-  'icon-sm': 'h-7 w-7 rounded-md',
+  'icon-sm': 'h-7 w-7 rounded-md pointer-coarse:h-9 pointer-coarse:w-9',
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -280,11 +280,29 @@ export function Segmented<T extends string>({
 }
 
 // Tip：悬浮提示。触屏设备上不显示，所以被提示的元素本身要有可读的含义或 aria-label。
+// Tip：悬停提示。触屏没有悬停，轻点时显示一会儿（不影响元素本身的点击动作）。
 export function Tip({ content, children, side = 'top' }: { content: ReactNode; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
+  const [open, setOpen] = useState(false)
+  const touch = useRef(false)
+  const timer = useRef(0)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
   if (!content) return <>{children}</>
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+    <Tooltip.Root open={open} onOpenChange={setOpen}>
+      <Tooltip.Trigger
+        asChild
+        onPointerDown={(e) => (touch.current = e.pointerType === 'touch')}
+        onClick={() => {
+          if (!touch.current) return
+          window.clearTimeout(timer.current)
+          timer.current = window.setTimeout(() => {
+            setOpen(true)
+            timer.current = window.setTimeout(() => setOpen(false), 1800)
+          }, 0)
+        }}
+      >
+        {children}
+      </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content side={side} sideOffset={6} collisionPadding={8} className="tip-pop z-[60] max-w-[280px] rounded-lg bg-fg px-2.5 py-1.5 text-xs leading-relaxed text-bg shadow-pop">
           {content}

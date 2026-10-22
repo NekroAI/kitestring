@@ -47,7 +47,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	if ev.PermMode != "" {
 		x.PermMode = ev.PermMode
 	}
-	if stale {
+	if stale || !fromLatestTerminal(&x, ev) {
 		return x
 	}
 	x.LastActiveAt = ev.Time
@@ -136,6 +136,26 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		x.StateSince = ev.Time
 	}
 	return x
+}
+
+// fromLatestTerminal 处理同一对话在多个终端打开的情况：以你最近发消息（或最近启动 / 恢复）的终端为准。
+// 较早终端的事件不改状态；它结束时只清除“另一终端也开着”的标记，不结束会话。
+func fromLatestTerminal(x *store.Session, ev protocol.Event) bool {
+	switch {
+	case ev.Instance == "" || x.Instance == "" || ev.Instance == x.Instance:
+		if ev.Instance != "" {
+			x.Instance = ev.Instance
+		}
+		return true
+	case ev.Name == "SessionStart" || (ev.Name == "UserPromptSubmit" && ev.Source != protocol.SourceAuto):
+		x.PrevInstance, x.Instance = x.Instance, ev.Instance
+		return true
+	default:
+		if ev.Name == "SessionEnd" && ev.Instance == x.PrevInstance {
+			x.PrevInstance = ""
+		}
+		return false
+	}
 }
 
 // bgDetail 生成后台任务说明，例如 “2 · 等待 CI 构建”。

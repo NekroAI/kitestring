@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Dialog } from 'radix-ui'
 import { ImagePlus, Loader2, Play, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -112,7 +113,7 @@ export function Thumb({ f, onRemove, size = 'md' }: { f: FileRef; onRemove?: () 
         </button>
       </Lightbox>
       {onRemove && (
-        <button onClick={onRemove} aria-label={t.attach.remove} className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-xs opacity-0 transition group-hover:opacity-100 hover:text-danger focus:opacity-100 max-lg:opacity-100">
+        <button onClick={onRemove} aria-label={t.attach.remove} className="absolute -top-1.5 -right-1.5 flex size-5 pointer-coarse:size-7 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-xs opacity-0 transition group-hover:opacity-100 hover:text-danger focus:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100">
           <X className="size-3" />
         </button>
       )}
@@ -133,26 +134,199 @@ export function Thumbs({ files, size }: { files?: FileRef[] | null; size?: 'sm' 
 
 function Lightbox({ f, children }: { f: FileRef; children: ReactNode }) {
   const [open, setOpen] = useState(false)
+  const stop = (e: SyntheticEvent) => e.stopPropagation()
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger asChild>{children}</Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Overlay className="modal-fade fixed inset-0 z-[70] bg-black/80" />
-        <Dialog.Content aria-describedby={undefined} onClick={(e) => e.target === e.currentTarget && setOpen(false)} className="fixed inset-0 z-[70] flex items-center justify-center p-4 outline-none">
-          <Dialog.Title className="sr-only">{f.name}</Dialog.Title>
-          {isVideo(f.mime) ? (
-            <video src={fileUrl(f.id)} controls autoPlay playsInline className="max-h-full max-w-full rounded-lg bg-black shadow-pop" />
-          ) : (
-            <Dialog.Close asChild>
-              <img src={fileUrl(f.id)} alt={f.name} className="max-h-full max-w-full cursor-zoom-out rounded-lg object-contain shadow-pop" />
-            </Dialog.Close>
-          )}
-          <a href={fileUrl(f.id)} target="_blank" rel="noreferrer" className="absolute right-4 bottom-4 rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80">
-            {t.attach.original}
-          </a>
-        </Dialog.Content>
-      </Dialog.Portal>
+      <Dialog.Trigger asChild onClick={stop}>
+        {children}
+      </Dialog.Trigger>
+      <AnimatePresence>
+        {open && (
+          <Dialog.Portal forceMount>
+            <Dialog.Overlay asChild forceMount>
+              <motion.div className="fixed inset-0 z-[70] bg-black/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
+            </Dialog.Overlay>
+            <Dialog.Content forceMount aria-describedby={undefined} onClick={stop} className="fixed inset-0 z-[70] outline-none">
+              <Dialog.Title className="sr-only">{f.name}</Dialog.Title>
+              <Viewer f={f} onClose={() => setOpen(false)} />
+            </Dialog.Content>
+          </Dialog.Portal>
+        )}
+      </AnimatePresence>
     </Dialog.Root>
+  )
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+type View = { s: number; x: number; y: number }
+
+// Viewer：看大图。触控板双指捏合缩放、双指移动平移；触屏双指缩放、单指拖动、下滑关闭；双击放大 / 复原。
+function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [v, setV] = useState<View>({ s: 1, x: 0, y: 0 })
+  const [smooth, setSmooth] = useState(false)
+  const cur = useRef(v)
+  cur.current = v
+  const pts = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<{ d: number; c: { x: number; y: number }; base: View } | null>(null)
+  const drag = useRef<{ x: number; y: number; base: View; touch: boolean } | null>(null)
+  const moved = useRef(false)
+  const onBackdrop = useRef(false) // 按下时是否在图片外（指针捕获后 click 的 target 不可靠）
+  const video = isVideo(f.mime)
+
+  // 以屏幕点 (cx, cy)（相对视口中心）为锚点缩放到 ns。
+  const zoomAt = (ns: number, cx: number, cy: number, base = cur.current): View => {
+    const s = clamp(ns, 1, 8)
+    if (s === 1) return { s: 1, x: 0, y: 0 }
+    const k = s / base.s
+    return { s, x: cx - (cx - base.x) * k, y: cy - (cy - base.y) * k }
+  }
+  const rel = (x: number, y: number) => {
+    const r = box.current!.getBoundingClientRect()
+    return { x: x - r.left - r.width / 2, y: y - r.top - r.height / 2 }
+  }
+  const animate = (nv: View) => {
+    setSmooth(true)
+    setV(nv)
+    window.setTimeout(() => setSmooth(false), 280)
+  }
+
+  useEffect(() => {
+    const el = box.current
+    if (!el || video) return
+    // 触控板：捏合是带 ctrlKey 的滚轮事件，双指移动是普通滚轮事件。
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const p = rel(e.clientX, e.clientY)
+      if (e.ctrlKey) setV(zoomAt(cur.current.s * Math.exp(-e.deltaY * 0.01), p.x, p.y))
+      else if (cur.current.s > 1) setV({ ...cur.current, x: cur.current.x - e.deltaX, y: cur.current.y - e.deltaY })
+    }
+    // Safari 的触控板捏合走手势事件。
+    let gBase = cur.current
+    const onGStart = (e: Event) => {
+      e.preventDefault()
+      gBase = cur.current
+    }
+    const onGChange = (e: Event) => {
+      e.preventDefault()
+      const g = e as Event & { scale: number; clientX: number; clientY: number }
+      const p = rel(g.clientX, g.clientY)
+      setV(zoomAt(gBase.s * g.scale, p.x, p.y, gBase))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('gesturestart', onGStart)
+    el.addEventListener('gesturechange', onGChange)
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('gesturestart', onGStart)
+      el.removeEventListener('gesturechange', onGChange)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video])
+
+  const onDown = (e: ReactPointerEvent) => {
+    onBackdrop.current = e.target === e.currentTarget
+    if (video) return
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    moved.current = false
+    if (pts.current.size === 2) {
+      const [a, b] = [...pts.current.values()]
+      pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), c: rel((a.x + b.x) / 2, (a.y + b.y) / 2), base: cur.current }
+      drag.current = null
+    } else if (pts.current.size === 1) {
+      drag.current = { x: e.clientX, y: e.clientY, base: cur.current, touch: e.pointerType === 'touch' }
+    }
+  }
+  const onMove = (e: ReactPointerEvent) => {
+    if (!pts.current.has(e.pointerId)) return
+    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pinch.current && pts.current.size >= 2) {
+      const [a, b] = [...pts.current.values()]
+      const c = rel((a.x + b.x) / 2, (a.y + b.y) / 2)
+      const { d, c: c0, base } = pinch.current
+      const nv = zoomAt((base.s * Math.hypot(a.x - b.x, a.y - b.y)) / d, c0.x, c0.y, base)
+      setV(nv.s === 1 ? nv : { ...nv, x: nv.x + c.x - c0.x, y: nv.y + c.y - c0.y })
+      moved.current = true
+      return
+    }
+    const g = drag.current
+    if (!g) return
+    const dx = e.clientX - g.x
+    const dy = e.clientY - g.y
+    if (Math.abs(dx) + Math.abs(dy) > 4) moved.current = true
+    if (g.base.s > 1) setV({ ...g.base, x: g.base.x + dx, y: g.base.y + dy })
+    else if (g.touch) setV({ s: 1, x: 0, y: Math.max(0, dy) }) // 触屏下滑关闭
+  }
+  const onUp = (e: ReactPointerEvent) => {
+    pts.current.delete(e.pointerId)
+    if (pinch.current && pts.current.size < 2) {
+      pinch.current = null
+      const [rest] = [...pts.current.entries()]
+      drag.current = rest ? { x: rest[1].x, y: rest[1].y, base: cur.current, touch: true } : null
+      return
+    }
+    const g = drag.current
+    drag.current = null
+    if (g && g.base.s === 1 && cur.current.y > 0) {
+      if (cur.current.y > 120) onClose()
+      else animate({ s: 1, x: 0, y: 0 })
+    }
+  }
+  const onDouble = (e: React.MouseEvent) => {
+    if (video) return
+    const p = rel(e.clientX, e.clientY)
+    animate(cur.current.s > 1 ? { s: 1, x: 0, y: 0 } : zoomAt(2.5, p.x, p.y))
+  }
+  const fade = v.s === 1 && v.y > 0 ? Math.max(0.3, 1 - v.y / 400) : 1
+
+  return (
+    <>
+      <div
+        ref={box}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        onDoubleClick={onDouble}
+        onClick={() => onBackdrop.current && !moved.current && onClose()}
+        className={cx('absolute inset-0 flex items-center justify-center overflow-hidden p-4 select-none', !video && 'touch-none', v.s > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in')}
+        style={{ opacity: fade }}
+      >
+        <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }} className="pointer-events-none flex max-h-full max-w-full items-center justify-center">
+          {video ? (
+            <video src={fileUrl(f.id)} controls autoPlay playsInline className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg bg-black shadow-pop" />
+          ) : (
+            <img
+              src={fileUrl(f.id)}
+              alt={f.name}
+              draggable={false}
+              className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg object-contain shadow-pop will-change-transform"
+              style={{ transform: `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.s})`, transition: smooth ? 'transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none' }}
+            />
+          )}
+        </motion.div>
+      </div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3 pt-safe">
+        <Dialog.Close asChild>
+          <button aria-label={t.common.close} className="pointer-events-auto flex size-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 active:scale-95">
+            <X className="size-5" />
+          </button>
+        </Dialog.Close>
+      </motion.div>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-4 pb-safe">
+        <span>
+          {v.s > 1 && (
+            <button onClick={() => animate({ s: 1, x: 0, y: 0 })} className="pointer-events-auto rounded-lg bg-black/55 px-3 py-1.5 text-xs text-white tabular backdrop-blur hover:bg-black/75">
+              {t.attach.zoomReset(Math.round(v.s * 100))}
+            </button>
+          )}
+        </span>
+        <a href={fileUrl(f.id)} target="_blank" rel="noreferrer" className="pointer-events-auto rounded-lg bg-black/55 px-3 py-1.5 text-xs text-white backdrop-blur hover:bg-black/75">
+          {video ? t.attach.originalFile : t.attach.original}
+        </a>
+      </motion.div>
+    </>
   )
 }
 

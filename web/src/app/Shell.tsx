@@ -34,7 +34,7 @@ export function Logo({ className }: { className?: string }) {
 
 function Count({ n }: { n: number }) {
   if (!n) return null
-  return <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-seal px-1 text-[11px] leading-none font-semibold text-seal-fg tabular">{n > 99 ? '99+' : n}</span>
+  return <span key={n} className="pop flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-seal px-1 text-[11px] leading-none font-semibold text-seal-fg tabular">{n > 99 ? '99+' : n}</span>
 }
 
 function Sidebar({ todo, connected }: { todo: number; connected: boolean }) {
@@ -86,7 +86,7 @@ function Sidebar({ todo, connected }: { todo: number; connected: boolean }) {
       </div>
 
       <div className="mt-auto flex items-center gap-2 px-2.5 text-xs text-fg-3">
-        <span className={cx('size-1.5 rounded-full', connected ? 'bg-run' : 'animate-pulse bg-danger')} />
+        <span className={cx('size-1.5 rounded-full', connected ? 'breathe bg-run' : 'animate-pulse bg-danger')} />
         {connected ? t.conn.live : t.conn.offline}
       </div>
     </aside>

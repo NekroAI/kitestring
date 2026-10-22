@@ -1,9 +1,10 @@
 import { useMemo, type ReactNode } from 'react'
-import { Copy, Link2, Plus, Unlink } from 'lucide-react'
+import { Copy, Link2, MonitorDot, Plus, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
 import { t } from '../i18n'
+import { Collapse, Item, List } from '../ui/motion'
 import { absTime, clockTime, copyText, cx, duration, relTime, shortPath, useNow } from '../lib/util'
 import { Badge, Button, ErrorState, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
@@ -178,15 +179,17 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
             </div>
           </Section>
 
-          {pending.length > 0 && (
+          <Collapse show={pending.length > 0}>
             <Section title={t.decision.status.pending}>
-              <div className="space-y-3">
+              <List space={12}>
                 {pending.map((d) => (
-                  <DecisionComposer key={d.id} d={d} embedded />
+                  <Item key={d.id} space={12}>
+                    <DecisionComposer d={d} embedded />
+                  </Item>
                 ))}
-              </div>
+              </List>
             </Section>
-          )}
+          </Collapse>
 
           <Section
             title={t.session.requirements}
@@ -231,6 +234,12 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           </Section>
 
           <Section title={t.session.info}>
+            {s.other_terminal && (
+              <div className="mb-3 flex items-start gap-2 rounded-xl bg-accent-soft/70 px-3 py-2.5 text-[13px] leading-relaxed text-fg-2">
+                <MonitorDot className="mt-0.5 size-4 shrink-0 text-accent" />
+                {t.session.otherTerminal}
+              </div>
+            )}
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-2xl border border-line p-3.5">
               <Info label={t.session.device}>{s.device_name}</Info>
               <Info label={t.session.client}>{[t.tool[s.tool], s.client].filter(Boolean).join(t.common.sep)}</Info>

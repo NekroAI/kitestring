@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { CheckCheck, FolderGit2, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import { Archive, CheckCheck, FolderGit2, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
 import type { Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
@@ -13,6 +13,7 @@ import { composeAnswer, useOutbox } from '../app/outbox'
 import { RecapPanel } from '../app/Recap'
 import { SessionCard, sessionTitle } from '../app/SessionCard'
 import { SessionRow, ThreadCard } from '../app/thread'
+import { Item, List } from '../ui/motion'
 
 type Filter = 'all' | 'todo'
 
@@ -44,30 +45,66 @@ function SendAllBar() {
   )
 }
 
+function GroupHeader({ icon, title, count, right }: { icon: React.ReactNode; title: React.ReactNode; count?: number; right?: React.ReactNode }) {
+  return (
+    <div className="mb-3 flex items-center gap-2.5">
+      <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs [&_svg]:size-4">{icon}</span>
+      <h2 className="truncate font-display text-[17px] font-semibold text-fg">{title}</h2>
+      {count != null && <span className="text-xs text-fg-3 tabular">{count}</span>}
+      <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
+      {right}
+    </div>
+  )
+}
+
+// 已结束：所有项目的已结束会话统一放在最底下，不夹在项目之间。
+function Ended({ sessions, view, now }: { sessions: Session[]; view: 'threads' | 'cards'; now: number }) {
+  if (!sessions.length) return null
+  return (
+    <section>
+      <GroupHeader icon={<Archive />} title={t.thread.endedTitle} count={sessions.length} />
+      {view === 'cards' ? (
+        <div className="@container">
+          <List className="grid grid-cols-1 gap-x-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
+            {sessions.map((s) => (
+              <Item key={s.key} space={12} layout className="h-full">
+                <SessionCard s={s} now={now} />
+              </Item>
+            ))}
+          </List>
+        </div>
+      ) : (
+        <Card className="@container p-1.5">
+          <List>
+            {sessions.map((s) => (
+              <Item key={s.key}>
+                <SessionRow s={s} now={now} showProject />
+              </Item>
+            ))}
+          </List>
+        </Card>
+      )}
+    </section>
+  )
+}
+
 // 实例视图：每个会话一张卡片（改版前的实例墙），按项目分组，需要你处理的在前。
 function ProjectCards({ g, filter, k, now }: { g: ProjectGroup; filter: Filter; k: string; now: number }) {
   const attention = g.threads.map((th) => th.s).filter((s): s is Session => !!s && match(s, k))
-  const rest = filter === 'all' ? [...g.active, ...g.ended].filter((s) => match(s, k)) : []
+  const rest = filter === 'all' ? g.active.filter((s) => match(s, k)) : []
   const list = [...attention, ...rest]
   if (!list.length) return null
   return (
-    <section className="rise">
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs">
-          <FolderGit2 className="size-4" />
-        </span>
-        <h2 className="truncate font-display text-[17px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
-        <span className="text-xs text-fg-3 tabular">{list.length}</span>
-        <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
-      </div>
+    <section>
+      <GroupHeader icon={<FolderGit2 />} title={g.name || t.thread.noProject} count={list.length} />
       <div className="@container">
-        <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
+        <List className="grid grid-cols-1 gap-x-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
           {list.map((s) => (
-            <div key={s.key} className="h-full min-w-0">
+            <Item key={s.key} space={12} layout className="h-full">
               <SessionCard s={s} now={now} />
-            </div>
+            </Item>
           ))}
-        </div>
+        </List>
       </div>
     </section>
   )
@@ -77,47 +114,44 @@ function ProjectCards({ g, filter, k, now }: { g: ProjectGroup; filter: Filter; 
 function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Filter; k: string; now: number; sessions: Session[] }) {
   const threads = g.threads.filter((th) => !k || match(th.s, k))
   const active = filter === 'all' ? g.active.filter((s) => match(s, k)) : []
-  const ended = filter === 'all' ? g.ended.filter((s) => match(s, k)) : []
-  if (!threads.length && !active.length && !ended.length) return null
+  if (!threads.length && !active.length) return null
   const counts = (['waiting_approval', 'waiting_reply', 'running', 'background'] as const).map((st) => [st, [...g.active, ...g.threads.map((x) => x.s).filter(Boolean)].filter((s) => s!.state === st).length] as const).filter(([, n]) => n)
   return (
-    <section className="rise">
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs">
-          <FolderGit2 className="size-4" />
-        </span>
-        <h2 className="truncate font-display text-[17px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
-        <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
-        <span className="flex items-center gap-3 text-xs text-fg-3">
-          {counts.map(([st, n]) => (
-            <span key={st} className="flex items-center gap-1.5">
-              <StatusDot state={st} />
-              <span className="tabular">{n}</span>
-            </span>
-          ))}
-        </span>
-      </div>
-      <div className="space-y-3">
-        {threads.map((th) => (
-          <ThreadCard key={th.key} th={th} now={now} projectName={g.name} sessions={sessions} />
-        ))}
-        {(active.length > 0 || ended.length > 0) && (
-          <Card className="@container p-1.5">
-            {active.map((s) => (
-              <SessionRow key={s.key} s={s} now={now} />
+    <section>
+      <GroupHeader
+        icon={<FolderGit2 />}
+        title={g.name || t.thread.noProject}
+        right={
+          <span className="flex items-center gap-3 text-xs text-fg-3">
+            {counts.map(([st, n]) => (
+              <span key={st} className="flex items-center gap-1.5">
+                <StatusDot state={st} />
+                <span className="tabular">{n}</span>
+              </span>
             ))}
-            {ended.length > 0 && (
-              <>
-                {active.length > 0 && <div className="mx-3 my-1 border-t border-line" />}
-                <div className="px-3 pt-1.5 pb-0.5 text-xs text-fg-3">{t.thread.ended(ended.length)}</div>
-                {ended.map((s) => (
-                  <SessionRow key={s.key} s={s} now={now} />
+          </span>
+        }
+      />
+      <List space={12}>
+        {threads.map((th) => (
+          <Item key={th.key} space={12}>
+            <ThreadCard th={th} now={now} projectName={g.name} sessions={sessions} />
+          </Item>
+        ))}
+        {active.length > 0 && (
+          <Item key="active" space={12}>
+            <Card className="@container p-1.5">
+              <List>
+                {active.map((s) => (
+                  <Item key={s.key}>
+                    <SessionRow s={s} now={now} />
+                  </Item>
                 ))}
-              </>
-            )}
-          </Card>
+              </List>
+            </Card>
+          </Item>
         )}
-      </div>
+      </List>
     </section>
   )
 }
@@ -132,7 +166,11 @@ export default function WorkbenchPage() {
   const [recap, setRecap] = useState(false)
   const k = q.trim().toLowerCase()
   const recapOn = !!settings.data?.ai?.recap
-  const visible = useMemo(() => wb.projects.filter((g) => g.threads.length || filter === 'all'), [wb.projects, filter])
+  const visible = useMemo(() => wb.projects.filter((g) => g.threads.length || (filter === 'all' && g.active.length)), [wb.projects, filter])
+  const ended = useMemo(
+    () => (filter === 'all' ? wb.projects.flatMap((g) => g.ended).filter((s) => match(s, k)).sort((a, b) => b.last_active_at.localeCompare(a.last_active_at)) : []),
+    [wb.projects, filter, k],
+  )
 
   if (wb.error) return <ErrorState error={wb.error} onRetry={wb.refetch} />
 
@@ -201,8 +239,17 @@ export default function WorkbenchPage() {
           </Empty>
         </Card>
       ) : (
-        <div className="space-y-9">
-          {visible.map((g) => (view === 'cards' ? <ProjectCards key={g.key} g={g} filter={filter} k={k} now={now} /> : <Project key={g.key} g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />))}
+        <div>
+          <List space={36}>
+            {visible.map((g) => (
+              <Item key={g.key} space={36}>
+                {view === 'cards' ? <ProjectCards g={g} filter={filter} k={k} now={now} /> : <Project g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />}
+              </Item>
+            ))}
+          </List>
+          <div className="mt-9">
+            <Ended sessions={ended} view={view} now={now} />
+          </div>
           {k && !visible.some((g) => g.threads.some((th) => match(th.s, k)) || g.active.some((s) => match(s, k)) || g.ended.some((s) => match(s, k))) && (
             <Card>
               <Empty icon={<SearchX />} title={t.home.noMatch} />

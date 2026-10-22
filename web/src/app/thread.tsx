@@ -8,6 +8,7 @@ import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle }
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import type { Thread } from './inbox'
 import { useOpenSession } from './nav'
+import { Collapse, Item, List } from '../ui/motion'
 import { ReviewList } from './review'
 import { Callout, ReqCount, sessionTitle, toolIcon } from './SessionCard'
 
@@ -25,7 +26,7 @@ function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean }
 }
 
 // SessionRow：不需要你处理的会话，一行展示。
-export function SessionRow({ s, now }: { s: Session; now: number }) {
+export function SessionRow({ s, now, showProject }: { s: Session; now: number; showProject?: boolean }) {
   const open = useOpenSession()
   const ds = displayState(s)
   const a = activity(s)
@@ -39,6 +40,7 @@ export function SessionRow({ s, now }: { s: Session; now: number }) {
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-fg">{sessionTitle(s)}</span>
+          {showProject && s.project_name && <span className="shrink-0 text-xs text-fg-3">{s.project_name}</span>}
           <PhaseBadge phase={s.phase} />
         </div>
         {a && (
@@ -72,7 +74,7 @@ function Part({ id, icon, title, count, children }: { id: string; icon: ReactNod
         {title}
         <span className="tabular">{count}</span>
       </button>
-      {open && children}
+      <Collapse show={open}>{children}</Collapse>
     </div>
   )
 }
@@ -129,31 +131,41 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
         <div className="flex items-center gap-2 px-4 pt-4 text-[15px] font-semibold text-fg">{projectName || t.thread.noSession}</div>
       )}
 
-      {(th.decisions.length > 0 || th.reviews.length > 0 || th.orphans.length > 0) && (
-        <div className="@container space-y-4 border-t border-dashed border-line-strong bg-surface-2/60 p-3 sm:p-4">
-          {th.decisions.length > 0 && (
-            <div className={cx('grid grid-cols-1 items-start gap-3', th.decisions.length > 1 && '@3xl:grid-cols-2')}>
-              {th.decisions.map((d) => (
-                <div key={d.id} className="min-w-0">
-                  <DecisionComposer d={d} embedded />
-                </div>
-              ))}
-            </div>
-          )}
-          {th.reviews.length > 0 && (
-            <Part id={`${th.key}.reviews`} icon={<FileCheck2 className="size-3.5" />} title={t.thread.reviews} count={th.reviews.length}>
-              <ReviewList items={th.reviews} scroll />
-            </Part>
-          )}
-          {th.orphans.length > 0 && (
-            <div className="grid grid-cols-1 gap-3 @3xl:grid-cols-2">
-              {th.orphans.map((d) => (
-                <OrphanCard key={d.id} d={d} sessions={sessions} />
-              ))}
-            </div>
-          )}
+      <Collapse show={th.decisions.length > 0 || th.reviews.length > 0 || th.orphans.length > 0}>
+        <div className="@container border-t border-dashed border-line-strong bg-surface-2/60 p-3 sm:p-4">
+          <List space={16}>
+            {th.decisions.length > 0 && (
+              <Item key="decisions" space={16}>
+                <List className={cx('grid grid-cols-1 items-start gap-x-3', th.decisions.length > 1 && '@3xl:grid-cols-2')}>
+                  {th.decisions.map((d) => (
+                    <Item key={d.id} space={12} layout>
+                      <DecisionComposer d={d} embedded />
+                    </Item>
+                  ))}
+                </List>
+              </Item>
+            )}
+            {th.reviews.length > 0 && (
+              <Item key="reviews" space={16}>
+                <Part id={`${th.key}.reviews`} icon={<FileCheck2 className="size-3.5" />} title={t.thread.reviews} count={th.reviews.length}>
+                  <ReviewList items={th.reviews} scroll />
+                </Part>
+              </Item>
+            )}
+            {th.orphans.length > 0 && (
+              <Item key="orphans" space={16}>
+                <List className="grid grid-cols-1 gap-x-3 @3xl:grid-cols-2">
+                  {th.orphans.map((d) => (
+                    <Item key={d.id} space={12} layout>
+                      <OrphanCard d={d} sessions={sessions} />
+                    </Item>
+                  ))}
+                </List>
+              </Item>
+            )}
+          </List>
         </div>
-      )}
+      </Collapse>
     </Card>
   )
 }

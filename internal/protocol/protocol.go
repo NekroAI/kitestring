@@ -56,6 +56,7 @@ type Event struct {
 	BgBrief   string    `json:"bg_brief,omitempty"`   // 后台任务简述，截断
 	LastReply string    `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
 	Git       *Git      `json:"git,omitempty"`
+	Instance  string    `json:"instance,omitempty"` // 所属终端（agent 进程号 + 启动时间），区分同一对话在多个终端打开
 }
 
 // Decision 是下行到 daemon、等待注入的已决策项。

@@ -116,3 +116,34 @@ func TestApplyEventResumeAfterEnd(t *testing.T) {
 		t.Fatalf("恢复会话后应重新激活，得到 %s", next.State)
 	}
 }
+
+func TestOnlyLatestTerminalDrivesState(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	ev := func(name, inst string, min int) protocol.Event {
+		return protocol.Event{Tool: "claude", SessionID: "s", Name: name, Instance: inst, Time: t0.Add(time.Duration(min) * time.Minute)}
+	}
+	// 公司终端开着；回家后在新终端恢复并发消息
+	cur := applyEvent(nil, "dev", "", ev("UserPromptSubmit", "office", 0))
+	cur = applyEvent(&cur, "dev", "", ev("Stop", "office", 1))
+	cur = applyEvent(&cur, "dev", "", ev("SessionStart", "home", 10))
+	cur = applyEvent(&cur, "dev", "", ev("UserPromptSubmit", "home", 11))
+	if cur.Instance != "home" || cur.PrevInstance != "office" || cur.State != store.StateRunning {
+		t.Fatalf("新终端应成为最新：%+v", cur)
+	}
+	// 旧终端的事件不改状态，它结束也不结束会话
+	for i, name := range []string{"Stop", "Notification", "SessionEnd"} {
+		cur = applyEvent(&cur, "dev", "", ev(name, "office", 12+i))
+		if cur.State != store.StateRunning || cur.EndedAt != nil {
+			t.Fatalf("旧终端的 %s 不应改状态：%s", name, cur.State)
+		}
+	}
+	if cur.PrevInstance != "" {
+		t.Fatal("旧终端结束后应清除“另一终端也开着”")
+	}
+	// 回到旧终端继续发消息：它重新成为最新
+	cur = applyEvent(&cur, "dev", "", ev("Stop", "home", 20))
+	cur = applyEvent(&cur, "dev", "", ev("UserPromptSubmit", "office2", 21))
+	if cur.Instance != "office2" || cur.State != store.StateRunning {
+		t.Fatalf("最近发消息的终端应成为最新：%+v", cur)
+	}
+}

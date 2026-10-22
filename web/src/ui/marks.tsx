@@ -4,9 +4,9 @@ import { Tip } from './base'
 import { ClaudeGlyph, CodexGlyph } from './brand'
 
 // 会话状态的视觉映射。waiting_answer 是 waiting_reply 的细分：Agent 正在向你提问或请你确认计划。
-export const stateStyle: Record<string, { dot: string; pill: string; ring?: string; live?: boolean }> = {
+export const stateStyle: Record<string, { dot: string; pill: string; ring?: string; live?: boolean; slow?: boolean }> = {
   running: { dot: 'bg-run', pill: 'bg-run-soft text-run', live: true },
-  background: { dot: 'bg-accent', pill: 'bg-accent-soft text-accent', live: true },
+  background: { dot: 'bg-accent', pill: 'bg-accent-soft text-accent', live: true, slow: true },
   waiting_approval: { dot: 'bg-wait', pill: 'bg-wait-soft text-wait', ring: 'ring-1 ring-wait/45 border-wait/40' },
   waiting_answer: { dot: 'bg-reply', pill: 'bg-reply-soft text-reply', ring: 'ring-1 ring-reply/45 border-reply/40' },
   waiting_reply: { dot: 'bg-reply', pill: 'bg-reply-soft text-reply', ring: 'ring-1 ring-reply/30 border-reply/30' },
@@ -24,10 +24,10 @@ export function displayState(s: { state: string; state_detail?: string }): strin
 // StatusDot：一只小纸鸢（菱形）。运行中轻轻摆动，等你授权或回答时一拽一拽。
 export function StatusDot({ state, className }: { state: string; className?: string }) {
   const s = stateStyle[state] ?? stateStyle.idle
-  const motion = s.live ? 'kite-sway' : state === 'waiting_approval' || state === 'waiting_answer' ? 'kite-tug' : ''
+  const motion = s.live ? (s.slow ? 'kite-sway kite-slow' : 'kite-sway') : state === 'waiting_approval' || state === 'waiting_answer' ? 'kite-tug' : ''
   return (
     <span className={cx('inline-flex size-2 shrink-0 items-center justify-center', className)}>
-      <span className={cx('inline-block size-[7px] rotate-45 rounded-[1.5px]', s.dot, motion)} />
+      <span className={cx('inline-block size-[7px] rotate-45 rounded-[1.5px] transition-colors duration-500', s.dot, motion)} />
     </span>
   )
 }
@@ -37,7 +37,7 @@ export function StatusPill({ state, since, now, compact }: { state: string; sinc
   const s = stateStyle[state] ?? stateStyle.idle
   const show = !compact && !!since && state !== 'ended'
   const pill = (
-    <span className={cx('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap', s.pill)}>
+    <span className={cx('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-500', s.pill)}>
       <StatusDot state={state} />
       {t.state[state] ?? state}
       {show && <span className="font-normal opacity-70 tabular">{shortDuration(since, now)}</span>}

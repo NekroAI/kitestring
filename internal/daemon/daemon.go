@@ -323,6 +323,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if ev.TurnID == "" {
 		ev.TurnID = str(p, "prompt_id")
 	}
+	ev.Instance = d.agentInstance(req.PPID)
 	if name == "UserPromptSubmit" {
 		text, auto := protocol.CleanPrompt(str(p, "prompt"))
 		ev.Prompt = summary.Truncate(text, 200)
@@ -379,6 +380,46 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)
 	}
 	return ev, true
+}
+
+// agentInstance 沿父进程向上找到运行 hook 的 Claude Code / Codex 进程，返回“进程号@启动时间”，
+// 用来区分同一对话在多个终端打开（例如公司 SSH 里的旧进程与在家恢复的新进程）。找不到时返回空串。
+func (d *Daemon) agentInstance(ppid int) string {
+	pid := ppid
+	for i := 0; i < 5 && pid > 1; i++ {
+		cmd := exec.Command("ps", "-o", "ppid=,lstart=,command=", "-p", strconv.Itoa(pid))
+		cmd.Env = append(os.Environ(), "LC_ALL=C") // 固定 lstart 格式（中文环境下段数不同）
+		out, err := cmd.Output()
+		if err != nil {
+			return ""
+		}
+		f := strings.Fields(string(out))
+		if len(f) < 7 { // ppid + lstart（5 段）+ 命令
+			return ""
+		}
+		if isAgentCommand(f[6:]) {
+			return strconv.Itoa(pid) + "@" + strings.Join(f[1:6], " ")
+		}
+		pid, _ = strconv.Atoi(f[0])
+	}
+	return ""
+}
+
+// isAgentCommand 判断命令行是否是 Claude Code / Codex 本体（原生二进制或 node 启动的脚本）。
+func isAgentCommand(args []string) bool {
+	for i, a := range args {
+		if i > 1 {
+			break
+		}
+		switch filepath.Base(a) {
+		case "claude", "codex":
+			return true
+		}
+		if strings.Contains(a, "claude-code") || strings.Contains(a, "@openai/codex") {
+			return true
+		}
+	}
+	return false
 }
 
 // detectClient 推断客户端：Claude 看入口环境变量，Codex 看父进程是否为 app-server。

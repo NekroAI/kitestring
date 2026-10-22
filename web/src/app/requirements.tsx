@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useSessions } from '../api/queries'
 import { t } from '../i18n'
+import { Collapse, Item, List } from '../ui/motion'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Card, ErrorState, Field, Input, Skeleton, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, Panel, useConfirm, type MenuItem } from '../ui/overlay'
@@ -122,7 +123,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
         <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
           <Menu
             trigger={
-              <button className="rounded-md p-0.5 text-fg-3 opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-fg focus:opacity-100 max-lg:opacity-100" aria-label={t.common.more}>
+              <button className="rounded-md p-0.5 text-fg-3 opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-fg focus:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100" aria-label={t.common.more}>
                 <MoreHorizontal className="size-4" />
               </button>
             }
@@ -244,23 +245,25 @@ export function ReqDetail({ refId }: { refId: string | null }) {
             />
           </div>
 
-          {r.status === 'review' && (
-            <div className="mb-5">
+          <Collapse show={r.status === 'review'}>
+            <div className="pb-5">
               <ReviewRow r={r} hideTitle />
             </div>
-          )}
+          </Collapse>
 
-          {related.filter((d) => d.status === 'pending').length > 0 && (
+          <Collapse show={related.some((d) => d.status === 'pending')}>
             <Block title={t.decision.status.pending}>
-              <div className="space-y-3">
+              <List space={12}>
                 {related
                   .filter((d) => d.status === 'pending')
                   .map((d) => (
-                    <DecisionComposer key={d.id} d={d} embedded />
+                    <Item key={d.id} space={12}>
+                      <DecisionComposer d={d} embedded />
+                    </Item>
                   ))}
-              </div>
+              </List>
             </Block>
-          )}
+          </Collapse>
 
           <Block title={t.reqs.detail}>
             <AttachZone value={r.files ?? []} onChange={(files) => save({ files: files.map((f) => f.id) })}>

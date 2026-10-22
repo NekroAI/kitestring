@@ -6,6 +6,25 @@ import { cx, useDesktop } from '../lib/util'
 import { t } from '../i18n'
 import { Button } from './base'
 
+// swipeToClose：触屏（如 iPad）在右侧面板上向右轻扫关闭。
+function swipeToClose(onClose: () => void) {
+  let start: { x: number; y: number; t: number } | null = null
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      const p = e.touches[0]
+      start = e.touches.length === 1 ? { x: p.clientX, y: p.clientY, t: Date.now() } : null
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      const p = e.changedTouches[0]
+      if (!start || !p) return
+      const dx = p.clientX - start.x
+      const dy = Math.abs(p.clientY - start.y)
+      if (dx > 90 && dy < dx * 0.5 && Date.now() - start.t < 600) onClose()
+      start = null
+    },
+  }
+}
+
 // Panel：详情面板。桌面端从右侧滑出，移动端为可下拉关闭的底部抽屉。
 export function Panel({ open, onClose, title, subtitle, children, actions, wide }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean }) {
   const desktop = useDesktop()
@@ -17,6 +36,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide 
           <RDialog.Content
             aria-describedby={undefined}
             onOpenAutoFocus={(e) => e.preventDefault()}
+            {...swipeToClose(onClose)}
             className={cx(
               'panel-slide fixed top-2 right-2 bottom-2 z-50 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none',
               wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]',
@@ -34,7 +54,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide 
                 </Button>
               </RDialog.Close>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
           </RDialog.Content>
         </RDialog.Portal>
       </RDialog.Root>

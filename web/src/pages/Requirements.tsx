@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Columns3, FolderGit2, List, ListPlus, Messag
 import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
+import { Collapse, Item, List as MotionList } from '../ui/motion'
 import { cx, relTime, useNow, usePref } from '../lib/util'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
 import { PriorityDot } from '../ui/marks'
@@ -48,12 +49,14 @@ function Column({ status, items, onDrop }: { status: string; items: Requirement[
         <span className="text-[13px] font-semibold text-fg">{t.reqStatus[status]}</span>
         <span className="text-xs text-fg-3 tabular">{items.length}</span>
       </div>
-      <div className="flex flex-1 flex-col gap-2">
+      <MotionList className={cx('flex flex-col', items.length > 0 && 'flex-1')} space={8}>
         {items.map((r) => (
-          <div key={r.id} className="rise">
+          <Item key={r.id} space={8} layout>
             <ReqCard r={r} {...dragProps(r)} />
-          </div>
+          </Item>
         ))}
+      </MotionList>
+      <div className={cx('flex flex-col', !items.length && 'flex-1')}>
         {!items.length && <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-line-strong/70 py-6 text-xs text-fg-3">{over ? t.reqs.dropHere : t.reqs.empty}</div>}
       </div>
     </div>
@@ -71,13 +74,13 @@ function StatusSection({ status, items, onDrop }: { status: string; items: Requi
         <span className="text-xs text-fg-3 tabular">{items.length}</span>
       </div>
       {items.length ? (
-        <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-4">
+        <MotionList className="grid grid-cols-1 gap-x-2.5 @md:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-4" space={10}>
           {items.map((r) => (
-            <div key={r.id} className="rise h-full min-w-0">
+            <Item key={r.id} space={10} layout className="h-full">
               <ReqCard r={r} {...dragProps(r)} />
-            </div>
+            </Item>
           ))}
-        </div>
+        </MotionList>
       ) : (
         <div className="rounded-xl border border-dashed border-line-strong/70 py-3 text-center text-xs text-fg-3">{over ? t.reqs.dropHere : t.reqs.empty}</div>
       )}
@@ -115,11 +118,11 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         )}
         <span className="hidden w-20 shrink-0 text-right text-xs text-fg-3 sm:block">{relTime(r.updated_at, now)}</span>
       </div>
-      {expanded && (
-        <div className="rise border-t border-line px-4 pt-4 pb-2 sm:px-6">
+      <Collapse show={expanded}>
+        <div className="border-t border-line px-4 pt-4 pb-2 sm:px-6">
           <ReqDetail refId={r.code} />
         </div>
-      )}
+      </Collapse>
     </div>
   )
 }
@@ -141,12 +144,16 @@ function ListView({ items, statuses, projects }: { items: Requirement[]; statuse
               <h2 className="font-display text-[17px] font-semibold text-fg">{name(pid)}</h2>
               <span className="text-xs text-fg-3 tabular">{rs.length}</span>
             </div>
-            <Card className="space-y-0.5 p-1.5">
-              {rs
-                .sort((a, b) => (order.get(a.status) ?? 9) - (order.get(b.status) ?? 9) || sortReqs(a, b))
-                .map((r) => (
-                  <ReqListRow key={r.id} r={r} expanded={expanded === r.code} onToggle={() => setExpanded(expanded === r.code ? null : r.code)} />
-                ))}
+            <Card className="p-1.5">
+              <MotionList space={2}>
+                {rs
+                  .sort((a, b) => (order.get(a.status) ?? 9) - (order.get(b.status) ?? 9) || sortReqs(a, b))
+                  .map((r) => (
+                    <Item key={r.id} space={2} layout>
+                      <ReqListRow r={r} expanded={expanded === r.code} onToggle={() => setExpanded(expanded === r.code ? null : r.code)} />
+                    </Item>
+                  ))}
+              </MotionList>
             </Card>
           </section>
         ))}
@@ -275,12 +282,14 @@ export default function RequirementsPage() {
           <div className="-mx-4 mb-4 overflow-x-auto px-4">
             <Segmented id="req-mobile" size="sm" value={mobileStatus} onChange={setMobileStatus} options={statuses.map((s) => ({ value: s, label: t.reqStatus[s], count: byStatus(s).length }))} />
           </div>
-          <div className="space-y-2.5">
+          <MotionList space={10}>
             {byStatus(mobileStatus).map((r) => (
-              <div key={r.id} className="rise">
+              <Item key={r.id} space={10}>
                 <ReqCard r={r} />
-              </div>
+              </Item>
             ))}
+          </MotionList>
+          <div>
             {!byStatus(mobileStatus).length && <p className="py-10 text-center text-sm text-fg-3">{t.reqs.empty}</p>}
           </div>
         </>

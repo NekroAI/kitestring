@@ -58,6 +58,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"sessions", "phase", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "digest_done", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "digest_ask", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "instance", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "prev_instance", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "short_title", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "kind", "TEXT NOT NULL DEFAULT 'decision'"},
 	{"decisions", "answer_files", "TEXT NOT NULL DEFAULT '[]'"},
