@@ -38,6 +38,16 @@ type Session struct {
 	StateDetail      string           `json:"state_detail"`
 	LastPrompt       string           `json:"last_prompt"`
 	Summary          string           `json:"summary"`
+	StateSince       time.Time        `json:"state_since"` // 当前状态开始的时间
+	Turns            int              `json:"turns"`       // 用户提交过的轮数
+	TurnTools        int              `json:"turn_tools"`  // 本轮工具调用次数
+	LastTool         string           `json:"last_tool"`   // 最近一次工具动作简述
+	LastToolAt       *time.Time       `json:"last_tool_at,omitempty"`
+	Subagents        int              `json:"subagents"` // 正在运行的子 agent 数
+	PermMode         string           `json:"permission_mode"`
+	Compactions      int              `json:"compactions"`
+	Worktree         bool             `json:"worktree"`
+	Activity         []int            `json:"activity"` // 最近 60 分钟每 5 分钟的事件数，旧 → 新
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
 	EndedAt          *time.Time       `json:"ended_at,omitempty"`
@@ -55,17 +65,25 @@ type RequirementRef struct {
 
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
+	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active string
+	var started, active, since, toolAt string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
+		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
+	x.StateSince = parseTS(since)
+	if toolAt != "" {
+		t := parseTS(toolAt)
+		x.LastToolAt = &t
+	}
+	x.Activity = []int{}
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
 	x.Requirements = []RequirementRef{}
@@ -130,6 +148,9 @@ func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
 		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM decisions WHERE session_key = ? AND status = 'pending'`, x.Key).Scan(&x.PendingDecisions); err != nil {
 			return err
 		}
+		if err := s.fillActivity(ctx, x); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -140,13 +161,26 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 	if x.EndedAt != nil {
 		ended = ts(*x.EndedAt)
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, last_prompt, summary, started_at, last_active_at, ended_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	toolAt := ""
+	if x.LastToolAt != nil {
+		toolAt = ts(*x.LastToolAt)
+	}
+	since := ""
+	if !x.StateSince.IsZero() {
+		since = ts(x.StateSince)
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, last_prompt, summary,
+			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, started_at, last_active_at, ended_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, model = excluded.model,
 			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail,
-			last_prompt = excluded.last_prompt, summary = excluded.summary, last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
+			last_prompt = excluded.last_prompt, summary = excluded.summary, state_since = excluded.state_since, turns = excluded.turns,
+			turn_tools = excluded.turn_tools, last_tool = excluded.last_tool, last_tool_at = excluded.last_tool_at, subagents = excluded.subagents,
+			perm_mode = excluded.perm_mode, compactions = excluded.compactions, worktree = excluded.worktree,
+			last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
 		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail,
-		x.LastPrompt, x.Summary, ts(x.StartedAt), ts(x.LastActiveAt), ended)
+		x.LastPrompt, x.Summary, since, x.Turns, x.TurnTools, x.LastTool, toolAt, x.Subagents, x.PermMode, x.Compactions, x.Worktree,
+		ts(x.StartedAt), ts(x.LastActiveAt), ended)
 	return err
 }
 
@@ -210,4 +244,35 @@ func (s *Store) SessionEvents(ctx context.Context, key string, limit int) ([]pro
 		}
 	}
 	return out, rows.Err()
+}
+
+// 活跃度：最近 activityBuckets × activityStep 内每段的事件数。
+const (
+	activityBuckets = 12
+	activityStep    = 5 * time.Minute
+)
+
+func (s *Store) fillActivity(ctx context.Context, x *Session) error {
+	x.Activity = make([]int, activityBuckets)
+	now := time.Now()
+	from := now.Add(-activityBuckets * activityStep)
+	if x.LastActiveAt.Before(from) {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT time FROM events WHERE session_key = ? AND time >= ? AND name <> ?`, x.Key, ts(from), protocol.EventSummary)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return err
+		}
+		i := int(parseTS(t).Sub(from) / activityStep)
+		if i >= 0 && i < activityBuckets {
+			x.Activity[i]++
+		}
+	}
+	return rows.Err()
 }

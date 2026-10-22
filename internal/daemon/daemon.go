@@ -308,6 +308,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ID: protocol.NewID(), Time: time.Now().UTC(), Tool: req.Tool, Name: name, SessionID: sid,
 		Cwd: str(p, "cwd"), Model: str(p, "model"), Source: str(p, "source"), Reason: str(p, "reason"),
 		ToolName: str(p, "tool_name"), ToolUseID: str(p, "tool_use_id"), NotifType: str(p, "notification_type"),
+		PermMode: str(p, "permission_mode"), AgentType: str(p, "agent_type"),
 	}
 	ev.TurnID = str(p, "turn_id")
 	if ev.TurnID == "" {
@@ -316,13 +317,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if name == "UserPromptSubmit" {
 		ev.Prompt = summary.Truncate(strings.TrimSpace(str(p, "prompt")), 200)
 	}
-	if name == "PermissionRequest" {
+	if name == "PreToolUse" || name == "PermissionRequest" {
 		if in, ok := p["tool_input"].(map[string]any); ok {
-			brief := str(in, "description")
-			if brief == "" {
-				brief = str(in, "command")
-			}
-			ev.ToolBrief = summary.Truncate(strings.ReplaceAll(brief, "\n", " "), 80)
+			ev.ToolBrief = toolBrief(ev.ToolName, in)
 		}
 	}
 	ev.Git = d.git.get(ev.Cwd)
@@ -507,4 +504,64 @@ func (d *Daemon) maybeSummarize(ev protocol.Event, p map[string]any) {
 			d.wake()
 		}
 	}()
+}
+
+var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
+
+// toolBrief 从工具输入中提取一句动作简述：命令截断、文件名、搜索词等，不含文件内容（D3）。
+func toolBrief(tool string, in map[string]any) string {
+	clean := func(s string, n int) string { return summary.Truncate(strings.Join(strings.Fields(s), " "), n) }
+	base := func(p string) string {
+		if p == "" {
+			return ""
+		}
+		return filepath.Base(p)
+	}
+	switch tool {
+	case "Bash", "shell", "exec_command", "local_shell":
+		if c := str(in, "command"); c != "" {
+			return clean(c, 80)
+		}
+		if arr, ok := in["command"].([]any); ok {
+			parts := make([]string, 0, len(arr))
+			for _, a := range arr {
+				if s, ok := a.(string); ok {
+					parts = append(parts, s)
+				}
+			}
+			return clean(strings.Join(parts, " "), 80)
+		}
+	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit":
+		if f := str(in, "file_path"); f != "" {
+			return base(f)
+		}
+		return base(str(in, "notebook_path"))
+	case "apply_patch":
+		patch := str(in, "input")
+		if patch == "" {
+			patch = str(in, "patch")
+		}
+		files := patchFileRe.FindAllStringSubmatch(patch, -1)
+		switch len(files) {
+		case 0:
+		case 1:
+			return base(strings.TrimSpace(files[0][1]))
+		default:
+			return fmt.Sprintf("%s 等 %d 个文件", base(strings.TrimSpace(files[0][1])), len(files))
+		}
+	case "Grep", "Glob":
+		return clean(str(in, "pattern"), 60)
+	case "WebFetch":
+		if u, err := url.Parse(str(in, "url")); err == nil {
+			return u.Host
+		}
+	case "WebSearch":
+		return clean(str(in, "query"), 60)
+	case "Task", "Agent":
+		return clean(str(in, "description"), 60)
+	}
+	if d := str(in, "description"); d != "" {
+		return clean(d, 60)
+	}
+	return ""
 }

@@ -505,6 +505,9 @@
       "Event": {
         "additionalProperties": false,
         "properties": {
+          "agent_type": {
+            "type": "string"
+          },
           "client": {
             "type": "string"
           },
@@ -527,6 +530,9 @@
             "type": "string"
           },
           "notification_type": {
+            "type": "string"
+          },
+          "permission_mode": {
             "type": "string"
           },
           "prompt": {
@@ -1007,11 +1013,25 @@
       "Session": {
         "additionalProperties": false,
         "properties": {
+          "activity": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "branch": {
             "type": "string"
           },
           "client": {
             "type": "string"
+          },
+          "compactions": {
+            "format": "int64",
+            "type": "integer"
           },
           "cwd": {
             "type": "string"
@@ -1040,12 +1060,22 @@
           "last_prompt": {
             "type": "string"
           },
+          "last_tool": {
+            "type": "string"
+          },
+          "last_tool_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
           "pending_decisions": {
             "format": "int64",
             "type": "integer"
+          },
+          "permission_mode": {
+            "type": "string"
           },
           "project_id": {
             "type": "string"
@@ -1075,11 +1105,30 @@
           "state_detail": {
             "type": "string"
           },
+          "state_since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "subagents": {
+            "format": "int64",
+            "type": "integer"
+          },
           "summary": {
             "type": "string"
           },
           "tool": {
             "type": "string"
+          },
+          "turn_tools": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "turns": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "worktree": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1097,6 +1146,15 @@
           "state_detail",
           "last_prompt",
           "summary",
+          "state_since",
+          "turns",
+          "turn_tools",
+          "last_tool",
+          "subagents",
+          "permission_mode",
+          "compactions",
+          "worktree",
+          "activity",
           "started_at",
           "last_active_at",
           "requirements",
@@ -1238,15 +1296,31 @@
         ],
         "type": "object"
       },
-      "Test-summaryResponse": {
+      "SummaryTestOutBody": {
         "additionalProperties": false,
         "properties": {
+          "latency_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sample_prompt": {
+            "description": "示例：用户最后一条指令",
+            "type": "string"
+          },
+          "sample_reply": {
+            "description": "示例：助手最后一条回复",
+            "type": "string"
+          },
           "summary": {
+            "description": "模型生成的一句话摘要",
             "type": "string"
           }
         },
         "required": [
-          "summary"
+          "sample_prompt",
+          "sample_reply",
+          "summary",
+          "latency_ms"
         ],
         "type": "object"
       },
@@ -2825,7 +2899,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Test-summaryResponse"
+                  "$ref": "#/components/schemas/SummaryTestOutBody"
                 }
               }
             },
@@ -2842,7 +2916,7 @@
             "description": "Error"
           }
         },
-        "summary": "用当前配置生成一条测试摘要",
+        "summary": "用一段固定的示例对话调用摘要模型，验证配置是否可用",
         "tags": [
           "settings"
         ]

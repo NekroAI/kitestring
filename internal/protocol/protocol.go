@@ -48,8 +48,10 @@ type Event struct {
 	Prompt    string    `json:"prompt,omitempty"`  // UserPromptSubmit，截断
 	ToolName  string    `json:"tool_name,omitempty"`
 	ToolUseID string    `json:"tool_use_id,omitempty"`
-	ToolBrief string    `json:"tool_brief,omitempty"` // 等待授权时的简述，截断
+	ToolBrief string    `json:"tool_brief,omitempty"` // 工具动作简述（命令截断 / 文件名），不含代码正文
 	NotifType string    `json:"notification_type,omitempty"`
+	PermMode  string    `json:"permission_mode,omitempty"`
+	AgentType string    `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
 	Summary   string    `json:"summary,omitempty"`    // 设备侧生成的一句话摘要
 	LastReply string    `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
 	Git       *Git      `json:"git,omitempty"`

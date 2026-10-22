@@ -36,7 +36,39 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("应用数据库结构失败：%w", err)
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("数据库迁移失败：%w", err)
+	}
 	return &Store{db: db}, nil
+}
+
+// addedColumns 是建表之后新增的列：旧数据库按需补齐（CREATE TABLE IF NOT EXISTS 不会改已有表）。
+var addedColumns = []struct{ table, column, ddl string }{
+	{"sessions", "state_since", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "turns", "INTEGER NOT NULL DEFAULT 0"},
+	{"sessions", "turn_tools", "INTEGER NOT NULL DEFAULT 0"},
+	{"sessions", "last_tool", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "last_tool_at", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "subagents", "INTEGER NOT NULL DEFAULT 0"},
+	{"sessions", "perm_mode", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "compactions", "INTEGER NOT NULL DEFAULT 0"},
+	{"sessions", "worktree", "INTEGER NOT NULL DEFAULT 0"},
+}
+
+func migrate(db *sql.DB) error {
+	for _, c := range addedColumns {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, c.table, c.column).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, c.table, c.column, c.ddl)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Close 关闭数据库。

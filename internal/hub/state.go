@@ -41,6 +41,10 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	if ev.Git != nil && ev.Git.Available {
 		x.Branch = ev.Git.Branch
 		x.Dirty = ev.Git.Dirty
+		x.Worktree = ev.Git.Worktree
+	}
+	if ev.PermMode != "" {
+		x.PermMode = ev.PermMode
 	}
 	if ev.Summary != "" {
 		x.Summary = ev.Summary
@@ -49,6 +53,10 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		return x
 	}
 	x.LastActiveAt = ev.Time
+	prevState := x.State
+	if prev == nil {
+		prevState = ""
+	}
 
 	switch ev.Name {
 	case "SessionStart":
@@ -57,10 +65,25 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	case "UserPromptSubmit":
 		x.EndedAt = nil
 		x.State, x.StateDetail = store.StateRunning, ""
+		x.Turns++
+		x.TurnTools = 0
 		if ev.Prompt != "" {
 			x.LastPrompt = ev.Prompt
 		}
 	case "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact":
+		switch ev.Name {
+		case "PreToolUse":
+			x.TurnTools++
+			x.LastTool = toolLabel(ev.ToolName, ev.ToolBrief)
+			t := ev.Time
+			x.LastToolAt = &t
+		case "SubagentStart":
+			x.Subagents++
+		case "SubagentStop":
+			x.Subagents = max(0, x.Subagents-1)
+		case "PreCompact":
+			x.Compactions++
+		}
 		// 等待授权时，只有同一回合继续推进的 PostToolUse 才解除；其余事件只刷新活跃时间。
 		if x.State == store.StateWaitApproval && ev.Name != "PostToolUse" {
 			break
@@ -84,6 +107,19 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		t := ev.Time
 		x.EndedAt = &t
 		x.State, x.StateDetail = store.StateEnded, ""
+		x.Subagents = 0
+	}
+	if x.State != prevState || x.StateSince.IsZero() {
+		x.StateSince = ev.Time
 	}
 	return x
+}
+
+// toolLabel 生成“工具 · 简述”形式的动作描述。
+func toolLabel(tool, brief string) string {
+	name := strings.TrimPrefix(tool, "mcp__")
+	if brief == "" {
+		return name
+	}
+	return name + " · " + brief
 }

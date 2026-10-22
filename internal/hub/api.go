@@ -648,28 +648,39 @@ func (h *Hub) registerWeb(api huma.API) {
 			}
 			return h.settingsView(ctx)
 		})
-	huma.Register(api, huma.Operation{OperationID: "test-summary", Method: http.MethodPost, Path: "/api/settings/test-summary", Tags: tag("settings"), Summary: "用当前配置生成一条测试摘要"},
-		func(ctx context.Context, _ *empty) (*struct {
-			Body struct {
-				Summary string `json:"summary"`
-			}
-		}, error) {
+	huma.Register(api, huma.Operation{OperationID: "test-summary", Method: http.MethodPost, Path: "/api/settings/test-summary", Tags: tag("settings"),
+		Summary: "用一段固定的示例对话调用摘要模型，验证配置是否可用"},
+		func(ctx context.Context, _ *empty) (*summaryTestOut, error) {
 			s, err := h.Settings(ctx)
 			if err != nil {
 				return nil, err
 			}
-			text, err := summary.Generate(ctx, s.Summary, "给登录页加上记住我功能", "已在登录表单增加“记住我”复选框，勾选后会话有效期延长到 30 天，并补充了单元测试，全部通过。")
+			out := &summaryTestOut{}
+			out.Body.SamplePrompt = summarySamplePrompt
+			out.Body.SampleReply = summarySampleReply
+			start := time.Now()
+			text, err := summary.Generate(ctx, s.Summary, summarySamplePrompt, summarySampleReply)
+			out.Body.LatencyMS = time.Since(start).Milliseconds()
 			if err != nil {
 				return nil, huma.Error502BadGateway(err.Error())
 			}
-			out := &struct {
-				Body struct {
-					Summary string `json:"summary"`
-				}
-			}{}
 			out.Body.Summary = text
 			return out, nil
 		})
+}
+
+const (
+	summarySamplePrompt = "给登录页加上“记住我”功能"
+	summarySampleReply  = "已在登录表单增加“记住我”复选框，勾选后会话有效期延长到 30 天，并补充了单元测试，全部通过。"
+)
+
+type summaryTestOut struct {
+	Body struct {
+		SamplePrompt string `json:"sample_prompt" doc:"示例：用户最后一条指令"`
+		SampleReply  string `json:"sample_reply" doc:"示例：助手最后一条回复"`
+		Summary      string `json:"summary" doc:"模型生成的一句话摘要"`
+		LatencyMS    int64  `json:"latency_ms"`
+	}
 }
 
 // ---------- agent 接口（设备 token，经 daemon 转发 MCP / CLI 调用） ----------

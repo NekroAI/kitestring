@@ -466,7 +466,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 用当前配置生成一条测试摘要 */
+        /** 用一段固定的示例对话调用摘要模型，验证配置是否可用 */
         post: operations["test-summary"];
         delete?: never;
         options?: never;
@@ -660,6 +660,7 @@ export interface components {
             type: string;
         };
         Event: {
+            agent_type?: string;
             client?: string;
             cwd?: string;
             git?: components["schemas"]["Git"];
@@ -668,6 +669,7 @@ export interface components {
             model?: string;
             name: string;
             notification_type?: string;
+            permission_mode?: string;
             prompt?: string;
             reason?: string;
             session_id: string;
@@ -787,8 +789,11 @@ export interface components {
             title: string;
         };
         Session: {
+            activity: number[] | null;
             branch: string;
             client: string;
+            /** Format: int64 */
+            compactions: number;
             cwd: string;
             device_id: string;
             device_name: string;
@@ -800,9 +805,13 @@ export interface components {
             /** Format: date-time */
             last_active_at: string;
             last_prompt: string;
+            last_tool: string;
+            /** Format: date-time */
+            last_tool_at?: string;
             model: string;
             /** Format: int64 */
             pending_decisions: number;
+            permission_mode: string;
             project_id?: string;
             project_name?: string;
             requirements: components["schemas"]["RequirementRef"][] | null;
@@ -811,8 +820,17 @@ export interface components {
             started_at: string;
             state: string;
             state_detail: string;
+            /** Format: date-time */
+            state_since: string;
+            /** Format: int64 */
+            subagents: number;
             summary: string;
             tool: string;
+            /** Format: int64 */
+            turn_tools: number;
+            /** Format: int64 */
+            turns: number;
+            worktree: boolean;
         };
         SessionDetailOutBody: {
             events: components["schemas"]["Event"][] | null;
@@ -842,7 +860,14 @@ export interface components {
             summary_mode: "off" | "hub" | "device";
             summary_model: string;
         };
-        "Test-summaryResponse": {
+        SummaryTestOutBody: {
+            /** Format: int64 */
+            latency_ms: number;
+            /** @description 示例：用户最后一条指令 */
+            sample_prompt: string;
+            /** @description 示例：助手最后一条回复 */
+            sample_reply: string;
+            /** @description 模型生成的一句话摘要 */
             summary: string;
         };
         "Update-workspaceRequest": {
@@ -2003,7 +2028,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Test-summaryResponse"];
+                    "application/json": components["schemas"]["SummaryTestOutBody"];
                 };
             };
             /** @description Error */
