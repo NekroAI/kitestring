@@ -66,4 +66,6 @@
 - Codex 的 MCP 工具在审批策略为 `never` 时会被自动拒绝；`ks install` 需要为 Kitestring 自己的工具配置 `[mcp_servers.<name>.tools.<tool>] approval_mode = "approve"`，或引导用户确认。
 - Codex 项目级 hook 与项目级 MCP 都需要用户先信任项目、并在 `/hooks` 中逐条信任；未信任时静默跳过，不报错。`ks install` 需要引导用户完成这一步，不应使用绕过信任的参数。
 - Codex 用户级与项目级 hook 叠加执行，不互相覆盖。
+- Claude `--resume` 恢复会话后 `session_id` 保持不变（M2 实测），Codex 文档同样说明恢复为同一会话。
+- hook 退出码 2 在两边都表示“阻止”：hook 命令配错导致进程以 2 退出时会拦住用户的 prompt（M2 实测），因此 `ks` 永不以 2 退出。
 - Codex 0.163.0-alpha 的 `exec` 在 stdin 不是终端时会等待 stdin 结束，与 hook 无关，仅影响测试脚本。
