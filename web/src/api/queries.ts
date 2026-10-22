@@ -1,13 +1,15 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, unwrap } from './client'
+import { api, unwrap, type Requirement, type Session } from './client'
+
+const normSession = (x: Omit<Session, 'requirements' | 'activity'> & { requirements?: Session['requirements'] | null; activity?: number[] | null }): Session => ({ ...x, requirements: x.requirements ?? [], activity: x.activity ?? [] })
+const normReq = (x: Omit<Requirement, 'sessions'> & { sessions?: string[] | null }): Requirement => ({ ...x, sessions: x.sessions ?? [] })
 
 // 查询键按 SSE 主题组织，便于收到 changed 事件时整组失效。
 export const qk = {
   auth: ['auth'] as const,
   sessions: ['sessions'] as const,
   session: (key: string) => ['sessions', 'detail', key] as const,
-  decisions: (status: string) => ['decisions', status] as const,
   requirements: ['requirements'] as const,
   requirement: (ref: string) => ['requirements', 'detail', ref] as const,
   devices: ['devices'] as const,
@@ -27,7 +29,7 @@ export function useSessions() {
   return useQuery({
     queryKey: qk.sessions,
     queryFn: () => unwrap(api.GET('/api/sessions')),
-    select: (d) => ({ sessions: d.sessions ?? [], devices: d.devices ?? [] }),
+    select: (d) => ({ sessions: (d.sessions ?? []).map(normSession), devices: d.devices ?? [] }),
   })
 }
 
@@ -35,17 +37,18 @@ export function useSessionDetail(key: string | null) {
   return useQuery({
     queryKey: qk.session(key ?? ''),
     queryFn: () => unwrap(api.GET('/api/sessions/{key}', { params: { path: { key: key! } } })),
+    select: (d) => ({ session: normSession(d.session), events: d.events ?? [] }),
     enabled: !!key,
   })
 }
 
 export type DecisionStatus = 'pending' | 'answered' | 'delivered' | 'closed'
-export const decisionStatuses: DecisionStatus[] = ['pending', 'answered', 'delivered', 'closed']
 
-export function useDecisions(status: DecisionStatus) {
+// 全部决策一次取回，在前端按状态分组（单用户场景数量很小）。
+export function useDecisions() {
   return useQuery({
-    queryKey: qk.decisions(status),
-    queryFn: () => unwrap(api.GET('/api/decisions', { params: { query: { status: [status] } } })),
+    queryKey: ['decisions', 'all'],
+    queryFn: () => unwrap(api.GET('/api/decisions')),
     select: (d) => d.decisions ?? [],
   })
 }
@@ -54,7 +57,7 @@ export function useRequirements() {
   return useQuery({
     queryKey: qk.requirements,
     queryFn: () => unwrap(api.GET('/api/requirements')),
-    select: (d) => d.requirements ?? [],
+    select: (d) => (d.requirements ?? []).map(normReq),
   })
 }
 
@@ -62,6 +65,7 @@ export function useRequirement(ref: string | null) {
   return useQuery({
     queryKey: qk.requirement(ref ?? ''),
     queryFn: () => unwrap(api.GET('/api/requirements/{ref}', { params: { path: { ref: ref! } } })),
+    select: normReq,
     enabled: !!ref,
   })
 }

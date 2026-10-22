@@ -16,5 +16,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // 依赖拆成几个稳定的块，前端更新时浏览器可以复用缓存。
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) return undefined
+          if (/react-dom|react-router|scheduler|\/react\//.test(id)) return 'react'
+          if (/motion|framer/.test(id)) return 'motion'
+          if (/radix|vaul|sonner|lucide/.test(id)) return 'ui'
+          return 'vendor'
+        },
+      },
+    },
   },
 })

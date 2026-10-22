@@ -3,10 +3,12 @@ import type { components, paths } from './schema'
 import { t } from '../i18n'
 
 export type Schemas = components['schemas']
-export type Session = Schemas['Session']
+type NN<T, K extends keyof T> = Omit<T, K> & { [P in K]-?: NonNullable<T[P]> }
+// 后端总是返回数组，这里去掉 OpenAPI 生成的 null 可能，并在 queries 中做归一化兜底。
+export type Session = NN<Schemas['Session'], 'requirements' | 'activity'>
 export type Device = Schemas['Device']
 export type Decision = Schemas['Decision']
-export type Requirement = Schemas['Requirement']
+export type Requirement = NN<Schemas['Requirement'], 'sessions'>
 export type Project = Schemas['Project']
 export type Workspace = Schemas['Workspace']
 export type NotifyConfig = Schemas['NotifyConfig']

@@ -1,0 +1,67 @@
+import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
+import { api, errMsg, unwrap, type NotifyConfig, type ReqFields } from '../api/client'
+import { qk } from '../api/queries'
+
+// 所有写操作集中在这里：调用 API、失败时弹出错误、成功后立即刷新相关数据（SSE 也会推送，这里是为了更快）。
+
+export function useActions() {
+  const qc = useQueryClient()
+  const refresh = useCallback((...keys: string[]) => keys.forEach((k) => void qc.invalidateQueries({ queryKey: [k] })), [qc])
+
+  const run = useCallback(async <T,>(fn: () => Promise<T>, keys: string[]): Promise<T | undefined> => {
+    try {
+      const r = await fn()
+      refresh(...keys)
+      return r
+    } catch (e) {
+      toast.error(errMsg(e))
+      return undefined
+    }
+  }, [refresh])
+
+  return {
+    answer: (answers: { ref: string; answer: string }[]) =>
+      run(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
+    reassign: (ref: string, sessionKey: string) =>
+      run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
+    closeDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: {} })), ['decisions', 'sessions']),
+    resendDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/resend', { params: { path: { ref } }, body: {} })), ['decisions']),
+
+    createReq: (body: ReqFields) => run(() => unwrap(api.POST('/api/requirements', { body })), ['requirements']),
+    updateReq: (ref: string, body: ReqFields) => run(() => unwrap(api.PUT('/api/requirements/{ref}', { params: { path: { ref } }, body })), ['requirements', 'sessions']),
+    deleteReq: (ref: string) => run(() => unwrap(api.DELETE('/api/requirements/{ref}', { params: { path: { ref } } })), ['requirements', 'sessions']),
+    linkReq: (ref: string, sessionKey: string, unlink = false) =>
+      run(() => unwrap(api.POST('/api/requirements/{ref}/links', { params: { path: { ref } }, body: { session_key: sessionKey, unlink } })), ['requirements', 'sessions']),
+
+    createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions']),
+    revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions']),
+
+    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string }) =>
+      run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
+    createWorkspace: (name: string, notify: NotifyConfig) => run(() => unwrap(api.POST('/api/workspaces', { body: { name, notify } })), ['projects']),
+    updateWorkspace: (id: string, name: string, notify: NotifyConfig) =>
+      run(() => unwrap(api.PUT('/api/workspaces/{id}', { params: { path: { id } }, body: { name, notify } })), ['projects']),
+    deleteWorkspace: (id: string) => run(() => unwrap(api.DELETE('/api/workspaces/{id}', { params: { path: { id } } })), ['projects']),
+
+    logout: async () => {
+      await api.POST('/api/auth/logout')
+      qc.setQueryData(qk.auth, (cur: { initialized: boolean; version: string } | undefined) => ({ initialized: true, version: cur?.version ?? '', logged_in: false }))
+    },
+  }
+}
+
+// useBusy：给异步按钮提供 loading 状态。
+export function useBusy() {
+  const [busy, setBusy] = useState(false)
+  const wrap = useCallback(async <T,>(fn: () => Promise<T>) => {
+    setBusy(true)
+    try {
+      return await fn()
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+  return [busy, wrap] as const
+}

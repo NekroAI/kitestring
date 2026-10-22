@@ -1,71 +1,258 @@
 @import 'tailwindcss';
 
-/* 深色模式跟随系统（Tailwind 默认 prefers-color-scheme）。 */
+/* 主题：html 上的 .dark 类控制（跟随系统或手动切换，见 lib/theme.ts）。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * 设计令牌。暗色刻意不用接近纯黑的底色：中等深度的灰蓝，长时间盯屏更舒适。
+ * 组件只使用这些语义色，不直接写具体色值。
+ */
+:root {
+  --bg: #f5f6f8;
+  --bg-sunken: #eef0f3;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-hover: #f2f4f7;
+  --line: #e5e7ec;
+  --line-strong: #d3d7de;
+  --fg: #151a23;
+  --fg-2: #4a5263;
+  --fg-3: #8a92a3;
+  --accent: #4f5bd5;
+  --accent-hover: #4350c6;
+  --accent-soft: #eef0fd;
+  --accent-fg: #ffffff;
+  --ring: rgb(79 91 213 / 0.35);
+  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow: 0 1px 3px rgb(16 24 40 / 0.06), 0 1px 2px rgb(16 24 40 / 0.04);
+  --shadow-lg: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.06);
+
+  --run: #15935a;
+  --run-soft: #e7f6ee;
+  --wait: #c27a06;
+  --wait-soft: #fdf4e3;
+  --reply: #7347d6;
+  --reply-soft: #f2edfd;
+  --danger: #d23b3b;
+  --danger-soft: #fdecec;
+  --idle: #6b7385;
+  --idle-soft: #eef0f3;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #1d2027;
+  --bg-sunken: #191b21;
+  --surface: #262a33;
+  --surface-2: #2b303a;
+  --surface-hover: #313642;
+  --line: #363b47;
+  --line-strong: #444a58;
+  --fg: #eceef3;
+  --fg-2: #b0b6c3;
+  --fg-3: #7d8496;
+  --accent: #8b95f5;
+  --accent-hover: #9aa3f7;
+  --accent-soft: #2f3350;
+  --accent-fg: #14172a;
+  --ring: rgb(139 149 245 / 0.4);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.2);
+  --shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  --shadow-lg: 0 16px 40px -10px rgb(0 0 0 / 0.5), 0 4px 10px -4px rgb(0 0 0 / 0.3);
+
+  --run: #4cc38a;
+  --run-soft: #233a31;
+  --wait: #f0b347;
+  --wait-soft: #3d3423;
+  --reply: #ac8ef5;
+  --reply-soft: #352f4c;
+  --danger: #f07070;
+  --danger-soft: #432a2d;
+  --idle: #959cad;
+  --idle-soft: #313642;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sunken: var(--bg-sunken);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-hover: var(--surface-hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-run: var(--run);
+  --color-run-soft: var(--run-soft);
+  --color-wait: var(--wait);
+  --color-wait-soft: var(--wait-soft);
+  --color-reply: var(--reply);
+  --color-reply-soft: var(--reply-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-idle: var(--idle);
+  --color-idle-soft: var(--idle-soft);
+  --shadow-xs: var(--shadow-sm);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --animate-pulse-dot: pulse-dot 1.8s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: scale(0.8);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
 }
 
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
+    font-feature-settings: 'cv11', 'ss01';
   }
   body {
-    @apply bg-slate-50 text-slate-900 antialiased dark:bg-[#0b0f14] dark:text-slate-100;
+    @apply bg-bg text-fg antialiased;
+    text-rendering: optimizeLegibility;
   }
   button,
-  [role='button'] {
+  [role='button'],
+  summary {
     cursor: pointer;
   }
   button:disabled {
     cursor: not-allowed;
   }
-}
-
-@layer components {
-  .card {
-    @apply rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900;
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
-  .btn {
-    @apply inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium whitespace-nowrap text-slate-800 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800;
+  ::selection {
+    background: var(--accent-soft);
   }
-  .btn-sm {
-    @apply min-h-8 px-2.5 text-xs;
-  }
-  .btn-primary {
-    @apply border-slate-900 bg-slate-900 text-white hover:bg-slate-700 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white;
-  }
-  .btn-danger {
-    @apply border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950;
-  }
-  .btn-ghost {
-    @apply border-transparent bg-transparent dark:border-transparent dark:bg-transparent;
-  }
-  .input {
-    @apply block min-h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 focus:outline-none sm:text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500;
-  }
-  .label {
-    @apply mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400;
-  }
-  .muted {
-    @apply text-slate-500 dark:text-slate-400;
-  }
-  .chip {
-    @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap;
-  }
-  .chip-gray {
-    @apply bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300;
-  }
-  .section-title {
-    @apply text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400;
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
   }
 }
 
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
-.pt-safe {
-  padding-top: env(safe-area-inset-top);
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---------- 浮层动效 ---------- */
+@keyframes ks-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ks-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ks-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@keyframes ks-slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@keyframes ks-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.97);
+  }
+}
+@keyframes ks-pop-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.97);
+  }
+}
+@keyframes ks-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+[data-state='open'].panel-slide {
+  animation: ks-slide-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-state='closed'].panel-slide {
+  animation: ks-slide-out 0.18s ease-in forwards;
+}
+[data-state='open'].modal-pop {
+  animation: ks-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-state='closed'].modal-pop {
+  animation: ks-pop-out 0.15s ease-in forwards;
+}
+[data-state='open'].modal-fade,
+[data-state='open'].animate-in {
+  animation: ks-fade-in 0.2s ease-out;
+}
+[data-state='closed'].modal-fade,
+[data-state='closed'].animate-out {
+  animation: ks-fade-out 0.15s ease-in forwards;
+}
+.menu-pop {
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+[data-state='open'].menu-pop {
+  animation: ks-menu-in 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }

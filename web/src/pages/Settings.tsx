@@ -1,655 +1,717 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { api, errMsg, unwrap, type Device, type NotifyConfig, type Project, type SettingsView, type Workspace } from '../api/client'
-import { qk, useDevices, useProjects, useSettings } from '../api/queries'
-import { ConfirmButton, CopyButton, Empty, ErrorBox, Field, Loading, Modal, Spinner, cx, useNow, useToast } from '../components/ui'
+import { useSearchParams } from 'react-router'
+import { motion } from 'motion/react'
+import { Bell, Check, CheckCircle2, ChevronDown, Copy, FolderGit2, KeyRound, LogOut, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Sparkles, Sun, SunMoon, Trash2, User, XCircle } from 'lucide-react'
+import { toast } from 'sonner'
+import { api, errMsg, unwrap, type Device, type NotifyConfig, type Workspace } from '../api/client'
+import { useDevices, useProjects, useSettings } from '../api/queries'
 import { t } from '../i18n'
-import { relTime } from '../lib/time'
+import { copyText, cx, relTime, useNow } from '../lib/util'
+import { useTheme, type ThemePref } from '../lib/theme'
+import { Badge, Button, Card, Checkbox, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton } from '../ui/base'
+import { Menu, Modal, useConfirm } from '../ui/overlay'
+import { useActions, useBusy } from '../app/actions'
+import { useQueryClient } from '@tanstack/react-query'
+import { qk } from '../api/queries'
 
-const DEFAULT_EVENTS = ['decision_raised', 'waiting_approval', 'requirement_review']
-const ALL_EVENTS = ['decision_raised', 'waiting_approval', 'requirement_review', 'waiting_reply', 'device_lost']
+type Tab = 'devices' | 'notify' | 'projects' | 'summary' | 'appearance' | 'account'
+const tabs: { id: Tab; icon: typeof Monitor }[] = [
+  { id: 'devices', icon: Monitor },
+  { id: 'notify', icon: Bell },
+  { id: 'projects', icon: FolderGit2 },
+  { id: 'summary', icon: Sparkles },
+  { id: 'appearance', icon: Palette },
+  { id: 'account', icon: User },
+]
 
-function Section({ title, hint, children, action }: { title: string; hint?: string; children: ReactNode; action?: ReactNode }) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-end gap-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-base font-semibold">{title}</h2>
-          {hint && <p className="muted mt-0.5 text-xs leading-relaxed">{hint}</p>}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  )
+function Intro({ children }: { children: ReactNode }) {
+  return <p className="mb-5 max-w-2xl text-sm leading-relaxed text-fg-2">{children}</p>
 }
 
-// useAsync 包装一次异步操作的忙碌状态与错误提示。
-function useAsync() {
-  const toast = useToast()
-  const [busy, setBusy] = useState(false)
-  const run = async <T,>(fn: () => Promise<T>, okText?: string): Promise<T | undefined> => {
-    setBusy(true)
-    try {
-      const out = await fn()
-      if (okText) toast(okText)
-      return out
-    } catch (e) {
-      toast(errMsg(e), 'err')
-      return undefined
-    } finally {
-      setBusy(false)
-    }
-  }
-  return { busy, run }
-}
-
-export default function SettingsPage({ version }: { version: string }) {
-  const settings = useSettings()
-  return (
-    <div className="mx-auto max-w-3xl space-y-8">
-      <h1 className="text-lg font-semibold">{t.settings.title}</h1>
-      <DevicesSection />
-      <WorkspacesSection events={settings.data?.notify_events ?? ALL_EVENTS} />
-      <ProjectsSection />
-      {settings.isPending ? (
-        <Loading />
-      ) : settings.isError ? (
-        <ErrorBox error={settings.error} onRetry={() => settings.refetch()} />
-      ) : (
-        <>
-          <DefaultNotifySection s={settings.data} />
-          <SummarySection s={settings.data} />
-          <PublicUrlSection s={settings.data} />
-        </>
-      )}
-      <AccountSection version={version} />
-    </div>
-  )
+function Row({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cx('flex items-center gap-3 px-4 py-3.5', className)}>{children}</div>
 }
 
 // ---------- 设备 ----------
 
-function DevicesSection() {
-  const q = useDevices()
-  const qc = useQueryClient()
+function CommandLine({ cmd }: { cmd: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-sunken px-3 py-2">
+      <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[12px] whitespace-nowrap text-fg">{cmd}</code>
+      <Button size="icon-sm" variant="ghost" aria-label={t.common.copy} onClick={async () => (await copyText(cmd)) && toast.success(t.common.copied)}>
+        <Copy className="size-3.5" />
+      </Button>
+    </div>
+  )
+}
+
+function DeviceTokenModal({ token, name, onClose }: { token: string; name: string; onClose: () => void }) {
+  const origin = window.location.origin
+  return (
+    <Modal
+      open={!!token}
+      onClose={onClose}
+      title={`${t.settings.devices.created} · ${name}`}
+      description={t.settings.devices.tokenOnce}
+      footer={
+        <Button variant="primary" onClick={onClose}>
+          {t.common.close}
+        </Button>
+      }
+    >
+      <div className="space-y-4">
+        <CommandLine cmd={token} />
+        <div className="text-sm font-medium text-fg">{t.settings.devices.stepsTitle}</div>
+        <ol className="space-y-3 text-sm text-fg-2">
+          {[
+            [t.settings.devices.step1, null],
+            [t.settings.devices.step2, `ks login --hub ${origin} --token ${token}`],
+            [t.settings.devices.step3, 'ks install'],
+            [t.settings.devices.step4, null],
+          ].map(([text, cmd], i) => (
+            <li key={i} className="flex gap-3">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">{i + 1}</span>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div>{text}</div>
+                {cmd && <CommandLine cmd={cmd} />}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </Modal>
+  )
+}
+
+function Devices() {
   const now = useNow()
-  const { busy, run } = useAsync()
+  const q = useDevices()
+  const { createDevice, revokeDevice } = useActions()
+  const confirm = useConfirm()
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
-  const [created, setCreated] = useState<{ device: Device; token: string } | null>(null)
+  const [busy, wrap] = useBusy()
+  const [created, setCreated] = useState<{ token: string; name: string } | null>(null)
 
-  const create = async () => {
-    const out = await run(() => unwrap(api.POST('/api/devices', { body: { name: name.trim() } })))
-    if (out) {
-      setAdding(false)
-      setName('')
-      setCreated(out)
-      void qc.invalidateQueries({ queryKey: qk.devices })
+  const add = () =>
+    wrap(async () => {
+      const r = await createDevice(name.trim())
+      if (r) {
+        setAdding(false)
+        setName('')
+        setCreated({ token: r.token, name: r.device.name })
+      }
+    })
+  const revoke = async (d: Device) => {
+    if (await confirm({ title: t.settings.devices.revoke, description: t.settings.devices.revokeConfirm(d.name), confirmText: t.settings.devices.revoke, danger: true })) {
+      if (await revokeDevice(d.id)) toast(t.settings.devices.revoked)
     }
   }
 
-  const cmd = created ? `ks login --hub ${window.location.origin} --token ${created.token}` : ''
-
   return (
-    <Section
-      title={t.settings.devices.title}
-      hint={t.settings.devices.hint}
-      action={
-        <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>
-          + {t.settings.devices.add}
-        </button>
-      }
-    >
-      {q.isPending ? (
-        <Loading />
-      ) : q.isError ? (
-        <ErrorBox error={q.error} onRetry={() => q.refetch()} />
-      ) : q.data.length === 0 ? (
-        <Empty>{t.settings.devices.empty}</Empty>
-      ) : (
-        <ul className="card divide-y divide-slate-100 dark:divide-slate-800">
-          {q.data.map((d) => (
-            <li key={d.id} className={cx('flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5', d.revoked && 'opacity-60')}>
-              <span className={cx('size-2 shrink-0 rounded-full', d.revoked ? 'bg-slate-300' : d.online ? 'bg-emerald-500' : 'bg-slate-400')} />
+    <>
+      <Intro>{t.settings.devices.intro}</Intro>
+      <Card className="divide-y divide-line overflow-hidden">
+        {q.isPending ? (
+          <Row>
+            <Skeleton className="h-10 w-full" />
+          </Row>
+        ) : q.isError ? (
+          <div className="p-4">
+            <ErrorState error={q.error} />
+          </div>
+        ) : !q.data.length ? (
+          <Empty icon={<MonitorSmartphone />} title={t.settings.devices.empty} />
+        ) : (
+          q.data.map((d) => (
+            <Row key={d.id} className={cx(d.revoked && 'opacity-55')}>
+              <span className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-sunken text-fg-2">
+                <Monitor className="size-[18px]" />
+                {!d.revoked && <span className={cx('absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-surface', d.online ? 'bg-run' : 'bg-fg-3/50')} />}
+              </span>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                  <span className={cx(d.revoked && 'line-through')}>{d.name}</span>
-                  {d.revoked ? (
-                    <span className="chip chip-gray">{t.settings.devices.revoked}</span>
-                  ) : (
-                    <span className={cx('text-xs font-normal', d.online ? 'text-emerald-700 dark:text-emerald-400' : 'muted')}>
-                      {d.online ? t.wall.online : d.last_seen ? t.wall.lastSeen(relTime(d.last_seen, now)) : t.settings.devices.never}
-                    </span>
-                  )}
+                <div className="flex items-center gap-2 text-sm font-medium text-fg">
+                  {d.name}
+                  {d.revoked && <Badge tone="danger">{t.settings.devices.revokedTag}</Badge>}
                 </div>
-                <div className="muted mt-0.5 flex flex-wrap gap-x-3 text-xs">
-                  {d.hostname && (
-                    <span>
-                      {t.settings.devices.hostname} <span className="font-mono">{d.hostname}</span>
-                    </span>
-                  )}
-                  {d.platform && (
-                    <span>
-                      {t.settings.devices.platform} <span className="font-mono">{d.platform}</span>
-                    </span>
-                  )}
-                  {d.version && (
-                    <span>
-                      {t.settings.devices.version} <span className="font-mono">{d.version}</span>
-                    </span>
-                  )}
+                <div className="mt-0.5 truncate text-xs text-fg-3">
+                  {[d.online ? t.sessions.deviceOnline : d.last_seen ? t.sessions.lastSeen(relTime(d.last_seen, now)) : t.sessions.neverConnected, d.hostname, d.platform, d.version && `v${d.version}`].filter(Boolean).join(t.common.sep)}
                 </div>
               </div>
               {!d.revoked && (
-                <ConfirmButton
-                  className="btn btn-danger btn-sm"
-                  message={t.settings.devices.revokeConfirm}
-                  confirmLabel={t.settings.devices.revoke}
-                  onConfirm={() => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id: d.id } } })), t.settings.devices.revoked).then(() => qc.invalidateQueries({ queryKey: qk.devices }))}
-                >
+                <Button size="sm" variant="ghost" className="text-fg-3 hover:text-danger" onClick={() => revoke(d)}>
                   {t.settings.devices.revoke}
-                </ConfirmButton>
+                </Button>
               )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {adding && (
-        <Modal
-          title={t.settings.devices.add}
-          onClose={() => setAdding(false)}
-          footer={
-            <>
-              <button className="btn" onClick={() => setAdding(false)}>
-                {t.common.cancel}
-              </button>
-              <button className="btn btn-primary" disabled={!name.trim() || busy} onClick={create}>
-                {busy && <Spinner />}
+            </Row>
+          ))
+        )}
+        <Row className="bg-surface-2/50">
+          {adding ? (
+            <div className="flex w-full flex-wrap gap-2">
+              <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t.settings.devices.namePlaceholder} onKeyDown={(e) => e.key === 'Enter' && name.trim() && add()} className="min-w-[200px] flex-1" />
+              <Button onClick={() => setAdding(false)}>{t.common.cancel}</Button>
+              <Button variant="primary" loading={busy} disabled={!name.trim()} onClick={add}>
                 {t.common.create}
-              </button>
-            </>
-          }
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (name.trim()) void create()
-            }}
-          >
-            <Field label={t.settings.devices.name}>
-              <input className="input" autoFocus maxLength={64} placeholder={t.settings.devices.namePlaceholder} value={name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-          </form>
-        </Modal>
-      )}
-
-      {created && (
-        <Modal title={`${t.settings.devices.created} · ${created.device.name}`} onClose={() => setCreated(null)} footer={<button className="btn btn-primary" onClick={() => setCreated(null)}>{t.common.close}</button>}>
-          <div className="space-y-3">
-            <p className="text-sm text-amber-800 dark:text-amber-300">{t.settings.devices.tokenOnce}</p>
-            <pre className="rounded-lg bg-slate-900 p-3 font-mono text-xs break-all whitespace-pre-wrap text-slate-100 dark:bg-black">{cmd}</pre>
-            <div className="flex gap-2">
-              <CopyButton text={cmd} className="btn btn-primary btn-sm" />
+              </Button>
             </div>
-            <p className="muted text-xs">{t.settings.devices.token}</p>
-            <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 rounded bg-slate-100 px-2 py-1 font-mono text-xs break-all dark:bg-slate-800">{created.token}</code>
-              <CopyButton text={created.token} />
-            </div>
-          </div>
-        </Modal>
-      )}
-    </Section>
+          ) : (
+            <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>
+              {t.settings.devices.add}
+            </Button>
+          )}
+        </Row>
+      </Card>
+      {created && <DeviceTokenModal token={created.token} name={created.name} onClose={() => setCreated(null)} />}
+    </>
   )
 }
 
-// ---------- 通知配置表单 ----------
+// ---------- 通知 ----------
 
-function NotifyForm({ value, onChange, events }: { value: NotifyConfig; onChange: (v: NotifyConfig) => void; events: string[] }) {
-  const chosen = value.events && value.events.length > 0 ? value.events : DEFAULT_EVENTS
-  const toggle = (ev: string) => {
-    const next = chosen.includes(ev) ? chosen.filter((x) => x !== ev) : [...chosen, ev]
-    onChange({ ...value, events: events.filter((x) => next.includes(x)) })
-  }
-  return (
-    <div className="space-y-3">
-      <fieldset className="space-y-2">
-        <legend className="label">{t.settings.notify.bark}</legend>
-        <div className="grid gap-2 sm:grid-cols-[1fr_1fr]">
-          <input
-            className="input"
-            placeholder={t.common.labeled(t.settings.notify.barkServer, 'https://api.day.app')}
-            value={value.bark?.server ?? ''}
-            onChange={(e) => onChange({ ...value, bark: { server: e.target.value, key: value.bark?.key ?? '' } })}
-          />
-          <input
-            className="input font-mono"
-            placeholder={t.settings.notify.barkKey}
-            value={value.bark?.key ?? ''}
-            onChange={(e) => onChange({ ...value, bark: { server: value.bark?.server ?? '', key: e.target.value } })}
-          />
-        </div>
-      </fieldset>
-      <Field label={t.settings.notify.wecom}>
-        <input
-          className="input font-mono"
-          placeholder={t.settings.notify.wecomWebhook}
-          value={value.wecom?.webhook ?? ''}
-          onChange={(e) => onChange({ ...value, wecom: { webhook: e.target.value } })}
-        />
-      </Field>
-      <fieldset>
-        <legend className="label">{t.settings.notify.events}</legend>
-        <div className="flex flex-wrap gap-2">
-          {events.map((ev) => {
-            const on = chosen.includes(ev)
-            return (
-              <button
-                key={ev}
-                type="button"
-                onClick={() => toggle(ev)}
-                className={cx(
-                  'inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-sm',
-                  on ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900' : 'border-slate-300 dark:border-slate-700',
-                )}
-                aria-pressed={on}
-              >
-                {on ? '✓' : '+'} {t.settings.notify.eventNames[ev] ?? ev}
-              </button>
-            )
-          })}
-        </div>
-        <p className="muted mt-1 text-xs">{t.settings.notify.eventsDefaultHint}</p>
-      </fieldset>
-    </div>
-  )
-}
-
-// cleanNotify 去掉空渠道；Bark 未填服务器时使用默认服务器。
-function cleanNotify(n: NotifyConfig): NotifyConfig {
-  const out: NotifyConfig = {}
-  if (n.bark?.key?.trim()) out.bark = { server: n.bark.server?.trim() || 'https://api.day.app', key: n.bark.key.trim() }
-  if (n.wecom?.webhook?.trim()) out.wecom = { webhook: n.wecom.webhook.trim() }
-  if (n.events && n.events.length) out.events = n.events
+function channelsOf(n: NotifyConfig): string[] {
+  const out: string[] = []
+  if (n.bark?.key) out.push(t.settings.notify.bark)
+  if (n.wecom?.webhook) out.push(t.settings.notify.wecom)
   return out
 }
 
-function TestNotifyButton({ value }: { value: NotifyConfig }) {
-  const { busy, run } = useAsync()
-  const toast = useToast()
-  return (
-    <button
-      type="button"
-      className="btn"
-      disabled={busy}
-      onClick={() => {
-        const cfg = cleanNotify(value)
-        if (!cfg.bark && !cfg.wecom) return toast(t.settings.notify.noChannel, 'err')
-        void run(() => unwrap(api.POST('/api/notify/test', { body: cfg })), t.settings.notify.testOk)
-      }}
-    >
-      {busy && <Spinner />}
-      {t.settings.notify.test}
-    </button>
-  )
-}
-
-// ---------- 工作空间 ----------
-
-function WorkspacesSection({ events }: { events: string[] }) {
-  const q = useProjects()
-  const qc = useQueryClient()
-  const { busy, run } = useAsync()
-  const ws = q.data?.workspaces ?? []
-
-  return (
-    <Section
-      title={t.settings.workspaces.title}
-      hint={t.settings.workspaces.hint}
-      action={
-        <button
-          className="btn btn-primary btn-sm"
-          disabled={busy}
-          onClick={() => run(() => unwrap(api.POST('/api/workspaces', { body: { name: t.settings.workspaces.newName, notify: {} } }))).then(() => qc.invalidateQueries({ queryKey: qk.projects }))}
-        >
-          + {t.settings.workspaces.add}
-        </button>
+function NotifyForm({ value, onChange, events }: { value: NotifyConfig; onChange: (v: NotifyConfig) => void; events: string[] }) {
+  const [busy, wrap] = useBusy()
+  const chosen = value.events ?? []
+  const test = () =>
+    wrap(async () => {
+      try {
+        await unwrap(api.POST('/api/notify/test', { body: value }))
+        toast.success(t.settings.notify.testOk)
+      } catch (e) {
+        toast.error(errMsg(e))
       }
-    >
-      {q.isPending ? (
-        <Loading />
-      ) : q.isError ? (
-        <ErrorBox error={q.error} onRetry={() => q.refetch()} />
-      ) : ws.length === 0 ? (
-        <Empty>{t.settings.workspaces.empty}</Empty>
-      ) : (
-        <div className="space-y-3">
-          {ws.map((w) => (
-            <WorkspaceCard key={w.id} w={w} events={events} />
+    })
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t.settings.notify.barkKey} hint={t.settings.notify.barkKeyHint}>
+          <Input value={value.bark?.key ?? ''} onChange={(e) => onChange({ ...value, bark: { server: value.bark?.server ?? '', key: e.target.value } })} className="font-mono" />
+        </Field>
+        <Field label={t.settings.notify.barkServer}>
+          <Input value={value.bark?.server ?? ''} placeholder="https://api.day.app" onChange={(e) => onChange({ ...value, bark: { key: value.bark?.key ?? '', server: e.target.value } })} className="font-mono" />
+        </Field>
+      </div>
+      <Field label={t.settings.notify.wecomWebhook} hint={t.settings.notify.wecomHint}>
+        <Input value={value.wecom?.webhook ?? ''} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…" onChange={(e) => onChange({ ...value, wecom: { webhook: e.target.value } })} className="font-mono" />
+      </Field>
+      <div>
+        <div className="mb-1 text-[13px] font-medium text-fg-2">{t.settings.notify.events}</div>
+        <div className="grid gap-x-4 sm:grid-cols-2">
+          {events.map((ev, i) => (
+            <Checkbox
+              key={ev}
+              checked={chosen.length ? chosen.includes(ev) : i < 3}
+              hint={t.settings.notify.evHint[ev]}
+              onChange={(on) => {
+                const base = chosen.length ? chosen : events.slice(0, 3)
+                onChange({ ...value, events: on ? [...base, ev] : base.filter((x) => x !== ev) })
+              }}
+            >
+              {t.settings.notify.ev[ev] ?? ev}
+            </Checkbox>
           ))}
         </div>
-      )}
-    </Section>
+      </div>
+      <Button size="sm" icon={<Send className="size-3.5" />} loading={busy} disabled={!channelsOf(value).length} onClick={test}>
+        {t.settings.notify.test}
+      </Button>
+    </div>
   )
 }
 
-function WorkspaceCard({ w, events }: { w: Workspace; events: string[] }) {
-  const qc = useQueryClient()
-  const { busy, run } = useAsync()
-  const [name, setName] = useState(w.name)
-  const [notify, setNotify] = useState<NotifyConfig>(w.notify ?? {})
+function WorkspaceModal({ ws, onClose, events }: { ws: Workspace | 'new' | null; onClose: () => void; events: string[] }) {
+  const { createWorkspace, updateWorkspace } = useActions()
+  const [busy, wrap] = useBusy()
+  const [name, setName] = useState('')
+  const [n, setN] = useState<NotifyConfig>({})
   useEffect(() => {
-    setName(w.name)
-    setNotify(w.notify ?? {})
-  }, [w])
-  const dirty = name !== w.name || JSON.stringify(cleanNotify(notify)) !== JSON.stringify(cleanNotify(w.notify ?? {}))
+    if (ws && ws !== 'new') {
+      setName(ws.name)
+      setN(ws.notify)
+    } else {
+      setName('')
+      setN({})
+    }
+  }, [ws])
+  const save = () =>
+    wrap(async () => {
+      const ok = ws === 'new' ? await createWorkspace(name.trim(), n) : ws && (await updateWorkspace(ws.id, name.trim(), n))
+      if (ok) {
+        toast.success(t.common.saved)
+        onClose()
+      }
+    })
+  return (
+    <Modal
+      open={!!ws}
+      onClose={onClose}
+      title={ws === 'new' ? t.settings.notify.addWorkspace : name}
+      footer={
+        <>
+          <Button onClick={onClose}>{t.common.cancel}</Button>
+          <Button variant="primary" loading={busy} disabled={!name.trim()} onClick={save}>
+            {t.common.save}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <Field label={t.settings.notify.workspaceName}>
+          <Input autoFocus value={name} placeholder={t.settings.notify.workspaceNamePlaceholder} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <NotifyForm value={n} onChange={setN} events={events} />
+      </div>
+    </Modal>
+  )
+}
+
+function Notify() {
+  const settings = useSettings()
+  const projects = useProjects()
+  const { deleteWorkspace } = useActions()
+  const confirm = useConfirm()
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState<Workspace | 'new' | null>(null)
+  const [def, setDef] = useState<NotifyConfig | null>(null)
+  const [busy, wrap] = useBusy()
+  useEffect(() => {
+    if (settings.data && !def) setDef(settings.data.notify_default)
+  }, [settings.data, def])
+  const events = settings.data?.notify_events ?? []
+
+  const saveDefault = () =>
+    wrap(async () => {
+      const s = settings.data!
+      try {
+        await unwrap(api.PUT('/api/settings', { body: { public_url: s.public_url, summary_mode: s.summary_mode, summary_base_url: s.summary_base_url, summary_model: s.summary_model, notify_default: def ?? {} } }))
+        void qc.invalidateQueries({ queryKey: qk.settings })
+        toast.success(t.common.saved)
+      } catch (e) {
+        toast.error(errMsg(e))
+      }
+    })
 
   return (
-    <div className="card space-y-3 p-3">
-      <Field label={t.settings.workspaces.name}>
-        <input className="input font-medium" value={name} onChange={(e) => setName(e.target.value)} />
-      </Field>
-      <NotifyForm value={notify} onChange={setNotify} events={events} />
-      <div className="flex flex-wrap items-center gap-2">
-        <ConfirmButton
-          className="btn btn-danger btn-sm"
-          message={t.settings.workspaces.deleteConfirm}
-          confirmLabel={t.common.delete}
-          onConfirm={() => run(() => unwrap(api.DELETE('/api/workspaces/{id}', { params: { path: { id: w.id } } }))).then(() => qc.invalidateQueries({ queryKey: qk.projects }))}
-        >
-          {t.common.delete}
-        </ConfirmButton>
-        <span className="ml-auto" />
-        <TestNotifyButton value={notify} />
-        <button
-          className="btn btn-primary"
-          disabled={!dirty || !name.trim() || busy}
-          onClick={() =>
-            run(() => unwrap(api.PUT('/api/workspaces/{id}', { params: { path: { id: w.id } }, body: { name: name.trim(), notify: cleanNotify(notify) } })), t.common.saved).then(() =>
-              qc.invalidateQueries({ queryKey: qk.projects }),
-            )
-          }
-        >
-          {busy && <Spinner />}
-          {t.common.save}
-        </button>
-      </div>
-    </div>
+    <>
+      <Intro>{t.settings.notify.intro}</Intro>
+      <h3 className="mb-1 text-[15px] font-semibold text-fg">{t.settings.notify.workspacesTitle}</h3>
+      <p className="mb-3 text-[13px] text-fg-3">{t.settings.notify.workspacesHint}</p>
+      <Card className="mb-8 divide-y divide-line overflow-hidden">
+        {(projects.data?.workspaces ?? []).map((w) => {
+          const ch = channelsOf(w.notify)
+          const n = projects.data?.projects.filter((p) => p.workspace_id === w.id).length ?? 0
+          return (
+            <Row key={w.id}>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-fg">{w.name}</div>
+                <div className="mt-0.5 text-xs text-fg-3">
+                  {n} · {ch.length ? ch.join('、') : t.settings.notify.noChannel}
+                </div>
+              </div>
+              <Button size="icon-sm" variant="ghost" aria-label={t.common.edit} onClick={() => setEditing(w)}>
+                <Pencil className="size-3.5" />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t.common.delete}
+                onClick={async () => (await confirm({ title: t.common.delete, description: t.settings.notify.deleteConfirm(w.name), danger: true, confirmText: t.common.delete })) && deleteWorkspace(w.id)}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </Row>
+          )
+        })}
+        <Row className="bg-surface-2/50">
+          <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>
+            {t.settings.notify.addWorkspace}
+          </Button>
+        </Row>
+      </Card>
+
+      <h3 className="mb-1 text-[15px] font-semibold text-fg">{t.settings.notify.defaultTitle}</h3>
+      <p className="mb-3 text-[13px] text-fg-3">{t.settings.notify.defaultHint}</p>
+      <Card className="p-4 sm:p-5">
+        {def ? (
+          <>
+            <NotifyForm value={def} onChange={setDef} events={events} />
+            <div className="mt-5 flex justify-end border-t border-line pt-4">
+              <Button variant="primary" loading={busy} onClick={saveDefault}>
+                {t.common.save}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Skeleton className="h-40" />
+        )}
+      </Card>
+      <WorkspaceModal ws={editing} onClose={() => setEditing(null)} events={events} />
+    </>
   )
 }
 
 // ---------- 项目 ----------
 
-function ProjectsSection() {
+function Projects() {
   const q = useProjects()
+  const { updateProject } = useActions()
+  const [edit, setEdit] = useState<{ id: string; name: string; doc_root: string } | null>(null)
+  const workspaces = q.data?.workspaces ?? []
   return (
-    <Section title={t.settings.projects.title} hint={t.settings.projects.hint}>
-      {q.isPending ? (
-        <Loading />
-      ) : q.isError ? (
-        <ErrorBox error={q.error} onRetry={() => q.refetch()} />
-      ) : q.data.projects.length === 0 ? (
-        <Empty>{t.settings.projects.empty}</Empty>
-      ) : (
-        <ul className="card divide-y divide-slate-100 dark:divide-slate-800">
-          {q.data.projects.map((p) => (
-            <ProjectRow key={p.id} p={p} workspaces={q.data.workspaces} />
-          ))}
-        </ul>
-      )}
-    </Section>
-  )
-}
-
-function ProjectRow({ p, workspaces }: { p: Project; workspaces: Workspace[] }) {
-  const qc = useQueryClient()
-  const { busy, run } = useAsync()
-  const [name, setName] = useState(p.name)
-  const [ws, setWs] = useState(p.workspace_id ?? '')
-  const [doc, setDoc] = useState(p.doc_root)
-  useEffect(() => {
-    setName(p.name)
-    setWs(p.workspace_id ?? '')
-    setDoc(p.doc_root)
-  }, [p])
-  const dirty = name !== p.name || ws !== (p.workspace_id ?? '') || doc !== p.doc_root
-
-  return (
-    <li className="space-y-2 p-3">
-      {p.remote && <div className="muted font-mono text-xs break-all">{p.remote}</div>}
-      <div className="grid gap-2 sm:grid-cols-[1fr_10rem]">
-        <input className="input" aria-label={t.settings.projects.name} value={name} onChange={(e) => setName(e.target.value)} />
-        <select className="input" aria-label={t.settings.projects.workspace} value={ws} onChange={(e) => setWs(e.target.value)}>
-          <option value="">{t.settings.projects.noWorkspace}</option>
-          {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex gap-2">
-        <input className="input flex-1" aria-label={t.settings.projects.docRoot} placeholder={t.common.labeled(t.settings.projects.docRoot, t.settings.projects.docRootPlaceholder)} value={doc} onChange={(e) => setDoc(e.target.value)} />
-        <button
-          className="btn btn-primary"
-          disabled={!dirty || !name.trim() || busy}
-          onClick={() =>
-            run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id: p.id } }, body: { name: name.trim(), workspace_id: ws || undefined, doc_root: doc.trim() } })), t.common.saved).then(() =>
-              qc.invalidateQueries({ queryKey: qk.projects }),
+    <>
+      <Intro>{t.settings.projects.intro}</Intro>
+      <Card className="divide-y divide-line overflow-hidden">
+        {q.isPending ? (
+          <Row>
+            <Skeleton className="h-10 w-full" />
+          </Row>
+        ) : !q.data?.projects.length ? (
+          <Empty icon={<FolderGit2 />} title={t.settings.projects.empty} />
+        ) : (
+          q.data.projects.map((p) => {
+            const ws = workspaces.find((w) => w.id === p.workspace_id)
+            return (
+              <Row key={p.id} className="flex-wrap">
+                <FolderGit2 className="size-[18px] shrink-0 text-fg-3" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-fg">{p.name}</div>
+                  <div className="truncate font-mono text-xs text-fg-3">{p.remote || t.settings.projects.noRemote}</div>
+                </div>
+                <Menu
+                  trigger={
+                    <Button size="sm">
+                      {ws?.name ?? t.settings.projects.noWorkspace}
+                      <ChevronDown className="size-3 opacity-60" />
+                    </Button>
+                  }
+                  items={[
+                    { type: 'label', label: t.settings.projects.workspace },
+                    { label: t.settings.projects.noWorkspace, checked: !p.workspace_id, onSelect: () => void updateProject(p.id, { name: p.name, doc_root: p.doc_root }) },
+                    ...workspaces.map((w) => ({ label: w.name, checked: w.id === p.workspace_id, onSelect: () => void updateProject(p.id, { name: p.name, doc_root: p.doc_root, workspace_id: w.id }) })),
+                  ]}
+                />
+                <Button size="icon-sm" variant="ghost" aria-label={t.settings.projects.rename} onClick={() => setEdit({ id: p.id, name: p.name, doc_root: p.doc_root })}>
+                  <Pencil className="size-3.5" />
+                </Button>
+              </Row>
             )
-          }
-        >
-          {t.common.save}
-        </button>
-      </div>
-    </li>
-  )
-}
-
-// ---------- 全局设置（默认通知、摘要、公网地址共用一次 PUT） ----------
-
-type SettingsPatch = { public_url?: string; summary_mode?: SettingsView['summary_mode']; summary_base_url?: string; summary_model?: string; summary_api_key?: string; notify_default?: NotifyConfig }
-
-function useSaveSettings() {
-  const qc = useQueryClient()
-  return async (s: SettingsView, patch: SettingsPatch) => {
-    const body = {
-      public_url: s.public_url,
-      summary_mode: s.summary_mode,
-      summary_base_url: s.summary_base_url,
-      summary_model: s.summary_model,
-      notify_default: cleanNotify(s.notify_default ?? {}),
-      ...patch,
-    }
-    const out = await unwrap(api.PUT('/api/settings', { body }))
-    qc.setQueryData(qk.settings, out)
-    return out
-  }
-}
-
-function DefaultNotifySection({ s }: { s: SettingsView }) {
-  const save = useSaveSettings()
-  const { busy, run } = useAsync()
-  const [notify, setNotify] = useState<NotifyConfig>(s.notify_default ?? {})
-  useEffect(() => setNotify(s.notify_default ?? {}), [s.notify_default])
-  const dirty = JSON.stringify(cleanNotify(notify)) !== JSON.stringify(cleanNotify(s.notify_default ?? {}))
-  return (
-    <Section title={t.settings.defaultNotify.title} hint={t.settings.defaultNotify.hint}>
-      <div className="card space-y-3 p-3">
-        <NotifyForm value={notify} onChange={setNotify} events={s.notify_events ?? ALL_EVENTS} />
-        <div className="flex justify-end gap-2">
-          <TestNotifyButton value={notify} />
-          <button className="btn btn-primary" disabled={!dirty || busy} onClick={() => run(() => save(s, { notify_default: cleanNotify(notify) }), t.common.saved)}>
-            {busy && <Spinner />}
-            {t.common.save}
-          </button>
-        </div>
-      </div>
-    </Section>
-  )
-}
-
-function SummarySection({ s }: { s: SettingsView }) {
-  const save = useSaveSettings()
-  const { busy, run } = useAsync()
-  const [mode, setMode] = useState(s.summary_mode || 'off')
-  const [base, setBase] = useState(s.summary_base_url)
-  const [model, setModel] = useState(s.summary_model)
-  const [key, setKey] = useState('')
-  const [result, setResult] = useState('')
-  useEffect(() => {
-    setMode(s.summary_mode || 'off')
-    setBase(s.summary_base_url)
-    setModel(s.summary_model)
-  }, [s.summary_mode, s.summary_base_url, s.summary_model])
-
-  const patch = (): SettingsPatch => ({ summary_mode: mode, summary_base_url: base.trim(), summary_model: model.trim(), ...(key ? { summary_api_key: key } : {}) })
-  const doSave = () =>
-    run(async () => {
-      await save(s, patch())
-      setKey('')
-    }, t.common.saved)
-  const doTest = () =>
-    run(async () => {
-      setResult('')
-      await save(s, patch())
-      setKey('')
-      const out = await unwrap(api.POST('/api/settings/test-summary'))
-      setResult(out.summary)
-    })
-
-  return (
-    <Section title={t.settings.summary.title} hint={t.settings.summary.hint}>
-      <div className="card space-y-3 p-3">
-        <div>
-          <span className="label">{t.settings.summary.mode}</span>
-          <div className="inline-flex w-full rounded-lg bg-slate-100 p-1 sm:w-auto dark:bg-slate-800">
-            {(['off', 'hub', 'device'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={cx('h-9 flex-1 rounded-md px-3 text-sm font-medium whitespace-nowrap sm:flex-none', mode === m ? 'bg-white shadow-sm dark:bg-slate-950' : 'muted')}
-              >
-                {t.settings.summary.modes[m]}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t.settings.summary.baseUrl}>
-            <input className="input font-mono" placeholder="https://api.openai.com/v1" value={base} onChange={(e) => setBase(e.target.value)} />
-          </Field>
-          <Field label={t.settings.summary.model}>
-            <input className="input font-mono" value={model} onChange={(e) => setModel(e.target.value)} />
-          </Field>
-        </div>
-        <Field label={t.settings.summary.apiKey} hint={s.summary_api_key_set ? t.settings.summary.apiKeySet : t.settings.summary.apiKeyUnset}>
-          <input className="input font-mono" type="password" autoComplete="off" placeholder={s.summary_api_key_set ? '••••••••' : ''} value={key} onChange={(e) => setKey(e.target.value)} />
-        </Field>
-        {result && (
-          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm dark:bg-emerald-950/40">
-            <span className="mr-1.5 text-xs font-semibold text-emerald-800 dark:text-emerald-300">{t.settings.summary.testResult}</span>
-            {result}
+          })
+        )}
+      </Card>
+      <Modal
+        open={!!edit}
+        onClose={() => setEdit(null)}
+        title={t.settings.projects.rename}
+        footer={
+          <>
+            <Button onClick={() => setEdit(null)}>{t.common.cancel}</Button>
+            <Button
+              variant="primary"
+              disabled={!edit?.name.trim()}
+              onClick={async () => {
+                const p = q.data?.projects.find((x) => x.id === edit!.id)
+                if (await updateProject(edit!.id, { name: edit!.name.trim(), doc_root: edit!.doc_root, workspace_id: p?.workspace_id || undefined })) setEdit(null)
+              }}
+            >
+              {t.common.save}
+            </Button>
+          </>
+        }
+      >
+        {edit && (
+          <div className="space-y-4">
+            <Field label={t.settings.notify.workspaceName}>
+              <Input autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+            </Field>
+            <Field label={t.settings.projects.docRoot}>
+              <Input value={edit.doc_root} placeholder={t.settings.projects.docRootPlaceholder} onChange={(e) => setEdit({ ...edit, doc_root: e.target.value })} className="font-mono" />
+            </Field>
           </div>
         )}
-        <div className="flex justify-end gap-2">
-          <button className="btn" disabled={busy} onClick={doTest}>
-            {t.settings.summary.test}
-          </button>
-          <button className="btn btn-primary" disabled={busy} onClick={doSave}>
-            {busy && <Spinner />}
-            {t.common.save}
-          </button>
-        </div>
-      </div>
-    </Section>
+      </Modal>
+    </>
   )
 }
 
-function PublicUrlSection({ s }: { s: SettingsView }) {
-  const save = useSaveSettings()
-  const { busy, run } = useAsync()
-  const [url, setUrl] = useState(s.public_url)
-  useEffect(() => setUrl(s.public_url), [s.public_url])
+// ---------- AI 摘要 ----------
+
+type TestResult = { ok: true; sample_prompt: string; sample_reply: string; summary: string; latency_ms: number } | { ok: false; error: string }
+
+function Summary() {
+  const q = useSettings()
+  const qc = useQueryClient()
+  const [mode, setMode] = useState('off')
+  const [base, setBase] = useState('')
+  const [model, setModel] = useState('')
+  const [key, setKey] = useState('')
+  const [busy, wrap] = useBusy()
+  const [result, setResult] = useState<TestResult | null>(null)
+  useEffect(() => {
+    if (q.data) {
+      setMode(q.data.summary_mode)
+      setBase(q.data.summary_base_url)
+      setModel(q.data.summary_model)
+    }
+  }, [q.data])
+
+  const save = (test: boolean) =>
+    wrap(async () => {
+      const s = q.data!
+      setResult(null)
+      try {
+        await unwrap(api.PUT('/api/settings', { body: { public_url: s.public_url, notify_default: s.notify_default, summary_mode: mode as 'off', summary_base_url: base, summary_model: model, summary_api_key: key || undefined } }))
+        setKey('')
+        void qc.invalidateQueries({ queryKey: qk.settings })
+        if (!test) {
+          toast.success(t.common.saved)
+          return
+        }
+        const r = await unwrap(api.POST('/api/settings/test-summary'))
+        setResult({ ok: true, ...r })
+      } catch (e) {
+        if (test) setResult({ ok: false, error: errMsg(e) })
+        else toast.error(errMsg(e))
+      }
+    })
+
+  if (!q.data) return <Skeleton className="h-64" />
   return (
-    <Section title={t.settings.publicUrl.title} hint={t.settings.publicUrl.hint}>
-      <div className="card flex gap-2 p-3">
-        <input className="input flex-1 font-mono" aria-label={t.settings.publicUrl.label} placeholder={window.location.origin} value={url} onChange={(e) => setUrl(e.target.value)} />
-        <button className="btn btn-primary" disabled={busy || url === s.public_url} onClick={() => run(() => save(s, { public_url: url.trim() }), t.common.saved)}>
-          {t.common.save}
-        </button>
+    <>
+      <Intro>{t.settings.summary.intro}</Intro>
+      <div className="mb-5 flex items-start gap-2.5 rounded-xl bg-accent-soft/60 px-3.5 py-3 text-[13px] text-fg-2">
+        <KeyRound className="mt-0.5 size-4 shrink-0 text-accent" />
+        {t.settings.summary.privacy}
       </div>
-    </Section>
+
+      <div className="mb-2 text-[13px] font-medium text-fg-2">{t.settings.summary.mode}</div>
+      <div className="mb-6 grid gap-2 sm:grid-cols-3">
+        {(['off', 'hub', 'device'] as const).map((m) => (
+          <button key={m} onClick={() => setMode(m)} className={cx('rounded-xl border p-3 text-left transition', mode === m ? 'border-accent bg-accent-soft ring-1 ring-accent/40' : 'border-line bg-surface hover:border-line-strong')}>
+            <div className="flex items-center justify-between text-sm font-medium text-fg">
+              {t.settings.summary.modes[m]}
+              {mode === m && <Check className="size-4 text-accent" />}
+            </div>
+            <div className="mt-1 text-xs leading-relaxed text-fg-3">{t.settings.summary.modeHints[m]}</div>
+          </button>
+        ))}
+      </div>
+
+      {mode === 'hub' && (
+        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="space-y-4 p-4 sm:p-5">
+            <Field label={t.settings.summary.baseUrl} hint={t.settings.summary.baseUrlHint}>
+              <Input value={base} onChange={(e) => setBase(e.target.value)} placeholder="https://api.deepseek.com/v1" className="font-mono" />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={t.settings.summary.model}>
+                <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={t.settings.summary.modelPlaceholder} className="font-mono" />
+              </Field>
+              <Field label={t.settings.summary.apiKey} hint={q.data.summary_api_key_set ? t.settings.summary.apiKeySet : undefined}>
+                <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={q.data.summary_api_key_set ? '••••••••' : 'sk-…'} className="font-mono" autoComplete="off" />
+              </Field>
+            </div>
+          </Card>
+        </motion.div>
+      )}
+
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <Button loading={busy && !result} onClick={() => save(false)}>
+          {t.common.save}
+        </Button>
+        {mode === 'hub' && (
+          <Button variant="primary" icon={<Sparkles className="size-4" />} loading={busy} disabled={!base || !model} onClick={() => save(true)}>
+            {busy ? t.settings.summary.testing : t.settings.summary.test}
+          </Button>
+        )}
+      </div>
+
+      {result && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mt-5">
+          {result.ok ? (
+            <Card className="overflow-hidden">
+              <div className="flex items-center gap-2 border-b border-line bg-run-soft px-4 py-2.5 text-sm font-medium text-run">
+                <CheckCircle2 className="size-4" />
+                {t.settings.summary.testOk(result.latency_ms)}
+              </div>
+              <div className="space-y-3 p-4 text-sm">
+                <p className="text-fg-3">{t.settings.summary.testExplain}</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl bg-sunken p-3">
+                    <div className="text-xs text-fg-3">{t.settings.summary.samplePrompt}</div>
+                    <div className="mt-1 text-fg-2">{result.sample_prompt}</div>
+                  </div>
+                  <div className="rounded-xl bg-sunken p-3">
+                    <div className="text-xs text-fg-3">{t.settings.summary.sampleReply}</div>
+                    <div className="mt-1 text-fg-2">{result.sample_reply}</div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-accent/40 bg-accent-soft/50 p-3">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-accent">
+                    <Sparkles className="size-3.5" />
+                    {t.settings.summary.result}
+                  </div>
+                  <div className="mt-1 text-[15px] font-medium text-fg">{result.summary}</div>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <Card className="flex items-start gap-3 border-danger/40 p-4">
+              <XCircle className="mt-0.5 size-5 shrink-0 text-danger" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-fg">{t.settings.summary.testFail}</div>
+                <div className="mt-1 text-[13px] break-words text-fg-2">{result.error}</div>
+              </div>
+            </Card>
+          )}
+        </motion.div>
+      )}
+    </>
+  )
+}
+
+// ---------- 外观 ----------
+
+function Appearance() {
+  const [pref, setPref] = useTheme()
+  const opts: { v: ThemePref; icon: typeof Sun; label: string }[] = [
+    { v: 'system', icon: SunMoon, label: t.theme.system },
+    { v: 'light', icon: Sun, label: t.theme.light },
+    { v: 'dark', icon: Moon, label: t.theme.dark },
+  ]
+  return (
+    <div className="grid max-w-xl grid-cols-3 gap-3">
+      {opts.map((o) => (
+        <button key={o.v} onClick={() => setPref(o.v)} className={cx('flex flex-col items-center gap-2 rounded-2xl border p-4 transition', pref === o.v ? 'border-accent bg-accent-soft ring-1 ring-accent/40' : 'border-line bg-surface hover:border-line-strong')}>
+          <o.icon className={cx('size-6', pref === o.v ? 'text-accent' : 'text-fg-3')} />
+          <span className="text-sm font-medium text-fg">{o.label}</span>
+        </button>
+      ))}
+    </div>
   )
 }
 
 // ---------- 账户 ----------
 
-function AccountSection({ version }: { version: string }) {
+function Account({ version }: { version: string }) {
+  const q = useSettings()
   const qc = useQueryClient()
-  const toast = useToast()
-  const { busy, run } = useAsync()
-  const [oldPw, setOld] = useState('')
-  const [pw, setPw] = useState('')
-  const [pw2, setPw2] = useState('')
-
-  const change = () => {
-    if (pw.length < 8) return toast(t.auth.tooShort, 'err')
-    if (pw !== pw2) return toast(t.auth.mismatch, 'err')
-    void run(() => unwrap(api.POST('/api/password', { body: { old: oldPw, new: pw } })), t.settings.password.changed).then((ok) => {
-      if (ok) {
-        setOld('')
-        setPw('')
-        setPw2('')
+  const { logout } = useActions()
+  const [url, setUrl] = useState('')
+  const [pw, setPw] = useState({ old: '', next: '' })
+  const [busy, wrap] = useBusy()
+  const [busy2, wrap2] = useBusy()
+  useEffect(() => {
+    if (q.data) setUrl(q.data.public_url)
+  }, [q.data])
+  const saveUrl = () =>
+    wrap(async () => {
+      const s = q.data!
+      try {
+        await unwrap(api.PUT('/api/settings', { body: { public_url: url, summary_mode: s.summary_mode, summary_base_url: s.summary_base_url, summary_model: s.summary_model, notify_default: s.notify_default } }))
+        void qc.invalidateQueries({ queryKey: qk.settings })
+        toast.success(t.common.saved)
+      } catch (e) {
+        toast.error(errMsg(e))
       }
     })
-  }
-
-  const logout = async () => {
-    try {
-      await api.POST('/api/auth/logout')
-    } finally {
-      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== qk.auth[0] })
-      qc.setQueryData(qk.auth, { initialized: true, logged_in: false, version })
-    }
-  }
-
+  const changePw = () =>
+    wrap2(async () => {
+      try {
+        await unwrap(api.POST('/api/password', { body: { old: pw.old, new: pw.next } }))
+        setPw({ old: '', next: '' })
+        toast.success(t.settings.account.passwordChanged)
+      } catch (e) {
+        toast.error(errMsg(e))
+      }
+    })
   return (
-    <Section title={t.settings.password.title}>
-      <form
-        className="card space-y-3 p-3"
-        onSubmit={(e) => {
-          e.preventDefault()
-          change()
-        }}
-      >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label={t.settings.password.old}>
-            <input className="input" type="password" autoComplete="current-password" value={oldPw} onChange={(e) => setOld(e.target.value)} />
+    <div className="max-w-xl space-y-6">
+      <Card className="p-4 sm:p-5">
+        <Field label={t.settings.account.publicUrl} hint={t.settings.account.publicUrlHint}>
+          <div className="flex gap-2">
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://ks.example.com" className="font-mono" />
+            <Button loading={busy} onClick={saveUrl}>
+              {t.common.save}
+            </Button>
+          </div>
+        </Field>
+      </Card>
+      <Card className="space-y-4 p-4 sm:p-5">
+        <div className="text-sm font-semibold text-fg">{t.settings.account.password}</div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t.settings.account.oldPassword}>
+            <Input type="password" value={pw.old} onChange={(e) => setPw({ ...pw, old: e.target.value })} autoComplete="current-password" />
           </Field>
-          <Field label={t.settings.password.new}>
-            <input className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
-          </Field>
-          <Field label={t.settings.password.confirm}>
-            <input className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+          <Field label={t.settings.account.newPassword}>
+            <Input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} autoComplete="new-password" />
           </Field>
         </div>
         <div className="flex justify-end">
-          <button className="btn btn-primary" disabled={busy || !oldPw || !pw}>
-            {busy && <Spinner />}
-            {t.settings.password.title}
-          </button>
+          <Button variant="primary" loading={busy2} disabled={!pw.old || pw.next.length < 8} onClick={changePw}>
+            {t.common.save}
+          </Button>
         </div>
-      </form>
-      <div className="flex items-center justify-between pt-2">
-        <span className="muted text-xs">{t.settings.version(version)}</span>
-        <button className="btn btn-danger" onClick={logout}>
-          {t.settings.logout}
-        </button>
+      </Card>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-fg-3">{t.settings.account.version(version)}</span>
+        <Button variant="danger" icon={<LogOut className="size-4" />} onClick={() => void logout()}>
+          {t.settings.account.logout}
+        </Button>
       </div>
-    </Section>
+    </div>
+  )
+}
+
+export default function SettingsPage({ version }: { version: string }) {
+  const [params, setParams] = useSearchParams()
+  const tab = (tabs.find((x) => x.id === params.get('tab'))?.id ?? 'devices') as Tab
+  const go = (id: Tab) =>
+    setParams((p) => {
+      const n = new URLSearchParams(p)
+      n.set('tab', id)
+      return n
+    })
+
+  const body: Record<Tab, ReactNode> = {
+    devices: <Devices />,
+    notify: <Notify />,
+    projects: <Projects />,
+    summary: <Summary />,
+    appearance: <Appearance />,
+    account: <Account version={version} />,
+  }
+
+  return (
+    <>
+      <PageHeader title={t.settings.title} />
+      <div className="-mx-4 mb-5 overflow-x-auto px-4 lg:hidden">
+        <Segmented id="settings-m" size="sm" value={tab} onChange={go} options={tabs.map((x) => ({ value: x.id, label: t.settings.sections[x.id] }))} />
+      </div>
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <nav className="hidden space-y-0.5 lg:block">
+          {tabs.map((x) => (
+            <button key={x.id} onClick={() => go(x.id)} className={cx('relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors', tab === x.id ? 'text-fg' : 'text-fg-2 hover:bg-hover')}>
+              {tab === x.id && <motion.span layoutId="settings-active" className="absolute inset-0 rounded-xl bg-surface shadow-xs" transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }} />}
+              <x.icon className="relative size-[18px] shrink-0 text-fg-3" />
+              <span className="relative min-w-0">
+                <span className="block text-sm font-medium">{t.settings.sections[x.id]}</span>
+                <span className="block truncate text-xs text-fg-3">{t.settings.sectionHints[x.id]}</span>
+              </span>
+            </button>
+          ))}
+        </nav>
+        <motion.div key={tab} initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.18 }} className="min-w-0">
+          <h2 className="mb-2 hidden text-lg font-semibold text-fg lg:block">{t.settings.sections[tab]}</h2>
+          {body[tab]}
+        </motion.div>
+      </div>
+    </>
   )
 }
