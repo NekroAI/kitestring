@@ -23,7 +23,8 @@ export function useSessionMenu() {
   const { markDone } = useActions()
   return (s: Session): CtxItem[] => {
     const reqs = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
-    const canDone = s.state !== 'ended' && s.state !== 'running' && s.state !== 'background'
+    const canDone = s.state !== 'ended'
+    const busy = s.state === 'running' || s.state === 'background'
     return [
       { type: 'label', label: sessionTitle(s) },
       { label: t.menu.openSession, icon: <PanelRight />, onSelect: () => open(s.key) },
@@ -31,7 +32,12 @@ export function useSessionMenu() {
         ? [
             s.done_at
               ? { label: t.menu.undoDone, icon: <ArchiveRestore />, onSelect: () => void markDone(s.key, false) }
-              : { label: t.menu.markDone, hint: t.menu.markDoneHint, icon: <Archive />, onSelect: async () => (await markDone(s.key, true)) && toast.success(t.menu.markedDone) },
+              : {
+                  label: busy ? t.menu.markStopped : t.menu.markDone,
+                  hint: busy ? t.menu.markStoppedHint : t.menu.markDoneHint,
+                  icon: <Archive />,
+                  onSelect: async () => (await markDone(s.key, true)) && toast.success(t.menu.markedDone),
+                },
           ]
         : []),
       ...(reqs.length

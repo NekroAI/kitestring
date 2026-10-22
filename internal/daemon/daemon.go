@@ -116,6 +116,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 	d.log.Info("daemon 已启动", "socket", sock, "hub", d.cfg.HubURL)
+	go d.watchInstances(ctx)
 
 	backoff := time.Second
 	for ctx.Err() == nil {

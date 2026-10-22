@@ -1397,6 +1397,15 @@
           "project_name": {
             "type": "string"
           },
+          "recent_tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolAct"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/RequirementRef"
@@ -1480,6 +1489,7 @@
           "last_active_at",
           "other_terminal",
           "parked",
+          "recent_tools",
           "requirements",
           "pending_decisions"
         ],
@@ -1637,6 +1647,23 @@
         ],
         "type": "object"
       },
+      "ToolAct": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "at"
+        ],
+        "type": "object"
+      },
       "Update-workspaceRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1712,7 +1739,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "2c39f52-dirty"
+    "version": "54b1302-dirty"
   },
   "openapi": "3.1.0",
   "paths": {

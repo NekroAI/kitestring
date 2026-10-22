@@ -4,18 +4,22 @@ import type { Session } from '../api/client'
 import { cx, relTime } from '../lib/util'
 import { splitTool, toolIcon } from './SessionCard'
 
-// 运行中会话的实时动作流：记下页面打开以来每个会话最近的几次工具调用（来自实时推送的会话更新），
-// 在卡片上滚动展示，让人一眼看出它确实在动。只存在内存里，刷新页面后从最新一条重新开始。
+// 运行中会话的实时动作流：Hub 给出最近几次工具调用打底，之后随实时推送的会话更新追加，
+// 在卡片上滚动展示，让人一眼看出它确实在动。
 
 type Act = { label: string; at: string }
 const feeds = new Map<string, Act[]>()
 const listeners = new Set<() => void>()
 const KEEP = 4
 
-function push(key: string, label: string, at: string) {
-  const cur = feeds.get(key) ?? []
-  if (cur.length && cur[cur.length - 1].at === at) return
-  feeds.set(key, [...cur, { label, at }].slice(-KEEP))
+// merge 把新动作并入会话的动作流（按时间去重、排序，只留最近几条）。
+function merge(key: string, acts: Act[]) {
+  // 同一次调用可能来自两处（事件记录与会话的“最近动作”），时间戳精度不同：同名且相差 2 秒内视为同一次。
+  const same = (a: Act, b: Act) => a.label === b.label && Math.abs(Date.parse(a.at) - Date.parse(b.at)) < 2000
+  const next = [...(feeds.get(key) ?? [])]
+  for (const a of acts) if (a.at && !next.some((x) => same(x, a))) next.push(a)
+  if (next.length === (feeds.get(key) ?? []).length) return
+  feeds.set(key, next.sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).slice(-KEEP))
   listeners.forEach((l) => l())
 }
 
@@ -24,11 +28,11 @@ function subscribe(fn: () => void) {
   return () => listeners.delete(fn)
 }
 
-// useToolFeed：会话最近的动作，旧 → 新。
+// useToolFeed：会话最近的动作，旧 → 新。打开页面时用 Hub 给的最近几次调用打底，之后跟着实时更新滚动。
 export function useToolFeed(s: Session): Act[] {
   useEffect(() => {
-    if (s.last_tool && s.last_tool_at) push(s.key, s.last_tool, s.last_tool_at)
-  }, [s.key, s.last_tool, s.last_tool_at])
+    merge(s.key, [...(s.recent_tools ?? []).map((a) => ({ label: a.label, at: a.at })), ...(s.last_tool && s.last_tool_at ? [{ label: s.last_tool, at: s.last_tool_at }] : [])])
+  }, [s.key, s.last_tool, s.last_tool_at, s.recent_tools])
   return useSyncExternalStore(subscribe, () => feeds.get(s.key) ?? EMPTY)
 }
 const EMPTY: Act[] = []
@@ -58,11 +62,11 @@ export function LiveFeed({ s, now, lines = 3, className }: { s: Session; now: nu
   const feed = useToolFeed(s).slice(-lines)
   const dims = [0.4, 0.65, 1].slice(-feed.length)
   return (
-    <div className={cx('relative overflow-hidden', className)} style={{ height: lines * 22 }}>
+    <div className={cx('relative overflow-hidden transition-[height] duration-300', className)} style={{ height: Math.max(1, feed.length) * 22 }}>
       <div className="absolute inset-x-0 bottom-0 flex flex-col justify-end">
         <AnimatePresence initial={false} mode="popLayout">
           {feed.map((a, i) => (
-            <Line key={a.at} a={a} now={now} dim={dims[i] ?? 1} />
+            <Line key={Date.parse(a.at)} a={a} now={now} dim={dims[i] ?? 1} />
           ))}
         </AnimatePresence>
       </div>

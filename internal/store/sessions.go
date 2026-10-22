@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -57,13 +58,20 @@ type Session struct {
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
 	EndedAt          *time.Time       `json:"ended_at,omitempty"`
-	Instance         string           `json:"-"`              // 最新的终端（agent 进程）；同一对话可能在多个终端同时打开
-	PrevInstance     string           `json:"-"`              // 被取代、可能仍开着的较早终端
-	OtherTerminal    bool             `json:"other_terminal"` // 另有一个较早的终端也开着这个对话
+	Instance         string           `json:"-"`                 // 最新的终端（agent 进程）；同一对话可能在多个终端同时打开
+	PrevInstance     string           `json:"-"`                 // 被取代、可能仍开着的较早终端
+	OtherTerminal    bool             `json:"other_terminal"`    // 另有一个较早的终端也开着这个对话
 	DoneAt           *time.Time       `json:"done_at,omitempty"` // 你手动标为已完成；你再给它发消息时自动清除
 	Parked           bool             `json:"parked"`            // Agent 用 ks wait 挂起等你的答复 / 验收 / 留言
+	RecentTools      []ToolAct        `json:"recent_tools"`      // 最近几次工具调用，旧 → 新（工作台滚动展示）
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
+}
+
+// ToolAct 是一次工具调用的简述。
+type ToolAct struct {
+	Label string    `json:"label"`
+	At    time.Time `json:"at"`
 }
 
 // RequirementRef 是会话卡片上显示的需求引用。
@@ -97,6 +105,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 		x.LastToolAt = &t
 	}
 	x.Activity = []int{}
+	x.RecentTools = []ToolAct{}
 	x.OtherTerminal = x.PrevInstance != ""
 	if doneAt != "" {
 		t := parseTS(doneAt)
@@ -170,8 +179,43 @@ func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
 		if err := s.fillActivity(ctx, x); err != nil {
 			return err
 		}
+		if x.State != StateEnded {
+			if err := s.fillRecentTools(ctx, x); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// fillRecentTools 取最近 3 次工具调用，让工作台一打开就能看到它最近在做什么。
+func (s *Store) fillRecentTools(ctx context.Context, x *Session) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name = 'PreToolUse' ORDER BY time DESC LIMIT 3`, x.Key)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var acts []ToolAct
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return err
+		}
+		var ev protocol.Event
+		if json.Unmarshal([]byte(p), &ev) != nil || ev.ToolName == "" {
+			continue
+		}
+		label := strings.TrimPrefix(ev.ToolName, "mcp__")
+		if ev.ToolBrief != "" {
+			label += " · " + ev.ToolBrief
+		}
+		acts = append([]ToolAct{{Label: label, At: ev.Time}}, acts...)
+	}
+	x.RecentTools = acts
+	if x.RecentTools == nil {
+		x.RecentTools = []ToolAct{}
+	}
+	return rows.Err()
 }
 
 // SaveSession 插入或整体更新会话行（不含关联字段）。

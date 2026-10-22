@@ -18,9 +18,9 @@ export const stateStyle: Record<string, { dot: string; pill: string; ring?: stri
 }
 
 // displayState 把后端状态映射成界面状态（区分“等你回复”和“等你回答问题”）。
-export function displayState(s: { state: string; state_detail?: string; done_at?: string | null }): string {
-  // 你手动标为已完成：除非它又在干活，否则按“已完成”展示
-  if (s.done_at && s.state !== 'running' && s.state !== 'background' && s.state !== 'ended') return 'done'
+export function displayState(s: { state: string; state_detail?: string; done_at?: string | null; last_active_at?: string }): string {
+  // 你手动标为已完成（或把卡在“运行中”的旧对话收起）：之后它真的又有动静，才按实际状态显示
+  if (s.done_at && s.state !== 'ended' && (!s.last_active_at || s.last_active_at <= s.done_at || (s.state !== 'running' && s.state !== 'background'))) return 'done'
   if (s.state === 'waiting_reply' && /^(AskUserQuestion|ExitPlanMode|request_user_input)\b/.test(s.state_detail ?? '')) return 'waiting_answer'
   return s.state
 }

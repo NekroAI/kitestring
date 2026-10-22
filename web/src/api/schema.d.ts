@@ -954,6 +954,7 @@ export interface components {
             phase: string;
             project_id?: string;
             project_name?: string;
+            recent_tools: components["schemas"]["ToolAct"][] | null;
             requirements: components["schemas"]["RequirementRef"][] | null;
             session_id: string;
             /** Format: date-time */
@@ -1008,6 +1009,11 @@ export interface components {
             sample_reply: string;
             /** @description 模型生成的一句话摘要 */
             summary: string;
+        };
+        ToolAct: {
+            /** Format: date-time */
+            at: string;
+            label: string;
         };
         "Update-workspaceRequest": {
             name: string;

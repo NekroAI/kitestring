@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -115,4 +117,59 @@ func (d *Daemon) reportWait(tool, sid, name, reason string) {
 		d.log.Warn("上报挂起等待失败", "err", err)
 	}
 	d.wake()
+}
+
+// watchInstances 每分钟检查一次本机见过的 agent 进程是否还在（进程号 + 启动时间都对得上）。
+// 终端被直接关掉时 Claude Code / Codex 来不及发 SessionEnd，会话会一直显示运行中；
+// 这里替它补发一条 SessionEnd，Hub 按“最新终端”规则决定是否结束会话。
+func (d *Daemon) watchInstances(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		d.mu.Lock()
+		insts := make(map[string]string, len(d.instances))
+		for k, v := range d.instances {
+			insts[k] = v
+		}
+		d.mu.Unlock()
+		for inst, key := range insts {
+			if instanceAlive(inst) {
+				continue
+			}
+			d.mu.Lock()
+			delete(d.instances, inst)
+			d.mu.Unlock()
+			tool, sid, ok := strings.Cut(key, ":")
+			if !ok {
+				continue
+			}
+			ev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: tool, Name: "SessionEnd", SessionID: sid, Reason: "process_gone", Instance: inst}
+			if err := d.q.pushEvent(ev); err != nil {
+				d.log.Warn("补发会话结束失败", "err", err)
+				continue
+			}
+			d.log.Info("agent 进程已退出，补发会话结束", "session", key)
+			d.wake()
+		}
+	}
+}
+
+// instanceAlive：“进程号@启动时间”对应的进程是否仍在运行。
+func instanceAlive(inst string) bool {
+	pid, start, ok := strings.Cut(inst, "@")
+	if !ok {
+		return true
+	}
+	cmd := exec.Command("ps", "-o", "lstart=", "-p", pid)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		return false // ps 找不到该进程时以非零退出
+	}
+	return strings.Join(strings.Fields(string(out)), " ") == start
 }
