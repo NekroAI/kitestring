@@ -35,8 +35,25 @@ type tools struct {
 	c *client.Client
 }
 
-// sessionKey 按 D17 识别调用来自哪个会话：Codex 读 _meta.sessionId，Claude 读环境变量。
-func sessionKey(req *mcp.CallToolRequest) string {
+// sessionKey 识别调用来自哪个会话（D17）：
+//   - Codex：请求 _meta.sessionId；
+//   - Claude：用 _meta 里的 toolUseId 向 daemon 查询（与 PreToolUse hook 对齐）；
+//     进程环境里的 CLAUDE_CODE_SESSION_ID 只作兜底——同一进程内恢复或清空会话后它会过期。
+func (t *tools) sessionKey(ctx context.Context, req *mcp.CallToolRequest) string {
+	if req.Params != nil && req.Params.Meta != nil {
+		if id, ok := req.Params.Meta["claudecode/toolUseId"].(string); ok && id != "" {
+			var out struct {
+				SessionKey string `json:"session_key"`
+			}
+			if t.c.Do(ctx, "GET", "/session?tool_use_id="+url.QueryEscape(id), nil, &out) == nil && out.SessionKey != "" {
+				return out.SessionKey
+			}
+		}
+	}
+	return sessionKeyFromMeta(req)
+}
+
+func sessionKeyFromMeta(req *mcp.CallToolRequest) string {
 	tool := ""
 	if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {
 		name := strings.ToLower(p.ClientInfo.Name)
@@ -108,7 +125,7 @@ func (t *tools) register(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "req_list", Description: "列出需求（默认当前会话所在项目），返回编号、标题、状态、轮到谁、待决决策数。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqListIn) (*mcp.CallToolResult, any, error) {
 			q := url.Values{}
-			if k := sessionKey(req); k != "" {
+			if k := t.sessionKey(ctx, req); k != "" {
 				q.Set("session_key", k)
 			}
 			if in.All {
@@ -129,7 +146,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqCreateIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "session_key": sessionKey(req)}
+			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			var out map[string]any
 			err := t.c.Do(ctx, "POST", "/agent/requirements", body, &out)
@@ -137,7 +154,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqStatusIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"status": in.Status, "session_key": sessionKey(req)}
+			body := map[string]any{"status": in.Status, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			var out map[string]any
 			err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/status", body, &out)
@@ -145,7 +162,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据（测试结果、提交、截图路径等）。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": sessionKey(req)}
+			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			var out map[string]any
 			err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/evidence", body, &out)
@@ -153,7 +170,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "session_key": sessionKey(req)}
+			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			var out map[string]any
 			if err := t.c.Do(ctx, "POST", "/agent/decisions", body, &out); err != nil {
@@ -163,7 +180,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "把当前会话关联到一条需求，让用户在实例墙上看到你在做什么。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {
-			key := sessionKey(req)
+			key := t.sessionKey(ctx, req)
 			if key == "" {
 				return nil, nil, fmt.Errorf("无法识别当前会话")
 			}

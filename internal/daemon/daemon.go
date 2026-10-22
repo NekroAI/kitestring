@@ -45,6 +45,13 @@ type Daemon struct {
 	devCfg    protocol.DeviceConfig
 	decisions []protocol.Decision
 	sessions  map[string]*sessionInfo
+	toolUses  map[string]toolUse // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
+	toolCond  *sync.Cond
+}
+
+type toolUse struct {
+	session string
+	at      time.Time
 }
 
 // sessionInfo 缓存每个会话不常变化的信息。
@@ -66,7 +73,8 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}}
+	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(hub)
@@ -97,6 +105,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /hook", d.handleHook)
 	mux.HandleFunc("GET /status", d.handleStatus)
+	mux.HandleFunc("GET /session", d.handleSessionLookup)
 	mux.Handle("/agent/", d.proxy)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
@@ -317,6 +326,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 			ev.Source = protocol.SourceAuto
 		}
 	}
+	if name == "PreToolUse" && ev.ToolUseID != "" && strings.HasPrefix(ev.ToolName, "mcp__") {
+		d.rememberToolUse(ev.ToolUseID, key)
+	}
 	if name == "PreToolUse" || name == "PermissionRequest" {
 		if in, ok := p["tool_input"].(map[string]any); ok {
 			ev.ToolBrief = toolBrief(ev.ToolName, in)
@@ -499,6 +511,45 @@ func backgroundTasks(p map[string]any) (int, string) {
 		}
 	}
 	return n, summary.Truncate(strings.Join(strings.Fields(brief), " "), 80)
+}
+
+// rememberToolUse 记录 MCP 工具调用来自哪个会话（PreToolUse 先于 MCP 请求到达）。
+func (d *Daemon) rememberToolUse(id, session string) {
+	d.mu.Lock()
+	now := time.Now()
+	for k, v := range d.toolUses {
+		if now.Sub(v.at) > 10*time.Minute {
+			delete(d.toolUses, k)
+		}
+	}
+	d.toolUses[id] = toolUse{session: session, at: now}
+	d.mu.Unlock()
+	d.toolCond.Broadcast()
+}
+
+// lookupToolUse 等待至多 wait，返回 tool_use_id 对应的会话。
+func (d *Daemon) lookupToolUse(id string, wait time.Duration) string {
+	deadline := time.Now().Add(wait)
+	stop := time.AfterFunc(wait, d.toolCond.Broadcast)
+	defer stop.Stop()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for {
+		if v, ok := d.toolUses[id]; ok {
+			return v.session
+		}
+		if !time.Now().Before(deadline) {
+			return ""
+		}
+		d.toolCond.Wait()
+	}
+}
+
+// handleSessionLookup：ks mcp 用本次调用的 tool_use_id 查询会话（Claude Code 恢复会话后，MCP 进程环境里的会话 ID 会过期）。
+func (d *Daemon) handleSessionLookup(w http.ResponseWriter, r *http.Request) {
+	key := d.lookupToolUse(r.URL.Query().Get("tool_use_id"), time.Second)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"session_key": key})
 }
 
 var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
