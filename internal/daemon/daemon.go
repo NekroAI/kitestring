@@ -548,7 +548,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		}
 	}
 	if len(assigns) > 0 {
-		b.WriteString("[Kitestring] 用户把以下需求交给你，请开始处理（已关联本会话并设为进行中；完成后附上证据并设为待验收）：\n")
+		b.WriteString("[Kitestring] 用户把以下需求交给你（已关联本会话，状态为待开始）。开始做时先调用 session_link_req，需求会变为进行中；完成后附上证据并设为待验收：\n")
 		for _, dec := range assigns {
 			d.writeItem(&b, dec)
 		}

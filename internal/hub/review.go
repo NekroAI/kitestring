@@ -156,7 +156,8 @@ func (h *Hub) note(ctx context.Context, ref, comment string, fileIDs []string) (
 	return d, nil
 }
 
-// assign 把需求交给某个会话开工：关联会话、改为进行中，并把需求内容作为一条送达交给它（D-14）。
+// assign 把需求交给某个会话：关联会话、放到待开始，并把需求内容作为一条送达交给它（D-14）。
+// 不直接改为进行中——Agent 真正开始做时调用 session_link_req，才进入进行中，看板反映的是实际进度。
 // 会话正在待命（ks wait）时会立刻被唤醒。
 func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (store.Decision, error) {
 	r, err := h.store.GetRequirement(ctx, ref)
@@ -170,8 +171,8 @@ func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (stor
 	if err := h.store.LinkSession(ctx, r.ID, x.Key); err != nil {
 		return store.Decision{}, apiErr(err)
 	}
-	if r.Status != store.ReqInProgress {
-		if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
+	if r.Status == store.ReqDraft || r.Status == store.ReqDone || r.Status == store.ReqShelved {
+		if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqReady); err != nil {
 			return store.Decision{}, apiErr(err)
 		}
 	}
@@ -201,7 +202,7 @@ func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (stor
 }
 
 func (h *Hub) registerReview(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "assign-requirement", Method: http.MethodPost, Path: "/api/requirements/{ref}/assign", Tags: []string{"requirements"}, Summary: "把需求交给某个会话开工（关联、改为进行中并送达）"},
+	huma.Register(api, huma.Operation{OperationID: "assign-requirement", Method: http.MethodPost, Path: "/api/requirements/{ref}/assign", Tags: []string{"requirements"}, Summary: "把需求交给某个会话（关联、放到待开始并送达；Agent 开始做时才进入进行中）"},
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body struct {

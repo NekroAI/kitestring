@@ -613,8 +613,13 @@ func TestAssignWakesParkedSession(t *testing.T) {
 	}
 	var got store.Requirement
 	c.Do(context.Background(), "GET", "/agent/requirements/"+r.Code, nil, &got)
-	if got.Status != store.ReqInProgress || len(got.Sessions) != 1 || got.Sessions[0] != "claude:a-1" {
-		t.Fatalf("交出后应关联会话并进行中：%s %v", got.Status, got.Sessions)
+	if got.Status != store.ReqReady || len(got.Sessions) != 1 || got.Sessions[0] != "claude:a-1" {
+		t.Fatalf("交出后应关联会话、待开始：%s %v", got.Status, got.Sessions)
+	}
+	// Agent 真正开始做时关联 → 进行中
+	c.Do(context.Background(), "POST", "/agent/sessions/claude:a-1/link", map[string]any{"requirement": r.Code}, &got)
+	if got.Status != store.ReqInProgress {
+		t.Fatalf("Agent 开始做后应为进行中：%s", got.Status)
 	}
 }
 
