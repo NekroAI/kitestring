@@ -376,7 +376,7 @@ export const zh = {
     deploy: '部署',
   } as Record<string, string>,
   assign: {
-    button: '交给…',
+    button: '交给会话',
     createAndSend: '新建并交出',
     title: '交给哪个会话开工',
     field: '交给',
