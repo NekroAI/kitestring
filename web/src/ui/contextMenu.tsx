@@ -57,7 +57,7 @@ function Items({ items }: { items: CtxItem[] }) {
 export function Ctx({ items, children, className }: { items: CtxItem[]; children: ReactNode; className?: string }) {
   if (!items.length) return <>{children}</>
   return (
-    <ContextMenu.Root modal={false} onOpenChange={(o) => o && navigator.vibrate?.(8)}>
+    <ContextMenu.Root onOpenChange={(o) => o && navigator.vibrate?.(8)}>
       <ContextMenu.Trigger asChild>
         <div className={cx('ctx-target rounded-2xl transition-[transform,box-shadow] duration-200 data-[state=open]:scale-[0.985] data-[state=open]:ring-2 data-[state=open]:ring-accent/40', className)}>{children}</div>
       </ContextMenu.Trigger>

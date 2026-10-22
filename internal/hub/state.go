@@ -118,26 +118,30 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		case "permission_prompt":
 			x.State = store.StateWaitApproval
 		case "idle_prompt":
+			if x.Parked {
+				break // 待命时 Claude Code 照常发“空闲”提醒，不算等你回复
+			}
 			x.State, x.StateDetail = store.StateWaitReply, ""
 		}
 	case protocol.EventWait:
-		// Agent 用 ks wait 挂在后台等你：对你来说就是在等你回复。
+		// Agent 用 ks wait 挂在后台：待命，你在 Kitestring 上一回应它就继续。
 		x.Parked = true
-		if x.State != store.StateEnded {
-			x.State, x.StateDetail = store.StateWaitReply, protocol.WaitDetail
+		if x.State != store.StateEnded && x.State != store.StateRunning {
+			x.State, x.StateDetail = store.StateParked, ""
 		}
 	case protocol.EventWaitEnd:
 		x.Parked = false
-		if x.StateDetail == protocol.WaitDetail {
-			x.StateDetail = ""
+		if x.State == store.StateParked {
 			if ev.Reason == "delivered" {
 				x.State = store.StateRunning // 收到你的答复，马上继续
+			} else {
+				x.State = store.StateWaitReply
 			}
 		}
 	case "Stop":
 		if x.Parked {
-			// 后台挂着的是 ks wait：不算“后台运行”，而是在等你。
-			x.State, x.StateDetail = store.StateWaitReply, protocol.WaitDetail
+			// 后台挂着的是 ks wait：不是“后台运行”也不是“等你回复”，而是待命。
+			x.State, x.StateDetail = store.StateParked, ""
 			break
 		}
 		if ev.BgTasks > 0 {

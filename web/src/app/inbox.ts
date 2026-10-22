@@ -30,12 +30,12 @@ export type ProjectGroup = {
 function sessionUrgency(s: Session): number {
   const ds = displayState(s)
   if (ds === 'waiting_approval') return 1
-  if (ds === 'waiting_answer' || ds === 'parked') return 2
+  if (ds === 'waiting_answer') return 2
   if (ds === 'waiting_reply') return 5
   return 9
 }
 
-const activeRank: Record<string, number> = { running: 0, background: 1, idle: 2, lost: 3 }
+const activeRank: Record<string, number> = { running: 0, parked: 1, background: 2, idle: 3, lost: 4 }
 
 export function useWorkbench() {
   const sessions = useSessions()

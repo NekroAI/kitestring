@@ -63,7 +63,6 @@ type Event struct {
 const (
 	EventWait    = "KsWait"
 	EventWaitEnd = "KsWaitEnd"
-	WaitDetail   = "ks wait" // 会话 state_detail：挂起等你
 )
 
 // Decision 是下行到 daemon、等待注入的已决策项。

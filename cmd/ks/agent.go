@@ -202,9 +202,26 @@ func runWait(args []string) error {
 	if *session != "" {
 		q.Set("session_key", *session)
 	}
+	// daemon 重启（例如升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒。
+	ctx := signalContext()
+	deadline := time.Now().Add(min(*timeout, daemon.MaxWait))
 	var res daemon.WaitResult
-	if err := client.New(min(*timeout, daemon.MaxWait)+time.Minute).Do(signalContext(), "GET", "/wait?"+q.Encode(), nil, &res); err != nil {
-		return err
+	for {
+		left := time.Until(deadline)
+		if left <= 0 {
+			res.Reason = "timeout"
+			break
+		}
+		q.Set("timeout", left.Round(time.Second).String())
+		err := client.New(left+time.Minute).Do(ctx, "GET", "/wait?"+q.Encode(), nil, &res)
+		if err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			res.Reason = "canceled"
+			break
+		}
+		time.Sleep(3 * time.Second)
 	}
 	switch res.Reason {
 	case "delivered":

@@ -175,8 +175,14 @@ func TestParkedWaitIsWaitingForYou(t *testing.T) {
 	cur := applyEvent(nil, "dev", "", ev("UserPromptSubmit", 0, nil))
 	cur = applyEvent(&cur, "dev", "", ev(protocol.EventWait, 1, nil))
 	cur = applyEvent(&cur, "dev", "", ev("Stop", 2, func(e *protocol.Event) { e.BgTasks = 1; e.BgBrief = "等待反馈" }))
-	if !cur.Parked || cur.State != store.StateWaitReply || cur.StateDetail != protocol.WaitDetail {
-		t.Fatalf("挂起等待时应显示为等你：%+v", cur)
+	if !cur.Parked || cur.State != store.StateParked {
+		t.Fatalf("挂起等待时应为待命：%+v", cur)
+	}
+	// Claude Code 空闲一分钟后会发 idle_prompt；子 Agent 也可能晚到结束
+	cur = applyEvent(&cur, "dev", "", ev("Notification", 3, func(e *protocol.Event) { e.NotifType = "idle_prompt" }))
+	cur = applyEvent(&cur, "dev", "", ev("SubagentStop", 4, nil))
+	if cur.State != store.StateParked {
+		t.Fatalf("空闲提醒不应把待命改成等你回复：%s", cur.State)
 	}
 	cur = applyEvent(&cur, "dev", "", ev(protocol.EventWaitEnd, 5, func(e *protocol.Event) { e.Reason = "delivered" }))
 	if cur.Parked || cur.State != store.StateRunning {

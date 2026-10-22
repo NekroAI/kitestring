@@ -1378,6 +1378,9 @@
           "other_terminal": {
             "type": "boolean"
           },
+          "parked": {
+            "type": "boolean"
+          },
           "pending_decisions": {
             "format": "int64",
             "type": "integer"
@@ -1476,6 +1479,7 @@
           "started_at",
           "last_active_at",
           "other_terminal",
+          "parked",
           "requirements",
           "pending_decisions"
         ],
@@ -1708,7 +1712,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "7374e2d-dirty"
+    "version": "2c39f52-dirty"
   },
   "openapi": "3.1.0",
   "paths": {

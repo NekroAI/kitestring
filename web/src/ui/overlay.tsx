@@ -175,7 +175,7 @@ export type MenuItem =
 
 export function Menu({ trigger, items, align = 'end', width }: { trigger: ReactNode; items: MenuItem[]; align?: 'start' | 'end' | 'center'; width?: string }) {
   return (
-    <DropdownMenu.Root modal={false}>
+    <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content

@@ -947,6 +947,7 @@ export interface components {
             last_tool_at?: string;
             model: string;
             other_terminal: boolean;
+            parked: boolean;
             /** Format: int64 */
             pending_decisions: number;
             permission_mode: string;

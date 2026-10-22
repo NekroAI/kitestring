@@ -89,10 +89,10 @@ export function Callout({ s }: { s: Session }) {
   }
   if (ds === 'parked') {
     return (
-      <div className="flex items-start gap-2.5 rounded-xl bg-reply-soft px-3 py-2.5">
-        <Hourglass className="mt-0.5 size-4 shrink-0 animate-pulse text-reply" />
+      <div className="flex items-start gap-2.5 rounded-xl bg-accent-soft px-3 py-2.5">
+        <Hourglass className="mt-0.5 size-4 shrink-0 animate-pulse text-accent" />
         <div className="min-w-0 flex-1 text-sm">
-          <div className="text-xs font-medium text-reply">{t.session.parked}</div>
+          <div className="text-xs font-medium text-accent">{t.session.parked}</div>
           <div className="mt-0.5 leading-relaxed text-fg">{t.session.parkedHint}</div>
         </div>
       </div>
@@ -242,7 +242,7 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
       )}
 
       <Callout s={s} />
-      {!(ds === 'waiting_approval' || ds === 'waiting_answer' || ds === 'background') && <ActionLine s={s} now={now} />}
+      {!(ds === 'waiting_approval' || ds === 'waiting_answer' || ds === 'background' || ds === 'parked') && <ActionLine s={s} now={now} />}
 
       {/* 底部指标 */}
       <div className="mt-auto flex items-center gap-3 border-t border-line pt-2.5 text-xs text-fg-3">

@@ -16,6 +16,7 @@ const (
 	StateWaitApproval = "waiting_approval"
 	StateWaitReply    = "waiting_reply"
 	StateBackground   = "background" // 本轮已结束，但还有后台任务在跑（例如等 CI、后台子 Agent）
+	StateParked       = "parked"     // 待命：Agent 用 ks wait 挂着，你在 Kitestring 答复 / 验收 / 留言后它立刻继续
 	StateIdle         = "idle"
 	StateEnded        = "ended"
 	StateLost         = "lost"

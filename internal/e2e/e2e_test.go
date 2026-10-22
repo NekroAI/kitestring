@@ -19,7 +19,6 @@ import (
 
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/daemon"
-	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/hookcli"
 	"github.com/NekroAI/kitestring/internal/hub"
 	"github.com/NekroAI/kitestring/internal/store"
@@ -552,7 +551,10 @@ func TestWaitWakesOnAnswer(t *testing.T) {
 		_ = c.Do(context.Background(), "GET", "/wait?session_key=claude:w-1&timeout=20s", nil, &res)
 		done <- res
 	}()
-	e.waitFor("会话挂起等你", func() bool { s := e.session("claude:w-1"); return s.Parked && s.StateDetail == protocol.WaitDetail })
+	e.waitFor("登记挂起", func() bool { return e.session("claude:w-1").Parked })
+	// 本轮结束（后台挂着 ks wait）→ 待命，而不是“后台运行”或“等你回复”
+	hook(t, "claude", map[string]any{"session_id": "w-1", "cwd": cwd, "hook_event_name": "Stop", "background_tasks": []any{map[string]any{"description": "ks wait"}}})
+	e.waitFor("会话待命", func() bool { return e.session("claude:w-1").State == store.StateParked })
 
 	// 用户作答 → 等待立刻返回答复内容，并记为已送达（下次发消息不再重复注入）
 	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": dec.Code, "answer": "朱红"}}}, nil)
