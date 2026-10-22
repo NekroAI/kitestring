@@ -102,15 +102,17 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
 }
 
 // ReviewList：一组待验收需求；两条以上时可以全部通过。
-export function ReviewList({ items, className }: { items: Requirement[]; className?: string }) {
+export function ReviewList({ items, className, scroll }: { items: Requirement[]; className?: string; scroll?: boolean }) {
   const { review } = useActions()
   const [busy, wrap] = useBusy()
   if (!items.length) return null
   return (
     <div className={cx('space-y-2', className)}>
-      {items.map((r) => (
-        <ReviewRow key={r.id} r={r} />
-      ))}
+      <div className={cx('space-y-2', scroll && 'max-h-[420px] overflow-y-auto overscroll-contain pr-1')}>
+        {items.map((r) => (
+          <ReviewRow key={r.id} r={r} />
+        ))}
+      </div>
       {items.length > 1 && (
         <div className="flex justify-end pt-1">
           <Button

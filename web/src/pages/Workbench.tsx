@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { CheckCheck, FolderGit2, History, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import { CheckCheck, FolderGit2, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
 import type { Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
@@ -11,7 +11,7 @@ import { StatusDot } from '../ui/marks'
 import { useWorkbench, type ProjectGroup } from '../app/inbox'
 import { composeAnswer, useOutbox } from '../app/outbox'
 import { RecapPanel } from '../app/Recap'
-import { sessionTitle } from '../app/SessionCard'
+import { SessionCard, sessionTitle } from '../app/SessionCard'
 import { SessionRow, ThreadCard } from '../app/thread'
 
 type Filter = 'all' | 'todo'
@@ -44,7 +44,35 @@ function SendAllBar() {
   )
 }
 
-// 项目：先列需要你处理的对话（线程），再列其余会话（紧凑行）。
+// 实例视图：每个会话一张卡片（改版前的实例墙），按项目分组，需要你处理的在前。
+function ProjectCards({ g, filter, k, now }: { g: ProjectGroup; filter: Filter; k: string; now: number }) {
+  const attention = g.threads.map((th) => th.s).filter((s): s is Session => !!s && match(s, k))
+  const rest = filter === 'all' ? [...g.active, ...g.ended].filter((s) => match(s, k)) : []
+  const list = [...attention, ...rest]
+  if (!list.length) return null
+  return (
+    <section className="rise">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs">
+          <FolderGit2 className="size-4" />
+        </span>
+        <h2 className="truncate text-[15px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
+        <span className="text-xs text-fg-3 tabular">{list.length}</span>
+      </div>
+      <div className="@container">
+        <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
+          {list.map((s) => (
+            <div key={s.key} className="h-full min-w-0">
+              <SessionCard s={s} now={now} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// 对话视图：先列需要你处理的对话（线程），再列其余会话（紧凑行）。
 function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Filter; k: string; now: number; sessions: Session[] }) {
   const threads = g.threads.filter((th) => !k || match(th.s, k))
   const active = filter === 'all' ? g.active.filter((s) => match(s, k)) : []
@@ -97,6 +125,7 @@ export default function WorkbenchPage() {
   const wb = useWorkbench()
   const settings = useSettings()
   const [filter, setFilter] = usePref<Filter>('ks.home.filter', 'all')
+  const [view, setView] = usePref<'threads' | 'cards'>('ks.home.view', 'threads')
   const [q, setQ] = useState('')
   const [recap, setRecap] = useState(false)
   const k = q.trim().toLowerCase()
@@ -125,6 +154,14 @@ export default function WorkbenchPage() {
           options={[
             { value: 'all', label: t.home.filter.all },
             { value: 'todo', label: t.home.filter.todo, count: wb.todo },
+          ]}
+        />
+        <Segmented
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'threads', label: <MessagesSquare className="size-4" />, tip: t.home.viewThreads },
+            { value: 'cards', label: <LayoutGrid className="size-4" />, tip: t.home.viewCards },
           ]}
         />
         <div className="relative ml-auto w-full sm:w-64">
@@ -163,9 +200,7 @@ export default function WorkbenchPage() {
         </Card>
       ) : (
         <div className="space-y-9">
-          {visible.map((g) => (
-            <Project key={g.key} g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />
-          ))}
+          {visible.map((g) => (view === 'cards' ? <ProjectCards key={g.key} g={g} filter={filter} k={k} now={now} /> : <Project key={g.key} g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />))}
           {k && !visible.some((g) => g.threads.some((th) => match(th.s, k)) || g.active.some((s) => match(s, k)) || g.ended.some((s) => match(s, k))) && (
             <Card>
               <Empty icon={<SearchX />} title={t.home.noMatch} />

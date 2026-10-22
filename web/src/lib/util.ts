@@ -39,6 +39,19 @@ export function duration(iso?: string | null, now = Date.now()): string {
   return t.time.durDays(Math.floor(h / 24), h % 24)
 }
 
+// shortDuration：只保留最大单位，用在状态胶囊等狭窄位置（完整时长放在悬停提示里）。
+export function shortDuration(iso?: string | null, now = Date.now()): string {
+  const v = ts(iso)
+  if (!v) return ''
+  const s = Math.max(0, Math.round((now - v) / 1000))
+  if (s < 60) return t.time.durSeconds(s)
+  const m = Math.floor(s / 60)
+  if (m < 60) return t.time.durMinutes(m)
+  const h = Math.floor(m / 60)
+  if (h < 24) return t.time.durHours(h, 0)
+  return t.time.durDays(Math.floor(h / 24), 0)
+}
+
 export function absTime(iso?: string | null): string {
   const v = ts(iso)
   if (!v) return t.time.never

@@ -75,6 +75,7 @@ export const zh = {
     ended: '已结束',
     lost: '失联',
   } as Record<string, string>,
+  stateSince: (label: string, dur: string, at: string) => `${label} ${dur}（自 ${at}）`,
   phase: {
     planning: '规划中',
     implementing: '实现中',
@@ -157,6 +158,8 @@ export const zh = {
     noDevicesSub: '接入一台电脑，开始在这里查看它的会话。',
     addDevice: '接入设备',
     recap: '回顾',
+    viewThreads: '按对话：同一对话的待办集中处理',
+    viewCards: '按实例：每个会话一张卡片',
   },
 
   session: {

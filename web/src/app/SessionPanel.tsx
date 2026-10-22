@@ -45,72 +45,43 @@ function evLabel(e: HubEvent): string {
   return t.session.ev[e.name] ?? e.name
 }
 
-type Row = { kind: 'event'; e: HubEvent } | { kind: 'tools'; id: string; events: HubEvent[] }
-
-// 时间线：连续的工具调用合并成一行图标（悬浮查看具体动作），其余事件逐条显示。
+// 时间线：每个事件一行。工具调用用图标代替名称（悬停显示），一行只占很小的高度。
 function Timeline({ events }: { events: HubEvent[] }) {
-  const rows = useMemo(() => {
-    const out: Row[] = []
-    // events 为时间倒序；合并时保持倒序，组内按时间正序排列图标。
-    for (const e of events) {
-      if (e.name === 'PostToolUse') continue
-      const isTool = e.name === 'PreToolUse' && !asks(e.tool_name) && e.tool_name !== 'ExitPlanMode'
-      const last = out[out.length - 1]
-      if (isTool && last?.kind === 'tools') last.events.unshift(e)
-      else if (isTool) out.push({ kind: 'tools', id: e.id, events: [e] })
-      else out.push({ kind: 'event', e })
-    }
-    return out
-  }, [events])
+  const rows = useMemo(() => events.filter((e) => e.name !== 'PostToolUse'), [events])
   if (!rows.length) return <p className="text-sm text-fg-3">{t.session.noEvents}</p>
   return (
-    <ol className="relative space-y-0.5 before:absolute before:top-2 before:bottom-2 before:left-[7px] before:w-px before:bg-line">
-      {rows.map((row) => {
-        if (row.kind === 'tools') {
-          const first = row.events[0]
-          const last = row.events[row.events.length - 1]
+    <ol className="relative before:absolute before:top-2 before:bottom-2 before:left-[7px] before:w-px before:bg-line">
+      {rows.map((e) => {
+        const userFacing = asks(e.tool_name) || e.tool_name === 'ExitPlanMode'
+        const isTool = (e.name === 'PreToolUse' || e.name === 'PermissionRequest') && !userFacing
+        if (isTool) {
+          const Icon = toolIcon(e.tool_name ?? '')
+          const name = e.tool_name?.replace(/^mcp__/, '') ?? ''
+          const waiting = e.name === 'PermissionRequest'
           return (
-            <li key={row.id} className="relative flex gap-3 py-1.5">
-              <span className="relative z-10 mt-1 size-[15px] shrink-0 rounded-full border-[3px] border-surface bg-line-strong" />
-              <div className="flex min-w-0 flex-1 items-start gap-2">
-                <div className="flex min-w-0 flex-1 flex-wrap gap-1">
-                  {row.events.map((e) => {
-                    const Icon = toolIcon(e.tool_name ?? '')
-                    const label = [e.tool_name?.replace(/^mcp__/, ''), e.tool_brief].filter(Boolean).join(' · ')
-                    return (
-                      <Tip key={e.id} content={`${label}  ${clockTime(e.time)}`}>
-                        <span className="flex size-6 items-center justify-center rounded-md bg-sunken text-fg-2 hover:bg-hover hover:text-fg" aria-label={label}>
-                          <Icon className="size-3.5" />
-                        </span>
-                      </Tip>
-                    )
-                  })}
-                </div>
-                <span className="mt-1 shrink-0 text-[11px] text-fg-3 tabular">{first.id === last.id ? clockTime(first.time) : `${clockTime(first.time)}–${clockTime(last.time).slice(-5)}`}</span>
-              </div>
+            <li key={e.id} className="relative flex items-center gap-3 py-[3px]">
+              <span className="relative z-10 flex size-[15px] shrink-0 items-center justify-center">
+                <span className={cx('size-[7px] rounded-full border-2 border-surface', waiting ? 'bg-wait' : 'bg-line-strong')} />
+              </span>
+              <Tip content={waiting ? `${t.session.ev.PermissionRequest} · ${name}` : name}>
+                <span className={cx('flex size-5 shrink-0 items-center justify-center rounded-md', waiting ? 'bg-wait-soft text-wait' : 'bg-sunken text-fg-2')} aria-label={name}>
+                  <Icon className="size-3.5" />
+                </span>
+              </Tip>
+              <span className={cx('min-w-0 flex-1 truncate font-mono text-[12px]', waiting ? 'text-fg' : 'text-fg-3')}>{e.tool_brief || name}</span>
+              <span className="shrink-0 text-[11px] text-fg-3 tabular">{clockTime(e.time)}</span>
             </li>
           )
         }
-        const e = row.e
-        const userFacing = asks(e.tool_name) || e.tool_name === 'ExitPlanMode'
-        const tool = e.name === 'PermissionRequest' && !userFacing
-        const Icon = tool ? toolIcon(e.tool_name ?? '') : null
         const auto = e.name === 'UserPromptSubmit' && e.source === 'auto'
-        const emph = (e.name === 'UserPromptSubmit' && !auto) || e.name === 'PermissionRequest' || e.name === 'Stop'
-        const dot = userFacing ? 'bg-reply' : e.name === 'PermissionRequest' ? 'bg-wait' : e.name === 'Stop' ? (e.bg_tasks ? 'bg-accent' : 'bg-reply') : e.name === 'UserPromptSubmit' && !auto ? 'bg-accent' : 'bg-line-strong'
+        const emph = (e.name === 'UserPromptSubmit' && !auto) || e.name === 'Stop' || userFacing
+        const dot = userFacing ? 'bg-reply' : e.name === 'Stop' ? (e.bg_tasks ? 'bg-accent' : 'bg-reply') : e.name === 'UserPromptSubmit' && !auto ? 'bg-accent' : 'bg-line-strong'
         return (
           <li key={e.id} className="relative flex gap-3 py-1.5">
             <span className={cx('relative z-10 mt-1 size-[15px] shrink-0 rounded-full border-[3px] border-surface', dot)} />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 <span className={cx('text-[13px]', emph ? 'font-medium text-fg' : 'text-fg-2')}>{evLabel(e)}</span>
-                {tool && (
-                  <span className="inline-flex min-w-0 items-center gap-1 text-[12px] text-fg-2">
-                    {Icon && <Icon className="size-3.5 shrink-0 text-fg-3" />}
-                    <span className="shrink-0">{e.tool_name?.replace(/^mcp__/, '')}</span>
-                    {e.tool_brief && <span className="truncate font-mono text-fg-3">{e.tool_brief}</span>}
-                  </span>
-                )}
                 {e.name === 'Stop' && !!e.bg_tasks && <span className="truncate text-[12px] text-accent">{t.state.background}</span>}
                 <span className="ml-auto shrink-0 text-[11px] text-fg-3 tabular">{clockTime(e.time)}</span>
               </div>

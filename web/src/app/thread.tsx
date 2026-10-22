@@ -1,47 +1,15 @@
 import type { ReactNode } from 'react'
-import { FileCheck2, GitBranch, ListTodo, MessageSquare, Monitor } from 'lucide-react'
+import { ChevronRight, FileCheck2, GitBranch, MessageSquare, Monitor } from 'lucide-react'
 import type { Session } from '../api/client'
 import { t } from '../i18n'
-import { cx, relTime } from '../lib/util'
-import { Card, Tip } from '../ui/base'
+import { cx, relTime, usePref } from '../lib/util'
+import { Card } from '../ui/base'
 import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import type { Thread } from './inbox'
-import { useOpenReq, useOpenSession } from './nav'
+import { useOpenSession } from './nav'
 import { ReviewList } from './review'
-import { Callout, sessionTitle, toolIcon } from './SessionCard'
-
-// ReqCount：会话关联的需求只显示数量，悬停列出。
-export function ReqCount({ s }: { s: Session }) {
-  const openReq = useOpenReq()
-  const open = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
-  if (!open.length) return null
-  return (
-    <Tip
-      content={
-        <div className="space-y-0.5">
-          {open.map((r) => (
-            <div key={r.id} className="truncate">
-              <span className="mr-1.5 font-mono opacity-70">{r.code}</span>
-              {r.title}
-            </div>
-          ))}
-        </div>
-      }
-    >
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          if (open.length === 1) openReq(open[0].code)
-        }}
-        className="inline-flex items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-xs text-accent hover:brightness-95"
-      >
-        <ListTodo className="size-3.5" />
-        <span className="tabular">{t.thread.reqs(open.length)}</span>
-      </button>
-    </Tip>
-  )
-}
+import { Callout, ReqCount, sessionTitle, toolIcon } from './SessionCard'
 
 // SessionLine：会话在做什么的一行描述（摘要 → 最后动作 → 你最后说的话）。
 function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean } | null {
@@ -63,7 +31,10 @@ export function SessionRow({ s, now }: { s: Session; now: number }) {
   const a = activity(s)
   const ended = s.state === 'ended'
   return (
-    <button onClick={() => open(s.key)} className={cx('group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-hover/70', ended && 'opacity-60 hover:opacity-100')}>
+    <button
+      onClick={() => open(s.key)}
+      className={cx('group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-hover/70', ended && 'opacity-60 hover:opacity-100')}
+    >
       <ToolMark tool={s.tool} size="sm" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -85,20 +56,23 @@ export function SessionRow({ s, now }: { s: Session; now: number }) {
         <ReqCount s={s} />
       </span>
       <Sparkline data={s.activity} state={ds} className="hidden @lg:flex" />
-      <span className="w-[112px] shrink-0 text-right">{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} />}</span>
+      <span className="shrink-0">{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} />}</span>
     </button>
   )
 }
 
-function Part({ icon, title, count, children }: { icon: ReactNode; title: string; count: number; children: ReactNode }) {
+// Part：对话块里可折叠的一组事项（折叠状态按对话记在本机）。
+function Part({ id, icon, title, count, children }: { id: string; icon: ReactNode; title: string; count: number; children: ReactNode }) {
+  const [open, setOpen] = usePref(`ks.part.${id}`, true)
   return (
     <div>
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-fg-3">
+      <button onClick={() => setOpen(!open)} className="mb-2 flex items-center gap-1.5 rounded-md text-xs font-medium text-fg-3 hover:text-fg-2">
+        <ChevronRight className={cx('size-3.5 transition-transform', open && 'rotate-90')} />
         {icon}
         {title}
         <span className="tabular">{count}</span>
-      </div>
-      {children}
+      </button>
+      {open && children}
     </div>
   )
 }
@@ -113,7 +87,13 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
   return (
     <Card className={cx('overflow-hidden', st.ring)}>
       {s ? (
-        <div role="button" tabIndex={0} onClick={() => open(s.key)} onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key)} className="cursor-pointer space-y-2.5 p-4 transition-colors hover:bg-hover/40">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => open(s.key)}
+          onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key)}
+          className="cursor-pointer space-y-2.5 p-4 transition-colors hover:bg-hover/40"
+        >
           <div className="flex items-start gap-3">
             <ToolMark tool={s.tool} />
             <div className="min-w-0 flex-1">
@@ -140,7 +120,9 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
               </div>
             </div>
           </div>
-          {(s.summary || s.last_prompt) && !(ds === 'waiting_reply' && (s.digest_done || s.digest_ask)) && <p className="line-clamp-2 text-sm leading-relaxed text-fg-2">{s.summary || s.last_prompt}</p>}
+          {(s.summary || s.last_prompt) && !(ds === 'waiting_reply' && (s.digest_done || s.digest_ask)) && (
+            <p className="line-clamp-2 text-sm leading-relaxed text-fg-2">{s.summary || s.last_prompt}</p>
+          )}
           <Callout s={s} />
         </div>
       ) : (
@@ -159,8 +141,8 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
             </div>
           )}
           {th.reviews.length > 0 && (
-            <Part icon={<FileCheck2 className="size-3.5" />} title={t.thread.reviews} count={th.reviews.length}>
-              <ReviewList items={th.reviews} />
+            <Part id={`${th.key}.reviews`} icon={<FileCheck2 className="size-3.5" />} title={t.thread.reviews} count={th.reviews.length}>
+              <ReviewList items={th.reviews} scroll />
             </Part>
           )}
           {th.orphans.length > 0 && (

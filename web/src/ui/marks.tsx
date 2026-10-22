@@ -1,4 +1,4 @@
-import { cx, duration } from '../lib/util'
+import { absTime, cx, duration, shortDuration } from '../lib/util'
 import { t } from '../i18n'
 import { Tip } from './base'
 import { ClaudeGlyph, CodexGlyph } from './brand'
@@ -34,14 +34,15 @@ export function StatusDot({ state, className }: { state: string; className?: str
 // StatusPill：“运行中 12 分钟”。
 export function StatusPill({ state, since, now, compact }: { state: string; since?: string; now: number; compact?: boolean }) {
   const s = stateStyle[state] ?? stateStyle.idle
-  const dur = !compact && since && state !== 'ended' ? duration(since, now) : ''
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap', s.pill)}>
+  const show = !compact && !!since && state !== 'ended'
+  const pill = (
+    <span className={cx('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap', s.pill)}>
       <StatusDot state={state} />
       {t.state[state] ?? state}
-      {dur && <span className="font-normal opacity-70 tabular">{dur}</span>}
+      {show && <span className="font-normal opacity-70 tabular">{shortDuration(since, now)}</span>}
     </span>
   )
+  return show ? <Tip content={t.stateSince(t.state[state] ?? state, duration(since, now), absTime(since))}>{pill}</Tip> : pill
 }
 
 const phaseStyle: Record<string, string> = {

@@ -90,7 +90,12 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		case "PreCompact":
 			x.Compactions++
 		}
-		// 等待授权时，只有同一回合继续推进的 PostToolUse 才解除；其余事件只刷新活跃时间。
+		// 只有工具调用才说明 agent 在干活。子 Agent 启停、上下文压缩可能发生在回合结束之后
+		// （例如 Claude Code 结束后生成回顾摘要），只更新计数，不改状态。
+		if ev.Name != "PreToolUse" && ev.Name != "PostToolUse" {
+			break
+		}
+		// 等待授权时，只有同一回合继续推进的 PostToolUse 才解除。
 		if x.State == store.StateWaitApproval && ev.Name != "PostToolUse" {
 			break
 		}

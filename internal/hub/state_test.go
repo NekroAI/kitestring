@@ -80,6 +80,22 @@ func TestStopWithBackgroundTasks(t *testing.T) {
 	}
 }
 
+// 回合结束后才到达的子 Agent / 压缩事件不应把“等你回复”改回“运行中”（R-3 修改意见）。
+func TestLateSubagentEventsKeepWaiting(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Time: t0})
+	cur = applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Stop", Time: t0.Add(time.Minute)})
+	for i, name := range []string{"Notification", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"} {
+		cur = applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: name, Time: t0.Add(time.Duration(2+i) * time.Minute)})
+		if cur.State != store.StateWaitReply {
+			t.Fatalf("%s 之后应仍为等你回复，得到 %s", name, cur.State)
+		}
+	}
+	if !cur.StateSince.Equal(t0.Add(time.Minute)) {
+		t.Fatalf("状态起始时间不应被刷新：%v", cur.StateSince)
+	}
+}
+
 func TestApplyEventStaleDoesNotRegress(t *testing.T) {
 	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Stop", Time: t0.Add(10 * time.Second)})
