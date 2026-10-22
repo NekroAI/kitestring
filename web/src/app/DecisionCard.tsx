@@ -8,6 +8,7 @@ import { cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
+import { AttachZone, Thumbs } from '../ui/attach'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
 import { useOpenReq, useOpenSession } from './nav'
@@ -87,7 +88,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   }, [draft.choice, draft.noteOpen])
 
   const choose = (c: number | 'other') => setDraft(d.code, { choice: draft.choice === c ? null : c })
-  const submit = () => answer && send([{ code: d.code, answer }])
+  const submit = () => answer && send([{ code: d.code, answer, files: draft.files?.map((f) => f.id) }])
   const onKey = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
@@ -180,7 +181,9 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
         <AnimatePresence initial={false}>
           {(free || note) && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden px-px pb-px">
-              <Textarea ref={noteRef} minRows={free ? 3 : 2} value={draft.note} placeholder={free ? t.decision.freePlaceholder : t.decision.notePlaceholder} onChange={(e) => setDraft(d.code, { note: e.target.value })} />
+              <AttachZone value={draft.files ?? []} onChange={(files) => setDraft(d.code, { files })} compact>
+                <Textarea ref={noteRef} minRows={free ? 3 : 2} value={draft.note} placeholder={free ? t.decision.freePlaceholder : t.decision.notePlaceholder} onChange={(e) => setDraft(d.code, { note: e.target.value })} className="pr-10" />
+              </AttachZone>
             </motion.div>
           )}
         </AnimatePresence>
@@ -191,9 +194,9 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
               {t.decision.addNote}
             </Button>
           )}
-          {(draft.choice != null || draft.note) && (
+          {(draft.choice != null || draft.note || !!draft.files?.length) && (
             <Tip content={t.decision.clearDrafts}>
-              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false })}>
+              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [] })}>
                 <X className="size-3.5" />
               </Button>
             </Tip>
@@ -272,9 +275,12 @@ export function OrphanCard({ d, sessions }: { d: Decision; sessions: Session[] }
 
 export function AnswerBlock({ d }: { d: Decision }) {
   return (
-    <div className="rounded-xl border border-line bg-surface-2 px-3 py-2.5">
-      <div className="text-xs font-medium text-fg-3">{t.decision.answer}</div>
-      <div className="mt-0.5 text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">{d.answer}</div>
+    <div className="space-y-2 rounded-xl border border-line bg-surface-2 px-3 py-2.5">
+      <div>
+        <div className="text-xs font-medium text-fg-3">{d.kind === 'feedback' ? t.review.history : t.decision.answer}</div>
+        <div className="mt-0.5 text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">{d.answer}</div>
+      </div>
+      <Thumbs files={d.answer_files} size="sm" />
     </div>
   )
 }

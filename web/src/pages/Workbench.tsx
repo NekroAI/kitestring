@@ -1,67 +1,29 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { CheckCheck, FileCheck2, History, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
-import type { Requirement, Session } from '../api/client'
+import { CheckCheck, FolderGit2, History, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import type { Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
 import { useNow, usePref } from '../lib/util'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented } from '../ui/base'
-import { DecisionComposer, OrphanCard } from '../app/DecisionCard'
-import { useWorkbench } from '../app/inbox'
-import { useOpenReq } from '../app/nav'
+import { StatusDot } from '../ui/marks'
+import { useWorkbench, type ProjectGroup } from '../app/inbox'
 import { composeAnswer, useOutbox } from '../app/outbox'
 import { RecapPanel } from '../app/Recap'
-import { ReviewActions } from '../app/requirements'
-import { SessionCard, sessionTitle } from '../app/SessionCard'
+import { sessionTitle } from '../app/SessionCard'
+import { SessionRow, ThreadCard } from '../app/thread'
 
 type Filter = 'all' | 'todo'
 
-function Section({ title, count, children, right }: { title: ReactNode; count?: number; children: ReactNode; right?: ReactNode }) {
-  return (
-    <section>
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-[15px] font-semibold text-fg">{title}</h2>
-        {count != null && count > 0 && <span className="rounded-full bg-sunken px-2 py-px text-xs font-semibold text-fg-2 tabular">{count}</span>}
-        <span className="ml-auto">{right}</span>
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function ReviewCard({ r }: { r: Requirement }) {
-  const open = useOpenReq()
-  const latest = r.evidence?.filter((e) => !e.voided).at(-1)
-  return (
-    <Card className="flex h-full flex-col gap-3 p-4">
-      <button onClick={() => open(r.code)} className="flex items-start gap-3 text-left">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-reply-soft text-reply">
-          <FileCheck2 className="size-[18px]" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 text-xs text-fg-3">
-            <span className="font-mono font-semibold">{r.code}</span>
-            <span className="truncate">{r.project_name}</span>
-          </span>
-          <span className="mt-0.5 block text-[15px] font-semibold text-fg">{r.title}</span>
-          {latest && <span className="mt-1 block truncate text-[13px] text-fg-3">{latest.summary}</span>}
-        </span>
-      </button>
-      <div className="mt-auto flex items-center justify-between">
-        <span className="text-xs text-fg-3">{t.reqs.reviewBanner}</span>
-        <ReviewActions r={r} />
-      </div>
-    </Card>
-  )
-}
+const match = (s: Session | undefined, k: string) => !k || (!!s && [sessionTitle(s), s.project_name, s.branch, s.cwd, s.last_prompt, s.summary, s.device_name, s.model].some((v) => v?.toLowerCase().includes(k)))
 
 function SendAllBar() {
   const wb = useWorkbench()
   const { drafts, send, clearDrafts, queued } = useOutbox()
   const ready = wb.decisions
     .filter((d) => d.status === 'pending')
-    .map((d) => ({ code: d.code, answer: composeAnswer(drafts[d.code], d.options ?? []) }))
+    .map((d) => ({ code: d.code, answer: composeAnswer(drafts[d.code], d.options ?? []), files: drafts[d.code]?.files?.map((f) => f.id) }))
     .filter((x) => x.answer && !queued[x.code])
   return (
     <AnimatePresence>
@@ -82,16 +44,53 @@ function SendAllBar() {
   )
 }
 
-function Grid({ children }: { children: ReactNode }) {
-  // 按容器宽度分列（而不是窗口宽度），竖屏、窄窗口下同样合理。
+// 项目：先列需要你处理的对话（线程），再列其余会话（紧凑行）。
+function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Filter; k: string; now: number; sessions: Session[] }) {
+  const threads = g.threads.filter((th) => !k || match(th.s, k))
+  const active = filter === 'all' ? g.active.filter((s) => match(s, k)) : []
+  const ended = filter === 'all' ? g.ended.filter((s) => match(s, k)) : []
+  if (!threads.length && !active.length && !ended.length) return null
+  const counts = (['waiting_approval', 'waiting_reply', 'running', 'background'] as const).map((st) => [st, [...g.active, ...g.threads.map((x) => x.s).filter(Boolean)].filter((s) => s!.state === st).length] as const).filter(([, n]) => n)
   return (
-    <div className="@container">
-      <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @6xl:grid-cols-3">{children}</div>
-    </div>
+    <section className="rise">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs">
+          <FolderGit2 className="size-4" />
+        </span>
+        <h2 className="truncate text-[15px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
+        <span className="ml-auto flex items-center gap-3 text-xs text-fg-3">
+          {counts.map(([st, n]) => (
+            <span key={st} className="flex items-center gap-1.5">
+              <StatusDot state={st} />
+              <span className="tabular">{n}</span>
+            </span>
+          ))}
+        </span>
+      </div>
+      <div className="space-y-3">
+        {threads.map((th) => (
+          <ThreadCard key={th.key} th={th} now={now} projectName={g.name} sessions={sessions} />
+        ))}
+        {(active.length > 0 || ended.length > 0) && (
+          <Card className="@container p-1.5">
+            {active.map((s) => (
+              <SessionRow key={s.key} s={s} now={now} />
+            ))}
+            {ended.length > 0 && (
+              <>
+                {active.length > 0 && <div className="mx-3 my-1 border-t border-line" />}
+                <div className="px-3 pt-1.5 pb-0.5 text-xs text-fg-3">{t.thread.ended(ended.length)}</div>
+                {ended.map((s) => (
+                  <SessionRow key={s.key} s={s} now={now} />
+                ))}
+              </>
+            )}
+          </Card>
+        )}
+      </div>
+    </section>
   )
 }
-
-const match = (s: Session, k: string) => !k || [sessionTitle(s), s.project_name, s.branch, s.cwd, s.last_prompt, s.summary, s.device_name, s.model].some((v) => v?.toLowerCase().includes(k))
 
 export default function WorkbenchPage() {
   const now = useNow()
@@ -102,33 +101,23 @@ export default function WorkbenchPage() {
   const [recap, setRecap] = useState(false)
   const k = q.trim().toLowerCase()
   const recapOn = !!settings.data?.ai?.recap
-
-  const attention = useMemo(() => wb.attention.filter((x) => match(x.s, k)), [wb.attention, k])
-  const active = useMemo(() => wb.active.filter((s) => match(s, k)), [wb.active, k])
-  const ended = useMemo(() => wb.ended.filter((s) => match(s, k)), [wb.ended, k])
-  const withDecisions = attention.filter((x) => x.decisions.length)
-  const others = attention.filter((x) => !x.decisions.length)
-  const hasTodo = attention.length + wb.looseDecisions.length + wb.reviews.length + wb.orphans.length > 0
-
-  const header = (
-    <PageHeader
-      title={t.home.title}
-      subtitle={wb.loading ? ' ' : t.home.summary(wb.todo, wb.running.length)}
-      actions={
-        recapOn && (
-          <Button icon={<History className="size-4" />} onClick={() => setRecap(true)}>
-            {t.home.recap}
-          </Button>
-        )
-      }
-    />
-  )
+  const visible = useMemo(() => wb.projects.filter((g) => g.threads.length || filter === 'all'), [wb.projects, filter])
 
   if (wb.error) return <ErrorState error={wb.error} onRetry={wb.refetch} />
 
   return (
     <>
-      {header}
+      <PageHeader
+        title={t.home.title}
+        subtitle={wb.loading ? ' ' : t.home.summary(wb.todo, wb.running.length)}
+        actions={
+          recapOn && (
+            <Button icon={<History className="size-4" />} onClick={() => setRecap(true)}>
+              {t.home.recap}
+            </Button>
+          )
+        }
+      />
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <Segmented
           value={filter}
@@ -160,83 +149,24 @@ export default function WorkbenchPage() {
             {t.home.noDevicesSub}
           </Empty>
         </Card>
-      ) : !wb.sessions.length && !hasTodo ? (
+      ) : !wb.sessions.length && !wb.threads.length ? (
         <Card>
           <Empty icon={<MonitorSmartphone />} title={t.home.empty}>
             {t.home.emptySub}
           </Empty>
         </Card>
+      ) : filter === 'todo' && !wb.threads.length ? (
+        <Card>
+          <Empty icon={<CheckCheck />} title={t.home.allClear}>
+            {t.home.allClearSub(wb.running.length)}
+          </Empty>
+        </Card>
       ) : (
         <div className="space-y-9">
-          {hasTodo ? (
-            <Section title={t.home.sections.attention} count={wb.todo}>
-              <div className="space-y-3">
-                {withDecisions.map((x) => (
-                  <div key={x.s.key} className="rise">
-                    <SessionCard s={x.s} now={now} decisions={x.decisions} wide />
-                  </div>
-                ))}
-                {wb.looseDecisions.map((d) => (
-                  <div key={d.id} className="rise">
-                    <DecisionComposer d={d} />
-                  </div>
-                ))}
-                {(others.length > 0 || wb.reviews.length > 0 || wb.orphans.length > 0) && (
-                  <Grid>
-                    {others.map((x) => (
-                      <div key={x.s.key} className="rise h-full min-w-0">
-                        <SessionCard s={x.s} now={now} />
-                      </div>
-                    ))}
-                    {wb.reviews.map((r) => (
-                      <div key={r.id} className="rise h-full min-w-0">
-                        <ReviewCard r={r} />
-                      </div>
-                    ))}
-                    {wb.orphans.map((d) => (
-                      <div key={d.id} className="rise h-full min-w-0">
-                        <OrphanCard d={d} sessions={wb.sessions} />
-                      </div>
-                    ))}
-                  </Grid>
-                )}
-              </div>
-            </Section>
-          ) : (
-            filter === 'todo' && (
-              <Card>
-                <Empty icon={<CheckCheck />} title={t.home.allClear}>
-                  {t.home.allClearSub(wb.running.length)}
-                </Empty>
-              </Card>
-            )
-          )}
-
-          {filter === 'all' && active.length > 0 && (
-            <Section title={t.home.sections.active} count={active.length}>
-              <Grid>
-                {active.map((s) => (
-                  <div key={s.key} className="rise h-full min-w-0">
-                    <SessionCard s={s} now={now} />
-                  </div>
-                ))}
-              </Grid>
-            </Section>
-          )}
-
-          {filter === 'all' && ended.length > 0 && (
-            <Section title={t.home.sections.ended} count={ended.length} right={<span className="text-xs text-fg-3">{t.home.endedHint}</span>}>
-              <Grid>
-                {ended.map((s) => (
-                  <div key={s.key} className="rise h-full min-w-0">
-                    <SessionCard s={s} now={now} />
-                  </div>
-                ))}
-              </Grid>
-            </Section>
-          )}
-
-          {k && !attention.length && !active.length && !ended.length && (
+          {visible.map((g) => (
+            <Project key={g.key} g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />
+          ))}
+          {k && !visible.some((g) => g.threads.some((th) => match(th.s, k)) || g.active.some((s) => match(s, k)) || g.ended.some((s) => match(s, k))) && (
             <Card>
               <Empty icon={<SearchX />} title={t.home.noMatch} />
             </Card>

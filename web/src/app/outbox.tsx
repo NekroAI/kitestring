@@ -8,7 +8,9 @@ import { useActions } from './actions'
 // - 草稿：每条决策的选择与文字，保存在本机，刷新不丢。
 // - 发件箱：点击发送后先等待几秒，期间可撤销；到时一次性提交。
 
-export type Draft = { choice: number | 'other' | null; note: string; noteOpen?: boolean }
+import type { FileRef } from '../ui/attach'
+
+export type Draft = { choice: number | 'other' | null; note: string; noteOpen?: boolean; files?: FileRef[] }
 export const emptyDraft: Draft = { choice: null, note: '' }
 const DRAFTS_KEY = 'ks.drafts.v2'
 export const UNDO_MS = 4000
@@ -17,7 +19,7 @@ export const UNDO_MS = 4000
 export function composeAnswer(d: Draft | undefined, options: string[]): string {
   if (!d) return ''
   const note = d.note.trim()
-  if (d.choice === 'other' || options.length === 0) return note
+  if (d.choice === 'other' || options.length === 0) return note || (d.files?.length ? t.decision.seeImages : '')
   if (typeof d.choice === 'number' && options[d.choice] != null) {
     const c = options[d.choice]
     return note ? t.decision.joinAnswer(c, note) : c
@@ -30,7 +32,7 @@ type Ctx = {
   setDraft: (code: string, patch: Partial<Draft>) => void
   clearDrafts: (codes?: string[]) => void
   queued: Record<string, number> // code → 计划发送时间
-  send: (items: { code: string; answer: string }[]) => void
+  send: (items: { code: string; answer: string; files?: string[] }[]) => void
   cancel: (code: string) => void
 }
 
@@ -40,7 +42,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
   const { answer } = useActions()
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => loadPref(DRAFTS_KEY, {}))
   const [queued, setQueued] = useState<Record<string, number>>({})
-  const pending = useRef(new Map<string, { answer: string; timer: number }>())
+  const pending = useRef(new Map<string, { answer: string; files?: string[]; timer: number }>())
 
   useEffect(() => savePref(DRAFTS_KEY, drafts), [drafts])
 
@@ -48,7 +50,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     setDrafts((cur) => {
       const d = { ...emptyDraft, ...cur[code], ...patch }
       const next = { ...cur }
-      if (d.choice == null && !d.note && !d.noteOpen) delete next[code]
+      if (d.choice == null && !d.note && !d.noteOpen && !d.files?.length) delete next[code]
       else next[code] = d
       return next
     })
@@ -69,7 +71,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     pending.current.clear()
     due.forEach(([, v]) => window.clearTimeout(v.timer))
     const codes = due.map(([c]) => c)
-    const res = await answer(due.map(([ref, v]) => ({ ref, answer: v.answer })))
+    const res = await answer(due.map(([ref, v]) => ({ ref, answer: v.answer, files: v.files })))
     setQueued((cur) => {
       const next = { ...cur }
       codes.forEach((c) => delete next[c])
@@ -82,13 +84,13 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
   }, [answer, clearDrafts])
 
   const send = useCallback(
-    (items: { code: string; answer: string }[]) => {
+    (items: { code: string; answer: string; files?: string[] }[]) => {
       const at = Date.now() + UNDO_MS
       for (const it of items) {
         const old = pending.current.get(it.code)
         if (old) window.clearTimeout(old.timer)
         // 所有排队项共用一个到期时间，到期时一起提交。
-        pending.current.set(it.code, { answer: it.answer, timer: window.setTimeout(() => void flush(), UNDO_MS) })
+        pending.current.set(it.code, { answer: it.answer, files: it.files, timer: window.setTimeout(() => void flush(), UNDO_MS) })
       }
       setQueued((cur) => {
         const next = { ...cur }

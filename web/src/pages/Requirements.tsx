@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ListPlus, Plus, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, Columns3, FolderGit2, List, ListPlus, MessageCircleQuestion, Plus, Search, User } from 'lucide-react'
 import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
-import { cx, usePref } from '../lib/util'
-import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch } from '../ui/base'
+import { cx, relTime, useNow, usePref } from '../lib/util'
+import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
+import { PriorityDot } from '../ui/marks'
 import { Menu } from '../ui/overlay'
-import { boardStatuses, closedStatuses, NewReqModal, ReqCard, statusCls, useSetStatus } from '../app/requirements'
+import { boardStatuses, closedStatuses, NewReqModal, ReqCard, ReqDetail, StatusMenu, statusCls, useSetStatus } from '../app/requirements'
 
 const prio: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
 const sortReqs = (a: Requirement, b: Requirement) => (prio[a.priority] ?? 9) - (prio[b.priority] ?? 9) || b.updated_at.localeCompare(a.updated_at)
@@ -84,6 +85,75 @@ function StatusSection({ status, items, onDrop }: { status: string; items: Requi
   )
 }
 
+// 列表视图：按项目分组，组内按状态；点开就地展开详情。
+function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boolean; onToggle: () => void }) {
+  const now = useNow()
+  return (
+    <div className={cx('rounded-xl transition-colors', expanded ? 'bg-surface shadow-card ring-1 ring-line' : 'hover:bg-hover/60')}>
+      <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+        <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', expanded && 'rotate-90')} />
+        <span onClick={(e) => e.stopPropagation()}>
+          <StatusMenu r={r} />
+        </span>
+        <PriorityDot p={r.priority} />
+        <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
+        {r.pending_decisions > 0 && (
+          <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
+            <span className="inline-flex items-center gap-1 text-xs text-wait tabular">
+              <MessageCircleQuestion className="size-3.5" />
+              {r.pending_decisions}
+            </span>
+          </Tip>
+        )}
+        {r.next_actor === 'user' && r.status !== 'done' && (
+          <Tip content={t.nextActor.user}>
+            <span className="inline-flex text-reply">
+              <User className="size-3.5" />
+            </span>
+          </Tip>
+        )}
+        <span className="hidden w-20 shrink-0 text-right text-xs text-fg-3 sm:block">{relTime(r.updated_at, now)}</span>
+      </div>
+      {expanded && (
+        <div className="rise border-t border-line px-4 pt-4 pb-2 sm:px-6">
+          <ReqDetail refId={r.code} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ListView({ items, statuses, projects }: { items: Requirement[]; statuses: string[]; projects: { id: string; name: string }[] }) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const order = new Map(statuses.map((s, i) => [s, i]))
+  const groups = new Map<string, Requirement[]>()
+  for (const r of items) groups.set(r.project_id || '', [...(groups.get(r.project_id || '') ?? []), r])
+  const name = (id: string) => projects.find((p) => p.id === id)?.name || t.reqs.noProject
+  return (
+    <div className="space-y-7">
+      {[...groups.entries()]
+        .sort((a, b) => name(a[0]).localeCompare(name(b[0])))
+        .map(([pid, rs]) => (
+          <section key={pid || 'none'} className="rise">
+            <div className="mb-2 flex items-center gap-2.5 px-1">
+              <FolderGit2 className="size-4 text-fg-3" />
+              <h2 className="text-[15px] font-semibold text-fg">{name(pid)}</h2>
+              <span className="text-xs text-fg-3 tabular">{rs.length}</span>
+            </div>
+            <Card className="space-y-0.5 p-1.5">
+              {rs
+                .sort((a, b) => (order.get(a.status) ?? 9) - (order.get(b.status) ?? 9) || sortReqs(a, b))
+                .map((r) => (
+                  <ReqListRow key={r.id} r={r} expanded={expanded === r.code} onToggle={() => setExpanded(expanded === r.code ? null : r.code)} />
+                ))}
+            </Card>
+          </section>
+        ))}
+    </div>
+  )
+}
+
 // useWidth：观察元素宽度。
 function useWidth() {
   const [el, setEl] = useState<HTMLDivElement | null>(null)
@@ -107,6 +177,7 @@ export default function RequirementsPage() {
   const [project, setProject] = usePref<string>('ks.reqs.project', '')
   const [showClosed, setShowClosed] = usePref('ks.reqs.closed', false)
   const [mobileStatus, setMobileStatus] = usePref<string>('ks.reqs.mstatus', 'in_progress')
+  const [view, setView] = usePref<'list' | 'board'>('ks.reqs.view', 'list')
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
 
@@ -152,6 +223,15 @@ export default function RequirementsPage() {
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t.reqs.search} className="pl-9" />
         </div>
+        <Segmented
+          size="sm"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'list', label: <List className="size-4" />, tip: t.reqs.viewList },
+            { value: 'board', label: <Columns3 className="size-4" />, tip: t.reqs.viewBoard },
+          ]}
+        />
         <label className="ml-auto flex items-center gap-2 text-sm text-fg-2">
           <Switch checked={showClosed} onChange={setShowClosed} />
           {t.reqs.showClosed}
@@ -176,6 +256,8 @@ export default function RequirementsPage() {
             {t.reqs.emptyAllSub}
           </Empty>
         </Card>
+      ) : view === 'list' ? (
+        <ListView items={filtered.filter((r) => (statuses as string[]).includes(r.status))} statuses={statuses} projects={projects.data?.projects ?? []} />
       ) : width >= statuses.length * COL_MIN ? (
         <div className="flex gap-3 pb-4">
           {statuses.map((s) => (

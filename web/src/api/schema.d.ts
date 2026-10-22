@@ -426,6 +426,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 验收：逐条通过或提修改意见 */
+        post: operations["review-requirements"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -535,6 +552,8 @@ export interface components {
             title?: boolean;
         };
         "Agent-attach-evidenceRequest": {
+            /** @description 截图等附图 ID（先上传到 /api/agent/files） */
+            files?: string[] | null;
             /** @description 例：test、screenshot、commit、doc、manual */
             kind: string;
             link?: string;
@@ -563,6 +582,7 @@ export interface components {
             acceptance?: string;
             detail?: string;
             doc_link?: string;
+            files?: string[] | null;
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
             project_id?: string;
@@ -596,6 +616,7 @@ export interface components {
         };
         Decision: {
             answer: string;
+            answer_files: components["schemas"]["FileRef"][] | null;
             /** Format: date-time */
             answered_at?: string;
             code: string;
@@ -607,6 +628,8 @@ export interface components {
             delivered_turn?: string;
             device_name?: string;
             id: string;
+            /** @enum {string} */
+            kind: "decision" | "feedback";
             options: string[] | null;
             origin_session?: string;
             project_id?: string;
@@ -615,6 +638,7 @@ export interface components {
             recommendation: string;
             requirement_code?: string;
             requirement_id?: string;
+            requirement_title?: string;
             session_key?: string;
             session_state?: string;
             short_title: string;
@@ -713,6 +737,7 @@ export interface components {
         Evidence: {
             /** Format: date-time */
             created_at: string;
+            files: components["schemas"]["FileRef"][] | null;
             id: string;
             kind: string;
             link: string;
@@ -720,6 +745,13 @@ export interface components {
             session_key?: string;
             summary: string;
             voided: boolean;
+        };
+        FileRef: {
+            id: string;
+            mime: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
         };
         Git: {
             available: boolean;
@@ -732,6 +764,8 @@ export interface components {
         };
         Item: {
             answer: string;
+            /** @description 附图 ID */
+            files?: string[] | null;
             ref: string;
         };
         "Link-requirementRequest": {
@@ -787,6 +821,7 @@ export interface components {
             acceptance?: string;
             detail?: string;
             doc_link?: string;
+            files?: string[] | null;
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
             project_id?: string;
@@ -808,6 +843,8 @@ export interface components {
             detail: string;
             doc_link: string;
             evidence?: components["schemas"]["Evidence"][] | null;
+            feedback?: components["schemas"]["Decision"][] | null;
+            files: components["schemas"]["FileRef"][] | null;
             id: string;
             next_actor: string;
             /** Format: int64 */
@@ -827,6 +864,20 @@ export interface components {
             id: string;
             status: string;
             title: string;
+        };
+        ReviewInBody: {
+            items: components["schemas"]["ReviewItem"][] | null;
+        };
+        ReviewItem: {
+            comment?: string;
+            files?: string[] | null;
+            ref: string;
+            /** @enum {string} */
+            verdict: "accept" | "revise";
+        };
+        ReviewOutBody: {
+            feedback: components["schemas"]["Decision"][] | null;
+            requirements: components["schemas"]["Requirement"][] | null;
         };
         Session: {
             activity: number[] | null;
@@ -1953,6 +2004,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "review-requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOutBody"];
                 };
             };
             /** @description Error */

@@ -246,6 +246,7 @@ export const zh = {
     sentDesc: '下次和它对话时自动送达',
     keyTip: '数字键选择 · ⌘↵ 发送',
     joinAnswer: (choice: string, note: string) => `${choice}；${note}`,
+    seeImages: '见附图',
     status: {
       pending: '待决策',
       answered: '待送达',
@@ -308,8 +309,41 @@ export const zh = {
     rejected: (code: string) => `${code} 已退回`,
     moved: (code: string, status: string) => `${code} 移到${status}`,
     dropHere: '放到这里',
+    viewList: '列表',
+    viewBoard: '看板',
     sessionsTip: (x: number) => `${x} 个会话在做`,
     decisionsTip: (x: number) => `${x} 个待决策`,
+  },
+
+  attach: {
+    add: '图片',
+    hint: '也可以直接粘贴或拖入图片',
+    drop: '松开以添加图片',
+    remove: '移除',
+    original: '查看原图',
+    failed: '图片上传失败',
+    tooLarge: '图片不能超过 10 MB',
+  },
+
+  thread: {
+    reqs: (x: number) => `${x} 个需求`,
+    reviews: '待验收',
+    noSession: '未关联会话',
+    ended: (x: number) => `已结束 ${x}`,
+    noProject: '未识别的项目',
+  },
+
+  review: {
+    pass: '通过',
+    passAll: (x: number) => `全部通过（${x}）`,
+    revise: '提修改意见',
+    revisePlaceholder: '哪里需要改？可以贴图说明',
+    sendRevise: '退回修改',
+    passed: (code: string) => `${code} 已验收`,
+    revised: (code: string) => `${code} 已退回，意见会在下次和它对话时送达`,
+    evidence: '证据',
+    history: '修改意见',
+    noEvidence: 'Agent 没有附证据',
   },
 
   recap: {

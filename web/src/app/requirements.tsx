@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bot, Check, ChevronDown, ExternalLink, FileCheck2, Link2, MessageCircleQuestion, Monitor, MoreHorizontal, Trash2, Undo2, User } from 'lucide-react'
+import { Bot, ChevronDown, ExternalLink, Link2, MessageCircleQuestion, Monitor, MoreHorizontal, Trash2, User } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useSessions } from '../api/queries'
@@ -9,6 +9,8 @@ import { Badge, Button, Card, ErrorState, Field, Input, Skeleton, Textarea, Tip 
 import { Menu, Modal, Panel, useConfirm, type MenuItem } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
+import { AttachZone, Thumbs, type FileRef } from '../ui/attach'
+import { ReviewRow } from './review'
 import { DecisionComposer, DecisionRow } from './DecisionCard'
 import { useOpenReq, useOpenSession } from './nav'
 
@@ -157,22 +159,6 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
   )
 }
 
-// ReviewActions：待验收的“验收通过 / 退回”。
-export function ReviewActions({ r, size = 'sm' }: { r: Requirement; size?: 'sm' | 'md' }) {
-  const setStatus = useSetStatus()
-  const [busy, wrap] = useBusy()
-  return (
-    <div className="flex gap-2">
-      <Button size={size} variant="ghost" icon={<Undo2 className="size-3.5" />} disabled={busy} onClick={() => wrap(() => setStatus(r, 'in_progress'))}>
-        {t.reqs.reject}
-      </Button>
-      <Button size={size} variant="primary" icon={<Check className="size-3.5" />} loading={busy} onClick={() => wrap(() => setStatus(r, 'done'))}>
-        {t.reqs.accept}
-      </Button>
-    </div>
-  )
-}
-
 // EditableText：点击即编辑，失焦保存。
 function EditableText({ value, onSave, placeholder, multiline, className }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; className?: string }) {
   const [v, setV] = useState(value)
@@ -202,14 +188,14 @@ function Block({ title, children, right }: { title: string; children: ReactNode;
   )
 }
 
-export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: () => void }) {
+// ReqDetail：需求详情主体，用于侧边面板和需求列表里的就地展开。
+export function ReqDetail({ refId }: { refId: string | null }) {
   const now = useNow()
   const q = useRequirement(refId)
   const projects = useProjects()
   const sessions = useSessions()
   const decisions = useDecisions()
-  const { updateReq, deleteReq, linkReq } = useActions()
-  const confirm = useConfirm()
+  const { updateReq, linkReq } = useActions()
   const openSession = useOpenSession()
   const r = q.data
   const save = (patch: Partial<ReqFields>) => r && void updateReq(r.code, toFields(r, patch))
@@ -218,39 +204,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const linkable = (sessions.data?.sessions ?? []).filter((s) => r && !r.sessions.includes(s.key) && s.state !== 'ended')
 
   return (
-    <Panel
-      open={!!refId}
-      onClose={onClose}
-      wide
-      title={r ? <span className="font-mono text-sm text-fg-3">{r.code}</span> : <Skeleton className="h-5 w-24" />}
-      subtitle={r && t.reqs.createdBy(relTime(r.created_at, now), r.created_by === 'agent')}
-      actions={
-        r && (
-          <Menu
-            trigger={
-              <Button size="icon-sm" variant="ghost" aria-label={t.common.more}>
-                <MoreHorizontal className="size-4" />
-              </Button>
-            }
-            items={[
-              {
-                label: t.common.delete,
-                icon: <Trash2 />,
-                danger: true,
-                onSelect: async () => {
-                  if (await confirm({ title: t.common.delete, description: t.reqs.deleteConfirm, confirmText: t.common.delete, danger: true })) {
-                    if (await deleteReq(r.code)) {
-                      toast(t.reqs.deleted)
-                      onClose()
-                    }
-                  }
-                },
-              },
-            ]}
-          />
-        )
-      }
-    >
+    <>
       {q.isError ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : !r ? (
@@ -291,14 +245,8 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
           </div>
 
           {r.status === 'review' && (
-            <div className="mb-5 flex flex-col gap-3 rounded-2xl bg-reply-soft p-3.5 sm:flex-row sm:items-center">
-              <div className="flex min-w-0 flex-1 items-start gap-2.5">
-                <FileCheck2 className="mt-0.5 size-5 shrink-0 text-reply" />
-                <p className="text-sm text-fg">{t.reqs.reviewBanner}</p>
-              </div>
-              <div className="flex justify-end">
-                <ReviewActions r={r} />
-              </div>
+            <div className="mb-5">
+              <ReviewRow r={r} hideTitle />
             </div>
           )}
 
@@ -315,7 +263,9 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
           )}
 
           <Block title={t.reqs.detail}>
-            <EditableText multiline value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3" />
+            <AttachZone value={r.files ?? []} onChange={(files) => save({ files: files.map((f) => f.id) })}>
+              <EditableText multiline value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3" />
+            </AttachZone>
           </Block>
           <Block title={t.reqs.acceptance}>
             <EditableText multiline value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
@@ -330,6 +280,11 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
                     <div className="min-w-0 flex-1">
                       <div className={cx('text-sm break-words text-fg', e.voided && 'line-through')}>{e.summary}</div>
                       {e.link && <div className="mt-0.5 truncate font-mono text-xs text-fg-3">{e.link}</div>}
+                      {!!e.files?.length && (
+                        <div className="mt-2">
+                          <Thumbs files={e.files} />
+                        </div>
+                      )}
                     </div>
                     {e.voided ? (
                       <Tip content={t.reqs.voidedTip}>
@@ -347,6 +302,27 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
               <p className="text-sm text-fg-3">{t.reqs.noEvidence}</p>
             )}
           </Block>
+
+          {!!r.feedback?.length && (
+            <Block title={t.review.history}>
+              <ul className="space-y-2">
+                {r.feedback.map((d) => (
+                  <li key={d.id} className="rounded-xl border border-line px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2 text-xs text-fg-3">
+                      <span>{relTime(d.created_at, now)}</span>
+                      <Badge tone={d.status === 'delivered' ? 'run' : 'reply'}>{t.decision.status[d.status]}</Badge>
+                    </div>
+                    {d.answer && <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-fg">{d.answer}</p>}
+                    {!!d.answer_files?.length && (
+                      <div className="mt-2">
+                        <Thumbs files={d.answer_files} size="sm" />
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Block>
+          )}
 
           <Block
             title={t.reqs.sessions}
@@ -424,6 +400,51 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
           <p className="mt-4 text-xs text-fg-3">{absTime(r.updated_at)}</p>
         </>
       )}
+    </>
+  )
+}
+
+export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: () => void }) {
+  const now = useNow()
+  const q = useRequirement(refId)
+  const { deleteReq } = useActions()
+  const confirm = useConfirm()
+  const r = q.data
+  return (
+    <Panel
+      open={!!refId}
+      onClose={onClose}
+      wide
+      title={r ? <span className="font-mono text-sm text-fg-3">{r.code}</span> : <Skeleton className="h-5 w-24" />}
+      subtitle={r && t.reqs.createdBy(relTime(r.created_at, now), r.created_by === 'agent')}
+      actions={
+        r && (
+          <Menu
+            trigger={
+              <Button size="icon-sm" variant="ghost" aria-label={t.common.more}>
+                <MoreHorizontal className="size-4" />
+              </Button>
+            }
+            items={[
+              {
+                label: t.common.delete,
+                icon: <Trash2 />,
+                danger: true,
+                onSelect: async () => {
+                  if (await confirm({ title: t.common.delete, description: t.reqs.deleteConfirm, confirmText: t.common.delete, danger: true })) {
+                    if (await deleteReq(r.code)) {
+                      toast(t.reqs.deleted)
+                      onClose()
+                    }
+                  }
+                },
+              },
+            ]}
+          />
+        )
+      }
+    >
+      <ReqDetail refId={refId} />
     </Panel>
   )
 }
@@ -434,12 +455,16 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
   const openReq = useOpenReq()
   const [busy, wrap] = useBusy()
   const [f, setF] = useState<ReqFields>({ title: '', status: 'ready', priority: 'P2', project_id: defaultProject })
+  const [files, setFiles] = useState<FileRef[]>([])
   useEffect(() => {
-    if (open) setF({ title: '', status: 'ready', priority: 'P2', project_id: defaultProject })
+    if (open) {
+      setF({ title: '', status: 'ready', priority: 'P2', project_id: defaultProject })
+      setFiles([])
+    }
   }, [open, defaultProject])
   const submit = () =>
     wrap(async () => {
-      const r = await createReq({ ...f, title: f.title.trim() })
+      const r = await createReq({ ...f, title: f.title.trim(), files: files.map((x) => x.id) })
       if (r) {
         toast.success(t.reqs.created(r.code))
         onClose()
@@ -463,7 +488,9 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
     >
       <div className="space-y-4">
         <Input autoFocus value={f.title} placeholder={t.reqs.titlePlaceholder} onChange={(e) => setF({ ...f, title: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && f.title.trim() && submit()} className="h-11 text-base" />
-        <Textarea value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholder} onChange={(e) => setF({ ...f, detail: e.target.value })} />
+        <AttachZone value={files} onChange={setFiles}>
+          <Textarea value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholder} onChange={(e) => setF({ ...f, detail: e.target.value })} />
+        </AttachZone>
         <div className="flex flex-wrap gap-2">
           <Menu
             align="start"
