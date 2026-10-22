@@ -37,6 +37,7 @@ type Decision struct {
 	Context         string     `json:"context"`
 	Options         []string   `json:"options"`
 	Recommendation  string     `json:"recommendation"`
+	ShortTitle      string     `json:"short_title"` // 模型生成的短标题
 	Status          string     `json:"status"`
 	Answer          string     `json:"answer"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -49,7 +50,7 @@ func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0),
-	x.question, x.context, x.options, x.recommendation, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn
+	x.question, x.context, x.options, x.recommendation, x.short_title, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -62,7 +63,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var options, created string
 	var answered, delivered sql.NullString
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq,
-		&d.Question, &d.Context, &options, &d.Recommendation, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn)
+		&d.Question, &d.Context, &options, &d.Recommendation, &d.ShortTitle, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn)
 	d.Code = decCode(seq)
 	if rseq > 0 {
 		d.RequirementCode = reqCode(rseq)
@@ -205,6 +206,17 @@ func (s *Store) ResendDecision(ctx context.Context, ref string) (Decision, error
 		return d, err
 	}
 	return s.GetDecision(ctx, d.ID)
+}
+
+// SetDecisionTitle 写入模型生成的短标题。
+func (s *Store) SetDecisionTitle(ctx context.Context, id, title string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE decisions SET short_title = ? WHERE id = ?`, title, id)
+	return err
+}
+
+// DecisionsBetween 返回时间窗内提出或作答的决策，供时段回顾使用。
+func (s *Store) DecisionsBetween(ctx context.Context, from, to time.Time) ([]Decision, error) {
+	return s.queryDecs(ctx, decSelect+` WHERE (x.created_at >= ? AND x.created_at <= ?) OR (x.answered_at >= ? AND x.answered_at <= ?) ORDER BY x.seq`, ts(from), ts(to), ts(from), ts(to))
 }
 
 // CloseDecision 关闭决策，不再注入。

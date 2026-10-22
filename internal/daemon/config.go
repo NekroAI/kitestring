@@ -7,16 +7,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-
-	"github.com/NekroAI/kitestring/internal/summary"
 )
 
 // Config 是 daemon 配置文件内容。
 type Config struct {
 	HubURL string `json:"hub_url"` // 例：http://nexus-mini.local:7310
 	Token  string `json:"token"`
-	// Summary 仅在 Hub 摘要模式为 device 时使用（D7）。
-	Summary summary.Config `json:"summary,omitempty"`
 }
 
 // Home 返回 Kitestring 本机目录，可用 KS_HOME 覆盖（测试与多实例用）。

@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 	perm_mode      TEXT NOT NULL DEFAULT '',
 	compactions    INTEGER NOT NULL DEFAULT 0,
 	worktree       INTEGER NOT NULL DEFAULT 0,
+	title          TEXT NOT NULL DEFAULT '',
+	phase          TEXT NOT NULL DEFAULT '',
+	digest_done    TEXT NOT NULL DEFAULT '',
+	digest_ask     TEXT NOT NULL DEFAULT '',
 	started_at     TEXT NOT NULL,
 	last_active_at TEXT NOT NULL,
 	ended_at       TEXT
@@ -124,6 +128,7 @@ CREATE TABLE IF NOT EXISTS decisions (
 	context        TEXT NOT NULL DEFAULT '',
 	options        TEXT NOT NULL DEFAULT '[]',
 	recommendation TEXT NOT NULL DEFAULT '',
+	short_title    TEXT NOT NULL DEFAULT '',
 	status         TEXT NOT NULL, -- pending | answered | delivered | closed
 	answer         TEXT NOT NULL DEFAULT '',
 	created_at     TEXT NOT NULL,

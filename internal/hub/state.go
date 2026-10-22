@@ -46,10 +46,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	if ev.PermMode != "" {
 		x.PermMode = ev.PermMode
 	}
-	if ev.Summary != "" {
-		x.Summary = ev.Summary
-	}
-	if stale || ev.Name == protocol.EventSummary {
+	if stale {
 		return x
 	}
 	x.LastActiveAt = ev.Time
@@ -65,12 +62,20 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	case "UserPromptSubmit":
 		x.EndedAt = nil
 		x.State, x.StateDetail = store.StateRunning, ""
+		if ev.Source == protocol.SourceAuto {
+			break // 后台任务通知等自动消息：继续运行，但不算你的一轮，也不覆盖你最后说的话
+		}
 		x.Turns++
 		x.TurnTools = 0
 		if ev.Prompt != "" {
 			x.LastPrompt = ev.Prompt
 		}
 	case "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact":
+		if ev.Name == "PreToolUse" && asksUser(ev.ToolName) {
+			x.TurnTools++
+			x.State, x.StateDetail = store.StateWaitReply, toolLabel(ev.ToolName, ev.ToolBrief)
+			break
+		}
 		switch ev.Name {
 		case "PreToolUse":
 			x.TurnTools++
@@ -92,6 +97,11 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.State, x.StateDetail = store.StateRunning, ""
 		}
 	case "PermissionRequest":
+		if asksUser(ev.ToolName) {
+			// 向用户提问 / 请用户确认计划也走授权通道，但对用户来说是“等你回答”。
+			x.State, x.StateDetail = store.StateWaitReply, toolLabel(ev.ToolName, ev.ToolBrief)
+			break
+		}
 		x.State = store.StateWaitApproval
 		x.StateDetail = strings.TrimSpace(ev.ToolName + " " + ev.ToolBrief)
 	case "Notification":
@@ -113,6 +123,11 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		x.StateSince = ev.Time
 	}
 	return x
+}
+
+// asksUser 判断工具是否是在向用户提问或请求确认，而不是请求执行权限。
+func asksUser(tool string) bool {
+	return tool == "AskUserQuestion" || tool == "ExitPlanMode" || tool == "request_user_input"
 }
 
 // toolLabel 生成“工具 · 简述”形式的动作描述。

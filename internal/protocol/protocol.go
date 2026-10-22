@@ -52,7 +52,6 @@ type Event struct {
 	NotifType string    `json:"notification_type,omitempty"`
 	PermMode  string    `json:"permission_mode,omitempty"`
 	AgentType string    `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
-	Summary   string    `json:"summary,omitempty"`    // 设备侧生成的一句话摘要
 	LastReply string    `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
 	Git       *Git      `json:"git,omitempty"`
 }
@@ -82,12 +81,7 @@ const (
 type DeviceConfig struct {
 	// SendLastReply 为真时 daemon 在 Stop 事件中附带截断的最后回复，供 Hub 生成摘要（D3 / D7）。
 	SendLastReply bool `json:"send_last_reply"`
-	// SummaryOnDevice 为真时 daemon 用本机配置的模型生成摘要，只上送摘要文本。
-	SummaryOnDevice bool `json:"summary_on_device"`
 }
-
-// EventSummary 是 daemon 在设备侧生成摘要后补发的合成事件名，只更新摘要、不改变会话状态。
-const EventSummary = "KsSummary"
 
 // Envelope 是 WebSocket 上的统一消息外壳。
 type Envelope struct {

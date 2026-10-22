@@ -49,9 +49,8 @@ type Daemon struct {
 
 // sessionInfo 缓存每个会话不常变化的信息。
 type sessionInfo struct {
-	client     string
-	model      string
-	lastPrompt string
+	client string
+	model  string
 }
 
 // New 创建 daemon。
@@ -278,9 +277,6 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := protocol.HookResponse{Context: d.injection(ev)}
 	d.wake()
-	if ev.Name == "Stop" {
-		d.maybeSummarize(ev, req.Payload)
-	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -315,7 +311,11 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.TurnID = str(p, "prompt_id")
 	}
 	if name == "UserPromptSubmit" {
-		ev.Prompt = summary.Truncate(strings.TrimSpace(str(p, "prompt")), 200)
+		text, auto := protocol.CleanPrompt(str(p, "prompt"))
+		ev.Prompt = summary.Truncate(text, 200)
+		if auto {
+			ev.Source = protocol.SourceAuto
+		}
 	}
 	if name == "PreToolUse" || name == "PermissionRequest" {
 		if in, ok := p["tool_input"].(map[string]any); ok {
@@ -354,9 +354,6 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	ev.Client = info.client
 	if ev.Model == "" {
 		ev.Model = info.model
-	}
-	if ev.Prompt != "" {
-		info.lastPrompt = ev.Prompt
 	}
 	d.mu.Unlock()
 	if name == "Stop" && cfg.SendLastReply {
@@ -478,34 +475,6 @@ func (d *Daemon) injection(ev protocol.Event) string {
 
 func oneLine(s string) string { return summary.Truncate(strings.Join(strings.Fields(s), " "), 300) }
 
-// maybeSummarize 在 Hub 指定设备侧摘要时，用本机配置的模型生成摘要并补发合成事件。
-func (d *Daemon) maybeSummarize(ev protocol.Event, p map[string]any) {
-	d.mu.Lock()
-	onDevice := d.devCfg.SummaryOnDevice
-	prompt := ""
-	if info := d.sessions[protocol.SessionKey(ev.Tool, ev.SessionID)]; info != nil {
-		prompt = info.lastPrompt
-	}
-	d.mu.Unlock()
-	if !onDevice || !d.cfg.Summary.Enabled() {
-		return
-	}
-	reply := summary.Truncate(str(p, "last_assistant_message"), 1500)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
-		defer cancel()
-		text, err := summary.Generate(ctx, d.cfg.Summary, prompt, reply)
-		if err != nil {
-			d.log.Warn("设备侧摘要失败", "err", err)
-			return
-		}
-		sev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: ev.Tool, Name: protocol.EventSummary, SessionID: ev.SessionID, Summary: text}
-		if err := d.q.pushEvent(sev); err == nil {
-			d.wake()
-		}
-	}()
-}
-
 var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
 
 // toolBrief 从工具输入中提取一句动作简述：命令截断、文件名、搜索词等，不含文件内容（D3）。
@@ -557,6 +526,15 @@ func toolBrief(tool string, in map[string]any) string {
 		}
 	case "WebSearch":
 		return clean(str(in, "query"), 60)
+	case "AskUserQuestion":
+		if qs, ok := in["questions"].([]any); ok && len(qs) > 0 {
+			if q, ok := qs[0].(map[string]any); ok {
+				return clean(str(q, "question"), 80)
+			}
+		}
+		return clean(str(in, "question"), 80)
+	case "ExitPlanMode":
+		return ""
 	case "Task", "Agent":
 		return clean(str(in, "description"), 60)
 	}

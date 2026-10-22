@@ -27,21 +27,30 @@ func (c Config) Enabled() bool { return c.BaseURL != "" && c.Model != "" }
 
 const systemPrompt = `你是开发进度速记员。根据用户给 AI 编程助手的最后一条指令和助手的最后一条回复，用一句中文概括这个会话当前的进展，不超过 40 个字。只输出这句话，不要引号、前缀或解释。`
 
-// Generate 生成摘要。prompt 与 reply 由调用方预先截断。
+// Generate 用固定提示词生成一句话摘要（用于设置页测试）。prompt 与 reply 由调用方预先截断。
 func Generate(ctx context.Context, cfg Config, prompt, reply string) (string, error) {
+	text, err := Chat(ctx, cfg, systemPrompt, fmt.Sprintf("最后一条指令：\n%s\n\n助手最后回复：\n%s", prompt, reply), 120)
+	if err != nil {
+		return "", err
+	}
+	return Clean(text, 80), nil
+}
+
+// Chat 调用 OpenAI 兼容的 Chat Completions 接口，返回模型输出文本。
+func Chat(ctx context.Context, cfg Config, system, user string, maxTokens int) (string, error) {
 	if !cfg.Enabled() {
-		return "", errors.New("摘要模型未配置")
+		return "", errors.New("模型未配置")
 	}
 	body, _ := json.Marshal(map[string]any{
 		"model": cfg.Model,
 		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": fmt.Sprintf("最后一条指令：\n%s\n\n助手最后回复：\n%s", prompt, reply)},
+			{"role": "system", "content": system},
+			{"role": "user", "content": user},
 		},
-		"max_tokens":  120,
+		"max_tokens":  maxTokens,
 		"temperature": 0.2,
 	})
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	url := strings.TrimSuffix(cfg.BaseURL, "/") + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -57,9 +66,9 @@ func Generate(ctx context.Context, cfg Config, prompt, reply string) (string, er
 		return "", err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("摘要接口返回 %d：%s", resp.StatusCode, Truncate(string(raw), 200))
+		return "", fmt.Errorf("模型接口返回 %d：%s", resp.StatusCode, Truncate(string(raw), 200))
 	}
 	var out struct {
 		Choices []struct {
@@ -69,14 +78,28 @@ func Generate(ctx context.Context, cfg Config, prompt, reply string) (string, er
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("解析摘要响应失败：%w", err)
+		return "", fmt.Errorf("解析模型响应失败：%w", err)
 	}
 	if len(out.Choices) == 0 {
-		return "", errors.New("摘要接口未返回内容")
+		return "", errors.New("模型未返回内容")
 	}
-	text := strings.TrimSpace(out.Choices[0].Message.Content)
-	text = strings.Trim(text, "\"“”「」")
-	return Truncate(strings.ReplaceAll(text, "\n", " "), 80), nil
+	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+}
+
+// JSON 从模型输出中提取第一个 JSON 对象并解析到 v（容忍代码块包裹与前后多余文字）。
+func JSON(text string, v any) error {
+	i, j := strings.Index(text, "{"), strings.LastIndex(text, "}")
+	if i < 0 || j <= i {
+		return errors.New("模型输出中没有 JSON")
+	}
+	return json.Unmarshal([]byte(text[i:j+1]), v)
+}
+
+// Clean 去掉引号与换行并截断，用于单行文本。
+func Clean(text string, n int) string {
+	text = strings.TrimSpace(text)
+	text = strings.Trim(text, "\"“”「」『』'`")
+	return Truncate(strings.Join(strings.Fields(text), " "), n)
 }
 
 // Truncate 按字符截断字符串，超长时追加省略号。

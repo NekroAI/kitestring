@@ -44,6 +44,29 @@ func TestApplyEventLifecycle(t *testing.T) {
 	}
 }
 
+func TestAskUserQuestionIsWaitingReply(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Time: t0})
+	ask := applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "PermissionRequest", ToolName: "AskUserQuestion", ToolBrief: "先做哪个？", Time: t0.Add(time.Second)})
+	if ask.State != store.StateWaitReply || ask.StateDetail != "AskUserQuestion · 先做哪个？" {
+		t.Fatalf("提问应为等你回复，得到 %s / %q", ask.State, ask.StateDetail)
+	}
+	back := applyEvent(&ask, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "PostToolUse", ToolName: "AskUserQuestion", Time: t0.Add(2 * time.Second)})
+	if back.State != store.StateRunning {
+		t.Fatalf("回答后应继续运行，得到 %s", back.State)
+	}
+}
+
+func TestAutoPromptKeepsLastPrompt(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Prompt: "修登录页", Time: t0})
+	cur = applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Stop", Time: t0.Add(time.Second)})
+	auto := applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Source: protocol.SourceAuto, Time: t0.Add(2 * time.Second)})
+	if auto.LastPrompt != "修登录页" || auto.Turns != 1 || auto.State != store.StateRunning {
+		t.Fatalf("自动消息不应覆盖最后消息或增加轮次：%q %d %s", auto.LastPrompt, auto.Turns, auto.State)
+	}
+}
+
 func TestApplyEventStaleDoesNotRegress(t *testing.T) {
 	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Stop", Time: t0.Add(10 * time.Second)})

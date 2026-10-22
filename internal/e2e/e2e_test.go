@@ -300,3 +300,92 @@ func TestLoginLockout(t *testing.T) {
 		t.Fatalf("其他 IP 应能正常登录，得到 %d", code)
 	}
 }
+
+// fakeModel 模拟 OpenAI 兼容接口：按系统提示词的内容返回不同结果，并记录调用次数。
+func fakeModel(t *testing.T) (*httptest.Server, *int) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct{ Content string } `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		calls++
+		sys := body.Messages[0].Content
+		out := "？"
+		switch {
+		case strings.Contains(sys, "第一条指令"):
+			out = "登录页记住我"
+		case strings.Contains(sys, "输出一个 JSON"):
+			out = "```json\n{\"summary\":\"已加记住我复选框\",\"phase\":\"testing\",\"done\":\"加了复选框和测试\",\"ask\":\"有效期选 7 天还是 30 天\"}\n```"
+		case strings.Contains(sys, "短标题"):
+			out = "“记住我”有效期"
+		case strings.Contains(sys, "回顾"):
+			out = "## 概览\n推进了登录页。"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": out}}}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &calls
+}
+
+func TestAIFeatures(t *testing.T) {
+	e := setup(t)
+	model, calls := fakeModel(t)
+	cwd, _ := os.Getwd()
+	ev := func(name string, extra map[string]any) map[string]any {
+		m := map[string]any{"session_id": "ai-1", "cwd": cwd, "hook_event_name": name, "turn_id": "t1"}
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+
+	// 默认全部关闭：配了模型也不调用。
+	settings := map[string]any{"public_url": "", "summary_base_url": model.URL + "/v1", "summary_model": "m", "notify_default": map[string]any{}, "ai": map[string]bool{}}
+	e.call("PUT", "/api/settings", settings, nil)
+	hook(t, "claude", ev("UserPromptSubmit", map[string]any{"prompt": "给登录页加记住我"}))
+	time.Sleep(300 * time.Millisecond)
+	if *calls != 0 {
+		t.Fatalf("功能默认关闭时不应调用模型，调用了 %d 次", *calls)
+	}
+
+	settings["ai"] = map[string]bool{"summary": true, "title": true, "digest": true, "decision_title": true, "recap": true}
+	e.call("PUT", "/api/settings", settings, nil)
+	time.Sleep(300 * time.Millisecond) // 等 daemon 收到“上送最后回复”的配置
+
+	hook(t, "claude", map[string]any{"session_id": "ai-2", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "给登录页加记住我", "prompt_id": "p1"})
+	e.waitFor("根据首条消息生成标题", func() bool { return e.session("claude:ai-2").Title == "登录页记住我" })
+
+	hook(t, "claude", map[string]any{"session_id": "ai-2", "cwd": cwd, "hook_event_name": "Stop", "last_assistant_message": "已在登录表单加了记住我复选框并补了测试，有效期你想用多久？"})
+	e.waitFor("一轮结束后生成摘要、阶段与要点", func() bool {
+		s := e.session("claude:ai-2")
+		return s.Summary == "已加记住我复选框" && s.Phase == "testing" && s.DigestDone == "加了复选框和测试" && s.DigestAsk == "有效期选 7 天还是 30 天"
+	})
+
+	hook(t, "claude", map[string]any{"session_id": "ai-2", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "30 天", "prompt_id": "p2"})
+	e.waitFor("新一轮开始时清掉要点", func() bool {
+		s := e.session("claude:ai-2")
+		return s.DigestAsk == "" && s.Title == "登录页记住我"
+	})
+
+	c := client.New(5 * time.Second)
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", map[string]any{"question": "记住我的有效期用 7 天还是 30 天？", "session_key": "claude:ai-2"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("决策短标题", func() bool {
+		var list struct {
+			Decisions []store.Decision `json:"decisions"`
+		}
+		e.call("GET", "/api/decisions", nil, &list)
+		return len(list.Decisions) == 1 && list.Decisions[0].ShortTitle == "记住我有效期"
+	})
+
+	var recap struct {
+		Markdown string `json:"markdown"`
+	}
+	now := time.Now()
+	e.call("POST", "/api/recap", map[string]any{"from": now.Add(-time.Hour), "to": now.Add(time.Minute)}, &recap)
+	if !strings.Contains(recap.Markdown, "## 概览") {
+		t.Fatalf("回顾内容异常：%q", recap.Markdown)
+	}
+}

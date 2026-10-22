@@ -47,7 +47,11 @@ type Session struct {
 	PermMode         string           `json:"permission_mode"`
 	Compactions      int              `json:"compactions"`
 	Worktree         bool             `json:"worktree"`
-	Activity         []int            `json:"activity"` // 最近 60 分钟每 5 分钟的事件数，旧 → 新
+	Activity         []int            `json:"activity"`    // 最近 60 分钟每 5 分钟的事件数，旧 → 新
+	Title            string           `json:"title"`       // 模型生成的会话标题
+	Phase            string           `json:"phase"`       // 模型判断的阶段：planning implementing debugging testing done blocked
+	DigestDone       string           `json:"digest_done"` // 等你回复时：这一轮做了什么
+	DigestAsk        string           `json:"digest_ask"`  // 等你回复时：在等你决定什么
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
 	EndedAt          *time.Time       `json:"ended_at,omitempty"`
@@ -66,6 +70,7 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
+	s.title, s.phase, s.digest_done, s.digest_ask,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
@@ -76,6 +81,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
+		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
@@ -103,9 +109,10 @@ func (s *Store) GetSession(ctx context.Context, key string) (Session, error) {
 	return x, err
 }
 
-// ListSessions 列出会话：未结束的全部返回，已结束的只返回 endedWithin 内的。
-func (s *Store) ListSessions(ctx context.Context, endedWithin time.Duration) ([]Session, error) {
-	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.ended_at IS NULL OR s.ended_at >= ? ORDER BY s.last_active_at DESC`, ts(time.Now().Add(-endedWithin)))
+// ListSessions 列出 activeWithin 内活跃过的会话，以及更早但仍有待决策的会话。
+func (s *Store) ListSessions(ctx context.Context, activeWithin time.Duration) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.last_active_at >= ? OR s.key IN (SELECT session_key FROM decisions WHERE status = 'pending')
+		ORDER BY s.last_active_at DESC`, ts(time.Now().Add(-activeWithin)))
 	if err != nil {
 		return nil, err
 	}
@@ -184,10 +191,115 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 	return err
 }
 
-// SetSessionSummary 只更新摘要（异步摘要生成完成后调用）。
-func (s *Store) SetSessionSummary(ctx context.Context, key, summary string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET summary = ? WHERE key = ?`, summary, key)
+// SessionAI 是模型生成的会话信息；空字段表示不修改。
+type SessionAI struct {
+	Summary, Title, Phase, DigestDone, DigestAsk string
+}
+
+// SetSessionAI 更新模型生成的字段（异步生成完成后调用）。
+func (s *Store) SetSessionAI(ctx context.Context, key string, a SessionAI) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET
+		summary = CASE WHEN ? <> '' THEN ? ELSE summary END,
+		title = CASE WHEN ? <> '' THEN ? ELSE title END,
+		phase = CASE WHEN ? <> '' THEN ? ELSE phase END,
+		digest_done = CASE WHEN ? <> '' THEN ? ELSE digest_done END,
+		digest_ask = CASE WHEN ? <> '' THEN ? ELSE digest_ask END
+		WHERE key = ?`,
+		a.Summary, a.Summary, a.Title, a.Title, a.Phase, a.Phase, a.DigestDone, a.DigestDone, a.DigestAsk, a.DigestAsk, key)
 	return err
+}
+
+// ClearDigest 在新一轮开始时清掉上一轮的“等你回复”要点。
+func (s *Store) ClearDigest(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET digest_done = '', digest_ask = '' WHERE key = ?`, key)
+	return err
+}
+
+// RepairPrompts 修复被自动消息（如后台任务通知）覆盖的“最后消息”：
+// 用 clean 重新整理，必要时回溯到最近一条真正由用户发出的消息。返回修复的会话数。
+func (s *Store) RepairPrompts(ctx context.Context, clean func(string) (string, bool)) (int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, last_prompt FROM sessions WHERE last_prompt LIKE '<%'`)
+	if err != nil {
+		return 0, err
+	}
+	type item struct{ key, prompt string }
+	var items []item
+	for rows.Next() {
+		var it item
+		if err := rows.Scan(&it.key, &it.prompt); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		items = append(items, it)
+	}
+	rows.Close()
+	fixed := 0
+	for _, it := range items {
+		text, auto := clean(it.prompt)
+		if auto {
+			text = ""
+			evs, err := s.SessionEvents(ctx, it.key, 500)
+			if err != nil {
+				return fixed, err
+			}
+			for _, ev := range evs { // 时间倒序
+				if ev.Name != "UserPromptSubmit" {
+					continue
+				}
+				if t, a := clean(ev.Prompt); !a && t != "" {
+					text = t
+					break
+				}
+			}
+		}
+		if text == it.prompt {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE sessions SET last_prompt = ? WHERE key = ?`, text, it.key); err != nil {
+			return fixed, err
+		}
+		fixed++
+	}
+	return fixed, nil
+}
+
+// SessionsBetween 返回在 [from, to] 内有过事件的会话，供时段回顾使用。
+func (s *Store) SessionsBetween(ctx context.Context, from, to time.Time) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.key IN (SELECT DISTINCT session_key FROM events WHERE time >= ? AND time <= ?) ORDER BY s.last_active_at DESC`, ts(from), ts(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Session{}
+	for rows.Next() {
+		x, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// PromptsBetween 返回会话在时间窗内用户发出的消息（已截断）。
+func (s *Store) PromptsBetween(ctx context.Context, key string, from, to time.Time, limit int) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name = 'UserPromptSubmit' AND time >= ? AND time <= ? ORDER BY time LIMIT ?`, key, ts(from), ts(to), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		var ev protocol.Event
+		if json.Unmarshal([]byte(p), &ev) == nil && ev.Prompt != "" {
+			out = append(out, ev.Prompt)
+		}
+	}
+	return out, rows.Err()
 }
 
 // MarkDeviceLost 把设备下未结束的会话标为失联，返回受影响的会话键。
@@ -259,7 +371,7 @@ func (s *Store) fillActivity(ctx context.Context, x *Session) error {
 	if x.LastActiveAt.Before(from) {
 		return nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT time FROM events WHERE session_key = ? AND time >= ? AND name <> ?`, x.Key, ts(from), protocol.EventSummary)
+	rows, err := s.db.QueryContext(ctx, `SELECT time FROM events WHERE session_key = ? AND time >= ?`, x.Key, ts(from))
 	if err != nil {
 		return err
 	}

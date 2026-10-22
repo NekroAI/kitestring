@@ -22,15 +22,16 @@ const (
 	lostGrace = 45 * time.Second
 	// redeliverWindow 是恢复 / 压缩时补注入的已接收决策时间窗（D15）。
 	redeliverWindow = 24 * time.Hour
-	// endedVisible 是已结束会话在实例墙上保留的时长。
-	endedVisible = 6 * time.Hour
+	// recentWindow 是工作台展示的会话活跃时间窗。
+	recentWindow = 24 * time.Hour
 )
 
 // Settings 是保存在数据库里的 Hub 运行配置。
 type Settings struct {
 	PublicURL     string             `json:"public_url"`
-	SummaryMode   string             `json:"summary_mode"` // off | hub | device
-	Summary       summary.Config     `json:"summary"`
+	SummaryMode   string             `json:"summary_mode,omitempty"` // 旧版字段，仅用于迁移
+	Summary       summary.Config     `json:"summary"`                // Hub 侧模型（OpenAI 兼容接口）
+	AI            AIFeatures         `json:"ai"`
 	NotifyDefault store.NotifyConfig `json:"notify_default"`
 }
 
@@ -42,6 +43,7 @@ type Hub struct {
 	log    *slog.Logger
 	broker *broker
 	logins *loginLimiter
+	ai     aiGuard
 
 	mu       sync.Mutex
 	conns    map[string]*deviceConn // deviceID → 连接
@@ -67,13 +69,14 @@ func (h *Hub) Settings(ctx context.Context) (Settings, error) {
 	var s Settings
 	raw, err := h.store.GetSetting(ctx, settingsKey)
 	if err != nil || raw == "" {
-		s.SummaryMode = "off"
 		return s, err
 	}
 	err = json.Unmarshal([]byte(raw), &s)
-	if s.SummaryMode == "" {
-		s.SummaryMode = "off"
+	// 迁移：旧版“在 Hub 上生成摘要”等价于只开启会话摘要；“在各设备上生成”已移除。
+	if s.SummaryMode == "hub" && !s.AI.any() {
+		s.AI.Summary = true
 	}
+	s.SummaryMode = ""
 	return s, err
 }
 
@@ -93,16 +96,18 @@ func (h *Hub) SaveSettings(ctx context.Context, s Settings) error {
 }
 
 func (h *Hub) deviceConfig(s Settings) protocol.DeviceConfig {
-	return protocol.DeviceConfig{
-		SendLastReply:   s.SummaryMode == "hub" && s.Summary.Enabled(),
-		SummaryOnDevice: s.SummaryMode == "device",
-	}
+	return protocol.DeviceConfig{SendLastReply: s.Summary.Enabled() && s.AI.needsReply()}
 }
 
 // Start 启动 HTTP 服务，阻塞直到 ctx 结束。
 func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	if err := h.store.ResetOnline(ctx); err != nil {
 		return err
+	}
+	if n, err := h.store.RepairPrompts(ctx, protocol.CleanPrompt); err != nil {
+		h.log.Warn("修复会话最后消息失败", "err", err)
+	} else if n > 0 {
+		h.log.Info("已修复会话最后消息", "count", n)
 	}
 	// 启动时所有设备视为离线，但给与运行中断线相同的宽限期：daemon 很快重连时会话状态保持不变。
 	devs, err := h.store.ListDevices(ctx)
@@ -137,6 +142,14 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) error {
 	if ev.ID == "" || ev.SessionID == "" || ev.Tool == "" {
 		return fmt.Errorf("事件缺少必要字段")
+	}
+	if ev.Name == "UserPromptSubmit" {
+		// 兼容旧版 daemon：Hub 侧再整理一次。
+		text, auto := protocol.CleanPrompt(ev.Prompt)
+		ev.Prompt = text
+		if auto {
+			ev.Source = protocol.SourceAuto
+		}
 	}
 	inserted, err := h.store.InsertEvent(ctx, dev.ID, ev)
 	if err != nil || !inserted {
@@ -177,29 +190,16 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 			h.notifySession(full, notify.EventWaitingReply, "等待回复", full.Summary)
 		}
 	}
-	if ev.Name == "Stop" && ev.LastReply != "" {
-		go h.summarize(key, next.LastPrompt, ev.LastReply)
+	switch {
+	case ev.Name == "UserPromptSubmit" && ev.Source != protocol.SourceAuto:
+		if next.DigestDone != "" || next.DigestAsk != "" {
+			_ = h.store.ClearDigest(ctx, key)
+		}
+		go h.aiOnPrompt(key, ev.Prompt)
+	case ev.Name == "Stop" && ev.LastReply != "":
+		go h.aiOnStop(key, next.LastPrompt, ev.LastReply)
 	}
 	return nil
-}
-
-func (h *Hub) summarize(key, prompt, reply string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
-	defer cancel()
-	s, err := h.Settings(ctx)
-	if err != nil || s.SummaryMode != "hub" || !s.Summary.Enabled() {
-		return
-	}
-	text, err := summary.Generate(ctx, s.Summary, prompt, reply)
-	if err != nil {
-		h.log.Warn("生成摘要失败", "session", key, "err", err)
-		return
-	}
-	if err := h.store.SetSessionSummary(ctx, key, text); err != nil {
-		h.log.Warn("保存摘要失败", "err", err)
-		return
-	}
-	h.broker.publish("sessions")
 }
 
 // pushDecisions 把设备上待注入的决策全集下发给 daemon。

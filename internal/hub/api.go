@@ -294,7 +294,7 @@ func (f ReqFields) toReq() store.Requirement {
 // SettingsView 是返回给 Web 的配置，隐藏 API key。
 type SettingsView struct {
 	PublicURL     string             `json:"public_url"`
-	SummaryMode   string             `json:"summary_mode" enum:"off,hub,device"`
+	AI            AIFeatures         `json:"ai"`
 	SummaryBase   string             `json:"summary_base_url"`
 	SummaryModel  string             `json:"summary_model"`
 	SummaryKeySet bool               `json:"summary_api_key_set"`
@@ -305,7 +305,7 @@ type SettingsView struct {
 type settingsIn struct {
 	Body struct {
 		PublicURL     string             `json:"public_url"`
-		SummaryMode   string             `json:"summary_mode" enum:"off,hub,device"`
+		AI            AIFeatures         `json:"ai"`
 		SummaryBase   string             `json:"summary_base_url"`
 		SummaryModel  string             `json:"summary_model"`
 		SummaryKey    string             `json:"summary_api_key,omitempty" doc:"留空表示不修改"`
@@ -323,7 +323,7 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 		return nil, err
 	}
 	return &settingsOut{Body: SettingsView{
-		PublicURL: s.PublicURL, SummaryMode: s.SummaryMode, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
+		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
 	}}, nil
 }
@@ -356,7 +356,7 @@ func (h *Hub) registerWeb(api huma.API) {
 		func(ctx context.Context, _ *empty) (*sessionsOut, error) {
 			out := &sessionsOut{}
 			var err error
-			if out.Body.Sessions, err = h.store.ListSessions(ctx, endedVisible); err != nil {
+			if out.Body.Sessions, err = h.store.ListSessions(ctx, recentWindow); err != nil {
 				return nil, err
 			}
 			out.Body.Devices, err = h.store.ListDevices(ctx)
@@ -639,7 +639,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			}
 			b := in.Body
 			cur.PublicURL = strings.TrimSuffix(strings.TrimSpace(b.PublicURL), "/")
-			cur.SummaryMode = b.SummaryMode
+			cur.AI = b.AI
 			cur.Summary.BaseURL = strings.TrimSpace(b.SummaryBase)
 			cur.Summary.Model = strings.TrimSpace(b.SummaryModel)
 			if b.SummaryKey != "" {
@@ -650,6 +650,19 @@ func (h *Hub) registerWeb(api huma.API) {
 				return nil, err
 			}
 			return h.settingsView(ctx)
+		})
+	huma.Register(api, huma.Operation{OperationID: "recap", Method: http.MethodPost, Path: "/api/recap", Tags: tag("ai"), Summary: "生成一段时间内的进展回顾"},
+		func(ctx context.Context, in *recapIn) (*recapOut, error) {
+			if !in.Body.To.After(in.Body.From) {
+				return nil, huma.Error400BadRequest("时间范围无效")
+			}
+			text, err := h.Recap(ctx, in.Body.From, in.Body.To)
+			if err != nil {
+				return nil, huma.Error422UnprocessableEntity(err.Error())
+			}
+			out := &recapOut{}
+			out.Body.Markdown, out.Body.From, out.Body.To = text, in.Body.From, in.Body.To
+			return out, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "test-summary", Method: http.MethodPost, Path: "/api/settings/test-summary", Tags: tag("settings"),
 		Summary: "用一段固定的示例对话调用摘要模型，验证配置是否可用"},
@@ -670,6 +683,21 @@ func (h *Hub) registerWeb(api huma.API) {
 			out.Body.Summary = text
 			return out, nil
 		})
+}
+
+type recapIn struct {
+	Body struct {
+		From time.Time `json:"from"`
+		To   time.Time `json:"to"`
+	}
+}
+
+type recapOut struct {
+	Body struct {
+		Markdown string    `json:"markdown"`
+		From     time.Time `json:"from"`
+		To       time.Time `json:"to"`
+	}
 }
 
 const (
@@ -826,6 +854,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("decisions", "sessions", "requirements")
+			go h.aiOnDecision(d)
 			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, "/decisions")
 			return &decisionOut{Body: d}, nil
 		})

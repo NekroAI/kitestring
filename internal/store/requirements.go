@@ -264,6 +264,24 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 	return s.GetRequirement(ctx, cur.ID)
 }
 
+// RequirementsUpdatedBetween 返回时间窗内有变化的需求。
+func (s *Store) RequirementsUpdatedBetween(ctx context.Context, from, to time.Time) ([]Requirement, error) {
+	rows, err := s.db.QueryContext(ctx, reqSelect+` WHERE r.updated_at >= ? AND r.updated_at <= ? ORDER BY r.updated_at`, ts(from), ts(to))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Requirement{}
+	for rows.Next() {
+		r, err := scanReq(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // DeleteRequirement 删除需求。
 func (s *Store) DeleteRequirement(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM requirements WHERE id = ?`, id)
