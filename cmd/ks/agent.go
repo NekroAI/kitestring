@@ -20,6 +20,22 @@ type stringList []string
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
+// parseAnywhere 允许参数与位置参数任意交错（Go 的 flag 包遇到第一个位置参数就停止解析）。
+func parseAnywhere(fs *flag.FlagSet, args []string) error {
+	var pos []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		pos = append(pos, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
+	return fs.Parse(append([]string{"--"}, pos...))
+}
+
 // cliSession 推断 CLI 调用所在会话：显式参数优先，其次 Claude 注入的环境变量。
 func cliSession(flagVal string) string {
 	if flagVal != "" {
@@ -58,7 +74,7 @@ func runReq(args []string) error {
 	priority := fs.String("priority", "", "create：优先级 P0-P3")
 	kind := fs.String("kind", "manual", "evidence：证据类型")
 	link := fs.String("link", "", "evidence：链接")
-	if err := fs.Parse(args); err != nil {
+	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	key := cliSession(*session)
@@ -115,7 +131,7 @@ func runDecision(args []string) error {
 	req := fs.String("req", "", "关联需求")
 	var opts stringList
 	fs.Var(&opts, "option", "选项，可重复")
-	if err := fs.Parse(args[1:]); err != nil {
+	if err := parseAnywhere(fs, args[1:]); err != nil {
 		return err
 	}
 	if *question == "" {
