@@ -22,7 +22,7 @@
 | `permission_mode` | ✅ | ✅ |
 | `SessionStart.source` | ✅ | ✅（startup / resume / clear / compact / fork） |
 | `Stop.last_assistant_message` | ✅ | ✅ |
-| `PermissionRequest` | ✅ 实测（含 `tool_input`、`permission_suggestions`） | 官方文档列出；本次因审批策略为免审批未触发，未实测 |
+| `PermissionRequest` | ✅ 实测（含 `tool_input`、`permission_suggestions`） | ✅ 实测（0.159.3，需审批的 MCP 工具调用触发） |
 | `Notification` | ✅ 官方事件（本次未触发） | ❌ 无此事件；另有 `Interrupt` |
 
 ## 3. 进程与会话关联
@@ -31,9 +31,15 @@
 |---|---|---|
 | hook 进程的父进程 | agent 进程本身 | CLI 直跑时为 agent 进程；**经 app-server 运行时为共享的 app-server 进程**（一个进程承载多个会话） |
 | MCP 子进程环境里的会话标识 | ✅ `CLAUDE_CODE_SESSION_ID`，与 hook 的 `session_id` 一致 | ❌ Codex 给 MCP 子进程的环境是精简过的，没有会话标识 |
-| MCP 子进程的父进程 | agent 进程 | agent 进程（CLI 直跑时与 hook 的父进程相同） |
+| MCP `tools/call` 请求的 `_meta` | `claudecode/toolUseId`，等于同一调用 `PreToolUse` hook 的 `tool_use_id` | `sessionId`（= hook 的 `session_id`）、`threadId`、`callId`（= hook 的 `tool_use_id`）、`x-codex-turn-metadata`（含 `model`、`codex_version` 等）；0.159.3 与 0.163.0-alpha 一致 |
+| MCP 工具调用是否触发 `PreToolUse` / `PostToolUse` | ✅，`tool_name` 为 `mcp__<server>__<tool>` | ✅，同左；`tool_input` 与 MCP 收到的参数完全一致 |
 
-结论：Claude 侧 `ks mcp` 可直接从环境变量拿到会话；Codex 侧只能在 CLI 直跑时用父进程 PID 关联，经 app-server（桌面 App、IDE 插件等）时一个 PID 对应多个会话，需要别的办法（见 decisions.md Q9）。
+实测：同一目录下并发两个 Codex 会话各调用一次 MCP 工具，`_meta.sessionId` 与各自 hook 的 `session_id` 一一对应，无串扰。
+
+结论（Q9）：MCP 调用可以精确关联会话，不需要进程推断。
+- Codex：直接读 `_meta.sessionId`。
+- Claude：读环境变量 `CLAUDE_CODE_SESSION_ID`；`_meta.claudecode/toolUseId` 可与 `PreToolUse` hook 的 `tool_use_id` 交叉校验。
+- 兜底：按 `tool_use_id` / `callId` 与 `PreToolUse` hook 对齐（hook 先于 MCP 调用约 15–35ms 到达）。
 
 ## 4. 性能
 
@@ -57,6 +63,7 @@
 
 ## 6. 其他观察
 
+- Codex 的 MCP 工具在审批策略为 `never` 时会被自动拒绝；`ks install` 需要为 Kitestring 自己的工具配置 `[mcp_servers.<name>.tools.<tool>] approval_mode = "approve"`，或引导用户确认。
 - Codex 项目级 hook 与项目级 MCP 都需要用户先信任项目、并在 `/hooks` 中逐条信任；未信任时静默跳过，不报错。`ks install` 需要引导用户完成这一步，不应使用绕过信任的参数。
 - Codex 用户级与项目级 hook 叠加执行，不互相覆盖。
 - Codex 0.163.0-alpha 的 `exec` 在 stdin 不是终端时会等待 stdin 结束，与 hook 无关，仅影响测试脚本。

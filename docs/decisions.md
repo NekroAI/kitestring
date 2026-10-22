@@ -30,7 +30,7 @@
 | Q5 | Codex 的“等待用户输入”状态如何识别（Codex 无与 Claude Notification 对等的事件） | M1 结论倾向：两边统一以 `Stop`（及 Codex `Interrupt`）为“等待回复”，`Notification` 仅作 Claude 侧补充，不需要读 app-server；状态推导表见 hook-matrix.md 第 5 节 |
 | Q6 | 同一项目在不同设备路径不同时的归并规则 | 倾向按 git remote URL 归并，无 remote 时按设备 + 路径 |
 | Q7 | 是否导入外部需求源（GitHub issue、业务系统反馈、截图批量） | MVP 不做，留接口 |
-| Q9 | Codex 侧 `ks mcp` 如何关联到会话：Codex 给 MCP 子进程的环境无会话标识，经 app-server 运行时一个进程承载多个会话 | 待讨论。候选：CLI 直跑用父进程 PID；app-server 场景按 cwd + 最近活跃会话推断，歧义时在 Web 端手动调整（D5 已允许） |
+| Q9 | `ks mcp` 如何关联到会话 | M1 已实测（hook-matrix.md 第 3 节）：Codex MCP 请求 `_meta.sessionId` 即会话 ID；Claude MCP 子进程环境有 `CLAUDE_CODE_SESSION_ID`；两边都可再用 `tool_use_id` 与 `PreToolUse` hook 交叉校验。倾向直接采用，待确认后关闭 |
 | Q8 | 需求状态枚举是否沿用旧看板的 7 态 | 倾向沿用：草稿｜可开始｜进行中｜阻塞中｜待用户审查｜已完成并验收｜搁置 |
 
 已关闭：Q2（技术栈）→ D12；Q3（采集器形态）→ D12，结论为 daemon 是核心组件，hook 只是它的薄客户端。
