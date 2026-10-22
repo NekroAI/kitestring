@@ -385,6 +385,8 @@ export const zh = {
     done: (code: string, who: string) => `${code} 已交给「${who}」，待命中的会话会立刻开工`,
     timeline: '你交给会话开工',
     menu: '交给会话',
+    group: { now: '立即开工 · 待命中', later: '对话时送达 · 你下次和它对话或它待命时', stale: '已收起 · 需要你回终端唤醒' },
+    when: { now: '立即开工', later: '对话时送达', stale: '需你唤醒' },
   },
   menu: {
     openSession: '打开会话详情',

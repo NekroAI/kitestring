@@ -12,6 +12,7 @@ import { AttachZone, Thumbs } from '../ui/attach'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
 import { useOpenReq, useOpenSession } from './nav'
+import { targetItems } from './assign'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
 function recIndex(options: string[], rec: string): number {
@@ -251,21 +252,13 @@ export function OrphanCard({ d, sessions }: { d: Decision; sessions: Session[] }
             {t.decision.closeIt}
           </Button>
           <Menu
-            width="min-w-[280px]"
+            width="w-80"
             trigger={
               <Button size="sm" variant="primary" icon={<ArrowRightLeft className="size-3.5" />} disabled={busy || !active.length}>
                 {active.length ? t.decision.reassign : t.decision.noActive}
               </Button>
             }
-            items={[
-              { type: 'label', label: t.decision.reassignTo },
-              ...active.map((s) => ({
-                label: s.title || s.project_name || s.cwd,
-                hint: [s.device_name, s.summary || s.last_prompt].filter(Boolean).join(t.common.sep),
-                icon: <ToolMark tool={s.tool} size="sm" />,
-                onSelect: () => void wrap(async () => (await reassign(d.code, s.key)) && toast.success(t.decision.reassigned)),
-              })),
-            ]}
+            items={targetItems(sessions, d.project_id, (s) => void wrap(async () => (await reassign(d.code, s.key)) && toast.success(t.decision.reassigned)), { exclude: d.session_key ?? undefined })}
           />
         </div>
       </div>

@@ -3,8 +3,7 @@ import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Send,
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useProjects, useSessions } from '../api/queries'
-import { assignCandidates, defaultTarget, targetLabel, useAssign } from './assign'
-import { sessionTitle } from './SessionCard'
+import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from './assign'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Badge, Button, Card, Input, Textarea, Tip } from '../ui/base'
@@ -272,15 +271,11 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
               <button className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-fg hover:bg-hover">
                 {to && <StatusDot state={displayState(to)} />}
                 <span className="min-w-0 flex-1 truncate">{to ? targetLabel(to) : t.assign.nobody}</span>
+                {to && <span className={cx('shrink-0 text-xs', targetGroup(to) === 'now' ? 'text-accent' : 'text-fg-3')}>{t.assign.when[targetGroup(to)]}</span>}
                 <ChevronDown className="size-3 shrink-0 opacity-60" />
               </button>
             }
-            items={[
-              { label: t.assign.nobody, checked: !to, onSelect: () => setTarget(null) },
-              ...assignCandidates(all, f.project_id)
-                .slice(0, 12)
-                .map((s) => ({ label: sessionTitle(s), hint: [s.project_name, s.device_name, t.state[displayState(s)]].filter(Boolean).join(t.common.sep), icon: <StatusDot state={displayState(s)} />, checked: to?.key === s.key, onSelect: () => setTarget(s.key) })),
-            ]}
+            items={[{ label: t.assign.nobody, checked: !to, onSelect: () => setTarget(null) }, { type: 'separator' }, ...targetItems(all, f.project_id, (s) => setTarget(s.key), { checked: to?.key })]}
           />
         </div>
       </div>
