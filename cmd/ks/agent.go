@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/client"
+	"github.com/NekroAI/kitestring/internal/daemon"
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
@@ -183,4 +185,40 @@ func compact(m map[string]any) map[string]any {
 		}
 	}
 	return m
+}
+
+// runWait：ks wait——挂在后台等用户在 Kitestring 上的答复、修改意见或留言，收到后打印出来并退出。
+// 用法（Claude Code）：用后台方式运行，并把工具超时设得比 --timeout 略长。
+func runWait(args []string) error {
+	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	timeout := fs.Duration("timeout", daemon.DefaultWait, "最长等待时间，如 30m、2h（最长 12h）")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	q := url.Values{}
+	q.Set("timeout", timeout.String())
+	q.Set("ppid", strconv.Itoa(os.Getppid()))
+	if *session != "" {
+		q.Set("session_key", *session)
+	}
+	var res daemon.WaitResult
+	if err := client.New(min(*timeout, daemon.MaxWait)+time.Minute).Do(signalContext(), "GET", "/wait?"+q.Encode(), nil, &res); err != nil {
+		return err
+	}
+	switch res.Reason {
+	case "delivered":
+		fmt.Print(res.Text)
+	case "timeout":
+		fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。可以结束本轮；用户回来后会在对话里继续。\n", *timeout)
+	case "replaced":
+		fmt.Println("[Kitestring] 同一对话有新的 ks wait 接替等待，本次结束。")
+	case "canceled":
+		fmt.Println("[Kitestring] 等待被取消。")
+	default:
+		if res.Error != "" {
+			return fmt.Errorf("%s", res.Error)
+		}
+	}
+	return nil
 }

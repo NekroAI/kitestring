@@ -47,7 +47,10 @@ type Daemon struct {
 	decisions []protocol.Decision
 	sessions  map[string]*sessionInfo
 	toolUses  map[string]toolUse // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
-	toolCond  *sync.Cond
+	toolCond  *sync.Cond // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
+	instances map[string]string // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
+	waiting   map[string]int64  // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
+	waitSeq   int64
 }
 
 type toolUse struct {
@@ -74,7 +77,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -107,6 +110,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	mux.HandleFunc("POST /hook", d.handleHook)
 	mux.HandleFunc("GET /status", d.handleStatus)
 	mux.HandleFunc("GET /session", d.handleSessionLookup)
+	mux.HandleFunc("GET /wait", d.handleWait)
 	mux.Handle("/agent/", d.proxy)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
@@ -242,6 +246,7 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		}
 		d.mu.Lock()
 		d.decisions = e.Decisions
+		d.toolCond.Broadcast() // 唤醒挂起等待的 ks wait
 		d.mu.Unlock()
 	case protocol.MsgConfig:
 		if e.Config != nil {
@@ -324,6 +329,11 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.TurnID = str(p, "prompt_id")
 	}
 	ev.Instance = d.agentInstance(req.PPID)
+	if ev.Instance != "" {
+		d.mu.Lock()
+		d.instances[ev.Instance] = key
+		d.mu.Unlock()
+	}
 	if name == "UserPromptSubmit" {
 		text, auto := protocol.CleanPrompt(str(p, "prompt"))
 		ev.Prompt = summary.Truncate(text, 200)

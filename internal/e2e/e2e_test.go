@@ -19,6 +19,7 @@ import (
 
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/daemon"
+	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/hookcli"
 	"github.com/NekroAI/kitestring/internal/hub"
 	"github.com/NekroAI/kitestring/internal/store"
@@ -531,5 +532,46 @@ func TestAttachmentsAndReviewFeedback(t *testing.T) {
 	e.call("POST", "/api/reviews", map[string]any{"items": []map[string]any{{"ref": r.Code, "verdict": "accept"}}}, &rv)
 	if rv.Requirements[0].Status != store.ReqDone {
 		t.Fatalf("验收通过应为已完成，得到 %s", rv.Requirements[0].Status)
+	}
+}
+
+func TestWaitWakesOnAnswer(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	hook(t, "claude", map[string]any{"session_id": "w-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "做登录页", "prompt_id": "p0"})
+	c := client.New(30 * time.Second)
+	var dec store.Decision
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", map[string]any{"question": "按钮用什么颜色？", "session_key": "claude:w-1"}, &dec); err != nil {
+		t.Fatal(err)
+	}
+
+	// 挂起等待：会话显示为“挂起等你”
+	done := make(chan daemon.WaitResult, 1)
+	go func() {
+		var res daemon.WaitResult
+		_ = c.Do(context.Background(), "GET", "/wait?session_key=claude:w-1&timeout=20s", nil, &res)
+		done <- res
+	}()
+	e.waitFor("会话挂起等你", func() bool { s := e.session("claude:w-1"); return s.Parked && s.StateDetail == protocol.WaitDetail })
+
+	// 用户作答 → 等待立刻返回答复内容，并记为已送达（下次发消息不再重复注入）
+	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": dec.Code, "answer": "朱红"}}}, nil)
+	select {
+	case res := <-done:
+		if res.Reason != "delivered" || !strings.Contains(res.Text, "朱红") {
+			t.Fatalf("应带着答复返回：%+v", res)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("作答后等待没有返回")
+	}
+	if out := hook(t, "claude", map[string]any{"session_id": "w-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "继续", "prompt_id": "p1"}); strings.Contains(out, "朱红") {
+		t.Fatalf("已经通过 ks wait 送达，不应重复注入：%q", out)
+	}
+	e.waitFor("等待结束后不再挂起", func() bool { return !e.session("claude:w-1").Parked })
+
+	// 超时：安静返回
+	var res daemon.WaitResult
+	if err := c.Do(context.Background(), "GET", "/wait?session_key=claude:w-1&timeout=1s", nil, &res); err != nil || res.Reason != "timeout" {
+		t.Fatalf("应超时返回：%+v %v", res, err)
 	}
 }

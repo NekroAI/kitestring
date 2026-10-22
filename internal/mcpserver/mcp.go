@@ -22,7 +22,8 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 开始一项工作前，用 req_list 看当前项目已有需求；属于某条需求的工作用 session_link_req 关联本会话。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
-- 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。`
+- 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
+- 做完一段、需要用户验收或答复才能继续时，可以在后台运行 shell 命令 ks wait（默认最长等 1 小时，可用 --timeout 调整，最长 12h；后台任务的超时要设得比它长）。用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你随即被唤醒，按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。`
 
 // Run 以 stdio 运行 MCP server。
 func Run(ctx context.Context) error {

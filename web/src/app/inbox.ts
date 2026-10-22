@@ -30,7 +30,7 @@ export type ProjectGroup = {
 function sessionUrgency(s: Session): number {
   const ds = displayState(s)
   if (ds === 'waiting_approval') return 1
-  if (ds === 'waiting_answer') return 2
+  if (ds === 'waiting_answer' || ds === 'parked') return 2
   if (ds === 'waiting_reply') return 5
   return 9
 }

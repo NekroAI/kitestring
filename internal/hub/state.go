@@ -69,6 +69,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		}
 		x.Turns++
 		x.TurnTools = 0
+		x.Parked = false // 你直接在终端里发了消息
 		x.DoneAt = nil // 你又给它发了消息，不再算已完成
 		if ev.Prompt != "" {
 			x.LastPrompt = ev.Prompt
@@ -119,7 +120,26 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		case "idle_prompt":
 			x.State, x.StateDetail = store.StateWaitReply, ""
 		}
+	case protocol.EventWait:
+		// Agent 用 ks wait 挂在后台等你：对你来说就是在等你回复。
+		x.Parked = true
+		if x.State != store.StateEnded {
+			x.State, x.StateDetail = store.StateWaitReply, protocol.WaitDetail
+		}
+	case protocol.EventWaitEnd:
+		x.Parked = false
+		if x.StateDetail == protocol.WaitDetail {
+			x.StateDetail = ""
+			if ev.Reason == "delivered" {
+				x.State = store.StateRunning // 收到你的答复，马上继续
+			}
+		}
 	case "Stop":
+		if x.Parked {
+			// 后台挂着的是 ks wait：不算“后台运行”，而是在等你。
+			x.State, x.StateDetail = store.StateWaitReply, protocol.WaitDetail
+			break
+		}
 		if ev.BgTasks > 0 {
 			// 还有后台任务在跑：结束后 Claude Code 会自动继续，并不是在等你。
 			x.State, x.StateDetail = store.StateBackground, bgDetail(ev.BgTasks, ev.BgBrief)

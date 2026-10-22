@@ -45,6 +45,7 @@ agent 调用：
   mcp                    stdio MCP server
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
   decision raise ...     提出决策
+  wait [--timeout 1h]    挂起等待用户在 Kitestring 上的答复 / 验收 / 留言（后台运行，收到后输出并退出）
 
   version                打印版本
 所有本机数据位于 ~/.kitestring（可用 KS_HOME 覆盖）。`
@@ -81,6 +82,8 @@ func main() {
 		err = runReq(args)
 	case "decision":
 		err = runDecision(args)
+	case "wait":
+		err = runWait(args)
 	case "help", "--help", "-h":
 		fmt.Println(usage)
 	default:

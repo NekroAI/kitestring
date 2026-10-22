@@ -13,6 +13,7 @@ export const stateStyle: Record<string, { dot: string; pill: string; ring?: stri
   idle: { dot: 'bg-idle', pill: 'bg-idle-soft text-idle' },
   ended: { dot: 'bg-fg-3/60', pill: 'bg-sunken text-fg-3' },
   done: { dot: 'bg-run', pill: 'bg-run-soft text-run' },
+  parked: { dot: 'bg-reply', pill: 'bg-reply-soft text-reply', ring: 'ring-1 ring-reply/45 border-reply/40' },
   lost: { dot: 'bg-danger', pill: 'bg-danger-soft text-danger' },
 }
 
@@ -20,6 +21,7 @@ export const stateStyle: Record<string, { dot: string; pill: string; ring?: stri
 export function displayState(s: { state: string; state_detail?: string; done_at?: string | null }): string {
   // 你手动标为已完成：除非它又在干活，否则按“已完成”展示
   if (s.done_at && s.state !== 'running' && s.state !== 'background' && s.state !== 'ended') return 'done'
+  if (s.state === 'waiting_reply' && s.state_detail === 'ks wait') return 'parked'
   if (s.state === 'waiting_reply' && /^(AskUserQuestion|ExitPlanMode|request_user_input)\b/.test(s.state_detail ?? '')) return 'waiting_answer'
   return s.state
 }
@@ -27,7 +29,7 @@ export function displayState(s: { state: string; state_detail?: string; done_at?
 // StatusDot：一只小纸鸢（菱形）。运行中轻轻摆动，等你授权或回答时一拽一拽。
 export function StatusDot({ state, className }: { state: string; className?: string }) {
   const s = stateStyle[state] ?? stateStyle.idle
-  const motion = s.live ? (s.slow ? 'kite-sway kite-slow' : 'kite-sway') : state === 'waiting_approval' || state === 'waiting_answer' ? 'kite-tug' : ''
+  const motion = s.live ? (s.slow ? 'kite-sway kite-slow' : 'kite-sway') : state === 'waiting_approval' || state === 'waiting_answer' || state === 'parked' ? 'kite-tug' : ''
   return (
     <span className={cx('inline-flex size-2 shrink-0 items-center justify-center', className)}>
       <span className={cx('inline-block size-[7px] rotate-45 rounded-[1.5px] transition-colors duration-500', s.dot, motion)} />

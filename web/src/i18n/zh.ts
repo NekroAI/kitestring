@@ -76,6 +76,7 @@ export const zh = {
     ended: '已结束',
     lost: '失联',
     done: '已完成',
+    parked: '挂起等你',
   } as Record<string, string>,
   stateSince: (label: string, dur: string, at: string) => `${label} ${dur}（自 ${at}）`,
   phase: {
@@ -194,6 +195,8 @@ export const zh = {
     branch: '分支',
     model: '模型',
     client: '客户端',
+    parked: 'Agent 挂着等你',
+    parkedHint: '答复、验收或留言后它会立刻继续，不用回到终端',
     otherTerminal: '这个对话也在另一个终端打开过。状态与送达以你最近发消息的终端为准。',
     sessionId: '会话 ID',
     startedAt: '开始',
@@ -224,6 +227,8 @@ export const zh = {
       PostCompact: '压缩完成',
       Interrupt: '被中断',
       SessionEnd: '会话结束',
+      KsWait: '挂起等你',
+      KsWaitEnd: '结束等待',
     } as Record<string, string>,
   },
 

@@ -87,6 +87,17 @@ export function Callout({ s }: { s: Session }) {
       </div>
     )
   }
+  if (ds === 'parked') {
+    return (
+      <div className="flex items-start gap-2.5 rounded-xl bg-reply-soft px-3 py-2.5">
+        <Hourglass className="mt-0.5 size-4 shrink-0 animate-pulse text-reply" />
+        <div className="min-w-0 flex-1 text-sm">
+          <div className="text-xs font-medium text-reply">{t.session.parked}</div>
+          <div className="mt-0.5 leading-relaxed text-fg">{t.session.parkedHint}</div>
+        </div>
+      </div>
+    )
+  }
   if (ds === 'waiting_answer') {
     const [name, brief] = splitTool(s.state_detail)
     const plan = name === 'ExitPlanMode'

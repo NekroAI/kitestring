@@ -162,3 +162,24 @@ func TestNewPromptClearsDone(t *testing.T) {
 		t.Fatal("你再发消息后应自动取消已完成")
 	}
 }
+
+func TestParkedWaitIsWaitingForYou(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	ev := func(name string, min int, f func(*protocol.Event)) protocol.Event {
+		e := protocol.Event{Tool: "claude", SessionID: "s", Name: name, Time: t0.Add(time.Duration(min) * time.Minute)}
+		if f != nil {
+			f(&e)
+		}
+		return e
+	}
+	cur := applyEvent(nil, "dev", "", ev("UserPromptSubmit", 0, nil))
+	cur = applyEvent(&cur, "dev", "", ev(protocol.EventWait, 1, nil))
+	cur = applyEvent(&cur, "dev", "", ev("Stop", 2, func(e *protocol.Event) { e.BgTasks = 1; e.BgBrief = "等待反馈" }))
+	if !cur.Parked || cur.State != store.StateWaitReply || cur.StateDetail != protocol.WaitDetail {
+		t.Fatalf("挂起等待时应显示为等你：%+v", cur)
+	}
+	cur = applyEvent(&cur, "dev", "", ev(protocol.EventWaitEnd, 5, func(e *protocol.Event) { e.Reason = "delivered" }))
+	if cur.Parked || cur.State != store.StateRunning {
+		t.Fatalf("收到答复后应继续运行：%+v", cur)
+	}
+}

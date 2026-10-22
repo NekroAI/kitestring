@@ -59,6 +59,13 @@ type Event struct {
 	Instance  string    `json:"instance,omitempty"` // 所属终端（agent 进程号 + 启动时间），区分同一对话在多个终端打开
 }
 
+// ks wait 挂起等待：daemon 在等待开始 / 结束时上报的合成事件。
+const (
+	EventWait    = "KsWait"
+	EventWaitEnd = "KsWaitEnd"
+	WaitDetail   = "ks wait" // 会话 state_detail：挂起等你
+)
+
 // Decision 是下行到 daemon、等待注入的已决策项。
 type Decision struct {
 	ID         string    `json:"id"`
