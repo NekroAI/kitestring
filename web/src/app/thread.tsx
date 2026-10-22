@@ -11,6 +11,7 @@ import { useOpenSession } from './nav'
 import { Collapse, Item, List } from '../ui/motion'
 import { ReviewList } from './review'
 import { Callout, ReqCount, sessionTitle, toolIcon } from './SessionCard'
+import { Ticker } from './liveFeed'
 
 // SessionLine：会话在做什么的一行描述（摘要 → 最后动作 → 你最后说的话）。
 function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean } | null {
@@ -44,10 +45,10 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
           <PhaseBadge phase={s.phase} />
         </div>
         {a && (
-          <div className={cx('mt-0.5 flex min-w-0 items-center gap-1.5 text-[13px] text-fg-3', a.mono && 'font-mono text-[12px]')}>
+          <Ticker id={a.text} className={cx('mt-0.5 h-5 text-[13px] text-fg-3', a.mono && 'font-mono text-[12px]')}>
             {a.icon}
             <span className="truncate">{a.text}</span>
-          </div>
+          </Ticker>
         )}
       </div>
       <span className="hidden shrink-0 items-center gap-1 text-xs text-fg-3 @xl:flex">
@@ -87,7 +88,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
   const st = stateStyle[ds] ?? stateStyle.idle
 
   return (
-    <Card className={cx('paper-fold overflow-hidden rounded-tr-md', st.ring)}>
+    <Card className={cx('paper-fold overflow-hidden rounded-tr-md', st.ring, s?.state === 'running' && 'live-edge')}>
       {s ? (
         <div
           role="button"

@@ -419,3 +419,28 @@ html [data-sonner-toaster] [data-close-button] {
 .pop {
   animation: ks-pop 0.36s cubic-bezier(0.3, 1.4, 0.5, 1) both;
 }
+
+/* 运行中的卡片：顶边一道扫过的微光，表示它正在干活 */
+.live-edge {
+  position: relative;
+}
+.live-edge::before {
+  content: '';
+  position: absolute;
+  inset: -1px -1px auto -1px;
+  height: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--run), transparent) no-repeat;
+  background-size: 35% 100%;
+  animation: ks-scan 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+@keyframes ks-scan {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}

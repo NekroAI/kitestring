@@ -32,6 +32,7 @@ import { Card, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer } from './DecisionCard'
+import { LiveFeed } from './liveFeed'
 import { useOpenReq, useOpenSession } from './nav'
 
 // 工具名 → 图标。
@@ -50,7 +51,7 @@ export function toolIcon(label: string): LucideIcon {
 }
 
 // 拆分“工具 · 简述”。
-function splitTool(label: string): [string, string] {
+export function splitTool(label: string): [string, string] {
   const [name, ...rest] = label.split(' · ')
   return [name.replace(/^mcp__/, ''), rest.join(' · ')]
 }
@@ -132,6 +133,15 @@ export function Callout({ s }: { s: Session }) {
 
 function ActionLine({ s, now }: { s: Session; now: number }) {
   if (!s.last_tool || s.state === 'ended') return null
+  // 运行中：最近几次动作滚动展示
+  if (s.state === 'running')
+    return (
+      <Tip content={t.session.action}>
+        <div className="rounded-lg bg-surface-2 px-2.5 py-1.5">
+          <LiveFeed s={s} now={now} />
+        </div>
+      </Tip>
+    )
   const Icon = toolIcon(s.last_tool)
   const [name, brief] = splitTool(s.last_tool)
   const live = s.state === 'running'
@@ -288,7 +298,7 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
   return (
     <Card
       {...clickable}
-      className={cx('flex h-full cursor-pointer flex-col p-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-65 hover:opacity-100')}
+      className={cx('flex h-full cursor-pointer flex-col p-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-65 hover:opacity-100', s.state === 'running' && 'live-edge')}
     >
       {body}
     </Card>
