@@ -6,8 +6,8 @@ import { cx, useDesktop } from '../lib/util'
 import { t } from '../i18n'
 import { Button } from './base'
 
-// swipeToClose：触屏（如 iPad）在右侧面板上向右轻扫关闭。
-function swipeToClose(onClose: () => void) {
+// swipeToClose：触屏（如 iPad）在右侧面板上横向轻扫。onSwipe 返回 true 表示已处理（例如切换需求），否则向右扫关闭。
+function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => boolean) {
   let start: { x: number; y: number; t: number } | null = null
   return {
     onTouchStart: (e: React.TouchEvent) => {
@@ -19,14 +19,19 @@ function swipeToClose(onClose: () => void) {
       if (!start || !p) return
       const dx = p.clientX - start.x
       const dy = Math.abs(p.clientY - start.y)
-      if (dx > 90 && dy < dx * 0.5 && Date.now() - start.t < 600) onClose()
+      const adx = Math.abs(dx)
+      if (adx > 90 && dy < adx * 0.5 && Date.now() - start.t < 600) {
+        const dir = dx > 0 ? 'right' : 'left'
+        if (!onSwipe?.(dir) && dir === 'right') onClose()
+      }
       start = null
     },
   }
 }
 
 // Panel：详情面板。桌面端从右侧滑出，移动端为可下拉关闭的底部抽屉。
-export function Panel({ open, onClose, title, subtitle, children, actions, wide }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean }) {
+// bare：内容自己负责标题栏与滚动（例如需求抽屉：顶部固定、中间滚动、底部输入），title 只给读屏用。
+export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean }) {
   const desktop = useDesktop()
   if (desktop) {
     return (
@@ -36,25 +41,34 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide 
           <RDialog.Content
             aria-describedby={undefined}
             onOpenAutoFocus={(e) => e.preventDefault()}
-            {...swipeToClose(onClose)}
+            {...swipeToClose(onClose, onSwipe)}
             className={cx(
               'panel-slide fixed top-2 right-2 bottom-2 z-50 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none',
               wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]',
             )}
           >
-            <div className="flex items-start gap-3 border-b border-line px-5 py-4">
-              <div className="min-w-0 flex-1">
-                <RDialog.Title className="font-display text-[17px] font-semibold text-fg">{title}</RDialog.Title>
-                {subtitle && <div className="mt-1 text-[13px] text-fg-3">{subtitle}</div>}
-              </div>
-              {actions}
-              <RDialog.Close asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={t.common.close}>
-                  <X className="size-4" />
-                </Button>
-              </RDialog.Close>
-            </div>
-            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
+            {bare ? (
+              <>
+                <RDialog.Title className="sr-only">{title}</RDialog.Title>
+                <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-start gap-3 border-b border-line px-5 py-4">
+                  <div className="min-w-0 flex-1">
+                    <RDialog.Title className="font-display text-[17px] font-semibold text-fg">{title}</RDialog.Title>
+                    {subtitle && <div className="mt-1 text-[13px] text-fg-3">{subtitle}</div>}
+                  </div>
+                  {actions}
+                  <RDialog.Close asChild>
+                    <Button variant="ghost" size="icon-sm" aria-label={t.common.close}>
+                      <X className="size-4" />
+                    </Button>
+                  </RDialog.Close>
+                </div>
+                <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
+              </>
+            )}
           </RDialog.Content>
         </RDialog.Portal>
       </RDialog.Root>
@@ -64,16 +78,25 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide 
     <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/30 dark:bg-black/50" />
-        <Drawer.Content aria-describedby={undefined} className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col rounded-t-3xl border-t border-line bg-surface outline-none">
+        <Drawer.Content aria-describedby={undefined} className={cx('fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-line bg-surface outline-none', bare ? 'h-[92dvh]' : 'max-h-[92dvh]')}>
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-line-strong" />
-          <div className="flex items-start gap-3 px-5 pt-2 pb-3">
-            <div className="min-w-0 flex-1">
-              <Drawer.Title className="text-base font-semibold text-fg">{title}</Drawer.Title>
-              {subtitle && <div className="mt-1 text-[13px] text-fg-3">{subtitle}</div>}
-            </div>
-            {actions}
-          </div>
-          <div className="pb-safe flex-1 overflow-y-auto px-5 pb-6">{children}</div>
+          {bare ? (
+            <>
+              <Drawer.Title className="sr-only">{title}</Drawer.Title>
+              <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-start gap-3 px-5 pt-2 pb-3">
+                <div className="min-w-0 flex-1">
+                  <Drawer.Title className="text-base font-semibold text-fg">{title}</Drawer.Title>
+                  {subtitle && <div className="mt-1 text-[13px] text-fg-3">{subtitle}</div>}
+                </div>
+                {actions}
+              </div>
+              <div className="pb-safe flex-1 overflow-y-auto px-5 pb-6">{children}</div>
+            </>
+          )}
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>

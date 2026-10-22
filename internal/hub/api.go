@@ -854,6 +854,13 @@ func (h *Hub) registerAgent(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			// 标成截图 / 录屏却没附文件，用户验收时会看不到任何东西：直接拒绝，让 agent 补上附件。
+			switch strings.ToLower(in.Body.Kind) {
+			case "screenshot", "video", "recording":
+				if len(files) == 0 {
+					return nil, huma.Error400BadRequest("证据类型为 " + in.Body.Kind + " 时必须附上图片或录屏（MCP 用 images / videos，命令行用 --image / --video）")
+				}
+			}
 			if _, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: in.Body.SessionKey, Kind: in.Body.Kind, Summary: in.Body.Summary, Link: in.Body.Link, Files: files}); err != nil {
 				return nil, apiErr(err)
 			}

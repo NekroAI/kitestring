@@ -1,20 +1,16 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Bot, ChevronDown, ExternalLink, Link2, MessageCircleQuestion, Monitor, MoreHorizontal, Trash2, User } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, User } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
-import { useDecisions, useProjects, useRequirement, useSessions } from '../api/queries'
+import { useProjects } from '../api/queries'
 import { t } from '../i18n'
-import { Collapse, Item, List } from '../ui/motion'
-import { absTime, cx, relTime, useNow } from '../lib/util'
-import { Badge, Button, Card, ErrorState, Field, Input, Skeleton, Textarea, Tip } from '../ui/base'
-import { Menu, Modal, Panel, useConfirm, type MenuItem } from '../ui/overlay'
-import { PriorityDot, StatusDot } from '../ui/marks'
+import { cx } from '../lib/util'
+import { Badge, Button, Card, Input, Textarea, Tip } from '../ui/base'
+import { Menu, Modal, useConfirm, type MenuItem } from '../ui/overlay'
+import { PriorityDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
-import { ReviewRow } from './review'
-import { DecisionComposer } from './DecisionCard'
-import { ReqTimeline } from './reqTimeline'
-import { useOpenReq, useOpenSession } from './nav'
+import { useOpenReq } from './nav'
 
 export const boardStatuses = ['draft', 'ready', 'in_progress', 'blocked', 'review'] as const
 export const closedStatuses = ['done', 'shelved'] as const
@@ -162,7 +158,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
 }
 
 // EditableText：点击即编辑，失焦保存。
-function EditableText({ value, onSave, placeholder, multiline, className }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; className?: string }) {
+export function EditableText({ value, onSave, placeholder, multiline, className }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; className?: string }) {
   const [v, setV] = useState(value)
   useEffect(() => setV(value), [value])
   const commit = () => v.trim() !== value.trim() && onSave(v.trim())
@@ -178,218 +174,6 @@ function EditableText({ value, onSave, placeholder, multiline, className }: { va
   )
 }
 
-function Block({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
-  return (
-    <section className="mb-5">
-      <div className="mb-1.5 flex items-center justify-between">
-        <h3 className="text-[13px] font-semibold text-fg-2">{title}</h3>
-        {right}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-// ReqDetail：需求详情主体，用于侧边面板和需求列表里的就地展开。
-export function ReqDetail({ refId }: { refId: string | null }) {
-  const q = useRequirement(refId)
-  const projects = useProjects()
-  const sessions = useSessions()
-  const decisions = useDecisions()
-  const { updateReq, linkReq } = useActions()
-  const openSession = useOpenSession()
-  const r = q.data
-  const save = (patch: Partial<ReqFields>) => r && void updateReq(r.code, toFields(r, patch))
-  const sessByKey = new Map((sessions.data?.sessions ?? []).map((s) => [s.key, s]))
-  const related = (decisions.data ?? []).filter((d) => r && d.requirement_id === r.id)
-  const linkable = (sessions.data?.sessions ?? []).filter((s) => r && !r.sessions.includes(s.key) && s.state !== 'ended')
-
-  return (
-    <>
-      {q.isError ? (
-        <ErrorState error={q.error} onRetry={() => q.refetch()} />
-      ) : !r ? (
-        <div className="space-y-3">
-          <Skeleton className="h-8" />
-          <Skeleton className="h-24" />
-        </div>
-      ) : (
-        <>
-          <EditableText value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} className="-mx-3 h-auto py-1.5 text-lg font-semibold" />
-
-          <div className="mt-3 mb-5 flex flex-wrap items-center gap-2">
-            <StatusMenu r={r} size="md" />
-            <Menu
-              align="start"
-              trigger={
-                <button className="inline-flex items-center gap-1.5 rounded-md bg-sunken px-2.5 py-1 text-sm text-fg-2 hover:text-fg">
-                  <PriorityDot p={r.priority} />
-                  {t.priority[r.priority]}
-                  <ChevronDown className="size-3 opacity-70" />
-                </button>
-              }
-              items={priorities.map((p) => ({ label: t.priority[p], checked: p === r.priority, icon: <PriorityDot p={p} />, onSelect: () => save({ priority: p as ReqFields['priority'] }) }))}
-            />
-            <Menu
-              align="start"
-              trigger={
-                <button className="inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-sunken px-2.5 py-1 text-sm text-fg-2 hover:text-fg">
-                  <span className="truncate">{r.project_name || t.reqs.noProject}</span>
-                  <ChevronDown className="size-3 shrink-0 opacity-70" />
-                </button>
-              }
-              items={[
-                { label: t.reqs.noProject, checked: !r.project_id, onSelect: () => save({ project_id: undefined }) },
-                ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === r.project_id, onSelect: () => save({ project_id: p.id }) })),
-              ]}
-            />
-          </div>
-
-          <Collapse show={r.status === 'review'}>
-            <div className="pb-5">
-              <ReviewRow r={r} hideTitle />
-            </div>
-          </Collapse>
-
-          <Collapse show={related.some((d) => d.status === 'pending')}>
-            <Block title={t.decision.status.pending}>
-              <List space={12}>
-                {related
-                  .filter((d) => d.status === 'pending')
-                  .map((d) => (
-                    <Item key={d.id} space={12}>
-                      <DecisionComposer d={d} embedded />
-                    </Item>
-                  ))}
-              </List>
-            </Block>
-          </Collapse>
-
-          <Block title={t.reqs.detail}>
-            <AttachZone value={r.files ?? []} onChange={(files) => save({ files: files.map((f) => f.id) })}>
-              <EditableText multiline value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3" />
-            </AttachZone>
-          </Block>
-          <Block title={t.reqs.acceptance}>
-            <EditableText multiline value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
-          </Block>
-
-          <Block title={t.timeline.title}>
-            <ReqTimeline r={r} decisions={related} />
-          </Block>
-
-          <Block
-            title={t.reqs.sessions}
-            right={
-              <Menu
-                width="min-w-[280px]"
-                trigger={
-                  <Button size="sm" variant="ghost" icon={<Link2 className="size-3.5" />} disabled={!linkable.length}>
-                    {t.session.link}
-                  </Button>
-                }
-                items={linkable.map((s) => ({
-                  label: [s.title || s.project_name || s.cwd, s.device_name].filter(Boolean).join(t.common.sep),
-                  hint: s.summary || s.last_prompt,
-                  icon: <StatusDot state={s.state} />,
-                  onSelect: () => void linkReq(r.code, s.key),
-                }))}
-              />
-            }
-          >
-            {r.sessions.length ? (
-              <div className="divide-y divide-line rounded-2xl border border-line">
-                {r.sessions.map((k) => {
-                  const s = sessByKey.get(k)
-                  return (
-                    <div key={k} className="flex items-center gap-2.5 px-3 py-2">
-                      {s ? <StatusDot state={s.state} /> : <span className="size-2 rounded-full bg-line-strong" />}
-                      <button onClick={() => s && openSession(k)} className="min-w-0 flex-1 text-left">
-                        <div className="truncate text-sm text-fg">{s ? [s.title || s.project_name, s.device_name].filter(Boolean).join(t.common.sep) : k}</div>
-                        <div className="truncate text-xs text-fg-3">{s ? s.summary || s.last_prompt : t.reqs.sessionGone}</div>
-                      </button>
-                      <Button size="icon-sm" variant="ghost" aria-label={t.session.unlink} onClick={() => void linkReq(r.code, k, true)}>
-                        <span className="text-fg-3">×</span>
-                      </Button>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-fg-3">{t.reqs.noSessions}</p>
-            )}
-          </Block>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t.reqs.source}>
-              <EditableText value={r.source} placeholder={t.reqs.sourcePlaceholder} onSave={(v) => save({ source: v })} className="-mx-3" />
-            </Field>
-            <Field
-              label={
-                <span className="flex items-center gap-1">
-                  {t.reqs.docLink}
-                  {/^https?:\/\//.test(r.doc_link) && (
-                    <a href={r.doc_link} target="_blank" rel="noreferrer" className="text-accent">
-                      <ExternalLink className="size-3" />
-                    </a>
-                  )}
-                </span>
-              }
-            >
-              <EditableText value={r.doc_link} placeholder={t.reqs.docLinkPlaceholder} onSave={(v) => save({ doc_link: v })} className="-mx-3 font-mono text-[13px]" />
-            </Field>
-          </div>
-          <p className="mt-4 text-xs text-fg-3">{absTime(r.updated_at)}</p>
-        </>
-      )}
-    </>
-  )
-}
-
-export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: () => void }) {
-  const now = useNow()
-  const q = useRequirement(refId)
-  const { deleteReq } = useActions()
-  const confirm = useConfirm()
-  const r = q.data
-  return (
-    <Panel
-      open={!!refId}
-      onClose={onClose}
-      wide
-      title={r ? <span className="font-mono text-sm text-fg-3">{r.code}</span> : <Skeleton className="h-5 w-24" />}
-      subtitle={r && t.reqs.createdBy(relTime(r.created_at, now), r.created_by === 'agent')}
-      actions={
-        r && (
-          <Menu
-            trigger={
-              <Button size="icon-sm" variant="ghost" aria-label={t.common.more}>
-                <MoreHorizontal className="size-4" />
-              </Button>
-            }
-            items={[
-              {
-                label: t.common.delete,
-                icon: <Trash2 />,
-                danger: true,
-                onSelect: async () => {
-                  if (await confirm({ title: t.common.delete, description: t.reqs.deleteConfirm, confirmText: t.common.delete, danger: true })) {
-                    if (await deleteReq(r.code)) {
-                      toast(t.reqs.deleted)
-                      onClose()
-                    }
-                  }
-                },
-              },
-            ]}
-          />
-        )
-      }
-    >
-      <ReqDetail refId={refId} />
-    </Panel>
-  )
-}
 
 export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; onClose: () => void; defaultProject?: string }) {
   const projects = useProjects()

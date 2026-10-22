@@ -3,12 +3,13 @@ import { ChevronDown, ChevronRight, Columns3, FolderGit2, List, ListPlus, Messag
 import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
+import { ReqView } from '../app/reqDrawer'
 import { Collapse, Item, List as MotionList } from '../ui/motion'
 import { cx, relTime, useNow, usePref } from '../lib/util'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
 import { PriorityDot } from '../ui/marks'
 import { Menu } from '../ui/overlay'
-import { boardStatuses, closedStatuses, NewReqModal, ReqCard, ReqDetail, StatusMenu, statusCls, useSetStatus } from '../app/requirements'
+import { boardStatuses, closedStatuses, NewReqModal, ReqCard, StatusMenu, statusCls, useSetStatus } from '../app/requirements'
 
 const prio: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
 const sortReqs = (a: Requirement, b: Requirement) => (prio[a.priority] ?? 9) - (prio[b.priority] ?? 9) || b.updated_at.localeCompare(a.updated_at)
@@ -119,8 +120,8 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         <span className="hidden w-20 shrink-0 text-right text-xs text-fg-3 sm:block">{relTime(r.updated_at, now)}</span>
       </div>
       <Collapse show={expanded}>
-        <div className="border-t border-line px-4 pt-4 pb-2 sm:px-6">
-          <ReqDetail refId={r.code} />
+        <div className="flex max-h-[min(680px,78dvh)] flex-col border-t border-line">
+          <ReqView refId={r.code} />
         </div>
       </Collapse>
     </div>

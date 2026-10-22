@@ -7,7 +7,7 @@ import { cx, relTime, useNow } from '../lib/util'
 import { Tip } from '../ui/base'
 import { useWorkbench } from './inbox'
 import { usePanelParams } from './nav'
-import { ReqPanel } from './requirements'
+import { ReqPanel } from './reqDrawer'
 import { SessionPanel } from './SessionPanel'
 
 // 页面切换不做进出场动画：路由直接切换，避免闪烁与白屏。

@@ -470,6 +470,9 @@ func TestAttachmentsAndReviewFeedback(t *testing.T) {
 	if err := c.Do(context.Background(), "POST", "/agent/requirements/"+r.Code+"/evidence", map[string]any{"kind": "screenshot", "summary": "改好了", "files": []string{ref.ID}}, nil); err != nil {
 		t.Fatal(err)
 	}
+	if err := c.Do(context.Background(), "POST", "/agent/requirements/"+r.Code+"/evidence", map[string]any{"kind": "screenshot", "summary": "忘了附图"}, nil); err == nil || !strings.Contains(err.Error(), "必须附上") {
+		t.Fatalf("截图证据没有附件应被拒绝：%v", err)
+	}
 	c.Do(context.Background(), "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review"}, nil)
 
 	// 用户提修改意见（附图）→ 回到进行中、证据作废、意见送达该会话
