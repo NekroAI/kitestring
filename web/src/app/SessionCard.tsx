@@ -147,7 +147,7 @@ export function Callout({ s }: { s: Session }) {
 function ActionLine({ s, now }: { s: Session; now: number }) {
   if (!s.last_tool || s.state === 'ended') return null
   // 运行中：最近几次动作滚动展示
-  if (s.state === 'running')
+  if (displayState(s) === 'running')
     return (
       <Tip content={t.session.action}>
         <div className="rounded-lg bg-surface-2 px-2.5 py-1.5">
@@ -157,7 +157,7 @@ function ActionLine({ s, now }: { s: Session; now: number }) {
     )
   const Icon = toolIcon(s.last_tool)
   const [name, brief] = splitTool(s.last_tool)
-  const live = s.state === 'running'
+  const live = displayState(s) === 'running'
   return (
     <Tip content={t.session.action}>
       <div className={cx('flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px]', live ? 'bg-surface-2' : 'bg-transparent px-0')}>
@@ -315,7 +315,7 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
     <Ctx items={menu(s)} className="h-full">
     <Card
       {...clickable}
-      className={cx('flex h-full cursor-pointer flex-col p-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-65 hover:opacity-100', s.state === 'running' && 'live-edge')}
+      className={cx('flex h-full cursor-pointer flex-col p-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-65 hover:opacity-100', ds === 'running' && 'live-edge')}
     >
       {body}
     </Card>

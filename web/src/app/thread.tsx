@@ -20,7 +20,7 @@ function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean }
   const ds = displayState(s)
   if (ds === 'background' && s.state_detail) return { icon: null, text: s.state_detail }
   if (s.summary && ds !== 'waiting_reply') return { icon: null, text: s.summary }
-  if (s.state === 'running' && s.last_tool) {
+  if (ds === 'running' && s.last_tool) {
     const I = toolIcon(s.last_tool)
     return { icon: <I className="size-3.5 shrink-0 text-run" />, text: s.last_tool, mono: true }
   }
@@ -94,7 +94,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
   const st = stateStyle[ds] ?? stateStyle.idle
 
   return (
-    <Card className={cx('paper-fold overflow-hidden rounded-tr-md', st.ring, s?.state === 'running' && 'live-edge')}>
+    <Card className={cx('paper-fold overflow-hidden rounded-tr-md', st.ring, ds === 'running' && 'live-edge')}>
       {s ? (
         <Ctx items={menu(s)} className="rounded-none">
         <div
