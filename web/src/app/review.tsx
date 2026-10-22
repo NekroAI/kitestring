@@ -5,7 +5,7 @@ import type { Requirement } from '../api/client'
 import { useRequirement } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { Button, Textarea } from '../ui/base'
+import { Button, Textarea, Tip } from '../ui/base'
 import { AttachZone, Thumbs, type FileRef } from '../ui/attach'
 import { Collapse, Item, List } from '../ui/motion'
 import { AnnotateTarget } from '../ui/annotate'
@@ -120,6 +120,25 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
               {t.common.cancel}
             </Button>
+            <Tip content={t.review.passWithHint}>
+              <span>
+                <Button
+                  size="sm"
+                  disabled={busy || (!comment.trim() && !files.length)}
+                  icon={<Check className="size-3.5" />}
+                  onClick={() =>
+                    wrap(async () => {
+                      if (await review([{ ref: r.code, verdict: 'accept', comment, files: files.map((f) => f.id) }])) {
+                        toast.success(t.review.passedWith(r.code))
+                        onDone?.()
+                      }
+                    })
+                  }
+                >
+                  {t.review.passWith}
+                </Button>
+              </span>
+            </Tip>
             <Button size="sm" variant="primary" loading={busy} disabled={!comment.trim() && !files.length} onClick={revise}>
               {t.review.sendRevise}
             </Button>

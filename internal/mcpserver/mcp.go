@@ -24,6 +24,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
 - 设计类需求（kind = design，或用户说“出方案 / 设计”）：先用 decision_raise 交 2～3 套方案，并在 option_images 附上每套的效果图，用户看图选定后再实现。
+- 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
 - 做完一段、需要用户验收或答复才能继续时，可以在后台运行 shell 命令 ks wait（默认最长等 1 小时，可用 --timeout 调整，最长 12h；后台任务的超时要设得比它长）。用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你随即被唤醒，按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。`
 
 // Run 以 stdio 运行 MCP server。
@@ -121,6 +122,8 @@ type decisionIn struct {
 	Context        string   `json:"context,omitempty" jsonschema:"背景：为什么需要决策、各选项的取舍"`
 	Options        []string `json:"options,omitempty" jsonschema:"候选选项"`
 	OptionImages   []string `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
+	Approval       bool     `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
+	Images         []string `json:"images,omitempty" jsonschema:"问题附带的本机图片路径（例如待批准的方案图）"`
 	Recommendation string   `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
 	Requirement    string   `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
 }
@@ -203,6 +206,16 @@ func (t *tools) register(s *mcp.Server) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
+			if in.Approval {
+				body["approval"] = true
+			}
+			if len(in.Images) > 0 {
+				ids, err := t.upload(ctx, in.Images)
+				if err != nil {
+					return nil, nil, err
+				}
+				body["images"] = ids
+			}
 			if len(in.OptionImages) > 0 {
 				ids := make([]string, len(in.OptionImages))
 				for i, p := range in.OptionImages {

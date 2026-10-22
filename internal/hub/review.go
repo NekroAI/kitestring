@@ -70,6 +70,29 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 			if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqDone); err != nil {
 				return nil, apiErr(err)
 			}
+			// 带意见通过：意见作为留言送达 Agent（需求仍是已完成）
+			comment := strings.TrimSpace(it.Comment)
+			if comment != "" || len(it.Files) > 0 {
+				files, err := h.store.ResolveFiles(ctx, it.Files)
+				if err != nil {
+					return nil, err
+				}
+				text := "验收通过。"
+				if comment != "" {
+					text += "附言：" + comment
+				}
+				d, err := h.store.CreateDecision(ctx, store.Decision{
+					Kind: store.KindNote, SessionKey: h.feedbackTarget(ctx, r), ProjectID: r.ProjectID, RequirementID: r.ID,
+					Question: r.Title, Answer: text, AnswerFiles: files,
+				})
+				if err != nil {
+					return nil, apiErr(err)
+				}
+				out.Body.Feedback = append(out.Body.Feedback, d)
+				if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
+					devices[x.DeviceID] = true
+				}
+			}
 		case "revise":
 			files, err := h.store.ResolveFiles(ctx, it.Files)
 			if err != nil {

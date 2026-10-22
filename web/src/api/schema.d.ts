@@ -620,7 +620,11 @@ export interface components {
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
         };
         AgentDecisionInBody: {
+            /** @description 请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言 */
+            approval?: boolean;
             context?: string;
+            /** @description 问题附带的图（例如待批准的方案图）的附件 ID */
+            images?: string[] | null;
             /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
             option_images?: string[] | null;
             options?: string[] | null;
@@ -678,8 +682,10 @@ export interface components {
             answer_files: components["schemas"]["FileRef"][] | null;
             /** Format: date-time */
             answered_at?: string;
+            approval: boolean;
             code: string;
             context: string;
+            context_files: components["schemas"]["FileRef"][] | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */

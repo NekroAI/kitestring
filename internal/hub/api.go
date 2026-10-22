@@ -771,6 +771,8 @@ type agentDecisionIn struct {
 		Context        string   `json:"context,omitempty"`
 		Options        []string `json:"options,omitempty"`
 		OptionImages   []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
+		Approval       bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
+		Images         []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
 		Recommendation string   `json:"recommendation,omitempty"`
 		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
 	}
@@ -894,6 +896,18 @@ func (h *Hub) registerAgent(api huma.API) {
 			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation}
 			if d.Options == nil {
 				d.Options = []string{}
+			}
+			if b.Approval {
+				d.Approval = true
+				d.Options = []string{"批准", "拒绝"}
+				b.OptionImages = nil
+			}
+			if len(b.Images) > 0 {
+				fs, err := h.store.ResolveFiles(ctx, b.Images)
+				if err != nil {
+					return nil, err
+				}
+				d.ContextFiles = fs
 			}
 			if len(b.OptionImages) > 0 {
 				// 方案对比：每个选项最多一张效果图

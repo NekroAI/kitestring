@@ -658,3 +658,36 @@ func TestLinkStartsRequirement(t *testing.T) {
 		t.Fatalf("Agent 关联后待开始的需求应变为进行中，得到 %s", got.Status)
 	}
 }
+
+func TestApprovalAndAcceptWithComment(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	prompt := func(turn string) string {
+		return hook(t, "claude", map[string]any{"session_id": "ap-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "继续", "prompt_id": turn})
+	}
+	prompt("p0")
+	c := client.New(10 * time.Second)
+
+	// 请你批准：选项固定为批准 / 拒绝，可以附言
+	var d store.Decision
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", map[string]any{"question": "按这个方案做项目入口？", "approval": true, "session_key": "claude:ap-1"}, &d); err != nil {
+		t.Fatal(err)
+	}
+	if !d.Approval || len(d.Options) != 2 || d.Options[0] != "批准" {
+		t.Fatalf("批准类决策异常：%+v", d)
+	}
+	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": d.Code, "answer": "批准；顺便把设置页的项目设置去掉"}}}, nil)
+	var out string
+	e.waitFor("批准送达", func() bool { out = prompt("p1"); return strings.Contains(out, "批准；顺便把设置页的项目设置去掉") })
+
+	// 带意见通过：需求完成，意见作为留言送达
+	var r store.Requirement
+	c.Do(context.Background(), "POST", "/agent/requirements", map[string]any{"title": "项目入口", "status": "review", "session_key": "claude:ap-1"}, &r)
+	e.call("POST", "/api/reviews", map[string]any{"items": []map[string]any{{"ref": r.Code, "verdict": "accept", "comment": "很好，下次按钮再大一点"}}}, nil)
+	var got store.Requirement
+	c.Do(context.Background(), "GET", "/agent/requirements/"+r.Code, nil, &got)
+	if got.Status != store.ReqDone {
+		t.Fatalf("带意见通过后应为已完成：%s", got.Status)
+	}
+	e.waitFor("通过附言送达", func() bool { out = prompt("p2"); return strings.Contains(out, "验收通过。附言：很好，下次按钮再大一点") })
+}

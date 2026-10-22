@@ -46,6 +46,8 @@ type Decision struct {
 	Context          string     `json:"context"`
 	Options          []string   `json:"options"`
 	OptionFiles      [][]FileRef `json:"option_files"` // 每个选项的效果图（与 options 一一对应），用于方案对比
+	Approval         bool        `json:"approval"`      // 请你批准（选项固定为“批准 / 拒绝”，两种都可以附言）
+	ContextFiles     []FileRef   `json:"context_files"` // 问题本身附带的图（例如待批准的方案图）
 	Recommendation   string     `json:"recommendation"`
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
 	Kind             string     `json:"kind" enum:"decision,feedback,note,assign"`
@@ -63,7 +65,7 @@ func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
-	x.question, x.context, x.options, x.option_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn
+	x.question, x.context, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -73,10 +75,10 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var d Decision
 	var seq, rseq int
-	var options, optFiles, created, files string
+	var options, optFiles, ctxFiles, created, files string
 	var answered, delivered sql.NullString
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
-		&d.Question, &d.Context, &options, &optFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn)
+		&d.Question, &d.Context, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn)
 	d.Code = decCode(seq)
 	d.AnswerFiles = parseFiles(files)
 	if rseq > 0 {
@@ -86,6 +88,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	_ = json.Unmarshal([]byte(options), &d.Options)
 	d.OptionFiles = [][]FileRef{}
 	_ = json.Unmarshal([]byte(optFiles), &d.OptionFiles)
+	d.ContextFiles = parseFiles(ctxFiles)
 	d.CreatedAt = parseTS(created)
 	d.AnsweredAt = parseNullTS(answered)
 	d.DeliveredAt = parseNullTS(delivered)
@@ -116,8 +119,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			optFiles = [][]FileRef{}
 		}
 		of, _ := json.Marshal(optFiles)
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, option_files, recommendation, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, string(opts), string(of), d.Recommendation, DecPending, n)
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, option_files, approval, context_files, recommendation, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n)
 		return err
 	})
 	if err != nil {

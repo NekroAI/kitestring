@@ -242,6 +242,9 @@ export const zh = {
 
   decision: {
     noImage: '没有效果图',
+    approve: '批准',
+    approvalNote: '附言（可选）：批准或拒绝都可以带上说明、贴图',
+    reject: '拒绝',
     recommended: '推荐',
     recommendation: '建议',
     other: '其他回答',
@@ -494,6 +497,9 @@ export const zh = {
     hintPass: '没问题就通过 · ⌘↵',
     hintRevise: '意见会在你下次和它对话时送达 · ⌘↵',
     passBlocked: '已经写了修改意见：请退回，或清空后再通过',
+    passWith: '带意见通过',
+    passWithHint: '需求标为已完成，意见作为留言送给 Agent',
+    passedWith: (code: string) => `${code} 已验收，意见会送给 Agent`,
     passed: (code: string) => `${code} 已验收`,
     revised: (code: string) => `${code} 已退回，意见会在下次和它对话时送达`,
     evidence: '证据',

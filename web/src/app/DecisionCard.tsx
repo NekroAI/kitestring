@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRightLeft, CornerDownLeft, Keyboard, PenLine, Plus, RotateCcw, Sparkles, Undo2, X } from 'lucide-react'
+import { ArrowRightLeft, Check, CornerDownLeft, Keyboard, PenLine, Plus, RotateCcw, Sparkles, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
@@ -81,8 +81,10 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   const answer = composeAnswer(draft, options)
   const sendingAt = queued[d.code]
   const noteRef = useRef<HTMLTextAreaElement>(null)
+  const approval = !!d.approval
   const free = options.length === 0 || draft.choice === 'other'
-  const note = !free && (draft.noteOpen || !!draft.note)
+  // 批准类：附言框常驻（批准和拒绝都可以附言）
+  const note = !free && (approval || draft.noteOpen || !!draft.note)
   const title = d.short_title || d.question
   // 方案对比：任一选项带效果图时，选项改为看图点选的卡片
   const visual = (d.option_files ?? []).some((f) => f?.length)
@@ -132,6 +134,42 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
         </div>
         {d.context && <Context text={d.context} />}
 
+        {!!d.context_files?.length && (
+          <div className={cx('grid gap-2.5', d.context_files.length > 1 && 'grid-cols-2')}>
+            {d.context_files.map((f) => (
+              <div key={f.id} className="group/ctx relative overflow-hidden rounded-xl border border-line bg-sunken">
+                <img src={fileUrl(f.id)} alt={f.name} loading="lazy" className="max-h-[360px] w-full object-cover object-top" />
+                <span className="absolute top-2 right-2 opacity-0 transition group-hover/ctx:opacity-100 pointer-coarse:opacity-100">
+                  <ZoomButton f={f} />
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {approval && (
+          <div className="grid grid-cols-2 gap-2.5" role="radiogroup">
+            {[
+              { i: 0, label: t.decision.approve, icon: <Check className="size-5" />, on: 'border-run bg-run-soft text-run ring-2 ring-run/25' },
+              { i: 1, label: t.decision.reject, icon: <X className="size-5" />, on: 'border-danger bg-danger-soft text-danger ring-2 ring-danger/25' },
+            ].map((b) => (
+              <button
+                key={b.i}
+                role="radio"
+                aria-checked={draft.choice === b.i}
+                onClick={() => choose(b.i)}
+                className={cx(
+                  'flex h-14 items-center justify-center gap-2 rounded-xl border text-[15px] font-medium transition-[background,border,box-shadow,transform] active:scale-[0.98] pointer-coarse:h-16',
+                  draft.choice === b.i ? b.on : 'border-line bg-surface text-fg-2 hover:border-line-strong hover:bg-hover',
+                )}
+              >
+                {b.icon}
+                {b.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {options.length > 0 && visual && (
           <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2" role="radiogroup">
             {options.map((o, i) => {
@@ -172,7 +210,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           </div>
         )}
 
-        {options.length > 0 && (
+        {options.length > 0 && !approval && (
           <div className="space-y-1.5" role={visual ? undefined : 'radiogroup'}>
             {options.map((o, i) => {
               if (visual && d.option_files?.[i]?.length) return null
@@ -235,7 +273,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           {(free || note) && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden px-px pb-px">
               <AttachZone value={draft.files ?? []} onChange={(files) => setDraft(d.code, { files })} compact incoming={incoming} onIncoming={() => setIncoming([])}>
-                <Textarea ref={noteRef} minRows={free ? 3 : 2} value={draft.note} placeholder={free ? t.decision.freePlaceholder : t.decision.notePlaceholder} onChange={(e) => setDraft(d.code, { note: e.target.value })} className="pr-10" />
+                <Textarea ref={noteRef} minRows={free ? 3 : 2} value={draft.note} placeholder={free ? t.decision.freePlaceholder : approval ? t.decision.approvalNote : t.decision.notePlaceholder} onChange={(e) => setDraft(d.code, { note: e.target.value })} className="pr-10" />
               </AttachZone>
             </motion.div>
           )}

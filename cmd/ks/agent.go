@@ -166,6 +166,9 @@ func runDecision(args []string) error {
 	var opts, optImgs stringList
 	fs.Var(&opts, "option", "选项，可重复")
 	fs.Var(&optImgs, "option-image", "选项的效果图路径，按 --option 的顺序一一对应，可重复")
+	approval := fs.Bool("approval", false, "请用户批准（选项固定为批准 / 拒绝，两种都可以附言）")
+	var imgs stringList
+	fs.Var(&imgs, "image", "问题附带的图片路径（例如待批准的方案图），可重复")
 	if err := parseAnywhere(fs, args[1:]); err != nil {
 		return err
 	}
@@ -175,6 +178,16 @@ func runDecision(args []string) error {
 	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "session_key": cliSession(*session)}
 	if len(opts) > 0 {
 		body["options"] = []string(opts)
+	}
+	if *approval {
+		body["approval"] = true
+	}
+	if len(imgs) > 0 {
+		tmp := map[string]any{}
+		if err := attachFiles(tmp, imgs); err != nil {
+			return err
+		}
+		body["images"] = tmp["files"]
 	}
 	if len(optImgs) > 0 {
 		var tmp map[string]any = map[string]any{}

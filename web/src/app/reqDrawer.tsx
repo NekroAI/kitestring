@@ -249,9 +249,12 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
         clear()
       }
     })
+  // 通过时也可以带意见（作为留言送达，需求仍是已完成）
   const pass = () =>
     wrap(async () => {
-      if (await review([{ ref: r.code, verdict: 'accept' }])) {
+      if (await review([{ ref: r.code, verdict: 'accept', comment: text, files: files.map((f) => f.id) }])) {
+        if (dirty) toast(t.review.passedWith(r.code))
+        clear()
         if (onPassed) onPassed(r.code)
         else toast.success(t.review.passed(r.code))
       }
@@ -287,10 +290,10 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
             <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy} icon={<Undo2 className="size-4" />} onClick={revise}>
               {t.review.sendRevise}
             </Button>
-            <Tip content={dirty ? t.review.passBlocked : undefined}>
+            <Tip content={dirty ? t.review.passWithHint : undefined}>
               <span>
-                <Button variant={dirty ? 'secondary' : 'primary'} disabled={dirty} loading={busy && !dirty} icon={<Check className="size-4" />} onClick={pass} className="min-w-24">
-                  {t.review.pass}
+                <Button variant={dirty ? 'secondary' : 'primary'} disabled={busy} loading={busy && !dirty} icon={<Check className="size-4" />} onClick={pass} className="min-w-24">
+                  {dirty ? t.review.passWith : t.review.pass}
                 </Button>
               </span>
             </Tip>
