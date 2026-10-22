@@ -17,6 +17,9 @@ import { Item, List } from '../ui/motion'
 
 type Filter = 'all' | 'todo'
 
+// 分组键是项目 ID 时才有项目页（没有识别出项目的会话按目录分组）
+const projectHref = (key: string) => (key && !key.startsWith('cwd:') && key !== 'none' ? `/projects/${key}` : undefined)
+
 const match = (s: Session | undefined, k: string) => !k || (!!s && [sessionTitle(s), s.project_name, s.branch, s.cwd, s.last_prompt, s.summary, s.device_name, s.model].some((v) => v?.toLowerCase().includes(k)))
 
 function SendAllBar() {
@@ -45,11 +48,11 @@ function SendAllBar() {
   )
 }
 
-function GroupHeader({ icon, title, count, right }: { icon: React.ReactNode; title: React.ReactNode; count?: number; right?: React.ReactNode }) {
+function GroupHeader({ icon, title, count, right, href }: { icon: React.ReactNode; title: React.ReactNode; count?: number; right?: React.ReactNode; href?: string }) {
   return (
     <div className="mb-3 flex items-center gap-2.5">
       <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs [&_svg]:size-4">{icon}</span>
-      <h2 className="truncate font-display text-[17px] font-semibold text-fg">{title}</h2>
+      <h2 className="truncate font-display text-[17px] font-semibold text-fg">{href ? <Link to={href} className="transition-colors hover:text-accent">{title}</Link> : title}</h2>
       {count != null && <span className="text-xs text-fg-3 tabular">{count}</span>}
       <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
       {right}
@@ -96,7 +99,7 @@ function ProjectCards({ g, filter, k, now }: { g: ProjectGroup; filter: Filter; 
   if (!list.length) return null
   return (
     <section>
-      <GroupHeader icon={<FolderGit2 />} title={g.name || t.thread.noProject} count={list.length} />
+      <GroupHeader icon={<FolderGit2 />} title={g.name || t.thread.noProject} count={list.length} href={projectHref(g.key)} />
       <div className="@container">
         <List className="grid grid-cols-1 gap-x-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
           {list.map((s) => (
@@ -121,6 +124,7 @@ function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Fil
       <GroupHeader
         icon={<FolderGit2 />}
         title={g.name || t.thread.noProject}
+        href={projectHref(g.key)}
         right={
           <span className="flex items-center gap-3 text-xs text-fg-3">
             {counts.map(([st, n]) => (

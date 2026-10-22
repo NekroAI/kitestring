@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { LayoutDashboard, ListTodo, Monitor, Settings2, WifiOff } from 'lucide-react'
+import { FolderKanban, LayoutDashboard, ListTodo, Monitor, Settings2, WifiOff } from 'lucide-react'
 import { useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
@@ -14,6 +14,7 @@ import { SessionPanel } from './SessionPanel'
 
 const nav = [
   { to: '/', label: t.nav.home, icon: LayoutDashboard, end: true },
+  { to: '/projects', label: t.nav.projects, icon: FolderKanban },
   { to: '/requirements', label: t.nav.requirements, icon: ListTodo },
   { to: '/settings', label: t.nav.settings, icon: Settings2 },
 ]
@@ -96,7 +97,7 @@ function Sidebar({ todo, connected }: { todo: number; connected: boolean }) {
 function TabBar({ todo }: { todo: number }) {
   return (
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-md grid-cols-3">
+      <div className="mx-auto grid max-w-md grid-cols-4">
         {nav.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive ? 'text-accent' : 'text-fg-3')}>
             <span className="relative">
