@@ -10,9 +10,10 @@ import { Badge, Button, Card, ErrorState, Field, Input, Skeleton, Textarea, Tip 
 import { Menu, Modal, Panel, useConfirm, type MenuItem } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
-import { AttachZone, Thumbs, type FileRef } from '../ui/attach'
+import { AttachZone, type FileRef } from '../ui/attach'
 import { ReviewRow } from './review'
-import { DecisionComposer, DecisionRow } from './DecisionCard'
+import { DecisionComposer } from './DecisionCard'
+import { ReqTimeline } from './reqTimeline'
 import { useOpenReq, useOpenSession } from './nav'
 
 export const boardStatuses = ['draft', 'ready', 'in_progress', 'blocked', 'review'] as const
@@ -191,7 +192,6 @@ function Block({ title, children, right }: { title: string; children: ReactNode;
 
 // ReqDetail：需求详情主体，用于侧边面板和需求列表里的就地展开。
 export function ReqDetail({ refId }: { refId: string | null }) {
-  const now = useNow()
   const q = useRequirement(refId)
   const projects = useProjects()
   const sessions = useSessions()
@@ -274,58 +274,9 @@ export function ReqDetail({ refId }: { refId: string | null }) {
             <EditableText multiline value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
           </Block>
 
-          <Block title={t.reqs.evidence}>
-            {r.evidence?.length ? (
-              <ul className="space-y-1.5">
-                {r.evidence.map((e) => (
-                  <li key={e.id} className={cx('flex items-start gap-2.5 rounded-xl border border-line px-3 py-2', e.voided && 'opacity-60')}>
-                    <Badge tone={e.voided ? 'neutral' : 'run'}>{e.kind}</Badge>
-                    <div className="min-w-0 flex-1">
-                      <div className={cx('text-sm break-words text-fg', e.voided && 'line-through')}>{e.summary}</div>
-                      {e.link && <div className="mt-0.5 truncate font-mono text-xs text-fg-3">{e.link}</div>}
-                      {!!e.files?.length && (
-                        <div className="mt-2">
-                          <Thumbs files={e.files} />
-                        </div>
-                      )}
-                    </div>
-                    {e.voided ? (
-                      <Tip content={t.reqs.voidedTip}>
-                        <span>
-                          <Badge tone="danger">{t.reqs.voided}</Badge>
-                        </span>
-                      </Tip>
-                    ) : (
-                      <span className="shrink-0 text-xs text-fg-3">{relTime(e.created_at, now)}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-fg-3">{t.reqs.noEvidence}</p>
-            )}
+          <Block title={t.timeline.title}>
+            <ReqTimeline r={r} decisions={related} />
           </Block>
-
-          {!!r.feedback?.length && (
-            <Block title={t.review.history}>
-              <ul className="space-y-2">
-                {r.feedback.map((d) => (
-                  <li key={d.id} className="rounded-xl border border-line px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-2 text-xs text-fg-3">
-                      <span>{relTime(d.created_at, now)}</span>
-                      <Badge tone={d.status === 'delivered' ? 'run' : 'reply'}>{t.decision.status[d.status]}</Badge>
-                    </div>
-                    {d.answer && <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-fg">{d.answer}</p>}
-                    {!!d.answer_files?.length && (
-                      <div className="mt-2">
-                        <Thumbs files={d.answer_files} size="sm" />
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Block>
-          )}
 
           <Block
             title={t.reqs.sessions}
@@ -368,18 +319,6 @@ export function ReqDetail({ refId }: { refId: string | null }) {
               <p className="text-sm text-fg-3">{t.reqs.noSessions}</p>
             )}
           </Block>
-
-          {related.some((d) => d.status !== 'pending') && (
-            <Block title={t.reqs.decisions}>
-              <div className="overflow-hidden rounded-2xl border border-line">
-                {related
-                  .filter((d) => d.status !== 'pending')
-                  .map((d) => (
-                    <DecisionRow key={d.id} d={d} />
-                  ))}
-              </div>
-            </Block>
-          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label={t.reqs.source}>

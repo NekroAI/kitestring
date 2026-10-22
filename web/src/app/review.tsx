@@ -11,6 +11,9 @@ import { Collapse, Item, List } from '../ui/motion'
 import { useActions, useBusy } from './actions'
 import { useOpenReq } from './nav'
 
+// evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
+export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
+
 // ReviewRow：一条待验收需求——看证据，然后通过或提修改意见（可贴图）。
 function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => void; hideTitle?: boolean }) {
   const now = useNow()
@@ -70,7 +73,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
             <ul className="mt-1.5 space-y-1.5">
               {evidence.slice(-3).map((e) => (
                 <li key={e.id} className="text-[13px] text-fg-2">
-                  <span className="mr-1.5 rounded bg-run-soft px-1 text-[11px] font-medium text-run">{e.kind}</span>
+                  <span className="mr-1.5 rounded bg-run-soft px-1 text-[11px] font-medium text-run">{evidenceKind(e.kind)}</span>
                   {e.summary}
                   <span className="ml-1.5 text-xs text-fg-3">{relTime(e.created_at, now)}</span>
                   {!!e.files?.length && (
