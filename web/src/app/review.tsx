@@ -8,6 +8,7 @@ import { cx, relTime, useNow } from '../lib/util'
 import { Button, Textarea } from '../ui/base'
 import { AttachZone, Thumbs, type FileRef } from '../ui/attach'
 import { Collapse, Item, List } from '../ui/motion'
+import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
 import { useOpenReq } from './nav'
 import { useReqMenu } from './menus'
@@ -26,6 +27,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
   const [editing, setEditing] = useState(false)
   const [comment, setComment] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
+  const [incoming, setIncoming] = useState<File[]>([])
   const evidence = (detail.data?.evidence ?? []).filter((e) => !e.voided)
 
   const pass = () =>
@@ -48,6 +50,12 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
   const menu = useReqMenu()
   return (
+    <AnnotateTarget.Provider
+      value={(f) => {
+        setEditing(true)
+        setIncoming((x) => [...x, f])
+      }}
+    >
     <Ctx items={clickable ? menu(r) : []} className="rounded-xl">
     <div
       role={clickable ? 'link' : undefined}
@@ -105,7 +113,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
       </div>
       <Collapse show={editing}>
         <div className="space-y-2 pt-3 sm:pl-10" onClick={stop} onKeyDown={stop}>
-          <AttachZone value={files} onChange={setFiles} compact>
+          <AttachZone value={files} onChange={setFiles} compact incoming={incoming} onIncoming={() => setIncoming([])}>
             <Textarea autoFocus minRows={3} value={comment} placeholder={t.review.revisePlaceholder} onChange={(e) => setComment(e.target.value)} className="pr-10" />
           </AttachZone>
           <div className="flex justify-end gap-2">
@@ -120,6 +128,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
       </Collapse>
     </div>
     </Ctx>
+    </AnnotateTarget.Provider>
   )
 }
 

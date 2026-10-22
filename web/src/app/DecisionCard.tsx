@@ -9,6 +9,7 @@ import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
 import { AttachZone, fileUrl, Thumbs, ZoomButton } from '../ui/attach'
+import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
 import { useOpenReq, useOpenSession } from './nav'
@@ -85,6 +86,8 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   const title = d.short_title || d.question
   // 方案对比：任一选项带效果图时，选项改为看图点选的卡片
   const visual = (d.option_files ?? []).some((f) => f?.length)
+  // 在选项效果图上“标注并附上”：打开补充说明并把标注图附进答复
+  const [incoming, setIncoming] = useState<File[]>([])
 
   useEffect(() => {
     if (draft.choice === 'other' || draft.noteOpen) noteRef.current?.focus()
@@ -105,6 +108,12 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   }
 
   return (
+    <AnnotateTarget.Provider
+      value={(f) => {
+        if (!free) setDraft(d.code, { noteOpen: true })
+        setIncoming((x) => [...x, f])
+      }}
+    >
     <div
       tabIndex={-1}
       onKeyDown={onKey}
@@ -225,7 +234,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
         <AnimatePresence initial={false}>
           {(free || note) && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden px-px pb-px">
-              <AttachZone value={draft.files ?? []} onChange={(files) => setDraft(d.code, { files })} compact>
+              <AttachZone value={draft.files ?? []} onChange={(files) => setDraft(d.code, { files })} compact incoming={incoming} onIncoming={() => setIncoming([])}>
                 <Textarea ref={noteRef} minRows={free ? 3 : 2} value={draft.note} placeholder={free ? t.decision.freePlaceholder : t.decision.notePlaceholder} onChange={(e) => setDraft(d.code, { note: e.target.value })} className="pr-10" />
               </AttachZone>
             </motion.div>
@@ -261,6 +270,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
 
       <AnimatePresence>{sendingAt && <SendingOverlay answer={answer} at={sendingAt} onUndo={() => cancel(d.code)} />}</AnimatePresence>
     </div>
+    </AnnotateTarget.Provider>
   )
 }
 

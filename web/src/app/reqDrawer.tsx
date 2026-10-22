@@ -9,6 +9,7 @@ import { t } from '../i18n'
 import { cx, relTime, useNow, usePref } from '../lib/util'
 import { Button, ErrorState, Skeleton, Textarea, Tip } from '../ui/base'
 import { AttachZone, type FileRef } from '../ui/attach'
+import { AnnotateTarget } from '../ui/annotate'
 import { Collapse } from '../ui/motion'
 import { Menu, Panel, useConfirm } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
@@ -34,7 +35,9 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
   const decisions = useDecisions()
   const r = q.data
   const related = useMemo(() => (decisions.data ?? []).filter((d) => r && d.requirement_id === r.id), [decisions.data, r])
-  const scroller = useRef<HTMLDivElement>(null)
+ const scroller = useRef<HTMLDivElement>(null)
+  // 看图时“标注并附上”：标注后的图片送进底部输入区
+  const [incoming, setIncoming] = useState<File[]>([])
   const count = (r?.evidence?.length ?? 0) + (r?.feedback?.length ?? 0) + related.length
 
   // 打开时停在最新的记录；有新记录时，如果本来就在底部附近就跟上去。
@@ -49,6 +52,7 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
   }, [count])
 
   return (
+    <AnnotateTarget.Provider value={(f) => setIncoming((x) => [...x, f])}>
     <div className="flex min-h-0 flex-1 flex-col">
       {top}
       {q.isError ? (
@@ -74,11 +78,20 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
             <ReqTimeline r={r} decisions={related} />
           </div>
           <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
-            <Composer key={r.code} r={r} onPassed={onPassed} pending={related.filter((d) => d.status === 'pending').length} onJump={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })} />
+            <Composer
+              key={r.code}
+              r={r}
+              onPassed={onPassed}
+              pending={related.filter((d) => d.status === 'pending').length}
+              onJump={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })}
+              incoming={incoming}
+              onIncoming={() => setIncoming([])}
+            />
           </footer>
         </>
       )}
     </div>
+    </AnnotateTarget.Provider>
   )
 }
 
@@ -209,7 +222,7 @@ function Brief({ r }: { r: Requirement }) {
 
 // Composer：底部输入。待验收时——没写意见“通过”是主操作，写了意见或贴了图就“退回修改”；
 // 其它状态——可以随时给 Agent 留言（只送达，不改需求状态）。
-function Composer({ r, onPassed, pending, onJump }: { r: Requirement; onPassed?: (code: string) => void; pending: number; onJump: () => void }) {
+function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: Requirement; onPassed?: (code: string) => void; pending: number; onJump: () => void; incoming?: File[]; onIncoming?: () => void }) {
   const { review, note } = useActions()
   const [busy, wrap] = useBusy()
   const [text, setText] = useState('')
@@ -262,7 +275,7 @@ function Composer({ r, onPassed, pending, onJump }: { r: Requirement; onPassed?:
         }
       }}
     >
-      <AttachZone value={files} onChange={setFiles} compact>
+      <AttachZone value={files} onChange={setFiles} compact incoming={incoming} onIncoming={onIncoming}>
         <Textarea minRows={1} value={text} placeholder={reviewing ? t.review.composer : t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
       </AttachZone>
       <div className="mt-2.5 flex items-center gap-2">

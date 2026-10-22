@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Dialog } from 'radix-ui'
-import { ImagePlus, Loader2, Maximize2, Play, X } from 'lucide-react'
+import { ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
+import { Annotator, useAnnotateTarget } from './annotate'
 import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
@@ -98,7 +99,7 @@ function Preview({ f }: { f: FileRef }) {
 }
 
 // Thumb：附件缩略图，点击放大；录屏与动图带播放标记。
-export function Thumb({ f, onRemove, size = 'md' }: { f: FileRef; onRemove?: () => void; size?: 'sm' | 'md' }) {
+export function Thumb({ f, onRemove, onAnnotate, size = 'md' }: { f: FileRef; onRemove?: () => void; onAnnotate?: () => void; size?: 'sm' | 'md' }) {
   const box = size === 'sm' ? 'size-12' : 'size-16'
   return (
     <span className={cx('group relative inline-block shrink-0', box)}>
@@ -112,6 +113,11 @@ export function Thumb({ f, onRemove, size = 'md' }: { f: FileRef; onRemove?: () 
           )}
         </button>
       </Lightbox>
+      {onAnnotate && f.mime.startsWith('image/') && (
+        <button onClick={onAnnotate} aria-label={t.annotate.title} className="absolute -bottom-1.5 -left-1.5 flex size-5 pointer-coarse:size-7 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-xs opacity-0 transition group-hover:opacity-100 hover:text-accent focus:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100">
+          <PenLine className="size-3" />
+        </button>
+      )}
       {onRemove && (
         <button onClick={onRemove} aria-label={t.attach.remove} className="absolute -top-1.5 -right-1.5 flex size-5 pointer-coarse:size-7 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-xs opacity-0 transition group-hover:opacity-100 hover:text-danger focus:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100">
           <X className="size-3" />
@@ -171,6 +177,8 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
   const pinch = useRef<{ d: number; c: { x: number; y: number }; base: View } | null>(null)
   const drag = useRef<{ x: number; y: number; base: View; touch: boolean } | null>(null)
   const moved = useRef(false)
+  const target = useAnnotateTarget()
+  const [annotating, setAnnotating] = useState(false)
   const onBackdrop = useRef(false) // 按下时是否在图片外（指针捕获后 click 的 target 不可靠）
   const video = isVideo(f.mime)
 
@@ -315,7 +323,13 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
         </Dialog.Close>
       </motion.div>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <span>
+        <span className="flex items-center gap-2">
+          {target && !video && (
+            <button onClick={() => setAnnotating(true)} className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-medium text-black backdrop-blur hover:bg-white">
+              <PenLine className="size-3.5" />
+              {t.annotate.attach}
+            </button>
+          )}
           {v.s > 1 && (
             <button onClick={() => animate({ s: 1, x: 0, y: 0 })} className="pointer-events-auto rounded-lg bg-black/55 px-3 py-1.5 text-xs text-white tabular backdrop-blur hover:bg-black/75">
               {t.attach.zoomReset(Math.round(v.s * 100))}
@@ -326,6 +340,18 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
           {video ? t.attach.originalFile : t.attach.original}
         </a>
       </motion.div>
+      {target && (
+        <Annotator
+          src={fileUrl(f.id)}
+          name={f.name}
+          open={annotating}
+          onClose={() => setAnnotating(false)}
+          onDone={(file) => {
+            target(file)
+            onClose()
+          }}
+        />
+      )}
     </>
   )
 }
@@ -342,8 +368,17 @@ export function ZoomButton({ f, className }: { f: FileRef; className?: string })
 }
 
 // AttachZone：包住输入框，支持粘贴与拖拽；下方显示附图与“添加图片”按钮。
-export function AttachZone({ value, onChange, children, className, compact }: { value: FileRef[]; onChange: (v: FileRef[]) => void; children: ReactNode; className?: string; compact?: boolean }) {
+export function AttachZone({ value, onChange, children, className, compact, incoming, onIncoming }: { value: FileRef[]; onChange: (v: FileRef[]) => void; children: ReactNode; className?: string; compact?: boolean; incoming?: File[]; onIncoming?: () => void }) {
   const { pending, add, onPaste, remove } = useAttach(value, onChange)
+  const [annotating, setAnnotating] = useState<FileRef | null>(null)
+  // 从看图处“标注并附上”送来的图片：上传后加进来
+  useEffect(() => {
+    if (incoming?.length) {
+      void add(incoming)
+      onIncoming?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming])
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
   const onDrop = (e: DragEvent) => {
@@ -367,7 +402,7 @@ export function AttachZone({ value, onChange, children, className, compact }: { 
       {children}
       <div className={cx('flex flex-wrap items-center gap-2', (value.length || pending.length || !compact) && 'mt-2')}>
         {value.map((f) => (
-          <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} />
+          <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} onAnnotate={() => setAnnotating(f)} />
         ))}
         {pending.map((p) => (
           <span key={p.key} className="relative size-12 overflow-hidden rounded-lg border border-line">
@@ -380,6 +415,18 @@ export function AttachZone({ value, onChange, children, className, compact }: { 
       <input ref={input} type="file" accept={ACCEPT} multiple hidden onChange={(e) => void add([...(e.target.files ?? [])]).then(() => (e.target.value = ''))} />
       {compact && <AttachTrigger onPick={() => input.current?.click()} />}
       {over && <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-accent-soft/80 text-sm font-medium text-accent">{t.attach.drop}</div>}
+      {annotating && (
+        <Annotator
+          src={fileUrl(annotating.id)}
+          name={annotating.name}
+          open
+          onClose={() => setAnnotating(null)}
+          onDone={(file) => {
+            const old = annotating.id
+            void add([file]).then(() => remove(old)) // 标注后的图替换原图
+          }}
+        />
+      )}
     </div>
   )
 }
