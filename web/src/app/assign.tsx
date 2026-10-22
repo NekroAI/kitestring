@@ -17,7 +17,8 @@ export type TargetGroup = 'now' | 'later' | 'stale'
 
 export function targetGroup(s: Session): TargetGroup {
   const ds = displayState(s)
-  if (ds === 'parked') return 'now'
+  // 挂着 ks wait 的会话（哪怕本轮还没结束、仍显示运行中）收到就会立刻响应
+  if (ds === 'parked' || (s.parked && ds !== 'done')) return 'now'
   if (ds === 'done') return 'stale'
   return 'later'
 }

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Send, User } from 'lucide-react'
+import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Send, User, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useProjects, useSessions } from '../api/queries'
 import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from './assign'
 import { t } from '../i18n'
-import { cx } from '../lib/util'
+import { cx, loadPref, savePref } from '../lib/util'
 import { Badge, Button, Card, Input, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, useConfirm, type MenuItem } from '../ui/overlay'
 import { displayState, PriorityDot, StatusDot } from '../ui/marks'
@@ -187,7 +187,9 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
   const assign = useAssign()
   const openReq = useOpenReq()
   const [busy, wrap] = useBusy()
-  const [f, setF] = useState<ReqFields>({ title: '', status: 'ready', priority: 'P2', project_id: defaultProject })
+  // 项目默认用上次新建时选的（页面已按项目筛选时以筛选为准），连续新建不用每次切
+  const lastProject = () => defaultProject || loadPref<string>('ks.newreq.project', '') || undefined
+  const [f, setF] = useState<ReqFields>({ title: '', status: 'ready', priority: 'P2', project_id: lastProject() })
   const [files, setFiles] = useState<FileRef[]>([])
   // 交给哪个会话：默认同项目里待命或刚活跃过的会话；手动选过就以你的为准
   const [target, setTarget] = useState<string | null | undefined>(undefined)
@@ -195,7 +197,7 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
   const to = target === undefined ? defaultTarget(all, f.project_id) : all.find((s) => s.key === target)
   useEffect(() => {
     if (open) {
-      setF({ title: '', status: 'ready', priority: 'P2', project_id: defaultProject })
+      setF({ title: '', status: 'ready', priority: 'P2', project_id: lastProject() })
       setFiles([])
       setTarget(undefined)
     }
@@ -204,6 +206,7 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
     wrap(async () => {
       const r = await createReq({ ...f, title: f.title.trim(), files: files.map((x) => x.id) })
       if (r) {
+        savePref('ks.newreq.project', f.project_id ?? '')
         if (to) await assign(r.code, to)
         else toast.success(t.reqs.created(r.code))
         onClose()
@@ -269,7 +272,7 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
             width="w-80"
             trigger={
               <button className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-fg hover:bg-hover">
-                {to && <StatusDot state={displayState(to)} />}
+                {to && (targetGroup(to) === 'now' ? <Zap className="size-4 shrink-0 text-accent" /> : <StatusDot state={displayState(to)} />)}
                 <span className="min-w-0 flex-1 truncate">{to ? targetLabel(to) : t.assign.nobody}</span>
                 {to && <span className={cx('shrink-0 text-xs', targetGroup(to) === 'now' ? 'text-accent' : 'text-fg-3')}>{t.assign.when[targetGroup(to)]}</span>}
                 <ChevronDown className="size-3 shrink-0 opacity-60" />
