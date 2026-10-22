@@ -95,12 +95,14 @@
 | 回合结束信号 | `Stop` / `SubagentStop` | `Stop` |
 | 等待回复信号 | `Notification` | 无直接事件，待验证（见 decisions.md Q5） |
 
-注入策略草案：
+注入策略（见 decisions.md D15，实测见 hook-matrix.md）：
 
 1. 用户在 Web 上完成决策后，决策进入“已决策待接收”。
-2. Hub 把决策下行到对应设备的 daemon 缓存；该会话的下一次 `UserPromptSubmit`（或新会话的 `SessionStart`）hook 从本机 daemon 读取该会话 / 项目的待接收决策，以 `additionalContext` 注入。
-3. 注入成功即标记“已接收”；同一决策只注入一次，可在 Web 上手动重发。
-4. 注入文本需控制长度，遵守 Codex 的 `additionalContextLimit`。
+2. 每条决策只有一个目标会话，即提出它的会话（通过 D17 精确识别）。Hub 把决策下行到该会话所在设备的 daemon 缓存。
+3. 该会话下一次 `UserPromptSubmit` 时，hook 从本机 daemon 读取并以 `additionalContext` 注入；成功输出即标记“已接收”，同一决策不重复注入，可在 Web 上手动重发。
+4. 该会话恢复或上下文压缩时（`SessionStart.source` 为 `resume` / `compact`），补注入其近期已接收的决策。
+5. 来源会话已结束时，决策停在“已决策待接收”并在 Web 标出，由用户手动转交或关闭。
+6. 注入文本需控制长度，遵守 Codex 的 `additionalContextLimit`（缺省约 2,500 token）。
 
 待原型验证：npm 版 Codex CLI（0.159.x）与桌面 App 内置 CLI 的 hook 行为是否一致；cmux 通过 `--settings` 启动 Claude 时，用户级 hooks 是否仍然生效。
 
