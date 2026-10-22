@@ -27,6 +27,7 @@ const (
 	KindDecision = "decision"
 	KindFeedback = "feedback"
 	KindNote     = "note"
+	KindAssign   = "assign" // 你把需求交给某个会话开工
 )
 
 // Decision 是一条待用户决策的问题。
@@ -46,7 +47,7 @@ type Decision struct {
 	Options          []string   `json:"options"`
 	Recommendation   string     `json:"recommendation"`
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback,note"`
+	Kind             string     `json:"kind" enum:"decision,feedback,note,assign"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
@@ -101,7 +102,7 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			return err
 		}
 		n := now()
-		if d.Kind == KindFeedback || d.Kind == KindNote {
+		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
 			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?)`,
 				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)

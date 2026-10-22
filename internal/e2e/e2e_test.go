@@ -577,3 +577,43 @@ func TestWaitWakesOnAnswer(t *testing.T) {
 		t.Fatalf("应超时返回：%+v %v", res, err)
 	}
 }
+
+func TestAssignWakesParkedSession(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	hook(t, "claude", map[string]any{"session_id": "a-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "先待命", "prompt_id": "p0"})
+	c := client.New(30 * time.Second)
+
+	// 你在网页上新建需求
+	var r store.Requirement
+	e.call("POST", "/api/requirements", map[string]any{"title": "导出 CSV", "detail": "订单列表加导出按钮", "acceptance": "能导出当前筛选结果", "status": "ready"}, &r)
+
+	// 会话挂着 ks wait
+	done := make(chan daemon.WaitResult, 1)
+	go func() {
+		var res daemon.WaitResult
+		_ = c.Do(context.Background(), "GET", "/wait?session_key=claude:a-1&timeout=20s", nil, &res)
+		done <- res
+	}()
+	e.waitFor("登记挂起", func() bool { return e.session("claude:a-1").Parked })
+
+	// 交给这个会话 → 关联、进行中，并立刻唤醒
+	var d store.Decision
+	e.call("POST", "/api/requirements/"+r.Code+"/assign", map[string]any{"session_key": "claude:a-1"}, &d)
+	if d.Kind != store.KindAssign {
+		t.Fatalf("应生成交付记录：%+v", d)
+	}
+	select {
+	case res := <-done:
+		if res.Reason != "delivered" || !strings.Contains(res.Text, "交给你") || !strings.Contains(res.Text, "导出 CSV") || !strings.Contains(res.Text, "验收标准：能导出当前筛选结果") {
+			t.Fatalf("应带着需求内容唤醒：%+v", res)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("交出需求后等待没有返回")
+	}
+	var got store.Requirement
+	c.Do(context.Background(), "GET", "/agent/requirements/"+r.Code, nil, &got)
+	if got.Status != store.ReqInProgress || len(got.Sessions) != 1 || got.Sessions[0] != "claude:a-1" {
+		t.Fatalf("交出后应关联会话并进行中：%s %v", got.Status, got.Sessions)
+	}
+}

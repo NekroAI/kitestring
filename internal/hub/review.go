@@ -133,7 +133,62 @@ func (h *Hub) note(ctx context.Context, ref, comment string, fileIDs []string) (
 	return d, nil
 }
 
+// assign 把需求交给某个会话开工：关联会话、改为进行中，并把需求内容作为一条送达交给它（D-14）。
+// 会话正在待命（ks wait）时会立刻被唤醒。
+func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (store.Decision, error) {
+	r, err := h.store.GetRequirement(ctx, ref)
+	if err != nil {
+		return store.Decision{}, apiErr(err)
+	}
+	x, err := h.store.GetSession(ctx, sessionKey)
+	if err != nil {
+		return store.Decision{}, apiErr(err)
+	}
+	if err := h.store.LinkSession(ctx, r.ID, x.Key); err != nil {
+		return store.Decision{}, apiErr(err)
+	}
+	if r.Status != store.ReqInProgress {
+		if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
+			return store.Decision{}, apiErr(err)
+		}
+	}
+	var body []string
+	if c := strings.TrimSpace(comment); c != "" {
+		body = append(body, c)
+	}
+	if d := strings.TrimSpace(r.Detail); d != "" {
+		body = append(body, "说明："+d)
+	}
+	if a := strings.TrimSpace(r.Acceptance); a != "" {
+		body = append(body, "验收标准："+a)
+	}
+	d, err := h.store.CreateDecision(ctx, store.Decision{
+		Kind: store.KindAssign, SessionKey: x.Key, ProjectID: r.ProjectID, RequirementID: r.ID,
+		Question: r.Title, Answer: strings.Join(body, "\n"), AnswerFiles: r.Files,
+	})
+	if err != nil {
+		return store.Decision{}, apiErr(err)
+	}
+	h.pushDecisions(ctx, x.DeviceID)
+	h.broker.publish("requirements", "decisions", "sessions")
+	return d, nil
+}
+
 func (h *Hub) registerReview(api huma.API) {
+	huma.Register(api, huma.Operation{OperationID: "assign-requirement", Method: http.MethodPost, Path: "/api/requirements/{ref}/assign", Tags: []string{"requirements"}, Summary: "把需求交给某个会话开工（关联、改为进行中并送达）"},
+		func(ctx context.Context, in *struct {
+			Ref  string `path:"ref"`
+			Body struct {
+				SessionKey string `json:"session_key" minLength:"1"`
+				Comment    string `json:"comment,omitempty"`
+			}
+		}) (*decisionOut, error) {
+			d, err := h.assign(ctx, in.Ref, in.Body.SessionKey, in.Body.Comment)
+			if err != nil {
+				return nil, err
+			}
+			return &decisionOut{Body: d}, nil
+		})
 	huma.Register(api, huma.Operation{OperationID: "note-requirement", Method: http.MethodPost, Path: "/api/requirements/{ref}/notes", Tags: []string{"requirements"}, Summary: "给需求留言（只送达，不改状态）"},
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`

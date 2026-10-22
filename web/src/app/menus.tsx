@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
+import { Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement, Session } from '../api/client'
 import { t } from '../i18n'
@@ -7,6 +7,8 @@ import type { CtxItem } from '../ui/contextMenu'
 import { PriorityDot } from '../ui/marks'
 import { useConfirm } from '../ui/overlay'
 import { useActions } from './actions'
+import { useSessions } from '../api/queries'
+import { assignItems, useAssign } from './assign'
 import { useOpenReq, useOpenSession } from './nav'
 import { allStatuses, priorities, statusCls, toFields, useSetStatus } from './requirements'
 import { sessionTitle } from './SessionCard'
@@ -53,6 +55,8 @@ export function useSessionMenu() {
 // useReqMenu：需求的右键 / 长按菜单。
 export function useReqMenu() {
   const openReq = useOpenReq()
+  const sessions = useSessions()
+  const pick = useAssign()
   const setStatus = useSetStatus()
   const { review, updateReq, deleteReq } = useActions()
   const confirm = useConfirm()
@@ -60,6 +64,9 @@ export function useReqMenu() {
     { type: 'label', label: `${r.code} ${r.title}` },
     { label: t.menu.openReq, icon: <PanelRight />, onSelect: () => openReq(r.code) },
     ...(r.status === 'review' ? [{ label: t.review.pass, icon: <Check />, onSelect: async () => (await review([{ ref: r.code, verdict: 'accept' }])) && toast.success(t.review.passed(r.code)) }] : []),
+    ...(r.status !== 'done' && r.status !== 'shelved'
+      ? [{ type: 'sub' as const, label: t.assign.menu, icon: <Send />, items: assignItems(sessions.data?.sessions ?? [], r.project_id, (s) => void pick(r.code, s)) }]
+      : []),
     {
       type: 'sub',
       label: t.menu.status,

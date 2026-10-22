@@ -375,6 +375,17 @@ export const zh = {
     build: '构建',
     deploy: '部署',
   } as Record<string, string>,
+  assign: {
+    button: '交给…',
+    createAndSend: '新建并交出',
+    title: '交给哪个会话开工',
+    field: '交给',
+    nobody: '暂不交给会话',
+    none: '没有可交给的会话',
+    done: (code: string, who: string) => `${code} 已交给「${who}」，待命中的会话会立刻开工`,
+    timeline: '你交给会话开工',
+    menu: '交给会话',
+  },
   menu: {
     openSession: '打开会话详情',
     openReq: '打开需求',

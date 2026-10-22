@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CheckCheck, FileCheck2, HelpCircle, MessageSquareText, Sparkles, Undo2 } from 'lucide-react'
+import { CheckCheck, FileCheck2, HelpCircle, MessageSquareText, Send, Sparkles, Undo2 } from 'lucide-react'
 import type { Decision, Requirement } from '../api/client'
 import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
@@ -8,6 +8,8 @@ import { Thumbs } from '../ui/attach'
 import { Item, List } from '../ui/motion'
 import { DecisionComposer } from './DecisionCard'
 import { evidenceKind } from './review'
+import { useSessions } from '../api/queries'
+import { sessionTitle } from './SessionCard'
 
 // 需求进展：一条竖向时间线，从上往下按时间排，最新在最下面（紧挨底部的输入区）。
 // 每次退回修改开启新的一轮，复杂需求反复几轮也能看清来龙去脉；留言不开新一轮。
@@ -50,8 +52,13 @@ function Quote({ children, cls }: { children: ReactNode; cls: string }) {
 
 export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decision[] }) {
   const now = useNow()
+  const sessions = useSessions()
+  const who = (key?: string | null) => {
+    const s = (sessions.data?.sessions ?? []).find((x) => x.key === key)
+    return s ? [sessionTitle(s), s.device_name].filter(Boolean).join(t.common.sep) : ''
+  }
   const mine = [...(r.feedback ?? [])].sort((a, b) => (a.answered_at ?? a.created_at).localeCompare(b.answered_at ?? b.created_at))
-  const revises = mine.filter((f) => f.kind !== 'note')
+  const revises = mine.filter((f) => f.kind === 'feedback')
   const bounds = revises.map((f) => f.answered_at ?? f.created_at)
   const roundOf = (at: string) => 1 + bounds.filter((b) => b <= at).length
   const current = 1 + revises.length
@@ -92,6 +99,29 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   }
   for (const f of mine) {
     const at = f.answered_at ?? f.created_at
+    if (f.kind === 'assign') {
+      entries.push({
+        at,
+        key: f.id,
+        round: roundOf(at),
+        node: (
+          <Node
+            icon={<Send />}
+            tone={tone.note}
+            title={
+              <>
+                {t.assign.timeline}
+                <span className="truncate font-normal text-fg-3">{who(f.session_key) || f.device_name}</span>
+                <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
+              </>
+            }
+            at={at}
+            now={now}
+          />
+        ),
+      })
+      continue
+    }
     const note = f.kind === 'note'
     entries.push({
       at,

@@ -16,6 +16,7 @@ import { useActions, useBusy } from './actions'
 import { useOpenSession } from './nav'
 import { EditableText, priorities, StatusMenu, statusCls, toFields } from './requirements'
 import { ReqTimeline } from './reqTimeline'
+import { AssignButton } from './assign'
 
 // 需求抽屉：从上到下是“需求是什么”（固定）→ 来回的记录（滚动，最新在下）→ 轮到你做的事（固定在底部）。
 // 验收时可以在同一个抽屉里连续处理同一项目的待验收：通过后自动滑到下一条，顶部左右按钮切换。
@@ -280,9 +281,12 @@ function Composer({ r, onPassed, pending, onJump }: { r: Requirement; onPassed?:
             </Tip>
           </>
         ) : (
-          <Button variant="primary" disabled={!dirty} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>
-            {t.reqs.noteSend}
-          </Button>
+          <>
+            {r.status !== 'done' && r.status !== 'shelved' && <AssignButton code={r.code} projectId={r.project_id} />}
+            <Button variant="primary" disabled={!dirty} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>
+              {t.reqs.noteSend}
+            </Button>
+          </>
         )}
       </div>
     </div>

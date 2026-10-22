@@ -409,6 +409,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/requirements/{ref}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 把需求交给某个会话开工（关联、改为进行中并送达） */
+        post: operations["assign-requirement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/requirements/{ref}/links": {
         parameters: {
             query?: never;
@@ -629,6 +646,10 @@ export interface components {
         AnswersInBody: {
             answers: components["schemas"]["Item"][] | null;
         };
+        "Assign-requirementRequest": {
+            comment?: string;
+            session_key: string;
+        };
         "Auth-loginRequest": {
             password: string;
         };
@@ -663,7 +684,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note";
+            kind: "decision" | "feedback" | "note" | "assign";
             options: string[] | null;
             origin_session?: string;
             project_id?: string;
@@ -2021,6 +2042,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "assign-requirement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Assign-requirementRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
                 };
             };
             /** @description Error */

@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, User } from 'lucide-react'
+import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Send, User } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
-import { useProjects } from '../api/queries'
+import { useProjects, useSessions } from '../api/queries'
+import { assignCandidates, defaultTarget, targetLabel, useAssign } from './assign'
+import { sessionTitle } from './SessionCard'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Badge, Button, Card, Input, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, useConfirm, type MenuItem } from '../ui/overlay'
-import { PriorityDot } from '../ui/marks'
+import { displayState, PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
@@ -181,22 +183,30 @@ export function EditableText({ value, onSave, placeholder, multiline, className 
 
 export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; onClose: () => void; defaultProject?: string }) {
   const projects = useProjects()
+  const sessions = useSessions()
   const { createReq } = useActions()
+  const assign = useAssign()
   const openReq = useOpenReq()
   const [busy, wrap] = useBusy()
   const [f, setF] = useState<ReqFields>({ title: '', status: 'ready', priority: 'P2', project_id: defaultProject })
   const [files, setFiles] = useState<FileRef[]>([])
+  // 交给哪个会话：默认同项目里待命或刚活跃过的会话；手动选过就以你的为准
+  const [target, setTarget] = useState<string | null | undefined>(undefined)
+  const all = sessions.data?.sessions ?? []
+  const to = target === undefined ? defaultTarget(all, f.project_id) : all.find((s) => s.key === target)
   useEffect(() => {
     if (open) {
       setF({ title: '', status: 'ready', priority: 'P2', project_id: defaultProject })
       setFiles([])
+      setTarget(undefined)
     }
   }, [open, defaultProject])
   const submit = () =>
     wrap(async () => {
       const r = await createReq({ ...f, title: f.title.trim(), files: files.map((x) => x.id) })
       if (r) {
-        toast.success(t.reqs.created(r.code))
+        if (to) await assign(r.code, to)
+        else toast.success(t.reqs.created(r.code))
         onClose()
         openReq(r.code)
       }
@@ -210,8 +220,8 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" loading={busy} disabled={!f.title.trim()} onClick={submit}>
-            {t.common.create}
+          <Button variant="primary" loading={busy} disabled={!f.title.trim()} onClick={submit} icon={to ? <Send className="size-4" /> : undefined}>
+            {to ? t.assign.createAndSend : t.common.create}
           </Button>
         </>
       }
@@ -250,6 +260,27 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
               </Button>
             }
             items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
+          />
+        </div>
+        <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
+          <Send className="size-4 shrink-0 text-fg-3" />
+          <span className="shrink-0 text-[13px] text-fg-3">{t.assign.field}</span>
+          <Menu
+            align="start"
+            width="w-80"
+            trigger={
+              <button className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-fg hover:bg-hover">
+                {to && <StatusDot state={displayState(to)} />}
+                <span className="min-w-0 flex-1 truncate">{to ? targetLabel(to) : t.assign.nobody}</span>
+                <ChevronDown className="size-3 shrink-0 opacity-60" />
+              </button>
+            }
+            items={[
+              { label: t.assign.nobody, checked: !to, onSelect: () => setTarget(null) },
+              ...assignCandidates(all, f.project_id)
+                .slice(0, 12)
+                .map((s) => ({ label: sessionTitle(s), hint: [s.project_name, s.device_name, t.state[displayState(s)]].filter(Boolean).join(t.common.sep), icon: <StatusDot state={displayState(s)} />, checked: to?.key === s.key, onSelect: () => setTarget(s.key) })),
+            ]}
           />
         </div>
       </div>

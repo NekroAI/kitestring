@@ -208,6 +208,22 @@
         ],
         "type": "object"
       },
+      "Assign-requirementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
+        ],
+        "type": "object"
+      },
       "Auth-loginRequest": {
         "additionalProperties": false,
         "properties": {
@@ -333,7 +349,8 @@
             "enum": [
               "decision",
               "feedback",
-              "note"
+              "note",
+              "assign"
             ],
             "type": "string"
           },
@@ -1739,7 +1756,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "54b1302-dirty"
+    "version": "5dbe348-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3078,6 +3095,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "requirements"
+        ]
+      }
+    },
+    "/api/requirements/{ref}/assign": {
+      "post": {
+        "operationId": "assign-requirement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Assign-requirementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "把需求交给某个会话开工（关联、改为进行中并送达）",
         "tags": [
           "requirements"
         ]
