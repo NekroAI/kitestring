@@ -533,6 +533,13 @@
           "agent_type": {
             "type": "string"
           },
+          "bg_brief": {
+            "type": "string"
+          },
+          "bg_tasks": {
+            "format": "int64",
+            "type": "integer"
+          },
           "client": {
             "type": "string"
           },

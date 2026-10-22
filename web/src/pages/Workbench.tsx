@@ -1,12 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { CheckCheck, ChevronDown, FileCheck2, History, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import { CheckCheck, FileCheck2, History, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
 import type { Requirement, Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
-import { cx, useNow, usePref } from '../lib/util'
-import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Tip } from '../ui/base'
+import { useNow, usePref } from '../lib/util'
+import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented } from '../ui/base'
 import { DecisionComposer, OrphanCard } from '../app/DecisionCard'
 import { useWorkbench } from '../app/inbox'
 import { useOpenReq } from '../app/nav'
@@ -34,7 +34,7 @@ function ReviewCard({ r }: { r: Requirement }) {
   const open = useOpenReq()
   const latest = r.evidence?.filter((e) => !e.voided).at(-1)
   return (
-    <Card className="flex flex-col gap-3 p-4">
+    <Card className="flex h-full flex-col gap-3 p-4">
       <button onClick={() => open(r.code)} className="flex items-start gap-3 text-left">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-reply-soft text-reply">
           <FileCheck2 className="size-[18px]" />
@@ -48,7 +48,7 @@ function ReviewCard({ r }: { r: Requirement }) {
           {latest && <span className="mt-1 block truncate text-[13px] text-fg-3">{latest.summary}</span>}
         </span>
       </button>
-      <div className="flex items-center justify-between">
+      <div className="mt-auto flex items-center justify-between">
         <span className="text-xs text-fg-3">{t.reqs.reviewBanner}</span>
         <ReviewActions r={r} />
       </div>
@@ -83,7 +83,12 @@ function SendAllBar() {
 }
 
 function Grid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">{children}</div>
+  // 按容器宽度分列（而不是窗口宽度），竖屏、窄窗口下同样合理。
+  return (
+    <div className="@container">
+      <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @6xl:grid-cols-3">{children}</div>
+    </div>
+  )
 }
 
 const match = (s: Session, k: string) => !k || [sessionTitle(s), s.project_name, s.branch, s.cwd, s.last_prompt, s.summary, s.device_name, s.model].some((v) => v?.toLowerCase().includes(k))
@@ -93,7 +98,6 @@ export default function WorkbenchPage() {
   const wb = useWorkbench()
   const settings = useSettings()
   const [filter, setFilter] = usePref<Filter>('ks.home.filter', 'all')
-  const [showEnded, setShowEnded] = usePref('ks.home.ended', false)
   const [q, setQ] = useState('')
   const [recap, setRecap] = useState(false)
   const k = q.trim().toLowerCase()
@@ -180,17 +184,17 @@ export default function WorkbenchPage() {
                 {(others.length > 0 || wb.reviews.length > 0 || wb.orphans.length > 0) && (
                   <Grid>
                     {others.map((x) => (
-                      <div key={x.s.key} className="rise min-w-0">
+                      <div key={x.s.key} className="rise h-full min-w-0">
                         <SessionCard s={x.s} now={now} />
                       </div>
                     ))}
                     {wb.reviews.map((r) => (
-                      <div key={r.id} className="rise min-w-0">
+                      <div key={r.id} className="rise h-full min-w-0">
                         <ReviewCard r={r} />
                       </div>
                     ))}
                     {wb.orphans.map((d) => (
-                      <div key={d.id} className="rise min-w-0">
+                      <div key={d.id} className="rise h-full min-w-0">
                         <OrphanCard d={d} sessions={wb.sessions} />
                       </div>
                     ))}
@@ -212,7 +216,7 @@ export default function WorkbenchPage() {
             <Section title={t.home.sections.active} count={active.length}>
               <Grid>
                 {active.map((s) => (
-                  <div key={s.key} className="rise min-w-0">
+                  <div key={s.key} className="rise h-full min-w-0">
                     <SessionCard s={s} now={now} />
                   </div>
                 ))}
@@ -221,27 +225,14 @@ export default function WorkbenchPage() {
           )}
 
           {filter === 'all' && ended.length > 0 && (
-            <Section
-              title={t.home.sections.ended}
-              count={ended.length}
-              right={
-                <Tip content={t.home.endedHint}>
-                  <button onClick={() => setShowEnded(!showEnded)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[13px] text-fg-3 hover:bg-hover hover:text-fg">
-                    {showEnded ? t.common.collapse : t.common.showAll}
-                    <ChevronDown className={cx('size-4 transition-transform', showEnded && 'rotate-180')} />
-                  </button>
-                </Tip>
-              }
-            >
-              {showEnded && (
-                <Grid>
-                  {ended.map((s) => (
-                    <div key={s.key} className="rise min-w-0">
-                      <SessionCard s={s} now={now} />
-                    </div>
-                  ))}
-                </Grid>
-              )}
+            <Section title={t.home.sections.ended} count={ended.length} right={<span className="text-xs text-fg-3">{t.home.endedHint}</span>}>
+              <Grid>
+                {ended.map((s) => (
+                  <div key={s.key} className="rise h-full min-w-0">
+                    <SessionCard s={s} now={now} />
+                  </div>
+                ))}
+              </Grid>
             </Section>
           )}
 

@@ -237,11 +237,11 @@ export function OrphanCard({ d, sessions }: { d: Decision; sessions: Session[] }
   const [busy, wrap] = useBusy()
   const active = sessions.filter((s) => s.state !== 'ended' && s.state !== 'lost' && s.key !== d.session_key)
   return (
-    <Card className="space-y-3 p-4">
+    <Card className="flex h-full flex-col gap-3 p-4">
       <Source d={d} now={now} />
       <div className="text-[15px] font-semibold text-fg">{d.short_title || d.question}</div>
       <AnswerBlock d={d} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-fg-3">{t.decision.orphan}</span>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => wrap(async () => (await closeDecision(d.code)) && toast(t.decision.closed))}>

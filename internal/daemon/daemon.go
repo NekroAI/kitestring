@@ -356,6 +356,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.Model = info.model
 	}
 	d.mu.Unlock()
+	if name == "Stop" {
+		ev.BgTasks, ev.BgBrief = backgroundTasks(p)
+	}
 	if name == "Stop" && cfg.SendLastReply {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)
 	}
@@ -474,6 +477,29 @@ func (d *Daemon) injection(ev protocol.Event) string {
 }
 
 func oneLine(s string) string { return summary.Truncate(strings.Join(strings.Fields(s), " "), 300) }
+
+// backgroundTasks 统计 Stop 时仍在运行的后台任务（Claude Code 的 background_tasks），返回数量与简述。
+func backgroundTasks(p map[string]any) (int, string) {
+	list, _ := p["background_tasks"].([]any)
+	n, brief := 0, ""
+	for _, it := range list {
+		m, _ := it.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if st := str(m, "status"); st != "" && st != "running" && st != "pending" {
+			continue
+		}
+		n++
+		if brief == "" {
+			brief = str(m, "description")
+			if brief == "" {
+				brief = str(m, "command")
+			}
+		}
+	}
+	return n, summary.Truncate(strings.Join(strings.Fields(brief), " "), 80)
+}
 
 var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
 

@@ -15,6 +15,7 @@ const (
 	StateRunning      = "running"
 	StateWaitApproval = "waiting_approval"
 	StateWaitReply    = "waiting_reply"
+	StateBackground   = "background" // 本轮已结束，但还有后台任务在跑（例如等 CI、后台子 Agent）
 	StateIdle         = "idle"
 	StateEnded        = "ended"
 	StateLost         = "lost"

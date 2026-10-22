@@ -52,6 +52,8 @@ type Event struct {
 	NotifType string    `json:"notification_type,omitempty"`
 	PermMode  string    `json:"permission_mode,omitempty"`
 	AgentType string    `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
+	BgTasks   int       `json:"bg_tasks,omitempty"`   // Stop 时仍在运行的后台任务数（后台 shell / 子 Agent）
+	BgBrief   string    `json:"bg_brief,omitempty"`   // 后台任务简述，截断
 	LastReply string    `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
 	Git       *Git      `json:"git,omitempty"`
 }

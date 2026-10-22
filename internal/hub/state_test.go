@@ -67,6 +67,19 @@ func TestAutoPromptKeepsLastPrompt(t *testing.T) {
 	}
 }
 
+func TestStopWithBackgroundTasks(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Prompt: "等 CI", Time: t0})
+	bg := applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Stop", BgTasks: 1, BgBrief: "等待 CI 构建", Time: t0.Add(time.Second)})
+	if bg.State != store.StateBackground || bg.StateDetail != "等待 CI 构建" {
+		t.Fatalf("有后台任务时应为后台运行，得到 %s / %q", bg.State, bg.StateDetail)
+	}
+	back := applyEvent(&bg, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Source: protocol.SourceAuto, Time: t0.Add(time.Minute)})
+	if back.State != store.StateRunning || back.LastPrompt != "等 CI" {
+		t.Fatalf("后台任务完成通知后应继续运行且保留最后消息，得到 %s / %q", back.State, back.LastPrompt)
+	}
+}
+
 func TestApplyEventStaleDoesNotRegress(t *testing.T) {
 	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "Stop", Time: t0.Add(10 * time.Second)})

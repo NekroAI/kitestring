@@ -13,7 +13,7 @@ function urgency(s: Session, pending: number): number {
   return 9
 }
 
-const activeRank: Record<string, number> = { running: 0, idle: 1, lost: 2 }
+const activeRank: Record<string, number> = { running: 0, background: 1, idle: 2, lost: 3 }
 
 // useWorkbench 汇总工作台数据；导航角标与页面使用同一套计数。
 export function useWorkbench() {
@@ -54,7 +54,7 @@ export function useWorkbench() {
     })
     const active = ss.filter((s) => !attentionKeys.has(s.key) && s.state !== 'ended').sort((a, b) => (activeRank[a.state] ?? 9) - (activeRank[b.state] ?? 9) || b.last_active_at.localeCompare(a.last_active_at))
     const ended = ss.filter((s) => !attentionKeys.has(s.key) && s.state === 'ended')
-    const running = ss.filter((s) => s.state === 'running')
+    const running = ss.filter((s) => s.state === 'running' || s.state === 'background')
 
     return {
       loading: sessions.isPending || decisions.isPending || reqs.isPending,

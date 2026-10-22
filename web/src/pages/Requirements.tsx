@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ListPlus, Plus, Search } from 'lucide-react'
 import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
-import { cx, useDesktop, usePref } from '../lib/util'
+import { cx, usePref } from '../lib/util'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { boardStatuses, closedStatuses, NewReqModal, ReqCard, statusCls, useSetStatus } from '../app/requirements'
@@ -11,22 +11,36 @@ import { boardStatuses, closedStatuses, NewReqModal, ReqCard, statusCls, useSetS
 const prio: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
 const sortReqs = (a: Requirement, b: Requirement) => (prio[a.priority] ?? 9) - (prio[b.priority] ?? 9) || b.updated_at.localeCompare(a.updated_at)
 
-function Column({ status, items, onDrop }: { status: string; items: Requirement[]; onDrop: (code: string, status: string) => void }) {
+// useDrop：把元素变成需求卡片的放置区。
+function useDrop(status: string, onDrop: (code: string, status: string) => void) {
   const [over, setOver] = useState(false)
-  return (
-    <div
-      onDragOver={(e) => {
+  return {
+    over,
+    props: {
+      onDragOver: (e: React.DragEvent) => {
         e.preventDefault()
         setOver(true)
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
+      },
+      onDragLeave: () => setOver(false),
+      onDrop: (e: React.DragEvent) => {
         e.preventDefault()
         setOver(false)
         const code = e.dataTransfer.getData('text/ks-req')
         if (code) onDrop(code, status)
-      }}
-      className={cx('flex min-h-[200px] w-[260px] shrink-0 flex-col rounded-2xl p-2 transition-colors xl:w-auto xl:min-w-[200px] xl:flex-1 xl:shrink', over ? 'bg-accent-soft ring-2 ring-accent/40' : 'bg-sunken/70')}
+      },
+    },
+  }
+}
+
+const dragProps = (r: Requirement) => ({ draggable: true, onDragStart: (e: React.DragEvent) => e.dataTransfer.setData('text/ks-req', r.code) })
+
+// 看板列：宽度足够时使用。
+function Column({ status, items, onDrop }: { status: string; items: Requirement[]; onDrop: (code: string, status: string) => void }) {
+  const { over, props } = useDrop(status, onDrop)
+  return (
+    <div
+      {...props}
+      className={cx('flex min-h-[240px] min-w-0 flex-1 flex-col rounded-2xl p-2 transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : 'bg-sunken/70')}
     >
       <div className="flex items-center gap-2 px-2 pt-1 pb-2.5">
         <span className={cx('size-2 rounded-full', statusCls[status].dot)} />
@@ -36,7 +50,7 @@ function Column({ status, items, onDrop }: { status: string; items: Requirement[
       <div className="flex flex-1 flex-col gap-2">
         {items.map((r) => (
           <div key={r.id} className="rise">
-            <ReqCard r={r} draggable onDragStart={(e) => e.dataTransfer.setData('text/ks-req', r.code)} />
+            <ReqCard r={r} {...dragProps(r)} />
           </div>
         ))}
         {!items.length && <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-line-strong/70 py-6 text-xs text-fg-3">{over ? t.reqs.dropHere : t.reqs.empty}</div>}
@@ -45,10 +59,50 @@ function Column({ status, items, onDrop }: { status: string; items: Requirement[
   )
 }
 
+// 纵向分组：宽度放不下所有列时使用（竖屏、窄窗口），按状态分段，段内多列网格。
+function StatusSection({ status, items, onDrop }: { status: string; items: Requirement[]; onDrop: (code: string, status: string) => void }) {
+  const { over, props } = useDrop(status, onDrop)
+  return (
+    <section {...props} className={cx('@container rounded-2xl p-2 transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : '')}>
+      <div className="flex items-center gap-2 px-1 pb-2.5">
+        <span className={cx('size-2 rounded-full', statusCls[status].dot)} />
+        <span className="text-[13px] font-semibold text-fg">{t.reqStatus[status]}</span>
+        <span className="text-xs text-fg-3 tabular">{items.length}</span>
+      </div>
+      {items.length ? (
+        <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-4">
+          {items.map((r) => (
+            <div key={r.id} className="rise h-full min-w-0">
+              <ReqCard r={r} {...dragProps(r)} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-line-strong/70 py-3 text-center text-xs text-fg-3">{over ? t.reqs.dropHere : t.reqs.empty}</div>
+      )}
+    </section>
+  )
+}
+
+// useWidth：观察元素宽度。
+function useWidth() {
+  const [el, setEl] = useState<HTMLDivElement | null>(null)
+  const [w, setW] = useState(0)
+  useEffect(() => {
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [el])
+  return [setEl, w] as const
+}
+
+const COL_MIN = 212 // 每列最小宽度（含间距）；放不下所有列时改为纵向分组
+
 export default function RequirementsPage() {
   const q = useRequirements()
   const projects = useProjects()
-  const desktop = useDesktop()
+  const [measure, width] = useWidth()
   const setStatus = useSetStatus()
   const [project, setProject] = usePref<string>('ks.reqs.project', '')
   const [showClosed, setShowClosed] = usePref('ks.reqs.closed', false)
@@ -72,7 +126,7 @@ export default function RequirementsPage() {
   }
 
   return (
-    <>
+    <div ref={measure}>
       <PageHeader
         title={t.reqs.title}
         subtitle={q.isPending ? ' ' : t.reqs.summary(open)}
@@ -122,10 +176,16 @@ export default function RequirementsPage() {
             {t.reqs.emptyAllSub}
           </Empty>
         </Card>
-      ) : desktop ? (
-        <div className="-mx-10 flex gap-3 overflow-x-auto px-10 pb-4">
+      ) : width >= statuses.length * COL_MIN ? (
+        <div className="flex gap-3 pb-4">
           {statuses.map((s) => (
             <Column key={s} status={s} items={byStatus(s)} onDrop={drop} />
+          ))}
+        </div>
+      ) : width >= 600 ? (
+        <div className="space-y-4">
+          {statuses.map((s) => (
+            <StatusSection key={s} status={s} items={byStatus(s)} onDrop={drop} />
           ))}
         </div>
       ) : (
@@ -145,6 +205,6 @@ export default function RequirementsPage() {
       )}
 
       <NewReqModal open={creating} onClose={() => setCreating(false)} defaultProject={project || undefined} />
-    </>
+    </div>
   )
 }

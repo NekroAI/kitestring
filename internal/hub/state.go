@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -111,7 +112,14 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		case "idle_prompt":
 			x.State, x.StateDetail = store.StateWaitReply, ""
 		}
-	case "Stop", "Interrupt":
+	case "Stop":
+		if ev.BgTasks > 0 {
+			// 还有后台任务在跑：结束后 Claude Code 会自动继续，并不是在等你。
+			x.State, x.StateDetail = store.StateBackground, bgDetail(ev.BgTasks, ev.BgBrief)
+			break
+		}
+		x.State, x.StateDetail = store.StateWaitReply, ""
+	case "Interrupt":
 		x.State, x.StateDetail = store.StateWaitReply, ""
 	case "SessionEnd":
 		t := ev.Time
@@ -123,6 +131,14 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		x.StateSince = ev.Time
 	}
 	return x
+}
+
+// bgDetail 生成后台任务说明，例如 “2 · 等待 CI 构建”。
+func bgDetail(n int, brief string) string {
+	if n <= 1 {
+		return brief
+	}
+	return fmt.Sprintf("%d · %s", n, brief)
 }
 
 // asksUser 判断工具是否是在向用户提问或请求确认，而不是请求执行权限。

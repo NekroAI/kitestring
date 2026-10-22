@@ -6,6 +6,7 @@ import { ClaudeGlyph, CodexGlyph } from './brand'
 // 会话状态的视觉映射。waiting_answer 是 waiting_reply 的细分：Agent 正在向你提问或请你确认计划。
 export const stateStyle: Record<string, { dot: string; pill: string; ring?: string; live?: boolean }> = {
   running: { dot: 'bg-run', pill: 'bg-run-soft text-run', live: true },
+  background: { dot: 'bg-accent', pill: 'bg-accent-soft text-accent', live: true },
   waiting_approval: { dot: 'bg-wait', pill: 'bg-wait-soft text-wait', ring: 'ring-1 ring-wait/45 border-wait/40' },
   waiting_answer: { dot: 'bg-reply', pill: 'bg-reply-soft text-reply', ring: 'ring-1 ring-reply/45 border-reply/40' },
   waiting_reply: { dot: 'bg-reply', pill: 'bg-reply-soft text-reply', ring: 'ring-1 ring-reply/30 border-reply/30' },
@@ -73,7 +74,7 @@ export function ToolMark({ tool, size = 'md' }: { tool: string; size?: 'sm' | 'm
 // Sparkline：最近一小时活跃度（12 个 5 分钟柱）。
 export function Sparkline({ data, state, className }: { data: number[]; state: string; className?: string }) {
   const max = Math.max(1, ...data)
-  const color = state === 'running' ? 'bg-run' : state === 'waiting_approval' ? 'bg-wait' : state.startsWith('waiting') ? 'bg-reply' : 'bg-fg-3'
+  const color = state === 'running' ? 'bg-run' : state === 'background' ? 'bg-accent' : state === 'waiting_approval' ? 'bg-wait' : state.startsWith('waiting') ? 'bg-reply' : 'bg-fg-3'
   return (
     <Tip content={t.session.activity}>
       <div className={cx('flex h-5 shrink-0 items-end gap-[2px]', className)} aria-label={t.session.activity}>

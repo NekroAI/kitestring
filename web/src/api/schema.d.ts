@@ -686,6 +686,9 @@ export interface components {
         };
         Event: {
             agent_type?: string;
+            bg_brief?: string;
+            /** Format: int64 */
+            bg_tasks?: number;
             client?: string;
             cwd?: string;
             git?: components["schemas"]["Git"];
