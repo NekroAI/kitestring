@@ -149,6 +149,8 @@
   html {
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
+    /* 应用式界面：页面不随手势缩放（看图器自己处理捏合） */
+    touch-action: pan-x pan-y;
     font-feature-settings: 'cv11', 'ss01';
   }
   body {
@@ -489,4 +491,18 @@ nav.fixed {
   ::view-transition-new(root) {
     animation: none;
   }
+}
+
+/* 登录页的纸鸢：在风里轻轻浮动 */
+@keyframes ks-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(3deg);
+  }
+}
+.kite-float {
+  animation: ks-float 4s ease-in-out infinite;
 }

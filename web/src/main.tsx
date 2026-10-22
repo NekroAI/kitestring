@@ -14,6 +14,11 @@ import './index.css'
 
 initTheme()
 
+// iOS Safari 无视 viewport 的 user-scalable=no：拦下页面级的捏合与多指缩放。
+// 看图器用指针事件自己算缩放，不受影响。
+document.addEventListener('gesturestart', (e) => e.preventDefault())
+document.addEventListener('touchmove', (e) => e.touches.length > 1 && e.preventDefault(), { passive: false })
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
