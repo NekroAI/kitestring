@@ -1,35 +1,91 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
-import { motion } from 'motion/react'
-import { Bell, Check, CheckCircle2, ChevronDown, Copy, FolderGit2, KeyRound, LogOut, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Sparkles, Sun, SunMoon, Trash2, User, XCircle } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Bell, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, errMsg, unwrap, type Device, type NotifyConfig, type Workspace } from '../api/client'
-import { useDevices, useProjects, useSettings } from '../api/queries'
+import { api, errMsg, unwrap, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
+import { qk, useDevices, useProjects, useSettings } from '../api/queries'
 import { t } from '../i18n'
 import { copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
-import { Badge, Button, Card, Checkbox, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton } from '../ui/base'
+import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Tip } from '../ui/base'
 import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
-import { useQueryClient } from '@tanstack/react-query'
-import { qk } from '../api/queries'
 
-type Tab = 'devices' | 'notify' | 'projects' | 'summary' | 'appearance' | 'account'
-const tabs: { id: Tab; icon: typeof Monitor }[] = [
+type Tab = 'devices' | 'notify' | 'projects' | 'ai' | 'appearance' | 'account'
+const tabs: { id: Tab; icon: LucideIcon }[] = [
   { id: 'devices', icon: Monitor },
   { id: 'notify', icon: Bell },
   { id: 'projects', icon: FolderGit2 },
-  { id: 'summary', icon: Sparkles },
+  { id: 'ai', icon: Sparkles },
   { id: 'appearance', icon: Palette },
   { id: 'account', icon: User },
 ]
 
-function Intro({ children }: { children: ReactNode }) {
-  return <p className="mb-5 max-w-2xl text-sm leading-relaxed text-fg-2">{children}</p>
-}
-
 function Row({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={cx('flex items-center gap-3 px-4 py-3.5', className)}>{children}</div>
+}
+
+function Hint({ children }: { children: ReactNode }) {
+  return (
+    <Tip content={children}>
+      <span className="inline-flex text-fg-3 hover:text-fg-2" aria-label={typeof children === 'string' ? children : undefined}>
+        <Info className="size-3.5" />
+      </span>
+    </Tip>
+  )
+}
+
+function Label({ children, hint }: { children: ReactNode; hint?: ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      {children}
+      {hint && <Hint>{hint}</Hint>}
+    </span>
+  )
+}
+
+function Group({ title, hint, children, action }: { title: ReactNode; hint?: ReactNode; children: ReactNode; action?: ReactNode }) {
+  return (
+    <section className="mb-8">
+      <div className="mb-2.5 flex items-center gap-2">
+        <h3 className="text-[13px] font-semibold text-fg-2">{title}</h3>
+        {hint && <Hint>{hint}</Hint>}
+        <span className="ml-auto">{action}</span>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+// 保存设置：服务端接口要求整份提交，这里在当前值上合并修改。
+function useSaveSettings() {
+  const q = useSettings()
+  const qc = useQueryClient()
+  return async (patch: Partial<SettingsView> & { summary_api_key?: string }, okMsg: string | false = t.common.saved) => {
+    const s = q.data
+    if (!s) return false
+    try {
+      await unwrap(
+        api.PUT('/api/settings', {
+          body: {
+            public_url: patch.public_url ?? s.public_url,
+            ai: patch.ai ?? s.ai,
+            summary_base_url: patch.summary_base_url ?? s.summary_base_url,
+            summary_model: patch.summary_model ?? s.summary_model,
+            summary_api_key: patch.summary_api_key || undefined,
+            notify_default: patch.notify_default ?? s.notify_default,
+          },
+        }),
+      )
+      await qc.invalidateQueries({ queryKey: qk.settings })
+      if (okMsg) toast.success(okMsg)
+      return true
+    } catch (e) {
+      toast.error(errMsg(e))
+      return false
+    }
+  }
 }
 
 // ---------- 设备 ----------
@@ -38,15 +94,17 @@ function CommandLine({ cmd }: { cmd: string }) {
   return (
     <div className="flex items-center gap-2 rounded-lg bg-sunken px-3 py-2">
       <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[12px] whitespace-nowrap text-fg">{cmd}</code>
-      <Button size="icon-sm" variant="ghost" aria-label={t.common.copy} onClick={async () => (await copyText(cmd)) && toast.success(t.common.copied)}>
-        <Copy className="size-3.5" />
-      </Button>
+      <Tip content={t.common.copy}>
+        <Button size="icon-sm" variant="ghost" aria-label={t.common.copy} onClick={async () => (await copyText(cmd)) && toast.success(t.common.copied)}>
+          <Copy className="size-3.5" />
+        </Button>
+      </Tip>
     </div>
   )
 }
 
 function DeviceTokenModal({ token, name, onClose }: { token: string; name: string; onClose: () => void }) {
-  const origin = window.location.origin
+  const cmds = [null, `ks login --hub ${window.location.origin} --token ${token}`, 'ks install', null]
   return (
     <Modal
       open={!!token}
@@ -59,26 +117,17 @@ function DeviceTokenModal({ token, name, onClose }: { token: string; name: strin
         </Button>
       }
     >
-      <div className="space-y-4">
-        <CommandLine cmd={token} />
-        <div className="text-sm font-medium text-fg">{t.settings.devices.stepsTitle}</div>
-        <ol className="space-y-3 text-sm text-fg-2">
-          {[
-            [t.settings.devices.step1, null],
-            [t.settings.devices.step2, `ks login --hub ${origin} --token ${token}`],
-            [t.settings.devices.step3, 'ks install'],
-            [t.settings.devices.step4, null],
-          ].map(([text, cmd], i) => (
-            <li key={i} className="flex gap-3">
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">{i + 1}</span>
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <div>{text}</div>
-                {cmd && <CommandLine cmd={cmd} />}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
+      <ol className="space-y-3.5 text-sm text-fg-2">
+        {t.settings.devices.steps.map((text, i) => (
+          <li key={i} className="flex gap-3">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">{i + 1}</span>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div>{text}</div>
+              {cmds[i] && <CommandLine cmd={cmds[i]!} />}
+            </div>
+          </li>
+        ))}
+      </ol>
     </Modal>
   )
 }
@@ -103,14 +152,13 @@ function Devices() {
       }
     })
   const revoke = async (d: Device) => {
-    if (await confirm({ title: t.settings.devices.revoke, description: t.settings.devices.revokeConfirm(d.name), confirmText: t.settings.devices.revoke, danger: true })) {
+    if (await confirm({ title: `${t.settings.devices.revoke}「${d.name}」`, description: t.settings.devices.revokeConfirm(d.name), confirmText: t.settings.devices.revoke, danger: true })) {
       if (await revokeDevice(d.id)) toast(t.settings.devices.revoked)
     }
   }
 
   return (
     <>
-      <Intro>{t.settings.devices.intro}</Intro>
       <Card className="divide-y divide-line overflow-hidden">
         {q.isPending ? (
           <Row>
@@ -134,14 +182,14 @@ function Devices() {
                   {d.name}
                   {d.revoked && <Badge tone="danger">{t.settings.devices.revokedTag}</Badge>}
                 </div>
-                <div className="mt-0.5 truncate text-xs text-fg-3">
-                  {[d.online ? t.sessions.deviceOnline : d.last_seen ? t.sessions.lastSeen(relTime(d.last_seen, now)) : t.sessions.neverConnected, d.hostname, d.platform, d.version && `v${d.version}`].filter(Boolean).join(t.common.sep)}
-                </div>
+                <div className="mt-0.5 truncate text-xs text-fg-3">{[d.online ? t.device.online : d.last_seen ? t.device.lastSeen(relTime(d.last_seen, now)) : t.device.never, d.hostname, d.platform, d.version].filter(Boolean).join(t.common.sep)}</div>
               </div>
               {!d.revoked && (
-                <Button size="sm" variant="ghost" className="text-fg-3 hover:text-danger" onClick={() => revoke(d)}>
-                  {t.settings.devices.revoke}
-                </Button>
+                <Tip content={t.settings.devices.revoke}>
+                  <Button size="icon-sm" variant="ghost" className="text-fg-3 hover:text-danger" aria-label={t.settings.devices.revoke} onClick={() => revoke(d)}>
+                    <Trash2 className="size-4" />
+                  </Button>
+                </Tip>
               )}
             </Row>
           ))
@@ -169,16 +217,18 @@ function Devices() {
 
 // ---------- 通知 ----------
 
-function channelsOf(n: NotifyConfig): string[] {
+function channels(n: NotifyConfig): string[] {
   const out: string[] = []
   if (n.bark?.key) out.push(t.settings.notify.bark)
   if (n.wecom?.webhook) out.push(t.settings.notify.wecom)
   return out
 }
 
-function NotifyForm({ value, onChange, events }: { value: NotifyConfig; onChange: (v: NotifyConfig) => void; events: string[] }) {
+const allEvents = ['decision_raised', 'waiting_approval', 'requirement_review', 'waiting_reply', 'device_lost']
+
+function NotifyForm({ value, onChange }: { value: NotifyConfig; onChange: (v: NotifyConfig) => void }) {
   const [busy, wrap] = useBusy()
-  const chosen = value.events ?? []
+  const chosen = value.events?.length ? value.events : allEvents.slice(0, 3)
   const test = () =>
     wrap(async () => {
       try {
@@ -191,54 +241,50 @@ function NotifyForm({ value, onChange, events }: { value: NotifyConfig; onChange
   return (
     <div className="space-y-5">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label={t.settings.notify.barkKey} hint={t.settings.notify.barkKeyHint}>
+        <Field label={<Label hint={t.settings.notify.barkKeyTip}>{t.settings.notify.barkKey}</Label>}>
           <Input value={value.bark?.key ?? ''} onChange={(e) => onChange({ ...value, bark: { server: value.bark?.server ?? '', key: e.target.value } })} className="font-mono" />
         </Field>
         <Field label={t.settings.notify.barkServer}>
           <Input value={value.bark?.server ?? ''} placeholder="https://api.day.app" onChange={(e) => onChange({ ...value, bark: { key: value.bark?.key ?? '', server: e.target.value } })} className="font-mono" />
         </Field>
       </div>
-      <Field label={t.settings.notify.wecomWebhook} hint={t.settings.notify.wecomHint}>
+      <Field label={<Label hint={t.settings.notify.wecomTip}>{t.settings.notify.wecomWebhook}</Label>}>
         <Input value={value.wecom?.webhook ?? ''} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…" onChange={(e) => onChange({ ...value, wecom: { webhook: e.target.value } })} className="font-mono" />
       </Field>
       <div>
-        <div className="mb-1 text-[13px] font-medium text-fg-2">{t.settings.notify.events}</div>
-        <div className="grid gap-x-4 sm:grid-cols-2">
-          {events.map((ev, i) => (
-            <Checkbox
-              key={ev}
-              checked={chosen.length ? chosen.includes(ev) : i < 3}
-              hint={t.settings.notify.evHint[ev]}
-              onChange={(on) => {
-                const base = chosen.length ? chosen : events.slice(0, 3)
-                onChange({ ...value, events: on ? [...base, ev] : base.filter((x) => x !== ev) })
-              }}
-            >
-              {t.settings.notify.ev[ev] ?? ev}
-            </Checkbox>
-          ))}
+        <div className="mb-2 text-[13px] font-medium text-fg-2">{t.settings.notify.events}</div>
+        <div className="flex flex-wrap gap-2">
+          {allEvents.map((ev) => {
+            const on = chosen.includes(ev)
+            return (
+              <Tip key={ev} content={t.settings.notify.evTip[ev]}>
+                <button
+                  onClick={() => onChange({ ...value, events: on ? chosen.filter((x) => x !== ev) : [...chosen, ev] })}
+                  aria-pressed={on}
+                  className={cx('rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors', on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-fg-2 hover:border-line-strong')}
+                >
+                  {t.settings.notify.ev[ev]}
+                </button>
+              </Tip>
+            )
+          })}
         </div>
       </div>
-      <Button size="sm" icon={<Send className="size-3.5" />} loading={busy} disabled={!channelsOf(value).length} onClick={test}>
+      <Button size="sm" icon={<Send className="size-3.5" />} loading={busy} disabled={!channels(value).length} onClick={test}>
         {t.settings.notify.test}
       </Button>
     </div>
   )
 }
 
-function WorkspaceModal({ ws, onClose, events }: { ws: Workspace | 'new' | null; onClose: () => void; events: string[] }) {
+function WorkspaceModal({ ws, onClose }: { ws: Workspace | 'new' | null; onClose: () => void }) {
   const { createWorkspace, updateWorkspace } = useActions()
   const [busy, wrap] = useBusy()
   const [name, setName] = useState('')
   const [n, setN] = useState<NotifyConfig>({})
   useEffect(() => {
-    if (ws && ws !== 'new') {
-      setName(ws.name)
-      setN(ws.notify)
-    } else {
-      setName('')
-      setN({})
-    }
+    setName(ws && ws !== 'new' ? ws.name : '')
+    setN(ws && ws !== 'new' ? ws.notify : {})
   }, [ws])
   const save = () =>
     wrap(async () => {
@@ -266,7 +312,7 @@ function WorkspaceModal({ ws, onClose, events }: { ws: Workspace | 'new' | null;
         <Field label={t.settings.notify.workspaceName}>
           <Input autoFocus value={name} placeholder={t.settings.notify.workspaceNamePlaceholder} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <NotifyForm value={n} onChange={setN} events={events} />
+        <NotifyForm value={n} onChange={setN} />
       </div>
     </Modal>
   )
@@ -277,82 +323,83 @@ function Notify() {
   const projects = useProjects()
   const { deleteWorkspace } = useActions()
   const confirm = useConfirm()
-  const qc = useQueryClient()
+  const save = useSaveSettings()
   const [editing, setEditing] = useState<Workspace | 'new' | null>(null)
   const [def, setDef] = useState<NotifyConfig | null>(null)
   const [busy, wrap] = useBusy()
   useEffect(() => {
     if (settings.data && !def) setDef(settings.data.notify_default)
   }, [settings.data, def])
-  const events = settings.data?.notify_events ?? []
-
-  const saveDefault = () =>
-    wrap(async () => {
-      const s = settings.data!
-      try {
-        await unwrap(api.PUT('/api/settings', { body: { public_url: s.public_url, summary_mode: s.summary_mode, summary_base_url: s.summary_base_url, summary_model: s.summary_model, notify_default: def ?? {} } }))
-        void qc.invalidateQueries({ queryKey: qk.settings })
-        toast.success(t.common.saved)
-      } catch (e) {
-        toast.error(errMsg(e))
-      }
-    })
 
   return (
     <>
-      <Intro>{t.settings.notify.intro}</Intro>
-      <h3 className="mb-1 text-[15px] font-semibold text-fg">{t.settings.notify.workspacesTitle}</h3>
-      <p className="mb-3 text-[13px] text-fg-3">{t.settings.notify.workspacesHint}</p>
-      <Card className="mb-8 divide-y divide-line overflow-hidden">
-        {(projects.data?.workspaces ?? []).map((w) => {
-          const ch = channelsOf(w.notify)
-          const n = projects.data?.projects.filter((p) => p.workspace_id === w.id).length ?? 0
-          return (
-            <Row key={w.id}>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-fg">{w.name}</div>
-                <div className="mt-0.5 text-xs text-fg-3">
-                  {n} · {ch.length ? ch.join('、') : t.settings.notify.noChannel}
-                </div>
-              </div>
-              <Button size="icon-sm" variant="ghost" aria-label={t.common.edit} onClick={() => setEditing(w)}>
-                <Pencil className="size-3.5" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t.common.delete}
-                onClick={async () => (await confirm({ title: t.common.delete, description: t.settings.notify.deleteConfirm(w.name), danger: true, confirmText: t.common.delete })) && deleteWorkspace(w.id)}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </Row>
-          )
-        })}
-        <Row className="bg-surface-2/50">
-          <Button variant="ghost" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>
+      <Group
+        title={t.settings.notify.workspaces}
+        hint={t.settings.notify.workspacesHint}
+        action={
+          <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setEditing('new')}>
             {t.settings.notify.addWorkspace}
           </Button>
-        </Row>
-      </Card>
-
-      <h3 className="mb-1 text-[15px] font-semibold text-fg">{t.settings.notify.defaultTitle}</h3>
-      <p className="mb-3 text-[13px] text-fg-3">{t.settings.notify.defaultHint}</p>
-      <Card className="p-4 sm:p-5">
-        {def ? (
-          <>
-            <NotifyForm value={def} onChange={setDef} events={events} />
-            <div className="mt-5 flex justify-end border-t border-line pt-4">
-              <Button variant="primary" loading={busy} onClick={saveDefault}>
-                {t.common.save}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <Skeleton className="h-40" />
+        }
+      >
+        {(projects.data?.workspaces ?? []).length > 0 && (
+          <Card className="divide-y divide-line overflow-hidden">
+            {projects.data!.workspaces.map((w) => {
+              const ch = channels(w.notify)
+              const n = projects.data!.projects.filter((p) => p.workspace_id === w.id).length
+              return (
+                <Row key={w.id}>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-fg">{w.name}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {ch.length ? ch.map((c) => <Badge key={c}>{c}</Badge>) : <span className="text-xs text-fg-3">{t.settings.notify.noChannel}</span>}
+                      <Tip content={t.settings.sections.projects}>
+                        <span className="inline-flex items-center gap-1 text-xs text-fg-3">
+                          <FolderGit2 className="size-3.5" />
+                          {n}
+                        </span>
+                      </Tip>
+                    </div>
+                  </div>
+                  <Tip content={t.common.edit}>
+                    <Button size="icon-sm" variant="ghost" aria-label={t.common.edit} onClick={() => setEditing(w)}>
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  </Tip>
+                  <Tip content={t.common.delete}>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t.common.delete}
+                      onClick={async () => (await confirm({ title: t.common.delete, description: t.settings.notify.deleteConfirm(w.name), danger: true, confirmText: t.common.delete })) && deleteWorkspace(w.id)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </Tip>
+                </Row>
+              )
+            })}
+          </Card>
         )}
-      </Card>
-      <WorkspaceModal ws={editing} onClose={() => setEditing(null)} events={events} />
+      </Group>
+
+      <Group title={t.settings.notify.defaultTitle} hint={t.settings.notify.defaultHint}>
+        <Card className="p-4 sm:p-5">
+          {def ? (
+            <>
+              <NotifyForm value={def} onChange={setDef} />
+              <div className="mt-5 flex justify-end border-t border-line pt-4">
+                <Button variant="primary" loading={busy} onClick={() => wrap(() => save({ notify_default: def }))}>
+                  {t.common.save}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Skeleton className="h-40" />
+          )}
+        </Card>
+      </Group>
+      <WorkspaceModal ws={editing} onClose={() => setEditing(null)} />
     </>
   )
 }
@@ -366,14 +413,15 @@ function Projects() {
   const workspaces = q.data?.workspaces ?? []
   return (
     <>
-      <Intro>{t.settings.projects.intro}</Intro>
       <Card className="divide-y divide-line overflow-hidden">
         {q.isPending ? (
           <Row>
             <Skeleton className="h-10 w-full" />
           </Row>
         ) : !q.data?.projects.length ? (
-          <Empty icon={<FolderGit2 />} title={t.settings.projects.empty} />
+          <Empty icon={<FolderGit2 />} title={t.settings.projects.empty}>
+            {t.settings.projects.emptySub}
+          </Empty>
         ) : (
           q.data.projects.map((p) => {
             const ws = workspaces.find((w) => w.id === p.workspace_id)
@@ -382,7 +430,7 @@ function Projects() {
                 <FolderGit2 className="size-[18px] shrink-0 text-fg-3" />
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-fg">{p.name}</div>
-                  <div className="truncate font-mono text-xs text-fg-3">{p.remote || t.settings.projects.noRemote}</div>
+                  <div className="truncate font-mono text-xs text-fg-3">{p.remote || t.settings.projects.local}</div>
                 </div>
                 <Menu
                   trigger={
@@ -397,9 +445,11 @@ function Projects() {
                     ...workspaces.map((w) => ({ label: w.name, checked: w.id === p.workspace_id, onSelect: () => void updateProject(p.id, { name: p.name, doc_root: p.doc_root, workspace_id: w.id }) })),
                   ]}
                 />
-                <Button size="icon-sm" variant="ghost" aria-label={t.settings.projects.rename} onClick={() => setEdit({ id: p.id, name: p.name, doc_root: p.doc_root })}>
-                  <Pencil className="size-3.5" />
-                </Button>
+                <Tip content={t.settings.projects.rename}>
+                  <Button size="icon-sm" variant="ghost" aria-label={t.settings.projects.rename} onClick={() => setEdit({ id: p.id, name: p.name, doc_root: p.doc_root })}>
+                    <Pencil className="size-3.5" />
+                  </Button>
+                </Tip>
               </Row>
             )
           })
@@ -427,7 +477,7 @@ function Projects() {
       >
         {edit && (
           <div className="space-y-4">
-            <Field label={t.settings.notify.workspaceName}>
+            <Field label={t.settings.projects.name}>
               <Input autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
             </Field>
             <Field label={t.settings.projects.docRoot}>
@@ -440,138 +490,128 @@ function Projects() {
   )
 }
 
-// ---------- AI 摘要 ----------
+// ---------- 智能 ----------
+
+type Feature = 'summary' | 'title' | 'digest' | 'decision_title' | 'recap'
+const features: { id: Feature; icon: LucideIcon }[] = [
+  { id: 'summary', icon: FileText },
+  { id: 'title', icon: Tag },
+  { id: 'digest', icon: MessageSquareText },
+  { id: 'decision_title', icon: Sparkles },
+  { id: 'recap', icon: History },
+]
 
 type TestResult = { ok: true; sample_prompt: string; sample_reply: string; summary: string; latency_ms: number } | { ok: false; error: string }
 
-function Summary() {
+function AI() {
   const q = useSettings()
-  const qc = useQueryClient()
-  const [mode, setMode] = useState('off')
+  const save = useSaveSettings()
   const [base, setBase] = useState('')
   const [model, setModel] = useState('')
   const [key, setKey] = useState('')
   const [busy, wrap] = useBusy()
   const [result, setResult] = useState<TestResult | null>(null)
+  const [sample, setSample] = useState(false)
   useEffect(() => {
     if (q.data) {
-      setMode(q.data.summary_mode)
       setBase(q.data.summary_base_url)
       setModel(q.data.summary_model)
     }
   }, [q.data])
 
-  const save = (test: boolean) =>
+  if (!q.data) return <Skeleton className="h-64" />
+  const ai = q.data.ai ?? {}
+  const configured = !!q.data.summary_base_url && !!q.data.summary_model
+  const dirty = base !== q.data.summary_base_url || model !== q.data.summary_model || !!key
+
+  const test = () =>
     wrap(async () => {
-      const s = q.data!
       setResult(null)
+      if (dirty && !(await save({ summary_base_url: base.trim(), summary_model: model.trim(), summary_api_key: key }, false))) return
+      setKey('')
       try {
-        await unwrap(api.PUT('/api/settings', { body: { public_url: s.public_url, notify_default: s.notify_default, summary_mode: mode as 'off', summary_base_url: base, summary_model: model, summary_api_key: key || undefined } }))
-        setKey('')
-        void qc.invalidateQueries({ queryKey: qk.settings })
-        if (!test) {
-          toast.success(t.common.saved)
-          return
-        }
         const r = await unwrap(api.POST('/api/settings/test-summary'))
         setResult({ ok: true, ...r })
       } catch (e) {
-        if (test) setResult({ ok: false, error: errMsg(e) })
-        else toast.error(errMsg(e))
+        setResult({ ok: false, error: errMsg(e) })
       }
     })
 
-  if (!q.data) return <Skeleton className="h-64" />
   return (
     <>
-      <Intro>{t.settings.summary.intro}</Intro>
-      <div className="mb-5 flex items-start gap-2.5 rounded-xl bg-accent-soft/60 px-3.5 py-3 text-[13px] text-fg-2">
-        <KeyRound className="mt-0.5 size-4 shrink-0 text-accent" />
-        {t.settings.summary.privacy}
-      </div>
-
-      <div className="mb-2 text-[13px] font-medium text-fg-2">{t.settings.summary.mode}</div>
-      <div className="mb-6 grid gap-2 sm:grid-cols-3">
-        {(['off', 'hub', 'device'] as const).map((m) => (
-          <button key={m} onClick={() => setMode(m)} className={cx('rounded-xl border p-3 text-left transition', mode === m ? 'border-accent bg-accent-soft ring-1 ring-accent/40' : 'border-line bg-surface hover:border-line-strong')}>
-            <div className="flex items-center justify-between text-sm font-medium text-fg">
-              {t.settings.summary.modes[m]}
-              {mode === m && <Check className="size-4 text-accent" />}
-            </div>
-            <div className="mt-1 text-xs leading-relaxed text-fg-3">{t.settings.summary.modeHints[m]}</div>
-          </button>
-        ))}
-      </div>
-
-      {mode === 'hub' && (
-        <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="space-y-4 p-4 sm:p-5">
-            <Field label={t.settings.summary.baseUrl} hint={t.settings.summary.baseUrlHint}>
-              <Input value={base} onChange={(e) => setBase(e.target.value)} placeholder="https://api.deepseek.com/v1" className="font-mono" />
+      <Group title={t.settings.ai.model} hint={t.settings.ai.modelHint}>
+        <Card className="space-y-4 p-4 sm:p-5">
+          <Field label={t.settings.ai.baseUrl}>
+            <Input value={base} onChange={(e) => setBase(e.target.value)} placeholder="https://api.deepseek.com/v1" className="font-mono" />
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={t.settings.ai.modelName}>
+              <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" className="font-mono" />
             </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={t.settings.summary.model}>
-                <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder={t.settings.summary.modelPlaceholder} className="font-mono" />
-              </Field>
-              <Field label={t.settings.summary.apiKey} hint={q.data.summary_api_key_set ? t.settings.summary.apiKeySet : undefined}>
-                <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={q.data.summary_api_key_set ? '••••••••' : 'sk-…'} className="font-mono" autoComplete="off" />
-              </Field>
+            <Field label={<Label>{t.settings.ai.apiKey}</Label>}>
+              <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={q.data.summary_api_key_set ? `•••••••• ${t.settings.ai.apiKeySet}` : 'sk-…'} className="font-mono" autoComplete="off" />
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+            {result &&
+              (result.ok ? (
+                <button onClick={() => setSample(!sample)} className="mr-auto flex items-center gap-1.5 text-sm text-run">
+                  <CheckCircle2 className="size-4" />
+                  {t.settings.ai.testOk(result.latency_ms)}
+                  <span className="text-fg-3">· {t.settings.ai.sample}</span>
+                  <ChevronDown className={cx('size-3.5 text-fg-3 transition-transform', sample && 'rotate-180')} />
+                </button>
+              ) : (
+                <Tip content={result.error}>
+                  <span className="mr-auto flex min-w-0 items-center gap-1.5 text-sm text-danger">
+                    <XCircle className="size-4 shrink-0" />
+                    <span className="truncate">{t.settings.ai.testFail}：{result.error}</span>
+                  </span>
+                </Tip>
+              ))}
+            {dirty && (
+              <Button onClick={() => wrap(async () => (await save({ summary_base_url: base.trim(), summary_model: model.trim(), summary_api_key: key })) && setKey(''))}>
+                {t.common.save}
+              </Button>
+            )}
+            <Button variant="primary" loading={busy} disabled={!base || !model} onClick={test}>
+              {t.settings.ai.test}
+            </Button>
+          </div>
+          {result?.ok && sample && (
+            <div className="rise grid gap-2 text-[13px] sm:grid-cols-[auto_1fr]">
+              <span className="text-fg-3">{t.settings.ai.sampleIn}</span>
+              <span className="text-fg-2">
+                {result.sample_prompt} → {result.sample_reply}
+              </span>
+              <span className="text-fg-3">{t.settings.ai.sampleOut}</span>
+              <span className="font-medium text-fg">{result.summary}</span>
             </div>
-          </Card>
-        </motion.div>
-      )}
-
-      <div className="mt-5 flex flex-wrap justify-end gap-2">
-        <Button loading={busy && !result} onClick={() => save(false)}>
-          {t.common.save}
-        </Button>
-        {mode === 'hub' && (
-          <Button variant="primary" icon={<Sparkles className="size-4" />} loading={busy} disabled={!base || !model} onClick={() => save(true)}>
-            {busy ? t.settings.summary.testing : t.settings.summary.test}
-          </Button>
-        )}
-      </div>
-
-      {result && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mt-5">
-          {result.ok ? (
-            <Card className="overflow-hidden">
-              <div className="flex items-center gap-2 border-b border-line bg-run-soft px-4 py-2.5 text-sm font-medium text-run">
-                <CheckCircle2 className="size-4" />
-                {t.settings.summary.testOk(result.latency_ms)}
-              </div>
-              <div className="space-y-3 p-4 text-sm">
-                <p className="text-fg-3">{t.settings.summary.testExplain}</p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl bg-sunken p-3">
-                    <div className="text-xs text-fg-3">{t.settings.summary.samplePrompt}</div>
-                    <div className="mt-1 text-fg-2">{result.sample_prompt}</div>
-                  </div>
-                  <div className="rounded-xl bg-sunken p-3">
-                    <div className="text-xs text-fg-3">{t.settings.summary.sampleReply}</div>
-                    <div className="mt-1 text-fg-2">{result.sample_reply}</div>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-accent/40 bg-accent-soft/50 p-3">
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-accent">
-                    <Sparkles className="size-3.5" />
-                    {t.settings.summary.result}
-                  </div>
-                  <div className="mt-1 text-[15px] font-medium text-fg">{result.summary}</div>
-                </div>
-              </div>
-            </Card>
-          ) : (
-            <Card className="flex items-start gap-3 border-danger/40 p-4">
-              <XCircle className="mt-0.5 size-5 shrink-0 text-danger" />
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-fg">{t.settings.summary.testFail}</div>
-                <div className="mt-1 text-[13px] break-words text-fg-2">{result.error}</div>
-              </div>
-            </Card>
           )}
-        </motion.div>
-      )}
+        </Card>
+      </Group>
+
+      <Group title={t.settings.ai.features} hint={t.settings.ai.featuresHint}>
+        <Card className="divide-y divide-line overflow-hidden">
+          {features.map((f) => (
+            <Row key={f.id} className={cx(!configured && 'opacity-60')}>
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-accent-soft text-accent">
+                <f.icon className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-fg">{t.settings.ai.f[f.id].name}</div>
+                <div className="mt-0.5 text-xs text-fg-3">{t.settings.ai.f[f.id].desc}</div>
+              </div>
+              <Tip content={configured ? undefined : t.settings.ai.needModel}>
+                <span>
+                  <Switch checked={!!ai[f.id]} disabled={!configured} onChange={(v) => void save({ ai: { ...ai, [f.id]: v } }, false)} />
+                </span>
+              </Tip>
+            </Row>
+          ))}
+        </Card>
+        {(ai.summary || ai.title || ai.digest) && <p className="mt-2.5 text-xs text-fg-3">{t.settings.ai.privacy}</p>}
+      </Group>
     </>
   )
 }
@@ -580,15 +620,15 @@ function Summary() {
 
 function Appearance() {
   const [pref, setPref] = useTheme()
-  const opts: { v: ThemePref; icon: typeof Sun; label: string }[] = [
+  const opts: { v: ThemePref; icon: LucideIcon; label: string }[] = [
     { v: 'system', icon: SunMoon, label: t.theme.system },
     { v: 'light', icon: Sun, label: t.theme.light },
     { v: 'dark', icon: Moon, label: t.theme.dark },
   ]
   return (
-    <div className="grid max-w-xl grid-cols-3 gap-3">
+    <div className="grid max-w-md grid-cols-3 gap-3">
       {opts.map((o) => (
-        <button key={o.v} onClick={() => setPref(o.v)} className={cx('flex flex-col items-center gap-2 rounded-2xl border p-4 transition', pref === o.v ? 'border-accent bg-accent-soft ring-1 ring-accent/40' : 'border-line bg-surface hover:border-line-strong')}>
+        <button key={o.v} onClick={() => setPref(o.v)} className={cx('flex flex-col items-center gap-2 rounded-2xl border p-4 transition-colors', pref === o.v ? 'border-accent bg-accent-soft ring-1 ring-accent/40' : 'border-line bg-surface hover:border-line-strong')}>
           <o.icon className={cx('size-6', pref === o.v ? 'text-accent' : 'text-fg-3')} />
           <span className="text-sm font-medium text-fg">{o.label}</span>
         </button>
@@ -601,7 +641,7 @@ function Appearance() {
 
 function Account({ version }: { version: string }) {
   const q = useSettings()
-  const qc = useQueryClient()
+  const save = useSaveSettings()
   const { logout } = useActions()
   const [url, setUrl] = useState('')
   const [pw, setPw] = useState({ old: '', next: '' })
@@ -610,17 +650,6 @@ function Account({ version }: { version: string }) {
   useEffect(() => {
     if (q.data) setUrl(q.data.public_url)
   }, [q.data])
-  const saveUrl = () =>
-    wrap(async () => {
-      const s = q.data!
-      try {
-        await unwrap(api.PUT('/api/settings', { body: { public_url: url, summary_mode: s.summary_mode, summary_base_url: s.summary_base_url, summary_model: s.summary_model, notify_default: s.notify_default } }))
-        void qc.invalidateQueries({ queryKey: qk.settings })
-        toast.success(t.common.saved)
-      } catch (e) {
-        toast.error(errMsg(e))
-      }
-    })
   const changePw = () =>
     wrap2(async () => {
       try {
@@ -634,10 +663,10 @@ function Account({ version }: { version: string }) {
   return (
     <div className="max-w-xl space-y-6">
       <Card className="p-4 sm:p-5">
-        <Field label={t.settings.account.publicUrl} hint={t.settings.account.publicUrlHint}>
+        <Field label={<Label hint={t.settings.account.publicUrlTip}>{t.settings.account.publicUrl}</Label>}>
           <div className="flex gap-2">
             <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://ks.example.com" className="font-mono" />
-            <Button loading={busy} onClick={saveUrl}>
+            <Button loading={busy} disabled={url === q.data?.public_url} onClick={() => wrap(() => save({ public_url: url.trim() }))}>
               {t.common.save}
             </Button>
           </div>
@@ -678,39 +707,33 @@ export default function SettingsPage({ version }: { version: string }) {
       n.set('tab', id)
       return n
     })
-
   const body: Record<Tab, ReactNode> = {
     devices: <Devices />,
     notify: <Notify />,
     projects: <Projects />,
-    summary: <Summary />,
+    ai: <AI />,
     appearance: <Appearance />,
     account: <Account version={version} />,
   }
-
   return (
     <>
       <PageHeader title={t.settings.title} />
       <div className="-mx-4 mb-5 overflow-x-auto px-4 lg:hidden">
-        <Segmented id="settings-m" size="sm" value={tab} onChange={go} options={tabs.map((x) => ({ value: x.id, label: t.settings.sections[x.id] }))} />
+        <Segmented size="sm" value={tab} onChange={go} options={tabs.map((x) => ({ value: x.id, label: t.settings.sections[x.id] }))} />
       </div>
-      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[200px_minmax(0,1fr)]">
         <nav className="hidden space-y-0.5 lg:block">
           {tabs.map((x) => (
-            <button key={x.id} onClick={() => go(x.id)} className={cx('relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors', tab === x.id ? 'text-fg' : 'text-fg-2 hover:bg-hover')}>
-              {tab === x.id && <motion.span layoutId="settings-active" className="absolute inset-0 rounded-xl bg-surface shadow-xs" transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }} />}
-              <x.icon className="relative size-[18px] shrink-0 text-fg-3" />
-              <span className="relative min-w-0">
-                <span className="block text-sm font-medium">{t.settings.sections[x.id]}</span>
-                <span className="block truncate text-xs text-fg-3">{t.settings.sectionHints[x.id]}</span>
-              </span>
+            <button key={x.id} onClick={() => go(x.id)} className={cx('flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-sm font-medium transition-colors', tab === x.id ? 'bg-surface text-fg shadow-xs' : 'text-fg-2 hover:bg-hover hover:text-fg')}>
+              <x.icon className="size-[18px] shrink-0 text-fg-3" />
+              {t.settings.sections[x.id]}
             </button>
           ))}
         </nav>
-        <motion.div key={tab} initial={{ opacity: 0, x: 6 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.18 }} className="min-w-0">
-          <h2 className="mb-2 hidden text-lg font-semibold text-fg lg:block">{t.settings.sections[tab]}</h2>
+        <div key={tab} className="rise min-w-0 max-w-3xl">
+          <h2 className="mb-4 hidden text-lg font-semibold text-fg lg:block">{t.settings.sections[tab]}</h2>
           {body[tab]}
-        </motion.div>
+        </div>
       </div>
     </>
   )

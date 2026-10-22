@@ -1,6 +1,5 @@
 import { forwardRef, useLayoutEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react'
-import { motion } from 'motion/react'
-import { Switch as RSwitch } from 'radix-ui'
+import { Switch as RSwitch, Tooltip } from 'radix-ui'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { cx } from '../lib/util'
 import { t } from '../i18n'
@@ -234,40 +233,64 @@ export function Checkbox({ checked, onChange, children, hint }: { checked: boole
   )
 }
 
-// Segmented 分段控件，选中指示器平滑滑动。
+// Segmented 分段控件。选中态用静态样式，切换页面时不会闪动。
 export function Segmented<T extends string>({
   value,
   onChange,
   options,
-  id,
   size = 'md',
 }: {
   value: T
   onChange: (v: T) => void
-  options: { value: T; label: ReactNode; count?: number }[]
-  id: string
+  options: { value: T; label: ReactNode; count?: number; tip?: string }[]
+  id?: string
   size?: 'sm' | 'md'
 }) {
   return (
     <div className="no-scrollbar inline-flex max-w-full overflow-x-auto rounded-xl bg-sunken p-1">
       {options.map((o) => {
         const active = o.value === value
-        return (
+        const btn = (
           <button
             key={o.value}
             onClick={() => onChange(o.value)}
+            aria-pressed={active}
+            aria-label={o.tip}
             className={cx(
-              'relative flex shrink-0 items-center gap-1.5 rounded-lg font-medium transition-colors',
+              'flex shrink-0 items-center gap-1.5 rounded-lg font-medium transition-[background,color,box-shadow] duration-150',
               size === 'sm' ? 'h-7 px-2.5 text-[13px]' : 'h-8 px-3 text-sm',
-              active ? 'text-fg' : 'text-fg-3 hover:text-fg-2',
+              active ? 'bg-surface text-fg shadow-xs' : 'text-fg-3 hover:text-fg-2',
             )}
           >
-            {active && <motion.span layoutId={`seg-${id}`} className="absolute inset-0 rounded-lg bg-surface shadow-xs" transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }} />}
-            <span className="relative">{o.label}</span>
-            {o.count != null && o.count > 0 && <span className="relative rounded-full bg-accent-soft px-1.5 text-[11px] font-semibold text-accent tabular">{o.count}</span>}
+            {o.label}
+            {o.count != null && o.count > 0 && <span className={cx('rounded-full px-1.5 text-[11px] font-semibold tabular', active ? 'bg-accent-soft text-accent' : 'bg-line text-fg-2')}>{o.count}</span>}
           </button>
+        )
+        return o.tip ? (
+          <Tip key={o.value} content={o.tip}>
+            {btn}
+          </Tip>
+        ) : (
+          btn
         )
       })}
     </div>
   )
 }
+
+// Tip：悬浮提示。触屏设备上不显示，所以被提示的元素本身要有可读的含义或 aria-label。
+export function Tip({ content, children, side = 'top' }: { content: ReactNode; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
+  if (!content) return <>{children}</>
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content side={side} sideOffset={6} collisionPadding={8} className="tip-pop z-[60] max-w-[280px] rounded-lg bg-fg px-2.5 py-1.5 text-xs leading-relaxed text-bg shadow-pop">
+          {content}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  )
+}
+
+export const TipProvider = Tooltip.Provider

@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDown, ListPlus, Plus, Search } from 'lucide-react'
 import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
@@ -35,13 +34,11 @@ function Column({ status, items, onDrop }: { status: string; items: Requirement[
         <span className="text-xs text-fg-3 tabular">{items.length}</span>
       </div>
       <div className="flex flex-1 flex-col gap-2">
-        <AnimatePresence initial={false} mode="popLayout">
-          {items.map((r) => (
-            <motion.div key={r.id} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ duration: 0.18 }}>
-              <ReqCard r={r} draggable onDragStart={(e) => e.dataTransfer.setData('text/ks-req', r.code)} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {items.map((r) => (
+          <div key={r.id} className="rise">
+            <ReqCard r={r} draggable onDragStart={(e) => e.dataTransfer.setData('text/ks-req', r.code)} />
+          </div>
+        ))}
         {!items.length && <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-line-strong/70 py-6 text-xs text-fg-3">{over ? t.reqs.dropHere : t.reqs.empty}</div>}
       </div>
     </div>
@@ -78,7 +75,7 @@ export default function RequirementsPage() {
     <>
       <PageHeader
         title={t.reqs.title}
-        subtitle={q.isPending ? ' ' : t.reqs.subtitle(open)}
+        subtitle={q.isPending ? ' ' : t.reqs.summary(open)}
         actions={
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>
             {t.reqs.new}
@@ -122,7 +119,7 @@ export default function RequirementsPage() {
               </Button>
             }
           >
-            {t.reqs.emptyAllHint}
+            {t.reqs.emptyAllSub}
           </Empty>
         </Card>
       ) : desktop ? (
@@ -137,13 +134,11 @@ export default function RequirementsPage() {
             <Segmented id="req-mobile" size="sm" value={mobileStatus} onChange={setMobileStatus} options={statuses.map((s) => ({ value: s, label: t.reqStatus[s], count: byStatus(s).length }))} />
           </div>
           <div className="space-y-2.5">
-            <AnimatePresence initial={false} mode="popLayout">
-              {byStatus(mobileStatus).map((r) => (
-                <motion.div key={r.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <ReqCard r={r} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
+            {byStatus(mobileStatus).map((r) => (
+              <div key={r.id} className="rise">
+                <ReqCard r={r} />
+              </div>
+            ))}
             {!byStatus(mobileStatus).length && <p className="py-10 text-center text-sm text-fg-3">{t.reqs.empty}</p>}
           </div>
         </>

@@ -1,6 +1,27 @@
 {
   "components": {
     "schemas": {
+      "AIFeatures": {
+        "additionalProperties": false,
+        "properties": {
+          "decision_title": {
+            "type": "boolean"
+          },
+          "digest": {
+            "type": "boolean"
+          },
+          "recap": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "Agent-attach-evidenceRequest": {
         "additionalProperties": false,
         "properties": {
@@ -316,6 +337,9 @@
           "session_state": {
             "type": "string"
           },
+          "short_title": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           }
@@ -327,6 +351,7 @@
           "context",
           "options",
           "recommendation",
+          "short_title",
           "status",
           "answer",
           "created_at"
@@ -545,9 +570,6 @@
             "type": "string"
           },
           "source": {
-            "type": "string"
-          },
-          "summary": {
             "type": "string"
           },
           "time": {
@@ -817,6 +839,46 @@
         ],
         "type": "object"
       },
+      "RecapInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "RecapOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "markdown",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
       "ReqFields": {
         "additionalProperties": false,
         "properties": {
@@ -1042,6 +1104,12 @@
           "device_name": {
             "type": "string"
           },
+          "digest_ask": {
+            "type": "string"
+          },
+          "digest_done": {
+            "type": "string"
+          },
           "dirty": {
             "format": "int64",
             "type": "integer"
@@ -1075,6 +1143,9 @@
             "type": "integer"
           },
           "permission_mode": {
+            "type": "string"
+          },
+          "phase": {
             "type": "string"
           },
           "project_id": {
@@ -1116,6 +1187,9 @@
           "summary": {
             "type": "string"
           },
+          "title": {
+            "type": "string"
+          },
           "tool": {
             "type": "string"
           },
@@ -1155,6 +1229,10 @@
           "compactions",
           "worktree",
           "activity",
+          "title",
+          "phase",
+          "digest_done",
+          "digest_ask",
           "started_at",
           "last_active_at",
           "requirements",
@@ -1215,6 +1293,9 @@
       "SettingsInBody": {
         "additionalProperties": false,
         "properties": {
+          "ai": {
+            "$ref": "#/components/schemas/AIFeatures"
+          },
           "notify_default": {
             "$ref": "#/components/schemas/NotifyConfig"
           },
@@ -1228,21 +1309,13 @@
           "summary_base_url": {
             "type": "string"
           },
-          "summary_mode": {
-            "enum": [
-              "off",
-              "hub",
-              "device"
-            ],
-            "type": "string"
-          },
           "summary_model": {
             "type": "string"
           }
         },
         "required": [
           "public_url",
-          "summary_mode",
+          "ai",
           "summary_base_url",
           "summary_model",
           "notify_default"
@@ -1252,6 +1325,9 @@
       "SettingsView": {
         "additionalProperties": false,
         "properties": {
+          "ai": {
+            "$ref": "#/components/schemas/AIFeatures"
+          },
           "notify_default": {
             "$ref": "#/components/schemas/NotifyConfig"
           },
@@ -1273,21 +1349,13 @@
           "summary_base_url": {
             "type": "string"
           },
-          "summary_mode": {
-            "enum": [
-              "off",
-              "hub",
-              "device"
-            ],
-            "type": "string"
-          },
           "summary_model": {
             "type": "string"
           }
         },
         "required": [
           "public_url",
-          "summary_mode",
+          "ai",
           "summary_base_url",
           "summary_model",
           "summary_api_key_set",
@@ -2481,6 +2549,47 @@
         },
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/recap": {
+      "post": {
+        "operationId": "recap",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecapInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecapOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "生成一段时间内的进展回顾",
+        "tags": [
+          "ai"
         ]
       }
     },

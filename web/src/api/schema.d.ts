@@ -360,6 +360,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 生成一段时间内的进展回顾 */
+        post: operations["recap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/requirements": {
         parameters: {
             query?: never;
@@ -510,6 +527,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AIFeatures: {
+            decision_title?: boolean;
+            digest?: boolean;
+            recap?: boolean;
+            summary?: boolean;
+            title?: boolean;
+        };
         "Agent-attach-evidenceRequest": {
             /** @description 例：test、screenshot、commit、doc、manual */
             kind: string;
@@ -593,6 +617,7 @@ export interface components {
             requirement_id?: string;
             session_key?: string;
             session_state?: string;
+            short_title: string;
             status: string;
         };
         DecisionsOutBody: {
@@ -674,7 +699,6 @@ export interface components {
             reason?: string;
             session_id: string;
             source?: string;
-            summary?: string;
             /** Format: date-time */
             time: string;
             tool: string;
@@ -743,6 +767,19 @@ export interface components {
             projects: components["schemas"]["Project"][] | null;
             workspaces: components["schemas"]["Workspace"][] | null;
         };
+        RecapInBody: {
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+        };
+        RecapOutBody: {
+            /** Format: date-time */
+            from: string;
+            markdown: string;
+            /** Format: date-time */
+            to: string;
+        };
         ReqFields: {
             acceptance?: string;
             detail?: string;
@@ -797,6 +834,8 @@ export interface components {
             cwd: string;
             device_id: string;
             device_name: string;
+            digest_ask: string;
+            digest_done: string;
             /** Format: int64 */
             dirty: number;
             /** Format: date-time */
@@ -812,6 +851,7 @@ export interface components {
             /** Format: int64 */
             pending_decisions: number;
             permission_mode: string;
+            phase: string;
             project_id?: string;
             project_name?: string;
             requirements: components["schemas"]["RequirementRef"][] | null;
@@ -825,6 +865,7 @@ export interface components {
             /** Format: int64 */
             subagents: number;
             summary: string;
+            title: string;
             tool: string;
             /** Format: int64 */
             turn_tools: number;
@@ -841,23 +882,21 @@ export interface components {
             sessions: components["schemas"]["Session"][] | null;
         };
         SettingsInBody: {
+            ai: components["schemas"]["AIFeatures"];
             notify_default: components["schemas"]["NotifyConfig"];
             public_url: string;
             /** @description 留空表示不修改 */
             summary_api_key?: string;
             summary_base_url: string;
-            /** @enum {string} */
-            summary_mode: "off" | "hub" | "device";
             summary_model: string;
         };
         SettingsView: {
+            ai: components["schemas"]["AIFeatures"];
             notify_default: components["schemas"]["NotifyConfig"];
             notify_events: string[] | null;
             public_url: string;
             summary_api_key_set: boolean;
             summary_base_url: string;
-            /** @enum {string} */
-            summary_mode: "off" | "hub" | "device";
             summary_model: string;
         };
         SummaryTestOutBody: {
@@ -1681,6 +1720,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    recap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecapInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecapOutBody"];
                 };
             };
             /** @description Error */

@@ -8,6 +8,7 @@ import { qk } from './api/queries'
 import { OutboxProvider } from './app/outbox'
 import { initTheme } from './lib/theme'
 import { ConfirmProvider } from './ui/overlay'
+import { TipProvider } from './ui/base'
 import App from './App'
 import './index.css'
 
@@ -33,11 +34,13 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <ConfirmProvider>
-          <OutboxProvider>
-            <App />
-          </OutboxProvider>
-        </ConfirmProvider>
+        <TipProvider delayDuration={350} skipDelayDuration={200}>
+          <ConfirmProvider>
+            <OutboxProvider>
+              <App />
+            </OutboxProvider>
+          </ConfirmProvider>
+        </TipProvider>
         <Toaster position="top-center" richColors closeButton toastOptions={{ className: 'font-sans' }} />
       </BrowserRouter>
     </QueryClientProvider>

@@ -256,3 +256,23 @@
 [data-state='open'].menu-pop {
   animation: ks-menu-in 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }
+@keyframes ks-tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+.tip-pop[data-state='delayed-open'],
+.tip-pop[data-state='instant-open'] {
+  animation: ks-tip-in 0.12s ease-out;
+}
+/* 列表项首次出现时的轻微淡入（不做离场动画，避免切换时闪烁） */
+@keyframes ks-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.rise {
+  animation: ks-rise 0.22s ease-out both;
+}

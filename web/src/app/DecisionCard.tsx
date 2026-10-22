@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRightLeft, CornerDownLeft, PenLine, Plus, RotateCcw, Sparkles, Undo2, XCircle } from 'lucide-react'
+import { ArrowRightLeft, CornerDownLeft, Keyboard, PenLine, Plus, RotateCcw, Sparkles, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { Badge, Button, Card, Kbd, Textarea } from '../ui/base'
+import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
-import { StatusDot, ToolMark } from '../ui/marks'
+import { ToolMark } from '../ui/marks'
 import { useActions, useBusy } from './actions'
-import { composeAnswer, emptyDraft, UNDO_MS, useOutbox } from './outbox'
+import { composeAnswer, emptyDraft, useOutbox } from './outbox'
 import { useOpenReq, useOpenSession } from './nav'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
@@ -24,23 +24,26 @@ function recIndex(options: string[], rec: string): number {
   })
 }
 
-function Source({ d, now }: { d: Decision; now: number }) {
+function CodeChip({ code }: { code: string }) {
+  return <span className="rounded-md bg-sunken px-1.5 py-0.5 font-mono text-[11px] font-semibold text-fg-2">{code}</span>
+}
+
+// 来源行：独立展示时显示项目与设备；嵌在会话卡片里时只显示编号、需求与时间。
+function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boolean }) {
   const openSession = useOpenSession()
   const openReq = useOpenReq()
   const tool = d.session_key?.split(':')[0] ?? ''
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-fg-3">
-      <span className="rounded-md bg-sunken px-1.5 py-0.5 font-mono text-[11px] font-semibold text-fg-2">{d.code}</span>
-      {d.session_key ? (
-        <button onClick={() => openSession(d.session_key!)} className="inline-flex min-w-0 items-center gap-1.5 rounded-md hover:text-fg">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-fg-3">
+      <CodeChip code={d.code} />
+      {!embedded && d.session_key && (
+        <button onClick={() => openSession(d.session_key!)} className="inline-flex min-w-0 items-center gap-1.5 hover:text-fg">
           {tool && <ToolMark tool={tool} size="sm" />}
           <span className="truncate">{[d.project_name, d.device_name].filter(Boolean).join(t.common.sep)}</span>
         </button>
-      ) : (
-        d.project_name && <span>{d.project_name}</span>
       )}
       {d.requirement_code && (
-        <button onClick={() => openReq(d.requirement_code!)} className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] font-medium text-accent hover:brightness-95">
+        <button onClick={() => openReq(d.requirement_code!)} className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] font-semibold text-accent hover:brightness-95">
           {d.requirement_code}
         </button>
       )}
@@ -56,7 +59,7 @@ function Context({ text }: { text: string }) {
     <div className="text-sm leading-relaxed text-fg-2">
       <div className={cx('break-words whitespace-pre-wrap', !open && long && 'line-clamp-3')}>{text}</div>
       {long && (
-        <button onClick={() => setOpen(!open)} className="mt-1 text-[13px] font-medium text-accent hover:underline">
+        <button onClick={() => setOpen(!open)} className="mt-0.5 text-[13px] font-medium text-accent hover:underline">
           {open ? t.common.collapse : t.common.showAll}
         </button>
       )}
@@ -64,19 +67,20 @@ function Context({ text }: { text: string }) {
   )
 }
 
-// DecisionComposer：待决策卡片，像回复消息一样作答。
-export function DecisionComposer({ d }: { d: Decision }) {
+// DecisionComposer：待决策，像回复消息一样作答。
+export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: boolean }) {
   const now = useNow()
   const { drafts, setDraft, queued, send, cancel } = useOutbox()
   const draft = drafts[d.code] ?? emptyDraft
-  const options = d.options ?? []
+  const options = useMemo(() => d.options ?? [], [d.options])
   const rec = d.recommendation?.trim() ?? ''
   const ri = useMemo(() => recIndex(options, rec), [options, rec])
   const answer = composeAnswer(draft, options)
   const sendingAt = queued[d.code]
   const noteRef = useRef<HTMLTextAreaElement>(null)
-  const showFree = options.length === 0 || draft.choice === 'other'
-  const showNote = !showFree && (draft.noteOpen || !!draft.note)
+  const free = options.length === 0 || draft.choice === 'other'
+  const note = !free && (draft.noteOpen || !!draft.note)
+  const title = d.short_title || d.question
 
   useEffect(() => {
     if (draft.choice === 'other' || draft.noteOpen) noteRef.current?.focus()
@@ -84,7 +88,6 @@ export function DecisionComposer({ d }: { d: Decision }) {
 
   const choose = (c: number | 'other') => setDraft(d.code, { choice: draft.choice === c ? null : c })
   const submit = () => answer && send([{ code: d.code, answer }])
-
   const onKey = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
@@ -98,10 +101,22 @@ export function DecisionComposer({ d }: { d: Decision }) {
   }
 
   return (
-    <Card tabIndex={-1} onKeyDown={onKey} className={cx('group relative overflow-hidden outline-none transition-shadow focus-within:shadow-pop', answer && !sendingAt && 'border-accent/50')}>
-      <div className="space-y-3.5 p-4 sm:p-5">
-        <Source d={d} now={now} />
-        <h3 className="text-base leading-snug font-semibold text-fg sm:text-[17px]">{d.question}</h3>
+    <div
+      tabIndex={-1}
+      onKeyDown={onKey}
+      onClick={(e) => e.stopPropagation()}
+      className={cx(
+        'group relative overflow-hidden rounded-2xl border bg-surface outline-none transition-[box-shadow,border] focus-within:shadow-pop',
+        answer && !sendingAt ? 'border-accent/50' : 'border-line',
+        !embedded && 'shadow-card',
+      )}
+    >
+      <div className={cx('space-y-3', embedded ? 'p-3.5 sm:p-4' : 'p-4 sm:p-5')}>
+        <Source d={d} now={now} embedded={embedded} />
+        <div>
+          <h3 className="text-[15px] leading-snug font-semibold text-fg sm:text-base">{title}</h3>
+          {d.short_title && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}
+        </div>
         {d.context && <Context text={d.context} />}
 
         {options.length > 0 && (
@@ -115,16 +130,20 @@ export function DecisionComposer({ d }: { d: Decision }) {
                   aria-checked={on}
                   onClick={() => choose(i)}
                   className={cx(
-                    'flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-all duration-150',
+                    'flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-[background,border,box-shadow] duration-150',
                     on ? 'border-accent bg-accent-soft text-fg shadow-xs' : 'border-line bg-surface hover:border-line-strong hover:bg-hover',
                   )}
                 >
                   <span className={cx('mt-px flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular transition-colors', on ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong text-fg-3')}>{i + 1}</span>
                   <span className="min-w-0 flex-1 leading-relaxed break-words">{o}</span>
                   {i === ri && (
-                    <Badge tone="accent" icon={<Sparkles className="size-3" />}>
-                      {t.decision.recommended}
-                    </Badge>
+                    <Tip content={rec !== o ? rec : undefined}>
+                      <span className="shrink-0">
+                        <Badge tone="accent" icon={<Sparkles className="size-3" />}>
+                          {t.decision.recommended}
+                        </Badge>
+                      </span>
+                    </Tip>
                   )}
                 </button>
               )
@@ -134,7 +153,7 @@ export function DecisionComposer({ d }: { d: Decision }) {
               aria-checked={draft.choice === 'other'}
               onClick={() => choose('other')}
               className={cx(
-                'flex w-full items-center gap-3 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm transition-all',
+                'flex w-full items-center gap-3 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm transition-[background,border]',
                 draft.choice === 'other' ? 'border-accent bg-accent-soft text-fg' : 'border-line-strong text-fg-2 hover:bg-hover hover:text-fg',
               )}
             >
@@ -149,10 +168,7 @@ export function DecisionComposer({ d }: { d: Decision }) {
         {rec && ri < 0 && (
           <div className="flex items-start gap-2.5 rounded-xl bg-accent-soft/60 px-3 py-2.5 text-sm">
             <Sparkles className="mt-0.5 size-4 shrink-0 text-accent" />
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-accent">{t.decision.recommendation}</div>
-              <div className="mt-0.5 leading-relaxed break-words text-fg-2">{rec}</div>
-            </div>
+            <div className="min-w-0 flex-1 leading-relaxed break-words text-fg-2">{rec}</div>
             {options.length === 0 && (
               <Button size="sm" variant="soft" onClick={() => setDraft(d.code, { note: rec })}>
                 {t.decision.useRecommendation}
@@ -162,49 +178,54 @@ export function DecisionComposer({ d }: { d: Decision }) {
         )}
 
         <AnimatePresence initial={false}>
-          {(showFree || showNote) && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden px-px pb-px">
-              <Textarea
-                ref={noteRef}
-                minRows={showFree ? 3 : 2}
-                value={draft.note}
-                placeholder={showFree ? (options.length ? t.decision.otherPlaceholder : t.decision.freePlaceholder) : t.decision.notePlaceholder}
-                onChange={(e) => setDraft(d.code, { note: e.target.value })}
-              />
+          {(free || note) && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden px-px pb-px">
+              <Textarea ref={noteRef} minRows={free ? 3 : 2} value={draft.note} placeholder={free ? t.decision.freePlaceholder : t.decision.notePlaceholder} onChange={(e) => setDraft(d.code, { note: e.target.value })} />
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="flex flex-wrap items-center gap-2 pt-0.5">
-          {!showFree && !showNote && typeof draft.choice === 'number' && (
+        <div className="flex items-center gap-1.5">
+          {!free && !note && typeof draft.choice === 'number' && (
             <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setDraft(d.code, { noteOpen: true })}>
               {t.decision.addNote}
             </Button>
           )}
-          <span className="hidden items-center gap-1 text-xs text-fg-3 lg:inline-flex lg:opacity-0 lg:transition-opacity lg:group-focus-within:opacity-100">
-            <Kbd>1</Kbd>–<Kbd>{Math.max(1, options.length)}</Kbd> {t.decision.keyHint}
-          </span>
-          <Button variant="primary" className="ml-auto" disabled={!answer} onClick={submit} icon={<CornerDownLeft className="size-4" />}>
+          {(draft.choice != null || draft.note) && (
+            <Tip content={t.decision.clearDrafts}>
+              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false })}>
+                <X className="size-3.5" />
+              </Button>
+            </Tip>
+          )}
+          <span className="ml-auto" />
+          {options.length > 0 && (
+            <Tip content={t.decision.keyTip}>
+              <span className="hidden text-fg-3 lg:inline-flex" aria-label={t.decision.keyTip}>
+                <Keyboard className="size-4" />
+              </span>
+            </Tip>
+          )}
+          <Button variant="primary" size="sm" className="h-9 px-4" disabled={!answer} onClick={submit} icon={<CornerDownLeft className="size-4" />}>
             {t.decision.send}
           </Button>
         </div>
       </div>
 
-      <AnimatePresence>{sendingAt && <SendingOverlay code={d.code} answer={answer} at={sendingAt} onUndo={() => cancel(d.code)} />}</AnimatePresence>
-    </Card>
+      <AnimatePresence>{sendingAt && <SendingOverlay answer={answer} at={sendingAt} onUndo={() => cancel(d.code)} />}</AnimatePresence>
+    </div>
   )
 }
 
-function SendingOverlay({ code, answer, at, onUndo }: { code: string; answer: string; at: number; onUndo: () => void }) {
+function SendingOverlay({ answer, at, onUndo }: { answer: string; at: number; onUndo: () => void }) {
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface/92 px-6 text-center backdrop-blur-[2px]">
-      <div className="text-sm font-medium text-fg">{t.decision.sending(code)}</div>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2.5 bg-surface/92 px-6 text-center backdrop-blur-[2px]">
+      <div className="text-sm font-medium text-fg">{t.decision.sending}</div>
       <div className="line-clamp-2 max-w-md text-[13px] text-fg-3">{answer}</div>
       <Button size="sm" icon={<Undo2 className="size-3.5" />} onClick={onUndo}>
         {t.common.undo}
       </Button>
       <motion.div className="absolute bottom-0 left-0 h-0.5 bg-accent" initial={{ width: '0%' }} animate={{ width: '100%' }} transition={{ duration: Math.max(0, at - Date.now()) / 1000, ease: 'linear' }} key={at} />
-      <span className="sr-only">{UNDO_MS}</span>
     </motion.div>
   )
 }
@@ -216,35 +237,34 @@ export function OrphanCard({ d, sessions }: { d: Decision; sessions: Session[] }
   const [busy, wrap] = useBusy()
   const active = sessions.filter((s) => s.state !== 'ended' && s.state !== 'lost' && s.key !== d.session_key)
   return (
-    <Card className="space-y-3 p-4 sm:p-5">
+    <Card className="space-y-3 p-4">
       <Source d={d} now={now} />
-      <div className="text-[15px] font-semibold text-fg">{d.question}</div>
+      <div className="text-[15px] font-semibold text-fg">{d.short_title || d.question}</div>
       <AnswerBlock d={d} />
-      <div className="flex items-center gap-2 rounded-xl bg-wait-soft px-3 py-2 text-[13px] text-wait">
-        <StatusDot state="lost" />
-        {t.decision.sessionEnded}
-      </div>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button size="sm" variant="ghost" icon={<XCircle className="size-3.5" />} disabled={busy} onClick={() => wrap(() => closeDecision(d.code))}>
-          {t.decision.closeIt}
-        </Button>
-        <Menu
-          width="min-w-[280px]"
-          trigger={
-            <Button size="sm" variant="primary" icon={<ArrowRightLeft className="size-3.5" />} disabled={busy || !active.length}>
-              {active.length ? t.decision.reassign : t.decision.noActive}
-            </Button>
-          }
-          items={[
-            { type: 'label', label: t.decision.reassignTo },
-            ...active.map((s) => ({
-              label: [s.project_name || s.cwd, s.device_name].filter(Boolean).join(t.common.sep),
-              hint: s.summary || s.last_prompt,
-              icon: <ToolMark tool={s.tool} size="sm" />,
-              onSelect: () => void wrap(async () => (await reassign(d.code, s.key)) && toast.success(t.decision.reassigned)),
-            })),
-          ]}
-        />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-fg-3">{t.decision.orphan}</span>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => wrap(async () => (await closeDecision(d.code)) && toast(t.decision.closed))}>
+            {t.decision.closeIt}
+          </Button>
+          <Menu
+            width="min-w-[280px]"
+            trigger={
+              <Button size="sm" variant="primary" icon={<ArrowRightLeft className="size-3.5" />} disabled={busy || !active.length}>
+                {active.length ? t.decision.reassign : t.decision.noActive}
+              </Button>
+            }
+            items={[
+              { type: 'label', label: t.decision.reassignTo },
+              ...active.map((s) => ({
+                label: s.title || s.project_name || s.cwd,
+                hint: [s.device_name, s.summary || s.last_prompt].filter(Boolean).join(t.common.sep),
+                icon: <ToolMark tool={s.tool} size="sm" />,
+                onSelect: () => void wrap(async () => (await reassign(d.code, s.key)) && toast.success(t.decision.reassigned)),
+              })),
+            ]}
+          />
+        </div>
       </div>
     </Card>
   )
@@ -259,7 +279,7 @@ export function AnswerBlock({ d }: { d: Decision }) {
   )
 }
 
-// DecisionRow：历史记录里的一行。
+// DecisionRow：决策记录里的一行，点击展开。
 export function DecisionRow({ d }: { d: Decision }) {
   const now = useNow()
   const { resendDecision } = useActions()
@@ -268,31 +288,33 @@ export function DecisionRow({ d }: { d: Decision }) {
   const when = d.status === 'delivered' ? t.decision.deliveredAt(relTime(d.delivered_at, now)) : d.status === 'answered' ? t.decision.answeredAt(relTime(d.answered_at, now)) : relTime(d.created_at, now)
   return (
     <div className="border-b border-line last:border-0">
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-hover/60">
-        <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{d.code}</span>
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-hover/60">
+        <span className="w-9 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{d.code}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-fg">{d.question}</span>
-          {d.answer && <span className="block truncate text-[13px] text-fg-3">→ {d.answer}</span>}
+          <span className="block truncate text-sm text-fg">{d.short_title || d.question}</span>
+          {d.answer && <span className="block truncate text-[13px] text-fg-3">{d.answer}</span>}
         </span>
-        <span className="hidden shrink-0 text-xs text-fg-3 sm:block">{when}</span>
-        <Badge tone={tone}>{t.decision.status[d.status]}</Badge>
+        <Tip content={when}>
+          <span>
+            <Badge tone={tone}>{t.decision.status[d.status]}</Badge>
+          </span>
+        </Tip>
       </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-            <div className="space-y-3 px-4 pb-4 sm:pl-[68px]">
-              <Source d={d} now={now} />
-              {d.context && <Context text={d.context} />}
-              {d.answer && <AnswerBlock d={d} />}
-              {d.status === 'delivered' && (
-                <Button size="sm" icon={<RotateCcw className="size-3.5" />} onClick={async () => (await resendDecision(d.code)) && toast.success(t.decision.resent)}>
-                  {t.decision.resend}
-                </Button>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {open && (
+        <div className="rise space-y-3 px-3.5 pb-3.5 sm:pl-[60px]">
+          {d.short_title && <p className="text-sm text-fg-2">{d.question}</p>}
+          {d.context && <Context text={d.context} />}
+          {d.answer && <AnswerBlock d={d} />}
+          <div className="flex items-center justify-between text-xs text-fg-3">
+            <span>{when}</span>
+            {d.status === 'delivered' && (
+              <Button size="sm" variant="ghost" icon={<RotateCcw className="size-3.5" />} onClick={async () => (await resendDecision(d.code)) && toast(t.decision.resent)}>
+                {t.decision.resend}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

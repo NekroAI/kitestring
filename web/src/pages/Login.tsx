@@ -41,7 +41,7 @@ export default function LoginPage({ initialized }: { initialized: boolean }) {
             <path d="M16 21c0 2.5-1.2 4.2-3.5 5.5" fill="none" className="stroke-accent-fg" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
           <h1 className="text-xl font-semibold text-fg">{initialized ? t.login.welcome : t.login.setupTitle}</h1>
-          <p className="mt-1.5 text-sm text-fg-3">{initialized ? t.login.welcomeSub : t.login.setupSub}</p>
+          {!initialized && <p className="mt-1.5 text-sm text-fg-3">{t.login.setupSub}</p>}
         </div>
         <form onSubmit={submit} className="space-y-4 rounded-2xl border border-line bg-surface p-6 shadow-pop">
           <Field label={t.login.password}>

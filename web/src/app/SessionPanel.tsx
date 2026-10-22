@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react'
-import { Copy, Link2, Plus, ShieldAlert, Unlink } from 'lucide-react'
+import { Copy, Link2, Plus, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
@@ -7,11 +7,11 @@ import { t } from '../i18n'
 import { absTime, clockTime, copyText, cx, duration, relTime, shortPath, useNow } from '../lib/util'
 import { Badge, Button, ErrorState, Skeleton } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
-import { Sparkline, StatusPill, ToolMark } from '../ui/marks'
+import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark } from '../ui/marks'
 import { useActions } from './actions'
 import { DecisionComposer, DecisionRow } from './DecisionCard'
 import { useOpenReq } from './nav'
-import { toolIcon } from './SessionCard'
+import { Callout, sessionTitle, toolIcon } from './SessionCard'
 
 function Section({ title, children, right }: { title: ReactNode; children: ReactNode; right?: ReactNode }) {
   return (
@@ -34,26 +34,32 @@ function Info({ label, children, mono }: { label: string; children: ReactNode; m
   )
 }
 
+const asks = (tool?: string) => tool === 'AskUserQuestion' || tool === 'request_user_input'
+
 function evLabel(e: HubEvent): string {
+  if ((e.name === 'PermissionRequest' || e.name === 'PreToolUse') && asks(e.tool_name)) return t.session.ev.Ask
+  if ((e.name === 'PermissionRequest' || e.name === 'PreToolUse') && e.tool_name === 'ExitPlanMode') return t.session.ev.Plan
   if (e.name === 'SessionStart' && e.source === 'resume') return t.session.ev.SessionStartResume
   if (e.name === 'SessionStart' && e.source === 'compact') return t.session.ev.SessionStartCompact
+  if (e.name === 'UserPromptSubmit' && e.source === 'auto') return t.session.ev.UserPromptAuto
   return t.session.ev[e.name] ?? e.name
 }
 
 // 时间线：按回合（UserPromptSubmit）分段，工具调用合并显示。
 function Timeline({ events }: { events: HubEvent[] }) {
   const rows = useMemo(() => {
-    const asc = [...events].reverse().filter((e) => e.name !== 'PostToolUse' && e.name !== 'KsSummary')
+    const asc = [...events].reverse().filter((e) => e.name !== 'PostToolUse')
     return asc.reverse()
   }, [events])
   if (!rows.length) return <p className="text-sm text-fg-3">{t.session.noEvents}</p>
   return (
     <ol className="relative space-y-0.5 before:absolute before:top-2 before:bottom-2 before:left-[7px] before:w-px before:bg-line">
       {rows.map((e) => {
-        const tool = e.name === 'PreToolUse' || e.name === 'PermissionRequest'
+        const userFacing = asks(e.tool_name) || e.tool_name === 'ExitPlanMode'
+        const tool = (e.name === 'PreToolUse' || e.name === 'PermissionRequest') && !userFacing
         const Icon = tool ? toolIcon(e.tool_name ?? '') : null
-        const emph = e.name === 'UserPromptSubmit' || e.name === 'PermissionRequest' || e.name === 'Stop'
-        const dot = e.name === 'PermissionRequest' ? 'bg-wait' : e.name === 'Stop' ? 'bg-reply' : e.name === 'UserPromptSubmit' ? 'bg-accent' : 'bg-line-strong'
+        const emph = (e.name === 'UserPromptSubmit' && e.source !== 'auto') || e.name === 'PermissionRequest' || e.name === 'Stop'
+        const dot = userFacing ? 'bg-reply' : e.name === 'PermissionRequest' ? 'bg-wait' : e.name === 'Stop' ? 'bg-reply' : e.name === 'UserPromptSubmit' ? 'bg-accent' : 'bg-line-strong'
         return (
           <li key={e.id} className="relative flex gap-3 py-1.5 pl-0">
             <span className={cx('relative z-10 mt-1.5 size-[15px] shrink-0 rounded-full border-[3px] border-surface', dot)} />
@@ -69,6 +75,7 @@ function Timeline({ events }: { events: HubEvent[] }) {
                 )}
                 <span className="ml-auto shrink-0 text-[11px] text-fg-3 tabular">{clockTime(e.time)}</span>
               </div>
+              {userFacing && e.tool_brief && <p className="mt-1 rounded-lg bg-reply-soft px-2.5 py-1.5 text-[13px] leading-relaxed text-fg">{e.tool_brief}</p>}
               {e.prompt && <p className="mt-1 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[13px] leading-relaxed break-words text-fg-2">{e.prompt}</p>}
             </div>
           </li>
@@ -99,13 +106,21 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
         s ? (
           <span className="flex items-center gap-2.5">
             <ToolMark tool={s.tool} size="sm" />
-            <span className="truncate">{s.project_name || shortPath(s.cwd)}</span>
+            <span className="truncate">{sessionTitle(s)}</span>
+            <PhaseBadge phase={s.phase} />
           </span>
         ) : (
           <Skeleton className="h-5 w-40" />
         )
       }
-      subtitle={s && <StatusPill state={s.state} since={s.state_since} now={now} />}
+      subtitle={
+        s && (
+          <span className="flex flex-wrap items-center gap-2">
+            <StatusPill state={displayState(s)} since={s.state_since} now={now} />
+            {s.title && s.project_name && <span>{s.project_name}</span>}
+          </span>
+        )
+      }
     >
       {q.isError ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
@@ -116,15 +131,9 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
         </div>
       ) : (
         <>
-          {s.state === 'waiting_approval' && (
-            <div className="mb-5 flex gap-3 rounded-2xl bg-wait-soft p-3.5">
-              <ShieldAlert className="mt-0.5 size-5 shrink-0 text-wait" />
-              <div className="min-w-0">
-                <div className="font-mono text-[13px] break-all text-fg">{s.state_detail}</div>
-                <div className="mt-1 text-xs text-fg-2">{t.session.approveHint}</div>
-              </div>
-            </div>
-          )}
+          <div className="mb-5 empty:hidden">
+            <Callout s={s} />
+          </div>
 
           <Section title={t.session.current} right={<Sparkline data={s.activity} state={s.state} />}>
             <div className="space-y-2.5 rounded-2xl border border-line p-3.5">
@@ -151,19 +160,19 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                 </div>
               )}
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-3">
-                {s.turns > 0 && <span>{t.sessions.turn(s.turns)}</span>}
-                {s.turn_tools > 0 && <span>{t.sessions.toolCalls(s.turn_tools)}</span>}
-                {s.subagents > 0 && <span>{t.sessions.subagents(s.subagents)}</span>}
-                {s.compactions > 0 && <span>{t.sessions.compactions(s.compactions)}</span>}
+                {s.turns > 0 && <span>{t.session.turns(s.turns)}</span>}
+                {s.turn_tools > 0 && <span>{t.session.toolsTip(s.turn_tools)}</span>}
+                {s.subagents > 0 && <span>{t.session.subagentsTip(s.subagents)}</span>}
+                {s.compactions > 0 && <span>{t.session.compactions(s.compactions)}</span>}
               </div>
             </div>
           </Section>
 
           {pending.length > 0 && (
-            <Section title={t.inbox.sections.decisions}>
+            <Section title={t.decision.status.pending}>
               <div className="space-y-3">
                 {pending.map((d) => (
-                  <DecisionComposer key={d.id} d={d} />
+                  <DecisionComposer key={d.id} d={d} embedded />
                 ))}
               </div>
             </Section>
@@ -214,7 +223,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           <Section title={t.session.info}>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-2xl border border-line p-3.5">
               <Info label={t.session.device}>{s.device_name}</Info>
-              <Info label={t.session.client}>{[t.tool[s.tool as 'claude'], s.client].filter(Boolean).join(t.common.sep)}</Info>
+              <Info label={t.session.client}>{[t.tool[s.tool], s.client].filter(Boolean).join(t.common.sep)}</Info>
               <Info label={t.session.model} mono>
                 {s.model}
               </Info>

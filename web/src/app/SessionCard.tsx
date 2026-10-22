@@ -1,10 +1,11 @@
-import { memo } from 'react'
-import { Bot, FileCode2, FileText, Globe, GitBranch, Layers, MessageSquareText, Monitor, Plug, Search, ShieldAlert, Terminal, Wrench, type LucideIcon } from 'lucide-react'
-import type { Session } from '../api/client'
+import { memo, type ReactNode } from 'react'
+import { Bot, CheckCircle2, Eye, FileCode2, FileText, FolderGit2, GitBranch, Globe, HelpCircle, Layers, ListChecks, MessageSquare, Monitor, Plug, Search, ShieldAlert, ShieldOff, Terminal, Wrench, type LucideIcon } from 'lucide-react'
+import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, shortPath } from '../lib/util'
-import { Badge, Card } from '../ui/base'
-import { Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
+import { Card, Tip } from '../ui/base'
+import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
+import { DecisionComposer } from './DecisionCard'
 import { useOpenReq, useOpenSession } from './nav'
 
 // 工具名 → 图标。
@@ -16,137 +17,253 @@ export function toolIcon(label: string): LucideIcon {
   if (/^(Grep|Glob)$/.test(name)) return Search
   if (/^Web/.test(name)) return Globe
   if (/^(Task|Agent)$/.test(name)) return Bot
+  if (name === 'AskUserQuestion') return HelpCircle
+  if (name === 'ExitPlanMode') return ListChecks
   if (name.includes('__')) return Plug
   return Wrench
 }
 
-function ActionLine({ s, now }: { s: Session; now: number }) {
-  if (s.state === 'waiting_approval') {
-    return (
-      <div className="flex items-start gap-2 rounded-xl bg-wait-soft px-3 py-2 text-[13px]">
-        <ShieldAlert className="mt-px size-4 shrink-0 text-wait" />
-        <span className="min-w-0 flex-1 font-mono text-[12px] leading-relaxed break-all text-fg">{s.state_detail || t.session.waitingApproval}</span>
-      </div>
-    )
-  }
-  if (!s.last_tool) return null
-  const Icon = toolIcon(s.last_tool)
-  const [name, ...rest] = s.last_tool.split(' · ')
-  const live = s.state === 'running'
+// 拆分“工具 · 简述”。
+function splitTool(label: string): [string, string] {
+  const [name, ...rest] = label.split(' · ')
+  return [name.replace(/^mcp__/, ''), rest.join(' · ')]
+}
+
+export function sessionTitle(s: Session): string {
+  return s.title || s.project_name || shortPath(s.cwd, 28) || t.session.noProject
+}
+
+function Meta({ icon: Icon, tip, children, className }: { icon: LucideIcon; tip: string; children: ReactNode; className?: string }) {
   return (
-    <div className={cx('flex items-center gap-2 rounded-xl px-3 py-2 text-[13px]', live ? 'bg-surface-2' : 'bg-transparent px-0 py-0')}>
-      <Icon className={cx('size-4 shrink-0', live ? 'text-run' : 'text-fg-3')} />
-      <span className="shrink-0 font-medium text-fg-2">{name}</span>
-      {rest.length > 0 && <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-2">{rest.join(' · ')}</span>}
-      <span className="ml-auto shrink-0 text-xs text-fg-3 tabular">{relTime(s.last_tool_at, now)}</span>
-    </div>
+    <Tip content={tip}>
+      <span className={cx('inline-flex min-w-0 items-center gap-1', className)}>
+        <Icon className="size-3.5 shrink-0" />
+        <span className="truncate">{children}</span>
+      </span>
+    </Tip>
   )
 }
 
-// SessionCard：实例卡片。一眼回答：它在做什么、做了多久、顺不顺利、要不要我管。
-export const SessionCard = memo(function SessionCard({ s, now, showProject = true, showDevice = true }: { s: Session; now: number; showProject?: boolean; showDevice?: boolean }) {
+// 等你处理时的提示块：在问你 / 请你确认计划 / 请求执行 / 回复要点。
+export function Callout({ s }: { s: Session }) {
+  const ds = displayState(s)
+  if (ds === 'waiting_approval') {
+    return (
+      <div className="flex items-start gap-2.5 rounded-xl bg-wait-soft px-3 py-2.5">
+        <ShieldAlert className="mt-0.5 size-4 shrink-0 text-wait" />
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-[12px] leading-relaxed break-all text-fg">{s.state_detail}</div>
+          <div className="mt-0.5 text-xs text-fg-3">{t.session.approvalHint}</div>
+        </div>
+      </div>
+    )
+  }
+  if (ds === 'waiting_answer') {
+    const [name, brief] = splitTool(s.state_detail)
+    const plan = name === 'ExitPlanMode'
+    const Icon = plan ? ListChecks : HelpCircle
+    return (
+      <div className="flex items-start gap-2.5 rounded-xl bg-reply-soft px-3 py-2.5">
+        <Icon className="mt-0.5 size-4 shrink-0 text-reply" />
+        <div className="min-w-0 flex-1 text-sm">
+          <div className="text-xs font-medium text-reply">{plan ? t.session.planConfirm : t.session.asking}</div>
+          {brief && <div className="mt-0.5 leading-relaxed text-fg">{brief}</div>}
+          <div className="mt-0.5 text-xs text-fg-3">{t.session.approvalHint}</div>
+        </div>
+      </div>
+    )
+  }
+  if (ds === 'waiting_reply' && (s.digest_done || s.digest_ask)) {
+    return (
+      <div className="space-y-1.5 rounded-xl bg-reply-soft px-3 py-2.5 text-sm">
+        {s.digest_done && (
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-run" />
+            <span className="leading-relaxed text-fg">{s.digest_done}</span>
+          </div>
+        )}
+        {s.digest_ask && (
+          <div className="flex items-start gap-2">
+            <HelpCircle className="mt-0.5 size-4 shrink-0 text-reply" />
+            <span className="leading-relaxed font-medium text-fg">{s.digest_ask}</span>
+          </div>
+        )}
+      </div>
+    )
+  }
+  return null
+}
+
+function ActionLine({ s, now }: { s: Session; now: number }) {
+  if (!s.last_tool || s.state === 'ended') return null
+  const Icon = toolIcon(s.last_tool)
+  const [name, brief] = splitTool(s.last_tool)
+  const live = s.state === 'running'
+  return (
+    <Tip content={t.session.action}>
+      <div className={cx('flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px]', live ? 'bg-surface-2' : 'bg-transparent px-0')}>
+        <Icon className={cx('size-4 shrink-0', live ? 'text-run' : 'text-fg-3')} />
+        <span className="shrink-0 font-medium text-fg-2">{name}</span>
+        {brief && <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-3">{brief}</span>}
+        <span className="ml-auto shrink-0 text-xs text-fg-3 tabular">{relTime(s.last_tool_at, now)}</span>
+      </div>
+    </Tip>
+  )
+}
+
+// SessionCard：会话卡片。
+// - 普通形态：一眼看出它在做什么、做了多久、顺不顺利。
+// - wide（要你处理）：附带提问 / 授权请求 / 回复要点，并就地回答待决策。
+export const SessionCard = memo(function SessionCard({ s, now, decisions = [], wide }: { s: Session; now: number; decisions?: Decision[]; wide?: boolean }) {
   const open = useOpenSession()
   const openReq = useOpenReq()
-  const st = stateStyle[s.state] ?? stateStyle.idle
-  const headline = s.summary || s.last_prompt
+  const ds = displayState(s)
+  const st = stateStyle[ds] ?? stateStyle.idle
   const ended = s.state === 'ended'
-  const perm = t.permMode[s.permission_mode] ?? ''
+  const perm = t.permMode[s.permission_mode]
+  const reqs = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
+  // 有回复要点时，要点本身就是进展，标题下只放你最后说的话，避免重复。
+  const hasDigest = ds === 'waiting_reply' && !!(s.digest_done || s.digest_ask)
+  const useSummary = !!s.summary && !hasDigest
+  const headline = useSummary ? s.summary : s.last_prompt
+  const showPrompt = useSummary && !!s.last_prompt
 
-  return (
-    <Card
-      role="button"
-      tabIndex={0}
-      onClick={() => open(s.key)}
-      onKeyDown={(e) => e.key === 'Enter' && open(s.key)}
-      className={cx('group flex cursor-pointer flex-col gap-3 p-4 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-70 hover:opacity-100')}
-    >
-      {/* 头部：工具、项目、状态 */}
+  const body = (
+    <div className="flex min-w-0 flex-col gap-3">
+      {/* 标题行 */}
       <div className="flex items-start gap-3">
         <ToolMark tool={s.tool} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 text-[15px] font-semibold text-fg">
-            <span className="truncate">{showProject ? s.project_name || shortPath(s.cwd, 28) || t.sessions.noProject : s.model || t.tool[s.tool as 'claude']}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[15px] font-semibold text-fg">{sessionTitle(s)}</span>
+            <PhaseBadge phase={s.phase} />
+            <span className="ml-auto shrink-0 pl-1">
+              <StatusPill state={ds} since={s.state_since} now={now} />
+            </span>
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-fg-3">
-            {showProject && s.model && <span className="truncate font-mono">{s.model}</span>}
-            {showDevice && (
-              <>
-                {showProject && s.model && <span>·</span>}
-                <span className="inline-flex shrink-0 items-center gap-1">
-                  <Monitor className="size-3" />
-                  {s.device_name}
-                </span>
-              </>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-fg-3">
+            {s.title && s.project_name && (
+              <Meta icon={FolderGit2} tip={s.cwd}>
+                {s.project_name}
+              </Meta>
             )}
-            {!showDevice && !showProject && <span className="truncate">{s.client}</span>}
+            <Meta icon={Monitor} tip={t.session.device}>
+              {s.device_name}
+            </Meta>
+            {s.branch && (
+              <Meta icon={GitBranch} tip={s.dirty ? t.session.dirtyTip(s.dirty) : t.session.branch} className="font-mono">
+                {s.branch}
+                {s.dirty > 0 && <span className="ml-1 font-sans font-medium text-wait tabular">±{s.dirty}</span>}
+              </Meta>
+            )}
           </div>
         </div>
-        <StatusPill state={s.state} since={s.state_since} now={now} />
       </div>
 
-      {/* 主体：在做什么 */}
-      {headline ? (
-        <div>
-          <p className={cx('text-sm leading-relaxed text-fg', s.summary ? 'line-clamp-2' : 'line-clamp-2 text-fg-2')}>
-            {!s.summary && <MessageSquareText className="mr-1.5 mb-0.5 inline size-3.5 text-fg-3" />}
+      {/* 在做什么 */}
+      {headline && (
+        <div className="min-w-0">
+          <p className={cx('line-clamp-2 text-sm leading-relaxed', useSummary ? 'text-fg' : 'text-fg-2')}>
+            {!useSummary && (
+              <Tip content={t.session.you}>
+                <MessageSquare className="mr-1.5 mb-0.5 inline size-3.5 text-fg-3" />
+              </Tip>
+            )}
             {headline}
           </p>
-          {s.summary && s.last_prompt && (
+          {showPrompt && (
             <p className="mt-1 line-clamp-1 text-[13px] text-fg-3">
-              <span className="mr-1 font-medium">{t.sessions.you}</span>
+              <Tip content={t.session.you}>
+                <MessageSquare className="mr-1.5 mb-0.5 inline size-3.5" />
+              </Tip>
               {s.last_prompt}
             </p>
           )}
         </div>
-      ) : null}
+      )}
 
-      <ActionLine s={s} now={now} />
+      <Callout s={s} />
+      {!(ds === 'waiting_approval' || ds === 'waiting_answer') && <ActionLine s={s} now={now} />}
 
-      {/* 进度指标 */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-fg-3">
-        {s.branch && (
-          <span className="inline-flex min-w-0 items-center gap-1">
-            <GitBranch className="size-3.5 shrink-0" />
-            <span className="max-w-[160px] truncate font-mono">{s.branch}</span>
-            {s.dirty > 0 && <span className="font-medium text-wait tabular">±{s.dirty}</span>}
-          </span>
-        )}
-        {s.worktree && <Badge tone="outline">{t.sessions.worktree}</Badge>}
-        {s.turns > 0 && <span className="tabular">{t.sessions.turn(s.turns)}</span>}
-        {s.turn_tools > 0 && !ended && <span className="tabular">{t.sessions.toolCalls(s.turn_tools)}</span>}
-        {s.subagents > 0 && (
-          <span className="inline-flex items-center gap-1 text-accent">
-            <Layers className="size-3.5" />
-            {t.sessions.subagents(s.subagents)}
-          </span>
-        )}
-        {perm && <Badge tone="outline">{perm}</Badge>}
-        {s.compactions > 0 && <span className="tabular">{t.sessions.compactions(s.compactions)}</span>}
-      </div>
-
-      {/* 底部：需求、决策、活跃度 */}
-      <div className="-mb-0.5 flex items-center gap-2 border-t border-line pt-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-          {s.pending_decisions > 0 && <Badge tone="wait">{t.sessions.pendingDecisions(s.pending_decisions)}</Badge>}
-          {s.requirements
-            .filter((r) => r.status !== 'done' && r.status !== 'shelved')
-            .map((r) => (
-            <button
-              key={r.id}
-              onClick={(e) => {
-                e.stopPropagation()
-                openReq(r.code)
-              }}
-              className="inline-flex max-w-[220px] items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-xs text-accent hover:brightness-95"
-            >
-              <span className="shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap">{r.code}</span>
-              <span className="truncate">{r.title}</span>
-            </button>
-            ))}
-          {!s.requirements.length && !s.pending_decisions && <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span>}
+      {/* 底部指标 */}
+      <div className="flex items-center gap-3 border-t border-line pt-2.5 text-xs text-fg-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
+          {s.turns > 0 && (
+            <Tip content={t.session.turnsTip}>
+              <span className="tabular">{t.session.turns(s.turns)}</span>
+            </Tip>
+          )}
+          {s.turn_tools > 0 && !ended && (
+            <Meta icon={Wrench} tip={t.session.toolsTip(s.turn_tools)} className="tabular">
+              {s.turn_tools}
+            </Meta>
+          )}
+          {s.subagents > 0 && (
+            <Meta icon={Layers} tip={t.session.subagentsTip(s.subagents)} className="text-accent tabular">
+              {s.subagents}
+            </Meta>
+          )}
+          {perm && (
+            <Tip content={perm}>
+              <span className="inline-flex" aria-label={perm}>
+                {s.permission_mode === 'plan' ? <Eye className="size-3.5" /> : <ShieldOff className="size-3.5" />}
+              </span>
+            </Tip>
+          )}
+          {s.worktree && (
+            <Tip content={t.session.worktree}>
+              <span className="rounded border border-line px-1 font-mono text-[10px]">wt</span>
+            </Tip>
+          )}
+          {reqs.map((r) => (
+            <Tip key={r.id} content={`${r.code} ${r.title} · ${t.reqStatus[r.status]}`}>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openReq(r.code)
+                }}
+                className="inline-flex max-w-[200px] items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-accent hover:brightness-95"
+              >
+                <span className="shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap">{r.code}</span>
+                <span className="truncate">{r.title}</span>
+              </button>
+            </Tip>
+          ))}
+          {!s.turns && !reqs.length && <span>{relTime(s.last_active_at, now)}</span>}
         </div>
-        <Sparkline data={s.activity} state={s.state} />
+        <Sparkline data={s.activity} state={ds} />
       </div>
+    </div>
+  )
+
+  const clickable = {
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: () => open(s.key),
+    onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key),
+  }
+
+  if (wide && decisions.length) {
+    // 有待决策：上方会话信息，下方就地作答（宽屏两列）。
+    return (
+      <Card className={cx('overflow-hidden', st.ring)}>
+        <div {...clickable} className="cursor-pointer p-4 transition-colors hover:bg-hover/40 sm:p-5">
+          {body}
+        </div>
+        <div className={cx('grid grid-cols-1 items-start gap-3 border-t border-line bg-surface-2/60 p-3 sm:p-4', decisions.length > 1 && 'xl:grid-cols-2')}>
+          {decisions.map((d) => (
+            <div key={d.id} className="min-w-0">
+              <DecisionComposer d={d} embedded />
+            </div>
+          ))}
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card {...clickable} className={cx('cursor-pointer p-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-65 hover:opacity-100')}>
+      {body}
     </Card>
   )
 })

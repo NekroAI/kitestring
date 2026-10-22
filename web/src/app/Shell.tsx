@@ -1,23 +1,24 @@
-import { useEffect, type ReactNode } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router'
-import { AnimatePresence, motion } from 'motion/react'
-import { Inbox, LayoutGrid, ListTodo, Monitor, Settings2, WifiOff } from 'lucide-react'
+import { useEffect } from 'react'
+import { NavLink, Outlet } from 'react-router'
+import { LayoutDashboard, ListTodo, Monitor, Settings2, WifiOff } from 'lucide-react'
 import { useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { useInbox } from './inbox'
+import { Tip } from '../ui/base'
+import { useWorkbench } from './inbox'
 import { usePanelParams } from './nav'
 import { ReqPanel } from './requirements'
 import { SessionPanel } from './SessionPanel'
 
+// 页面切换不做进出场动画：路由直接切换，避免闪烁与白屏。
+
 const nav = [
-  { to: '/', label: t.nav.inbox, icon: Inbox, end: true },
-  { to: '/sessions', label: t.nav.sessions, icon: LayoutGrid },
+  { to: '/', label: t.nav.home, icon: LayoutDashboard, end: true },
   { to: '/requirements', label: t.nav.requirements, icon: ListTodo },
   { to: '/settings', label: t.nav.settings, icon: Settings2 },
 ]
 
-function Logo({ className }: { className?: string }) {
+export function Logo({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" className={className} aria-hidden>
       <rect width="32" height="32" rx="9" className="fill-accent" />
@@ -27,28 +28,19 @@ function Logo({ className }: { className?: string }) {
   )
 }
 
-function CountDot({ n, tone = 'accent' }: { n: number; tone?: 'accent' | 'wait' }) {
+function Count({ n }: { n: number }) {
   if (!n) return null
-  return (
-    <motion.span
-      key={n}
-      initial={{ scale: 0.6 }}
-      animate={{ scale: 1 }}
-      className={cx('flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] leading-none font-semibold tabular', tone === 'wait' ? 'bg-wait text-white dark:text-black' : 'bg-accent text-accent-fg')}
-    >
-      {n > 99 ? '99+' : n}
-    </motion.span>
-  )
+  return <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-wait px-1 text-[11px] leading-none font-semibold text-white tabular dark:text-black">{n > 99 ? '99+' : n}</span>
 }
 
-function Sidebar({ counts, connected }: { counts: Record<string, number>; connected: boolean }) {
-  const inbox = useInbox()
+function Sidebar({ todo, connected }: { todo: number; connected: boolean }) {
+  const wb = useWorkbench()
   const now = useNow()
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-line bg-sunken/60 px-3 py-4 lg:flex">
       <div className="mb-6 flex items-center gap-2.5 px-2">
         <Logo className="size-8" />
-        <div>
+        <div className="leading-tight">
           <div className="text-[15px] font-semibold text-fg">{t.app.name}</div>
           <div className="text-[11px] text-fg-3">Kitestring</div>
         </div>
@@ -59,37 +51,32 @@ function Sidebar({ counts, connected }: { counts: Record<string, number>; connec
             key={n.to}
             to={n.to}
             end={n.end}
-            className={({ isActive }) => cx('relative flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors', isActive ? 'text-fg' : 'text-fg-2 hover:bg-hover hover:text-fg')}
+            className={({ isActive }) => cx('flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors', isActive ? 'bg-surface text-fg shadow-xs' : 'text-fg-2 hover:bg-hover hover:text-fg')}
           >
-            {({ isActive }) => (
-              <>
-                {isActive && <motion.span layoutId="side-active" className="absolute inset-0 rounded-lg bg-surface shadow-xs" transition={{ type: 'spring', bounce: 0.15, duration: 0.35 }} />}
-                <n.icon className="relative size-[18px]" />
-                <span className="relative flex-1">{n.label}</span>
-                <span className="relative">
-                  <CountDot n={counts[n.to] ?? 0} tone={n.to === '/' ? 'wait' : 'accent'} />
-                </span>
-              </>
-            )}
+            <n.icon className="size-[18px]" />
+            <span className="flex-1">{n.label}</span>
+            {n.to === '/' && <Count n={todo} />}
           </NavLink>
         ))}
       </nav>
 
       <div className="mt-8 px-2.5 text-xs font-medium text-fg-3">{t.settings.sections.devices}</div>
-      <div className="mt-2 space-y-0.5">
-        {inbox.devices
+      <div className="mt-1.5 space-y-0.5">
+        {wb.devices
           .filter((d) => !d.revoked)
           .map((d) => {
-            const n = inbox.sessions.filter((s) => s.device_id === d.id && s.state !== 'ended').length
+            const n = wb.sessions.filter((s) => s.device_id === d.id && s.state !== 'ended').length
             return (
-              <div key={d.id} className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px]" title={d.online ? t.sessions.deviceOnline : t.sessions.lastSeen(relTime(d.last_seen, now))}>
-                <span className="relative">
-                  <Monitor className="size-4 text-fg-3" />
-                  <span className={cx('absolute -right-0.5 -bottom-0.5 size-2 rounded-full border-2 border-bg', d.online ? 'bg-run' : 'bg-fg-3/50')} />
-                </span>
-                <span className={cx('min-w-0 flex-1 truncate', d.online ? 'text-fg-2' : 'text-fg-3')}>{d.name}</span>
-                {n > 0 && <span className="text-xs text-fg-3 tabular">{n}</span>}
-              </div>
+              <Tip key={d.id} side="right" content={d.online ? t.device.online : d.last_seen ? t.device.lastSeen(relTime(d.last_seen, now)) : t.device.never}>
+                <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px]">
+                  <span className="relative">
+                    <Monitor className="size-4 text-fg-3" />
+                    <span className={cx('absolute -right-0.5 -bottom-0.5 size-2 rounded-full border-2 border-bg', d.online ? 'bg-run' : 'bg-fg-3/50')} />
+                  </span>
+                  <span className={cx('min-w-0 flex-1 truncate', d.online ? 'text-fg-2' : 'text-fg-3')}>{d.name}</span>
+                  {n > 0 && <span className="text-xs text-fg-3 tabular">{n}</span>}
+                </div>
+              </Tip>
             )
           })}
       </div>
@@ -102,17 +89,19 @@ function Sidebar({ counts, connected }: { counts: Record<string, number>; connec
   )
 }
 
-function TabBar({ counts }: { counts: Record<string, number> }) {
+function TabBar({ todo }: { todo: number }) {
   return (
-    <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/85 backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-lg grid-cols-4">
+    <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-xl lg:hidden">
+      <div className="mx-auto grid max-w-md grid-cols-3">
         {nav.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('relative flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive ? 'text-accent' : 'text-fg-3')}>
+          <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive ? 'text-accent' : 'text-fg-3')}>
             <span className="relative">
               <n.icon className="size-[22px]" strokeWidth={1.8} />
-              <span className="absolute -top-1.5 -right-2.5">
-                <CountDot n={counts[n.to] ?? 0} tone={n.to === '/' ? 'wait' : 'accent'} />
-              </span>
+              {n.to === '/' && (
+                <span className="absolute -top-1.5 -right-2.5">
+                  <Count n={todo} />
+                </span>
+              )}
             </span>
             {n.label}
           </NavLink>
@@ -124,40 +113,40 @@ function TabBar({ counts }: { counts: Record<string, number> }) {
 
 function MobileHeader({ connected }: { connected: boolean }) {
   return (
-    <header className="pt-safe sticky top-0 z-20 border-b border-line/70 bg-bg/80 backdrop-blur-xl lg:hidden">
+    <header className="pt-safe sticky top-0 z-20 border-b border-line/70 bg-bg/85 backdrop-blur-xl lg:hidden">
       <div className="flex h-12 items-center gap-2 px-4">
         <Logo className="size-6" />
         <span className="text-[15px] font-semibold text-fg">{t.app.name}</span>
-        <span className="ml-auto">{!connected && <WifiOff className="size-4 animate-pulse text-danger" aria-label={t.conn.offline} />}</span>
+        {!connected && (
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-danger">
+            <WifiOff className="size-4" />
+            {t.conn.offline}
+          </span>
+        )}
       </div>
     </header>
   )
 }
 
-export function Shell({ children }: { children?: ReactNode }) {
+export function Shell() {
   const connected = useLiveUpdates(true)
-  const inbox = useInbox()
-  const loc = useLocation()
+  const wb = useWorkbench()
   const { session, req, close } = usePanelParams()
-  const counts = { '/': inbox.urgent, '/sessions': inbox.running.length }
 
   useEffect(() => {
-    document.title = inbox.urgent ? `(${inbox.urgent}) ${t.app.fullName}` : t.app.fullName
-  }, [inbox.urgent])
+    document.title = wb.todo ? `(${wb.todo}) ${t.app.fullName}` : t.app.fullName
+  }, [wb.todo])
 
   return (
     <div className="min-h-dvh">
-      <Sidebar counts={counts} connected={connected} />
+      <Sidebar todo={wb.todo} connected={connected} />
       <MobileHeader connected={connected} />
-      {!connected && <div className="sticky top-12 z-10 bg-danger-soft px-4 py-1.5 text-center text-xs text-danger lg:hidden">{t.conn.offline}</div>}
       <main className="pb-24 lg:pb-10 lg:pl-[232px]">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div key={loc.pathname} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }} className="mx-auto max-w-[1360px] px-4 pt-5 sm:px-6 lg:px-10 lg:pt-9">
-            {children ?? <Outlet />}
-          </motion.div>
-        </AnimatePresence>
+        <div className="mx-auto max-w-[1360px] px-4 pt-5 sm:px-6 lg:px-10 lg:pt-9">
+          <Outlet />
+        </div>
       </main>
-      <TabBar counts={counts} />
+      <TabBar todo={wb.todo} />
       <SessionPanel sessionKey={session} onClose={close} />
       <ReqPanel refId={req} onClose={close} />
     </div>

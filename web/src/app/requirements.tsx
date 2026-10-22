@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, ExternalLink, FileCheck2, Link2, MessageCircleQuestion, MoreHorizontal, Trash2, Undo2, User, Bot } from 'lucide-react'
+import { Bot, Check, ChevronDown, ExternalLink, FileCheck2, Link2, MessageCircleQuestion, Monitor, MoreHorizontal, Trash2, Undo2, User } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
-import { Badge, Button, Card, ErrorState, Field, Input, Skeleton, Textarea } from '../ui/base'
+import { Badge, Button, Card, ErrorState, Field, Input, Skeleton, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, Panel, useConfirm, type MenuItem } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
@@ -131,16 +131,27 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
       <div className="mt-1.5 line-clamp-3 text-sm leading-snug font-medium text-fg">{r.title}</div>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         {r.pending_decisions > 0 && (
-          <Badge tone="wait" icon={<MessageCircleQuestion className="size-3" />}>
-            {r.pending_decisions}
-          </Badge>
+          <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
+            <span>
+              <Badge tone="wait" icon={<MessageCircleQuestion className="size-3" />}>
+                {r.pending_decisions}
+              </Badge>
+            </span>
+          </Tip>
         )}
         {actor && r.status !== 'done' && r.status !== 'shelved' && (
           <Badge tone={r.next_actor === 'user' ? 'reply' : 'outline'} icon={r.next_actor === 'user' ? <User className="size-3" /> : <Bot className="size-3" />}>
             {actor}
           </Badge>
         )}
-        {r.sessions.length > 0 && <span className="text-xs text-fg-3">{t.reqs.sessionsCount(r.sessions.length)}</span>}
+        {r.sessions.length > 0 && (
+          <Tip content={t.reqs.sessionsTip(r.sessions.length)}>
+            <span className="inline-flex items-center gap-1 text-xs text-fg-3 tabular">
+              <Monitor className="size-3.5" />
+              {r.sessions.length}
+            </span>
+          </Tip>
+        )}
       </div>
     </Card>
   )
@@ -212,7 +223,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       onClose={onClose}
       wide
       title={r ? <span className="font-mono text-sm text-fg-3">{r.code}</span> : <Skeleton className="h-5 w-24" />}
-      subtitle={r && t.reqs.created(relTime(r.created_at, now), r.created_by)}
+      subtitle={r && t.reqs.createdBy(relTime(r.created_at, now), r.created_by === 'agent')}
       actions={
         r && (
           <Menu
@@ -292,12 +303,12 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
           )}
 
           {related.filter((d) => d.status === 'pending').length > 0 && (
-            <Block title={t.inbox.sections.decisions}>
+            <Block title={t.decision.status.pending}>
               <div className="space-y-3">
                 {related
                   .filter((d) => d.status === 'pending')
                   .map((d) => (
-                    <DecisionComposer key={d.id} d={d} />
+                    <DecisionComposer key={d.id} d={d} embedded />
                   ))}
               </div>
             </Block>
@@ -320,7 +331,15 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
                       <div className={cx('text-sm break-words text-fg', e.voided && 'line-through')}>{e.summary}</div>
                       {e.link && <div className="mt-0.5 truncate font-mono text-xs text-fg-3">{e.link}</div>}
                     </div>
-                    {e.voided ? <Badge tone="danger">{t.reqs.voided}</Badge> : <span className="shrink-0 text-xs text-fg-3">{relTime(e.created_at, now)}</span>}
+                    {e.voided ? (
+                      <Tip content={t.reqs.voidedTip}>
+                        <span>
+                          <Badge tone="danger">{t.reqs.voided}</Badge>
+                        </span>
+                      </Tip>
+                    ) : (
+                      <span className="shrink-0 text-xs text-fg-3">{relTime(e.created_at, now)}</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -340,7 +359,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
                   </Button>
                 }
                 items={linkable.map((s) => ({
-                  label: [s.project_name || s.cwd, s.device_name].filter(Boolean).join(t.common.sep),
+                  label: [s.title || s.project_name || s.cwd, s.device_name].filter(Boolean).join(t.common.sep),
                   hint: s.summary || s.last_prompt,
                   icon: <StatusDot state={s.state} />,
                   onSelect: () => void linkReq(r.code, s.key),
@@ -356,7 +375,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
                     <div key={k} className="flex items-center gap-2.5 px-3 py-2">
                       {s ? <StatusDot state={s.state} /> : <span className="size-2 rounded-full bg-line-strong" />}
                       <button onClick={() => s && openSession(k)} className="min-w-0 flex-1 text-left">
-                        <div className="truncate text-sm text-fg">{s ? [s.project_name, s.device_name].filter(Boolean).join(t.common.sep) : k}</div>
+                        <div className="truncate text-sm text-fg">{s ? [s.title || s.project_name, s.device_name].filter(Boolean).join(t.common.sep) : k}</div>
                         <div className="truncate text-xs text-fg-3">{s ? s.summary || s.last_prompt : t.reqs.sessionGone}</div>
                       </button>
                       <Button size="icon-sm" variant="ghost" aria-label={t.session.unlink} onClick={() => void linkReq(r.code, k, true)}>
@@ -422,7 +441,7 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
     wrap(async () => {
       const r = await createReq({ ...f, title: f.title.trim() })
       if (r) {
-        toast.success(t.reqs.createdToast(r.code))
+        toast.success(t.reqs.created(r.code))
         onClose()
         openReq(r.code)
       }
@@ -432,7 +451,7 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
     <Modal
       open={open}
       onClose={onClose}
-      title={t.reqs.new}
+      title={t.reqs.newTitle}
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>

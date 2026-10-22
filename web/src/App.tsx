@@ -3,11 +3,10 @@ import { useAuthStatus } from './api/queries'
 import { t } from './i18n'
 import { Shell } from './app/Shell'
 import { ErrorState } from './ui/base'
-import InboxPage from './pages/Inbox'
 import LoginPage from './pages/Login'
 import RequirementsPage from './pages/Requirements'
-import SessionsPage from './pages/Sessions'
 import SettingsPage from './pages/Settings'
+import WorkbenchPage from './pages/Workbench'
 
 function Splash() {
   return (
@@ -36,8 +35,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={logged_in ? <Navigate to={new URLSearchParams(loc.search).get('next') || '/'} replace /> : <LoginPage initialized={initialized} />} />
       <Route element={logged_in ? <Shell /> : <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />}>
-        <Route index element={<InboxPage />} />
-        <Route path="sessions" element={<SessionsPage />} />
+        <Route index element={<WorkbenchPage />} />
+        <Route path="sessions" element={<Navigate to="/" replace />} />
         <Route path="requirements" element={<RequirementsPage />} />
         <Route path="settings" element={<SettingsPage version={version} />} />
         <Route path="decisions" element={<Navigate to="/" replace />} />
