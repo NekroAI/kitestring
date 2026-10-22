@@ -456,3 +456,37 @@ html [data-sonner-toaster] [data-close-button] {
     user-select: none;
   }
 }
+
+/* 页面切换：浏览器原生视图过渡，旧页淡出、新页轻轻上浮淡入，不会出现空白 */
+::view-transition-old(root) {
+  animation: ks-vt-out 0.16s ease-in both;
+}
+::view-transition-new(root) {
+  animation: ks-vt-in 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes ks-vt-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ks-vt-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* 侧边栏与底部导航保持不动，只过渡内容区 */
+aside.fixed,
+nav.fixed {
+  view-transition-name: ks-chrome;
+}
+::view-transition-old(ks-chrome),
+::view-transition-new(ks-chrome) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}

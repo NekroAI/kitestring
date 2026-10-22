@@ -641,3 +641,20 @@ func TestDecisionOptionImages(t *testing.T) {
 		t.Fatalf("选项效果图应与选项一一对应：%+v", d.OptionFiles)
 	}
 }
+
+func TestLinkStartsRequirement(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	hook(t, "claude", map[string]any{"session_id": "l-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "开工", "prompt_id": "p0"})
+	var r store.Requirement
+	e.call("POST", "/api/requirements", map[string]any{"title": "导出 CSV", "status": "ready"}, &r)
+	c := client.New(5 * time.Second)
+	e.waitFor("会话已上报", func() bool { return e.session("claude:l-1").Key != "" })
+	var got store.Requirement
+	if err := c.Do(context.Background(), "POST", "/agent/sessions/claude:l-1/link", map[string]any{"requirement": r.Code}, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != store.ReqInProgress {
+		t.Fatalf("Agent 关联后待开始的需求应变为进行中，得到 %s", got.Status)
+	}
+}

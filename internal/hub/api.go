@@ -958,6 +958,12 @@ func (h *Hub) registerAgent(api huma.API) {
 			if err := h.store.LinkSession(ctx, r.ID, in.Key); err != nil {
 				return nil, apiErr(err)
 			}
+			// Agent 关联会话就是开始做了：还在草稿 / 待开始的需求自动进入进行中（R-35）
+			if r.Status == store.ReqDraft || r.Status == store.ReqReady {
+				if _, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
+					return nil, apiErr(err)
+				}
+			}
 			h.broker.publish("requirements", "sessions")
 			r, err = h.store.GetRequirement(ctx, r.ID)
 			return &reqOut{Body: r}, apiErr(err)

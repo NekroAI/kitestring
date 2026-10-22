@@ -56,6 +56,7 @@ function Sidebar({ todo, connected }: { todo: number; connected: boolean }) {
             key={n.to}
             to={n.to}
             end={n.end}
+            viewTransition
             className={({ isActive }) => cx('flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium transition-colors', isActive ? 'bg-surface text-fg shadow-xs' : 'text-fg-2 hover:bg-hover hover:text-fg')}
           >
             <n.icon className="size-[18px]" />
@@ -99,7 +100,7 @@ function TabBar({ todo }: { todo: number }) {
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-xl lg:hidden">
       <div className="mx-auto grid max-w-md grid-cols-4">
         {nav.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive ? 'text-accent' : 'text-fg-3')}>
+          <NavLink key={n.to} to={n.to} end={n.end} viewTransition className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive ? 'text-accent' : 'text-fg-3')}>
             <span className="relative">
               <n.icon className="size-[22px]" strokeWidth={1.8} />
               {n.to === '/' && (

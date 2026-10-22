@@ -19,7 +19,7 @@ import (
 )
 
 const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
-- 开始一项工作前，用 req_list 看当前项目已有需求；属于某条需求的工作用 session_link_req 关联本会话。
+- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（草稿 / 待开始的需求会自动变为进行中）。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
@@ -223,7 +223,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return nil, map[string]any{"decision": out["code"], "status": "已进入用户的决策收件箱，作答后会自动注入本会话"}, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "把当前会话关联到一条需求，让用户在实例墙上看到你在做什么。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，草稿 / 待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
