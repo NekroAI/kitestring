@@ -1,0 +1,7 @@
+# 含公司项目与个人环境信息的背景资料，不进开源仓库
+notes/private/
+.DS_Store
+
+# 构建产物
+bin/
+dist/
