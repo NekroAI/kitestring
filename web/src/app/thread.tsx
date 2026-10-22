@@ -85,7 +85,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
   const st = stateStyle[ds] ?? stateStyle.idle
 
   return (
-    <Card className={cx('overflow-hidden', st.ring)}>
+    <Card className={cx('paper-fold overflow-hidden rounded-tr-md', st.ring)}>
       {s ? (
         <div
           role="button"
@@ -130,7 +130,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
       )}
 
       {(th.decisions.length > 0 || th.reviews.length > 0 || th.orphans.length > 0) && (
-        <div className="@container space-y-4 border-t border-line bg-surface-2/60 p-3 sm:p-4">
+        <div className="@container space-y-4 border-t border-dashed border-line-strong bg-surface-2/60 p-3 sm:p-4">
           {th.decisions.length > 0 && (
             <div className={cx('grid grid-cols-1 items-start gap-3', th.decisions.length > 1 && '@3xl:grid-cols-2')}>
               {th.decisions.map((d) => (

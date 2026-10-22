@@ -506,7 +506,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	return text
 }
 
-// writeItem 写一条答复或修改意见；附图给出本地路径，agent 可直接读取图片。
+// writeItem 写一条答复或修改意见；附件给出本地路径，agent 可直接读取。
 func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 	if dec.Kind == "feedback" {
 		fmt.Fprintf(b, "- %s「%s」修改意见：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
@@ -514,25 +514,29 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 		fmt.Fprintf(b, "- %s 问题：%s\n  用户答复：%s\n", dec.Code, oneLine(dec.Question), dec.Answer)
 	}
 	for _, f := range dec.Files {
+		label := "附图"
+		if strings.HasPrefix(f.Mime, "video/") {
+			label = "录屏"
+		}
 		p := d.attachmentPath(f)
-		if _, err := os.Stat(p); err != nil {
-			d.fetchAttachment(f) // 送达前仍未下载完成：同步再试一次
+		if _, err := os.Stat(p); err != nil && label == "附图" {
+			d.fetchAttachment(f) // 送达前仍未下载完成：同步再试一次（录屏太大，不在 hook 里等）
 		}
 		if _, err := os.Stat(p); err == nil {
-			fmt.Fprintf(b, "  附图：%s\n", p)
+			fmt.Fprintf(b, "  %s：%s\n", label, p)
 		} else {
-			fmt.Fprintf(b, "  附图（下载失败，可在 Kitestring 网页查看）：%s\n", f.Name)
+			fmt.Fprintf(b, "  %s（未能下载，可在 Kitestring 网页查看）：%s\n", label, f.Name)
 		}
 	}
 }
 
-var mimeExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+var mimeExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm"}
 
 func (d *Daemon) attachmentPath(f protocol.File) string {
 	return filepath.Join(Home(), "attachments", f.ID+mimeExt[f.Mime])
 }
 
-// fetchAttachment 把附图下载到本机（已存在则跳过）。
+// fetchAttachment 把附件（图片或录屏）下载到本机（已存在则跳过）。
 func (d *Daemon) fetchAttachment(f protocol.File) {
 	p := d.attachmentPath(f)
 	if _, err := os.Stat(p); err == nil {
@@ -541,7 +545,7 @@ func (d *Daemon) fetchAttachment(f protocol.File) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/files/"+url.PathEscape(f.ID), nil)
 	if err != nil {
@@ -562,7 +566,7 @@ func (d *Daemon) fetchAttachment(f protocol.File) {
 	if err != nil {
 		return
 	}
-	_, err = io.Copy(tmp, io.LimitReader(resp.Body, 12<<20))
+	_, err = io.Copy(tmp, io.LimitReader(resp.Body, 52<<20))
 	tmp.Close()
 	if err != nil {
 		os.Remove(tmp.Name())

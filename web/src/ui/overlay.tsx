@@ -24,7 +24,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide 
           >
             <div className="flex items-start gap-3 border-b border-line px-5 py-4">
               <div className="min-w-0 flex-1">
-                <RDialog.Title className="text-base font-semibold text-fg">{title}</RDialog.Title>
+                <RDialog.Title className="font-display text-[17px] font-semibold text-fg">{title}</RDialog.Title>
                 {subtitle && <div className="mt-1 text-[13px] text-fg-3">{subtitle}</div>}
               </div>
               {actions}
@@ -71,7 +71,7 @@ export function Modal({ open, onClose, title, description, children, footer }: {
           className="modal-pop fixed top-1/2 left-1/2 z-50 flex max-h-[88dvh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none"
         >
           <div className="px-5 pt-5">
-            <RDialog.Title className="text-base font-semibold text-fg">{title}</RDialog.Title>
+            <RDialog.Title className="font-display text-[17px] font-semibold text-fg">{title}</RDialog.Title>
             {description && <RDialog.Description className="mt-1.5 text-sm leading-relaxed text-fg-2">{description}</RDialog.Description>}
           </div>
           {children && <div className="overflow-y-auto px-5 pt-4">{children}</div>}

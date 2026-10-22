@@ -59,6 +59,28 @@ func agentCall(method, path string, body any) error {
 	return nil
 }
 
+// attachFiles 经本机 daemon 上传文件，把附件 ID 写入 body["files"]。
+func attachFiles(body map[string]any, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	c := client.New(3 * time.Minute)
+	var ids []string
+	for _, p := range paths {
+		var ref struct {
+			ID string `json:"id"`
+		}
+		if err := c.Upload(ctx, "/agent/files", p, &ref); err != nil {
+			return fmt.Errorf("上传 %s 失败：%w", p, err)
+		}
+		ids = append(ids, ref.ID)
+	}
+	body["files"] = ids
+	return nil
+}
+
 func runReq(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("用法：ks req list|get|create|status|evidence ...")
@@ -74,6 +96,9 @@ func runReq(args []string) error {
 	priority := fs.String("priority", "", "create：优先级 P0-P3")
 	kind := fs.String("kind", "manual", "evidence：证据类型")
 	link := fs.String("link", "", "evidence：链接")
+	var images, videos stringList
+	fs.Var(&images, "image", "create / evidence：附图路径，可重复")
+	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -98,6 +123,9 @@ func runReq(args []string) error {
 			return fmt.Errorf("用法：ks req create --title <标题> [--detail ...] [--acceptance ...]")
 		}
 		body := map[string]any{"title": *title, "detail": *detail, "acceptance": *acceptance, "status": *status, "priority": *priority, "session_key": key}
+		if err := attachFiles(body, images); err != nil {
+			return err
+		}
 		return agentCall("POST", "/agent/requirements", compact(body))
 	case "status":
 		if fs.NArg() < 2 {
@@ -106,9 +134,13 @@ func runReq(args []string) error {
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key}))
 	case "evidence":
 		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req evidence <R-编号> <摘要> [--kind test] [--link ...]")
+			return fmt.Errorf("用法：ks req evidence <R-编号> <摘要> [--kind test] [--link ...] [--image 截图.png] [--video 录屏.webm]")
 		}
-		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(map[string]any{"kind": *kind, "summary": fs.Arg(1), "link": *link, "session_key": key}))
+		body := map[string]any{"kind": *kind, "summary": fs.Arg(1), "link": *link, "session_key": key}
+		if err := attachFiles(body, append(images, videos...)); err != nil {
+			return err
+		}
+		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(body))
 	case "link":
 		if fs.NArg() < 1 || key == "" {
 			return fmt.Errorf("用法：ks req link <R-编号> [--session tool:id]")

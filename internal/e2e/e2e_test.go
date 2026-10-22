@@ -494,6 +494,20 @@ func TestAttachmentsAndReviewFeedback(t *testing.T) {
 		t.Fatalf("需求详情应含修改意见，证据已作废并保留截图：%+v", got)
 	}
 
+	// 录屏：可上传，支持 Range 读取，req_get 的附图列表不含录屏
+	vid := t.TempDir() + "/demo.webm"
+	webm := append([]byte{0x1A, 0x45, 0xDF, 0xA3}, bytes.Repeat([]byte{0}, 2048)...)
+	os.WriteFile(vid, webm, 0o600)
+	var vref store.FileRef
+	if err := c.Upload(context.Background(), "/agent/files", vid, &vref); err != nil || vref.Mime != "video/webm" {
+		t.Fatalf("录屏上传失败：%v %+v", err, vref)
+	}
+	rq, _ := http.NewRequest("GET", e.srv.URL+"/api/files/"+vref.ID, nil)
+	rq.Header.Set("Range", "bytes=0-3")
+	if resp, err := e.web.Do(rq); err != nil || resp.StatusCode != http.StatusPartialContent || resp.Header.Get("Content-Type") != "video/webm" {
+		t.Fatalf("录屏应支持 Range：%v %v", err, resp)
+	}
+
 	// 通过：直接完成
 	e.call("POST", "/api/reviews", map[string]any{"items": []map[string]any{{"ref": r.Code, "verdict": "accept"}}}, &rv)
 	if rv.Requirements[0].Status != store.ReqDone {

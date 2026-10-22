@@ -1,12 +1,12 @@
-import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from 'react'
 import { Dialog } from 'radix-ui'
-import { ImagePlus, Loader2, X } from 'lucide-react'
+import { ImagePlus, Loader2, Play, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Button, Tip } from './base'
 
-// 图片附件：任何可以写字的地方都可以贴图（粘贴、拖拽、选择文件）。
+// 附件：任何可以写字的地方都可以贴图（粘贴、拖拽、选择文件），也可以附 MP4 / WebM 录屏。
 
 export type FileRef = { id: string; name: string; mime: string; size: number }
 
@@ -21,26 +21,30 @@ async function uploadOne(file: File): Promise<FileRef> {
   return body as FileRef
 }
 
-const MAX = 10 << 20
+const MAX_IMAGE = 10 << 20
+const MAX_VIDEO = 50 << 20
+const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm'
+const isVideo = (mime: string) => mime.startsWith('video/')
+const accepted = (f: File) => f.type.startsWith('image/') || f.type === 'video/mp4' || f.type === 'video/webm'
 
 // useAttach：管理一组附图的上传状态。
 export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
-  const [pending, setPending] = useState<{ key: string; url: string }[]>([])
+  const [pending, setPending] = useState<{ key: string; url: string; video: boolean }[]>([])
   const latest = useRef(value)
   latest.current = value
 
   const add = useCallback(
     async (files: File[]) => {
-      const images = files.filter((f) => f.type.startsWith('image/'))
-      if (!images.length) return
-      for (const f of images) {
-        if (f.size > MAX) {
-          toast.error(t.attach.tooLarge)
+      const list = files.filter(accepted)
+      if (!list.length) return
+      for (const f of list) {
+        if (f.size > (isVideo(f.type) ? MAX_VIDEO : MAX_IMAGE)) {
+          toast.error(isVideo(f.type) ? t.attach.videoTooLarge : t.attach.tooLarge)
           continue
         }
         const key = `${f.name}-${f.size}-${Math.random()}`
         const url = URL.createObjectURL(f)
-        setPending((p) => [...p, { key, url }])
+        setPending((p) => [...p, { key, url, video: isVideo(f.type) }])
         try {
           const ref = await uploadOne(f)
           onChange([...latest.current, ref])
@@ -58,7 +62,7 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
   const onPaste = useCallback(
     (e: ClipboardEvent) => {
       const files = [...e.clipboardData.files]
-      if (files.some((f) => f.type.startsWith('image/'))) {
+      if (files.some(accepted)) {
         e.preventDefault()
         void add(files)
       }
@@ -69,14 +73,42 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
   return { pending, add, onPaste, remove: (id: string) => onChange(latest.current.filter((f) => f.id !== id)) }
 }
 
-// Thumb：附图缩略图，点击放大。
+// Still：GIF 在列表里只显示第一帧，放大后才播放。
+function Still({ src, alt }: { src: string; alt: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      const c = ref.current
+      if (!c) return
+      c.width = img.naturalWidth
+      c.height = img.naturalHeight
+      c.getContext('2d')?.drawImage(img, 0, 0)
+    }
+    img.src = src
+  }, [src])
+  return <canvas ref={ref} aria-label={alt} className="size-full object-cover" />
+}
+
+function Preview({ f }: { f: FileRef }) {
+  if (isVideo(f.mime)) return <video src={`${fileUrl(f.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" />
+  if (f.mime === 'image/gif') return <Still src={fileUrl(f.id)} alt={f.name} />
+  return <img src={fileUrl(f.id)} alt={f.name} className="size-full object-cover" loading="lazy" />
+}
+
+// Thumb：附件缩略图，点击放大；录屏与动图带播放标记。
 export function Thumb({ f, onRemove, size = 'md' }: { f: FileRef; onRemove?: () => void; size?: 'sm' | 'md' }) {
   const box = size === 'sm' ? 'size-12' : 'size-16'
   return (
     <span className={cx('group relative inline-block shrink-0', box)}>
       <Lightbox f={f}>
-        <button className={cx('block overflow-hidden rounded-lg border border-line bg-sunken transition hover:border-line-strong', box)} aria-label={f.name}>
-          <img src={fileUrl(f.id)} alt={f.name} className="size-full object-cover" loading="lazy" />
+        <button className={cx('relative block overflow-hidden rounded-lg border border-line bg-sunken transition hover:border-line-strong', box)} aria-label={f.name}>
+          <Preview f={f} />
+          {(isVideo(f.mime) || f.mime === 'image/gif') && (
+            <span className="absolute inset-0 m-auto flex size-6 items-center justify-center rounded-full bg-black/55 text-white">
+              <Play className="size-3 translate-x-px fill-current" />
+            </span>
+          )}
         </button>
       </Lightbox>
       {onRemove && (
@@ -100,16 +132,21 @@ export function Thumbs({ files, size }: { files?: FileRef[] | null; size?: 'sm' 
 }
 
 function Lightbox({ f, children }: { f: FileRef; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
   return (
-    <Dialog.Root>
+    <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>{children}</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="modal-fade fixed inset-0 z-[70] bg-black/80" />
-        <Dialog.Content aria-describedby={undefined} className="fixed inset-0 z-[70] flex items-center justify-center p-4 outline-none">
+        <Dialog.Content aria-describedby={undefined} onClick={(e) => e.target === e.currentTarget && setOpen(false)} className="fixed inset-0 z-[70] flex items-center justify-center p-4 outline-none">
           <Dialog.Title className="sr-only">{f.name}</Dialog.Title>
-          <Dialog.Close asChild>
-            <img src={fileUrl(f.id)} alt={f.name} className="max-h-full max-w-full cursor-zoom-out rounded-lg object-contain shadow-pop" />
-          </Dialog.Close>
+          {isVideo(f.mime) ? (
+            <video src={fileUrl(f.id)} controls autoPlay playsInline className="max-h-full max-w-full rounded-lg bg-black shadow-pop" />
+          ) : (
+            <Dialog.Close asChild>
+              <img src={fileUrl(f.id)} alt={f.name} className="max-h-full max-w-full cursor-zoom-out rounded-lg object-contain shadow-pop" />
+            </Dialog.Close>
+          )}
           <a href={fileUrl(f.id)} target="_blank" rel="noreferrer" className="absolute right-4 bottom-4 rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white hover:bg-black/80">
             {t.attach.original}
           </a>
@@ -149,13 +186,13 @@ export function AttachZone({ value, onChange, children, className, compact }: { 
         ))}
         {pending.map((p) => (
           <span key={p.key} className="relative size-12 overflow-hidden rounded-lg border border-line">
-            <img src={p.url} alt="" className="size-full object-cover opacity-50" />
+            {p.video ? <video src={p.url} muted className="size-full object-cover opacity-50" /> : <img src={p.url} alt="" className="size-full object-cover opacity-50" />}
             <Loader2 className="absolute inset-0 m-auto size-4 animate-spin text-fg" />
           </span>
         ))}
         {!compact && <AddImageButton onPick={() => input.current?.click()} />}
       </div>
-      <input ref={input} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(e) => void add([...(e.target.files ?? [])]).then(() => (e.target.value = ''))} />
+      <input ref={input} type="file" accept={ACCEPT} multiple hidden onChange={(e) => void add([...(e.target.files ?? [])]).then(() => (e.target.value = ''))} />
       {compact && <AttachTrigger onPick={() => input.current?.click()} />}
       {over && <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-accent-soft/80 text-sm font-medium text-accent">{t.attach.drop}</div>}
     </div>

@@ -73,7 +73,7 @@ type Decision struct {
 	Files      []File    `json:"files,omitempty"` // 答复 / 意见附图
 }
 
-// File 是随决策下行的附图引用；daemon 下载到本地后在送达文字里给出路径。
+// File 是随决策下行的附件（图片或录屏）引用；daemon 下载到本地后在送达文字里给出路径。
 type File struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

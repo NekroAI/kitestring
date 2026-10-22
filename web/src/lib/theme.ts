@@ -7,7 +7,7 @@ const KEY = 'ks.theme'
 function apply(pref: ThemePref) {
   const dark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   document.documentElement.classList.toggle('dark', dark)
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1d2027' : '#f5f6f8')
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#1c2232' : '#f4f0e6')
 }
 
 // initTheme 在渲染前调用，避免闪烁。

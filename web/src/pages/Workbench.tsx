@@ -56,8 +56,9 @@ function ProjectCards({ g, filter, k, now }: { g: ProjectGroup; filter: Filter; 
         <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs">
           <FolderGit2 className="size-4" />
         </span>
-        <h2 className="truncate text-[15px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
+        <h2 className="truncate font-display text-[17px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
         <span className="text-xs text-fg-3 tabular">{list.length}</span>
+        <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
       </div>
       <div className="@container">
         <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
@@ -85,8 +86,9 @@ function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Fil
         <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs">
           <FolderGit2 className="size-4" />
         </span>
-        <h2 className="truncate text-[15px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
-        <span className="ml-auto flex items-center gap-3 text-xs text-fg-3">
+        <h2 className="truncate font-display text-[17px] font-semibold text-fg">{g.name || t.thread.noProject}</h2>
+        <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
+        <span className="flex items-center gap-3 text-xs text-fg-3">
           {counts.map(([st, n]) => (
             <span key={st} className="flex items-center gap-1.5">
               <StatusDot state={st} />

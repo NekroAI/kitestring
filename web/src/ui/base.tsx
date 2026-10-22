@@ -10,7 +10,8 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'soft'
 type Size = 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm'
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-accent-fg hover:bg-accent-hover shadow-xs',
+  // 主要操作是一方朱印：轮到你做的事
+  primary: 'bg-seal text-seal-fg hover:bg-seal-hover shadow-[inset_0_1px_0_rgb(255_255_255/0.22),0_6px_14px_-8px_var(--seal)]',
   secondary: 'bg-surface text-fg border border-line hover:bg-hover hover:border-line-strong shadow-xs',
   ghost: 'text-fg-2 hover:bg-hover hover:text-fg',
   danger: 'bg-surface text-danger border border-line hover:bg-danger-soft hover:border-danger/40',
@@ -67,7 +68,7 @@ export function SectionTitle({ children, hint, right, count }: { children: React
   return (
     <div className="mb-3 flex items-end justify-between gap-3">
       <div className="min-w-0">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-fg">
+        <h2 className="flex items-center gap-2 font-display text-base font-semibold text-fg">
           {children}
           {count != null && <span className="rounded-full bg-sunken px-2 py-px text-xs font-semibold text-fg-2 tabular">{count}</span>}
         </h2>
@@ -82,7 +83,7 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3 lg:mb-6">
       <div className="min-w-0">
-        <h1 className="text-[22px] font-semibold tracking-tight text-fg lg:text-2xl">{title}</h1>
+        <h1 className="font-display text-[24px] font-semibold tracking-wide text-fg lg:text-[28px]">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-fg-3">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -137,7 +138,7 @@ export function Empty({ icon, title, children, action, className }: { icon: Reac
   return (
     <div className={cx('flex flex-col items-center justify-center px-6 py-14 text-center', className)}>
       <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-accent-soft text-accent [&_svg]:size-6">{icon}</div>
-      <div className="text-[15px] font-semibold text-fg">{title}</div>
+      <div className="font-display text-base font-semibold text-fg">{title}</div>
       {children && <div className="mt-1.5 max-w-sm text-sm text-fg-3">{children}</div>}
       {action && <div className="mt-5">{action}</div>}
     </div>

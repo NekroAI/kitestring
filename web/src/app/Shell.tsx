@@ -18,19 +18,23 @@ const nav = [
   { to: '/settings', label: t.nav.settings, icon: Settings2 },
 ]
 
+// Logo：折纸菱形鸢，四个折面靠明暗分出折痕。
 export function Logo({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} aria-hidden>
-      <rect width="32" height="32" rx="9" className="fill-accent" />
-      <path d="M16 5l8 9-8 7-8-7z" className="fill-accent-fg" opacity="0.95" />
-      <path d="M16 21c0 2.5-1.2 4.2-3.5 5.5" fill="none" className="stroke-accent-fg" strokeWidth="1.6" strokeLinecap="round" />
+    <svg viewBox="0 0 128 128" className={className} aria-hidden>
+      <g transform="rotate(-10 64 64)">
+        <polygon points="64,10 22,54 64,54" fill="#D9503D" />
+        <polygon points="64,10 64,54 106,54" fill="#EE7A60" />
+        <polygon points="22,54 64,118 64,54" fill="#A9311F" />
+        <polygon points="64,54 64,118 106,54" fill="#C2402D" />
+      </g>
     </svg>
   )
 }
 
 function Count({ n }: { n: number }) {
   if (!n) return null
-  return <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-wait px-1 text-[11px] leading-none font-semibold text-white tabular dark:text-black">{n > 99 ? '99+' : n}</span>
+  return <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-seal px-1 text-[11px] leading-none font-semibold text-seal-fg tabular">{n > 99 ? '99+' : n}</span>
 }
 
 function Sidebar({ todo, connected }: { todo: number; connected: boolean }) {
@@ -41,7 +45,7 @@ function Sidebar({ todo, connected }: { todo: number; connected: boolean }) {
       <div className="mb-6 flex items-center gap-2.5 px-2">
         <Logo className="size-8" />
         <div className="leading-tight">
-          <div className="text-[15px] font-semibold text-fg">{t.app.name}</div>
+          <div className="font-display text-[17px] font-semibold tracking-wider text-fg">{t.app.name}</div>
           <div className="text-[11px] text-fg-3">Kitestring</div>
         </div>
       </div>
@@ -116,7 +120,7 @@ function MobileHeader({ connected }: { connected: boolean }) {
     <header className="pt-safe sticky top-0 z-20 border-b border-line/70 bg-bg/85 backdrop-blur-xl lg:hidden">
       <div className="flex h-12 items-center gap-2 px-4">
         <Logo className="size-6" />
-        <span className="text-[15px] font-semibold text-fg">{t.app.name}</span>
+        <span className="font-display text-[17px] font-semibold tracking-wider text-fg">{t.app.name}</span>
         {!connected && (
           <span className="ml-auto flex items-center gap-1.5 text-xs text-danger">
             <WifiOff className="size-4" />

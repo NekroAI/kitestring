@@ -320,12 +320,13 @@ export const zh = {
 
   attach: {
     add: '图片',
-    hint: '也可以直接粘贴或拖入图片',
-    drop: '松开以添加图片',
+    hint: '也可以直接粘贴或拖入图片、录屏',
+    drop: '松开以添加',
     remove: '移除',
     original: '查看原图',
-    failed: '图片上传失败',
+    failed: '上传失败',
     tooLarge: '图片不能超过 10 MB',
+    videoTooLarge: '录屏不能超过 50 MB',
   },
 
   thread: {

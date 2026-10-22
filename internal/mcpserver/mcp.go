@@ -109,7 +109,8 @@ type evidenceIn struct {
 	Kind    string   `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
 	Summary string   `json:"summary" jsonschema:"证据摘要，例如：单元测试 42 个全部通过"`
 	Link    string   `json:"link,omitempty" jsonschema:"链接或文件路径"`
-	Images  []string `json:"images,omitempty" jsonschema:"本机截图等图片文件路径，用户验收时会直接看到"`
+	Images  []string `json:"images,omitempty" jsonschema:"本机截图等图片文件路径（PNG/JPEG/GIF/WebP，单张不超过 10 MB），用户验收时会直接看到"`
+	Videos  []string `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM，单个不超过 50 MB）。只在用户明确要求录屏或视频时才附加，平时用截图"`
 }
 
 type decisionIn struct {
@@ -183,7 +184,7 @@ func (t *tools) register(s *mcp.Server) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
-			ids, err := t.upload(ctx, in.Images)
+			ids, err := t.upload(ctx, append(in.Images, in.Videos...))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -216,7 +217,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 }
 
-// upload 上传本机图片，返回附件 ID。
+// upload 上传本机图片或录屏，返回附件 ID。
 func (t *tools) upload(ctx context.Context, paths []string) ([]string, error) {
 	var ids []string
 	for _, p := range paths {
@@ -224,20 +225,23 @@ func (t *tools) upload(ctx context.Context, paths []string) ([]string, error) {
 			ID string `json:"id"`
 		}
 		if err := t.c.Upload(ctx, "/agent/files", p, &ref); err != nil {
-			return nil, fmt.Errorf("上传图片 %s 失败：%w", p, err)
+			return nil, fmt.Errorf("上传 %s 失败：%w", p, err)
 		}
 		ids = append(ids, ref.ID)
 	}
 	return ids, nil
 }
 
-// imageIDs 收集需求详情里所有附图：描述、证据（未作废）、修改意见；最多 8 张。
+// imageIDs 收集需求详情里所有附图（不含录屏）：描述、证据（未作废）、修改意见；最多 8 张。
 func imageIDs(r map[string]any) []string {
 	var ids []string
 	add := func(v any) {
 		list, _ := v.([]any)
 		for _, it := range list {
 			if m, ok := it.(map[string]any); ok {
+				if mime, _ := m["mime"].(string); mime != "" && !strings.HasPrefix(mime, "image/") {
+					continue
+				}
 				if id, ok := m["id"].(string); ok && len(ids) < 8 {
 					ids = append(ids, id)
 				}

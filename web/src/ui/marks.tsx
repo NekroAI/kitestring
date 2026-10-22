@@ -21,12 +21,13 @@ export function displayState(s: { state: string; state_detail?: string }): strin
   return s.state
 }
 
+// StatusDot：一只小纸鸢（菱形）。运行中轻轻摆动，等你授权或回答时一拽一拽。
 export function StatusDot({ state, className }: { state: string; className?: string }) {
   const s = stateStyle[state] ?? stateStyle.idle
+  const motion = s.live ? 'kite-sway' : state === 'waiting_approval' || state === 'waiting_answer' ? 'kite-tug' : ''
   return (
-    <span className={cx('relative inline-flex size-2 shrink-0', className)}>
-      {s.live && <span className={cx('absolute inset-0 animate-ping rounded-full opacity-50', s.dot)} />}
-      <span className={cx('relative inline-flex size-2 rounded-full', s.dot)} />
+    <span className={cx('inline-flex size-2 shrink-0 items-center justify-center', className)}>
+      <span className={cx('inline-block size-[7px] rotate-45 rounded-[1.5px]', s.dot, motion)} />
     </span>
   )
 }

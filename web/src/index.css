@@ -1,75 +1,86 @@
 @import 'tailwindcss';
+/* 标题字体：霞鹜文楷 GB 屏幕版（SIL OFL），按字符分片，用到才加载。 */
+@import 'lxgw-wenkai-screen-webfont/lxgwwenkaigbscreen.css';
 
 /* 主题：html 上的 .dark 类控制（跟随系统或手动切换，见 lib/theme.ts）。 */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * 设计令牌。暗色刻意不用接近纯黑的底色：中等深度的灰蓝，长时间盯屏更舒适。
- * 组件只使用这些语义色，不直接写具体色值。
+ * 设计令牌：纸鸢。浅色是宣纸与墨，暗色是黛蓝夜空（刻意不用接近纯黑的底色）。
+ * 靛蓝用于界面强调（链接、选中、焦点）；朱砂是印，只给“轮到你”和主要操作；
+ * 石绿表示进行中与完成，藤黄表示等你授权。组件只使用这些语义色，不直接写具体色值。
  */
 :root {
-  --bg: #f5f6f8;
-  --bg-sunken: #eef0f3;
-  --surface: #ffffff;
-  --surface-2: #f7f8fa;
-  --surface-hover: #f2f4f7;
-  --line: #e5e7ec;
-  --line-strong: #d3d7de;
-  --fg: #151a23;
-  --fg-2: #4a5263;
-  --fg-3: #8a92a3;
-  --accent: #4f5bd5;
-  --accent-hover: #4350c6;
-  --accent-soft: #eef0fd;
-  --accent-fg: #ffffff;
-  --ring: rgb(79 91 213 / 0.35);
-  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.05);
-  --shadow: 0 1px 3px rgb(16 24 40 / 0.06), 0 1px 2px rgb(16 24 40 / 0.04);
-  --shadow-lg: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.06);
+  --bg: #f4f0e6;
+  --bg-sunken: #ece6d9;
+  --surface: #fbf8f1;
+  --surface-2: #f7f3ea;
+  --surface-hover: #f0eadd;
+  --line: #e3dccb;
+  --line-strong: #d3c9b3;
+  --fg: #23211d;
+  --fg-2: #4f493c;
+  --fg-3: #776f5f;
+  --accent: #2f5d8c;
+  --accent-hover: #264e78;
+  --accent-soft: #e3eaf2;
+  --accent-fg: #fbf8f1;
+  --seal: #b5382a;
+  --seal-hover: #9e2f23;
+  --seal-fg: #fbf6ec;
+  --ring: rgb(47 93 140 / 0.35);
+  --shadow-sm: 0 1px 2px rgb(70 50 18 / 0.06);
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.7) inset, 0 1px 2px rgb(70 50 18 / 0.06), 0 8px 18px -14px rgb(70 50 18 / 0.28);
+  --shadow-lg: 0 20px 44px -16px rgb(60 40 10 / 0.32), 0 4px 10px -4px rgb(60 40 10 / 0.08);
+  --paper-grain: 0.045;
 
-  --run: #15935a;
-  --run-soft: #e7f6ee;
-  --wait: #c27a06;
-  --wait-soft: #fdf4e3;
-  --reply: #7347d6;
-  --reply-soft: #f2edfd;
-  --danger: #d23b3b;
-  --danger-soft: #fdecec;
-  --idle: #6b7385;
-  --idle-soft: #eef0f3;
+  --run: #2f7a5b;
+  --run-soft: #e0eee6;
+  --wait: #9a6508;
+  --wait-soft: #f5ead2;
+  --reply: #b5382a;
+  --reply-soft: #f6e6e0;
+  --danger: #a3243b;
+  --danger-soft: #f7e1e4;
+  --idle: #6f6a5c;
+  --idle-soft: #ece6d9;
   color-scheme: light;
 }
 
 .dark {
-  --bg: #1d2027;
-  --bg-sunken: #191b21;
-  --surface: #262a33;
-  --surface-2: #2b303a;
-  --surface-hover: #313642;
-  --line: #363b47;
-  --line-strong: #444a58;
-  --fg: #eceef3;
-  --fg-2: #b0b6c3;
-  --fg-3: #7d8496;
-  --accent: #8b95f5;
-  --accent-hover: #9aa3f7;
-  --accent-soft: #2f3350;
-  --accent-fg: #14172a;
-  --ring: rgb(139 149 245 / 0.4);
+  --bg: #1c2232;
+  --bg-sunken: #181d2b;
+  --surface: #242b3d;
+  --surface-2: #283042;
+  --surface-hover: #2e3649;
+  --line: #343c52;
+  --line-strong: #434c64;
+  --fg: #ece6d8;
+  --fg-2: #c2bbaa;
+  --fg-3: #9a9585;
+  --accent: #8db3e2;
+  --accent-hover: #a3c2ea;
+  --accent-soft: #26364f;
+  --accent-fg: #14202f;
+  --seal: #c8483a;
+  --seal-hover: #d65a4b;
+  --seal-fg: #fbf6ec;
+  --ring: rgb(141 179 226 / 0.4);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.2);
-  --shadow: 0 1px 3px rgb(0 0 0 / 0.25);
-  --shadow-lg: 0 16px 40px -10px rgb(0 0 0 / 0.5), 0 4px 10px -4px rgb(0 0 0 / 0.3);
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 1px 3px rgb(0 0 0 / 0.22), 0 10px 22px -16px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 20px 44px -14px rgb(0 0 0 / 0.55), 0 4px 10px -4px rgb(0 0 0 / 0.3);
+  --paper-grain: 0.03;
 
-  --run: #4cc38a;
-  --run-soft: #233a31;
-  --wait: #f0b347;
-  --wait-soft: #3d3423;
-  --reply: #ac8ef5;
-  --reply-soft: #352f4c;
-  --danger: #f07070;
-  --danger-soft: #432a2d;
-  --idle: #959cad;
-  --idle-soft: #313642;
+  --run: #72c7a0;
+  --run-soft: #21383a;
+  --wait: #e8b54a;
+  --wait-soft: #3a3428;
+  --reply: #ec7a63;
+  --reply-soft: #352a31;
+  --danger: #f07a8a;
+  --danger-soft: #43282f;
+  --idle: #a29c8c;
+  --idle-soft: #2e3446;
   color-scheme: dark;
 }
 
@@ -88,6 +99,9 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
   --color-accent-fg: var(--accent-fg);
+  --color-seal: var(--seal);
+  --color-seal-hover: var(--seal-hover);
+  --color-seal-fg: var(--seal-fg);
   --color-run: var(--run);
   --color-run-soft: var(--run-soft);
   --color-wait: var(--wait);
@@ -105,6 +119,7 @@
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-display: 'LXGW WenKai Screen', 'Songti SC', 'STSong', serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
   --animate-pulse-dot: pulse-dot 1.8s ease-in-out infinite;
   --animate-shimmer: shimmer 1.6s linear infinite;
@@ -140,6 +155,21 @@
     @apply bg-bg text-fg antialiased;
     text-rendering: optimizeLegibility;
   }
+  /* 文楷只有常规字重：标题不做假粗体，靠字号和字形本身区分层级 */
+  .font-display {
+    font-synthesis: none;
+    letter-spacing: 0.02em;
+  }
+  /* 宣纸纤维：极淡的噪点，固定在视口上，不随内容滚动重绘 */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--paper-grain);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .22 0 0 0 0 .1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
   button,
   [role='button'],
   summary {
@@ -172,6 +202,22 @@
   .pt-safe {
     padding-top: env(safe-area-inset-top);
   }
+  /* 折角：卡片右上角折起的一角，只用在“轮到你”的卡片上 */
+  .paper-fold {
+    position: relative;
+  }
+  .paper-fold::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    width: 18px;
+    height: 18px;
+    border-bottom-left-radius: 4px;
+    background: linear-gradient(225deg, var(--bg) 50%, var(--line-strong) 50%);
+    box-shadow: -1px 1px 2px rgb(70 50 18 / 0.08);
+    pointer-events: none;
+  }
   .no-scrollbar {
     scrollbar-width: none;
   }
@@ -200,10 +246,11 @@
     opacity: 0;
   }
 }
+/* 详情面板像纸页一样从右侧翻开 */
 @keyframes ks-slide-in {
   from {
     opacity: 0;
-    transform: translateX(24px);
+    transform: perspective(1600px) translateX(16px) rotateY(-9deg);
   }
 }
 @keyframes ks-slide-out {
@@ -230,8 +277,11 @@
     transform: scale(0.96) translateY(-4px);
   }
 }
+.panel-slide {
+  transform-origin: right center;
+}
 [data-state='open'].panel-slide {
-  animation: ks-slide-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: ks-slide-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 [data-state='closed'].panel-slide {
   animation: ks-slide-out 0.18s ease-in forwards;
@@ -275,4 +325,35 @@
 }
 .rise {
   animation: ks-rise 0.22s ease-out both;
+}
+
+/* ---------- 纸鸢状态标记 ---------- */
+/* 运行中：纸鸢轻轻摆动；轮到你：线绷紧似的一拽一拽 */
+@keyframes ks-kite-sway {
+  0%,
+  100% {
+    transform: rotate(45deg) translateY(0);
+  }
+  50% {
+    transform: rotate(53deg) translateY(-1px);
+  }
+}
+@keyframes ks-kite-tug {
+  0%,
+  60%,
+  100% {
+    transform: rotate(45deg) scale(1);
+  }
+  70% {
+    transform: rotate(45deg) scale(1.35);
+  }
+  85% {
+    transform: rotate(45deg) scale(0.92);
+  }
+}
+.kite-sway {
+  animation: ks-kite-sway 3.2s ease-in-out infinite;
+}
+.kite-tug {
+  animation: ks-kite-tug 1.8s cubic-bezier(0.3, 0.7, 0.3, 1) infinite;
 }

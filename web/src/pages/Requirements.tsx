@@ -138,7 +138,7 @@ function ListView({ items, statuses, projects }: { items: Requirement[]; statuse
           <section key={pid || 'none'} className="rise">
             <div className="mb-2 flex items-center gap-2.5 px-1">
               <FolderGit2 className="size-4 text-fg-3" />
-              <h2 className="text-[15px] font-semibold text-fg">{name(pid)}</h2>
+              <h2 className="font-display text-[17px] font-semibold text-fg">{name(pid)}</h2>
               <span className="text-xs text-fg-3 tabular">{rs.length}</span>
             </div>
             <Card className="space-y-0.5 p-1.5">
