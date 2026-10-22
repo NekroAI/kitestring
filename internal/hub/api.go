@@ -294,12 +294,13 @@ type ReqFields struct {
 	Source     string `json:"source,omitempty"`
 	Acceptance string `json:"acceptance,omitempty"`
 	DocLink    string `json:"doc_link,omitempty"`
+	Kind       string `json:"kind,omitempty" doc:"design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改"`
 	// Files 是描述里的附图 ID；不传表示不修改，传空数组表示清空。
 	Files []string `json:"files,omitempty"`
 }
 
 func (h *Hub) toReq(ctx context.Context, f ReqFields) (store.Requirement, error) {
-	r := store.Requirement{ProjectID: f.ProjectID, Title: f.Title, Detail: f.Detail, Status: f.Status, Priority: f.Priority, Source: f.Source, Acceptance: f.Acceptance, DocLink: f.DocLink}
+	r := store.Requirement{ProjectID: f.ProjectID, Title: f.Title, Detail: f.Detail, Status: f.Status, Priority: f.Priority, Source: f.Source, Acceptance: f.Acceptance, DocLink: f.DocLink, Kind: f.Kind}
 	if f.Files != nil {
 		files, err := h.store.ResolveFiles(ctx, f.Files)
 		if err != nil {

@@ -4,6 +4,7 @@ import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
 import { ReqView } from '../app/reqDrawer'
+import { DesignBadge } from '../app/design'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from '../app/menus'
 import { Collapse, Item, List as MotionList } from '../ui/motion'
@@ -106,6 +107,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         <PriorityDot p={r.priority} />
         <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
+        <DesignBadge r={r} className="max-sm:hidden" />
         {r.pending_decisions > 0 && (
           <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
             <span className="inline-flex items-center gap-1 text-xs text-wait tabular">

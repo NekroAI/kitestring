@@ -46,6 +46,7 @@ type Requirement struct {
 	Detail           string     `json:"detail"`
 	Status           string     `json:"status"`
 	Priority         string     `json:"priority"`
+	Kind             string     `json:"kind"` // design = 设计类需求（先交方案、你选定后再实现）；空 = 普通
 	Source           string     `json:"source"`
 	Acceptance       string     `json:"acceptance"`
 	DocLink          string     `json:"doc_link"`
@@ -88,15 +89,23 @@ func parseRef(ref, prefix string) (seq int, isSeq bool) {
 	return 0, false
 }
 
-const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.files, r.created_by, r.created_at, r.updated_at,
+const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.files, r.created_by, r.created_at, r.updated_at, r.kind,
 	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending')
 	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id`
+
+// normKind：只认 design，其它（含 feature）都存为空，即普通需求。
+func normKind(k string) string {
+	if k == "design" {
+		return k
+	}
+	return ""
+}
 
 func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var r Requirement
 	var seq int
 	var created, updated, files string
-	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.PendingDecisions)
+	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions)
 	r.Files = parseFiles(files)
 	r.Code = reqCode(seq)
 	r.CreatedAt = parseTS(created)
@@ -136,8 +145,8 @@ func (s *Store) CreateRequirement(ctx context.Context, r Requirement) (Requireme
 			return err
 		}
 		n := now()
-		_, err := t.ExecContext(ctx, `INSERT INTO requirements(id, seq, project_id, title, detail, status, priority, source, acceptance, doc_link, files, created_by, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(r.ProjectID), r.Title, r.Detail, r.Status, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), r.CreatedBy, n, n)
+		_, err := t.ExecContext(ctx, `INSERT INTO requirements(id, seq, project_id, title, detail, status, priority, source, acceptance, doc_link, files, created_by, kind, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(r.ProjectID), r.Title, r.Detail, r.Status, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), r.CreatedBy, normKind(r.Kind), n, n)
 		return err
 	})
 	if err != nil {
@@ -238,8 +247,11 @@ func (s *Store) UpdateRequirement(ctx context.Context, r Requirement) (Requireme
 	if r.Files == nil {
 		r.Files = cur.Files // 未提供附图字段时保持不变
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE requirements SET project_id = ?, title = ?, detail = ?, priority = ?, source = ?, acceptance = ?, doc_link = ?, files = ?, updated_at = ? WHERE id = ?`,
-		nullStr(r.ProjectID), r.Title, r.Detail, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), now(), cur.ID)
+	if r.Kind == "" {
+		r.Kind = cur.Kind // 未提供类型时保持不变；传 feature 表示改回普通需求
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE requirements SET project_id = ?, title = ?, detail = ?, priority = ?, source = ?, acceptance = ?, doc_link = ?, files = ?, kind = ?, updated_at = ? WHERE id = ?`,
+		nullStr(r.ProjectID), r.Title, r.Detail, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), normKind(r.Kind), now(), cur.ID)
 	if err != nil {
 		return r, err
 	}

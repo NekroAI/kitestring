@@ -403,6 +403,14 @@ export const zh = {
     evDone: (code: string, title: string) => `${code} 验收通过：${title}`,
     evAnswer: (code: string, q: string) => `你答复了 ${code}：${q}`,
   },
+  design: {
+    label: '设计',
+    phase: { propose: '设计 · 方案中', choose: '设计 · 待你选方案', build: '设计 · 实现中' } as Record<string, string>,
+    make: '设为设计需求',
+    makeHint: '先交方案图让你选，选定后再实现',
+    unmake: '改回普通需求',
+    toggle: '设计需求',
+  },
   annotate: {
     title: '圈画标注',
     attach: '标注并附上',

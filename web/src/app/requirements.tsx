@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Send, User, Zap } from 'lucide-react'
+import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Send, User, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useProjects, useSessions } from '../api/queries'
@@ -12,6 +12,7 @@ import { displayState, PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
+import { DesignBadge } from './design'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from './menus'
 
@@ -135,6 +136,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
       </div>
       <div className="mt-1.5 line-clamp-3 text-sm leading-snug font-medium text-fg">{r.title}</div>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <DesignBadge r={r} />
         {r.pending_decisions > 0 && (
           <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
             <span>
@@ -264,6 +266,16 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
             items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
           />
         </div>
+        <button
+          type="button"
+          aria-pressed={f.kind === 'design'}
+          onClick={() => setF({ ...f, kind: f.kind === 'design' ? 'feature' : 'design' })}
+          className={cx('flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition', f.kind === 'design' ? 'border-accent/50 bg-accent-soft text-accent' : 'border-dashed border-line-strong text-fg-3 hover:text-fg')}
+        >
+          <Palette className="size-4 shrink-0" />
+          <span className="flex-1">{t.design.toggle}</span>
+          <span className="text-xs opacity-80">{t.design.makeHint}</span>
+        </button>
         <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
           <Send className="size-4 shrink-0 text-fg-3" />
           <span className="shrink-0 text-[13px] text-fg-3">{t.assign.field}</span>

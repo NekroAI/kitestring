@@ -23,6 +23,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
+- 设计类需求（kind = design，或用户说“出方案 / 设计”）：先用 decision_raise 交 2～3 套方案，并在 option_images 附上每套的效果图，用户看图选定后再实现。
 - 做完一段、需要用户验收或答复才能继续时，可以在后台运行 shell 命令 ks wait（默认最长等 1 小时，可用 --timeout 调整，最长 12h；后台任务的超时要设得比它长）。用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你随即被唤醒，按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。`
 
 // Run 以 stdio 运行 MCP server。
@@ -97,6 +98,7 @@ type reqCreateIn struct {
 	Priority   string   `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`
 	Source     string   `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
 	DocLink    string   `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
+	Kind       string   `json:"kind,omitempty" jsonschema:"需求类型：design = 设计类（先交方案、用户选定后再实现），不填为普通需求"`
 	Images     []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，单张不超过 10 MB），如截图"`
 }
 
@@ -161,7 +163,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqCreateIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "session_key": t.sessionKey(ctx, req)}
+			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "kind": in.Kind, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			ids, err := t.upload(ctx, in.Images)
 			if err != nil {

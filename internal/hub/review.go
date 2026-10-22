@@ -153,6 +153,9 @@ func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (stor
 		}
 	}
 	var body []string
+	if r.Kind == "design" {
+		body = append(body, "这是设计需求：先用 decision_raise 交 2～3 套方案并在 option_images 附上效果图，等用户选定后再实现。")
+	}
 	if c := strings.TrimSpace(comment); c != "" {
 		body = append(body, c)
 	}

@@ -1,4 +1,4 @@
-import { Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
+import { Palette, Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement, Session } from '../api/client'
 import { t } from '../i18n'
@@ -67,6 +67,9 @@ export function useReqMenu() {
     ...(r.status !== 'done' && r.status !== 'shelved'
       ? [{ type: 'sub' as const, label: t.assign.menu, icon: <Send />, items: assignItems(sessions.data?.sessions ?? [], r.project_id, (s) => void pick(r.code, s)) }]
       : []),
+    r.kind === 'design'
+      ? { label: t.design.unmake, icon: <Palette />, onSelect: () => void updateReq(r.code, { ...toFields(r), kind: 'feature' }) }
+      : { label: t.design.make, hint: t.design.makeHint, icon: <Palette />, onSelect: () => void updateReq(r.code, { ...toFields(r), kind: 'design' }) },
     {
       type: 'sub',
       label: t.menu.status,

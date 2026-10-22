@@ -159,6 +159,10 @@
               "null"
             ]
           },
+          "kind": {
+            "description": "design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改",
+            "type": "string"
+          },
           "priority": {
             "enum": [
               "P0",
@@ -1069,6 +1073,10 @@
               "null"
             ]
           },
+          "kind": {
+            "description": "design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改",
+            "type": "string"
+          },
           "priority": {
             "enum": [
               "P0",
@@ -1186,6 +1194,9 @@
           "id": {
             "type": "string"
           },
+          "kind": {
+            "type": "string"
+          },
           "next_actor": {
             "type": "string"
           },
@@ -1232,6 +1243,7 @@
           "detail",
           "status",
           "priority",
+          "kind",
           "source",
           "acceptance",
           "doc_link",
@@ -1782,7 +1794,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "4241893-dirty"
+    "version": "fbb838f-dirty"
   },
   "openapi": "3.1.0",
   "paths": {

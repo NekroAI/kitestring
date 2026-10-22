@@ -636,6 +636,8 @@ export interface components {
             detail?: string;
             doc_link?: string;
             files?: string[] | null;
+            /** @description design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改 */
+            kind?: string;
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
             project_id?: string;
@@ -888,6 +890,8 @@ export interface components {
             detail?: string;
             doc_link?: string;
             files?: string[] | null;
+            /** @description design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改 */
+            kind?: string;
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
             project_id?: string;
@@ -912,6 +916,7 @@ export interface components {
             feedback?: components["schemas"]["Decision"][] | null;
             files: components["schemas"]["FileRef"][] | null;
             id: string;
+            kind: string;
             next_actor: string;
             /** Format: int64 */
             pending_decisions: number;
