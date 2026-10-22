@@ -154,24 +154,32 @@ func (h *Hub) deviceGone(c *deviceConn) {
 	}
 	delete(h.conns, c.dev.ID)
 	h.log.Info("设备已断开", "device", c.dev.Name)
-	h.lostTmr[c.dev.ID] = time.AfterFunc(lostGrace, func() {
+	h.scheduleLostLocked(c.dev)
+}
+
+// scheduleLostLocked 启动失联计时器，调用方须持有 h.mu。
+func (h *Hub) scheduleLostLocked(dev store.Device) {
+	if t := h.lostTmr[dev.ID]; t != nil {
+		t.Stop()
+	}
+	h.lostTmr[dev.ID] = time.AfterFunc(lostGrace, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		h.mu.Lock()
-		_, back := h.conns[c.dev.ID]
-		delete(h.lostTmr, c.dev.ID)
+		_, back := h.conns[dev.ID]
+		delete(h.lostTmr, dev.ID)
 		h.mu.Unlock()
 		if back {
 			return
 		}
-		_ = h.store.SetDeviceOnline(ctx, c.dev.ID, false, nil)
-		keys, err := h.store.MarkDeviceLost(ctx, c.dev.ID)
+		_ = h.store.SetDeviceOnline(ctx, dev.ID, false, nil)
+		keys, err := h.store.MarkDeviceLost(ctx, dev.ID)
 		if err != nil {
 			h.log.Warn("标记失联失败", "err", err)
 		}
 		h.broker.publish("devices", "sessions")
 		if len(keys) > 0 {
-			h.sendNotify("", notify.Message{Event: notify.EventDeviceLost, Title: "设备失联 · " + c.dev.Name, Body: "有未结束的会话", Group: "kitestring"}, "/")
+			h.sendNotify("", notify.Message{Event: notify.EventDeviceLost, Title: "设备失联 · " + dev.Name, Body: "有未结束的会话", Group: "kitestring"}, "/")
 		}
 	})
 }

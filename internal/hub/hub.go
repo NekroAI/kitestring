@@ -102,16 +102,18 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	if err := h.store.ResetOnline(ctx); err != nil {
 		return err
 	}
-	// 启动时所有设备视为离线：上次运行遗留的未结束会话先标失联，设备重连后由事件恢复。
+	// 启动时所有设备视为离线，但给与运行中断线相同的宽限期：daemon 很快重连时会话状态保持不变。
 	devs, err := h.store.ListDevices(ctx)
 	if err != nil {
 		return err
 	}
+	h.mu.Lock()
 	for _, d := range devs {
-		if _, err := h.store.MarkDeviceLost(ctx, d.ID); err != nil {
-			return err
+		if !d.Revoked {
+			h.scheduleLostLocked(d)
 		}
 	}
+	h.mu.Unlock()
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
