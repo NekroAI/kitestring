@@ -305,6 +305,11 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(protocol.HookResponse{Block: block})
 		return
 	}
+	if ev.Name == "Stop" {
+		// 常驻会话的 Stop 可能在宽限期里等了一会儿 ks wait 登记；这期间上报的 KsWait 时间更晚，
+		// Stop 若仍用收到时的时间，到了 Hub 会被当成乱序的旧事件丢掉，状态停在“运行中”（R-108）。
+		ev.Time = time.Now().UTC()
+	}
 	ev.Tools = d.toolsForEvent(protocol.SessionKey(ev.Tool, ev.SessionID))
 	if err := d.q.pushEvent(ev); err != nil {
 		d.log.Warn("事件入队失败", "err", err)

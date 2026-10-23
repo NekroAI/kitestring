@@ -70,7 +70,11 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		}
 		x.Turns++
 		x.TurnTools = 0
-		x.Parked = false // 你直接在终端里发了消息
+		if x.Tool == protocol.ToolCodex {
+			x.Parked = false // Codex 在前台跑 ks wait：你在终端里发了消息，说明那次等待已被打断
+		}
+		// Claude Code 的 ks wait 在后台跑，你在终端里插话并不会让它退出：仍算挂着，
+		// 这一轮结束（Stop）后照样待命；等待真正结束时会收到 KsWaitEnd（R-108）。
 		x.DoneAt = nil // 你又给它发了消息，不再算已完成
 		if ev.Prompt != "" {
 			x.LastPrompt = ev.Prompt

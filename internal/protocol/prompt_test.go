@@ -9,6 +9,7 @@ func TestCleanPrompt(t *testing.T) {
 	}{
 		{"<task-notification>\n<task-id>bjd</task-id>\n<output-file>/tmp/x</output-file>\n</task-notification>", "", true},
 		{"  <bash-stdout>ok</bash-stdout>", "", true},
+		{"<agent-message from=\"a934d12\">\n[Subagent hand-back] 做完了</agent-message>", "", true},
 		{"<command-message>review</command-message>\n<command-name>/code-review</command-name>\n<command-args>high</command-args>", "/code-review high", false},
 		{"<command-name>clear</command-name>", "/clear", false},
 		{"<bash-input>git status</bash-input>", "! git status", false},

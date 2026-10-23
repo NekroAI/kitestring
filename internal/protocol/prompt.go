@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	// 由 agent 自动注入、并非用户输入的消息（后台任务通知等）。
-	autoPromptRe = regexp.MustCompile(`(?s)^\s*<(task-notification|local-command-stdout|local-command-stderr|bash-stdout|bash-stderr)\b`)
+	// 由 agent 自动注入、并非用户输入的消息（后台任务通知、子 Agent 交回结果等）。
+	autoPromptRe = regexp.MustCompile(`(?s)^\s*<(task-notification|agent-message|local-command-stdout|local-command-stderr|bash-stdout|bash-stderr)\b`)
 	// 系统提示块，任何位置出现都去掉。
 	systemBlockRe = regexp.MustCompile(`(?s)<(system-reminder|local-command-caveat)>.*?</(system-reminder|local-command-caveat)>`)
 	cmdNameRe     = regexp.MustCompile(`(?s)<command-name>\s*(.*?)\s*</command-name>`)
