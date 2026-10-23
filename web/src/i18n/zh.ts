@@ -439,6 +439,10 @@ export const zh = {
   projects: {
     pm: (state: string) => `PM ${state}`,
     noPm: '没有 PM',
+    needDevs: (n: number) => `PM 需要 ${n} 个开发会话`,
+    joinHint: '在项目目录打开 Claude Code（或 Codex），对它说：',
+    needDismiss: '不需要了',
+    joinPhrase: (name: string) => `连接到纸鸢，做「${name}」的开发（运行 ks role dev）`,
     devs: (online: number, total: number) => (total ? `开发 ${online} / ${total} 在线` : '没有开发'),
     autoDispatch: '会话空闲时自动送达待开始的需求',
     autoDispatchHint: '你确认为待开始的需求，会在关联的会话一轮做完或待命时整批送过去（一次最多 10 条）；关掉后需要你手动交出',
@@ -509,6 +513,7 @@ export const zh = {
     done: (code: string, who: string, g: 'now' | 'later' | 'stale') =>
       `${code} 已交给「${who}」，` + (g === 'now' ? '它在待命，马上开工' : g === 'later' ? '你下次和它对话（或它进入待命）时送达' : '它已被收起，需要你回终端唤醒'),
     timeline: '你交给会话开工',
+    timelinePm: 'PM 派给会话开工',
     menu: '交给会话',
     group: { now: '立即开工 · 待命中', later: '对话时送达 · 你下次和它对话或它待命时', stale: '已收起 · 需要你回终端唤醒' },
     when: { now: '立即开工', later: '对话时送达', stale: '需你唤醒' },
@@ -769,7 +774,7 @@ export const zh = {
         device_lost: '设备离线',
       } as Record<string, string>,
       evTip: {
-        decision_raised: 'Agent 有问题要你拍板',
+        decision_raised: 'Agent 有问题要你拍板，或 PM 请你开开发会话',
         waiting_approval: '同一会话 1 分钟内只推一次',
         requirement_review: '需求做完，等你验收',
         waiting_reply: '每轮结束都会推送，比较频繁',

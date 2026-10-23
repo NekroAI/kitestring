@@ -22,6 +22,30 @@
         },
         "type": "object"
       },
+      "Agent-assignRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "description": "交代给开发的话，例如为什么交给它、和哪条需求相关",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "调用者（必须是本项目的 PM）",
+            "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "description": "开发会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "to"
+        ],
+        "type": "object"
+      },
       "Agent-attach-evidenceRequest": {
         "additionalProperties": false,
         "properties": {
@@ -95,6 +119,32 @@
         },
         "required": [
           "requirement"
+        ],
+        "type": "object"
+      },
+      "Agent-need-devsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "还需要几个开发会话；0 表示撤销提醒",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "description": "为什么需要：哪些需求在等、为什么不适合 subagent",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "调用者（必须是本项目的 PM）",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "count"
         ],
         "type": "object"
       },
@@ -322,6 +372,33 @@
         ],
         "type": "object"
       },
+      "AssignOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "assigned": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "presence": {
+            "type": "string"
+          },
+          "title": {
+            "description": "接手的开发会话标题",
+            "type": "string"
+          },
+          "to": {
+            "description": "接手的开发会话键",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assigned",
+          "message"
+        ],
+        "type": "object"
+      },
       "Auth-loginRequest": {
         "additionalProperties": false,
         "properties": {
@@ -452,6 +529,9 @@
           },
           "approval": {
             "type": "boolean"
+          },
+          "assigned_by": {
+            "type": "string"
           },
           "code": {
             "type": "string"
@@ -1437,6 +1517,17 @@
           "name": {
             "type": "string"
           },
+          "need_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "need_devs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "need_reason": {
+            "type": "string"
+          },
           "remote": {
             "type": "string"
           },
@@ -1451,7 +1542,9 @@
           "doc_root",
           "auto_dispatch",
           "hidden",
-          "created_at"
+          "created_at",
+          "need_devs",
+          "need_reason"
         ],
         "type": "object"
       },
@@ -2454,6 +2547,37 @@
         ],
         "type": "object"
       },
+      "TeamOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "devs": {
+            "description": "本项目的开发会话，在线的在前；已结束的不列",
+            "items": {
+              "$ref": "#/components/schemas/Worker"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "pm": {
+            "$ref": "#/components/schemas/Worker"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "pm",
+          "devs"
+        ],
+        "type": "object"
+      },
       "Test-pushRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2536,6 +2660,69 @@
         },
         "required": [
           "webhook"
+        ],
+        "type": "object"
+      },
+      "Worker": {
+        "additionalProperties": false,
+        "properties": {
+          "context_max": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "context_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_active_at": {
+            "type": "string"
+          },
+          "open": {
+            "description": "手上的需求：待开始、进行中、受阻",
+            "items": {
+              "$ref": "#/components/schemas/RequirementRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "presence": {
+            "description": "standby 在线待命；working 工作中；offline 离线",
+            "enum": [
+              "standby",
+              "working",
+              "offline"
+            ],
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "role",
+          "title",
+          "tool",
+          "device",
+          "presence",
+          "context_tokens",
+          "context_max",
+          "open",
+          "last_active_at"
         ],
         "type": "object"
       },
@@ -2952,6 +3139,57 @@
         ]
       }
     },
+    "/api/agent/requirements/{ref}/assign": {
+      "post": {
+        "operationId": "agent-assign",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-assignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PM 把需求交给开发（R-86）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/requirements/{ref}/evidence": {
       "post": {
         "operationId": "agent-attach-evidence",
@@ -3137,6 +3375,89 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/team": {
+      "get": {
+        "operationId": "agent-team",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "session_key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "工人池：本项目的 PM 与开发会话（R-86）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/team/need": {
+      "post": {
+        "operationId": "agent-need-devs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-need-devsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PM 请用户开开发会话（R-87）",
         "tags": [
           "agent"
         ]
@@ -4447,6 +4768,47 @@
           }
         },
         "summary": "把项目并入另一个项目",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/need": {
+      "delete": {
+        "operationId": "dismiss-need-devs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤销“需要开发会话”的提醒（R-87）",
         "tags": [
           "projects"
         ]

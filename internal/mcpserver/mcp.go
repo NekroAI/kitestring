@@ -35,6 +35,7 @@ func Run(ctx context.Context) error {
 	s := mcp.NewServer(&mcp.Implementation{Name: "kitestring", Version: version.Version}, &mcp.ServerOptions{Instructions: instructions})
 	t := &tools{c: client.New(20 * time.Second)}
 	t.register(s)
+	t.registerTeam(s)
 	return s.Run(ctx, &mcp.StdioTransport{})
 }
 

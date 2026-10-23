@@ -39,6 +39,7 @@ type Decision struct {
 	Code             string      `json:"code"`
 	SessionKey       string      `json:"session_key,omitempty"`
 	OriginSession    string      `json:"origin_session,omitempty"`
+	AssignedBy       string      `json:"assigned_by,omitempty"` // 交出需求的会话（PM 派活时为 PM，R-86）；你在网页上交出时为空
 	SessionState     string      `json:"session_state,omitempty"` // 目标会话当前状态
 	DeviceName       string      `json:"device_name,omitempty"`
 	ProjectID        string      `json:"project_id,omitempty"`
@@ -71,7 +72,7 @@ func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
 	x.question, x.context, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
-	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0)
+	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -86,7 +87,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var answered, delivered sql.NullString
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
 		&d.Question, &d.Context, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
-		&d.PlanID, &pseq)
+		&d.PlanID, &pseq, &d.AssignedBy)
 	d.Code = decCode(seq)
 	if pseq > 0 {
 		d.PlanCode = planCode(pseq)
@@ -121,8 +122,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		n := now()
 		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
-			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?)`,
-				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)
+			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?, ?)`,
+				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy)
 			return err
 		}
 		optFiles := d.OptionFiles

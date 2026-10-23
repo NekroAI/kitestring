@@ -1,11 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, ChevronRight, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Requirement, Session } from '../api/client'
 import { useDecisions, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
+import { copyText, cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
 import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input } from '../ui/base'
 import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { displayState, presence, presenceDot } from '../ui/marks'
@@ -30,6 +30,9 @@ type Stat = {
   open: Requirement[]
   review: number
   last: string
+  needDevs: number
+  needReason: string
+  needAt?: string | null
 }
 
 const order = ['in_progress', 'review', 'ready', 'blocked', 'draft'] as const
@@ -66,6 +69,9 @@ function useStats(): { list: Stat[]; loading: boolean } {
         open,
         review: open.filter((r) => r.status === 'review').length,
         last,
+        needDevs: p.need_devs,
+        needReason: p.need_reason,
+        needAt: p.need_at,
       }
     })
     list.sort((a, b) => Number(!!(b.sessions.length || b.reqs.length)) - Number(!!(a.sessions.length || a.reqs.length)) || b.last.localeCompare(a.last))
@@ -167,6 +173,35 @@ function Team({ sessions }: { sessions: Session[] }) {
   )
 }
 
+// NeedDevs：PM 请你开开发会话（R-87）。开发上线够数后由 hub 自动清除。
+function NeedDevs({ p, now }: { p: Stat; now: number }) {
+  const act = useActions()
+  if (!p.needDevs) return null
+  const phrase = t.projects.joinPhrase(p.name)
+  return (
+    <div className="mb-3 flex items-start gap-2.5 rounded-xl bg-wait-soft px-3.5 py-3">
+      <UserPlus className="mt-0.5 size-4 shrink-0 text-wait" />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-fg">
+          {t.projects.needDevs(p.needDevs)}
+          {p.needAt && <span className="ml-2 text-xs font-normal text-fg-3">{relTime(p.needAt, now)}</span>}
+          <button onClick={() => act.dismissNeedDevs(p.id)} className="float-right text-xs font-normal text-fg-3 hover:text-fg">
+            {t.projects.needDismiss}
+          </button>
+        </div>
+        {p.needReason && <div className="mt-0.5 text-sm leading-relaxed text-fg-2">{p.needReason}</div>}
+        <div className="mt-2 text-xs text-fg-3">{t.projects.joinHint}</div>
+        <div className="mt-1 flex items-center gap-1.5">
+          <code className="min-w-0 flex-1 rounded-md bg-surface px-2 py-1.5 font-mono text-[12px] break-words text-fg">{phrase}</code>
+          <Button size="icon-sm" variant="ghost" aria-label={t.common.copy} onClick={async () => (await copyText(phrase)) && toast.success(t.common.copied)}>
+            <Copy className="size-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const openReq = useOpenReq()
   const navigate = useNavigate()
@@ -235,6 +270,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
       </div>
 
       <Section title={t.projects.now} right={<Team sessions={p.sessions} />}>
+        <NeedDevs p={p} now={now} />
         {live.length ? (
           <Card className="@container p-1.5">
             <List>

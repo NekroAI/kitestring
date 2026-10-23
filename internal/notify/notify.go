@@ -21,6 +21,8 @@ const (
 	EventWaitingReply      = "waiting_reply"
 	EventRequirementReview = "requirement_review"
 	EventDeviceLost        = "device_lost"
+	// EventNeedDevs：PM 请你开开发会话（R-87）。和“新决策”一样是 Agent 请你处理的事，跟随它的订阅，不单独设开关。
+	EventNeedDevs = "need_devs"
 )
 
 // AllEvents 是可配置的通知事件，用于设置页展示。
@@ -40,6 +42,9 @@ type Message struct {
 
 // Wants 判断配置是否订阅了该事件。
 func Wants(cfg store.NotifyConfig, event string) bool {
+	if event == EventNeedDevs {
+		event = EventDecisionRaised
+	}
 	events := cfg.Events
 	if len(events) == 0 {
 		events = DefaultEvents

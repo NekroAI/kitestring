@@ -25,7 +25,8 @@ export function useOwnership() {
     r.sessions
       .map((k) => byKey.get(k))
       .filter(live)
-      .sort((a, b) => b!.last_active_at.localeCompare(a!.last_active_at))[0]
+      // PM 只管派活：需求同时关联了开发等其他会话时，看板显示真正在做的那个（R-86）
+      .sort((a, b) => Number(a!.role === 'pm') - Number(b!.role === 'pm') || b!.last_active_at.localeCompare(a!.last_active_at))[0]
   const autoOff = (pid?: string) => !!pid && projects.data?.projects.find((p) => p.id === pid)?.auto_dispatch === false
 
   return (r: Requirement): Own | null => {

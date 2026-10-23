@@ -75,3 +75,25 @@ func currentSession(flagVal string) string {
 	return cliSession("")
 }
 
+// runTeam：ks team——列出本项目的 PM 与开发会话（R-86）。
+func runTeam(args []string) error {
+	fs := flag.NewFlagSet("team", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	reason := fs.String("reason", "", "need：为什么需要开发会话")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	key := currentSession(*session)
+	if key == "" {
+		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+	}
+	if fs.NArg() > 0 && fs.Arg(0) == "need" {
+		// ks team need <数量> --reason ...：提醒用户开开发会话（R-87）
+		n, err := strconv.Atoi(fs.Arg(1))
+		if fs.NArg() < 2 || err != nil || (n > 0 && *reason == "") {
+			return fmt.Errorf("用法：ks team need <数量> --reason <为什么需要>（数量填 0 撤销提醒）")
+		}
+		return agentCall("POST", "/agent/team/need", map[string]any{"session_key": key, "count": n, "reason": *reason})
+	}
+	return agentCall("GET", "/agent/team?"+url.Values{"session_key": {key}}.Encode(), nil)
+}

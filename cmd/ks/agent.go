@@ -86,7 +86,7 @@ func attachFiles(body map[string]any, paths []string) error {
 
 func runReq(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("用法：ks req list|get|create|status|evidence ...")
+		return fmt.Errorf("用法：ks req list|get|create|status|evidence|assign ...")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("req "+sub, flag.ContinueOnError)
@@ -99,6 +99,8 @@ func runReq(args []string) error {
 	priority := fs.String("priority", "", "create：优先级 P0-P3")
 	kind := fs.String("kind", "manual", "evidence：证据类型")
 	link := fs.String("link", "", "evidence：链接")
+	to := fs.String("to", "", "assign：交给哪个开发会话（tool:session_id），auto 由 hub 挑")
+	comment := fs.String("comment", "", "assign：交代给开发的话")
 	var images, videos stringList
 	fs.Var(&images, "image", "create / evidence：附图路径，可重复")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
@@ -144,6 +146,12 @@ func runReq(args []string) error {
 			return err
 		}
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(body))
+	case "assign":
+		// PM 派活（R-86）：ks req assign R-12 --to <开发会话键|auto> [--comment ...]
+		if fs.NArg() < 1 || *to == "" {
+			return fmt.Errorf("用法：ks req assign <R-编号> --to <开发会话键|auto> [--comment 交代]")
+		}
+		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/assign", compact(map[string]any{"session_key": currentSession(*session), "to": *to, "comment": *comment}))
 	case "link":
 		if fs.NArg() < 1 || key == "" {
 			return fmt.Errorf("用法：ks req link <R-编号> [--session tool:id]")

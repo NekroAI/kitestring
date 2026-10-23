@@ -166,8 +166,9 @@ func (h *Hub) note(ctx context.Context, ref, comment string, fileIDs []string) (
 // assign 把需求交给某个会话：关联会话、放到待开始，并把需求内容作为一条送达交给它（D-14）。
 // 不直接改为进行中——Agent 真正开始做时调用 session_link_req，才进入进行中，看板反映的是实际进度。
 // 会话正在待命（ks wait）时会立刻被唤醒。
-func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (store.Decision, error) {
-	d, err := h.assignQuiet(ctx, ref, sessionKey, comment)
+// by 是派活的会话（PM 派活时），你在网页上交出时为空。
+func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment, by string) (store.Decision, error) {
+	d, err := h.assignQuiet(ctx, ref, sessionKey, comment, by)
 	if err != nil {
 		return d, err
 	}
@@ -180,7 +181,7 @@ func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (stor
 
 // assignQuiet 做 assign 的全部记录但不下发：批量交出时（计划阶段解锁）最后统一下发一次，
 // 挂起等待的会话一次收到整批内容。
-func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment string) (store.Decision, error) {
+func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment, by string) (store.Decision, error) {
 	r, err := h.store.GetRequirement(ctx, ref)
 	if err != nil {
 		return store.Decision{}, apiErr(err)
@@ -215,7 +216,7 @@ func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment string) 
 	}
 	d, err := h.store.CreateDecision(ctx, store.Decision{
 		Kind: store.KindAssign, SessionKey: x.Key, ProjectID: r.ProjectID, RequirementID: r.ID,
-		Question: r.Title, Answer: strings.Join(body, "\n"), AnswerFiles: r.Files,
+		Question: r.Title, Answer: strings.Join(body, "\n"), AnswerFiles: r.Files, AssignedBy: by,
 	})
 	if err != nil {
 		return store.Decision{}, apiErr(err)
@@ -232,7 +233,7 @@ func (h *Hub) registerReview(api huma.API) {
 				Comment    string `json:"comment,omitempty"`
 			}
 		}) (*decisionOut, error) {
-			d, err := h.assign(ctx, in.Ref, in.Body.SessionKey, in.Body.Comment)
+			d, err := h.assign(ctx, in.Ref, in.Body.SessionKey, in.Body.Comment, "")
 			if err != nil {
 				return nil, err
 			}

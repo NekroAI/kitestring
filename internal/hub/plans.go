@@ -141,7 +141,7 @@ func (h *Hub) unlockStage(ctx context.Context, x store.Plan, st store.Stage) err
 			continue
 		}
 		if x.OwnerSession != "" {
-			if _, err := h.assignQuiet(ctx, r.ID, x.OwnerSession, fmt.Sprintf("属于计划 %s「%s」%s。", x.Code, x.Title, stageName(st))); err == nil {
+			if _, err := h.assignQuiet(ctx, r.ID, x.OwnerSession, fmt.Sprintf("属于计划 %s「%s」%s。", x.Code, x.Title, stageName(st)), ""); err == nil {
 				continue
 			}
 		}

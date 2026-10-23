@@ -544,6 +544,31 @@ func (s *Store) RolesForDevice(ctx context.Context, deviceID string) (map[string
 	return out, rows.Err()
 }
 
+// RoleSessions 列出项目里有身份的会话（含已结束的），最近活跃的在前（R-86）。
+func (s *Store) RoleSessions(ctx context.Context, projectID string) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.project_id = ? AND s.role <> '' ORDER BY s.last_active_at DESC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Session{}
+	for rows.Next() {
+		x, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	ptrs := make([]*Session, len(out))
+	for i := range out {
+		ptrs[i] = &out[i]
+	}
+	return out, s.fillSessionLinks(ctx, ptrs)
+}
+
 // Presence 是常驻身份（PM / 开发）的在线状态（R-84 / R-86）：挂着 ks wait 为待命；在跑、等授权、在问你为工作中；
 // 一轮结束却没挂 ks wait、已结束或失联为离线。其它身份返回空。
 func (x Session) Presence() string {

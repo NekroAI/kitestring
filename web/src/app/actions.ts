@@ -91,6 +91,7 @@ export function useActions() {
     updateWorkspace: (id: string, name: string, notify: NotifyConfig) =>
       run(() => unwrap(api.PUT('/api/workspaces/{id}', { params: { path: { id } }, body: { name, notify } })), ['projects']),
     deleteWorkspace: (id: string) => run(() => unwrap(api.DELETE('/api/workspaces/{id}', { params: { path: { id } } })), ['projects']),
+    dismissNeedDevs: (id: string) => run(() => unwrap(api.DELETE('/api/projects/{id}/need', { params: { path: { id } } })), ['projects']),
 
     logout: async () => {
       await api.POST('/api/auth/logout')

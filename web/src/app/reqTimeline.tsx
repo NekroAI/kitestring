@@ -110,7 +110,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             tone={tone.note}
             title={
               <>
-                {t.assign.timeline}
+                {f.assigned_by ? t.assign.timelinePm : t.assign.timeline}
                 <span className="truncate font-normal text-fg-3">{who(f.session_key) || f.device_name}</span>
                 <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
               </>

@@ -118,6 +118,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/requirements/{ref}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PM 把需求交给开发（R-86） */
+        post: operations["agent-assign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/requirements/{ref}/evidence": {
         parameters: {
             query?: never;
@@ -176,6 +193,40 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["agent-link-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 工人池：本项目的 PM 与开发会话（R-86） */
+        get: operations["agent-team"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/team/need": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PM 请用户开开发会话（R-87） */
+        post: operations["agent-need-devs"];
         delete?: never;
         options?: never;
         head?: never;
@@ -581,6 +632,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/need": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销“需要开发会话”的提醒（R-87） */
+        delete: operations["dismiss-need-devs"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push": {
         parameters: {
             query?: never;
@@ -891,6 +959,14 @@ export interface components {
             summary?: boolean;
             title?: boolean;
         };
+        "Agent-assignRequest": {
+            /** @description 交代给开发的话，例如为什么交给它、和哪条需求相关 */
+            comment?: string;
+            /** @description 调用者（必须是本项目的 PM） */
+            session_key: string;
+            /** @description 开发会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻 */
+            to: string;
+        };
         "Agent-attach-evidenceRequest": {
             /** @description 截图等附图 ID（先上传到 /api/agent/files） */
             files?: string[] | null;
@@ -908,6 +984,17 @@ export interface components {
         };
         "Agent-link-sessionRequest": {
             requirement: string;
+        };
+        "Agent-need-devsRequest": {
+            /**
+             * Format: int64
+             * @description 还需要几个开发会话；0 表示撤销提醒
+             */
+            count: number;
+            /** @description 为什么需要：哪些需求在等、为什么不适合 subagent */
+            reason?: string;
+            /** @description 调用者（必须是本项目的 PM） */
+            session_key: string;
         };
         "Agent-set-roleRequest": {
             /**
@@ -965,6 +1052,15 @@ export interface components {
             comment?: string;
             session_key: string;
         };
+        AssignOutBody: {
+            assigned: boolean;
+            message: string;
+            presence?: string;
+            /** @description 接手的开发会话标题 */
+            title?: string;
+            /** @description 接手的开发会话键 */
+            to?: string;
+        };
         "Auth-loginRequest": {
             password: string;
         };
@@ -997,6 +1093,7 @@ export interface components {
             /** Format: date-time */
             answered_at?: string;
             approval: boolean;
+            assigned_by?: string;
             code: string;
             context: string;
             context_files: components["schemas"]["FileRef"][] | null;
@@ -1277,6 +1374,11 @@ export interface components {
             hidden: boolean;
             id: string;
             name: string;
+            /** Format: date-time */
+            need_at?: string;
+            /** Format: int64 */
+            need_devs: number;
+            need_reason: string;
             remote: string;
             workspace_id?: string;
         };
@@ -1546,6 +1648,13 @@ export interface components {
             /** @description 模型生成的一句话摘要 */
             summary: string;
         };
+        TeamOutBody: {
+            /** @description 本项目的开发会话，在线的在前；已结束的不列 */
+            devs: components["schemas"]["Worker"][] | null;
+            pm: components["schemas"]["Worker"];
+            project_id: string;
+            project_name: string;
+        };
         "Test-pushRequest": {
             ref: string;
         };
@@ -1567,6 +1676,25 @@ export interface components {
         };
         WeComConfig: {
             webhook: string;
+        };
+        Worker: {
+            /** Format: int64 */
+            context_max: number;
+            /** Format: int64 */
+            context_tokens: number;
+            device: string;
+            key: string;
+            last_active_at: string;
+            /** @description 手上的需求：待开始、进行中、受阻 */
+            open: components["schemas"]["RequirementRef"][] | null;
+            /**
+             * @description standby 在线待命；working 工作中；offline 离线
+             * @enum {string}
+             */
+            presence: "standby" | "working" | "offline";
+            role: string;
+            title: string;
+            tool: string;
         };
         Workspace: {
             /** Format: date-time */
@@ -1850,6 +1978,41 @@ export interface operations {
             };
         };
     };
+    "agent-assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-assignRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-attach-evidence": {
         parameters: {
             query?: never;
@@ -1975,6 +2138,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-team": {
+        parameters: {
+            query: {
+                session_key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-need-devs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-need-devsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
                 };
             };
             /** @description Error */
@@ -2930,6 +3157,37 @@ export interface operations {
                 "application/json": components["schemas"]["Merge-projectRequest"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "dismiss-need-devs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

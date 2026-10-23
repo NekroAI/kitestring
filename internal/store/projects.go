@@ -51,6 +51,10 @@ type Project struct {
 	// Hidden：误识别的目录等不想在项目列表里看到的项目（R-51），会话和需求照常显示
 	Hidden    bool      `json:"hidden"`
 	CreatedAt time.Time `json:"created_at"`
+	// NeedDevs / NeedReason / NeedAt：PM 请你开开发会话（R-87）；有足够开发上线后自动清除
+	NeedDevs   int        `json:"need_devs"`
+	NeedReason string     `json:"need_reason"`
+	NeedAt     *time.Time `json:"need_at,omitempty"`
 }
 
 // NormalizeRemote 把各种写法的 git remote 归一化为 host/owner/repo 小写形式。
@@ -160,7 +164,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 
 // ListProjects 列出全部项目。
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at FROM projects ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +172,12 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	out := []Project{}
 	for rows.Next() {
 		var p Project
-		var created string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created); err != nil {
+		var created, needAt string
+		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTS(created)
+		p.NeedAt = optTS(needAt)
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -181,13 +186,14 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 // GetProject 按 ID 读取项目。
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	var p Project
-	var created string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created)
+	var created, needAt string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
 	p.CreatedAt = parseTS(created)
+	p.NeedAt = optTS(needAt)
 	return p, err
 }
 
@@ -304,4 +310,24 @@ func (s *Store) WorkspaceForProject(ctx context.Context, projectID string) (Work
 	_ = json.Unmarshal([]byte(notify), &w.Notify)
 	w.CreatedAt = parseTS(created)
 	return w, err
+}
+
+// SetNeedDevs 记下 / 清除（n = 0）PM 请你开开发会话的提醒（R-87）。
+func (s *Store) SetNeedDevs(ctx context.Context, projectID string, n int, reason string) error {
+	at := ""
+	if n > 0 {
+		at = now()
+	} else {
+		reason = ""
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE projects SET need_devs = ?, need_reason = ?, need_at = ? WHERE id = ?`, n, reason, at, projectID)
+	return err
+}
+
+func optTS(v string) *time.Time {
+	if v == "" {
+		return nil
+	}
+	t := parseTS(v)
+	return &t
 }

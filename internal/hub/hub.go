@@ -14,6 +14,7 @@ import (
 
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 	"github.com/NekroAI/kitestring/internal/summary"
 )
@@ -242,6 +243,9 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		go h.aiOnPrompt(key, ev.Prompt)
 	case ev.Name == "Stop" && ev.LastReply != "":
 		go h.aiOnStop(key, next.LastPrompt, ev.LastReply)
+	}
+	if next.Role == roles.Dev && next.Presence() != "offline" && (prev == nil || prev.Presence() == "offline") {
+		h.checkNeed(ctx, next.ProjectID) // 开发上线了：够数就清除“需要开发”的提醒（R-87）
 	}
 	// 一轮做完或挂起待命：把排给它的待开始需求整批送过去（R-66）
 	if (ev.Name == "Stop" || ev.Name == protocol.EventWait) && next.State != store.StateEnded {

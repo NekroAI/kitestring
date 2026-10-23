@@ -1,0 +1,128 @@
+package mcpserver
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/NekroAI/kitestring/internal/summary"
+)
+
+// 工人池（R-86）：PM 用 team 查看本项目的开发会话，用 req_assign 把需求交给开发。
+
+type worker struct {
+	Key           string `json:"key"`
+	Title         string `json:"title"`
+	Tool          string `json:"tool"`
+	Device        string `json:"device"`
+	Presence      string `json:"presence"`
+	ContextTokens int    `json:"context_tokens"`
+	ContextMax    int    `json:"context_max"`
+	Open          []struct {
+		Code   string `json:"code"`
+		Title  string `json:"title"`
+		Status string `json:"status"`
+	} `json:"open"`
+}
+
+var presenceLabel = map[string]string{"standby": "在线待命", "working": "工作中", "offline": "离线"}
+
+func (w worker) line() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "- %s「%s」%s · %s@%s", w.Key, clip(w.Title, 40), presenceLabel[w.Presence], w.Tool, w.Device)
+	if w.ContextTokens > 0 {
+		fmt.Fprintf(&b, " · 上下文 %dk", w.ContextTokens/1000)
+	}
+	if len(w.Open) == 0 {
+		b.WriteString(" · 手上没有需求")
+	} else {
+		var rs []string
+		for _, r := range w.Open {
+			rs = append(rs, r.Code+"「"+clip(r.Title, 24)+"」")
+		}
+		b.WriteString(" · 手上：" + strings.Join(rs, "、"))
+	}
+	return b.String()
+}
+
+func clip(s string, n int) string { return summary.Truncate(strings.Join(strings.Fields(s), " "), n) }
+
+type assignIn struct {
+	Requirement string `json:"requirement" jsonschema:"需求编号（如 R-12）"`
+	To          string `json:"to" jsonschema:"开发会话键（team 列出的 key）；填 auto 由 Kitestring 挑：在线待命优先，其次手上需求少、上下文轻"`
+	Comment     string `json:"comment,omitempty" jsonschema:"交代给开发的话，例如为什么交给它、和哪条需求相关"`
+}
+
+type needIn struct {
+	Count  int    `json:"count" jsonschema:"还需要几个开发会话（1～5）；0 表示不再需要、撤销提醒"`
+	Reason string `json:"reason,omitempty" jsonschema:"为什么需要：哪些需求在等、为什么不适合用 subagent 做；用户会在推送里看到"`
+}
+
+func (t *tools) registerTeam(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{Name: "need_devs", Description: "PM 用：需要开发会话、但工人池里没有在线的开发时，提醒用户开新的开发会话。用户手机会收到推送，里面有原因和接入用的那句话；开发上线后提醒自动消失。req_assign 用 auto 找不到在线开发时会自动提醒，不必重复调用。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in needIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			body := map[string]any{"session_key": key, "count": in.Count, "reason": in.Reason}
+			dropEmpty(body)
+			if err := t.c.Do(ctx, "POST", "/agent/team/need", body, nil); err != nil {
+				return nil, nil, err
+			}
+			if in.Count == 0 {
+				return text("已撤销提醒。"), nil, nil
+			}
+			return text(fmt.Sprintf("已提醒用户开 %d 个开发会话。开发上线后用 team 查看，再用 req_assign 派活；等待期间可以挂 ks wait。", in.Count)), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "team", Description: "PM 用：查看本项目的工人池——PM 与各开发会话的在线状态（在线待命 / 工作中 / 离线）、上下文占用、手上的需求。开发按适合接活的顺序排列。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				ProjectName string   `json:"project_name"`
+				PM          *worker  `json:"pm"`
+				Devs        []worker `json:"devs"`
+			}
+			if err := t.c.Do(ctx, "GET", "/agent/team?"+url.Values{"session_key": {key}}.Encode(), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "项目「%s」\nPM：", out.ProjectName)
+			if out.PM == nil {
+				b.WriteString("没有\n")
+			} else {
+				b.WriteString(strings.TrimPrefix(out.PM.line(), "- ") + "\n")
+			}
+			if len(out.Devs) == 0 {
+				b.WriteString("开发：没有。需要开发时用 need_devs 提醒用户开开发会话，或自己用后台 subagent 做。")
+			} else {
+				fmt.Fprintf(&b, "开发（%d 个，适合接活的在前）：\n", len(out.Devs))
+				for _, w := range out.Devs {
+					b.WriteString(w.line() + "\n")
+				}
+			}
+			return text(b.String()), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个开发会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。开发在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in assignIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			body := map[string]any{"session_key": key, "to": in.To, "comment": in.Comment}
+			dropEmpty(body)
+			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Requirement)+"/assign", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+}

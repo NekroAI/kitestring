@@ -85,6 +85,9 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, error) {
 	for dev := range devices {
 		h.pushRoles(ctx, dev)
 	}
+	if role == roles.Dev {
+		h.checkNeed(ctx, x.ProjectID)
+	}
 	h.sessionChanged(key)
 	return demoted, nil
 }
