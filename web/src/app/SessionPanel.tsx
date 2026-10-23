@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
+import { ChevronRight, Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
@@ -26,6 +26,23 @@ function Section({ title, children, right }: { title: ReactNode; children: React
       </div>
       {children}
     </section>
+  )
+}
+
+// Fold：收起的一行入口（方案 A，R-75）——历史和细节默认不展开，点开再看。
+function Fold({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="overflow-hidden rounded-2xl border border-line">
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center gap-2 px-3.5 py-3 text-left text-sm transition hover:bg-hover">
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">{label}</span>
+        {hint != null && <span className="shrink-0 truncate text-[13px] text-fg-3">{hint}</span>}
+        <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', open && 'rotate-90')} />
+      </button>
+      <Collapse show={open}>
+        <div className="border-t border-line">{children}</div>
+      </Collapse>
+    </div>
   )
 }
 
@@ -118,6 +135,28 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
     .filter((r) => ['draft', 'ready', 'in_progress', 'blocked'].includes(r.status) && r.stage_status !== 'locked' && !(r.status === 'in_progress' && r.sessions.includes(sessionKey ?? '')) && r.offered_to !== sessionKey)
     .sort((a, b) => Number(b.project_id === s?.project_id) - Number(a.project_id === s?.project_id) || (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9) || a.code.localeCompare(b.code, undefined, { numeric: true }))
   const full = new Map((reqs.data ?? []).map((r) => [r.id, r]))
+  // 方案 A（R-75）：第一屏只列还没做完的需求，已完成 / 搁置的收进“更多”
+  const closed = (st: string) => st === 'done' || st === 'shelved'
+  const activeReqs = (s?.requirements ?? []).filter((r) => !closed(r.status))
+  const doneReqs = (s?.requirements ?? []).filter((r) => closed(r.status))
+  const answered = mine.filter((d) => d.status !== 'pending')
+  const events = q.data?.events ?? []
+  const lastAt = events.reduce((m, e) => (e.time && e.time > m ? e.time : m), '')
+  const reqRow = (r: Session['requirements'][number]) => (
+    <div key={r.id} className="flex items-center gap-2 px-3 py-2">
+      <button onClick={() => openReq(r.code)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <span className="shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap text-accent">{r.code}</span>
+        <span className="truncate text-sm text-fg">{r.title}</span>
+      </button>
+      {(() => {
+        const own = full.get(r.id) && ownership(full.get(r.id)!)
+        return own && own.session?.key === s?.key && own.tone !== 'working' ? <OwnBadge own={own} /> : <Badge>{t.reqStatus[r.status]}</Badge>
+      })()}
+      <Button size="icon-sm" variant="ghost" aria-label={t.session.unlink} title={t.session.unlink} onClick={() => s && void linkReq(r.code, s.key, true)}>
+        <Unlink className="size-3.5" />
+      </Button>
+    </div>
+  )
 
   return (
     <Panel
@@ -157,6 +196,18 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
             <Callout s={s} />
           </div>
 
+          <Collapse show={pending.length > 0}>
+            <Section title={t.decision.status.pending}>
+              <List space={12}>
+                {pending.map((d) => (
+                  <Item key={d.id} space={12}>
+                    <DecisionComposer d={d} embedded />
+                  </Item>
+                ))}
+              </List>
+            </Section>
+          </Collapse>
+
           <Section title={t.session.current} right={<Sparkline data={s.activity} state={s.state} />}>
             <div className="space-y-2.5 rounded-2xl border border-line p-3.5">
               {s.summary && (
@@ -190,20 +241,14 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
             </div>
           </Section>
 
-          <Collapse show={pending.length > 0}>
-            <Section title={t.decision.status.pending}>
-              <List space={12}>
-                {pending.map((d) => (
-                  <Item key={d.id} space={12}>
-                    <DecisionComposer d={d} embedded />
-                  </Item>
-                ))}
-              </List>
-            </Section>
-          </Collapse>
 
           <Section
-            title={t.session.requirements}
+            title={
+              <span>
+                {t.session.activeReqs}
+                <span className="ml-1.5 font-normal text-fg-3">{doneReqs.length ? t.session.activeReqsHint(activeReqs.length, doneReqs.length) : activeReqs.length || ''}</span>
+              </span>
+            }
             right={
               <span className="flex items-center gap-1">
                 <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setCreating(true)}>
@@ -228,43 +273,48 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
               </span>
             }
           >
-            {s.requirements.length ? (
-              <div className="divide-y divide-line rounded-2xl border border-line">
-                {s.requirements.map((r) => (
-                  <div key={r.id} className="flex items-center gap-2 px-3 py-2">
-                    <button onClick={() => openReq(r.code)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                      <span className="shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap text-accent">{r.code}</span>
-                      <span className="truncate text-sm text-fg">{r.title}</span>
-                    </button>
-                    {(() => {
-                      const own = full.get(r.id) && ownership(full.get(r.id)!)
-                      return own && own.session?.key === s.key && own.tone !== 'working' ? <OwnBadge own={own} /> : <Badge>{t.reqStatus[r.status]}</Badge>
-                    })()}
-                    <Button size="icon-sm" variant="ghost" aria-label={t.session.unlink} title={t.session.unlink} onClick={() => void linkReq(r.code, s.key, true)}>
-                      <Unlink className="size-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
+            {activeReqs.length ? (
+              <div className="divide-y divide-line rounded-2xl border border-line">{activeReqs.map(reqRow)}</div>
             ) : (
-              <p className="text-sm text-fg-3">{t.session.noReqs}</p>
+              <p className="text-sm text-fg-3">{s.requirements.length ? t.session.noActiveReqs : t.session.noReqs}</p>
             )}
           </Section>
 
-          <Section title={t.session.info}>
-            {s.tools_stale && (
-              <div className="mb-3 flex items-start gap-2 rounded-xl bg-wait-soft/70 px-3 py-2.5 text-[13px] leading-relaxed text-fg-2">
-                <RefreshCw className="mt-0.5 size-4 shrink-0 text-wait" />
-                {t.session.toolsStaleTip(s.tools_stale)}
-              </div>
-            )}
-            {s.other_terminal && (
-              <div className="mb-3 flex items-start gap-2 rounded-xl bg-accent-soft/70 px-3 py-2.5 text-[13px] leading-relaxed text-fg-2">
-                <MonitorDot className="mt-0.5 size-4 shrink-0 text-accent" />
-                {t.session.otherTerminal}
-              </div>
-            )}
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-2xl border border-line p-3.5">
+          {s.tools_stale && (
+          <div className="mb-3 flex items-start gap-2 rounded-xl bg-wait-soft/70 px-3 py-2.5 text-[13px] leading-relaxed text-fg-2">
+            <RefreshCw className="mt-0.5 size-4 shrink-0 text-wait" />
+            {t.session.toolsStaleTip(s.tools_stale)}
+          </div>
+          )}
+          {s.other_terminal && (
+          <div className="mb-3 flex items-start gap-2 rounded-xl bg-accent-soft/70 px-3 py-2.5 text-[13px] leading-relaxed text-fg-2">
+            <MonitorDot className="mt-0.5 size-4 shrink-0 text-accent" />
+            {t.session.otherTerminal}
+          </div>
+          )}
+
+          <Section title={t.session.more}>
+            <div className="space-y-2">
+              {doneReqs.length > 0 && (
+                <Fold label={t.session.doneReqs} hint={doneReqs.length}>
+                  <div className="divide-y divide-line">{doneReqs.map(reqRow)}</div>
+                </Fold>
+              )}
+              {answered.length > 0 && (
+                <Fold label={t.session.answered} hint={answered.length}>
+                  {answered.map((d) => (
+                    <DecisionRow key={d.id} d={d} />
+                  ))}
+                </Fold>
+              )}
+              <Fold label={t.session.timeline} hint={events.length ? t.session.lastActivity(relTime(lastAt, now)) : undefined}>
+                <div className="p-3">
+                  <Timeline events={events} />
+                </div>
+              </Fold>
+              <Fold label={t.session.sessionInfo} hint={t.session.infoHint}>
+                <div className="p-3.5">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 ">
               <Info label={t.session.device}>{s.device_name}</Info>
               <Info label={t.session.client}>{[t.tool[s.tool], s.client].filter(Boolean).join(t.common.sep)}</Info>
               <Info label={t.session.model} mono>
@@ -298,22 +348,9 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                 </Button>
               </div>
             </dl>
-          </Section>
-
-          {mine.some((d) => d.status !== 'pending') && (
-            <Section title={t.session.decisions}>
-              <div className="overflow-hidden rounded-2xl border border-line">
-                {mine
-                  .filter((d) => d.status !== 'pending')
-                  .map((d) => (
-                    <DecisionRow key={d.id} d={d} />
-                  ))}
-              </div>
-            </Section>
-          )}
-
-          <Section title={t.session.timeline}>
-            <Timeline events={q.data?.events ?? []} />
+                </div>
+              </Fold>
+            </div>
           </Section>
           <NewReqModal open={creating} onClose={() => setCreating(false)} defaultSession={s.key} />
         </>
