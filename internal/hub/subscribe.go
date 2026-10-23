@@ -61,6 +61,27 @@ func (h *Hub) broadcast(ctx context.Context, kind, projectID, reqID, text string
 	}
 }
 
+// notifyAssigner（R-160）：派活关系本身保证通知——事件 kind 发生在需求 r 上，派活的 PM（没有派活记录时为项目 PM）
+// 即使没订阅 kind 也要收到一条团队消息。订阅了的由 broadcast 照常送，这里不重复送。返回已处理的 PM 键（供 broadcast 跳过，没有为空）。
+func (h *Hub) notifyAssigner(ctx context.Context, kind string, r store.Requirement, by, text string) string {
+	to := h.assigner(ctx, r)
+	if to == "" || to == by {
+		return ""
+	}
+	if subs, err := h.store.WaitSubscribers(ctx, r.ProjectID); err == nil {
+		for _, s := range subs {
+			if s.Key == to && slices.Contains(effectiveWaitOn(s.Role, s.WaitOn), kind) {
+				return "" // 订阅了，broadcast 会送
+			}
+		}
+	}
+	msg := fmt.Sprintf("这条需求是你派的（%s · %s）：%s 只是告诉你，不是派给你的活；不必回复。", kind, waitOnZh[kind], text)
+	if _, err := h.tell(ctx, to, r.ProjectID, r.ID, msg); err != nil {
+		h.log.Warn("通知派活的 PM 失败", "err", err, "to", to)
+	}
+	return to
+}
+
 // actorName 是消息里称呼引起事件的会话；没有会话键时说“有会话”。
 func (h *Hub) actorName(ctx context.Context, key string) string {
 	if key == "" {
@@ -89,7 +110,14 @@ func (h *Hub) onDecisionRaised(ctx context.Context, d store.Decision) {
 	if h.proxyQuiet(ctx, d) {
 		text += "用户开着参谋授权窗口，这条在范围内：被授权的 Adv 可以用 decision_answer 代答（写理由和自己的风险判断），拿不准就留给用户。"
 	}
-	h.broadcast(ctx, protocol.OnDecision, d.ProjectID, d.RequirementID, text, d.SessionKey)
+	skip := []string{d.SessionKey}
+	if d.RequirementID != "" {
+		// 派活关系本身保证通知（R-160）：针对这条需求的决策一定告诉派活的 PM，不看它订阅了什么；之后不再按订阅重复送。
+		if r, err := h.store.GetRequirement(ctx, d.RequirementID); err == nil {
+			skip = append(skip, h.notifyAssigner(ctx, protocol.OnDecision, r, d.SessionKey, text))
+		}
+	}
+	h.broadcast(ctx, protocol.OnDecision, d.ProjectID, d.RequirementID, text, skip...)
 }
 
 // onStatusEvent：需求刚进入待验收或受阻。told 是已经收到交验收通知的 PM（R-135），不重复送。
@@ -99,7 +127,11 @@ func (h *Hub) onStatusEvent(ctx context.Context, r store.Requirement, by, told s
 		h.broadcast(ctx, protocol.OnReview, r.ProjectID, r.ID, reviewNote(r, by), by, told)
 	case store.ReqBlocked:
 		text := fmt.Sprintf("%s把 %s「%s」设为受阻。", h.actorName(ctx, by), r.Code, brief(r.Title, 40))
-		h.broadcast(ctx, protocol.OnBlocked, r.ProjectID, r.ID, text+"卡在哪见需求时间线 / 证据（req_get）。", by)
+		text += "卡在哪见需求时间线 / 证据（req_get）。"
+		skip := []string{by}
+		// 派活关系本身保证通知（R-160）：受阻一定告诉派活的 PM，不看它订阅了什么；之后不再按订阅重复送。
+		skip = append(skip, h.notifyAssigner(ctx, protocol.OnBlocked, r, by, text))
+		h.broadcast(ctx, protocol.OnBlocked, r.ProjectID, r.ID, text, skip...)
 	}
 }
 

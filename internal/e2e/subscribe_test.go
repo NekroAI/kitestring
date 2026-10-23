@@ -135,3 +135,67 @@ func TestWaitSubscribe(t *testing.T) {
 		t.Fatalf("订阅消息不应进用户收件箱：%d → %d", before, n)
 	}
 }
+
+// 派活关系保证通知（R-160）：开发把派给它（PM 派活或项目 PM）的需求设为受阻、或针对这条需求提决策，
+// 不管 PM 订阅了什么都告诉 PM（挂着 ks wait 的立刻被唤醒）；订阅了的 PM 只收一条；没关联需求的决策不打扰；用户收件箱不多出东西。
+func TestAssignerNotifiedOnBlockedAndDecision(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	c := client.New(30 * time.Second)
+	ctx := context.Background()
+	for _, sid := range []string{"pm", "dev"} {
+		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
+	}
+	e.waitFor("会话入库", func() bool { return e.session("claude:dev").Key != "" })
+	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:dev", "dev"}} {
+		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	woke(t, parkWait(t, e, c, "claude:pm"), "已上线待命")
+	var r store.Requirement
+	if err := c.Do(ctx, "POST", "/agent/requirements", map[string]any{"title": "导出 CSV", "session_key": "claude:dev"}, &r); err != nil {
+		t.Fatal(err)
+	}
+	setStatus := func(st string) {
+		t.Helper()
+		if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": st, "session_key": "claude:dev"}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// PM 默认订阅 blocked：受阻只收一条
+	pmW := parkWait(t, e, c, "claude:pm")
+	n0 := tellCount(e, "claude:pm")
+	setStatus("blocked")
+	woke(t, pmW, "受阻", r.Code)
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:pm"); n != n0+1 {
+		t.Fatalf("受阻 PM 只应收到一条：%d → %d", n0, n)
+	}
+	setStatus("in_progress")
+
+	// PM 订阅 none：受阻、针对需求的决策仍然送到；没关联需求的决策不送
+	pmW = parkWaitOn(t, e, c, "claude:pm", "none")
+	n0 = tellCount(e, "claude:pm")
+	setStatus("blocked")
+	woke(t, pmW, "受阻", r.Code)
+	pmW = parkWaitOn(t, e, c, "claude:pm", "none")
+	before := pendingCount(e)
+	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"session_key": "claude:dev", "question": "无关的问题？", "options": []string{"是", "否"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	asleep(t, pmW, "PM（决策没关联需求）")
+	var d store.Decision
+	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"session_key": "claude:dev", "question": "导出编码用哪个？", "options": []string{"UTF-8", "GBK"}, "requirement": r.Code}, &d); err != nil {
+		t.Fatal(err)
+	}
+	woke(t, pmW, "这条需求是你派的", d.Code, r.Code, "导出编码用哪个")
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:pm"); n != n0+2 {
+		t.Fatalf("PM 应收到受阻和需求上的决策共两条：%d → %d", n0, n)
+	}
+	if n := pendingCount(e); n != before+2 {
+		t.Fatalf("用户收件箱只应多出两条决策：%d → %d", before, n)
+	}
+}
