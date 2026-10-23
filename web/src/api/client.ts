@@ -15,6 +15,9 @@ export type NotifyConfig = Schemas['NotifyConfig']
 export type SettingsView = Schemas['SettingsView']
 export type ReqFields = Schemas['ReqFields']
 export type HubEvent = Schemas['Event']
+export type PlanReq = Schemas['PlanReq']
+export type Stage = NN<Schemas['Stage'], 'requirements'>
+export type Plan = Omit<Schemas['Plan'], 'stages'> & { stages: Stage[] }
 
 // 未登录回调：任何接口返回 401 时触发，由 App 跳回登录页。
 let onUnauthorized: () => void = () => {}

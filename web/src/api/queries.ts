@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { api, unwrap, type Requirement, type Session } from './client'
+import { api, unwrap, type Plan, type Requirement, type Schemas, type Session } from './client'
 
 const normSession = (x: Omit<Session, 'requirements' | 'activity'> & { requirements?: Session['requirements'] | null; activity?: number[] | null }): Session => ({ ...x, requirements: x.requirements ?? [], activity: x.activity ?? [] })
 const normReq = (x: Omit<Requirement, 'sessions'> & { sessions?: string[] | null }): Requirement => ({ ...x, sessions: x.sessions ?? [] })
+const normPlan = (x: Schemas['Plan']): Plan => ({ ...x, stages: (x.stages ?? []).map((st) => ({ ...st, requirements: st.requirements ?? [] })) })
 
 // 查询键按 SSE 主题组织，便于收到 changed 事件时整组失效。
 export const qk = {
@@ -12,6 +13,7 @@ export const qk = {
   session: (key: string) => ['sessions', 'detail', key] as const,
   requirements: ['requirements'] as const,
   requirement: (ref: string) => ['requirements', 'detail', ref] as const,
+  plans: ['plans'] as const,
   devices: ['devices'] as const,
   projects: ['projects'] as const,
   settings: ['settings'] as const,
@@ -70,6 +72,14 @@ export function useRequirement(ref: string | null) {
   })
 }
 
+export function usePlans() {
+  return useQuery({
+    queryKey: qk.plans,
+    queryFn: () => unwrap(api.GET('/api/plans')),
+    select: (d) => (d.plans ?? []).map(normPlan),
+  })
+}
+
 export function useDevices() {
   return useQuery({
     queryKey: qk.devices,
@@ -97,9 +107,10 @@ export function useSettings() {
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],
   decisions: [['decisions']],
-  requirements: [['requirements']],
+  requirements: [['requirements'], ['plans']],
+  plans: [['plans']],
   devices: [['devices'], ['sessions']],
-  projects: [['projects'], ['sessions'], ['requirements']],
+  projects: [['projects'], ['sessions'], ['requirements'], ['plans']],
 }
 
 function invalidateTopics(qc: QueryClient, topics: string[]) {

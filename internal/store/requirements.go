@@ -116,13 +116,16 @@ func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus)
 	r.Files = parseFiles(files)
 	r.Code = reqCode(seq)
+	r.NextActor = nextActor(r.Status, r.PendingDecisions)
 	if planSeq > 0 {
 		r.PlanCode = planCode(planSeq)
+	}
+	if r.StageStatus == StageLocked {
+		r.NextActor = "none" // 排在计划后面的阶段里：前一阶段通过前谁都不用动
 	}
 	r.CreatedAt = parseTS(created)
 	r.UpdatedAt = parseTS(updated)
 	r.Sessions = []string{}
-	r.NextActor = nextActor(r.Status, r.PendingDecisions)
 	return r, err
 }
 

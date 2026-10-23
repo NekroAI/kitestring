@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { Decision, Requirement, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessions } from '../api/queries'
 import { displayState } from '../ui/marks'
+import { usePlanTodo } from './plans'
 
 // 工作台数据模型：项目 → 对话。
 // 一个“线程”是一个需要你处理的对话，汇集它所有在等你的事：决策、待验收、待转交、提问 / 授权 / 回复。
@@ -41,6 +42,7 @@ export function useWorkbench() {
   const sessions = useSessions()
   const decisions = useDecisions()
   const reqs = useRequirements()
+  const plans = usePlanTodo()
 
   return useMemo(() => {
     const ss = sessions.data?.sessions ?? []
@@ -144,7 +146,8 @@ export function useWorkbench() {
       projects,
       threads: all,
       running: ss.filter((s) => s.state === 'running' || s.state === 'background'),
-      todo: all.reduce((n, th) => n + th.items, 0),
+      plans, // 在等你的计划：待批准、待阶段验收
+      todo: all.reduce((n, th) => n + th.items, 0) + plans.length,
     }
-  }, [sessions, decisions, reqs])
+  }, [sessions, decisions, reqs, plans])
 }

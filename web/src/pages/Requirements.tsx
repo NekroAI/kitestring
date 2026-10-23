@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Columns3, FolderGit2, List, ListPlus, MessageCircleQuestion, Plus, Search, User } from 'lucide-react'
+import { ChevronDown, ChevronRight, Columns3, FolderGit2, List, ListPlus, MessageCircleQuestion, Milestone, Plus, Search, User } from 'lucide-react'
 import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
 import { ReqView } from '../app/reqDrawer'
 import { DesignBadge } from '../app/design'
+import { PlanBadge, PlanEditor, PlansView } from '../app/plans'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from '../app/menus'
 import { Collapse, Item, List as MotionList } from '../ui/motion'
@@ -107,6 +108,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         <PriorityDot p={r.priority} />
         <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
+        <PlanBadge r={r} className="max-sm:hidden" />
         <DesignBadge r={r} className="max-sm:hidden" />
         {r.pending_decisions > 0 && (
           <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
@@ -192,9 +194,11 @@ export default function RequirementsPage() {
   const [project, setProject] = usePref<string>('ks.reqs.project', '')
   const [showClosed, setShowClosed] = usePref('ks.reqs.closed', false)
   const [mobileStatus, setMobileStatus] = usePref<string>('ks.reqs.mstatus', 'in_progress')
-  const [view, setView] = usePref<'list' | 'board'>('ks.reqs.view', 'list')
+  const [view, setView] = usePref<'list' | 'board' | 'plans'>('ks.reqs.view', 'list')
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  const [creatingPlan, setCreatingPlan] = useState(false)
+  const newItem = () => (view === 'plans' ? setCreatingPlan(true) : setCreating(true))
 
   const all = q.data ?? []
   const filtered = useMemo(() => {
@@ -217,8 +221,8 @@ export default function RequirementsPage() {
         title={t.reqs.title}
         subtitle={q.isPending ? ' ' : t.reqs.summary(open)}
         actions={
-          <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setCreating(true)}>
-            {t.reqs.new}
+          <Button variant="primary" icon={<Plus className="size-4" />} onClick={newItem}>
+            {view === 'plans' ? t.plan.new : t.reqs.new}
           </Button>
         }
       />
@@ -245,6 +249,7 @@ export default function RequirementsPage() {
           options={[
             { value: 'list', label: <List className="size-4" />, tip: t.reqs.viewList },
             { value: 'board', label: <Columns3 className="size-4" />, tip: t.reqs.viewBoard },
+            { value: 'plans', label: <Milestone className="size-4" />, tip: t.plan.view },
           ]}
         />
         <label className="ml-auto flex items-center gap-2 text-sm text-fg-2">
@@ -257,6 +262,8 @@ export default function RequirementsPage() {
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : q.isPending ? (
         <CardSkeleton rows={2} />
+      ) : view === 'plans' ? (
+        <PlansView project={project || undefined} showClosed={showClosed} onNew={() => setCreatingPlan(true)} />
       ) : !all.length ? (
         <Card>
           <Empty
@@ -304,6 +311,7 @@ export default function RequirementsPage() {
       )}
 
       <NewReqModal open={creating} onClose={() => setCreating(false)} defaultProject={project || undefined} />
+      <PlanEditor open={creatingPlan} onClose={() => setCreatingPlan(false)} defaultProject={project || undefined} />
     </div>
   )
 }

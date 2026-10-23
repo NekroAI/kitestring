@@ -14,6 +14,7 @@ import { RecapPanel } from '../app/Recap'
 import { SessionCard, sessionTitle } from '../app/SessionCard'
 import { SessionRow, ThreadCard } from '../app/thread'
 import { Item, List } from '../ui/motion'
+import { PlanAttention } from '../app/plans'
 
 type Filter = 'all' | 'todo'
 
@@ -236,7 +237,7 @@ export default function WorkbenchPage() {
             {t.home.emptySub}
           </Empty>
         </Card>
-      ) : filter === 'todo' && !wb.threads.length ? (
+      ) : filter === 'todo' && !wb.threads.length && !wb.plans.length ? (
         <Card>
           <Empty icon={<CheckCheck />} title={t.home.allClear}>
             {t.home.allClearSub(wb.running.length)}
@@ -244,6 +245,7 @@ export default function WorkbenchPage() {
         </Card>
       ) : (
         <div>
+          <PlanAttention plans={k ? [] : wb.plans} />
           <List space={36}>
             {visible.map((g) => (
               <Item key={g.key} space={36}>

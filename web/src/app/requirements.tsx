@@ -13,6 +13,7 @@ import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
 import { DesignBadge } from './design'
+import { PlanBadge } from './plans'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from './menus'
 
@@ -136,6 +137,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
       </div>
       <div className="mt-1.5 line-clamp-3 text-sm leading-snug font-medium text-fg">{r.title}</div>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <PlanBadge r={r} />
         <DesignBadge r={r} />
         {r.pending_decisions > 0 && (
           <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>

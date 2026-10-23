@@ -56,6 +56,36 @@
         ],
         "type": "object"
       },
+      "Agent-create-planRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageIn"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "stages"
+        ],
+        "type": "object"
+      },
       "Agent-link-sessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -65,6 +95,21 @@
         },
         "required": [
           "requirement"
+        ],
+        "type": "object"
+      },
+      "Agent-submit-stageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
         ],
         "type": "object"
       },
@@ -317,6 +362,15 @@
         ],
         "type": "object"
       },
+      "CommentBody": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Create-deviceRequest": {
         "additionalProperties": false,
         "properties": {
@@ -390,7 +444,8 @@
               "decision",
               "feedback",
               "note",
-              "assign"
+              "assign",
+              "plan"
             ],
             "type": "string"
           },
@@ -419,6 +474,12 @@
             ]
           },
           "origin_session": {
+            "type": "string"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "plan_id": {
             "type": "string"
           },
           "project_id": {
@@ -960,6 +1021,241 @@
         ],
         "type": "object"
       },
+      "Plan": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "current": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "owner_session": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/Stage"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "active",
+              "done",
+              "shelved"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "title",
+          "goal",
+          "owner_session",
+          "status",
+          "created_by",
+          "paused",
+          "current",
+          "stages",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "PlanCreateBody": {
+        "additionalProperties": false,
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "owner_session": {
+            "description": "负责会话：阶段解锁后需求自动交给它",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "stages": {
+            "description": "按顺序排列的阶段",
+            "items": {
+              "$ref": "#/components/schemas/StageIn"
+            },
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "start": {
+            "description": "为真时建好后立即开始",
+            "type": "boolean"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "stages"
+        ],
+        "type": "object"
+      },
+      "PlanFields": {
+        "additionalProperties": false,
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "owner_session": {
+            "description": "负责会话：阶段解锁后需求自动交给它",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "stages": {
+            "description": "按顺序排列的阶段；编辑时不给表示不改阶段",
+            "items": {
+              "$ref": "#/components/schemas/StageIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "PlanReq": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "title",
+          "status",
+          "priority",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "PlanReqIn": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "design",
+              "feature"
+            ],
+            "type": "string"
+          },
+          "priority": {
+            "enum": [
+              "P0",
+              "P1",
+              "P2",
+              "P3"
+            ],
+            "type": "string"
+          },
+          "ref": {
+            "description": "已有需求的编号（如 R-12）或 ID",
+            "type": "string"
+          },
+          "title": {
+            "description": "新建需求的标题（不给 ref 时必填）",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlansOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/Plan"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "plans"
+        ],
+        "type": "object"
+      },
       "Project": {
         "additionalProperties": false,
         "properties": {
@@ -1232,6 +1528,12 @@
             "format": "int64",
             "type": "integer"
           },
+          "plan_code": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
           "priority": {
             "type": "string"
           },
@@ -1251,6 +1553,16 @@
             ]
           },
           "source": {
+            "type": "string"
+          },
+          "stage_seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage_status": {
+            "type": "string"
+          },
+          "stage_title": {
             "type": "string"
           },
           "status": {
@@ -1702,6 +2014,85 @@
         ],
         "type": "object"
       },
+      "Stage": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "passed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/PlanReq"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "locked",
+              "active",
+              "review",
+              "passed"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "summary_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "title",
+          "status",
+          "summary",
+          "requirements"
+        ],
+        "type": "object"
+      },
+      "StageIn": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "已有阶段的 ID；不给表示新阶段",
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/PlanReqIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "requirements"
+        ],
+        "type": "object"
+      },
       "SummaryTestOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -1822,7 +2213,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "1de0264-dirty"
+    "version": "e08e7f1-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1901,6 +2292,147 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/plans": {
+      "post": {
+        "operationId": "agent-create-plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-create-planRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Agent 把大目标拆成计划，等用户批准后开工",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/plans/{ref}": {
+      "get": {
+        "operationId": "agent-get-plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/plans/{ref}/stages/{seq}/submit": {
+      "post": {
+        "operationId": "agent-submit-stage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "seq",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-submit-stageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "交阶段小结，阶段进入待阶段验收",
         "tags": [
           "agent"
         ]
@@ -2827,6 +3359,435 @@
         ]
       }
     },
+    "/api/plans": {
+      "get": {
+        "operationId": "list-plans",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlansOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "plans"
+        ]
+      },
+      "post": {
+        "operationId": "create-plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanCreateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "新建计划（start 为真时立即开始）",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/plans/{ref}": {
+      "delete": {
+        "operationId": "delete-plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "删除计划（其中的需求保留）",
+        "tags": [
+          "plans"
+        ]
+      },
+      "get": {
+        "operationId": "get-plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "plans"
+        ]
+      },
+      "put": {
+        "operationId": "update-plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanFields"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "编辑计划；给出 stages 时按它重排阶段与需求",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/plans/{ref}/reject": {
+      "post": {
+        "operationId": "reject-plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "不批准 Agent 拆出的计划（搁置，附言送达）",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/plans/{ref}/stages/{seq}/pass": {
+      "post": {
+        "operationId": "pass-stage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "seq",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "验收通过整个阶段，下一阶段自动开始",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/plans/{ref}/stages/{seq}/revise": {
+      "post": {
+        "operationId": "revise-stage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "seq",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "退回整个阶段（附意见）",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/plans/{ref}/start": {
+      "post": {
+        "operationId": "start-plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "开始 / 批准计划：第一个阶段解锁并交给负责会话",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
     "/api/projects": {
       "get": {
         "operationId": "list-projects",
@@ -3211,7 +4172,7 @@
             "description": "Error"
           }
         },
-        "summary": "把需求交给某个会话开工（关联、改为进行中并送达）",
+        "summary": "把需求交给某个会话（关联、放到待开始并送达；Agent 开始做时才进入进行中）",
         "tags": [
           "requirements"
         ]

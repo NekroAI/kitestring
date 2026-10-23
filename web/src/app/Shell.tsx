@@ -7,6 +7,7 @@ import { cx, relTime, useNow } from '../lib/util'
 import { Tip } from '../ui/base'
 import { useWorkbench } from './inbox'
 import { usePanelParams } from './nav'
+import { PlanPanel } from './plans'
 import { ReqPanel } from './reqDrawer'
 import { SessionPanel } from './SessionPanel'
 
@@ -137,7 +138,7 @@ function MobileHeader({ connected }: { connected: boolean }) {
 export function Shell() {
   const connected = useLiveUpdates(true)
   const wb = useWorkbench()
-  const { session, req, close } = usePanelParams()
+  const { session, req, plan, close } = usePanelParams()
 
   useEffect(() => {
     document.title = wb.todo ? `(${wb.todo}) ${t.app.fullName}` : t.app.fullName
@@ -155,6 +156,7 @@ export function Shell() {
       <TabBar todo={wb.todo} />
       <SessionPanel sessionKey={session} onClose={close} />
       <ReqPanel refId={req} onClose={close} />
+      <PlanPanel code={plan} onClose={close} />
     </div>
   )
 }

@@ -31,6 +31,21 @@ export function useOpenReq() {
   )
 }
 
+export function useOpenPlan() {
+  const [, setParams] = useSearchParams()
+  return useCallback(
+    (ref: string) =>
+      setParams((p) => {
+        const n = new URLSearchParams(p)
+        n.delete('s')
+        n.delete('r')
+        n.set('plan', ref)
+        return n
+      }),
+    [setParams],
+  )
+}
+
 export function usePanelParams() {
   const [params, setParams] = useSearchParams()
   const close = useCallback(
@@ -39,9 +54,10 @@ export function usePanelParams() {
         const n = new URLSearchParams(p)
         n.delete('s')
         n.delete('r')
+        n.delete('plan')
         return n
       }),
     [setParams],
   )
-  return { session: params.get('s'), req: params.get('r'), close }
+  return { session: params.get('s'), req: params.get('r'), plan: params.get('plan'), close }
 }

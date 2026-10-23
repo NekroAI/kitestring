@@ -36,6 +36,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent 把大目标拆成计划，等用户批准后开工 */
+        post: operations["agent-create-plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/plans/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["agent-get-plan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/plans/{ref}/stages/{seq}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 交阶段小结，阶段进入待阶段验收 */
+        post: operations["agent-submit-stage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/requirements": {
         parameters: {
             query?: never;
@@ -328,6 +378,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list-plans"];
+        put?: never;
+        /** 新建计划（start 为真时立即开始） */
+        post: operations["create-plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plans/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get-plan"];
+        /** 编辑计划；给出 stages 时按它重排阶段与需求 */
+        put: operations["update-plan"];
+        post?: never;
+        /** 删除计划（其中的需求保留） */
+        delete: operations["delete-plan"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plans/{ref}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 不批准 Agent 拆出的计划（搁置，附言送达） */
+        post: operations["reject-plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plans/{ref}/stages/{seq}/pass": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 验收通过整个阶段，下一阶段自动开始 */
+        post: operations["pass-stage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plans/{ref}/stages/{seq}/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 退回整个阶段（附意见） */
+        post: operations["revise-stage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plans/{ref}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 开始 / 批准计划：第一个阶段解锁并交给负责会话 */
+        post: operations["start-plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -418,7 +571,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 把需求交给某个会话开工（关联、改为进行中并送达） */
+        /** 把需求交给某个会话（关联、放到待开始并送达；Agent 开始做时才进入进行中） */
         post: operations["assign-requirement"];
         delete?: never;
         options?: never;
@@ -611,8 +764,18 @@ export interface components {
             session_key?: string;
             summary: string;
         };
+        "Agent-create-planRequest": {
+            goal?: string;
+            session_key?: string;
+            stages: components["schemas"]["StageIn"][] | null;
+            title: string;
+        };
         "Agent-link-sessionRequest": {
             requirement: string;
+        };
+        "Agent-submit-stageRequest": {
+            session_key?: string;
+            summary: string;
         };
         "Agent-update-statusRequest": {
             session_key?: string;
@@ -674,6 +837,9 @@ export interface components {
             new: string;
             old: string;
         };
+        CommentBody: {
+            comment?: string;
+        };
         "Create-deviceRequest": {
             name: string;
         };
@@ -694,10 +860,12 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
+            plan_code?: string;
+            plan_id?: string;
             project_id?: string;
             project_name?: string;
             question: string;
@@ -860,6 +1028,69 @@ export interface components {
         PasswordInBody: {
             password: string;
         };
+        Plan: {
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            /** Format: int64 */
+            current: number;
+            goal: string;
+            id: string;
+            owner_session: string;
+            paused: boolean;
+            project_id?: string;
+            project_name?: string;
+            stages: components["schemas"]["Stage"][] | null;
+            /** @enum {string} */
+            status: "draft" | "active" | "done" | "shelved";
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        PlanCreateBody: {
+            goal?: string;
+            /** @description 负责会话：阶段解锁后需求自动交给它 */
+            owner_session?: string;
+            project_id?: string;
+            /** @description 按顺序排列的阶段 */
+            stages: components["schemas"]["StageIn"][] | null;
+            /** @description 为真时建好后立即开始 */
+            start?: boolean;
+            title: string;
+        };
+        PlanFields: {
+            goal?: string;
+            /** @description 负责会话：阶段解锁后需求自动交给它 */
+            owner_session?: string;
+            project_id?: string;
+            /** @description 按顺序排列的阶段；编辑时不给表示不改阶段 */
+            stages?: components["schemas"]["StageIn"][] | null;
+            title: string;
+        };
+        PlanReq: {
+            code: string;
+            id: string;
+            kind: string;
+            priority: string;
+            status: string;
+            title: string;
+        };
+        PlanReqIn: {
+            acceptance?: string;
+            detail?: string;
+            /** @enum {string} */
+            kind?: "design" | "feature";
+            /** @enum {string} */
+            priority?: "P0" | "P1" | "P2" | "P3";
+            /** @description 已有需求的编号（如 R-12）或 ID */
+            ref?: string;
+            /** @description 新建需求的标题（不给 ref 时必填） */
+            title?: string;
+        };
+        PlansOutBody: {
+            plans: components["schemas"]["Plan"][] | null;
+        };
         Project: {
             /** Format: date-time */
             created_at: string;
@@ -926,11 +1157,17 @@ export interface components {
             next_actor: string;
             /** Format: int64 */
             pending_decisions: number;
+            plan_code?: string;
+            plan_id?: string;
             priority: string;
             project_id?: string;
             project_name?: string;
             sessions: string[] | null;
             source: string;
+            /** Format: int64 */
+            stage_seq?: number;
+            stage_status?: string;
+            stage_title?: string;
             status: string;
             title: string;
             /** Format: date-time */
@@ -1035,6 +1272,26 @@ export interface components {
             summary_base_url: string;
             summary_model: string;
         };
+        Stage: {
+            id: string;
+            /** Format: date-time */
+            passed_at?: string;
+            requirements: components["schemas"]["PlanReq"][] | null;
+            /** Format: int64 */
+            seq: number;
+            /** @enum {string} */
+            status: "locked" | "active" | "review" | "passed";
+            summary: string;
+            /** Format: date-time */
+            summary_at?: string;
+            title: string;
+        };
+        StageIn: {
+            /** @description 已有阶段的 ID；不给表示新阶段 */
+            id?: string;
+            requirements: components["schemas"]["PlanReqIn"][] | null;
+            title: string;
+        };
         SummaryTestOutBody: {
             /** Format: int64 */
             latency_ms: number;
@@ -1128,6 +1385,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-create-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-create-planRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-get-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-submit-stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                seq: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-submit-stageRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
                 };
             };
             /** @description Error */
@@ -1797,6 +2154,309 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LoginOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-plans": {
+        parameters: {
+            query?: {
+                project_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlansOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanCreateBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "update-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanFields"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "reject-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "pass-stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                seq: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "revise-stage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                seq: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "start-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
                 };
             };
             /** @description Error */

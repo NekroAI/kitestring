@@ -19,6 +19,7 @@ import { EditableText, priorities, StatusMenu, statusCls, toFields } from './req
 import { ReqTimeline } from './reqTimeline'
 import { AssignButton } from './assign'
 import { DesignBadge } from './design'
+import { PlanBadge } from './plans'
 
 // 需求抽屉：从上到下是“需求是什么”（固定）→ 来回的记录（滚动，最新在下）→ 轮到你做的事（固定在底部）。
 // 验收时可以在同一个抽屉里连续处理同一项目的待验收：通过后自动滑到下一条，顶部左右按钮切换。
@@ -113,6 +114,7 @@ function Brief({ r }: { r: Requirement }) {
       <EditableText value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} className="-mx-3 h-auto py-1 font-display text-lg leading-snug" />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusMenu r={r} size="md" />
+        <PlanBadge r={r} className="px-2.5 py-1 text-sm" />
         <DesignBadge r={r} className="px-2.5 py-1 text-sm" />
         <Menu
           align="start"

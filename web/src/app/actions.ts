@@ -4,6 +4,17 @@ import { toast } from 'sonner'
 import { api, errMsg, unwrap, type NotifyConfig, type ReqFields } from '../api/client'
 import { qk } from '../api/queries'
 
+const planKeys = ['plans', 'requirements', 'decisions', 'sessions']
+
+// PlanBody：新建 / 编辑计划。stages 里的需求用 ref（已有）或 title（新建）。
+export type PlanBody = {
+  title: string
+  goal?: string
+  project_id?: string
+  owner_session?: string
+  stages?: { id?: string; title: string; requirements: { ref?: string; title?: string }[] }[]
+}
+
 // 所有写操作集中在这里：调用 API、失败时弹出错误、成功后立即刷新相关数据（SSE 也会推送，这里是为了更快）。
 
 export function useActions() {
@@ -41,6 +52,16 @@ export function useActions() {
     deleteReq: (ref: string) => run(() => unwrap(api.DELETE('/api/requirements/{ref}', { params: { path: { ref } } })), ['requirements', 'sessions']),
     linkReq: (ref: string, sessionKey: string, unlink = false) =>
       run(() => unwrap(api.POST('/api/requirements/{ref}/links', { params: { path: { ref } }, body: { session_key: sessionKey, unlink } })), ['requirements', 'sessions']),
+
+    createPlan: (body: PlanBody & { start?: boolean }) => run(() => unwrap(api.POST('/api/plans', { body: { ...body, stages: body.stages ?? [] } })), planKeys),
+    updatePlan: (ref: string, body: PlanBody) => run(() => unwrap(api.PUT('/api/plans/{ref}', { params: { path: { ref } }, body })), planKeys),
+    deletePlan: (ref: string) => run(() => unwrap(api.DELETE('/api/plans/{ref}', { params: { path: { ref } } })), planKeys),
+    startPlan: (ref: string, comment = '') => run(() => unwrap(api.POST('/api/plans/{ref}/start', { params: { path: { ref } }, body: { comment } })), planKeys),
+    rejectPlan: (ref: string, comment = '') => run(() => unwrap(api.POST('/api/plans/{ref}/reject', { params: { path: { ref } }, body: { comment } })), planKeys),
+    passStage: (ref: string, seq: number, comment = '') =>
+      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/pass', { params: { path: { ref, seq } }, body: { comment } })), planKeys),
+    reviseStage: (ref: string, seq: number, comment: string) =>
+      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/revise', { params: { path: { ref, seq } }, body: { comment } })), planKeys),
 
     createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions']),
     revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions']),
