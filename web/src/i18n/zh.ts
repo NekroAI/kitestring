@@ -610,6 +610,7 @@ export const zh = {
     nobodyShort: '没人接手',
     nobody: '没人接手 · 还没交给任何会话',
     nobodyGone: '没人接手 · 关联的会话已结束或被收起',
+    nobodyNoPM: '没人接手 · 关联的是顾问 / 审查员，不自动排给它们；项目里还没有 PM，请交给开发或先指定 PM',
     offShort: '待开始',
     off: (who: string) => `这个项目关掉了自动送达 · 需要你交给「${who}」或别的会话`,
   },

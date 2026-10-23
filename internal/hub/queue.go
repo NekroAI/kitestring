@@ -14,7 +14,8 @@ import (
 
 // 待开始的需求排进会话的待办（R-66）。
 // 一条待开始的需求，归它关联的会话里最近活跃、还没结束 / 没被你收起的那个；没有这样的会话时归项目的 PM（R-85），
-// 连 PM 也没有就是“没人接手”，
+// 连 PM 也没有就是“没人接手”。顾问 / 审查员不写代码、不派活，关联的只有它们时同样交给项目 PM（R-150），
+// 你在网页上手动交给某个会话（交出、交给审查员）不受影响，
 // 在网页上提示你交出，不自动派给别的会话。
 // 会话空闲（一轮结束或挂起等待）时，把排给它的需求整批送过去（最多 maxBatch 条），让它先通读、
 // 合并能一起做的、标出重复和依赖再动手；挂着 ks wait 的会话会被立刻唤醒，其它会话在你下次和它对话时收到。
@@ -32,6 +33,9 @@ func (h *Hub) queueOwner(ctx context.Context, r store.Requirement) string {
 		if err != nil || x.State == store.StateEnded || x.State == store.StateLost || x.DoneAt != nil {
 			continue
 		}
+		if !queueRole(x.Role) {
+			continue // 顾问 / 审查员记下或关联的需求不排给它们，改由 PM 派活（R-150）
+		}
 		if best.Key == "" || x.LastActiveAt.After(best.LastActiveAt) {
 			best = x
 		}
@@ -42,6 +46,9 @@ func (h *Hub) queueOwner(ctx context.Context, r store.Requirement) string {
 	}
 	return best.Key
 }
+
+// queueRole 判断这个身份的会话能不能自动排到待开始的需求：PM、开发、无身份可以，顾问、审查员不行（R-150）。
+func queueRole(role string) bool { return role != roles.Advisor && role != roles.Reviewer }
 
 // projectPM 返回项目里没结束的 PM 会话，没有时为空。
 func (h *Hub) projectPM(ctx context.Context, projectID string) string {

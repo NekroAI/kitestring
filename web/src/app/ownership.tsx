@@ -10,6 +10,7 @@ import { Linkify } from '../ui/refmark'
 
 // 这条需求现在谁在管、什么时候会动（R-66）。和后端的排队规则一一对应：
 // 待开始的需求归关联会话里最近活跃、没结束 / 没被收起的那个；它空闲时整批送达；没有这样的会话就是“没人接手”。
+// 顾问 / 审查员不参与自动排队，关联的只有它们时交给项目 PM（R-150）。
 
 export type OwnTone = 'draft' | 'locked' | 'queued' | 'sent' | 'working' | 'nobody' | 'off'
 export type Own = { tone: OwnTone; short: string; text: string; session?: Session; canAssign?: boolean }
@@ -28,6 +29,12 @@ export function useOwnership() {
       .filter(live)
       // PM 只管派活：需求同时关联了开发等其他会话时，看板显示真正在做的那个（R-86）
       .sort((a, b) => Number(a!.role === 'pm') - Number(b!.role === 'pm') || b!.last_active_at.localeCompare(a!.last_active_at))[0]
+  // 排队归属：和后端 queueOwner 一致，跳过顾问 / 审查员（R-150）
+  const queueOwner = (r: Requirement) =>
+    r.sessions
+      .map((k) => byKey.get(k))
+      .filter((s) => live(s) && s!.role !== 'advisor' && s!.role !== 'reviewer')
+      .sort((a, b) => b!.last_active_at.localeCompare(a!.last_active_at))[0]
   const autoOff = (pid?: string) => !!pid && projects.data?.projects.find((p) => p.id === pid)?.auto_dispatch === false
 
   return (r: Requirement): Own | null => {
@@ -48,10 +55,13 @@ export function useOwnership() {
       return { tone: 'queued', short: t.own.offeredShort, text: s && displayState(s) === 'parked' ? t.own.offeredNow(name) : t.own.offeredNext(name), session: s }
     }
     // 没有关联会话的需求归项目的 PM（R-85），和后端排队规则一致
-    const s = owner(r) ?? (sessions.data?.sessions ?? []).find((x) => x.role === 'pm' && x.project_id === r.project_id && live(x))
-    if (!s) return { tone: 'nobody', short: t.own.nobodyShort, text: r.sessions.length ? t.own.nobodyGone : t.own.nobody, canAssign: true }
+    const s = queueOwner(r) ?? (sessions.data?.sessions ?? []).find((x) => x.role === 'pm' && x.project_id === r.project_id && live(x))
+    if (!s) {
+      const onlyAdvRev = r.sessions.map((k) => byKey.get(k)).some((x) => live(x) && (x!.role === 'advisor' || x!.role === 'reviewer'))
+      return { tone: 'nobody', short: t.own.nobodyShort, text: onlyAdvRev ? t.own.nobodyNoPM : r.sessions.length ? t.own.nobodyGone : t.own.nobody, canAssign: true }
+    }
     if (autoOff(r.project_id)) return { tone: 'off', short: t.own.offShort, text: t.own.off(sessionTitle(s)), session: s, canAssign: true }
-    const n = (reqs.data ?? []).filter((x) => x.status === 'ready' && !x.offered_to && x.stage_status !== 'locked' && (owner(x)?.key ?? (s.role === 'pm' && x.project_id === s.project_id ? s.key : '')) === s.key).length
+    const n = (reqs.data ?? []).filter((x) => x.status === 'ready' && !x.offered_to && x.stage_status !== 'locked' && (queueOwner(x)?.key ?? (s.role === 'pm' && x.project_id === s.project_id ? s.key : '')) === s.key).length
     const running = s.state === 'running' || s.state === 'background'
     return { tone: 'queued', short: t.own.queuedShort, text: running ? t.own.queuedRunning(sessionTitle(s), n) : t.own.queuedSoon(sessionTitle(s), n), session: s }
   }
