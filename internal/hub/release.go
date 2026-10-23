@@ -29,7 +29,7 @@ func (h *Hub) releaseCheck(ctx context.Context, r store.Requirement, callerKey, 
 		return x, apiErr(err)
 	}
 	if x.Role != roles.PM && x.Role != roles.Advisor {
-		return x, huma.Error403Forbidden("只有 PM 或 Adv 能把草稿放行为待开始；Dev 不能放行（避免自己记、自己放、自己做）。需要排期请告诉 PM（pm_notify），或请用户放行；你开始做某条需求时用 session_link_req，它会变为进行中")
+		return x, huma.Error403Forbidden("只有 PM 或 Adv 能把草稿放行为待开始；Dev 不能放行（避免自己记、自己放、自己做）。需要排期请告诉 PM（pm_notify），或请用户放行；开始做待开始的需求时用 session_link_req，它会变为进行中")
 	}
 	if r.ProjectID == "" || x.ProjectID != r.ProjectID {
 		return x, huma.Error400BadRequest(fmt.Sprintf("%s 不属于你所在的项目，不能放行", r.Code))

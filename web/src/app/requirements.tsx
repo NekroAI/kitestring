@@ -92,7 +92,7 @@ export function StatusMenu({ r, size = 'sm' }: { r: Requirement; size?: 'sm' | '
 // ReleaseBadge：PM / Adv 放行的需求（R-166），待开始 / 进行中 / 阻塞时在卡片上标出放行人，悬停看理由
 export function ReleaseBadge({ r, className }: { r: Requirement; className?: string }) {
   if (!r.release || (r.status !== 'ready' && r.status !== 'in_progress' && r.status !== 'blocked')) return null
-  const who = t.role[r.release.role] || r.release.role
+  const who = t.role[r.release.role] || r.release.role || 'Agent'
   return (
     <Tip content={t.timeline.releaseTip(who, r.release.reason)}>
       <span className={cx('inline-flex min-w-0 shrink-0', className)}>

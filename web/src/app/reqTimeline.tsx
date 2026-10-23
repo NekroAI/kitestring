@@ -189,7 +189,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
     // 放行（R-166）：PM / Adv 把草稿改为待开始，写明理由；当前有效的放行可以一键撤回（改回草稿）
     if (f.kind === 'release') {
       const withdrawn = !!f.close_reason
-      const role = t.role[f.context ?? ''] || f.context || ''
+      const role = t.role[f.context ?? ''] || f.context || 'Agent'
       entries.push({
         at,
         key: f.id,

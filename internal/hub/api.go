@@ -1053,6 +1053,13 @@ type agentDecisionIn struct {
 	}
 }
 
+type linkOut struct {
+	Body struct {
+		store.Requirement
+		Notices []string `json:"notices,omitempty" doc:"提示，例如草稿没放行、只关联未开工（R-166）"`
+	}
+}
+
 type agentReqIn struct {
 	Body struct {
 		ReqFields
@@ -1331,25 +1338,41 @@ func (h *Hub) registerAgent(api huma.API) {
 			Body struct {
 				Requirement string `json:"requirement"`
 			}
-		}) (*reqOut, error) {
+		}) (*linkOut, error) {
 			r, err := h.store.GetRequirement(ctx, in.Body.Requirement)
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			if _, err := h.store.GetSession(ctx, in.Key); err != nil {
+			x, err := h.store.GetSession(ctx, in.Key)
+			if err != nil {
 				return nil, huma.Error404NotFound("会话尚未上报，稍后重试")
 			}
 			if err := h.store.LinkSession(ctx, r.ID, in.Key); err != nil {
 				return nil, apiErr(err)
 			}
-			// Agent 关联会话就是开始做了：还在草稿 / 待开始的需求自动进入进行中（R-35）
-			if r.Status == store.ReqDraft || r.Status == store.ReqReady {
+			out := &linkOut{}
+			// Agent 关联会话就是开始做了：待开始的需求自动进入进行中（R-35）。
+			// 草稿要先放行（R-166）：项目开了放行时记一次放行（理由「开始做 R-x」）再进入进行中；没开时只关联、不改状态
+			switch r.Status {
+			case store.ReqReady:
+				if _, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
+					return nil, apiErr(err)
+				}
+			case store.ReqDraft:
+				p, perr := h.store.GetProject(ctx, r.ProjectID)
+				if r.ProjectID == "" || perr != nil || !p.AgentRelease {
+					out.Body.Notices = append(out.Body.Notices, "已关联，但"+releaseOff+"；放行前它仍是草稿")
+					break
+				}
+				if _, err := h.release(ctx, r, x, "开始做 "+r.Code); err != nil {
+					return nil, err
+				}
 				if _, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
 					return nil, apiErr(err)
 				}
 			}
 			h.broker.publish("requirements", "sessions")
-			r, err = h.store.GetRequirement(ctx, r.ID)
-			return &reqOut{Body: r}, apiErr(err)
+			out.Body.Requirement, err = h.store.GetRequirement(ctx, r.ID)
+			return out, apiErr(err)
 		})
 }

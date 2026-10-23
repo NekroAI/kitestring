@@ -22,7 +22,7 @@ import (
 
 const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
 - 会话身份：用户说“接管 PM / 做开发（Dev）/ 当顾问（Adv）/ 当审查员（Rev）”之类的话时，运行 shell 命令 ks role pm|dev|advisor|reviewer，按它输出的身份提示词工作。
-- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（草稿 / 待开始的需求会自动变为进行中）。
+- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿要项目开了「允许 PM / Adv 放行草稿」才会记一次放行并变为进行中，没开时只关联、仍是草稿，要先请用户放行）。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
@@ -401,7 +401,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，草稿 / 待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。草稿：项目开了「允许 PM / Adv 放行草稿」时记一次放行（理由「开始做 R-x」，用户可撤回）再变为进行中；没开时只关联、仍是草稿，返回里会提示先请用户放行。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -411,7 +411,11 @@ func (t *tools) register(s *mcp.Server) {
 			if err := t.c.Do(ctx, "POST", "/agent/sessions/"+url.PathEscape(key)+"/link", map[string]any{"requirement": in.Requirement}, &out); err != nil {
 				return nil, nil, err
 			}
-			return text("已关联 " + out.line()), nil, nil
+			msg := "已关联 " + out.line()
+			for _, n := range out.Notices {
+				msg += "\n" + n
+			}
+			return text(msg), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "plan_create", Description: "把较大的目标拆成计划：按顺序的阶段，阶段内可放多条需求（已有或新建；新建的与同项目未关闭需求同名时，直接关联已有需求并在返回里说明，已有的请用 ref 引用）。提交后进入用户的“待批准”，批准后第一阶段的需求会交给本会话。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in planCreateIn) (*mcp.CallToolResult, any, error) {

@@ -214,3 +214,85 @@ func TestRelease(t *testing.T) {
 		t.Fatalf("你验收后应是已完成：%s", st)
 	}
 }
+
+// 关联草稿也是放行路径（R-166 补充）：开关关着时只关联、仍是草稿并提示；开着时记一次放行（理由「开始做 R-x」）再进入进行中；
+// 待开始的照旧进入进行中、不另记放行。
+func TestLinkDraftRelease(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	c := client.New(10 * time.Second)
+	ctx := context.Background()
+	for _, sid := range []string{"pm", "dev"} {
+		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
+	}
+	e.waitFor("会话入库", func() bool { return e.session("claude:dev").ProjectID != "" })
+	for k, r := range map[string]string{"claude:pm": "pm", "claude:dev": "dev"} {
+		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": k, "role": r}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	create := func(title string) store.Requirement {
+		var r store.Requirement
+		if err := c.Do(ctx, "POST", "/agent/requirements", map[string]any{"title": title, "session_key": "claude:pm"}, &r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	type linked struct {
+		store.Requirement
+		Notices []string `json:"notices"`
+	}
+	link := func(ref string) linked {
+		var out linked
+		if err := c.Do(ctx, "POST", "/agent/sessions/claude:dev/link", map[string]any{"requirement": ref}, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	count := func(r store.Requirement) (n int) {
+		for _, f := range r.Feedback {
+			if f.Kind == store.KindRelease {
+				n++
+			}
+		}
+		return
+	}
+	r1, r2, r3 := create("导出 CSV"), create("优惠券入口"), create("积分规则")
+
+	// 开关关着：只关联，不改状态，提示先请用户放行
+	got := link(r1.Code)
+	if got.Status != store.ReqDraft || got.Release != nil || count(got.Requirement) != 0 {
+		t.Fatalf("开关关着时关联草稿不应改状态：%s %+v", got.Status, got.Release)
+	}
+	if len(got.Notices) == 0 || !strings.Contains(got.Notices[0], "先请用户放行") {
+		t.Fatalf("应提示先请用户放行：%v", got.Notices)
+	}
+	linkedDev := false
+	for _, k := range got.Sessions {
+		linkedDev = linkedDev || k == "claude:dev"
+	}
+	if !linkedDev {
+		t.Fatal("开关关着时仍应关联会话")
+	}
+
+	e.allowRelease("claude:pm")
+
+	// 已是待开始的：照旧进入进行中，不另记放行
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r2.Code+"/status", map[string]any{"status": "ready", "session_key": "claude:pm", "reason": "做法明确"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got = link(r2.Code); got.Status != store.ReqInProgress || count(got.Requirement) != 1 || len(got.Notices) != 0 {
+		t.Fatalf("待开始的关联后应进入进行中且只有原来那条放行：%s %d %v", got.Status, count(got.Requirement), got.Notices)
+	}
+
+	// 开关开着：关联草稿记一次放行（理由「开始做 R-x」），进入进行中；可撤回
+	got = link(r3.Code)
+	if got.Status != store.ReqInProgress || got.Release == nil || got.Release.By != "claude:dev" || got.Release.Reason != "开始做 "+r3.Code {
+		t.Fatalf("开关开着时关联草稿应记放行并进入进行中：%s %+v", got.Status, got.Release)
+	}
+	var back store.Requirement
+	e.call("POST", "/api/requirements/"+r3.Code+"/release/withdraw", map[string]any{}, &back)
+	if back.Status != store.ReqDraft || back.Release != nil {
+		t.Fatalf("应能撤回关联带出的放行：%s %+v", back.Status, back.Release)
+	}
+}

@@ -103,6 +103,10 @@ func roleZh(role string) string {
 		return "PM"
 	case "advisor":
 		return "Adv"
+	case "dev":
+		return "Dev"
+	case "":
+		return "Agent"
 	}
 	return role
 }

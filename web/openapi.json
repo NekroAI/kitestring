@@ -1953,6 +1953,166 @@
         ],
         "type": "object"
       },
+      "LinkOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "doc_link": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "feedback": {
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "next_actor": {
+            "type": "string"
+          },
+          "notices": {
+            "description": "提示，例如草稿没放行、只关联未开工（R-166）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "offered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "offered_to": {
+            "type": "string"
+          },
+          "pending_decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "stage_seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage_status": {
+            "type": "string"
+          },
+          "stage_title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "title",
+          "detail",
+          "status",
+          "priority",
+          "kind",
+          "source",
+          "acceptance",
+          "doc_link",
+          "files",
+          "created_by",
+          "next_actor",
+          "pending_decisions",
+          "sessions",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "List-passkeysResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4890,7 +5050,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Requirement"
+                  "$ref": "#/components/schemas/LinkOutBody"
                 }
               }
             },

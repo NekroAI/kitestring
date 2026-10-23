@@ -1652,6 +1652,45 @@ export interface components {
             session_key: string;
             unlink?: boolean;
         };
+        LinkOutBody: {
+            acceptance: string;
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            detail: string;
+            doc_link: string;
+            evidence?: components["schemas"]["Evidence"][] | null;
+            feedback?: components["schemas"]["Decision"][] | null;
+            files: components["schemas"]["FileRef"][] | null;
+            id: string;
+            kind: string;
+            next_actor: string;
+            /** @description 提示，例如草稿没放行、只关联未开工（R-166） */
+            notices?: string[] | null;
+            /** Format: date-time */
+            offered_at?: string;
+            offered_to?: string;
+            /** Format: int64 */
+            pending_decisions: number;
+            plan_code?: string;
+            plan_id?: string;
+            priority: string;
+            project_id?: string;
+            project_name?: string;
+            release?: components["schemas"]["Release"];
+            reviews?: components["schemas"]["Evidence"][] | null;
+            sessions: string[] | null;
+            source: string;
+            /** Format: int64 */
+            stage_seq?: number;
+            stage_status?: string;
+            stage_title?: string;
+            status: string;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         "List-passkeysResponse": {
             passkeys: components["schemas"]["Passkey"][] | null;
         };
@@ -2774,7 +2813,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Requirement"];
+                    "application/json": components["schemas"]["LinkOutBody"];
                 };
             };
             /** @description Error */
