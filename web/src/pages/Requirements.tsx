@@ -15,7 +15,7 @@ import { useTouchDrag } from '../ui/touchDrag'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
 import { PriorityTag } from '../ui/marks'
 import { Menu } from '../ui/overlay'
-import { boardStatuses, closedStatuses, NewReqModal, ReqCard, StatusMenu, useSetStatus } from '../app/requirements'
+import { boardStatuses, closedStatuses, NewReqModal, ReleaseBadge, ReqCard, StatusMenu, useSetStatus } from '../app/requirements'
 import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
 
 function ViewLabel({ icon, text }: { icon: React.ReactNode; text: string }) {
@@ -150,6 +150,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
         <PlanBadge r={r} className="max-sm:hidden" />
         <DesignBadge r={r} className="max-sm:hidden" />
+        <ReleaseBadge r={r} className="max-sm:hidden" />
         {r.pending_decisions > 0 && (
           <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
             <span className="inline-flex items-center gap-1 text-xs text-wait tabular">

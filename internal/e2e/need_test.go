@@ -76,7 +76,8 @@ func TestNeedDevs(t *testing.T) {
 		Assigned bool   `json:"assigned"`
 		Message  string `json:"message"`
 	}
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "auto"}, &out); err != nil {
+	e.allowRelease("claude:pm")
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "auto"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if out.Assigned || !strings.Contains(out.Message, "已推送提醒") {

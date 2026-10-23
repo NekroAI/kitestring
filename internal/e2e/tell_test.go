@@ -100,7 +100,8 @@ func TestTellPM(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/requirements", map[string]any{"title": "导出 CSV", "session_key": "claude:pm"}, &r); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "claude:dev"}, nil); err != nil {
+	e.allowRelease("claude:pm")
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "claude:dev"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	c.Do(ctx, "POST", "/agent/sessions/claude:dev/link", map[string]any{"requirement": r.Code}, nil)

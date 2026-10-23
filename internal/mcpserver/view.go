@@ -57,6 +57,9 @@ type reqView struct {
 		Status      string     `json:"status"`
 		AnsweredAt  *time.Time `json:"answered_at"`
 		AnswerFiles []fileView `json:"answer_files"`
+		AssignedBy  string     `json:"assigned_by"`
+		Context     string     `json:"context"`
+		CloseReason string     `json:"close_reason"`
 	} `json:"feedback"`
 }
 
@@ -92,6 +95,16 @@ func (r reqView) line() string {
 		parts = append(parts, fmt.Sprintf("%d 个待决", r.PendingDecisions))
 	}
 	return fmt.Sprintf("%s「%s」%s", r.Code, r.Title, strings.Join(nonEmpty(parts), " · "))
+}
+
+func roleZh(role string) string {
+	switch role {
+	case "pm":
+		return "PM"
+	case "advisor":
+		return "Adv"
+	}
+	return role
 }
 
 var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给 Rev"}
@@ -156,6 +169,11 @@ func (r reqView) String() string {
 			s = fmt.Sprintf("  - %s%s 决策：%s → %s", when, f.Code, oneLine(f.Question), ans)
 		case "assign", "queue", "plan", "review_task":
 			continue // 流转记录，状态已在上面
+		case "release":
+			s = fmt.Sprintf("  - %s%s 放行：由 %s（%s）放行：%s", when, f.Code, roleZh(f.Context), f.AssignedBy, f.Answer)
+			if f.CloseReason != "" {
+				s += "（已撤回：" + f.CloseReason + "）"
+			}
 		default:
 			s = fmt.Sprintf("  - %s%s %s：%s", when, f.Code, fbLabel[f.Kind], f.Answer)
 		}

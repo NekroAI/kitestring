@@ -33,6 +33,7 @@ const (
 	KindQueue      = "queue"       // 会话空闲时整批送达的待开始需求（R-66）
 	KindRole       = "role"        // 会话身份变更通知，例如 PM 被新会话接管（R-82）
 	KindReviewTask = "review_task" // 你把需求交给审查员审查（R-88）：只送达，不改需求状态
+	KindRelease    = "release"     // 放行记录（R-166）：PM / Adv 把草稿改为待开始，answer 是理由，assigned_by 是放行的会话；只留痕，不送达
 	KindTell       = "tell"        // 会话之间的团队消息（R-135 / R-116）：开发交验收、给 PM 留言、开发上线；只送给 Agent，不进你的收件箱
 )
 
@@ -65,7 +66,7 @@ type Decision struct {
 	Summary          []string   `json:"summary,omitempty"`
 	Recommendation   string     `json:"recommendation"`
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell"`
+	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell,release"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`

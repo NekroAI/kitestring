@@ -32,6 +32,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerPublic(publicAPI)
 	h.registerWeb(webAPI)
 	h.registerReview(webAPI)
+	h.registerRelease(webAPI)
 	h.registerReviewerWeb(webAPI)
 	h.registerPlans(webAPI)
 	h.registerNeedWeb(webAPI)
@@ -85,6 +86,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerPublic(api)
 	h.registerWeb(api)
 	h.registerReview(api)
+	h.registerRelease(api)
 	h.registerReviewerWeb(api)
 	h.registerPlans(api)
 	h.registerNeedWeb(api)
@@ -299,6 +301,8 @@ type projectIn struct {
 		AutoDispatch *bool `json:"auto_dispatch,omitempty"`
 		// Hidden：在项目列表里隐藏；不传表示不修改
 		Hidden *bool `json:"hidden,omitempty"`
+		// AgentRelease：允许 PM / Adv 把草稿放行为待开始（R-166）；不传表示不修改
+		AgentRelease *bool `json:"agent_release,omitempty"`
 	}
 }
 
@@ -560,14 +564,17 @@ func (h *Hub) registerWeb(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			auto, hidden := cur.AutoDispatch, cur.Hidden
+			auto, hidden, release := cur.AutoDispatch, cur.Hidden, cur.AgentRelease
+			if in.Body.AgentRelease != nil {
+				release = *in.Body.AgentRelease
+			}
 			if in.Body.AutoDispatch != nil {
 				auto = *in.Body.AutoDispatch
 			}
 			if in.Body.Hidden != nil {
 				hidden = *in.Body.Hidden
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden})
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release})
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -890,6 +897,9 @@ func (h *Hub) registerWeb(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.reopenStage(ctx, cur, r.Status)
+			if r.Status == store.ReqDraft && cur.Status != store.ReqDraft {
+				h.withdrawRelease(ctx, cur, "", "") // 你把放行过的需求改回草稿 = 撤回放行（R-166）
+			}
 			h.broker.publish("requirements", "sessions", "plans")
 			h.kick(ctx, r.ID)
 			if r.Status != cur.Status {
@@ -1113,23 +1123,39 @@ func (h *Hub) registerAgent(api huma.API) {
 			Body struct {
 				Status     string `json:"status" enum:"draft,ready,in_progress,blocked,review,done,shelved"`
 				SessionKey string `json:"session_key,omitempty"`
+				Reason     string `json:"reason,omitempty" doc:"放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）"`
 			}
 		}) (*reqOut, error) {
 			if in.Body.Status == store.ReqDone {
 				return nil, huma.Error400BadRequest("“已完成”只能由用户在验收后设置；完成开发请设为 review（待验收）")
 			}
-			if in.Body.Status == store.ReqReady {
-				return nil, huma.Error400BadRequest("“待开始”要由用户确认；你开始做某条需求时用 session_link_req，它会变为进行中")
-			}
 			before, err := h.store.GetRequirement(ctx, in.Ref)
 			if err != nil {
 				return nil, apiErr(err)
+			}
+			if in.Body.Status == store.ReqReady {
+				// 放行（R-166）：只有 PM / Adv、项目开关打开、从草稿、写了理由才行；不关联放行的会话，需求照常归原会话或 PM
+				x, err := h.releaseCheck(ctx, before, in.Body.SessionKey, in.Body.Reason)
+				if err != nil {
+					return nil, err
+				}
+				r, err := h.release(ctx, before, x, in.Body.Reason)
+				if err != nil {
+					return nil, err
+				}
+				h.broker.publish("requirements", "sessions", "plans")
+				h.kick(ctx, r.ID)
+				return &reqOut{Body: r}, nil
 			}
 			r, err := h.store.SetRequirementStatus(ctx, before.ID, in.Body.Status)
 			if err != nil {
 				return nil, apiErr(err)
 			}
 			h.reopenStage(ctx, before, r.Status)
+			if r.Status == store.ReqDraft && before.Status != store.ReqDraft {
+				h.withdrawRelease(ctx, before, in.Body.SessionKey, in.Body.Reason)
+				r, _ = h.store.GetRequirement(ctx, r.ID)
+			}
 			if in.Body.SessionKey != "" {
 				_ = h.store.LinkSession(ctx, r.ID, in.Body.SessionKey)
 			}

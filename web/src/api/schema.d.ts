@@ -919,6 +919,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/requirements/{ref}/release/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤回 PM / Adv 的放行：改回草稿，时间线标为已撤回（R-166） */
+        post: operations["withdraw-release"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/requirements/{ref}/reviewer": {
         parameters: {
             query?: never;
@@ -1098,6 +1115,8 @@ export interface components {
         "Agent-assignRequest": {
             /** @description 交代给开发的话，例如为什么交给它、和哪条需求相关 */
             comment?: string;
+            /** @description 派的是草稿时必填：放行理由（派活会顺带把草稿放行为待开始，R-166） */
+            reason?: string;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
             /** @description Dev 会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻 */
@@ -1180,6 +1199,8 @@ export interface components {
             text: string;
         };
         "Agent-update-statusRequest": {
+            /** @description 放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166） */
+            reason?: string;
             session_key?: string;
             /** @enum {string} */
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
@@ -1324,7 +1345,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1368,7 +1389,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1531,6 +1552,7 @@ export interface components {
             priority: string;
             project_id?: string;
             project_name?: string;
+            release?: components["schemas"]["Release"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -1767,6 +1789,7 @@ export interface components {
             plans: components["schemas"]["Plan"][] | null;
         };
         Project: {
+            agent_release: boolean;
             auto_dispatch: boolean;
             brief: string;
             /** Format: date-time */
@@ -1787,6 +1810,7 @@ export interface components {
             workspace_id?: string;
         };
         ProjectInBody: {
+            agent_release?: boolean;
             auto_dispatch?: boolean;
             doc_root: string;
             hidden?: boolean;
@@ -1819,6 +1843,17 @@ export interface components {
             /** Format: date-time */
             to: string;
         };
+        Release: {
+            /** Format: date-time */
+            at: string;
+            /** @description 放行的会话键 */
+            by: string;
+            /** @description 放行记录的编号（D-x） */
+            code: string;
+            reason: string;
+            /** @description 放行时的身份：pm / advisor */
+            role: string;
+        };
         "Reply-sessionRequest": {
             comment?: string;
             files?: string[] | null;
@@ -1849,6 +1884,7 @@ export interface components {
             priority: string;
             project_id?: string;
             project_name?: string;
+            release?: components["schemas"]["Release"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -1904,6 +1940,7 @@ export interface components {
             priority: string;
             project_id?: string;
             project_name?: string;
+            release?: components["schemas"]["Release"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -2168,6 +2205,10 @@ export interface components {
         };
         WeComConfig: {
             webhook: string;
+        };
+        "Withdraw-releaseRequest": {
+            /** @description 撤回原因，可不写 */
+            reason?: string;
         };
         Worker: {
             /** Format: int64 */
@@ -4320,6 +4361,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "withdraw-release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Withdraw-releaseRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
                 };
             };
             /** @description Error */

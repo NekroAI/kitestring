@@ -120,7 +120,8 @@ type reqCreateIn struct {
 
 type reqStatusIn struct {
 	Ref    string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
-	Status string `json:"status" jsonschema:"新状态：draft in_progress blocked review shelved（ready 待开始与 done 已完成只能由用户设置）"`
+	Status string `json:"status" jsonschema:"新状态：draft in_progress blocked review shelved；ready（放行）只有 PM / Adv 在项目开了放行时能设，且必须写 reason；done 只能由用户验收后设置"`
+	Reason string `json:"reason,omitempty" jsonschema:"设为 ready（放行草稿）时必填：一句理由，说明为什么做法明确、可以直接排期；改回草稿（撤回放行）时可写原因"`
 }
 
 type evidenceIn struct {
@@ -279,9 +280,9 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。放行：PM / Adv 可以把草稿设为 ready（待开始），必须写 reason，时间线记下谁放行、为什么，用户可一键撤回；项目设置没打开「允许 PM / Adv 放行草稿」时会被拒绝，Dev 不能放行。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqStatusIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"status": in.Status, "session_key": t.sessionKey(ctx, req)}
+			body := map[string]any{"status": in.Status, "session_key": t.sessionKey(ctx, req), "reason": in.Reason}
 			dropEmpty(body)
 			var out reqView
 			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/status", body, &out); err != nil {

@@ -367,6 +367,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const workspaces = projects.data?.workspaces ?? []
   const [auto, setAuto] = useState(projects.data?.projects.find((x) => x.id === p.id)?.auto_dispatch ?? true)
   const [hidden, setHidden] = useState(!!p.hidden)
+  const [release, setRelease] = useState(!!projects.data?.projects.find((x) => x.id === p.id)?.agent_release)
   const { mergeProject } = useActions()
   const confirm = useConfirm()
   const navigate = useNavigate()
@@ -387,7 +388,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -409,6 +410,9 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
         </Field>
         <Checkbox checked={auto} onChange={setAuto} hint={t.projects.autoDispatchHint}>
           {t.projects.autoDispatch}
+        </Checkbox>
+        <Checkbox checked={release} onChange={setRelease} hint={t.projects.agentReleaseHint}>
+          {t.projects.agentRelease}
         </Checkbox>
         <Checkbox checked={hidden} onChange={setHidden} hint={t.projects.hideHint}>
           {t.projects.hide}

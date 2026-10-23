@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, X, Zap } from 'lucide-react'
+import { Bot, ChevronDown, LockOpen, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useProjects, useSessions } from '../api/queries'
@@ -89,6 +89,21 @@ export function StatusMenu({ r, size = 'sm' }: { r: Requirement; size?: 'sm' | '
 }
 
 // ReqCard：看板卡片。
+// ReleaseBadge：PM / Adv 放行的需求（R-166），待开始 / 进行中 / 阻塞时在卡片上标出放行人，悬停看理由
+export function ReleaseBadge({ r, className }: { r: Requirement; className?: string }) {
+  if (!r.release || (r.status !== 'ready' && r.status !== 'in_progress' && r.status !== 'blocked')) return null
+  const who = t.role[r.release.role] || r.release.role
+  return (
+    <Tip content={t.timeline.releaseTip(who, r.release.reason)}>
+      <span className={cx('inline-flex min-w-0 shrink-0', className)}>
+        <Badge tone="accent" icon={<LockOpen className="size-3" />}>
+          {t.timeline.releaseBadge(who)}
+        </Badge>
+      </span>
+    </Tip>
+  )
+}
+
 export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggable?: boolean; onDragStart?: (e: React.DragEvent) => void }) {
   const open = useOpenReq()
   const setStatus = useSetStatus()
@@ -126,6 +141,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
       <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-2.5">
         <PlanBadge r={r} />
         <DesignBadge r={r} />
+        <ReleaseBadge r={r} />
         {r.pending_decisions > 0 && (
           <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
             <span>

@@ -29,6 +29,10 @@
             "description": "交代给开发的话，例如为什么交给它、和哪条需求相关",
             "type": "string"
           },
+          "reason": {
+            "description": "派的是草稿时必填：放行理由（派活会顺带把草稿放行为待开始，R-166）",
+            "type": "string"
+          },
           "session_key": {
             "description": "调用者（必须是本项目的 PM）",
             "minLength": 1,
@@ -306,6 +310,10 @@
       "Agent-update-statusRequest": {
         "additionalProperties": false,
         "properties": {
+          "reason": {
+            "description": "放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）",
+            "type": "string"
+          },
           "session_key": {
             "type": "string"
           },
@@ -868,7 +876,8 @@
               "queue",
               "role",
               "review_task",
-              "tell"
+              "tell",
+              "release"
             ],
             "type": "string"
           },
@@ -1078,7 +1087,8 @@
               "queue",
               "role",
               "review_task",
-              "tell"
+              "tell",
+              "release"
             ],
             "type": "string"
           },
@@ -1622,6 +1632,9 @@
           },
           "project_name": {
             "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
           },
           "reviews": {
             "items": {
@@ -2464,6 +2477,9 @@
       "Project": {
         "additionalProperties": false,
         "properties": {
+          "agent_release": {
+            "type": "boolean"
+          },
           "auto_dispatch": {
             "type": "boolean"
           },
@@ -2518,6 +2534,7 @@
           "doc_root",
           "auto_dispatch",
           "hidden",
+          "agent_release",
           "created_at",
           "need_devs",
           "need_reason",
@@ -2529,6 +2546,9 @@
       "ProjectInBody": {
         "additionalProperties": false,
         "properties": {
+          "agent_release": {
+            "type": "boolean"
+          },
           "auto_dispatch": {
             "type": "boolean"
           },
@@ -2649,6 +2669,38 @@
         ],
         "type": "object"
       },
+      "Release": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "description": "放行的会话键",
+            "type": "string"
+          },
+          "code": {
+            "description": "放行记录的编号（D-x）",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "role": {
+            "description": "放行时的身份：pm / advisor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "by",
+          "role",
+          "reason",
+          "at"
+        ],
+        "type": "object"
+      },
       "Reply-sessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2760,6 +2812,9 @@
           },
           "project_name": {
             "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
           },
           "reviews": {
             "items": {
@@ -2997,6 +3052,9 @@
           },
           "project_name": {
             "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
           },
           "reviews": {
             "items": {
@@ -3979,6 +4037,16 @@
         "required": [
           "webhook"
         ],
+        "type": "object"
+      },
+      "Withdraw-releaseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "撤回原因，可不写",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "Worker": {
@@ -6978,6 +7046,57 @@
           }
         },
         "summary": "给需求留言（只送达，不改状态）",
+        "tags": [
+          "requirements"
+        ]
+      }
+    },
+    "/api/requirements/{ref}/release/withdraw": {
+      "post": {
+        "operationId": "withdraw-release",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Withdraw-releaseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Requirement"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤回 PM / Adv 的放行：改回草稿，时间线标为已撤回（R-166）",
         "tags": [
           "requirements"
         ]

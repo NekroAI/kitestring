@@ -49,8 +49,10 @@ type Project struct {
 	// AutoDispatch：会话空闲时，把排给它的待开始需求整批送过去（R-66），默认开启
 	AutoDispatch bool `json:"auto_dispatch"`
 	// Hidden：误识别的目录等不想在项目列表里看到的项目（R-51），会话和需求照常显示
-	Hidden    bool      `json:"hidden"`
-	CreatedAt time.Time `json:"created_at"`
+	Hidden bool `json:"hidden"`
+	// AgentRelease：允许 PM / Adv 把草稿放行为待开始（R-166），须写理由、留痕、可撤回；默认关闭
+	AgentRelease bool      `json:"agent_release"`
+	CreatedAt    time.Time `json:"created_at"`
 	// NeedDevs / NeedReason / NeedAt：PM 请你开开发会话（R-87）；有足够开发上线后自动清除
 	NeedDevs   int        `json:"need_devs"`
 	NeedReason string     `json:"need_reason"`
@@ -168,7 +170,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 
 // ListProjects 列出全部项目。
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at FROM projects ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +179,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		var created, needAt, briefAt string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTS(created)
@@ -192,8 +194,8 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	var p Project
 	var created, needAt, briefAt string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -205,7 +207,7 @@ func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 
 // UpdateProject 修改项目名称、所属工作空间与方案文档根路径。
 func (s *Store) UpdateProject(ctx context.Context, p Project) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ?, hidden = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.Hidden, p.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ?, hidden = ?, agent_release = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.Hidden, p.AgentRelease, p.ID)
 	if err != nil {
 		return err
 	}

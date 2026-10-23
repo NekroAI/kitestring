@@ -47,6 +47,8 @@ export function useActions() {
       send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
     reassign: (ref: string, sessionKey: string) =>
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
+    withdrawRelease: (ref: string, reason = '') =>
+      run(() => unwrap(api.POST('/api/requirements/{ref}/release/withdraw', { params: { path: { ref } }, body: { reason } })), ['requirements', 'sessions', 'decisions', 'plans']),
     closeDecision: (ref: string, why: { reason?: string; replaced_by?: string } = {}) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: why })), ['decisions', 'sessions', 'requirements']),
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
       send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions']),
@@ -90,7 +92,7 @@ export function useActions() {
 
     deleteDevice: (id: string) => run(() => unwrap(api.DELETE('/api/devices/{id}', { params: { path: { id } } })), ['devices', 'sessions']),
 
-    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean }) =>
+    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean; agent_release?: boolean }) =>
       run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
     mergeProject: (id: string, into: string) =>
       run(() => unwrap(api.POST('/api/projects/{id}/merge', { params: { path: { id } }, body: { into } })), ['projects', 'sessions', 'requirements', 'decisions', 'plans']),

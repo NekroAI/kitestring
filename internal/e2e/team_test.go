@@ -29,6 +29,7 @@ func TestTeamAssign(t *testing.T) {
 		}
 	}
 	role("claude:pm", "pm")
+	e.allowRelease("claude:pm")
 	role("claude:dev-a", "dev")
 	role("claude:dev-b", "dev")
 
@@ -73,7 +74,7 @@ func TestTeamAssign(t *testing.T) {
 	if team.PM == nil || team.PM.Key != "claude:pm" || len(team.Devs) != 2 || team.Devs[0].Key != "claude:dev-b" || team.Devs[0].Presence != "standby" || team.Devs[1].Presence != "working" {
 		t.Fatalf("工人池不对：%+v", team)
 	}
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r1.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "auto", "comment": "和导入是一套"}, &out); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r1.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "auto", "comment": "和导入是一套"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !out.Assigned || out.To != "claude:dev-b" || !strings.Contains(out.Message, "马上开工") {
@@ -116,13 +117,13 @@ func TestTeamAssign(t *testing.T) {
 	}
 
 	// 指定派给在忙的 dev-a
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r2.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "claude:dev-a"}, &out); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r2.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "claude:dev-a"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !out.Assigned || !strings.Contains(out.Message, "这一轮结束") {
 		t.Fatalf("派给在忙的 dev-a：%+v", out)
 	}
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r2.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "claude:nobody"}, &out); err == nil {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r2.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "claude:nobody"}, &out); err == nil {
 		t.Fatal("派给不存在的会话应报错")
 	}
 
@@ -131,7 +132,7 @@ func TestTeamAssign(t *testing.T) {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "SessionEnd"})
 	}
 	e.waitFor("开发都结束", func() bool { return e.session("claude:dev-a").State == store.StateEnded && e.session("claude:dev-b").State == store.StateEnded })
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r3.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "auto"}, &out); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r3.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "auto"}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if out.Assigned || !strings.Contains(out.Message, "没有在线的 Dev") {

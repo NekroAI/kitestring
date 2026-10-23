@@ -167,6 +167,7 @@ func runReq(args []string) error {
 	link := fs.String("link", "", "evidence：链接")
 	to := fs.String("to", "", "assign：交给哪个 Dev 会话（tool:session_id），auto 由 hub 挑")
 	comment := fs.String("comment", "", "assign：交代给开发的话")
+	reason := fs.String("reason", "", "status ready / assign 草稿：放行理由（只有 PM / Adv 能放行）；status draft：撤回原因")
 	verdict := fs.String("verdict", "", "evidence：一句结论（40 字以内）")
 	details := fs.String("details", "", "evidence：实现细节（默认折叠）")
 	blocksArg := fs.String("blocks", "", "evidence：表达块，JSON 数组或 JSON 文件路径")
@@ -206,9 +207,9 @@ func runReq(args []string) error {
 		return agentCall("POST", "/agent/requirements", compact(body))
 	case "status":
 		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req status <R-编号> <状态>")
+			return fmt.Errorf("用法：ks req status <R-编号> <状态> [--reason 理由]（PM / Adv 放行草稿：ks req status R-x ready --reason ...）")
 		}
-		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key}))
+		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key, "reason": *reason}))
 	case "evidence":
 		if fs.NArg() < 1 || fs.NArg() < 2 && *verdict == "" {
 			return fmt.Errorf("用法：ks req evidence <R-编号> [证据正文] [--verdict 一句结论] [--blocks 块.json] [--todo ...] [--details ...] [--aside ...] [--kind test] [--link ...] [--image 截图.png] [--video 录屏.webm]\n%s\n表达块：%s", evidenceGuide, writing.BlocksGuide)
@@ -240,9 +241,9 @@ func runReq(args []string) error {
 	case "assign":
 		// PM 派活（R-86）：ks req assign R-12 --to <Dev 会话键|auto> [--comment ...]
 		if fs.NArg() < 1 || *to == "" {
-			return fmt.Errorf("用法：ks req assign <R-编号> --to <Dev 会话键|auto> [--comment 交代]")
+			return fmt.Errorf("用法：ks req assign <R-编号> --to <Dev 会话键|auto> [--comment 交代] [--reason 放行理由（派草稿时必填）]")
 		}
-		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/assign", compact(map[string]any{"session_key": currentSession(*session), "to": *to, "comment": *comment}))
+		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/assign", compact(map[string]any{"session_key": currentSession(*session), "to": *to, "comment": *comment, "reason": *reason}))
 	case "review":
 		// 审查员交审查意见（R-88）：ks req review R-12 <意见> [--image 截图.png]；不改需求状态
 		if fs.NArg() < 2 {

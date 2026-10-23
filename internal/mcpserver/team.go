@@ -54,6 +54,7 @@ type assignIn struct {
 	Requirement string `json:"requirement" jsonschema:"需求编号（如 R-12）"`
 	To          string `json:"to" jsonschema:"Dev 会话键（team 列出的 key）；填 auto 由 Kitestring 挑：在线待命优先，其次手上需求少、上下文轻"`
 	Comment     string `json:"comment,omitempty" jsonschema:"交代给开发的话，例如为什么交给它、和哪条需求相关"`
+	Reason      string `json:"reason,omitempty" jsonschema:"派的是草稿时必填：放行理由。派草稿会顺带把它放行为待开始，记进时间线、用户可撤回；项目没打开放行时派草稿会被拒绝"`
 }
 
 type needIn struct {
@@ -148,7 +149,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(b.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个 Dev 会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。Dev 在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个 Dev 会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。Dev 在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。派的是草稿时等于顺带放行：必须写 reason，项目没打开「允许 PM / Adv 放行草稿」时会被拒绝。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in assignIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -157,7 +158,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			var out struct {
 				Message string `json:"message"`
 			}
-			body := map[string]any{"session_key": key, "to": in.To, "comment": in.Comment}
+			body := map[string]any{"session_key": key, "to": in.To, "comment": in.Comment, "reason": in.Reason}
 			dropEmpty(body)
 			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Requirement)+"/assign", body, &out); err != nil {
 				return nil, nil, err

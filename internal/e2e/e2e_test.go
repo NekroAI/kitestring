@@ -707,3 +707,20 @@ func TestApprovalAndAcceptWithComment(t *testing.T) {
 	}
 	e.waitFor("通过附言送达", func() bool { out = prompt("p2"); return strings.Contains(out, "验收通过。附言：很好，下次按钮再大一点") })
 }
+
+// allowRelease 打开会话所在项目的「允许 PM / Adv 放行草稿」（R-166）。
+func (e *env) allowRelease(key string) {
+	e.t.Helper()
+	x := e.session(key)
+	var out struct {
+		Projects []store.Project `json:"projects"`
+	}
+	e.call("GET", "/api/projects", nil, &out)
+	for _, p := range out.Projects {
+		if p.ID == x.ProjectID {
+			e.call("PUT", "/api/projects/"+p.ID, map[string]any{"name": p.Name, "doc_root": p.DocRoot, "agent_release": true}, nil)
+			return
+		}
+	}
+	e.t.Fatalf("找不到 %s 所在的项目", key)
+}

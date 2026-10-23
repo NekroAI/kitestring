@@ -15,7 +15,7 @@ import { Menu, Panel, useConfirm } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { useOpenSession } from './nav'
-import { EditableText, priorities, StatusMenu, toFields } from './requirements'
+import { EditableText, priorities, ReleaseBadge, StatusMenu, toFields } from './requirements'
 import { ReqTimeline } from './reqTimeline'
 import { AcceptView } from './accept'
 import { AssignButton } from './assign'
@@ -124,6 +124,7 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
         <StatusMenu r={r} size="md" />
         <PlanBadge r={r} className="px-2.5 py-1 text-sm" />
         <DesignBadge r={r} className="px-2.5 py-1 text-sm" />
+        <ReleaseBadge r={r} />
         <span className={cx('contents', compact && 'max-sm:hidden')}>
         <Menu
           align="start"

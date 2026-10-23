@@ -112,9 +112,10 @@ func (h *Hub) registerAgentTeam(api huma.API) {
 				SessionKey string `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 PM）"`
 				To         string `json:"to" minLength:"1" doc:"Dev 会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻"`
 				Comment    string `json:"comment,omitempty" doc:"交代给开发的话，例如为什么交给它、和哪条需求相关"`
+				Reason     string `json:"reason,omitempty" doc:"派的是草稿时必填：放行理由（派活会顺带把草稿放行为待开始，R-166）"`
 			}
 		}) (*assignOut, error) {
-			return h.pmAssign(ctx, in.Ref, in.Body.SessionKey, in.Body.To, in.Body.Comment)
+			return h.pmAssign(ctx, in.Ref, in.Body.SessionKey, in.Body.To, in.Body.Comment, in.Body.Reason)
 		})
 }
 
@@ -129,7 +130,7 @@ type assignOut struct {
 }
 
 // pmAssign：PM 派活。只有本项目的 PM 能派；只能派给本项目、未结束的开发会话。
-func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment string) (*assignOut, error) {
+func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment, reason string) (*assignOut, error) {
 	me, _, devs, err := h.team(ctx, caller)
 	if err != nil {
 		return nil, apiErr(err)
@@ -146,6 +147,13 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment string) (*a
 	}
 	if r.Status == store.ReqDone || r.Status == store.ReqShelved {
 		return nil, huma.Error400BadRequest(fmt.Sprintf("%s 已完成或已搁置，不能派", r.Code))
+	}
+	// 派草稿 = 顺带放行（R-166）：同样受项目开关管、同样要理由，记一条放行
+	draft := r.Status == store.ReqDraft
+	if draft {
+		if _, err := h.releaseCheck(ctx, r, me.Key, reason); err != nil {
+			return nil, err
+		}
 	}
 	out := &assignOut{}
 	var w *Worker
@@ -168,6 +176,11 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment string) (*a
 		}
 		if w == nil {
 			return nil, huma.Error400BadRequest("找不到这个 Dev 会话：只能派给本项目、未结束、身份为 Dev 的会话（用 team 查看）")
+		}
+	}
+	if draft {
+		if r, err = h.release(ctx, r, me, reason); err != nil {
+			return nil, err
 		}
 	}
 	if _, err := h.assign(ctx, r.ID, w.Key, comment, me.Key); err != nil {

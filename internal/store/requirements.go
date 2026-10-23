@@ -67,8 +67,10 @@ type Requirement struct {
 	Evidence         []Evidence `json:"evidence,omitempty"`
 	Reviews          []Evidence `json:"reviews,omitempty"`  // 审查员的审查意见（R-88）：不改状态、不算验收证据
 	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// Release：最近一次没撤回的放行（R-166）——PM / Adv 把草稿改为待开始时留下的记录：谁、什么身份、为什么
+	Release   *Release  `json:"release,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Evidence 是需求的验收证据。
@@ -103,7 +105,9 @@ func parseRef(ref, prefix string) (seq int, isSeq bool) {
 
 const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.files, r.created_by, r.created_at, r.updated_at, r.kind,
 	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending'),
-	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, ''), r.offered_to, r.offered_at
+	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, ''), r.offered_to, r.offered_at,
+	COALESCE((SELECT x.seq || char(31) || x.assigned_by || char(31) || x.context || char(31) || x.answer || char(31) || x.created_at FROM decisions x
+		WHERE x.requirement_id = r.id AND x.kind = 'release' AND x.close_reason = '' ORDER BY x.seq DESC LIMIT 1), '')
 	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id
 	LEFT JOIN plan_stages ps ON ps.id = r.stage_id LEFT JOIN plans pl ON pl.id = ps.plan_id`
 
@@ -118,9 +122,10 @@ func normKind(k string) string {
 func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var r Requirement
 	var seq, planSeq int
-	var created, updated, files, offeredAt string
+	var created, updated, files, offeredAt, release string
 	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions,
-		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt)
+		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt, &release)
+	r.Release = parseRelease(release)
 	r.OfferedAt = parseNullTS(sql.NullString{String: offeredAt, Valid: offeredAt != ""})
 	r.Files = parseFiles(files)
 	r.Code = reqCode(seq)
@@ -235,7 +240,7 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 	if r.Reviews, err = s.ListReviews(ctx, r.ID); err != nil {
 		return r, err
 	}
-	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask)
+	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask, KindRelease)
 	return r, err
 }
 

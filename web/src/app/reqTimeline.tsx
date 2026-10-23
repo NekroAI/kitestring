@@ -1,13 +1,15 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { CheckCheck, FileCheck2, HelpCircle, MessageSquareText, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
+import { CheckCheck, FileCheck2, HelpCircle, LockOpen, MessageSquareText, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
+import { toast } from 'sonner'
 import type { Decision, Requirement } from '../api/client'
 import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
-import { Badge, Tip } from '../ui/base'
+import { Badge, Button, Tip } from '../ui/base'
 import { Thumbs } from '../ui/attach'
 import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
 import { DecisionComposer } from './DecisionCard'
+import { useActions } from './actions'
 import { evidenceKind } from './review'
 import { EvidenceView, hasPayload } from './evidence'
 import { useSessions } from '../api/queries'
@@ -81,6 +83,9 @@ function Quote({ children, cls }: { children: ReactNode; cls: string }) {
 export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decision[] }) {
   const now = useNow()
   const sessions = useSessions()
+  const { withdrawRelease } = useActions()
+  const [withdrawing, setWithdrawing] = useState(false)
+  const canWithdraw = !!r.release && (r.status === 'ready' || r.status === 'in_progress' || r.status === 'blocked')
   const who = (key?: string | null) => {
     const s = (sessions.data?.sessions ?? []).find((x) => x.key === key)
     return s ? [sessionTitle(s), s.device_name].filter(Boolean).join(t.common.sep) : ''
@@ -177,6 +182,55 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             at={at}
             now={now}
           />
+        ),
+      })
+      continue
+    }
+    // 放行（R-166）：PM / Adv 把草稿改为待开始，写明理由；当前有效的放行可以一键撤回（改回草稿）
+    if (f.kind === 'release') {
+      const withdrawn = !!f.close_reason
+      const role = t.role[f.context ?? ''] || f.context || ''
+      entries.push({
+        at,
+        key: f.id,
+        round: roundOf(at),
+        node: (
+          <Node
+            icon={<LockOpen />}
+            tone={tone.note}
+            title={
+              <>
+                {t.timeline.release(role)}
+                <span className="truncate font-normal text-fg-3">{who(f.assigned_by)}</span>
+                {withdrawn && <Badge tone="neutral">{t.timeline.withdrawn}</Badge>}
+              </>
+            }
+            at={at}
+            now={now}
+            muted={withdrawn}
+          >
+            <Quote cls="bg-accent-soft/60">
+              <span className="mr-1.5 text-fg-3">{t.timeline.releaseReason}</span>
+              <Linkify text={f.answer ?? ''} />
+            </Quote>
+            {withdrawn && <p className="text-sm text-fg-2">{f.close_reason}</p>}
+            {!withdrawn && canWithdraw && r.release?.code === f.code && (
+              <div>
+                <Button
+                  size="sm"
+                  disabled={withdrawing}
+                  onClick={async () => {
+                    setWithdrawing(true)
+                    if (await withdrawRelease(r.code)) toast(t.timeline.releaseWithdrawn)
+                    setWithdrawing(false)
+                  }}
+                >
+                  <Undo2 className="size-3.5" />
+                  {t.timeline.releaseWithdraw}
+                </Button>
+              </div>
+            )}
+          </Node>
         ),
       })
       continue
