@@ -306,9 +306,11 @@ type decisionOut struct {
 type answersIn struct {
 	Body struct {
 		Answers []struct {
-			Ref    string   `json:"ref"`
-			Answer string   `json:"answer"`
-			Files  []string `json:"files,omitempty" doc:"附图 ID"`
+			Ref     string   `json:"ref"`
+			Answer  string   `json:"answer" doc:"答复；有要拍板的点（points）时是附言，可空"`
+			Files   []string `json:"files,omitempty" doc:"附图 ID"`
+			Choices []int    `json:"choices,omitempty" doc:"逐点的选择（R-112）：与决策的 points 一一对应，填选项序号"`
+			Reject  bool     `json:"reject,omitempty" doc:"批准类的多点决策：拒绝（此时不要求逐点选择）"`
 		} `json:"answers" minItems:"1"`
 	}
 }
@@ -745,7 +747,21 @@ func (h *Hub) registerWeb(api huma.API) {
 				if err != nil {
 					return nil, err
 				}
-				d, err := h.store.AnswerDecision(ctx, a.Ref, a.Answer, files)
+				answer, choices := a.Answer, []int(nil)
+				if len(a.Choices) > 0 || a.Reject {
+					// 多点决策：hub 把逐点的选择拼成答复，注入给 Agent 的内容不依赖网页怎么写
+					d0, err := h.store.GetDecision(ctx, a.Ref)
+					if err != nil {
+						return nil, apiErr(err)
+					}
+					if len(d0.Points) > 0 {
+						if answer, err = pointsAnswer(d0, a.Choices, a.Answer, a.Reject); err != nil {
+							return nil, huma.Error400BadRequest(err.Error())
+						}
+						choices = a.Choices
+					}
+				}
+				d, err := h.store.AnswerDecisionPoints(ctx, a.Ref, answer, files, choices)
 				if err != nil {
 					return nil, apiErr(err)
 				}
@@ -994,6 +1010,8 @@ type agentDecisionIn struct {
 		Approval       bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
 		Images         []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
 		Blocks         []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
+		Points         []any    `json:"points,omitempty" doc:"要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
+		Summary        []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
 		Recommendation string   `json:"recommendation,omitempty"`
 		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
 	}
@@ -1150,8 +1168,15 @@ func (h *Hub) registerAgent(api huma.API) {
 		func(ctx context.Context, in *agentDecisionIn) (*decisionRaisedOut, error) {
 			b := in.Body
 			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation}
-			var warns []string
+			var warns, pw []string
 			d.Blocks, warns = blocks.Parse(b.Blocks, h.blockFile(ctx))
+			d.Points, pw = blocks.ParsePoints(b.Points, h.blockFile(ctx))
+			warns = append(warns, pw...)
+			for _, x := range b.Summary {
+				if x = strings.TrimSpace(x); x != "" && len(d.Summary) < 8 {
+					d.Summary = append(d.Summary, x)
+				}
+			}
 			if d.Options == nil {
 				d.Options = []string{}
 			}

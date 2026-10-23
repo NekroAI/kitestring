@@ -147,6 +147,8 @@ type decisionIn struct {
 	Recommendation string           `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
 	Requirement    string           `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
 	Blocks         []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
+	Points         []map[string]any `json:"points,omitempty" jsonschema:"要拍板的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
+	Summary        []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
 }
 
 type planReqIn struct {
@@ -309,7 +311,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。写法：问题一句话，每次只问一件事；有几个要拍板的点就拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别拍板时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
@@ -340,6 +342,22 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			if err := t.addBlocks(ctx, body, in.Blocks, cache); err != nil {
 				return nil, nil, err
+			}
+			if len(in.Points) > 0 {
+				raw := blocks.FromMaps(in.Points)
+				if err := blocks.Localize(raw, cache, func(p string) (string, error) {
+					ids, err := t.upload(ctx, []string{p})
+					if err != nil {
+						return "", err
+					}
+					return ids[0], nil
+				}); err != nil {
+					return nil, nil, err
+				}
+				body["points"] = raw
+			}
+			if len(in.Summary) > 0 {
+				body["summary"] = in.Summary
 			}
 			var out struct {
 				Code          string   `json:"code"`

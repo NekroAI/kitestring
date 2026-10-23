@@ -648,3 +648,43 @@ func FromMaps(in []map[string]any) []any {
 	}
 	return out
 }
+
+// PointsToRaw 把决策里“要拍板的点”（[{question, options:[{label, desc, recommended, image}]}]）转成 options 块（R-112），
+// 之后与其它块一样走 Parse / Localize：每个点就是一个标题为问题的 options 块。
+func PointsToRaw(points []any) []any {
+	out := make([]any, 0, len(points))
+	for _, p := range points {
+		m, ok := p.(map[string]any)
+		if !ok {
+			out = append(out, p)
+			continue
+		}
+		b := map[string]any{"type": Options, "title": firstStr(m, "question", "title")}
+		if id := str(m["id"]); id != "" {
+			b["id"] = id
+		}
+		b["items"] = list(m, "options", "items")
+		out = append(out, b)
+	}
+	return out
+}
+
+// ParsePoints 解析要拍板的点：每个点要有问题和至少 2 个选项；不合法的点丢掉并说明。
+func ParsePoints(points []any, resolve Resolver) (out []Block, warnings []string) {
+	bs, warns := Parse(PointsToRaw(points), resolve)
+	for _, b := range bs {
+		if strings.TrimSpace(b.Title) == "" {
+			var labels []string
+			for _, it := range b.Items {
+				labels = append(labels, it.Label)
+			}
+			warns = append(warns, fmt.Sprintf("选项为「%s」的要拍板的点缺少 question，没有保存", strings.Join(labels, " / ")))
+			continue
+		}
+		out = append(out, b)
+	}
+	for i := range warns {
+		warns[i] = strings.ReplaceAll(strings.ReplaceAll(warns[i], "个块（options）", "个要拍板的点"), "个块", "个要拍板的点")
+	}
+	return out, warns
+}

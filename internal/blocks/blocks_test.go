@@ -149,3 +149,20 @@ func TestLocalize(t *testing.T) {
 		t.Fatal("选项里的图也要上传")
 	}
 }
+
+// 决策的要拍板的点就是 options 块（R-112）：缺问题、选项不足的点丢掉并说明。
+func TestParsePoints(t *testing.T) {
+	raw := decode(t, `[
+	 {"question":"旧 PM 变成什么？","options":[{"label":"无身份","recommended":true,"image":"F1"},{"label":"降为开发"}]},
+	 {"options":[{"label":"甲"},{"label":"乙"}]},
+	 {"question":"只有一个","options":[{"label":"唯一"}]}
+	]`)
+	ps, warns := ParsePoints(raw, known)
+	if len(ps) != 1 || ps[0].Type != Options || ps[0].Title != "旧 PM 变成什么？" || !ps[0].Items[0].Recommended || ps[0].Items[0].Image == nil {
+		t.Fatalf("要拍板的点解析不对：%+v", ps)
+	}
+	all := strings.Join(warns, "\n")
+	if !strings.Contains(all, "「甲 / 乙」的要拍板的点缺少 question") || !strings.Contains(all, "第 3 个要拍板的点至少要 2 个有效选项") {
+		t.Fatalf("提示不对：\n%s", all)
+	}
+}

@@ -265,7 +265,7 @@ func runReq(args []string) error {
 
 func runDecision(args []string) error {
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--blocks 块.json]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
@@ -280,6 +280,9 @@ func runDecision(args []string) error {
 	var imgs stringList
 	fs.Var(&imgs, "image", "问题附带的图片路径（例如待批准的方案图），可重复")
 	blocksArg := fs.String("blocks", "", "表达块，JSON 数组或 JSON 文件路径")
+	pointsArg := fs.String("points", "", `要拍板的点，JSON 数组或 JSON 文件路径：[{"question":…,"options":[{"label":…,"desc":…,"recommended":true}]}]`)
+	var summary stringList
+	fs.Var(&summary, "summary", "方案要点，每条一行（以需求编号开头），可重复")
 	if err := parseAnywhere(fs, args[1:]); err != nil {
 		return err
 	}
@@ -310,6 +313,16 @@ func runDecision(args []string) error {
 	if _, err := attachBlocks(body, *blocksArg); err != nil {
 		return err
 	}
+	if *pointsArg != "" {
+		tmp := map[string]any{}
+		if _, err := attachBlocks(tmp, *pointsArg); err != nil {
+			return fmt.Errorf("--points：%w", err)
+		}
+		body["points"] = tmp["blocks"]
+	}
+	if len(summary) > 0 {
+		body["summary"] = []string(summary)
+	}
 	out, err := agentCallOut("POST", "/agent/decisions", compact(body))
 	if err != nil {
 		return err
@@ -322,7 +335,7 @@ func runDecision(args []string) error {
 // 写作规范（R-110），与 MCP 工具说明一致。
 const (
 	evidenceGuide = "证据写法：第一句是结论（40 字以内，写用户能看到的变化）；逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；无关的顺带改动单列或另记需求。交之前先自查截图里的文字有没有被截断、溢出或重叠。"
-	decisionGuide = "决策写法：问题一句话，每次只问一件事；要拍板的点拆成独立的决策，不埋在说明里；说明按“结论 / 依据 / 细节”写。"
+	decisionGuide = "决策写法：问题一句话，每次只问一件事；一个方案里有几个点要分别拍板时用 --points 逐点给选项（标出推荐），不埋在说明里；说明按“结论 / 依据 / 细节”写，方案长时用 --summary 每条需求一行。"
 	stageGuide    = "小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据。"
 )
 

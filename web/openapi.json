@@ -331,6 +331,14 @@
               "null"
             ]
           },
+          "points": {
+            "description": "要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明",
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "question": {
             "minLength": 1,
             "type": "string"
@@ -345,6 +353,16 @@
           "session_key": {
             "description": "提出决策的会话，由 daemon 填写",
             "type": "string"
+          },
+          "summary": {
+            "description": "方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -725,6 +743,16 @@
               "null"
             ]
           },
+          "choices": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "code": {
             "type": "string"
           },
@@ -803,6 +831,15 @@
           "plan_id": {
             "type": "string"
           },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "project_id": {
             "type": "string"
           },
@@ -835,6 +872,15 @@
           },
           "status": {
             "type": "string"
+          },
+          "summary": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -900,6 +946,16 @@
               "null"
             ]
           },
+          "choices": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "code": {
             "type": "string"
           },
@@ -978,6 +1034,15 @@
           "plan_id": {
             "type": "string"
           },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "project_id": {
             "type": "string"
           },
@@ -1010,6 +1075,15 @@
           },
           "status": {
             "type": "string"
+          },
+          "summary": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1706,7 +1780,19 @@
         "additionalProperties": false,
         "properties": {
           "answer": {
+            "description": "答复；有要拍板的点（points）时是附言，可空",
             "type": "string"
+          },
+          "choices": {
+            "description": "逐点的选择（R-112）：与决策的 points 一一对应，填选项序号",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "files": {
             "description": "附图 ID",
@@ -1720,6 +1806,10 @@
           },
           "ref": {
             "type": "string"
+          },
+          "reject": {
+            "description": "批准类的多点决策：拒绝（此时不要求逐点选择）",
+            "type": "boolean"
           }
         },
         "required": [

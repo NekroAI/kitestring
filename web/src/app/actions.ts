@@ -43,7 +43,7 @@ export function useActions() {
   }, [run])
 
   return {
-    answer: (answers: { ref: string; answer: string; files?: string[] }[]) =>
+    answer: (answers: { ref: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean }[]) =>
       send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
     reassign: (ref: string, sessionKey: string) =>
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),

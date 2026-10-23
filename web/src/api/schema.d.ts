@@ -1079,12 +1079,16 @@ export interface components {
             /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
             option_images?: string[] | null;
             options?: string[] | null;
+            /** @description 要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明 */
+            points?: unknown[] | null;
             question: string;
             recommendation?: string;
             /** @description 关联需求 ID 或 R-编号 */
             requirement?: string;
             /** @description 提出决策的会话，由 daemon 填写 */
             session_key?: string;
+            /** @description 方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来 */
+            summary?: string[] | null;
         };
         AgentReqInBody: {
             acceptance?: string;
@@ -1180,6 +1184,7 @@ export interface components {
             approval: boolean;
             assigned_by?: string;
             blocks?: components["schemas"]["Block"][] | null;
+            choices?: number[] | null;
             code: string;
             context: string;
             context_files: components["schemas"]["FileRef"][] | null;
@@ -1197,6 +1202,7 @@ export interface components {
             origin_session?: string;
             plan_code?: string;
             plan_id?: string;
+            points?: components["schemas"]["Block"][] | null;
             project_id?: string;
             project_name?: string;
             question: string;
@@ -1208,6 +1214,7 @@ export interface components {
             session_state?: string;
             short_title: string;
             status: string;
+            summary?: string[] | null;
         };
         DecisionRaisedOutBody: {
             answer: string;
@@ -1219,6 +1226,7 @@ export interface components {
             /** @description 没有保存的块及原因；决策本身已提出 */
             block_warnings?: string[] | null;
             blocks?: components["schemas"]["Block"][] | null;
+            choices?: number[] | null;
             code: string;
             context: string;
             context_files: components["schemas"]["FileRef"][] | null;
@@ -1236,6 +1244,7 @@ export interface components {
             origin_session?: string;
             plan_code?: string;
             plan_id?: string;
+            points?: components["schemas"]["Block"][] | null;
             project_id?: string;
             project_name?: string;
             question: string;
@@ -1247,6 +1256,7 @@ export interface components {
             session_state?: string;
             short_title: string;
             status: string;
+            summary?: string[] | null;
         };
         DecisionsOutBody: {
             decisions: components["schemas"]["Decision"][] | null;
@@ -1468,10 +1478,15 @@ export interface components {
             why?: string;
         };
         Item1: {
+            /** @description 答复；有要拍板的点（points）时是附言，可空 */
             answer: string;
+            /** @description 逐点的选择（R-112）：与决策的 points 一一对应，填选项序号 */
+            choices?: number[] | null;
             /** @description 附图 ID */
             files?: string[] | null;
             ref: string;
+            /** @description 批准类的多点决策：拒绝（此时不要求逐点选择） */
+            reject?: boolean;
         };
         LastReply: {
             /** Format: date-time */

@@ -13,6 +13,7 @@ import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
+import { currentPicks, picksText, PlanSummary, Points } from './points'
 import { useOpenReq, useOpenSession } from './nav'
 import { targetItems } from './assign'
 import { Linkify, RefChip } from '../ui/refmark'
@@ -51,9 +52,9 @@ function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boo
   )
 }
 
-function Context({ text }: { text: string }) {
-  const [open, setOpen] = useState(false)
-  const long = text.length > 140 || text.split('\n').length > 3
+function Context({ text, expanded }: { text: string; expanded?: boolean }) {
+  const [open, setOpen] = useState(!!expanded)
+  const long = !expanded && (text.length > 140 || text.split('\n').length > 3)
   return (
     <div className="text-sm leading-relaxed text-fg-2">
       <div className={cx('break-words whitespace-pre-wrap', !open && long && 'line-clamp-3')}>
@@ -76,11 +77,16 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   const options = useMemo(() => d.options ?? [], [d.options])
   const rec = d.recommendation?.trim() ?? ''
   const ri = useMemo(() => recIndex(options, rec), [options, rec])
-  const answer = composeAnswer(draft, options)
+  // 多点决策（R-112）：逐点选择，默认选推荐；附言和附图照旧
+  const multi = !!d.points?.length
+  const picks = multi ? currentPicks(d, draft.picks) : []
+  const picked = multi && picks.every((c) => c >= 0)
+  const answer = multi ? (picked ? picksText(d, picks, draft.note) : '') : composeAnswer(draft, options)
+  const [sendingText, setSendingText] = useState('')
   const sendingAt = queued[d.code]
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const approval = !!d.approval
-  const free = options.length === 0 || draft.choice === 'other'
+  const free = !multi && (options.length === 0 || draft.choice === 'other')
   // 批准类：附言框常驻（批准和拒绝都可以附言）
   const note = !free && (approval || draft.noteOpen || !!draft.note)
   const title = d.short_title || d.question
@@ -98,7 +104,15 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   const uploading = useUploading()
   const submit = () => {
     if (uploadsBusy()) return void toast(t.attach.wait) // 附件没传完先不发
-    if (answer) send([{ code: d.code, answer, files: draft.files?.map((f) => f.id) }])
+    if (!answer) return
+    setSendingText(answer)
+    if (multi) send([{ code: d.code, answer: draft.note.trim(), files: draft.files?.map((f) => f.id), choices: picks }])
+    else send([{ code: d.code, answer, files: draft.files?.map((f) => f.id) }])
+  }
+  const reject = () => {
+    if (uploadsBusy()) return void toast(t.attach.wait)
+    setSendingText([t.decision.reject, draft.note.trim()].filter(Boolean).join(' · '))
+    send([{ code: d.code, answer: draft.note.trim(), files: draft.files?.map((f) => f.id), reject: true }])
   }
   const onKey = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -106,7 +120,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
       submit()
       return
     }
-    if ((e.target as HTMLElement).tagName === 'TEXTAREA') return
+    if ((e.target as HTMLElement).tagName === 'TEXTAREA' || multi) return
     const k = Number(e.key)
     if (k >= 1 && k <= options.length) choose(k - 1)
     else if (e.key === '0' && options.length) choose('other')
@@ -135,7 +149,11 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           <h3 className="font-display text-base leading-snug font-semibold text-fg sm:text-[17px]">{title}</h3>
           {d.short_title && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}
         </div>
-        {d.context && <Context text={d.context} />}
+        {d.summary?.length ? (
+          <PlanSummary lines={d.summary} full={d.context ? <Context text={d.context} expanded /> : undefined} />
+        ) : (
+          d.context && <Context text={d.context} />
+        )}
         <BlockList blocks={d.blocks} />
 
         {!!d.context_files?.length && (
@@ -151,7 +169,9 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           </div>
         )}
 
-        {approval && (
+        {multi && <Points d={d} picks={picks} onPick={(i, k) => setDraft(d.code, { picks: picks.map((c, j) => (j === i ? k : c)) })} />}
+
+        {approval && !multi && (
           <div className="grid grid-cols-2 gap-2.5" role="radiogroup">
             {[
               { i: 0, label: t.decision.approve, icon: <Check className="size-5" />, on: 'border-run bg-run-soft text-run ring-2 ring-run/25' },
@@ -284,33 +304,38 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
         </AnimatePresence>
 
         <div className="flex items-center gap-1.5">
-          {!free && !note && typeof draft.choice === 'number' && (
+          {!free && !note && (multi || typeof draft.choice === 'number') && (
             <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setDraft(d.code, { noteOpen: true })}>
               {t.decision.addNote}
             </Button>
           )}
-          {(draft.choice != null || draft.note || !!draft.files?.length) && (
+          {(draft.choice != null || draft.note || !!draft.files?.length || !!draft.picks) && (
             <Tip content={t.decision.clearDrafts}>
-              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [] })}>
+              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [], picks: undefined })}>
                 <X className="size-3.5" />
               </Button>
             </Tip>
           )}
           <span className="ml-auto" />
-          {options.length > 0 && (
+          {options.length > 0 && !multi && (
             <Tip content={t.decision.keyTip}>
               <span className="hidden text-fg-3 lg:inline-flex" aria-label={t.decision.keyTip}>
                 <Keyboard className="size-4" />
               </span>
             </Tip>
           )}
-          <Button variant="primary" size="sm" className="h-9 px-4" disabled={!answer || uploading} onClick={submit} icon={<CornerDownLeft className="size-4" />}>
-            {t.decision.send}
+          {multi && approval && (
+            <Button size="sm" variant="ghost" className="h-9" disabled={uploading} onClick={reject} icon={<X className="size-4" />}>
+              {t.decision.reject}
+            </Button>
+          )}
+          <Button variant="primary" size="sm" className="h-9 px-4" disabled={!answer || uploading} onClick={submit} icon={multi && approval ? <Check className="size-4" /> : <CornerDownLeft className="size-4" />}>
+            {multi ? (approval ? t.decision.approvePicks : t.decision.sendPicks) : t.decision.send}
           </Button>
         </div>
       </div>
 
-      <AnimatePresence>{sendingAt && <SendingOverlay answer={answer} at={sendingAt} onUndo={() => cancel(d.code)} />}</AnimatePresence>
+      <AnimatePresence>{sendingAt && <SendingOverlay answer={sendingText || answer} at={sendingAt} onUndo={() => cancel(d.code)} />}</AnimatePresence>
     </div>
     </AnnotateTarget.Provider>
   )

@@ -292,6 +292,9 @@ export const zh = {
   },
 
   decision: {
+    approvePicks: '按以上选择批准',
+    sendPicks: '提交选择',
+    fullPlan: '完整方案',
     noImage: '没有效果图',
     approve: '批准',
     approvalNote: '附言（可选）：批准或拒绝都可以带上说明、贴图',

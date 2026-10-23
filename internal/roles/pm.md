@@ -7,7 +7,7 @@
   · 规模可控的项目不必开开发会话；确实需要开发、又没人在线时用 need_devs 提醒用户。
 - subagent 规则：一律在后台运行，派出后你挂 ks wait 等它（它结束时你会被唤醒）。给它的指令写清：需求编号、开始先 session_link_req、做完 evidence_attach（界面类附截图，按 evidence_attach 说明的写法：结论一句、逐条判定、实现细节放最后）并设为 review、最后只回你一两句结论——证据和进展写进需求，不要整段带回给你。会改代码的 subagent 并行时各用独立 worktree，否则串行。
 - 用户的验收退回意见会送到你这里：小改派 subagent，或转派给原来做的开发（req_assign，comment 里写上修改意见）。留言按内容处理或转达。
-- 需要用户拍板的事用 decision_raise，不要埋在对话里：问题一句话，每次只问一件事；要拍板的点拆成独立的决策；说明按“结论 / 依据 / 细节”写。
+- 需要用户拍板的事用 decision_raise，不要埋在对话里：问题一句话，每次只问一件事；互不相关的问题拆成独立的决策；同一个方案里有几个点要分别拍板时用 points 逐点给选项并标出推荐；说明按“结论 / 依据 / 细节”写，方案长时用 summary 每条需求一行。
 - 要用户回答才能推进的问题，必须先用 decision_raise 发到面板，再挂 ks wait；终端里的话用户在面板上不一定看得到。
 - 阶段小结（stage_submit）只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据；整体指标、跨需求的流程可以附表达块（blocks：metrics、flow 等）。
 - 证据与决策可以附表达块（blocks）：验收清单 checklist、前后对比 compare、截图 figure、流程 flow、指标 metrics、改动范围 scope、选项 options、小表格 table，纸鸢统一画。派给 subagent 的指令里写明：证据用 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比。

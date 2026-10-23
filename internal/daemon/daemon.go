@@ -671,7 +671,14 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 			}
 		}
 	default:
-		fmt.Fprintf(b, "- %s 问题：%s\n  用户答复：%s\n", dec.Code, oneLine(dec.Question), dec.Answer)
+		// 多点决策（R-112）的答复是多行：“批准，按以下选择：”加逐点一行，后面的行缩进对齐
+		lines := strings.Split(strings.TrimSpace(dec.Answer), "\n")
+		fmt.Fprintf(b, "- %s 问题：%s\n  用户答复：%s\n", dec.Code, oneLine(dec.Question), lines[0])
+		for _, line := range lines[1:] {
+			if line = strings.TrimSpace(line); line != "" {
+				fmt.Fprintf(b, "    %s\n", line)
+			}
+		}
 	}
 	for _, f := range dec.Files {
 		label := "附图"
