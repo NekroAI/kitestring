@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, animate as animateValue, motion, useMotionValue, useMotionValueEvent, useTransform, type AnimationPlaybackControls } from 'motion/react'
 import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
@@ -254,53 +254,89 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
     anim.current = animateValue(pos, page * W, { type: 'spring', stiffness: 380, damping: 38, velocity, onComplete: () => (aim.current = null) })
   }
   const go = (d: number) => snapTo((aim.current ?? Math.round(pos.get() / W)) + d)
-  // 拖动开始：打断正在进行的动画，从当前位置接着走
+  // 拖动开始：打断正在进行的动画，从当前位置接着走；以动画正要去的那一页为基准（连续翻页不丢页）
   const begin = () => {
     anim.current?.stop()
-    aim.current = null
     const from = pos.get()
-    gesture.current = { from, page: Math.round(from / W), acc: 0, samples: [{ t: performance.now(), v: from }] }
+    const page = aim.current ?? Math.round(from / W)
+    aim.current = null
+    gesture.current = { from, page, acc: 0, samples: [{ t: performance.now(), v: from }], last: 0, peak: 0, rises: 0, drops: 0 }
   }
-  // dx：手指 / 触控板相对开始时的水平位移（向左为负，即往下一张）
+  // dx：手指 / 触控板相对开始时的水平位移（向左为负，即往下一张）。带子最多走到基准页的前后一页（从动画中途接手时，起点可能还没到基准页）
   const move = (dx: number) => {
     const g = gesture.current
-    if (!g || g.done) return
-    const v = clamp(g.from - dx, (g.page - 1) * W, (g.page + 1) * W)
+    if (!g || g.done !== undefined) return
+    const v = clamp(g.from - dx, Math.min(g.from, (g.page - 1) * W), Math.max(g.from, (g.page + 1) * W))
     pos.set(v)
     g.samples.push({ t: performance.now(), v })
     if (g.samples.length > 6) g.samples.shift()
   }
-  const end = () => {
-    const g = gesture.current
-    gesture.current = null
-    if (!g || g.done) return
+  // 松手：按这次手势走了多少与速度决定翻页还是弹回
+  const decide = (g: Gesture) => {
     const [a, b] = [g.samples[0], g.samples[g.samples.length - 1]]
     const vel = b.t > a.t ? ((b.v - a.v) / (b.t - a.t)) * 1000 : 0 // px/s，正数是往下一张
-    const off = pos.get() - g.page * W
+    const off = pos.get() - g.from // 这次手势带子走了多少（从动画中途接手时也只看这一段）
     const fling = g.wheel ? 1500 : 400 // 触控板日常滑动本身就快，甩动门槛要高，免得轻轻一碰就翻页
     const page = vel > fling || off > W * 0.22 ? g.page + 1 : vel < -fling || off < -W * 0.22 ? g.page - 1 : g.page
     snapTo(page, vel)
   }
-  // 触控板：没有“松手”事件，滚轮停下约 120ms 视为结束；走满一页立即落定，余下的惯性滚动忽略
-  const wheel = (dx: number) => {
-    if (!gesture.current) {
-      begin()
-      gesture.current!.wheel = true
-    }
-    const g = gesture.current!
+  const end = () => {
+    const g = gesture.current
+    gesture.current = null
+    if (!g) return
     window.clearTimeout(g.idle)
-    g.idle = window.setTimeout(() => {
-      if (gesture.current !== g) return
-      if (g.done) gesture.current = null
-      else end()
-    }, 120)
-    if (g.done) return
-    g.acc -= dx
-    move(g.acc)
-    if (Math.abs(pos.get() - g.page * W) >= W - 1) {
-      g.done = true
-      snapTo(Math.round(pos.get() / W))
+    if (g.done === undefined) decide(g)
+  }
+  // 触控板：没有“松手”事件，从滚轮力度的走势推断。
+  // - 力度连续几下回落（手指离开、进入惯性）就当松手：立即决定翻页还是弹回，余下的惯性滚动忽略；
+  //   走满一页也立即落定。滚轮停下 120ms 同样视为结束。
+  // - macOS 的惯性滚动会一直发事件，不能只靠停顿判断下一次滑动：回落之后力度又连续回升（新的一次滑动起势）、
+  //   或方向反过来，就当成新手势；落定后的锁定最多 LOCK_MS（R-121）。
+  // 返回 true 表示这次滚轮归翻页（竖向为主、又不在翻页手势里的，交给看图器缩放）。
+  const wheel = (dx: number, dy: number): boolean => {
+    let g = gesture.current
+    if (g && !g.wheel) return true // 触屏正在拖
+    const a = Math.abs(dx)
+    if (g) {
+      g.rises = a > g.last + 1 ? g.rises + 1 : 0
+      const dir = Math.sign(g.samples[g.samples.length - 1].v - g.from)
+      const fresh =
+        (g.done !== undefined && a >= 4 && (g.rises >= 2 || a >= g.last * 3 + 6)) || // 回落后又起势
+        (dir !== 0 && Math.sign(dx) === -dir && a >= 3) || // 方向反过来
+        (g.done !== undefined && performance.now() - g.done > LOCK_MS) // 落定后的锁定到期
+      if (fresh) {
+        end()
+        g = null
+      } else {
+        g.drops = a < g.last ? g.drops + 1 : 0
+        if (a > g.peak) g.peak = a
+        g.last = a
+      }
     }
+    if (!g) {
+      if (a <= Math.abs(dy)) return false
+      begin()
+      g = gesture.current!
+      g.wheel = true
+      g.last = g.peak = a
+    }
+    const cur = g
+    window.clearTimeout(cur.idle)
+    cur.idle = window.setTimeout(() => gesture.current === cur && end(), 120)
+    if (cur.done !== undefined) return true
+    cur.acc -= dx
+    move(cur.acc)
+    const p = pos.get()
+    if (p >= (cur.page + 1) * W - 1 || p <= (cur.page - 1) * W + 1) {
+      // 走满一页
+      cur.done = performance.now()
+      snapTo(cur.page + Math.sign(p - cur.page * W))
+    } else if (cur.drops >= 3 && a < cur.peak * 0.7) {
+      // 松手进入惯性
+      cur.done = performance.now()
+      decide(cur)
+    }
+    return true
   }
   useEffect(() => {
     if (!open) return
@@ -365,16 +401,24 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 type View = { s: number; x: number; y: number }
-type Gesture = { from: number; page: number; acc: number; samples: { t: number; v: number }[]; idle?: number; done?: boolean; wheel?: boolean }
+// last / peak / rises / drops：滚轮力度的走势，用来认出松手与新的一次滑动；done：已决定翻页（松手或走满一页）的时刻，之后的惯性忽略
+type Gesture = { from: number; page: number; acc: number; samples: { t: number; v: number }[]; idle?: number; done?: number; wheel?: boolean; last: number; peak: number; rises: number; drops: number }
+const LOCK_MS = 800
 
-// Viewer：胶片带上的一页。触控板双指捏合缩放、双指移动平移；触屏双指缩放、单指拖动、下滑关闭；双击放大 / 复原。
-// 没放大时，左右拖动（触屏）和双指左右滑（触控板）交给胶片带翻页。按钮、页码等只由当前页画在胶片带外面（chromeHost）。
-type Nav = { i: number; n: number; go: (d: number) => void; begin: () => void; move: (dx: number) => void; end: () => void; wheel: (dx: number) => void }
+// Viewer：胶片带上的一页。滚轮上下滚（鼠标滚轮、触控板双指上下滑）与触控板捏合缩放，放大后拖动平移；
+// 触屏双指缩放、单指拖动、下滑关闭；单击任意处关闭（拖动、平移、捏合后松手不算）。
+// 左右滑（触屏左右拖、触控板双指左右滑）交给胶片带翻页。按钮、页码等只由当前页画在胶片带外面（chromeHost）。
+// 清晰度：静止时图片不挂 transform；放大停下后直接按放大后的宽高排版，让浏览器按原图高质量重采样，
+// 只有手势和动画进行中才用 transform 跟手（R-121）。
+type Nav = { i: number; n: number; go: (d: number) => void; begin: () => void; move: (dx: number) => void; end: () => void; wheel: (dx: number, dy: number) => boolean }
 
 function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { f: FileRef; onClose: () => void; nav?: Nav; active?: boolean; intro?: boolean; chromeHost?: HTMLElement | null }) {
   const box = useRef<HTMLDivElement>(null)
   const [v, setV] = useState<View>({ s: 1, x: 0, y: 0 })
   const [smooth, setSmooth] = useState(false)
+  const [live, setLive] = useState(false) // 手势 / 动画进行中：用 transform 跟手；停下后换成真实宽高
+  const liveTimer = useRef(0)
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
   const cur = useRef(v)
   cur.current = v
   const pts = useRef(new Map<number, { x: number; y: number }>())
@@ -397,24 +441,45 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
     const r = box.current!.getBoundingClientRect()
     return { x: x - r.left - r.width / 2, y: y - r.top - r.height / 2 }
   }
-  const animate = (nv: View) => {
-    setSmooth(true)
-    setV(nv)
-    window.setTimeout(() => setSmooth(false), 280)
+  const wake = (ms = 160) => {
+    setLive(true)
+    window.clearTimeout(liveTimer.current)
+    liveTimer.current = window.setTimeout(() => setLive(false), ms)
   }
+  // 手势里改视图：先切回 transform 跟手
+  const track = (nv: View) => {
+    wake()
+    setV(nv)
+  }
+  // 动画：先在当前视图上切回 transform（几何不变），下一帧再改目标，过渡才有起点
+  const animate = (nv: View) => {
+    wake(340)
+    setSmooth(true)
+    requestAnimationFrame(() => requestAnimationFrame(() => setV(nv)))
+    window.setTimeout(() => setSmooth(false), 320)
+  }
+  useEffect(() => () => window.clearTimeout(liveTimer.current), [])
+  // 翻走的那一页复原，翻回来时不是放大的
+  useEffect(() => {
+    if (!active) setV({ s: 1, x: 0, y: 0 })
+  }, [active])
 
   const navRef = useRef(nav)
   navRef.current = nav
   useEffect(() => {
     const el = box.current
     if (!el || video) return
-    // 触控板：捏合是带 ctrlKey 的滚轮事件，双指移动是普通滚轮事件；没放大时双指左右滑交给胶片带跟手翻页。
+    // 触控板：捏合是带 ctrlKey 的滚轮事件；普通滚轮（鼠标滚轮、触控板双指）上下是缩放，左右交给胶片带跟手翻页（R-69、R-121）。
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const p = rel(e.clientX, e.clientY)
-      if (e.ctrlKey) setV(zoomAt(cur.current.s * Math.exp(-e.deltaY * 0.01), p.x, p.y))
-      else if (cur.current.s > 1) setV({ ...cur.current, x: cur.current.x - e.deltaX, y: cur.current.y - e.deltaY })
-      else if (navRef.current && Math.abs(e.deltaX) > Math.abs(e.deltaY)) navRef.current.wheel(e.deltaX) // 跟手翻页（R-69）
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1 // 按行 / 按页滚动的换成像素
+      const dx = e.deltaX * unit
+      const dy = e.deltaY * unit
+      if (e.ctrlKey) return track(zoomAt(cur.current.s * Math.exp(-dy * 0.01), p.x, p.y))
+      if (navRef.current?.wheel(dx, dy)) return
+      if (Math.abs(dy) >= Math.abs(dx)) track(zoomAt(cur.current.s * Math.exp(-dy * 0.0025), p.x, p.y))
+      else if (cur.current.s > 1) track({ ...cur.current, x: cur.current.x - dx }) // 单张图没法翻页：放大后左右滑平移
     }
     // Safari 的触控板捏合走手势事件。
     let gBase = cur.current
@@ -426,7 +491,7 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
       e.preventDefault()
       const g = e as Event & { scale: number; clientX: number; clientY: number }
       const p = rel(g.clientX, g.clientY)
-      setV(zoomAt(gBase.s * g.scale, p.x, p.y, gBase))
+      track(zoomAt(gBase.s * g.scale, p.x, p.y, gBase))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     el.addEventListener('gesturestart', onGStart)
@@ -461,7 +526,7 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
       const c = rel((a.x + b.x) / 2, (a.y + b.y) / 2)
       const { d, c: c0, base } = pinch.current
       const nv = zoomAt((base.s * Math.hypot(a.x - b.x, a.y - b.y)) / d, c0.x, c0.y, base)
-      setV(nv.s === 1 ? nv : { ...nv, x: nv.x + c.x - c0.x, y: nv.y + c.y - c0.y })
+      track(nv.s === 1 ? nv : { ...nv, x: nv.x + c.x - c0.x, y: nv.y + c.y - c0.y })
       moved.current = true
       return
     }
@@ -470,7 +535,7 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
     const dx = e.clientX - g.x
     const dy = e.clientY - g.y
     if (Math.abs(dx) + Math.abs(dy) > 4) moved.current = true
-    if (g.base.s > 1) return setV({ ...g.base, x: g.base.x + dx, y: g.base.y + dy })
+    if (g.base.s > 1) return track({ ...g.base, x: g.base.x + dx, y: g.base.y + dy })
     if (!g.touch) return
     // 先看手指往哪个方向走：左右交给胶片带跟手翻页，向下是关闭
     if (!g.axis && Math.abs(dx) + Math.abs(dy) > 6) {
@@ -478,7 +543,7 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
       if (g.axis === 'x') nav!.begin()
     }
     if (g.axis === 'x') nav!.move(dx)
-    else if (g.axis === 'y') setV({ s: 1, x: 0, y: Math.max(0, dy) })
+    else if (g.axis === 'y') track({ s: 1, x: 0, y: Math.max(0, dy) })
   }
   const onUp = (e: ReactPointerEvent) => {
     pts.current.delete(e.pointerId)
@@ -496,12 +561,18 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
       else animate({ s: 1, x: 0, y: 0 })
     }
   }
-  const onDouble = (e: React.MouseEvent) => {
-    if (video) return
-    const p = rel(e.clientX, e.clientY)
-    animate(cur.current.s > 1 ? { s: 1, x: 0, y: 0 } : zoomAt(2.5, p.x, p.y))
-  }
   const fade = v.s === 1 && v.y > 0 ? Math.max(0.3, 1 - v.y / 400) : 1
+  // 图片样式：静止且没放大时什么都不挂；放大停下后按放大后的宽高排版（不靠 scale 放大位图）；手势中用 transform 跟手
+  const imgStyle = (): CSSProperties => {
+    const rest = v.s === 1 && v.x === 0 && v.y === 0
+    if (rest && !smooth) return {}
+    const el = box.current
+    if (v.s > 1 && !live && !smooth && nat && el) {
+      const fit = Math.min(1, (el.clientWidth - 32) / nat.w, (el.clientHeight - 32) / nat.h)
+      return { width: nat.w * fit * v.s, height: nat.h * fit * v.s, maxWidth: 'none', maxHeight: 'none', transform: `translate(${Math.round(v.x)}px, ${Math.round(v.y)}px)` }
+    }
+    return { transform: rest ? 'none' : `translate(${v.x}px, ${v.y}px) scale(${v.s})`, transition: smooth ? 'transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none' }
+  }
 
   return (
     <>
@@ -511,9 +582,8 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        onDoubleClick={onDouble}
-        onClick={() => onBackdrop.current && !moved.current && onClose()}
-        className={cx('absolute inset-0 flex items-center justify-center overflow-hidden p-4 select-none', !video && 'touch-none', v.s > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in')}
+        onClick={() => (onBackdrop.current || !video) && !moved.current && onClose()} // 录屏只在画面外单击才关，免得点控件时关掉
+        className={cx('absolute inset-0 flex items-center justify-center overflow-hidden p-4 select-none', !video && 'touch-none', v.s > 1 && 'cursor-grab active:cursor-grabbing')}
         style={{ opacity: fade }}
       >
         <motion.div initial={intro ? { opacity: 0, scale: 0.94 } : false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }} className="pointer-events-none flex max-h-full max-w-full items-center justify-center">
@@ -524,8 +594,9 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
               src={fileUrl(f.id)}
               alt={f.name}
               draggable={false}
-              className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg object-contain shadow-pop will-change-transform"
-              style={{ transform: `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.s})`, transition: smooth ? 'transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none' }}
+              onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+              className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] shrink-0 rounded-lg object-contain shadow-pop"
+              style={imgStyle()}
             />
           )}
         </motion.div>
@@ -555,7 +626,7 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
           </button>
         </Dialog.Close>
       </motion.div>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <span className="flex items-center gap-2">
           {target && !video && (
             <button onClick={() => setAnnotating(true)} className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-medium text-black backdrop-blur hover:bg-white">
@@ -569,9 +640,6 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
             </button>
           )}
         </span>
-        <a href={fileUrl(f.id)} target="_blank" rel="noreferrer" className="pointer-events-auto rounded-lg bg-black/55 px-3 py-1.5 text-xs text-white backdrop-blur hover:bg-black/75">
-          {video ? t.attach.originalFile : t.attach.original}
-        </a>
       </motion.div>
           </>,
           chromeHost,
