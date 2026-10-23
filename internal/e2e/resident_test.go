@@ -43,7 +43,7 @@ func TestResidentStopGuard(t *testing.T) {
 	// 等 daemon 收到身份：第一次被拦即说明已生效
 	var out string
 	e.waitFor("开发会话被拦", func() bool { out = stop("dev-1"); return blocked(out) })
-	if !strings.Contains(out, "ks wait") || !strings.Contains(out, "开发") {
+	if !strings.Contains(out, "ks wait") || !strings.Contains(out, "Dev 会话") {
 		t.Fatalf("拦下理由应提示挂 ks wait：%s", out)
 	}
 	if !blocked(stop("dev-1")) {

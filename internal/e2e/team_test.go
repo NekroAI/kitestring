@@ -134,7 +134,7 @@ func TestTeamAssign(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r3.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "auto"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Assigned || !strings.Contains(out.Message, "没有在线的开发") {
+	if out.Assigned || !strings.Contains(out.Message, "没有在线的 Dev") {
 		t.Fatalf("没有在线开发时不应派出：%+v", out)
 	}
 }

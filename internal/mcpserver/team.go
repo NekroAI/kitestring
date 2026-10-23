@@ -52,12 +52,12 @@ func clip(s string, n int) string { return summary.Truncate(strings.Join(strings
 
 type assignIn struct {
 	Requirement string `json:"requirement" jsonschema:"需求编号（如 R-12）"`
-	To          string `json:"to" jsonschema:"开发会话键（team 列出的 key）；填 auto 由 Kitestring 挑：在线待命优先，其次手上需求少、上下文轻"`
+	To          string `json:"to" jsonschema:"Dev 会话键（team 列出的 key）；填 auto 由 Kitestring 挑：在线待命优先，其次手上需求少、上下文轻"`
 	Comment     string `json:"comment,omitempty" jsonschema:"交代给开发的话，例如为什么交给它、和哪条需求相关"`
 }
 
 type needIn struct {
-	Count  int    `json:"count" jsonschema:"还需要几个开发会话（1～5）；0 表示不再需要、撤销提醒"`
+	Count  int    `json:"count" jsonschema:"还需要几个 Dev 会话（1～5）；0 表示不再需要、撤销提醒"`
 	Reason string `json:"reason,omitempty" jsonschema:"为什么需要：哪些需求在等、为什么不适合用 subagent 做；用户会在推送里看到"`
 }
 
@@ -80,7 +80,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text("简报已更新，用户在工作台顶部能看到。"), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "need_devs", Description: "PM 用：需要开发会话、但工人池里没有在线的开发时，提醒用户开新的开发会话。用户手机会收到推送，里面有原因和接入用的那句话；开发上线后提醒自动消失。req_assign 用 auto 找不到在线开发时会自动提醒，不必重复调用。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "need_devs", Description: "PM 用：需要 Dev 会话、但工人池里没有在线的 Dev 时，提醒用户开新的 Dev 会话。用户手机会收到推送，里面有原因和接入用的那句话；Dev 上线后提醒自动消失。req_assign 用 auto 找不到在线 Dev 时会自动提醒，不必重复调用。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in needIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -94,9 +94,9 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			if in.Count == 0 {
 				return text("已撤销提醒。"), nil, nil
 			}
-			return text(fmt.Sprintf("已提醒用户开 %d 个开发会话。开发上线后用 team 查看，再用 req_assign 派活；等待期间可以挂 ks wait。", in.Count)), nil, nil
+			return text(fmt.Sprintf("已提醒用户开 %d 个 Dev 会话。Dev 上线后用 team 查看，再用 req_assign 派活；等待期间可以挂 ks wait。", in.Count)), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "team", Description: "PM 用：查看本项目的工人池——PM 与各开发会话的在线状态（在线待命 / 工作中 / 离线）、上下文占用、手上的需求。开发按适合接活的顺序排列。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "team", Description: "PM 用：查看本项目的工人池——PM 与各 Dev 会话的在线状态（在线待命 / 工作中 / 离线）、上下文占用、手上的需求。Dev 按适合接活的顺序排列。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -118,7 +118,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 				b.WriteString(strings.TrimPrefix(out.PM.line(), "- ") + "\n")
 			}
 			if len(out.Devs) == 0 {
-				b.WriteString("开发：没有。需要开发时用 need_devs 提醒用户开开发会话，或自己用后台 subagent 做。")
+				b.WriteString("Dev：没有。需要 Dev 时用 need_devs 提醒用户开 Dev 会话，或自己用后台 subagent 做。")
 			} else {
 				fmt.Fprintf(&b, "开发（%d 个，适合接活的在前）：\n", len(out.Devs))
 				for _, w := range out.Devs {
@@ -127,7 +127,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(b.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个开发会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。开发在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个 Dev 会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。Dev 在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in assignIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {

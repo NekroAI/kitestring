@@ -165,7 +165,7 @@ func runReq(args []string) error {
 	priority := fs.String("priority", "", "create：优先级 P0-P3")
 	kind := fs.String("kind", "manual", "evidence：证据类型")
 	link := fs.String("link", "", "evidence：链接")
-	to := fs.String("to", "", "assign：交给哪个开发会话（tool:session_id），auto 由 hub 挑")
+	to := fs.String("to", "", "assign：交给哪个 Dev 会话（tool:session_id），auto 由 hub 挑")
 	comment := fs.String("comment", "", "assign：交代给开发的话")
 	verdict := fs.String("verdict", "", "evidence：一句结论（40 字以内）")
 	details := fs.String("details", "", "evidence：实现细节（默认折叠）")
@@ -238,15 +238,15 @@ func runReq(args []string) error {
 		printHint(writing.PayloadHint(*verdict, rawHasChecklist(raw)))
 		return nil
 	case "assign":
-		// PM 派活（R-86）：ks req assign R-12 --to <开发会话键|auto> [--comment ...]
+		// PM 派活（R-86）：ks req assign R-12 --to <Dev 会话键|auto> [--comment ...]
 		if fs.NArg() < 1 || *to == "" {
-			return fmt.Errorf("用法：ks req assign <R-编号> --to <开发会话键|auto> [--comment 交代]")
+			return fmt.Errorf("用法：ks req assign <R-编号> --to <Dev 会话键|auto> [--comment 交代]")
 		}
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/assign", compact(map[string]any{"session_key": currentSession(*session), "to": *to, "comment": *comment}))
 	case "review":
 		// 审查员交审查意见（R-88）：ks req review R-12 <意见> [--image 截图.png]；不改需求状态
 		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req review <R-编号> <审查意见> [--image 截图.png]（只有审查员会话能交）")
+			return fmt.Errorf("用法：ks req review <R-编号> <审查意见> [--image 截图.png]（只有 Rev 会话能交）")
 		}
 		body := map[string]any{"summary": fs.Arg(1), "session_key": currentSession(*session)}
 		if err := attachFiles(body, images); err != nil {

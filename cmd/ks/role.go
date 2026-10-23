@@ -96,7 +96,7 @@ func runBrief(args []string) error {
 func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
-	reason := fs.String("reason", "", "need：为什么需要开发会话")
+	reason := fs.String("reason", "", "need：为什么需要 Dev 会话")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}

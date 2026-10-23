@@ -1150,7 +1150,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			switch strings.ToLower(b.Kind) {
 			case store.EvidenceReview:
 				// 审查意见走 review_submit（R-88）：只有审查员能交，且不算验收证据
-				return nil, huma.Error400BadRequest("审查意见请用 review_submit（命令行 ks req review）提交，只有审查员会话能交；验收证据换一个 kind，例如 test、manual")
+				return nil, huma.Error400BadRequest("审查意见请用 review_submit（命令行 ks req review）提交，只有 Rev 会话能交；验收证据换一个 kind，例如 test、manual")
 			case "screenshot", "video", "recording":
 				if len(files) == 0 {
 					return nil, huma.Error400BadRequest("证据类型为 " + b.Kind + " 时必须附上图片或录屏（MCP 用 images / videos，命令行用 --image / --video）")

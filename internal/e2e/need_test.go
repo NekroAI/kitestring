@@ -82,7 +82,7 @@ func TestNeedDevs(t *testing.T) {
 	if out.Assigned || !strings.Contains(out.Message, "已推送提醒") {
 		t.Fatalf("应未派出并已提醒：%+v", out)
 	}
-	got("需要 1 个开发", "导出 CSV", "ks role dev", "https://ks.example/projects/")
+	got("需要 1 个 Dev 会话", "导出 CSV", "ks role dev", "https://ks.example/projects/")
 	if p := project(); p.NeedDevs != 1 || !strings.Contains(p.NeedReason, "导出 CSV") || p.NeedAt == nil {
 		t.Fatalf("项目上应记下需要 1 个开发：%+v", p)
 	}
@@ -91,7 +91,7 @@ func TestNeedDevs(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/team/need", map[string]any{"session_key": "claude:pm", "count": 2, "reason": "5 条前端需求排队，改动大、要你频繁看效果"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	got("需要 2 个开发", "要你频繁看效果")
+	got("需要 2 个 Dev 会话", "要你频繁看效果")
 
 	// 一个开发上线：还不够，不清除
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:dev", "role": "dev"}, nil); err != nil {

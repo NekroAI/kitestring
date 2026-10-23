@@ -45,15 +45,15 @@ agent 调用：
   mcp                    stdio MCP server
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
   req assign <R-x> --to <会话|auto>   PM 把需求交给开发
-  req review <R-x> <意见> [--image]   审查员交审查意见（不改需求状态）
-  team                   工人池：本项目的 PM 与开发会话（在线状态、上下文、手上的需求）
-  team need <数量> --reason ...   PM 提醒用户开开发会话
+  req review <R-x> <意见> [--image]   Rev 交审查意见（不改需求状态）
+  team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
+  team need <数量> --reason ...   PM 提醒用户开 Dev 会话
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结（只写跨需求的效果和遗留问题）
   decision raise ...     提出决策（一次只问一件事）
   写作规范：证据第一句是结论（40 字以内），再逐条写验收判定；证据超 600 字、决策说明超 400 字时照常保存并提示压缩
   表达块：req evidence / decision raise / plan submit 可加 --blocks 块.json（清单、对比、截图、流程、指标、改动范围、选项、表格），纸鸢统一渲染
-  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / 开发 / 顾问 / 审查员），打印身份提示词
+  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / Dev / Adv / Rev），打印身份提示词
   wait [--timeout 1h]    挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）
 
   version                打印版本

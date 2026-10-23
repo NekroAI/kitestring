@@ -20,7 +20,7 @@ const needRenotify = 10 * time.Minute // 同一项目 10 分钟内不重复推�
 
 // JoinPhrase 是开开发会话时对 Agent 说的那句话。
 func JoinPhrase(project string) string {
-	return fmt.Sprintf("连接到纸鸢，做「%s」的开发（运行 ks role dev）", project)
+	return fmt.Sprintf("连接到纸鸢，做「%s」的 Dev（运行 ks role dev）", project)
 }
 
 // requestDevs 记下需要 n 个开发并推送提醒。
@@ -44,7 +44,7 @@ func (h *Hub) requestDevs(ctx context.Context, projectID string, n int, reason s
 	h.mu.Unlock()
 	h.sendNotify(projectID, notify.Message{
 		Event: notify.EventNeedDevs,
-		Title: fmt.Sprintf("需要 %d 个开发 · %s", n, p.Name),
+		Title: fmt.Sprintf("需要 %d 个 Dev 会话 · %s", n, p.Name),
 		Body:  fmt.Sprintf("%s\n在项目目录打开 Claude Code，说：%s", reason, JoinPhrase(p.Name)),
 		Group: "kitestring",
 	}, "/projects/"+projectID)
@@ -78,11 +78,11 @@ func (h *Hub) checkNeed(ctx context.Context, projectID string) {
 }
 
 func (h *Hub) registerAgentNeed(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "agent-need-devs", Method: http.MethodPost, Path: "/api/agent/team/need", Tags: []string{"agent"}, Summary: "PM 请用户开开发会话（R-87）"},
+	huma.Register(api, huma.Operation{OperationID: "agent-need-devs", Method: http.MethodPost, Path: "/api/agent/team/need", Tags: []string{"agent"}, Summary: "PM 请用户开 Dev 会话（R-87）"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey string `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 PM）"`
-				Count      int    `json:"count" minimum:"0" maximum:"5" doc:"还需要几个开发会话；0 表示撤销提醒"`
+				Count      int    `json:"count" minimum:"0" maximum:"5" doc:"还需要几个 Dev 会话；0 表示撤销提醒"`
 				Reason     string `json:"reason,omitempty" doc:"为什么需要：哪些需求在等、为什么不适合 subagent"`
 			}
 		}) (*okBody, error) {
@@ -91,13 +91,13 @@ func (h *Hub) registerAgentNeed(api huma.API) {
 				return nil, apiErr(err)
 			}
 			if me.Role != roles.PM || me.ProjectID == "" {
-				return nil, huma.Error403Forbidden("只有项目的 PM 能请用户开开发会话")
+				return nil, huma.Error403Forbidden("只有项目的 PM 能请用户开 Dev 会话")
 			}
 			if in.Body.Count == 0 {
 				return ok(), apiErr(h.dismissNeed(ctx, me.ProjectID))
 			}
 			if strings.TrimSpace(in.Body.Reason) == "" {
-				return nil, huma.Error400BadRequest("请写明为什么需要开发会话，用户会在推送里看到")
+				return nil, huma.Error400BadRequest("请写明为什么需要 Dev 会话，用户会在推送里看到")
 			}
 			if err := h.requestDevs(ctx, me.ProjectID, in.Body.Count, in.Body.Reason); err != nil {
 				return nil, apiErr(err)
@@ -116,7 +116,7 @@ func (h *Hub) dismissNeed(ctx context.Context, projectID string) error {
 }
 
 func (h *Hub) registerNeedWeb(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "dismiss-need-devs", Method: http.MethodDelete, Path: "/api/projects/{id}/need", Tags: []string{"projects"}, Summary: "撤销“需要开发会话”的提醒（R-87）"},
+	huma.Register(api, huma.Operation{OperationID: "dismiss-need-devs", Method: http.MethodDelete, Path: "/api/projects/{id}/need", Tags: []string{"projects"}, Summary: "撤销“需要 Dev 会话”的提醒（R-87）"},
 		func(ctx context.Context, in *struct {
 			ID string `path:"id"`
 		}) (*okBody, error) {

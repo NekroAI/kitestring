@@ -7,7 +7,7 @@ import { t } from '../i18n'
 import { cx, relTime } from '../lib/util'
 import { Button, Card } from '../ui/base'
 import { Score } from '../ui/blocks'
-import { displayState, presence, SessAvatar } from '../ui/marks'
+import { displayState, presence, RoleTag } from '../ui/marks'
 import { Collapse } from '../ui/motion'
 import { Linkify, RefChip } from '../ui/refmark'
 import { useActions } from './actions'
@@ -38,7 +38,7 @@ export function Briefs({ sessions, now }: { sessions: Session[]; now: number }) 
         return (
           <section key={p.id} className="grid gap-1.5 rounded-r-xl border-l-[3px] border-seal bg-surface px-4 py-3 shadow-xs sm:px-5">
             <div className="flex min-w-0 items-center gap-2 text-xs text-fg-3">
-              <SessAvatar role="pm" presence={pm ? presence(pm) || undefined : undefined} />
+              <RoleTag role="pm" presence={pm ? presence(pm) || undefined : undefined} />
               <span className="truncate">{t.desk.briefBy(list.length > 1 ? p.name : '', relTime(p.brief_at, now))}</span>
             </div>
             <p className="text-[15px] leading-relaxed whitespace-pre-wrap text-fg">
@@ -340,7 +340,7 @@ function SessionTodo({ s, now }: { s: Session; now: number }) {
       kind={t.desk.kind[k]}
       title={
         <>
-          <SessAvatar role={s.role} />
+          {s.role && <RoleTag role={s.role} />}
           <span className="min-w-0 truncate text-sm font-medium text-fg">{sessionTitle(s)}</span>
           {s.project_name && <span className="shrink-0 text-xs text-fg-3 max-sm:hidden">{s.project_name}</span>}
         </>
@@ -454,7 +454,7 @@ function ReqProgress({ r }: { r: Requirement }) {
       <RefChip code={r.code} status={r.status} size="row" className="min-w-0 flex-1" />
       {s ? (
         <span className="inline-flex max-w-[40%] shrink-0 items-center gap-1.5 text-xs text-fg-3">
-          <SessAvatar role={s.role} />
+          {s.role && <RoleTag role={s.role} />}
           <span className="truncate">{sessionTitle(s)}</span>
         </span>
       ) : (

@@ -30,13 +30,13 @@ func (h *Hub) askReview(ctx context.Context, ref, sessionKey, comment string) (s
 		return store.Decision{}, apiErr(err)
 	}
 	if x.Role != roles.Reviewer {
-		return store.Decision{}, huma.Error400BadRequest("这个会话不是审查员：先在它的对话里运行 ks role reviewer")
+		return store.Decision{}, huma.Error400BadRequest("这个会话不是 Rev：先在它的对话里运行 ks role reviewer")
 	}
 	if x.State == store.StateEnded || x.State == store.StateLost {
-		return store.Decision{}, huma.Error400BadRequest("这个审查员会话已结束")
+		return store.Decision{}, huma.Error400BadRequest("这个 Rev 会话已结束")
 	}
 	if r.ProjectID != "" && x.ProjectID != r.ProjectID {
-		return store.Decision{}, huma.Error400BadRequest(fmt.Sprintf("这个审查员会话不属于 %s 所在的项目", r.Code))
+		return store.Decision{}, huma.Error400BadRequest(fmt.Sprintf("这个 Rev 会话不属于 %s 所在的项目", r.Code))
 	}
 	if r.Status == store.ReqShelved {
 		return store.Decision{}, huma.Error400BadRequest(fmt.Sprintf("%s 已搁置，不用审查", r.Code))
@@ -69,14 +69,14 @@ var reqStatusZh = map[string]string{store.ReqDraft: "草稿", store.ReqReady: "�
 // submitReview 审查员交审查意见：只记录，不改需求状态。只有审查员身份的会话能交。
 func (h *Hub) submitReview(ctx context.Context, ref, sessionKey, summary string, fileIDs []string) (store.Requirement, error) {
 	if sessionKey == "" {
-		return store.Requirement{}, huma.Error400BadRequest("无法识别当前会话：审查意见必须由审查员会话提交")
+		return store.Requirement{}, huma.Error400BadRequest("无法识别当前会话：审查意见必须由 Rev 会话提交")
 	}
 	x, err := h.store.GetSession(ctx, sessionKey)
 	if err != nil {
 		return store.Requirement{}, apiErr(err)
 	}
 	if x.Role != roles.Reviewer {
-		return store.Requirement{}, huma.Error403Forbidden("只有审查员会话能交审查意见（ks role reviewer）；验收证据请用 evidence_attach")
+		return store.Requirement{}, huma.Error403Forbidden("只有 Rev 会话能交审查意见（ks role reviewer）；验收证据请用 evidence_attach")
 	}
 	r, err := h.store.GetRequirement(ctx, ref)
 	if err != nil {
@@ -110,12 +110,12 @@ func reviewDone(r store.Requirement, d store.Decision) bool {
 }
 
 func (h *Hub) registerReviewerWeb(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "ask-review", Method: http.MethodPost, Path: "/api/requirements/{ref}/reviewer", Tags: []string{"requirements"}, Summary: "把需求交给审查员审查（R-88）：只送达审查任务，不改状态、不关联会话"},
+	huma.Register(api, huma.Operation{OperationID: "ask-review", Method: http.MethodPost, Path: "/api/requirements/{ref}/reviewer", Tags: []string{"requirements"}, Summary: "把需求交给 Rev 审查（R-88）：只送达审查任务，不改状态、不关联会话"},
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body struct {
-				SessionKey string `json:"session_key" minLength:"1" doc:"审查员会话键（身份必须是 reviewer）"`
-				Comment    string `json:"comment,omitempty" doc:"交代给审查员的话，例如重点看哪里"`
+				SessionKey string `json:"session_key" minLength:"1" doc:"Rev 会话键（身份必须是 reviewer）"`
+				Comment    string `json:"comment,omitempty" doc:"交代给 Rev 的话，例如重点看哪里"`
 			}
 		}) (*decisionOut, error) {
 			d, err := h.askReview(ctx, in.Ref, in.Body.SessionKey, in.Body.Comment)
@@ -127,7 +127,7 @@ func (h *Hub) registerReviewerWeb(api huma.API) {
 }
 
 func (h *Hub) registerReviewerAgent(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "agent-submit-review", Method: http.MethodPost, Path: "/api/agent/requirements/{ref}/reviews", Tags: []string{"agent"}, Summary: "审查员交审查意见（R-88）：不改需求状态，不拦截验收"},
+	huma.Register(api, huma.Operation{OperationID: "agent-submit-review", Method: http.MethodPost, Path: "/api/agent/requirements/{ref}/reviews", Tags: []string{"agent"}, Summary: "Rev 交审查意见（R-88）：不改需求状态，不拦截验收"},
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body struct {

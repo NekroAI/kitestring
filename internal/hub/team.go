@@ -34,7 +34,7 @@ type teamOut struct {
 		ProjectID   string   `json:"project_id"`
 		ProjectName string   `json:"project_name"`
 		PM          *Worker  `json:"pm"`
-		Devs        []Worker `json:"devs" doc:"本项目的开发会话，在线的在前；已结束的不列"`
+		Devs        []Worker `json:"devs" doc:"本项目的 Dev 会话，在线的在前；已结束的不列"`
 	}
 }
 
@@ -93,7 +93,7 @@ func (h *Hub) team(ctx context.Context, sessionKey string) (store.Session, *Work
 
 func (h *Hub) registerAgentTeam(api huma.API) {
 	tag := []string{"agent"}
-	huma.Register(api, huma.Operation{OperationID: "agent-team", Method: http.MethodGet, Path: "/api/agent/team", Tags: tag, Summary: "工人池：本项目的 PM 与开发会话（R-86）"},
+	huma.Register(api, huma.Operation{OperationID: "agent-team", Method: http.MethodGet, Path: "/api/agent/team", Tags: tag, Summary: "工人池：本项目的 PM 与 Dev 会话（R-86）"},
 		func(ctx context.Context, in *struct {
 			SessionKey string `query:"session_key" required:"true"`
 		}) (*teamOut, error) {
@@ -110,7 +110,7 @@ func (h *Hub) registerAgentTeam(api huma.API) {
 			Ref  string `path:"ref"`
 			Body struct {
 				SessionKey string `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 PM）"`
-				To         string `json:"to" minLength:"1" doc:"开发会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻"`
+				To         string `json:"to" minLength:"1" doc:"Dev 会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻"`
 				Comment    string `json:"comment,omitempty" doc:"交代给开发的话，例如为什么交给它、和哪条需求相关"`
 			}
 		}) (*assignOut, error) {
@@ -121,8 +121,8 @@ func (h *Hub) registerAgentTeam(api huma.API) {
 type assignOut struct {
 	Body struct {
 		Assigned bool   `json:"assigned"`
-		To       string `json:"to,omitempty" doc:"接手的开发会话键"`
-		Title    string `json:"title,omitempty" doc:"接手的开发会话标题"`
+		To       string `json:"to,omitempty" doc:"接手的 Dev 会话键"`
+		Title    string `json:"title,omitempty" doc:"接手的 Dev 会话标题"`
 		Presence string `json:"presence,omitempty"`
 		Message  string `json:"message"`
 	}
@@ -154,10 +154,10 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment string) (*a
 			w = &devs[0]
 		}
 		if w == nil {
-			if err := h.requestDevs(ctx, me.ProjectID, 1, fmt.Sprintf("%s「%s」等开发接手", r.Code, r.Title)); err != nil {
+			if err := h.requestDevs(ctx, me.ProjectID, 1, fmt.Sprintf("%s「%s」等 Dev 接手", r.Code, r.Title)); err != nil {
 				h.log.Warn("提醒开开发会话失败", "err", err)
 			}
-			out.Body.Message = fmt.Sprintf("没有在线的开发，%s 未派出；已推送提醒用户开开发会话。等不及可以自己用后台 subagent 做。", r.Code)
+			out.Body.Message = fmt.Sprintf("没有在线的 Dev，%s 未派出；已推送提醒用户开 Dev 会话。等不及可以自己用后台 subagent 做。", r.Code)
 			return out, nil
 		}
 	} else {
@@ -167,7 +167,7 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment string) (*a
 			}
 		}
 		if w == nil {
-			return nil, huma.Error400BadRequest("找不到这个开发会话：只能派给本项目、未结束、身份为开发的会话（用 team 查看）")
+			return nil, huma.Error400BadRequest("找不到这个 Dev 会话：只能派给本项目、未结束、身份为 Dev 的会话（用 team 查看）")
 		}
 	}
 	if _, err := h.assign(ctx, r.ID, w.Key, comment, me.Key); err != nil {

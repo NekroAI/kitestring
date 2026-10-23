@@ -194,7 +194,7 @@ func (h *Hub) checkPlanOwner(ctx context.Context, key string) error {
 		return nil
 	}
 	if s.Role == roles.Advisor || s.Role == roles.Reviewer {
-		return huma.Error400BadRequest("身份为" + roles.Label(s.Role) + "的会话不能当计划的负责会话，请选 PM、开发或无身份的会话")
+		return huma.Error400BadRequest("身份为" + roles.Label(s.Role) + "的会话不能当计划的负责会话，请选 PM、Dev 或无身份的会话")
 	}
 	return nil
 }

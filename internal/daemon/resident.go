@@ -97,7 +97,7 @@ func residentReason(tool, role string) string {
 	if tool == protocol.ToolCodex {
 		how = "运行 ks wait（前台运行，最多等 30 分钟）"
 	}
-	return "[Kitestring] 你是本项目的" + roles.Label(role) + "会话，需要常驻在线：先" + how + "挂起待命，再结束本轮。用户的需求、答复、留言会在你待命时送达。"
+	return "[Kitestring] 你是本项目的 " + roles.Label(role) + " 会话，需要常驻在线：先" + how + "挂起待命，再结束本轮。用户的需求、答复、留言会在你待命时送达。"
 }
 
 // resident：会话是否要求常驻在线。

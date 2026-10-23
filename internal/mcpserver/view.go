@@ -93,7 +93,7 @@ func (r reqView) line() string {
 	return fmt.Sprintf("%s「%s」%s", r.Code, r.Title, strings.Join(nonEmpty(parts), " · "))
 }
 
-var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给审查员"}
+var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给 Rev"}
 
 // String 是 req_get 的默认输出：要点按行，附图另以图片返回。
 func (r reqView) String() string {
@@ -127,7 +127,7 @@ func (r reqView) String() string {
 		}
 	}
 	if len(r.Reviews) > 0 {
-		fmt.Fprintf(&b, "审查意见（%d 条，审查员给的参考，不改状态）：\n", len(r.Reviews))
+		fmt.Fprintf(&b, "审查意见（%d 条，Rev 给的参考，不改状态）：\n", len(r.Reviews))
 		for _, e := range r.Reviews {
 			s := "  - " + summary.Truncate(strings.Join(strings.Fields(e.Summary), " "), 300)
 			if e.Voided {

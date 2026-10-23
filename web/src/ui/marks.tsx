@@ -64,30 +64,26 @@ export function presence(s: RoleSession): '' | 'standby' | 'working' | 'offline'
 
 export const presenceDot: Record<string, string> = { standby: 'bg-run', working: 'bg-accent', offline: 'bg-fg-3/50' }
 
-const roleChar: Record<string, string> = { pm: 'P', dev: '开', advisor: '顾', reviewer: '审' }
-
-// SessAvatar：会话是一个圆，里面写身份；常驻身份右下角带在线点（离线为灰）。
-export function SessAvatar({ role, presence, className }: { role?: string; presence?: string; className?: string }) {
+// RoleTag：会话身份标（R-124，D-117 方案 B）：描边胶囊写英文短名，PM / Dev 前面一个在线点
+// （在线待命绿、工作中蓝、离线灰）。描边与阶段、状态这类实底标签一眼分开；离线不写出来，悬停再说。
+export function RoleTag({ role, presence, className }: { role: string; presence?: string; className?: string }) {
+  if (!t.role[role]) return null
   return (
-    <span className={cx('relative inline-grid size-[18px] shrink-0 place-items-center rounded-full border border-line-strong bg-sunken text-[10px] leading-none font-bold text-fg-2', className)} aria-hidden>
-      {roleChar[role ?? ''] ?? '·'}
-      {presence && <span className={cx('absolute -right-0.5 -bottom-0.5 size-[7px] rounded-full border-[1.5px] border-surface', presenceDot[presence])} />}
+    <span className={cx('inline-flex shrink-0 items-center gap-1 rounded-full border border-line-strong px-2 text-[11px] leading-[18px] font-medium whitespace-nowrap', presence === 'offline' ? 'text-fg-3' : 'text-fg-2', className)}>
+      {presence && <span className={cx('size-1.5 shrink-0 rounded-full', presenceDot[presence])} />}
+      {t.role[role]}
     </span>
   )
 }
 
-// RoleBadge：会话身份（R-82）。圆形头像里写身份，PM / 开发右下角带在线点，离线时直接写出来（R-84、R-96）。
+// RoleBadge：会话卡片、面板上的身份标，悬停说明身份与在线状态。
 export function RoleBadge({ s }: { s: RoleSession }) {
   const role = s.role
   if (!role || !t.role[role]) return null
   const p = presence(s)
   return (
     <Tip content={p ? `${t.roleTip[role]}${t.common.sep}${t.presence[p]}` : t.roleTip[role]}>
-      <span className={cx('inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold', p === 'offline' ? 'text-fg-3' : 'text-fg-2')}>
-        <SessAvatar role={role} presence={p || undefined} />
-        {t.role[role]}
-        {p === 'offline' && <span className="font-normal">{t.presence.offline}</span>}
-      </span>
+      <RoleTag role={role} presence={p || undefined} />
     </Tip>
   )
 }

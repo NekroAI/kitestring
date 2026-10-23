@@ -43,7 +43,7 @@ func TestReviewer(t *testing.T) {
 	c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review", "session_key": "claude:dev"}, nil)
 
 	// 非审查员：不能交审查意见，也不能用 evidence_attach 冒充（kind = review）
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/reviews", map[string]any{"summary": "看着没问题", "session_key": "claude:dev"}, nil); err == nil || !strings.Contains(err.Error(), "审查员") {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/reviews", map[string]any{"summary": "看着没问题", "session_key": "claude:dev"}, nil); err == nil || !strings.Contains(err.Error(), "Rev 会话") {
 		t.Fatalf("非审查员交审查意见应被拒绝：%v", err)
 	}
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/evidence", map[string]any{"kind": "review", "summary": "冒充审查", "session_key": "claude:dev"}, nil); err == nil {
