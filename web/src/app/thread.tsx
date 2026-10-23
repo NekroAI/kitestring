@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ChevronRight, FileCheck2, GitBranch, MessageSquare, Monitor, RefreshCw } from 'lucide-react'
+import { ChevronRight, FileCheck2, Gauge, GitBranch, MessageSquare, Monitor, RefreshCw } from 'lucide-react'
 import type { Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, usePref } from '../lib/util'
@@ -8,6 +8,7 @@ import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle }
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import type { Thread } from './inbox'
 import { useOpenSession } from './nav'
+import { ctxLoad } from './assign'
 import { Collapse, Item, List } from '../ui/motion'
 import { ReviewList } from './review'
 import { Callout, ReqCount, sessionTitle, toolIcon } from './SessionCard'
@@ -119,6 +120,20 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
                   <Monitor className="size-3.5" />
                   {s.device_name}
                 </span>
+                {(() => {
+                  const c = s.state !== 'ended' && ctxLoad(s)
+                  return (
+                    c &&
+                    c.level !== 'ok' && (
+                      <Tip content={c.level === 'high' ? t.session.ctxHeavyTip(c.label) : t.session.ctxTip(c.label)}>
+                        <span className={cx('inline-flex items-center gap-1', c.level === 'high' ? 'text-danger' : 'text-wait')}>
+                          <Gauge className="size-3.5" />
+                          {t.session.ctx(c.label)}
+                        </span>
+                      </Tip>
+                    )
+                  )
+                })()}
                 {s.tools_stale && s.state !== 'ended' && (
                   <Tip content={t.session.toolsStaleTip(s.tools_stale)}>
                     <span className="inline-flex items-center gap-1 text-wait">

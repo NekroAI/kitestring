@@ -15,6 +15,18 @@ import { sessionTitle } from './SessionCard'
 
 export type TargetGroup = 'now' | 'later' | 'stale'
 
+// 上下文占用（R-60）：知道窗口时按比例，不知道（Claude）时按绝对值——15 万起偏重，60 万起很重，建议开新会话接手。
+export type CtxLoad = { used: number; max: number; level: 'ok' | 'mid' | 'high'; label: string }
+const fmtK = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
+export function ctxLoad(s: Session): CtxLoad | null {
+  const used = s.context_tokens ?? 0
+  const max = s.context_max ?? 0
+  if (!used) return null
+  const level = max ? (used / max >= 0.8 ? 'high' : used / max >= 0.5 ? 'mid' : 'ok') : used >= 600_000 ? 'high' : used >= 150_000 ? 'mid' : 'ok'
+  return { used, max, level, label: max ? `${fmtK(used)} / ${fmtK(max)}` : fmtK(used) }
+}
+const heavy = (s: Session) => (ctxLoad(s)?.level === 'high' ? 2 : ctxLoad(s)?.level === 'mid' ? 1 : 0)
+
 export function targetGroup(s: Session): TargetGroup {
   const ds = displayState(s)
   // 挂着 ks wait 的会话（哪怕本轮还没结束、仍显示运行中）收到就会立刻响应
@@ -31,6 +43,8 @@ export function assignCandidates(sessions: Session[], projectId?: string | null)
       (a, b) =>
         order[targetGroup(a)] - order[targetGroup(b)] ||
         Number((b.project_id ?? '') === (projectId ?? '')) - Number((a.project_id ?? '') === (projectId ?? '')) ||
+        heavy(a) - heavy(b) || // 同等条件下先推荐上下文轻的会话
+
         b.last_active_at.localeCompare(a.last_active_at),
     )
 }
@@ -38,7 +52,8 @@ export function assignCandidates(sessions: Session[], projectId?: string | null)
 // defaultTarget：新建需求时默认交给谁——同项目里待命的会话，其次一小时内活跃过的；收起的不算。
 export function defaultTarget(sessions: Session[], projectId?: string | null): Session | undefined {
   const same = assignCandidates(sessions, projectId).filter((s) => (s.project_id ?? '') === (projectId ?? '') && targetGroup(s) !== 'stale')
-  return same.find((s) => targetGroup(s) === 'now') ?? same.find((s) => Date.now() - Date.parse(s.last_active_at) < 3600_000)
+  const light = same.filter((s) => ctxLoad(s)?.level !== 'high') // 很重的会话不默认推荐
+  return light.find((s) => targetGroup(s) === 'now') ?? light.find((s) => Date.now() - Date.parse(s.last_active_at) < 3600_000)
 }
 
 // targetItems：按分组生成菜单项（下拉菜单与右键菜单共用）。
@@ -53,7 +68,7 @@ export function targetItems(sessions: Session[], projectId: string | null | unde
     for (const s of part)
       out.push({
         label: sessionTitle(s),
-        hint: [s.project_name, s.device_name, t.state[displayState(s)]].filter(Boolean).join(t.common.sep),
+        hint: [s.project_name, s.device_name, t.state[displayState(s)], ctxLoad(s) && (ctxLoad(s)!.level === 'high' ? t.session.ctxHeavyHint(ctxLoad(s)!.label) : t.session.ctx(ctxLoad(s)!.label))].filter(Boolean).join(t.common.sep),
         icon: g === 'now' ? <Zap className="text-accent" /> : <StatusDot state={displayState(s)} />,
         checked: opts.checked === s.key,
         onSelect: () => onPick(s),

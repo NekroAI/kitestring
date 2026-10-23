@@ -60,6 +60,9 @@ type Event struct {
 	// Tools：这个会话的 Kitestring 工具（MCP 进程）版本状态，daemon 发现变化时随下一条事件捎上（R-59）。
 	// "ok" 表示已是最新；其它非空值是过期工具的版本（"旧版" 表示太旧、没有上报版本）；空表示没有变化。
 	Tools string `json:"tools,omitempty"`
+	// Context / ContextMax：一轮结束时会话的上下文 token 数与上下文窗口（不知道时为 0），来自会话记录里的用量字段（R-60）
+	Context    int `json:"context,omitempty"`
+	ContextMax int `json:"context_max,omitempty"`
 }
 
 // ks wait 挂起等待：daemon 在等待开始 / 结束时上报的合成事件。

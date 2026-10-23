@@ -731,6 +731,14 @@
           "client": {
             "type": "string"
           },
+          "context": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "context_max": {
+            "format": "int64",
+            "type": "integer"
+          },
           "cwd": {
             "type": "string"
           },
@@ -1772,6 +1780,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "context_max": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "context_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
           "cwd": {
             "type": "string"
           },
@@ -1937,6 +1953,8 @@
           "other_terminal",
           "parked",
           "tools_stale",
+          "context_tokens",
+          "context_max",
           "recent_tools",
           "requirements",
           "pending_decisions"

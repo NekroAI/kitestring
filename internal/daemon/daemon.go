@@ -393,6 +393,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	d.mu.Unlock()
 	if name == "Stop" {
 		ev.BgTasks, ev.BgBrief = backgroundTasks(p)
+		ev.Context, ev.ContextMax = contextUsage(str(p, "transcript_path"))
 	}
 	if name == "Stop" && cfg.SendLastReply {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)

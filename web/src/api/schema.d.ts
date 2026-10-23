@@ -967,6 +967,10 @@ export interface components {
             /** Format: int64 */
             bg_tasks?: number;
             client?: string;
+            /** Format: int64 */
+            context?: number;
+            /** Format: int64 */
+            context_max?: number;
             cwd?: string;
             git?: components["schemas"]["Git"];
             id: string;
@@ -1230,6 +1234,10 @@ export interface components {
             client: string;
             /** Format: int64 */
             compactions: number;
+            /** Format: int64 */
+            context_max: number;
+            /** Format: int64 */
+            context_tokens: number;
             cwd: string;
             device_id: string;
             device_name: string;

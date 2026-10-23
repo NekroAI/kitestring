@@ -15,6 +15,7 @@ import {
   Layers,
   ListChecks,
   MessageSquare,
+  Gauge,
   Monitor,
   RefreshCw,
   Plug,
@@ -31,6 +32,7 @@ import { Item, List } from '../ui/motion'
 import { cx, relTime, shortPath } from '../lib/util'
 import { Card, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
+import { ctxLoad } from './assign'
 import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer } from './DecisionCard'
 import { LiveFeed } from './liveFeed'
@@ -210,6 +212,17 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
             <Meta icon={Monitor} tip={t.session.device}>
               {s.device_name}
             </Meta>
+            {(() => {
+              const c = s.state !== 'ended' && ctxLoad(s)
+              return (
+                c &&
+                c.level !== 'ok' && (
+                  <Meta icon={Gauge} tip={c.level === 'high' ? t.session.ctxHeavyTip(c.label) : t.session.ctxTip(c.label)} className={c.level === 'high' ? 'text-danger' : 'text-wait'}>
+                    {t.session.ctx(c.label)}
+                  </Meta>
+                )
+              )
+            })()}
             {s.tools_stale && s.state !== 'ended' && (
               <Meta icon={RefreshCw} tip={t.session.toolsStaleTip(s.tools_stale)} className="text-wait">
                 {t.session.toolsStale}

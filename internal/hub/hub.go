@@ -176,6 +176,11 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	if err := h.store.SaveSession(ctx, next); err != nil {
 		return err
 	}
+	if ev.Context > 0 { // 上下文占用（R-60）
+		if err := h.store.SetContext(ctx, key, ev.Context, ev.ContextMax); err != nil {
+			return err
+		}
+	}
 	if ev.Tools != "" { // 工具版本有变化（R-59）
 		v := ev.Tools
 		if v == "ok" {
