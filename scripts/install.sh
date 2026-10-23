@@ -36,7 +36,7 @@ if [ -z "$tag" ]; then
   url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO/releases/latest") ||
     fail "查询最新版本失败"
   tag="${url##*/}"
-  case "$tag" in v*) ;; *) fail "还没有发布版本（$url）" ;; esac
+  case "$tag" in v*) ;; *) fail "还没有发布版本（${url}）" ;; esac
 fi
 v="${tag#v}"
 
@@ -45,7 +45,7 @@ base="https://github.com/$REPO/releases/download/$tag"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-echo "下载 ks $tag（$os-$arch）…"
+echo "下载 ks ${tag}（${os}-${arch}）…"
 curl -fSL --progress-bar -o "$tmp/$name" "$base/$name" || fail "下载 $name 失败"
 curl -fsSL -o "$tmp/SHA256SUMS.txt" "$base/SHA256SUMS.txt" || fail "下载 SHA256SUMS.txt 失败"
 
