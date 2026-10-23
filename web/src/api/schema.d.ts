@@ -53,6 +53,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/decisions/{ref}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 参谋在用户的授权窗口内代答决策（R-163） */
+        post: operations["agent-answer-decision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/decisions/{ref}/withdraw": {
         parameters: {
             query?: never;
@@ -64,6 +81,23 @@ export interface paths {
         put?: never;
         /** Agent 撤回自己提的、还没答复的决策（R-136） */
         post: operations["agent-withdraw-decision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看本项目当前的参谋授权窗口（R-163） */
+        get: operations["agent-get-grant"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -432,6 +466,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/decisions/{ref}/override": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 推翻参谋的代答：以你的答复为准，更正送回提问方（R-163） */
+        post: operations["override-decision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/decisions/{ref}/reassign": {
         parameters: {
             query?: never;
@@ -508,6 +559,41 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["revoke-device"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 参谋授权窗口与代答记录（R-163） */
+        get: operations["list-grants"];
+        put?: never;
+        /** 开一个参谋授权窗口（R-163） */
+        post: operations["create-grant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/grants/{ref}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销参谋授权窗口（R-163） */
+        post: operations["revoke-grant"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1112,6 +1198,17 @@ export interface components {
             summary?: boolean;
             title?: boolean;
         };
+        "Agent-answer-decisionRequest": {
+            /** @description 答复；有要拍板的点时是附言，可空 */
+            answer?: string;
+            /** @description 要拍板的点：逐点选第几个（从 0 开始） */
+            choices?: number[] | null;
+            /** @description 为什么这样答、为什么不必等用户（必填） */
+            reason: string;
+            /** @description 你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档 */
+            risk: string;
+            session_key?: string;
+        };
         "Agent-assignRequest": {
             /** @description 交代给开发的话，例如为什么交给它、和哪条需求相关 */
             comment?: string;
@@ -1233,10 +1330,22 @@ export interface components {
             recommendation?: string;
             /** @description 关联需求 ID 或 R-编号 */
             requirement?: string;
+            /**
+             * @description 风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答
+             * @enum {string}
+             */
+            risk?: "low" | "medium" | "high";
             /** @description 提出决策的会话，由 daemon 填写 */
             session_key?: string;
             /** @description 方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来 */
             summary?: string[] | null;
+        };
+        AgentGrantOutBody: {
+            /** @description 会话所在项目当前生效中的授权窗口；没有时为空 */
+            grant?: components["schemas"]["Grant"];
+            /** @description 这个窗口是不是授权给调用者的 */
+            mine: boolean;
+            notice: string;
         };
         AgentReqInBody: {
             acceptance?: string;
@@ -1324,6 +1433,21 @@ export interface components {
         "Create-deviceRequest": {
             name: string;
         };
+        "Create-grantRequest": {
+            /**
+             * Format: date-time
+             * @description 到期时间（最长 24 小时后）
+             */
+            expires_at: string;
+            /**
+             * @description 可代答的最高风险档
+             * @enum {string}
+             */
+            max_risk: "low" | "medium";
+            project_id: string;
+            /** @description 被授权的 Adv 会话 */
+            session_key: string;
+        };
         Decision: {
             answer: string;
             answer_files: components["schemas"]["FileRef"][] | null;
@@ -1349,17 +1473,27 @@ export interface components {
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
+            /** Format: date-time */
+            overridden_at?: string;
             plan_code?: string;
             plan_id?: string;
             points?: components["schemas"]["Block"][] | null;
             project_id?: string;
             project_name?: string;
+            proxy_answer?: string;
+            /** Format: date-time */
+            proxy_at?: string;
+            proxy_by?: string;
+            proxy_reason?: string;
+            proxy_risk?: string;
             question: string;
             recommendation: string;
             replaced_by?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
+            /** @enum {string} */
+            risk?: "low" | "medium" | "high";
             session_key?: string;
             session_state?: string;
             short_title: string;
@@ -1393,17 +1527,27 @@ export interface components {
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
+            /** Format: date-time */
+            overridden_at?: string;
             plan_code?: string;
             plan_id?: string;
             points?: components["schemas"]["Block"][] | null;
             project_id?: string;
             project_name?: string;
+            proxy_answer?: string;
+            /** Format: date-time */
+            proxy_at?: string;
+            proxy_by?: string;
+            proxy_reason?: string;
+            proxy_risk?: string;
             question: string;
             recommendation: string;
             replaced_by?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
+            /** @enum {string} */
+            risk?: "low" | "medium" | "high";
             session_key?: string;
             session_state?: string;
             short_title: string;
@@ -1593,6 +1737,42 @@ export interface components {
             root?: string;
             worktree?: boolean;
         };
+        Grant: {
+            /** @description 窗口编号（G-x） */
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            id: string;
+            /**
+             * @description 可代答的最高风险档
+             * @enum {string}
+             */
+            max_risk: "low" | "medium";
+            project_id: string;
+            project_name: string;
+            /**
+             * Format: int64
+             * @description 这个窗口内代答了几条
+             */
+            proxied: number;
+            /** Format: date-time */
+            revoked_at?: string;
+            /** @description 被授权的 Adv 会话 */
+            session_key: string;
+            /**
+             * @description 生效中 / 已撤销 / 已到期
+             * @enum {string}
+             */
+            status: "active" | "revoked" | "expired";
+        };
+        GrantsOutBody: {
+            /** @description 授权窗口（新的在前）：生效中、已撤销、已到期都在 */
+            grants: components["schemas"]["Grant"][] | null;
+            /** @description 参谋代答过的决策（新的在前） */
+            proxied: components["schemas"]["Decision"][] | null;
+        };
         Item: {
             /**
              * Format: int64
@@ -1715,6 +1895,15 @@ export interface components {
         };
         OkBodyBody: {
             ok: boolean;
+        };
+        "Override-decisionRequest": {
+            /** @description 你的答复；有要拍板的点时是附言，可空 */
+            answer: string;
+            /** @description 要拍板的点：逐点选第几个（从 0 开始） */
+            choices?: number[] | null;
+            /** @description 附件 ID */
+            files?: string[] | null;
+            reject?: boolean;
         };
         Passkey: {
             /** Format: date-time */
@@ -2386,6 +2575,41 @@ export interface operations {
             };
         };
     };
+    "agent-answer-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-answer-decisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-withdraw-decision": {
         parameters: {
             query?: never;
@@ -2408,6 +2632,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-get-grant": {
+        parameters: {
+            query?: {
+                session_key?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentGrantOutBody"];
                 };
             };
             /** @description Error */
@@ -3191,6 +3446,41 @@ export interface operations {
             };
         };
     };
+    "override-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Override-decisionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "reassign-decision": {
         parameters: {
             query?: never;
@@ -3376,6 +3666,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-grants": {
+        parameters: {
+            query?: {
+                /** @description 只看这个项目；不填为全部 */
+                project_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Create-grantRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Grant"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "revoke-grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Grant"];
                 };
             };
             /** @description Error */

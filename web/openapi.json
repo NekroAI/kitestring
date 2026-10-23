@@ -22,6 +22,42 @@
         },
         "type": "object"
       },
+      "Agent-answer-decisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "description": "答复；有要拍板的点时是附言，可空",
+            "type": "string"
+          },
+          "choices": {
+            "description": "要拍板的点：逐点选第几个（从 0 开始）",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "为什么这样答、为什么不必等用户（必填）",
+            "type": "string"
+          },
+          "risk": {
+            "description": "你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档",
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "risk"
+        ],
+        "type": "object"
+      },
       "Agent-assignRequest": {
         "additionalProperties": false,
         "properties": {
@@ -428,6 +464,15 @@
             "description": "关联需求 ID 或 R-编号",
             "type": "string"
           },
+          "risk": {
+            "description": "风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "type": "string"
+          },
           "session_key": {
             "description": "提出决策的会话，由 daemon 填写",
             "type": "string"
@@ -445,6 +490,27 @@
         },
         "required": [
           "question"
+        ],
+        "type": "object"
+      },
+      "AgentGrantOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "grant": {
+            "$ref": "#/components/schemas/Grant",
+            "description": "会话所在项目当前生效中的授权窗口；没有时为空"
+          },
+          "mine": {
+            "description": "这个窗口是不是授权给调用者的",
+            "type": "boolean"
+          },
+          "notice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mine",
+          "notice"
         ],
         "type": "object"
       },
@@ -787,6 +853,40 @@
         ],
         "type": "object"
       },
+      "Create-grantRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "description": "到期时间（最长 24 小时后）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "max_risk": {
+            "description": "可代答的最高风险档",
+            "enum": [
+              "low",
+              "medium"
+            ],
+            "type": "string"
+          },
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "session_key": {
+            "description": "被授权的 Adv 会话",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "session_key",
+          "expires_at",
+          "max_risk"
+        ],
+        "type": "object"
+      },
       "Decision": {
         "additionalProperties": false,
         "properties": {
@@ -908,6 +1008,10 @@
           "origin_session": {
             "type": "string"
           },
+          "overridden_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "plan_code": {
             "type": "string"
           },
@@ -929,6 +1033,22 @@
           "project_name": {
             "type": "string"
           },
+          "proxy_answer": {
+            "type": "string"
+          },
+          "proxy_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "proxy_by": {
+            "type": "string"
+          },
+          "proxy_reason": {
+            "type": "string"
+          },
+          "proxy_risk": {
+            "type": "string"
+          },
           "question": {
             "type": "string"
           },
@@ -945,6 +1065,14 @@
             "type": "string"
           },
           "requirement_title": {
+            "type": "string"
+          },
+          "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "type": "string"
           },
           "session_key": {
@@ -1119,6 +1247,10 @@
           "origin_session": {
             "type": "string"
           },
+          "overridden_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "plan_code": {
             "type": "string"
           },
@@ -1140,6 +1272,22 @@
           "project_name": {
             "type": "string"
           },
+          "proxy_answer": {
+            "type": "string"
+          },
+          "proxy_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "proxy_by": {
+            "type": "string"
+          },
+          "proxy_reason": {
+            "type": "string"
+          },
+          "proxy_risk": {
+            "type": "string"
+          },
           "question": {
             "type": "string"
           },
@@ -1156,6 +1304,14 @@
             "type": "string"
           },
           "requirement_title": {
+            "type": "string"
+          },
+          "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
             "type": "string"
           },
           "session_key": {
@@ -1803,6 +1959,105 @@
         ],
         "type": "object"
       },
+      "Grant": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "窗口编号（G-x）",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "max_risk": {
+            "description": "可代答的最高风险档",
+            "enum": [
+              "low",
+              "medium"
+            ],
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "proxied": {
+            "description": "这个窗口内代答了几条",
+            "format": "int64",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "被授权的 Adv 会话",
+            "type": "string"
+          },
+          "status": {
+            "description": "生效中 / 已撤销 / 已到期",
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "project_id",
+          "project_name",
+          "session_key",
+          "max_risk",
+          "expires_at",
+          "created_at",
+          "status",
+          "proxied"
+        ],
+        "type": "object"
+      },
+      "GrantsOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "grants": {
+            "description": "授权窗口（新的在前）：生效中、已撤销、已到期都在",
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "proxied": {
+            "description": "参谋代答过的决策（新的在前）",
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "grants",
+          "proxied"
+        ],
+        "type": "object"
+      },
       "Item": {
         "additionalProperties": false,
         "properties": {
@@ -2217,6 +2472,43 @@
         },
         "required": [
           "ok"
+        ],
+        "type": "object"
+      },
+      "Override-decisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "description": "你的答复；有要拍板的点时是附言，可空",
+            "type": "string"
+          },
+          "choices": {
+            "description": "要拍板的点：逐点选第几个（从 0 开始）",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "files": {
+            "description": "附件 ID",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reject": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "answer"
         ],
         "type": "object"
       },
@@ -4446,6 +4738,57 @@
         ]
       }
     },
+    "/api/agent/decisions/{ref}/answer": {
+      "post": {
+        "operationId": "agent-answer-decision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-answer-decisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "参谋在用户的授权窗口内代答决策（R-163）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/decisions/{ref}/withdraw": {
       "post": {
         "operationId": "agent-withdraw-decision",
@@ -4492,6 +4835,47 @@
           }
         },
         "summary": "Agent 撤回自己提的、还没答复的决策（R-136）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/grant": {
+      "get": {
+        "operationId": "agent-get-grant",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "session_key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentGrantOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "查看本项目当前的参谋授权窗口（R-163）",
         "tags": [
           "agent"
         ]
@@ -5573,6 +5957,57 @@
         ]
       }
     },
+    "/api/decisions/{ref}/override": {
+      "post": {
+        "operationId": "override-decision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Override-decisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "推翻参谋的代答：以你的答复为准，更正送回提问方（R-163）",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
     "/api/decisions/{ref}/reassign": {
       "post": {
         "operationId": "reassign-decision",
@@ -5826,6 +6261,129 @@
         },
         "tags": [
           "devices"
+        ]
+      }
+    },
+    "/api/grants": {
+      "get": {
+        "operationId": "list-grants",
+        "parameters": [
+          {
+            "description": "只看这个项目；不填为全部",
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "description": "只看这个项目；不填为全部",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantsOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "参谋授权窗口与代答记录（R-163）",
+        "tags": [
+          "grants"
+        ]
+      },
+      "post": {
+        "operationId": "create-grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Create-grantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Grant"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "开一个参谋授权窗口（R-163）",
+        "tags": [
+          "grants"
+        ]
+      }
+    },
+    "/api/grants/{ref}/revoke": {
+      "post": {
+        "operationId": "revoke-grant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Grant"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤销参谋授权窗口（R-163）",
+        "tags": [
+          "grants"
         ]
       }
     },

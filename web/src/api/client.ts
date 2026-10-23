@@ -8,6 +8,7 @@ type NN<T, K extends keyof T> = Omit<T, K> & { [P in K]-?: NonNullable<T[P]> }
 export type Session = NN<Schemas['Session'], 'requirements' | 'activity'>
 export type Device = Schemas['Device']
 export type Decision = Schemas['Decision']
+export type Grant = Schemas['Grant']
 export type Requirement = NN<Schemas['Requirement'], 'sessions'>
 export type Project = Schemas['Project']
 export type Workspace = Schemas['Workspace']

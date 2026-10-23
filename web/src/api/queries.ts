@@ -87,6 +87,15 @@ export function useDecisions() {
   })
 }
 
+// 参谋授权窗口与代答记录（R-163），projectId 为空时为全部项目。
+export function useGrants(projectId?: string) {
+  return useQuery({
+    queryKey: ['grants', projectId ?? ''],
+    queryFn: () => unwrap(api.GET('/api/grants', { params: { query: { project_id: projectId || undefined } } })),
+    select: (d) => ({ grants: d.grants ?? [], proxied: d.proxied ?? [] }),
+  })
+}
+
 export function useRequirements() {
   return useQuery({
     queryKey: qk.requirements,
@@ -138,7 +147,8 @@ export function useSettings() {
 // 主题 → 需要失效的查询前缀。
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],
-  decisions: [['decisions']],
+  decisions: [['decisions'], ['grants']],
+  grants: [['grants']],
   requirements: [['requirements'], ['plans']],
   plans: [['plans']],
   devices: [['devices'], ['sessions']],

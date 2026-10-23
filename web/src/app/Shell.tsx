@@ -9,6 +9,7 @@ import { Tip } from '../ui/base'
 import { useWorkbench } from './inbox'
 import { useTodo } from './desk'
 import { usePanelParams } from './nav'
+import { GrantBanner } from './grant'
 import { PlanPanel } from './plans'
 import { ReqPanel } from './reqDrawer'
 import { SessionPanel } from './SessionPanel'
@@ -188,6 +189,7 @@ export function Shell() {
       <main className={cx('pb-24 transition-[padding] duration-200 ease-out lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
         {/* 工作台用满宽屏（主栏 + 右栏，D-171），其余页面保持 1360px 的阅读宽度 */}
         <div className={cx('mx-auto px-4 pt-5 sm:px-6 lg:px-10 lg:pt-9', pathname === '/' ? 'max-w-[1880px]' : 'max-w-[1360px]')}>
+          <GrantBanner />
           <Outlet />
         </div>
       </main>

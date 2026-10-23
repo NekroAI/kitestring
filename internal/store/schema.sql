@@ -206,3 +206,16 @@ CREATE TABLE IF NOT EXISTS passkeys (
 	created_at   TEXT NOT NULL,
 	last_used_at TEXT NOT NULL DEFAULT ''
 );
+
+-- 参谋授权窗口（R-163）：你在网页上授权一个 Adv 会话在到期前代你答复决策（风险档不超过 max_risk）；
+-- 开启、撤销都记在这里，到期按 expires_at 判断，不删除，作为留痕
+CREATE TABLE IF NOT EXISTS grants (
+	id          TEXT PRIMARY KEY,
+	seq         INTEGER NOT NULL UNIQUE, -- G-<seq>
+	project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+	session_key TEXT NOT NULL,
+	max_risk    TEXT NOT NULL, -- low | medium
+	expires_at  TEXT NOT NULL,
+	created_at  TEXT NOT NULL,
+	revoked_at  TEXT NOT NULL DEFAULT ''
+);

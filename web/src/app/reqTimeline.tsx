@@ -10,6 +10,7 @@ import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
 import { DecisionComposer } from './DecisionCard'
 import { useActions } from './actions'
+import { ProxyNote } from './grant'
 import { evidenceKind } from './review'
 import { EvidenceView, hasPayload } from './evidence'
 import { useSessions } from '../api/queries'
@@ -335,11 +336,15 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
               )}
             </p>
           )}
-          {d.answer && (
-            <Quote cls="bg-sunken/70">
-              <span className="mr-1.5 text-fg-3">{t.timeline.answer}</span>
-              <Linkify text={d.answer} />
-            </Quote>
+          {d.proxy_by ? (
+            <ProxyNote d={d} />
+          ) : (
+            d.answer && (
+              <Quote cls="bg-sunken/70">
+                <span className="mr-1.5 text-fg-3">{t.timeline.answer}</span>
+                <Linkify text={d.answer} />
+              </Quote>
+            )
           )}
           {!!d.answer_files?.length && <Thumbs files={d.answer_files} size="sm" />}
         </Node>

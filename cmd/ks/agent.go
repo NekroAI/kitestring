@@ -25,6 +25,19 @@ type stringList []string
 func (s *stringList) String() string     { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
+// intList 是可重复的整数参数。
+type intList []int
+
+func (s *intList) String() string { return fmt.Sprint([]int(*s)) }
+func (s *intList) Set(v string) error {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fmt.Errorf("要填数字：%s", v)
+	}
+	*s = append(*s, n)
+	return nil
+}
+
 // parseAnywhere 允许参数与位置参数任意交错（Go 的 flag 包遇到第一个位置参数就停止解析）。
 func parseAnywhere(fs *flag.FlagSet, args []string) error {
 	var pos []string
@@ -280,12 +293,42 @@ func runWithdraw(args []string) error {
 	return err
 }
 
+// runAnswer：ks decision answer D-x --answer 答复 --reason 理由 --risk low（R-163）：Adv 在用户的授权窗口内代答。
+func runAnswer(args []string) error {
+	fs := flag.NewFlagSet("decision answer", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
+	answer := fs.String("answer", "", "答复；有要拍板的点时是附言")
+	reason := fs.String("reason", "", "为什么这样答、为什么不必等用户（必填）")
+	risk := fs.String("risk", "", "你自己的风险判断：low / medium / high（必填），取它和提问方标的中更高的一档")
+	var choices intList
+	fs.Var(&choices, "choice", "有要拍板的点时逐点选第几个（从 1 开始），按点的顺序重复")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() < 1 {
+		return fmt.Errorf("用法：ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low|medium|high [--choice 1 --choice 2]（只有被授权的 Adv 在用户的授权窗口内能用）")
+	}
+	body := map[string]any{"session_key": cliSession(*session), "answer": *answer, "reason": *reason, "risk": *risk}
+	if len(choices) > 0 {
+		cs := make([]int, len(choices))
+		for i, c := range choices {
+			cs[i] = c - 1
+		}
+		body["choices"] = cs
+	}
+	_, err := agentCallOut("POST", "/agent/decisions/"+url.PathEscape(fs.Arg(0))+"/answer", body)
+	return err
+}
+
 func runDecision(args []string) error {
 	if len(args) >= 1 && args[0] == "withdraw" {
 		return runWithdraw(args[1:])
 	}
+	if len(args) >= 1 && args[0] == "answer" {
+		return runAnswer(args[1:])
+	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
@@ -293,6 +336,7 @@ func runDecision(args []string) error {
 	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的待拍板的点另开决策（建议 400 字以内）")
 	rec := fs.String("recommend", "", "推荐")
 	req := fs.String("req", "", "关联需求")
+	risk := fs.String("risk", "", "风险档 low / medium / high，不填按 high；产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high")
 	var opts, optImgs stringList
 	fs.Var(&opts, "option", "选项，可重复")
 	fs.Var(&optImgs, "option-image", "选项的效果图路径，按 --option 的顺序一一对应，可重复")
@@ -309,7 +353,7 @@ func runDecision(args []string) error {
 	if *question == "" {
 		return fmt.Errorf("--question 不能为空")
 	}
-	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "session_key": cliSession(*session)}
+	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "risk": *risk, "session_key": cliSession(*session)}
 	if len(opts) > 0 {
 		body["options"] = []string(opts)
 	}

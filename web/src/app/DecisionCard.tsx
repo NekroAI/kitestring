@@ -7,7 +7,8 @@ import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu, useConfirm } from '../ui/overlay'
-import { ToolMark } from '../ui/marks'
+import { RoleTag, ToolMark } from '../ui/marks'
+import { ProxyNote } from './grant'
 import { AttachZone, fileUrl, Thumbs, uploadsBusy, useUploading, ZoomButton } from '../ui/attach'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
@@ -425,6 +426,7 @@ export function DecisionRow({ d }: { d: Decision }) {
           <span className="block truncate text-sm text-fg">{d.short_title || d.question}</span>
           {d.answer && <span className="block truncate text-[13px] text-fg-3">{d.answer}</span>}
         </span>
+        {d.proxy_by && !d.overridden_at && <RoleTag role="advisor" />}
         <Tip content={when}>
           <span>
             <Badge tone={tone}>{t.decision.status[d.status]}</Badge>
@@ -436,7 +438,7 @@ export function DecisionRow({ d }: { d: Decision }) {
           {d.short_title && <p className="text-sm text-fg-2">{d.question}</p>}
           {d.context && <Context text={d.context} />}
           <BlockList blocks={d.blocks} />
-          {d.answer && <AnswerBlock d={d} />}
+          {d.proxy_by ? <ProxyNote d={d} /> : d.answer && <AnswerBlock d={d} />}
           <div className="flex items-center justify-between text-xs text-fg-3">
             <span>{when}</span>
             {d.status === 'delivered' && (

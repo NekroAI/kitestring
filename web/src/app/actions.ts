@@ -47,6 +47,11 @@ export function useActions() {
       send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
     reassign: (ref: string, sessionKey: string) =>
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
+    openGrant: (body: { project_id: string; session_key: string; expires_at: string; max_risk: 'low' | 'medium' }) =>
+      run(() => unwrap(api.POST('/api/grants', { body })), ['grants', 'decisions']),
+    revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions']),
+    overrideDecision: (ref: string, answer: string) =>
+      send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions']),
     withdrawRelease: (ref: string, reason = '') =>
       run(() => unwrap(api.POST('/api/requirements/{ref}/release/withdraw', { params: { path: { ref } }, body: { reason } })), ['requirements', 'sessions', 'decisions', 'plans']),
     closeDecision: (ref: string, why: { reason?: string; replaced_by?: string } = {}) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: why })), ['decisions', 'sessions', 'requirements']),

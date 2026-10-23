@@ -33,6 +33,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerWeb(webAPI)
 	h.registerReview(webAPI)
 	h.registerRelease(webAPI)
+	h.registerGrantWeb(webAPI)
 	h.registerReviewerWeb(webAPI)
 	h.registerPlans(webAPI)
 	h.registerNeedWeb(webAPI)
@@ -44,6 +45,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentNeed(agentAPI)
 	h.registerAgentBrief(agentAPI)
 	h.registerAgentTell(agentAPI)
+	h.registerAgentGrant(agentAPI)
 	h.registerAgentWaitCheck(agentAPI)
 	h.registerSessionReply(webAPI)
 
@@ -87,6 +89,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerWeb(api)
 	h.registerReview(api)
 	h.registerRelease(api)
+	h.registerGrantWeb(api)
 	h.registerReviewerWeb(api)
 	h.registerPlans(api)
 	h.registerNeedWeb(api)
@@ -98,6 +101,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentNeed(api)
 	h.registerAgentBrief(api)
 	h.registerAgentTell(api)
+	h.registerAgentGrant(api)
 	h.registerAgentWaitCheck(api)
 	h.registerSessionReply(api)
 	return api.OpenAPI()
@@ -1050,6 +1054,7 @@ type agentDecisionIn struct {
 		Summary        []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
 		Recommendation string   `json:"recommendation,omitempty"`
 		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
+		Risk           string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
 	}
 }
 
@@ -1241,7 +1246,7 @@ func (h *Hub) registerAgent(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-raise-decision", Method: http.MethodPost, Path: "/api/agent/decisions", Tags: tag},
 		func(ctx context.Context, in *agentDecisionIn) (*decisionRaisedOut, error) {
 			b := in.Body
-			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation}
+			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation, Risk: b.Risk}
 			var warns, pw []string
 			d.Blocks, warns = blocks.Parse(b.Blocks, h.blockFile(ctx))
 			d.Points, pw = blocks.ParsePoints(b.Points, h.blockFile(ctx))
@@ -1305,7 +1310,10 @@ func (h *Hub) registerAgent(api huma.API) {
 			h.broker.publish("decisions", "sessions", "requirements")
 			go h.aiOnDecision(d)
 			h.onDecisionRaised(ctx, d) // 订阅了 decision 的会话（R-164）
-			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
+			// 授权窗口开着、参谋可以代答的决策先不推送（夜里不吵醒你，R-163）；仍留在收件箱里
+			if !h.proxyQuiet(ctx, d) {
+				h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
+			}
 			out := &decisionRaisedOut{}
 			out.Body.Decision = d
 			out.Body.BlockWarnings = warns

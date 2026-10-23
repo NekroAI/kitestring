@@ -85,7 +85,11 @@ func (h *Hub) onDecisionRaised(ctx context.Context, d store.Decision) {
 			text += "（" + r.Code + "）"
 		}
 	}
-	h.broadcast(ctx, protocol.OnDecision, d.ProjectID, d.RequirementID, text+"，等用户在 Kitestring 上拍板。", d.SessionKey)
+	text += "，等用户在 Kitestring 上拍板。"
+	if h.proxyQuiet(ctx, d) {
+		text += "用户开着参谋授权窗口，这条在范围内：被授权的 Adv 可以用 decision_answer 代答（写理由和自己的风险判断），拿不准就留给用户。"
+	}
+	h.broadcast(ctx, protocol.OnDecision, d.ProjectID, d.RequirementID, text, d.SessionKey)
 }
 
 // onStatusEvent：需求刚进入待验收或受阻。told 是已经收到交验收通知的 PM（R-135），不重复送。

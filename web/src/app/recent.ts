@@ -25,7 +25,7 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
     }
     for (const d of decisions.data ?? [])
       if ((!projectId || d.project_id === projectId) && d.kind === 'decision' && d.answered_at)
-        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: t.projects.evAnswer(d.code, d.short_title || d.question), dot: 'bg-wait' })
+        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: (d.proxy_by && !d.overridden_at ? t.projects.evProxy : t.projects.evAnswer)(d.code, d.short_title || d.question), dot: 'bg-wait' })
     return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit)
   }, [list, projectId, limit, decisions.data])
 }

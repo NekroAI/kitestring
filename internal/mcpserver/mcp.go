@@ -157,6 +157,15 @@ type decisionIn struct {
 	Blocks         []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
 	Points         []map[string]any `json:"points,omitempty" jsonschema:"要拍板的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
 	Summary        []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
+	Risk           string           `json:"risk,omitempty" jsonschema:"风险档：low / medium / high，不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high。用户开了参谋授权窗口时，low / medium 的决策可能由 Adv 代答（用户可推翻，推翻时会送来更正）"`
+}
+
+type decisionAnswerIn struct {
+	Decision string `json:"decision" jsonschema:"要代答的决策编号，如 D-135"`
+	Answer   string `json:"answer,omitempty" jsonschema:"答复；决策有要拍板的点（points）时是附言，可空"`
+	Choices  []int  `json:"choices,omitempty" jsonschema:"决策有要拍板的点时，逐点选第几个选项（从 1 开始）"`
+	Reason   string `json:"reason" jsonschema:"为什么这样答、为什么不必等用户（必填，显示在用户的代答记录里）"`
+	Risk     string `json:"risk" jsonschema:"你自己的风险判断：low / medium / high（必填）。取它和提问方标的中更高的一档，超出用户授权的范围就会被拒"`
 }
 
 type planReqIn struct {
@@ -341,7 +350,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别拍板时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "session_key": t.sessionKey(ctx, req)}
+			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "risk": in.Risk, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			if in.Approval {
 				body["approval"] = true
@@ -400,6 +409,24 @@ func (t *tools) register(s *mcp.Server) {
 				msg += "\n" + h
 			}
 			return text(msg), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_answer", Description: "Adv（参谋）用：用户开了参谋授权窗口时，在到期前代用户答复本项目范围内的决策。必须写 reason 和你自己的风险判断 risk（取它和提问方标的中更高的一档，超出窗口范围就拒绝）。硬规则永不代答：批准方案 / 计划、设计选型（带效果图）、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收，以及你自己提的决策；拿不准的留给用户。代答会留痕，用户可推翻，推翻时更正送回提问方。没有窗口、窗口已到期 / 撤销、或你不是被授权的 Adv 时会被拒绝。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in decisionAnswerIn) (*mcp.CallToolResult, any, error) {
+			body := map[string]any{"session_key": t.sessionKey(ctx, req), "answer": in.Answer, "reason": in.Reason, "risk": in.Risk}
+			if len(in.Choices) > 0 {
+				cs := make([]int, len(in.Choices))
+				for i, c := range in.Choices {
+					cs[i] = c - 1
+				}
+				body["choices"] = cs
+			}
+			var out struct {
+				Code string `json:"code"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/decisions/"+url.PathEscape(in.Decision)+"/answer", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Code + " 已代用户答复并送给提问方；用户能在代答记录里看到，可能推翻"), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。草稿：项目开了「允许 PM / Adv 放行草稿」时记一次放行（理由「开始做 R-x」，用户可撤回）再变为进行中；没开时只关联、仍是草稿，返回里会提示先请用户放行。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {

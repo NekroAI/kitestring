@@ -77,6 +77,16 @@ type Decision struct {
 	DeliveredTurn    string     `json:"delivered_turn,omitempty"`
 	CloseReason      string     `json:"close_reason,omitempty"` // 撤回 / 关闭时写的原因（R-136）
 	ReplacedBy       string     `json:"replaced_by,omitempty"`  // 取代它的决策编号，如 D-142（R-136）
+	// 风险档与参谋代答（R-163）：Risk 是提问方标的风险档（low / medium / high，空 = 没标，按 high 算）；
+	// ProxyBy 非空表示是 Adv 在你的授权窗口内代答的：ProxyRisk 是代答时取的风险档（提问方与参谋判断中更高的一档），
+	// ProxyAnswer 是代答原文；OverriddenAt 非空表示你推翻了代答，Answer 换成你的答复
+	Risk         string     `json:"risk,omitempty" enum:"low,medium,high"`
+	ProxyBy      string     `json:"proxy_by,omitempty"`
+	ProxyReason  string     `json:"proxy_reason,omitempty"`
+	ProxyRisk    string     `json:"proxy_risk,omitempty"`
+	ProxyAnswer  string     `json:"proxy_answer,omitempty"`
+	ProxyAt      *time.Time `json:"proxy_at,omitempty"`
+	OverriddenAt *time.Time `json:"overridden_at,omitempty"`
 }
 
 func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
@@ -84,7 +94,8 @@ func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
-	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by
+	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
+	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -97,10 +108,14 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var seq, rseq, pseq int
 	var options, optFiles, ctxFiles, created, files, bs, points, summary, choices string
 	var answered, delivered sql.NullString
+	var proxyAt, overAt string
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
-		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy)
+		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
+		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt)
 	d.Code = decCode(seq)
+	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
+	d.OverriddenAt = parseNullTS(sql.NullString{String: overAt, Valid: overAt != ""})
 	if pseq > 0 {
 		d.PlanCode = planCode(pseq)
 	}
@@ -155,8 +170,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			optFiles = [][]FileRef{}
 		}
 		of, _ := json.Marshal(optFiles)
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n)
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk)
 		return err
 	})
 	if err != nil {
@@ -229,7 +244,10 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 	if strings.TrimSpace(answer) == "" && len(files) == 0 {
 		return d, errors.New("答复不能为空")
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '' WHERE id = ?`, DecAnswered, answer, filesJSON(files), blocks.Encode(choices), now(), d.ID)
+	// 你给参谋代答过的决策重新作答 = 推翻代答（R-163）：记下推翻时间，代答原文留在 proxy_answer
+	n := now()
+	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '',
+		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, filesJSON(files), blocks.Encode(choices), n, n, d.ID)
 	if err != nil {
 		return d, err
 	}

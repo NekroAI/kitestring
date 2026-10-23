@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, UserPlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, ShieldCheck, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Requirement, Session } from '../api/client'
 import { useProjects, useRequirements, useSessions } from '../api/queries'
@@ -16,6 +16,7 @@ import { NewReqModal, statusCls } from '../app/requirements'
 import { SessionRow } from '../app/thread'
 import { Linkify, ReqGlyph } from '../ui/refmark'
 import { useRecent } from '../app/recent'
+import { GrantPanel } from '../app/grant'
 
 // 项目：左侧项目列表常驻，右侧回答“这个项目现在怎样”（D-20 选定 B 主从双栏；窄屏退化为列表 → 详情）。
 
@@ -209,6 +210,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [granting, setGranting] = useState(false)
   const counts = order.map((s) => [s, p.open.filter((r) => r.status === s).length] as const).filter(([, n]) => n)
   const done = p.reqs.filter((r) => r.status === 'done').length
   const firstReview = p.open.filter((r) => r.status === 'review').sort((a, b) => a.updated_at.localeCompare(b.updated_at))[0]
@@ -246,6 +248,9 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button icon={<ShieldCheck className="size-4" />} onClick={() => setGranting(true)}>
+            <span className="max-sm:hidden">{t.grant.open}</span>
+          </Button>
           <Button icon={<Settings2 className="size-4" />} onClick={() => setEditing(true)}>
             <span className="max-sm:hidden">{t.projects.settings}</span>
           </Button>
@@ -354,6 +359,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
 
       <NewReqModal open={creating} onClose={() => setCreating(false)} defaultProject={p.id} />
       <ProjectSettings p={p} open={editing} onClose={() => setEditing(false)} />
+      <GrantPanel projectId={p.id} open={granting} onClose={() => setGranting(false)} />
     </div>
   )
 }
