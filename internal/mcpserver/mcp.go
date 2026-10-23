@@ -25,6 +25,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
 - 设计类需求（kind = design，或用户说“出方案 / 设计”）：先用 decision_raise 交 2～3 套方案，并在 option_images 附上每套的效果图，用户看图选定后再实现。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
+- 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开工。计划开始或阶段解锁时，该阶段的需求会交给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动交给你。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以在后台运行 shell 命令 ks wait（默认最长等 1 小时，可用 --timeout 调整，最长 12h；后台任务的超时要设得比它长）。用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你随即被唤醒，按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。`
 
 // Run 以 stdio 运行 MCP server。
@@ -126,6 +127,36 @@ type decisionIn struct {
 	Images         []string `json:"images,omitempty" jsonschema:"问题附带的本机图片路径（例如待批准的方案图）"`
 	Recommendation string   `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
 	Requirement    string   `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
+}
+
+type planReqIn struct {
+	Ref        string `json:"ref,omitempty" jsonschema:"已有需求的编号（如 R-12）；给了就不用填其它字段"`
+	Title      string `json:"title,omitempty" jsonschema:"新需求标题（不给 ref 时必填），一句话说清一个具体改动"`
+	Detail     string `json:"detail,omitempty" jsonschema:"新需求的背景与细节"`
+	Acceptance string `json:"acceptance,omitempty" jsonschema:"新需求的验收标准"`
+	Priority   string `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`
+	Kind       string `json:"kind,omitempty" jsonschema:"design = 设计类需求，不填为普通需求"`
+}
+
+type planStageIn struct {
+	Title        string      `json:"title" jsonschema:"阶段名称，如：方案、数据与接口、网页"`
+	Requirements []planReqIn `json:"requirements" jsonschema:"这一阶段的需求（可并行做），可以是已有需求或新需求"`
+}
+
+type planCreateIn struct {
+	Title  string        `json:"title" jsonschema:"计划标题"`
+	Goal   string        `json:"goal,omitempty" jsonschema:"计划目标：做完后达到什么效果"`
+	Stages []planStageIn `json:"stages" jsonschema:"按先后顺序排列的阶段；前一阶段验收通过后才开始下一阶段"`
+}
+
+type planRefIn struct {
+	Plan string `json:"plan" jsonschema:"计划编号（如 P-1）或 ID"`
+}
+
+type stageSubmitIn struct {
+	Plan    string `json:"plan" jsonschema:"计划编号（如 P-1）或 ID"`
+	Stage   int    `json:"stage" jsonschema:"阶段序号（从 1 开始），只能是计划的当前阶段"`
+	Summary string `json:"summary" jsonschema:"阶段小结：这一阶段做了什么、怎么验证的，用户验收时会看到"`
 }
 
 type linkIn struct {
@@ -246,6 +277,82 @@ func (t *tools) register(s *mcp.Server) {
 			err := t.c.Do(ctx, "POST", "/agent/sessions/"+url.PathEscape(key)+"/link", map[string]any{"requirement": in.Requirement}, &out)
 			return nil, out, err
 		})
+	mcp.AddTool(s, &mcp.Tool{Name: "plan_create", Description: "把较大的目标拆成计划：按顺序的阶段，阶段内可放多条需求（已有或新建）。提交后进入用户的“待批准”，批准后第一阶段的需求会交给本会话。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in planCreateIn) (*mcp.CallToolResult, any, error) {
+			body := map[string]any{"title": in.Title, "goal": in.Goal, "stages": in.Stages, "session_key": t.sessionKey(ctx, req)}
+			dropEmpty(body)
+			var out planView
+			if err := t.c.Do(ctx, "POST", "/agent/plans", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Code + " 已提交，等待用户批准；批准后第一阶段的需求会交给你。\n" + out.String()), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "plan_get", Description: "查看计划进度：各阶段状态、阶段内需求及其状态、阶段小结。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in planRefIn) (*mcp.CallToolResult, any, error) {
+			var out planView
+			if err := t.c.Do(ctx, "GET", "/agent/plans/"+url.PathEscape(in.Plan), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.String()), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "stage_submit", Description: "计划当前阶段的需求都做完（待验收）后调用：交阶段小结，阶段进入“待阶段验收”。用户通过后下一阶段会自动交给你；退回会附意见送达。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in stageSubmitIn) (*mcp.CallToolResult, any, error) {
+			var out planView
+			path := fmt.Sprintf("/agent/plans/%s/stages/%d/submit", url.PathEscape(in.Plan), in.Stage)
+			if err := t.c.Do(ctx, "POST", path, map[string]any{"summary": in.Summary, "session_key": t.sessionKey(ctx, req)}, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(fmt.Sprintf("%s 阶段 %d 已交小结，等待用户验收。", out.Code, in.Stage)), nil, nil
+		})
+}
+
+func text(s string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
+}
+
+// planView 是计划的精简视图：按行输出，省上下文。
+type planView struct {
+	Code   string `json:"code"`
+	Title  string `json:"title"`
+	Goal   string `json:"goal"`
+	Status string `json:"status"`
+	Paused bool   `json:"paused"`
+	Stages []struct {
+		Seq          int    `json:"seq"`
+		Title        string `json:"title"`
+		Status       string `json:"status"`
+		Summary      string `json:"summary"`
+		Requirements []struct {
+			Code   string `json:"code"`
+			Title  string `json:"title"`
+			Status string `json:"status"`
+		} `json:"requirements"`
+	} `json:"stages"`
+}
+
+var planStatusZh = map[string]string{"draft": "待开始 / 待批准", "active": "进行中", "done": "已完成", "shelved": "已搁置"}
+var stageStatusZh = map[string]string{"locked": "未解锁", "active": "进行中", "review": "待阶段验收", "passed": "已通过"}
+
+func (p planView) String() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s「%s」%s", p.Code, p.Title, planStatusZh[p.Status])
+	if p.Paused {
+		b.WriteString("（暂停：已通过阶段里有需求被重开）")
+	}
+	b.WriteString("\n")
+	if p.Goal != "" {
+		fmt.Fprintf(&b, "目标：%s\n", p.Goal)
+	}
+	for _, st := range p.Stages {
+		fmt.Fprintf(&b, "阶段 %d「%s」%s\n", st.Seq, st.Title, stageStatusZh[st.Status])
+		for _, r := range st.Requirements {
+			fmt.Fprintf(&b, "  - %s %s [%s]\n", r.Code, r.Title, r.Status)
+		}
+		if st.Summary != "" {
+			fmt.Fprintf(&b, "  小结：%s\n", st.Summary)
+		}
+	}
+	return b.String()
 }
 
 // upload 上传本机图片或录屏，返回附件 ID。

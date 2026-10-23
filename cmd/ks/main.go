@@ -44,6 +44,7 @@ agent 调用：
   hook <claude|codex> <event>   由 agent 的 hook 调用
   mcp                    stdio MCP server
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
+  plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结
   decision raise ...     提出决策
   wait [--timeout 1h]    挂起等待用户在 Kitestring 上的答复 / 验收 / 留言（后台运行，收到后输出并退出）
 
@@ -80,6 +81,8 @@ func main() {
 		err = mcpserver.Run(signalContext())
 	case "req":
 		err = runReq(args)
+	case "plan":
+		err = runPlan(args)
 	case "decision":
 		err = runDecision(args)
 	case "wait":

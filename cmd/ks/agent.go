@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strconv"
@@ -259,4 +260,59 @@ func runWait(args []string) error {
 		}
 	}
 	return nil
+}
+
+// runPlan：计划操作。create 从 JSON 文件读计划结构（与 MCP plan_create 相同：title、goal、stages[{title, requirements[{ref | title, detail, acceptance, priority, kind}]}]）。
+func runPlan(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("用法：ks plan create --file plan.json | get <P-编号> | submit <P-编号> <阶段序号> <小结>")
+	}
+	sub, args := args[0], args[1:]
+	fs := flag.NewFlagSet("plan "+sub, flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
+	file := fs.String("file", "", "create：计划结构 JSON 文件，- 表示从标准输入读")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	key := cliSession(*session)
+	switch sub {
+	case "create":
+		if *file == "" {
+			return fmt.Errorf(`用法：ks plan create --file plan.json（{"title":…,"goal":…,"stages":[{"title":…,"requirements":[{"ref":"R-12"},{"title":…}]}]}）`)
+		}
+		var raw []byte
+		var err error
+		if *file == "-" {
+			raw, err = io.ReadAll(os.Stdin)
+		} else {
+			raw, err = os.ReadFile(*file)
+		}
+		if err != nil {
+			return err
+		}
+		body := map[string]any{}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return fmt.Errorf("计划 JSON 格式不对：%w", err)
+		}
+		if key != "" {
+			body["session_key"] = key
+		}
+		return agentCall("POST", "/agent/plans", body)
+	case "get":
+		if fs.NArg() < 1 {
+			return fmt.Errorf("用法：ks plan get <P-编号>")
+		}
+		return agentCall("GET", "/agent/plans/"+url.PathEscape(fs.Arg(0)), nil)
+	case "submit":
+		if fs.NArg() < 3 {
+			return fmt.Errorf("用法：ks plan submit <P-编号> <阶段序号> <阶段小结>")
+		}
+		seq, err := strconv.Atoi(fs.Arg(1))
+		if err != nil {
+			return fmt.Errorf("阶段序号应为数字：%s", fs.Arg(1))
+		}
+		return agentCall("POST", fmt.Sprintf("/agent/plans/%s/stages/%d/submit", url.PathEscape(fs.Arg(0)), seq), compact(map[string]any{"summary": fs.Arg(2), "session_key": key}))
+	default:
+		return fmt.Errorf("未知的 plan 子命令：%s", sub)
+	}
 }
