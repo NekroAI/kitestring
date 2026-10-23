@@ -1,0 +1,51 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! For security problems, please use **Security → Report a vulnerability** instead of a public issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where
+      options:
+        - Web UI
+        - Hub (ks hub)
+        - Daemon / hooks (ks daemon, ks hook)
+        - MCP / CLI (ks mcp, ks req, ks wait…)
+        - Installation (install.sh, ks install)
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and version (if relevant)
+      placeholder: Claude Code 2.3.1, Codex 0.120.0
+  - type: input
+    id: version
+    attributes:
+      label: Kitestring version
+      description: Output of `ks version`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and architecture
+      placeholder: macOS 26.1 arm64, Ubuntu 24.04 x64
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything else?
+      description: Screenshots, logs from `~/.kitestring`, steps to reproduce. Please remove tokens, prompts and project names you don't want to share.

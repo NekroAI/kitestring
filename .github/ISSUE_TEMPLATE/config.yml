@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation guide
+    url: https://github.com/NekroAI/kitestring/blob/main/docs/install.md
+    about: Installing, connecting machines and updating.
+  - name: Security vulnerability
+    url: https://github.com/NekroAI/kitestring/security/advisories/new
+    about: Report security problems privately.

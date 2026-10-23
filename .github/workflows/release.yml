@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: tag 与 VERSION 一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "$GITHUB_REF_NAME" = "v$(tr -d '[:space:]' < VERSION)"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: 构建前端
+        working-directory: web
+        run: pnpm install --frozen-lockfile && pnpm build
+      - name: 测试
+        run: go test ./...
+      - name: 交叉编译
+        run: |
+          # 每个包只有一个文件：kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz，内含 ks、LICENSE、README
+          v=$(tr -d '[:space:]' < VERSION)
+          ldflags="-s -w -X github.com/NekroAI/kitestring/internal/version.Version=$v -X github.com/NekroAI/kitestring/internal/version.Commit=$(git rev-parse --short HEAD)"
+          mkdir -p dist
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            os=${target%/*} arch=${target#*/}
+            out="build/kitestring-$v-$os-$arch"
+            mkdir -p "$out"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o "$out/ks" ./cmd/ks
+            cp LICENSE README.md README.zh-CN.md "$out/"
+            tar -czf "dist/kitestring-$v-$os-$arch.tar.gz" -C "$out" .
+          done
+          test "$(ls dist | wc -l)" -eq 4
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kitestring
+          path: dist/*
+          if-no-files-found: error
+      - name: 发布
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 不标记为预发布：install.sh 依赖 releases/latest，它不包含预发布版本
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Kitestring $GITHUB_REF_NAME" \
+            --notes-file docs/install.md \
+            --latest

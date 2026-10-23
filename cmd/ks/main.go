@@ -196,7 +196,7 @@ func readPassword() (string, error) {
 
 func runLogin(args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
-	hubURL := fs.String("hub", "", "Hub 地址，例：http://nexus-mini.local:7310")
+	hubURL := fs.String("hub", "", "Hub 地址，例：http://hub.local:7310")
 	token := fs.String("token", "", "设备 token（kst_ 开头）")
 	if err := fs.Parse(args); err != nil {
 		return err
