@@ -1,7 +1,7 @@
 import { Send, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Session } from '../api/client'
-import { useSessions } from '../api/queries'
+import { usePlans, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { StatusDot, displayState } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
@@ -124,9 +124,22 @@ export function targetItems(sessions: Session[], projectId: string | null | unde
 export const targetLabel = (s: Session) => [sessionTitle(s), s.device_name].filter(Boolean).join(t.common.sep)
 
 export function useAssign() {
-  const { assign } = useActions()
+  const { assign, updatePlan } = useActions()
+  const plans = usePlans()
   return async (code: string, s: Session) => {
-    if (await assign(code, s.key)) toast.success(t.assign.done(code, sessionTitle(s), targetGroup(s)))
+    if (!(await assign(code, s.key))) return
+    toast.success(t.assign.done(code, sessionTitle(s), targetGroup(s)))
+    // 手动把计划里的需求交给别人：顺手问一句是否把计划的负责会话也改过去（R-99）；顾问 / 审查员不能当负责会话
+    const plan = (plans.data ?? []).find((x) => (x.status === 'active' || x.status === 'draft') && x.stages.some((st) => st.requirements.some((r) => r.code === code)))
+    if (plan && plan.owner_session !== s.key && s.role !== 'advisor' && s.role !== 'reviewer') {
+      toast(t.plan.ownerFollow(plan.code, sessionTitle(s)), {
+        duration: 12000,
+        action: {
+          label: t.plan.ownerFollowDo(plan.code),
+          onClick: () => void updatePlan(plan.code, { title: plan.title, goal: plan.goal, project_id: plan.project_id || undefined, owner_session: s.key }),
+        },
+      })
+    }
   }
 }
 

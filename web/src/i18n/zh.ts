@@ -559,6 +559,8 @@ export const zh = {
     owner: '负责会话',
     ownerHint: '不指定时，阶段解锁后由你手动交出需求',
     noOwner: '不指定',
+    ownerFollow: (code: string, who: string) => `${code} 的负责会话不是「${who}」，要一起改吗？`,
+    ownerFollowDo: (code: string) => `也把 ${code} 的负责会话改为它`,
     stage: (n: number) => `阶段 ${n}`,
     stageName: (n: number, title: string) => `阶段 ${n} · ${title}`,
     stagePlaceholder: '阶段名称，如：方案、接口、网页',

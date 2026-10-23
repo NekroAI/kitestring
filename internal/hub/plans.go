@@ -9,6 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/NekroAI/kitestring/internal/notify"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -140,7 +141,7 @@ func (h *Hub) unlockStage(ctx context.Context, x store.Plan, st store.Stage) err
 		if r.Status == store.ReqDone {
 			continue
 		}
-		if x.OwnerSession != "" {
+		if x.OwnerSession != "" && !h.handledElsewhere(ctx, r.ID, x.OwnerSession) {
 			if _, err := h.assignQuiet(ctx, r.ID, x.OwnerSession, fmt.Sprintf("属于计划 %s「%s」%s。", x.Code, x.Title, stageName(st)), ""); err == nil {
 				continue
 			}
@@ -150,6 +151,41 @@ func (h *Hub) unlockStage(ctx context.Context, x store.Plan, st store.Stage) err
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// handledElsewhere 判断需求已被用户手动交给了别的会话（待开始已送达别人，或别人正在做），
+// 阶段解锁时不再推给计划负责会话，避免同一条需求同时推给两个会话（R-99）。
+func (h *Hub) handledElsewhere(ctx context.Context, id, owner string) bool {
+	r, err := h.store.GetRequirement(ctx, id)
+	if err != nil {
+		return false
+	}
+	if r.OfferedTo != "" && r.OfferedTo != owner {
+		return true
+	}
+	if r.Status == store.ReqInProgress || r.Status == store.ReqReview {
+		for _, k := range r.Sessions {
+			if k != owner {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// checkPlanOwner 校验计划负责会话：顾问和审查员只给建议 / 审查，不接需求，不能当负责会话。
+func (h *Hub) checkPlanOwner(ctx context.Context, key string) error {
+	if key == "" {
+		return nil
+	}
+	s, err := h.store.GetSession(ctx, key)
+	if err != nil {
+		return nil
+	}
+	if s.Role == roles.Advisor || s.Role == roles.Reviewer {
+		return huma.Error400BadRequest("身份为" + roles.Label(s.Role) + "的会话不能当计划的负责会话，请选 PM、开发或无身份的会话")
 	}
 	return nil
 }
@@ -420,6 +456,9 @@ func (h *Hub) registerPlans(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			if err := h.checkPlanOwner(ctx, b.OwnerSession); err != nil {
+				return nil, err
+			}
 			x, err := h.store.CreatePlan(ctx, store.Plan{Title: b.Title, Goal: b.Goal, ProjectID: b.ProjectID, OwnerSession: b.OwnerSession, CreatedBy: "user"}, stages)
 			if err != nil {
 				return nil, apiErr(err)
@@ -455,6 +494,9 @@ func (h *Hub) registerPlans(api huma.API) {
 					return nil, err
 				}
 			}
+			if err := h.checkPlanOwner(ctx, b.OwnerSession); err != nil {
+				return nil, err
+			}
 			x, err := h.store.UpdatePlan(ctx, store.Plan{ID: cur.ID, Title: b.Title, Goal: b.Goal, ProjectID: b.ProjectID, OwnerSession: b.OwnerSession}, stages)
 			if err != nil {
 				return nil, apiErr(err)
@@ -479,7 +521,7 @@ func (h *Hub) registerPlans(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "start-plan", Method: http.MethodPost, Path: "/api/plans/{ref}/start", Tags: tag, Summary: "开始 / 批准计划：第一个阶段解锁并交给负责会话"},
 		func(ctx context.Context, in *struct {
-			Ref string `path:"ref"`
+			Ref  string `path:"ref"`
 			Body commentBody
 		}) (*planOut, error) {
 			n, err := h.noteOf(ctx, in.Body)
@@ -491,7 +533,7 @@ func (h *Hub) registerPlans(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "reject-plan", Method: http.MethodPost, Path: "/api/plans/{ref}/reject", Tags: tag, Summary: "不批准 Agent 拆出的计划（搁置，附言送达）"},
 		func(ctx context.Context, in *struct {
-			Ref string `path:"ref"`
+			Ref  string `path:"ref"`
 			Body commentBody
 		}) (*planOut, error) {
 			n, err := h.noteOf(ctx, in.Body)
@@ -503,8 +545,8 @@ func (h *Hub) registerPlans(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "pass-stage", Method: http.MethodPost, Path: "/api/plans/{ref}/stages/{seq}/pass", Tags: tag, Summary: "验收通过整个阶段，下一阶段自动开始"},
 		func(ctx context.Context, in *struct {
-			Ref string `path:"ref"`
-			Seq int    `path:"seq"`
+			Ref  string `path:"ref"`
+			Seq  int    `path:"seq"`
 			Body commentBody
 		}) (*planOut, error) {
 			n, err := h.noteOf(ctx, in.Body)
@@ -516,8 +558,8 @@ func (h *Hub) registerPlans(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "revise-stage", Method: http.MethodPost, Path: "/api/plans/{ref}/stages/{seq}/revise", Tags: tag, Summary: "退回整个阶段（附意见）"},
 		func(ctx context.Context, in *struct {
-			Ref string `path:"ref"`
-			Seq int    `path:"seq"`
+			Ref  string `path:"ref"`
+			Seq  int    `path:"seq"`
 			Body commentBody
 		}) (*planOut, error) {
 			n, err := h.noteOf(ctx, in.Body)
@@ -541,10 +583,14 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			}
 		}) (*planOut, error) {
 			b := in.Body
-			project := ""
+			project, owner := "", b.SessionKey
 			if b.SessionKey != "" {
 				if x, err := h.store.GetSession(ctx, b.SessionKey); err == nil {
 					project = x.ProjectID
+					// 顾问 / 审查员建的计划，负责会话改为本项目的 PM（没有就留空），避免推给自己（R-99）
+					if x.Role == roles.Advisor || x.Role == roles.Reviewer {
+						owner = h.projectPM(ctx, project)
+					}
 				}
 			}
 			for _, st := range b.Stages {
@@ -561,7 +607,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			x, err := h.store.CreatePlan(ctx, store.Plan{Title: b.Title, Goal: b.Goal, ProjectID: project, OwnerSession: b.SessionKey, CreatedBy: "agent"}, stages)
+			x, err := h.store.CreatePlan(ctx, store.Plan{Title: b.Title, Goal: b.Goal, ProjectID: project, OwnerSession: owner, CreatedBy: "agent"}, stages)
 			if err != nil {
 				return nil, apiErr(err)
 			}
