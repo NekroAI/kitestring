@@ -4,7 +4,6 @@ import { useDecisions, useProjects, useRequirements, useSessions } from '../api/
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { displayState } from '../ui/marks'
-import { AssignButton } from './assign'
 import { sessionTitle } from './SessionCard'
 
 // 这条需求现在谁在管、什么时候会动（R-66）。和后端的排队规则一一对应：
@@ -76,7 +75,7 @@ export function OwnBadge({ own, className }: { own: Own; className?: string }) {
   )
 }
 
-// OwnLine：需求详情顶部常驻的一行，说清现在谁在管、什么时候会动；没人接手时直接给“交给…”。
+// OwnLine：需求详情顶部常驻的一行，说清现在谁在管、什么时候会动（没人接手时用底部的“交给会话”）。
 export function OwnLine({ r }: { r: Requirement }) {
   const own = useOwnership()(r)
   if (!own) return null
@@ -85,7 +84,6 @@ export function OwnLine({ r }: { r: Requirement }) {
     <div className={cx('mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg px-2.5 py-1.5 text-[13px]', toneCls[own.tone])}>
       <Icon className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1">{own.text}</span>
-      {own.canAssign && <AssignButton code={r.code} projectId={r.project_id} />}
     </div>
   )
 }
