@@ -53,6 +53,7 @@ type Daemon struct {
 	waiting   map[string]int64  // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
 	roles     map[string]string // 会话键 → 身份（Hub 下发，R-82）
 	stopBlocks map[string]int   // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
+	heldReply  map[string]string // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
 	waitSeq   int64
 	tools     toolsState // 各会话的 Kitestring 工具版本（R-59）
 }
@@ -81,7 +82,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, tools: newToolsState()}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState()}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -300,11 +301,14 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if block := d.stopGuard(ev); block != "" {
-		// 这一轮没有真正结束，不上报 Stop（否则网页会闪一下“等你回复”，还会推送通知）
+		// 这一轮没有真正结束，不上报 Stop（否则网页会闪一下“等你回复”，还会推送通知）。
+		// 被拦下时的回复往往就是这一轮的正文（报告、计划），先留着，并到真正结束时一起上送（R-109）
+		d.holdReply(ev)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(protocol.HookResponse{Block: block})
 		return
 	}
+	d.mergeHeldReply(&ev)
 	if ev.Name == "Stop" {
 		// 常驻会话的 Stop 可能在宽限期里等了一会儿 ks wait 登记；这期间上报的 KsWait 时间更晚，
 		// Stop 若仍用收到时的时间，到了 Hub 会被当成乱序的旧事件丢掉，状态停在“运行中”（R-108）。
@@ -415,6 +419,8 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if name == "Stop" {
 		ev.BgTasks, ev.BgBrief = backgroundTasks(p)
 		ev.Context, ev.ContextMax = contextUsage(str(p, "transcript_path"))
+		// 这一轮的最后回复同步到 Hub，在会话详情里显示（R-109）；Claude Code 与 Codex 的 Stop 都带 last_assistant_message
+		ev.Reply = summary.Truncate(strings.TrimSpace(str(p, "last_assistant_message")), protocol.ReplyMax)
 	}
 	if name == "Stop" && cfg.SendLastReply {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)

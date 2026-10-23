@@ -183,6 +183,12 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 			ev.Source = protocol.SourceAuto
 		}
 	}
+	// 最后回复单独存在会话上，不写进事件记录（每轮一条，最长 2 万字，R-109）
+	reply := ev.Reply
+	ev.Reply = ""
+	if r := []rune(reply); len(r) > protocol.ReplyMax+1 { // 兼容不截断的设备
+		reply = string(r[:protocol.ReplyMax]) + "…"
+	}
 	inserted, err := h.store.InsertEvent(ctx, dev.ID, ev)
 	if err != nil || !inserted {
 		return err
@@ -206,6 +212,11 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		return err
 	}
 	defer h.sessionChanged(key) // 存完工具版本、上下文占用等再推
+	if ev.Name == "Stop" && reply != "" {
+		if err := h.store.SetLastReply(ctx, key, reply, ev.Time); err != nil {
+			return err
+		}
+	}
 	if ev.Context > 0 {         // 上下文占用（R-60）
 		if err := h.store.SetContext(ctx, key, ev.Context, ev.ContextMax); err != nil {
 			return err

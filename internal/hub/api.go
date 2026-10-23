@@ -227,6 +227,8 @@ type sessionDetailOut struct {
 	Body struct {
 		Session store.Session    `json:"session"`
 		Events  []protocol.Event `json:"events"`
+		// LastReply：最近一轮结束时的最后一条回复（Markdown，最长 2 万字）；还没有时省略（R-109）
+		LastReply *store.LastReply `json:"last_reply,omitempty"`
 	}
 }
 
@@ -429,7 +431,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if out.Body.Session, err = h.store.GetSession(ctx, in.Key); err != nil {
 				return nil, apiErr(err)
 			}
-			out.Body.Events, err = h.store.SessionEvents(ctx, in.Key, 50)
+			if out.Body.Events, err = h.store.SessionEvents(ctx, in.Key, 50); err != nil {
+				return nil, err
+			}
+			out.Body.LastReply, err = h.store.GetLastReply(ctx, in.Key)
 			return out, err
 		})
 

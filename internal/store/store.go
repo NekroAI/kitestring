@@ -86,6 +86,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"projects", "need_devs", "INTEGER NOT NULL DEFAULT 0"},
 	{"projects", "need_reason", "TEXT NOT NULL DEFAULT ''"},
 	{"projects", "need_at", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "last_reply", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "last_reply_at", "TEXT NOT NULL DEFAULT ''"},
 }
 
 func migrate(db *sql.DB) error {

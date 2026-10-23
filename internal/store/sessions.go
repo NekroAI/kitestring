@@ -311,6 +311,36 @@ func (s *Store) SetContext(ctx context.Context, key string, used, window int) er
 	return err
 }
 
+// LastReply 是会话最近一轮结束时的最后一条回复（R-109）。
+type LastReply struct {
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
+}
+
+// SetLastReply 记下会话一轮结束时的最后回复；比已存的旧（乱序补传）时不覆盖。
+func (s *Store) SetLastReply(ctx context.Context, key, text string, at time.Time) error {
+	if cur, err := s.GetLastReply(ctx, key); err != nil {
+		return err
+	} else if cur != nil && cur.At.After(at) {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET last_reply = ?, last_reply_at = ? WHERE key = ?`, text, ts(at), key)
+	return err
+}
+
+// GetLastReply 读取会话的最后回复；还没有时返回 nil。
+func (s *Store) GetLastReply(ctx context.Context, key string) (*LastReply, error) {
+	var text, at string
+	err := s.db.QueryRowContext(ctx, `SELECT last_reply, last_reply_at FROM sessions WHERE key = ?`, key).Scan(&text, &at)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && text == "") {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &LastReply{Text: text, At: parseTS(at)}, nil
+}
+
 // ClearDigest 在新一轮开始时清掉上一轮的“等你回复”要点。
 func (s *Store) ClearDigest(ctx context.Context, key string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET digest_done = '', digest_ask = '' WHERE key = ?`, key)

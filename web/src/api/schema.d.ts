@@ -1211,6 +1211,7 @@ export interface components {
             permission_mode?: string;
             prompt?: string;
             reason?: string;
+            reply?: string;
             session_id: string;
             source?: string;
             /** Format: date-time */
@@ -1261,6 +1262,11 @@ export interface components {
             /** @description 附图 ID */
             files?: string[] | null;
             ref: string;
+        };
+        LastReply: {
+            /** Format: date-time */
+            at: string;
+            text: string;
         };
         "Link-requirementRequest": {
             session_key: string;
@@ -1563,6 +1569,7 @@ export interface components {
         };
         SessionDetailOutBody: {
             events: components["schemas"]["Event"][] | null;
+            last_reply?: components["schemas"]["LastReply"];
             session: components["schemas"]["Session"];
         };
         SessionsOutBody: {

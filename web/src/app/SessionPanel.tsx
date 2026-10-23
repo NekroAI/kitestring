@@ -1,5 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { ChevronRight, Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
@@ -8,6 +8,7 @@ import { Collapse, Item, List } from '../ui/motion'
 import { absTime, clockTime, copyText, cx, duration, relTime, shortPath, useNow } from '../lib/util'
 import { Badge, Button, ErrorState, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
+import { Md } from '../ui/markdown'
 import { displayState, PhaseBadge, RoleBadge, Sparkline, StatusPill, ToolMark } from '../ui/marks'
 import { useActions } from './actions'
 import { DecisionComposer, DecisionRow } from './DecisionCard'
@@ -52,6 +53,47 @@ function Info({ label, children, mono }: { label: string; children: ReactNode; m
       <dt className="text-xs text-fg-3">{label}</dt>
       <dd className={cx('mt-0.5 truncate text-sm text-fg', mono && 'font-mono text-[13px]')}>{children || '—'}</dd>
     </div>
+  )
+}
+
+// LastReply：这一轮结束时 Agent 的最后一条回复（R-109），Markdown 显示；超过一屏的默认折叠，点开看全文。
+const replyFold = 280
+function LastReply({ text, at, now }: { text: string; at: string; now: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [long, setLong] = useState(false)
+  const [open, setOpen] = useState(false)
+  useLayoutEffect(() => {
+    setOpen(false)
+    if (ref.current) setLong(ref.current.scrollHeight > replyFold + 80)
+  }, [text])
+  const folded = long && !open
+  return (
+    <Section
+      title={t.session.lastReply}
+      right={
+        <span className="flex items-center gap-1">
+          <span className="text-xs text-fg-3" title={absTime(at)}>
+            {t.session.lastReplyAt(relTime(at, now))}
+          </span>
+          <Button size="icon-sm" variant="ghost" aria-label={t.common.copy} title={t.common.copy} onClick={async () => (await copyText(text)) && toast.success(t.common.copied)}>
+            <Copy className="size-3.5" />
+          </Button>
+        </span>
+      }
+    >
+      <div className="overflow-hidden rounded-2xl border border-line">
+        <div ref={ref} className="relative px-3.5 py-3" style={folded ? { maxHeight: replyFold, overflow: 'hidden' } : undefined}>
+          <Md text={text} />
+          {folded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-surface to-transparent" />}
+        </div>
+        {long && (
+          <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full items-center justify-center gap-1 border-t border-line py-2 text-[13px] text-accent transition hover:bg-hover">
+            {open ? t.session.collapseReply : t.session.expandReply}
+            <ChevronDown className={cx('size-4 transition-transform', open && 'rotate-180')} />
+          </button>
+        )}
+      </div>
+    </Section>
   )
 }
 
@@ -208,6 +250,8 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
               </List>
             </Section>
           </Collapse>
+
+          {q.data?.lastReply && <LastReply text={q.data.lastReply.text} at={q.data.lastReply.at} now={now} />}
 
           <Section title={t.session.current} right={<Sparkline data={s.activity} state={s.state} />}>
             <div className="space-y-2.5 rounded-2xl border border-line p-3.5">

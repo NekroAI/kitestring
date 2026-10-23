@@ -55,8 +55,10 @@ type Event struct {
 	BgTasks   int       `json:"bg_tasks,omitempty"`   // Stop 时仍在运行的后台任务数（后台 shell / 子 Agent）
 	BgBrief   string    `json:"bg_brief,omitempty"`   // 后台任务简述，截断
 	LastReply string    `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
-	Git       *Git      `json:"git,omitempty"`
-	Instance  string    `json:"instance,omitempty"` // 所属终端（agent 进程号 + 启动时间），区分同一对话在多个终端打开
+	// Reply：Stop 时这一轮的最后一条回复（截到 ReplyMax 字），Hub 存为会话的“最后回复”，不写进事件记录（R-109）
+	Reply    string `json:"reply,omitempty"`
+	Git      *Git   `json:"git,omitempty"`
+	Instance string `json:"instance,omitempty"` // 所属终端（agent 进程号 + 启动时间），区分同一对话在多个终端打开
 	// Tools：这个会话的 Kitestring 工具（MCP 进程）版本状态，daemon 发现变化时随下一条事件捎上（R-59）。
 	// "ok" 表示已是最新；其它非空值是过期工具的版本（"旧版" 表示太旧、没有上报版本）；空表示没有变化。
 	Tools string `json:"tools,omitempty"`
@@ -66,6 +68,9 @@ type Event struct {
 	// Until：ks wait 开始时（KsWait）最长等到什么时候（R-74）
 	Until *time.Time `json:"until,omitempty"`
 }
+
+// ReplyMax 是随 Stop 上送的最后回复的字数上限（R-109）。
+const ReplyMax = 20000
 
 // ks wait 挂起等待：daemon 在等待开始 / 结束时上报的合成事件。
 const (
@@ -83,7 +88,7 @@ type Decision struct {
 	AnsweredAt time.Time `json:"answered_at"`
 	Delivered  bool      `json:"delivered,omitempty"` // 已接收，仅用于恢复 / 压缩时补注入
 	Kind       string    `json:"kind,omitempty"`      // decision | feedback | note | assign | plan
-	ReqCode    string    `json:"req_code,omitempty"` // 关联需求编号；kind=plan 时是计划编号（P-n）
+	ReqCode    string    `json:"req_code,omitempty"`  // 关联需求编号；kind=plan 时是计划编号（P-n）
 	ReqTitle   string    `json:"req_title,omitempty"`
 	Files      []File    `json:"files,omitempty"` // 答复 / 意见附图
 }
@@ -114,13 +119,13 @@ type DeviceConfig struct {
 
 // Envelope 是 WebSocket 上的统一消息外壳。
 type Envelope struct {
-	Type      string        `json:"type"`
-	Hello     *Hello        `json:"hello,omitempty"`
-	Events    []Event       `json:"events,omitempty"`
-	Ack       []string      `json:"ack,omitempty"`
-	Decisions []Decision    `json:"decisions,omitempty"`
-	Delivered []Delivery    `json:"delivered,omitempty"`
-	Config    *DeviceConfig `json:"config,omitempty"`
+	Type      string            `json:"type"`
+	Hello     *Hello            `json:"hello,omitempty"`
+	Events    []Event           `json:"events,omitempty"`
+	Ack       []string          `json:"ack,omitempty"`
+	Decisions []Decision        `json:"decisions,omitempty"`
+	Delivered []Delivery        `json:"delivered,omitempty"`
+	Config    *DeviceConfig     `json:"config,omitempty"`
 	Roles     map[string]string `json:"roles,omitempty"` // 会话键 → 身份
 }
 

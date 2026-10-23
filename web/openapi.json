@@ -902,6 +902,9 @@
           "reason": {
             "type": "string"
           },
+          "reply": {
+            "type": "string"
+          },
           "session_id": {
             "type": "string"
           },
@@ -1093,6 +1096,23 @@
         "required": [
           "ref",
           "answer"
+        ],
+        "type": "object"
+      },
+      "LastReply": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "at"
         ],
         "type": "object"
       },
@@ -2269,6 +2289,9 @@
               "array",
               "null"
             ]
+          },
+          "last_reply": {
+            "$ref": "#/components/schemas/LastReply"
           },
           "session": {
             "$ref": "#/components/schemas/Session"

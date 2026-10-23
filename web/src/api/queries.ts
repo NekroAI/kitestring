@@ -71,7 +71,7 @@ export function useSessionDetail(key: string | null) {
   return useQuery({
     queryKey: qk.session(key ?? ''),
     queryFn: () => unwrap(api.GET('/api/sessions/{key}', { params: { path: { key: key! } } })),
-    select: (d) => ({ session: normSession(d.session), events: d.events ?? [] }),
+    select: (d) => ({ session: normSession(d.session), events: d.events ?? [], lastReply: d.last_reply }),
     enabled: !!key,
   })
 }

@@ -21,7 +21,7 @@
 | 回合标识 | `prompt_id` | `turn_id` |
 | `permission_mode` | ✅ | ✅ |
 | `SessionStart.source` | ✅ | ✅（startup / resume / clear / compact / fork） |
-| `Stop.last_assistant_message` | ✅ | ✅ |
+| `Stop.last_assistant_message` | ✅ | ✅（两边都随 Stop 上送，截到 2 万字，存为会话的“最后回复”，R-109） |
 | `PermissionRequest` | ✅ 实测（含 `tool_input`、`permission_suggestions`） | ✅ 实测（0.159.3，需审批的 MCP 工具调用触发） |
 | `Notification` | ✅ 官方事件（本次未触发） | ❌ 无此事件；另有 `Interrupt` |
 

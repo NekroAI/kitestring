@@ -1,10 +1,12 @@
 package daemon
 
 import (
+	"strings"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/roles"
+	"github.com/NekroAI/kitestring/internal/summary"
 )
 
 // 常驻在线（R-83）：PM 与开发会话要一直挂着 ks wait，需求、答复才送得到。
@@ -58,6 +60,36 @@ func (d *Daemon) stopGuard(ev protocol.Event) string {
 		d.mu.Unlock()
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// holdReply 留下被拦下的那次结束时的回复（R-109）。
+func (d *Daemon) holdReply(ev protocol.Event) {
+	if ev.Reply == "" {
+		return
+	}
+	key := protocol.SessionKey(ev.Tool, ev.SessionID)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if prev := d.heldReply[key]; prev != "" {
+		ev.Reply = prev + "\n\n" + ev.Reply
+	}
+	d.heldReply[key] = summary.Truncate(ev.Reply, protocol.ReplyMax)
+}
+
+// mergeHeldReply 在这一轮真正结束时把留下的回复并到前面；你发新消息时丢弃（那一轮已经过去了）。
+func (d *Daemon) mergeHeldReply(ev *protocol.Event) {
+	if ev.Name != "Stop" && ev.Name != "UserPromptSubmit" {
+		return
+	}
+	key := protocol.SessionKey(ev.Tool, ev.SessionID)
+	d.mu.Lock()
+	held := d.heldReply[key]
+	delete(d.heldReply, key)
+	d.mu.Unlock()
+	if held == "" || ev.Name != "Stop" {
+		return
+	}
+	ev.Reply = summary.Truncate(strings.TrimSpace(held+"\n\n"+ev.Reply), protocol.ReplyMax)
 }
 
 func residentReason(tool, role string) string {

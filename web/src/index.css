@@ -536,3 +536,41 @@ nav.fixed {
 .kite-float {
   animation: ks-float 4s ease-in-out infinite;
 }
+
+/* Markdown 正文（R-109）：Agent 的回复。只用语义色，长代码 / 表格在自己的框里横向滚动，不撑破页面。 */
+.md {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote, .md .md-table { margin: 0.6em 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 1.1em 0 0.45em; font-weight: 600; line-height: 1.4; }
+.md h1 { font-size: 1.25em; }
+.md h2 { font-size: 1.15em; }
+.md h3 { font-size: 1.05em; }
+.md h4, .md h5, .md h6 { font-size: 1em; }
+.md ul { list-style: disc; padding-left: 1.4em; }
+.md ol { list-style: decimal; padding-left: 1.6em; }
+.md li { margin: 0.2em 0; }
+.md li > ul, .md li > ol { margin: 0.2em 0; }
+.md li:has(> input[type='checkbox']) { list-style: none; margin-left: -1.2em; }
+.md input[type='checkbox'] { margin-right: 0.4em; vertical-align: -1px; }
+.md a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.md strong { font-weight: 600; }
+.md blockquote { border-left: 3px solid var(--line-strong); padding-left: 0.8em; color: var(--fg-2); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
+.md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; background: var(--bg-sunken); border-radius: 5px; padding: 0.1em 0.35em; }
+.md pre { background: var(--bg-sunken); border-radius: 10px; padding: 0.7em 0.9em; overflow-x: auto; line-height: 1.55; }
+.md pre code { background: none; padding: 0; font-size: 12.5px; overflow-wrap: normal; white-space: pre; }
+.md .md-table { overflow-x: auto; }
+.md table { border-collapse: collapse; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--line); padding: 0.3em 0.6em; text-align: left; vertical-align: top; }
+.md th { background: var(--surface-2); font-weight: 600; }
+.md td { overflow-wrap: normal; }
+/* 窄屏不把“R-108”“待验收”这种短格拆成两行：前几列不换行，最后一列留够宽度换行，放不下时表格自己横向滚动 */
+.md th, .md td:not(:last-child) { white-space: nowrap; }
+.md td:last-child { min-width: 12em; }
