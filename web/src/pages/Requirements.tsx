@@ -13,7 +13,7 @@ import { Collapse, Item, List as MotionList } from '../ui/motion'
 import { cx, relTime, useMedia, useNow, usePref } from '../lib/util'
 import { useTouchDrag } from '../ui/touchDrag'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
-import { PriorityDot } from '../ui/marks'
+import { PriorityTag } from '../ui/marks'
 import { Menu } from '../ui/overlay'
 import { boardStatuses, closedStatuses, NewReqModal, ReqCard, StatusMenu, useSetStatus } from '../app/requirements'
 import { ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
@@ -134,7 +134,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         <span onClick={(e) => e.stopPropagation()}>
           <StatusMenu r={r} />
         </span>
-        <PriorityDot p={r.priority} />
+        <PriorityTag p={r.priority} />
         <span className="w-[68px] shrink-0">
           <RefChip code={r.code} status={r.status} link={false} />
         </span>
@@ -149,7 +149,8 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
             </span>
           </Tip>
         )}
-        {own && own.tone !== 'locked' && <OwnBadge own={own} className="max-sm:hidden" />}
+        {/* 草稿左边的状态已经写着「草稿」，右边不再重复「待你确认」（R-129） */}
+        {own && own.tone !== 'locked' && own.tone !== 'draft' && <OwnBadge own={own} className="max-sm:hidden" />}
         {!own && r.next_actor === 'user' && r.status !== 'done' && (
           <TurnSeal />
         )}

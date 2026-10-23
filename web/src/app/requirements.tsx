@@ -8,7 +8,7 @@ import { t } from '../i18n'
 import { cx, loadPref, savePref, useDesktop, usePref } from '../lib/util'
 import { Badge, Button, Card, Switch, Textarea, Tip } from '../ui/base'
 import { FullSheet, Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
-import { displayState, PriorityDot, StatusDot } from '../ui/marks'
+import { displayState, PriorityDot, PriorityTag, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
@@ -107,7 +107,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
       className={cx('group flex h-full cursor-pointer flex-col p-3.5 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', r.status === 'review' && 'border-reply/40 ring-1 ring-reply/30', draggable && 'active:cursor-grabbing')}
     >
       <div className="flex items-center gap-2 text-xs text-fg-3">
-        <PriorityDot p={r.priority} />
+        <PriorityTag p={r.priority} />
         <RefChip code={r.code} status={r.status} link={false} />
         {r.project_name && <span className="truncate">{r.project_name}</span>}
         <span className="ml-auto" onClick={(e) => e.stopPropagation()}>

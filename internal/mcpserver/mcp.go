@@ -107,7 +107,7 @@ type reqGetIn struct {
 }
 
 type reqCreateIn struct {
-	Title      string   `json:"title" jsonschema:"需求标题，一句话"`
+	Title      string   `json:"title" jsonschema:"需求标题，一句话；不要把编号（R-12、R-95-D 之类）写进标题，纸鸢会自己显示编号，开头的编号前缀会被去掉"`
 	Detail     string   `json:"detail,omitempty" jsonschema:"背景与细节"`
 	Acceptance string   `json:"acceptance,omitempty" jsonschema:"验收标准"`
 	Status     string   `json:"status,omitempty" jsonschema:"初始状态，默认 draft（草稿，用户确认后才会排进会话的待办）；你当场就在做的用 in_progress"`
@@ -153,7 +153,7 @@ type decisionIn struct {
 
 type planReqIn struct {
 	Ref        string `json:"ref,omitempty" jsonschema:"已有需求的编号（如 R-12）；给了就不用填其它字段"`
-	Title      string `json:"title,omitempty" jsonschema:"新需求标题（不给 ref 时必填），一句话说清一个具体改动"`
+	Title      string `json:"title,omitempty" jsonschema:"新需求标题（不给 ref 时必填），一句话说清一个具体改动；不要把编号写进标题"`
 	Detail     string `json:"detail,omitempty" jsonschema:"新需求的背景与细节"`
 	Acceptance string `json:"acceptance,omitempty" jsonschema:"新需求的验收标准"`
 	Priority   string `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`

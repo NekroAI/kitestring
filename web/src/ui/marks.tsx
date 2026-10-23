@@ -116,6 +116,18 @@ export function Sparkline({ data, state, className }: { data: number[]; state: s
   )
 }
 
+// PriorityTag：优先级文字小标（R-129）：P0～P3 直接写出来，悬停说明紧急 / 高 / 普通 / 低。
+const priorityTag: Record<string, string> = { P0: 'bg-danger-soft text-danger', P1: 'bg-wait-soft text-wait', P2: 'bg-sunken text-fg-2', P3: 'text-fg-3 ring-1 ring-inset ring-line-strong' }
+export function PriorityTag({ p, className }: { p: string; className?: string }) {
+  return (
+    <Tip content={`${p} · ${t.priority[p] ?? p}`}>
+      <span className={cx('inline-flex shrink-0 rounded px-1 font-mono text-[11px] leading-[18px] font-semibold', priorityTag[p] ?? priorityTag.P2, className)} aria-label={t.priority[p] ?? p}>
+        {p}
+      </span>
+    </Tip>
+  )
+}
+
 export function PriorityDot({ p }: { p: string }) {
   const c = p === 'P0' ? 'bg-danger' : p === 'P1' ? 'bg-wait' : p === 'P2' ? 'bg-accent/60' : 'bg-line-strong'
   return <span className={cx('inline-block size-2 shrink-0 rounded-full', c)} aria-label={t.priority[p] ?? p} />

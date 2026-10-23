@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -149,7 +150,20 @@ func nextActor(status string, pending int) string {
 }
 
 // CreateRequirement 新建需求。
+// codePrefix 是标题开头的编号前缀，如「R-95-D 」「P-3：」。编号由纸鸢自己画在标题旁边，写进标题会叠在一起（R-129）。
+var codePrefix = regexp.MustCompile(`^(?:[RPD]-\d+(?:-[A-Za-z0-9]+)?[\s:：、.．\-—]*)+`)
+
+// CleanTitle 去掉标题开头的编号前缀；去完为空时保留原样。
+func CleanTitle(title string) string {
+	t := strings.TrimSpace(title)
+	if c := strings.TrimSpace(codePrefix.ReplaceAllString(t, "")); c != "" {
+		return c
+	}
+	return t
+}
+
 func (s *Store) CreateRequirement(ctx context.Context, r Requirement) (Requirement, error) {
+	r.Title = CleanTitle(r.Title)
 	if r.Status == "" {
 		r.Status = ReqDraft
 	}
