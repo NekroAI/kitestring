@@ -18,6 +18,7 @@ import { CtxRing, ctxLoad, useAssign } from './assign'
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
+import { bgCount, liveTasks, TaskList, tasksUnknown } from './tasks'
 import { Linkify, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 
 function Section({ title, children, right }: { title: ReactNode; children: ReactNode; right?: ReactNode }) {
@@ -247,7 +248,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
       subtitle={
         s && (
           <span className="flex flex-wrap items-center gap-2">
-            <StatusPill state={displayState(s)} since={s.state_since} now={now} bg={s.subagents} />
+            <StatusPill state={displayState(s)} since={s.state_since} now={now} bg={bgCount(s)} />
             {s.title && s.project_name && <span>{s.project_name}</span>}
           </span>
         )
@@ -317,6 +318,12 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
             </div>
           </Section>
 
+
+          {(liveTasks(s).length > 0 || (tasksUnknown(s) && s.state !== 'ended')) && (
+            <Section title={<span>{t.session.tasks}<span className="ml-1.5 font-normal text-fg-3">{liveTasks(s).length || ''}</span></span>}>
+              <TaskList s={s} now={now} />
+            </Section>
+          )}
 
           <Section
             title={

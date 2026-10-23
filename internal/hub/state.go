@@ -2,7 +2,9 @@ package hub
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/roles"
@@ -48,6 +50,13 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	if ev.PermMode != "" {
 		x.PermMode = ev.PermMode
 	}
+	if ev.Name == protocol.EventTasks {
+		// 后台 shell 全集（daemon 扫进程表得到，R-162）：只换掉 shell 类，不改状态与活跃时间
+		if x.State != store.StateEnded {
+			x.Tasks = replaceShellTasks(x.Tasks, ev.Tasks)
+		}
+		return x
+	}
 	if stale || !fromLatestTerminal(&x, ev) {
 		return x
 	}
@@ -80,6 +89,9 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.LastPrompt = ev.Prompt
 		}
 	case "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact":
+		if ev.AgentID != "" && ev.Name == "PreToolUse" {
+			x.Tasks = agentAction(x.Tasks, ev) // 子代理的工具调用记在它自己名下（R-162）
+		}
 		if ev.AgentID != "" && (ev.Name == "PreToolUse" || ev.Name == "PostToolUse") {
 			// 子 Agent 的工具调用：hook 带的是主会话的 session_id，但干活的是后台任务（计入 Subagents），
 			// 主会话可能早已结束这一轮、挂着 ks wait 待命，不能被改回运行中（R-115）。
@@ -106,8 +118,10 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.LastToolAt = &t
 		case "SubagentStart":
 			x.Subagents++
+			x.Tasks = agentStart(x.Tasks, ev)
 		case "SubagentStop":
 			x.Subagents = max(0, x.Subagents-1)
+			x.Tasks = agentStop(x.Tasks, ev)
 		case "PreCompact":
 			x.Compactions++
 		}
@@ -179,6 +193,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		x.EndedAt = &t
 		x.State, x.StateDetail = store.StateEnded, ""
 		x.Subagents = 0
+		x.Tasks = nil
 	}
 	if x.State != prevState || x.StateSince.IsZero() {
 		x.StateSince = ev.Time
@@ -226,4 +241,86 @@ func toolLabel(tool, brief string) string {
 		return name
 	}
 	return name + " · " + brief
+}
+
+// 后台任务（R-162）：子代理按 agent_id 记，后台 shell 由 daemon 上报全集。
+
+const maxTicks = 40
+
+func replaceShellTasks(cur []store.BgTask, shells []protocol.Task) []store.BgTask {
+	out := []store.BgTask{}
+	for _, t := range cur {
+		if t.Kind != "shell" {
+			out = append(out, t)
+		}
+	}
+	for _, t := range shells {
+		out = append(out, store.BgTask{ID: t.ID, Kind: "shell", Label: t.Label, StartedAt: t.StartedAt, Ticks: []time.Time{}})
+	}
+	sortTasks(out)
+	return out
+}
+
+func agentStart(cur []store.BgTask, ev protocol.Event) []store.BgTask {
+	id := ev.AgentID
+	if id == "" {
+		id = ev.ID
+	}
+	for _, t := range cur {
+		if t.Kind == "agent" && t.ID == id {
+			return cur
+		}
+	}
+	out := append(cur, store.BgTask{ID: id, Kind: "agent", Label: ev.ToolBrief, AgentType: ev.AgentType, StartedAt: ev.Time, Ticks: []time.Time{}})
+	sortTasks(out)
+	return out
+}
+
+func agentStop(cur []store.BgTask, ev protocol.Event) []store.BgTask {
+	idx := -1
+	for i, t := range cur {
+		if t.Kind != "agent" {
+			continue
+		}
+		if ev.AgentID != "" && t.ID == ev.AgentID {
+			idx = i
+			break
+		}
+		if ev.AgentID == "" && idx < 0 && (ev.AgentType == "" || t.AgentType == ev.AgentType) {
+			idx = i // 旧版没有 agent_id：按类型去掉最早的一个
+		}
+	}
+	if idx < 0 {
+		return cur
+	}
+	return append(cur[:idx:idx], cur[idx+1:]...)
+}
+
+func agentAction(cur []store.BgTask, ev protocol.Event) []store.BgTask {
+	i := -1
+	for j, t := range cur {
+		if t.Kind == "agent" && t.ID == ev.AgentID {
+			i = j
+			break
+		}
+	}
+	if i < 0 {
+		// 没收到 SubagentStart（例如 Hub 升级前就开始的子代理）：从第一次动作算起
+		cur = append(cur, store.BgTask{ID: ev.AgentID, Kind: "agent", StartedAt: ev.Time, Ticks: []time.Time{}})
+		i = len(cur) - 1
+	}
+	t := &cur[i]
+	t.LastAction = toolLabel(ev.ToolName, ev.ToolBrief)
+	at := ev.Time
+	t.LastActionAt = &at
+	t.Ticks = append(t.Ticks, at)
+	if len(t.Ticks) > maxTicks {
+		t.Ticks = t.Ticks[len(t.Ticks)-maxTicks:]
+	}
+	sortTasks(cur)
+	return cur
+}
+
+func sortTasks(ts []store.BgTask) {
+	sort.SliceStable(ts, func(i, j int) bool { return ts[i].StartedAt.Before(ts[j].StartedAt) })
 }

@@ -59,7 +59,8 @@
 | `Stop` | 等待回复 |
 | `Interrupt`（Codex） | 等待回复 |
 | `Notification`（Claude） | 按类型补充：权限提示 → 等待授权；空闲提示 → 等待回复 |
-| `SessionEnd` | 已结束 |
+| `SessionEnd` | 已结束（后台任务清空） |
+| `KsTasks`（daemon 合成） | 不改状态：替换会话的后台 shell 全集（R-162） |
 | daemon 心跳超时 | 失联 |
 
 ## 6. 其他观察
@@ -85,3 +86,14 @@
 - 两边都能用 Stop hook 保证 PM / 开发常驻在线。Kitestring 的规则：身份为 PM 或开发、daemon 上没有该会话的 `ks wait` 时拦下（先宽限 1 秒，避开后台 `ks wait` 刚启动的竞态）；挂上 `ks wait` 或用户发新消息时计数清零，连续拦 2 次仍不挂就放行。被拦下的那次 Stop 不上报 Hub，网页不会闪成“等你回复”。
 - Codex 的代价：它没有后台任务，常驻等于“一轮永不结束”，每次等待结束（最长 30 分钟）都要带着当前上下文再调一次模型。实测 1 分钟一续，约 11 次累计输入 74 万 token（97% 命中缓存）；按 30 分钟一续，一天约 48 次。规模小的项目可以用 Codex 做开发会话；PM 推荐用 Claude Code（后台等待，等待期间不调模型）。
 - 没有身份的会话不受影响（e2e：`TestResidentStopGuard`）。
+
+## 8. 后台任务（R-162）
+
+hook 不会告诉我们后台 shell 什么时候结束，子代理也只有启停事件。纸鸢这样采集，只记类型、标签、开始时间与最近动作，不读命令输出与对话内容：
+
+| 类型 | 来源 |
+|---|---|
+| 子代理 | `SubagentStart` / `SubagentStop` 的 `agent_id`；标签取父会话 `Agent` / `Task` 调用的 `description`（按 `subagent_type` 先进先出对上）；子代理内的 `PreToolUse` 记为它的最近动作与时间线刻度，不进主会话的最近动作。没收到 `SubagentStop` 的 30 分钟无动作后不再显示 |
+| 后台 shell | daemon 每 3 秒扫一次进程表，取 agent 进程（Claude Code / Codex）的 sh / bash / zsh / fish 子进程：命令对得上的前台调用（`PreToolUse` 到 `PostToolUse` 之间）不算，ks hook / ks wait（待命）/ ks mcp 与 MCP 服务不算，活过 2 秒的其余 shell 算后台任务；Claude 的 `run_in_background` 用其 `description` 做标签，否则取命令（截断 80 字）。进程消失即结束，有变化时上报 `KsTasks`（全集） |
+
+Codex 经 app-server / 桌面 App 运行时一个进程承载多个会话，分不清后台 shell 归属，不显示；会话面板注明“这类会话无法识别后台任务”。

@@ -103,6 +103,7 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "replaced_by", "TEXT NOT NULL DEFAULT ''"},
 	{"projects", "agent_release", "INTEGER NOT NULL DEFAULT 0"},
 	{"sessions", "wait_on", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "tasks", "TEXT NOT NULL DEFAULT '[]'"},
 	{"decisions", "risk", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "proxy_by", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "proxy_reason", "TEXT NOT NULL DEFAULT ''"},

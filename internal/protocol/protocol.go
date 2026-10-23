@@ -72,7 +72,19 @@ type Event struct {
 	Until *time.Time `json:"until,omitempty"`
 	// WaitOn：ks wait --on 给的订阅（R-164），规整后的逗号列表；空表示沿用上次，"default" 恢复按身份的默认，"none" 不订阅
 	WaitOn string `json:"wait_on,omitempty"`
+	// Tasks：KsTasks 事件带的这个会话当前在跑的后台 shell 全集（覆盖式，R-162）；只有标签与开始时间，不含命令输出
+	Tasks []Task `json:"tasks,omitempty"`
 }
+
+// Task 是 daemon 从进程表认出的一个后台 shell（R-162）。
+type Task struct {
+	ID        string    `json:"id"`
+	Label     string    `json:"label"` // run_in_background 时的描述，没有就是命令（截断）
+	StartedAt time.Time `json:"started_at"`
+}
+
+// EventTasks：daemon 发现某会话的后台 shell 有变化时上报的合成事件，Tasks 是当前全集（R-162）。
+const EventTasks = "KsTasks"
 
 // ReplyMax 是随 Stop 上送的最后回复的字数上限（R-109）。
 const ReplyMax = 20000

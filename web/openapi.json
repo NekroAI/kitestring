@@ -955,6 +955,56 @@
         ],
         "type": "object"
       },
+      "BgTask": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "shell",
+              "agent"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "last_action": {
+            "type": "string"
+          },
+          "last_action_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ticks": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "started_at",
+          "ticks"
+        ],
+        "type": "object"
+      },
       "Block": {
         "additionalProperties": false,
         "properties": {
@@ -2055,6 +2105,15 @@
           },
           "source": {
             "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "time": {
             "format": "date-time",
@@ -4721,6 +4780,15 @@
           "summary": {
             "type": "string"
           },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/BgTask"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "title": {
             "type": "string"
           },
@@ -4778,6 +4846,7 @@
           "context_max",
           "role",
           "recent_tools",
+          "tasks",
           "requirements",
           "pending_decisions"
         ],
@@ -5260,6 +5329,27 @@
           "sample_reply",
           "summary",
           "latency_ms"
+        ],
+        "type": "object"
+      },
+      "Task": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "started_at"
         ],
         "type": "object"
       },

@@ -1638,6 +1638,19 @@ export interface components {
             key: string;
             server: string;
         };
+        BgTask: {
+            agent_type?: string;
+            id: string;
+            /** @enum {string} */
+            kind: "shell" | "agent";
+            label: string;
+            last_action?: string;
+            /** Format: date-time */
+            last_action_at?: string;
+            /** Format: date-time */
+            started_at: string;
+            ticks: string[] | null;
+        };
         Block: {
             /** @description compare：改之后 */
             after?: components["schemas"]["File"];
@@ -1954,6 +1967,7 @@ export interface components {
             reply?: string;
             session_id: string;
             source?: string;
+            tasks?: components["schemas"]["Task"][] | null;
             /** Format: date-time */
             time: string;
             tool: string;
@@ -2693,6 +2707,7 @@ export interface components {
             /** Format: int64 */
             subagents: number;
             summary: string;
+            tasks: components["schemas"]["BgTask"][] | null;
             title: string;
             tool: string;
             tools_stale: string;
@@ -2845,6 +2860,12 @@ export interface components {
             sample_reply: string;
             /** @description 模型生成的一句话摘要 */
             summary: string;
+        };
+        Task: {
+            id: string;
+            label: string;
+            /** Format: date-time */
+            started_at: string;
         };
         TeamOutBody: {
             /** @description 本项目的 Dev 会话，在线的在前；已结束的不列 */

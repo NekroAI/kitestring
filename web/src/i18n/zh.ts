@@ -245,6 +245,13 @@ export const zh = {
     toolsTip: (x: number) => `本轮调用了 ${x} 次工具`,
     subagentsTip: (x: number) => `${x} 个子 Agent 在运行`,
     bgTasks: (x: number) => `后台 ${x} 个任务`,
+    // 后台任务子泳道（R-162）
+    tasks: '后台任务',
+    taskKind: { shell: '后台', agent: '子代理' } as Record<string, string>,
+    taskCounts: (shell: number, agent: number) => ['后台任务', shell && `后台 ${shell}`, agent && `子代理 ${agent}`].filter(Boolean).join(' · '),
+    taskRunning: (d: string) => `已运行 ${d}`,
+    tasksHint: '时间线是近 10 分钟，右边是现在；只记名称与时间，不看命令输出',
+    tasksUnknown: '这类会话（Codex 经 app-server / 桌面 App 运行）无法识别后台任务',
     dirtyTip: (x: number) => `${x} 个文件有未提交的改动`,
     worktree: '在 worktree 中',
     compactions: (x: number) => `上下文压缩过 ${x} 次`,

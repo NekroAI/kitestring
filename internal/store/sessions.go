@@ -50,10 +50,10 @@ type Session struct {
 	PermMode         string           `json:"permission_mode"`
 	Compactions      int              `json:"compactions"`
 	Worktree         bool             `json:"worktree"`
-	Activity         []int            `json:"activity"`    // 最近 60 分钟每 5 分钟的事件数，旧 → 新
-	Title            string           `json:"title"`       // 模型生成的会话标题
-	DigestDone       string           `json:"digest_done"` // 等你回复时：这一轮做了什么
-	DigestAsk        string           `json:"digest_ask"`  // 等你回复时：在等你决定什么
+	Activity         []int            `json:"activity"`            // 最近 60 分钟每 5 分钟的事件数，旧 → 新
+	Title            string           `json:"title"`               // 模型生成的会话标题
+	DigestDone       string           `json:"digest_done"`         // 等你回复时：这一轮做了什么
+	DigestAsk        string           `json:"digest_ask"`          // 等你回复时：在等你决定什么
 	ReplyAsk         string           `json:"reply_ask,omitempty"` // 最后一条回复在问你时，它的最后一段（R-117）；你回复后清空
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
@@ -69,8 +69,49 @@ type Session struct {
 	ContextMax       int              `json:"context_max"`                          // 上下文窗口；不知道时为 0
 	Role             string           `json:"role" enum:",pm,dev,advisor,reviewer"` // 会话身份（R-82）：pm 开发 dev 顾问 advisor 审查员 reviewer，空为无身份
 	RecentTools      []ToolAct        `json:"recent_tools"`                         // 最近几次工具调用，旧 → 新（工作台滚动展示）
+	Tasks            []BgTask         `json:"tasks"`                                // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
+}
+
+// BgTask 是会话下一个在跑的后台任务（R-162）：只有类型、标签、开始时间与最近动作，不含命令输出与对话内容。
+type BgTask struct {
+	ID           string      `json:"id"`                      // 子代理为 agent_id；后台 shell 为 daemon 给的进程标识
+	Kind         string      `json:"kind" enum:"shell,agent"` // shell 后台命令；agent 子代理
+	Label        string      `json:"label"`                   // 后台命令的描述或命令（截断）；子代理的任务描述
+	AgentType    string      `json:"agent_type,omitempty"`    // 子代理类型（Explore、general-purpose…）
+	StartedAt    time.Time   `json:"started_at"`
+	LastAction   string      `json:"last_action,omitempty"` // 子代理最近一次工具动作
+	LastActionAt *time.Time  `json:"last_action_at,omitempty"`
+	Ticks        []time.Time `json:"ticks"` // 近 10 分钟的工具调用时刻（子代理），旧 → 新
+}
+
+// 子代理没收到 SubagentStop（被中断等）时，这么久没有动作就不再算在跑。
+const agentTaskIdle = 30 * time.Minute
+
+// LiveTasks 去掉久无动作的子代理、过期的刻度。
+func LiveTasks(ts []BgTask, now time.Time) []BgTask {
+	out := []BgTask{}
+	for _, t := range ts {
+		if t.Kind == "agent" {
+			last := t.StartedAt
+			if t.LastActionAt != nil && t.LastActionAt.After(last) {
+				last = *t.LastActionAt
+			}
+			if now.Sub(last) > agentTaskIdle {
+				continue
+			}
+		}
+		ticks := []time.Time{}
+		for _, at := range t.Ticks {
+			if now.Sub(at) <= 10*time.Minute {
+				ticks = append(ticks, at)
+			}
+		}
+		t.Ticks = ticks
+		out = append(out, t)
+	}
+	return out
 }
 
 // ToolAct 是一次工具调用的简述。
@@ -90,19 +131,24 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role,
+	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt, doneAt, parkedUntil string
+	var started, active, since, toolAt, doneAt, parkedUntil, tasks string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role,
+		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks,
 		&started, &active, &ended)
+	x.Tasks = []BgTask{}
+	if tasks != "" && tasks != "[]" {
+		_ = json.Unmarshal([]byte(tasks), &x.Tasks)
+		x.Tasks = LiveTasks(x.Tasks, time.Now())
+	}
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
 	if toolAt != "" {
@@ -197,9 +243,9 @@ func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
 	return nil
 }
 
-// fillRecentTools 取最近 3 次工具调用，让工作台一打开就能看到它最近在做什么。
+// fillRecentTools 取主会话最近 3 次工具调用，让工作台一打开就能看到它最近在做什么。
 func (s *Store) fillRecentTools(ctx context.Context, x *Session) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name = 'PreToolUse' ORDER BY time DESC LIMIT 3`, x.Key)
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name = 'PreToolUse' ORDER BY time DESC LIMIT 12`, x.Key)
 	if err != nil {
 		return err
 	}
@@ -211,8 +257,8 @@ func (s *Store) fillRecentTools(ctx context.Context, x *Session) error {
 			return err
 		}
 		var ev protocol.Event
-		if json.Unmarshal([]byte(p), &ev) != nil || ev.ToolName == "" {
-			continue
+		if json.Unmarshal([]byte(p), &ev) != nil || ev.ToolName == "" || ev.AgentID != "" || len(acts) >= 3 {
+			continue // 子代理的工具调用记在子代理名下（R-162），不混进主会话的最近动作
 		}
 		label := strings.TrimPrefix(ev.ToolName, "mcp__")
 		if ev.ToolBrief != "" {
@@ -249,19 +295,24 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 	if x.ParkedUntil != nil && x.Parked {
 		parkedUntil = ts(*x.ParkedUntil)
 	}
+	tasks := "[]"
+	if len(x.Tasks) > 0 {
+		b, _ := json.Marshal(x.Tasks)
+		tasks = string(b)
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, last_prompt, summary,
-			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, parked_until, started_at, last_active_at, ended_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, parked_until, tasks, started_at, last_active_at, ended_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, model = excluded.model,
 			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail,
 			last_prompt = excluded.last_prompt, summary = excluded.summary, state_since = excluded.state_since, turns = excluded.turns,
 			turn_tools = excluded.turn_tools, last_tool = excluded.last_tool, last_tool_at = excluded.last_tool_at, subagents = excluded.subagents,
 			perm_mode = excluded.perm_mode, compactions = excluded.compactions, worktree = excluded.worktree,
-			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked, parked_until = excluded.parked_until,
+			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked, parked_until = excluded.parked_until, tasks = excluded.tasks,
 			last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
 		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail,
 		x.LastPrompt, x.Summary, since, x.Turns, x.TurnTools, x.LastTool, toolAt, x.Subagents, x.PermMode, x.Compactions, x.Worktree,
-		x.Instance, x.PrevInstance, doneAt, x.Parked, parkedUntil, ts(x.StartedAt), ts(x.LastActiveAt), ended)
+		x.Instance, x.PrevInstance, doneAt, x.Parked, parkedUntil, tasks, ts(x.StartedAt), ts(x.LastActiveAt), ended)
 	return err
 }
 
@@ -511,7 +562,7 @@ func (s *Store) InsertEvent(ctx context.Context, deviceID string, ev protocol.Ev
 
 // SessionEvents 返回会话最近的事件（时间倒序）。
 func (s *Store) SessionEvents(ctx context.Context, key string, limit int) ([]protocol.Event, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM events WHERE session_key = ? ORDER BY time DESC LIMIT ?`, key, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name <> 'KsTasks' ORDER BY time DESC LIMIT ?`, key, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +594,7 @@ func (s *Store) fillActivity(ctx context.Context, x *Session) error {
 	if x.LastActiveAt.Before(from) {
 		return nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT time FROM events WHERE session_key = ? AND time >= ?`, x.Key, ts(from))
+	rows, err := s.db.QueryContext(ctx, `SELECT time FROM events WHERE session_key = ? AND time >= ? AND name <> 'KsTasks'`, x.Key, ts(from))
 	if err != nil {
 		return err
 	}

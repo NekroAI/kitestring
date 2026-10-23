@@ -56,6 +56,7 @@ type Daemon struct {
 	heldReply  map[string]string // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
 	waitSeq   int64
 	tools     toolsState // 各会话的 Kitestring 工具版本（R-59）
+	tasks     taskState  // 后台 shell 与子代理线索（R-162）
 }
 
 type toolUse struct {
@@ -83,7 +84,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState()}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState()}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -124,6 +125,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	defer srv.Close()
 	d.log.Info("daemon 已启动", "socket", sock, "hub", d.cfg.HubURL)
 	go d.watchInstances(ctx)
+	go d.watchTasks(ctx)
 
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -430,6 +432,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if name == "Stop" && cfg.SendLastReply {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)
 	}
+	d.noteTaskEvent(key, p, &ev)
 	return ev, true
 }
 

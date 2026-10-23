@@ -16,6 +16,7 @@ import { useSessionMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { Linkify } from '../ui/refmark'
 import { awaitingReply, ReplyBox } from './replyBox'
+import { bgCount } from './tasks'
 
 // SessionLine：会话在做什么的一行描述（摘要 → 最后动作 → 你最后说的话）。
 function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean } | null {
@@ -64,7 +65,7 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
           {s.device_name}
         </span>
       </Tip>
-      <span className="shrink-0">{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} bg={s.subagents} />}</span>
+      <span className="shrink-0">{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} bg={bgCount(s)} />}</span>
     </button>
     </Ctx>
   )
@@ -120,7 +121,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
                     <span className="truncate text-[15px] font-semibold text-fg">{sessionTitle(s)}</span>
                     <RoleBadge s={s} />
                     <span className="ml-auto shrink-0 pl-1">
-                      <StatusPill state={ds} since={s.state_since} now={now} bg={s.subagents} />
+                      <StatusPill state={ds} since={s.state_since} now={now} bg={bgCount(s)} />
                     </span>
                   </div>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-fg-3">
