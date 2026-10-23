@@ -38,10 +38,43 @@ func Generate(ctx context.Context, cfg Config, prompt, reply string) (string, er
 
 // Chat 调用 OpenAI 兼容的 Chat Completions 接口，返回模型输出文本。
 func Chat(ctx context.Context, cfg Config, system, user string, maxTokens int) (string, error) {
-	if !cfg.Enabled() {
-		return "", errors.New("模型未配置")
+	text, _, err := chat(ctx, cfg, system, user, maxTokens, false)
+	return text, err
+}
+
+// errJSONModeUnsupported 表示接口不认 response_format，需要去掉后重试。
+var errJSONModeUnsupported = errors.New("接口不支持 response_format")
+
+// ChatJSON 要求模型输出 JSON 对象并解析到 v（R-119）。
+// 先带 response_format=json_object 调用（接口不支持就去掉重试）；输出里没有可解析的 JSON
+// （常见原因是推理内容占满 max_tokens，正文为空或被截断）时，把 max_tokens 翻倍再试一次。
+// 最终失败的错误里带结束原因和输出开头一段，便于排查。
+func ChatJSON(ctx context.Context, cfg Config, system, user string, maxTokens int, v any) error {
+	jsonMode := true
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		text, finish, err := chat(ctx, cfg, system, user, maxTokens, jsonMode)
+		if errors.Is(err, errJSONModeUnsupported) {
+			jsonMode = false
+			text, finish, err = chat(ctx, cfg, system, user, maxTokens, false)
+		}
+		if err != nil {
+			return err
+		}
+		if err = JSON(text, v); err == nil {
+			return nil
+		}
+		lastErr = fmt.Errorf("%w（结束原因 %q，max_tokens %d，输出 %d 字，开头：%q）", err, finish, maxTokens, utf8.RuneCountInString(text), Truncate(text, 120))
+		maxTokens *= 2
 	}
-	body, _ := json.Marshal(map[string]any{
+	return lastErr
+}
+
+func chat(ctx context.Context, cfg Config, system, user string, maxTokens int, jsonMode bool) (string, string, error) {
+	if !cfg.Enabled() {
+		return "", "", errors.New("模型未配置")
+	}
+	payload := map[string]any{
 		"model": cfg.Model,
 		"messages": []map[string]string{
 			{"role": "system", "content": system},
@@ -49,13 +82,17 @@ func Chat(ctx context.Context, cfg Config, system, user string, maxTokens int) (
 		},
 		"max_tokens":  maxTokens,
 		"temperature": 0.2,
-	})
+	}
+	if jsonMode {
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	}
+	body, _ := json.Marshal(payload)
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	url := strings.TrimSuffix(cfg.BaseURL, "/") + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if cfg.APIKey != "" {
@@ -63,27 +100,31 @@ func Chat(ctx context.Context, cfg Config, system, user string, maxTokens int) (
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("模型接口返回 %d：%s", resp.StatusCode, Truncate(string(raw), 200))
+		if jsonMode && resp.StatusCode == http.StatusBadRequest && strings.Contains(string(raw), "response_format") {
+			return "", "", errJSONModeUnsupported
+		}
+		return "", "", fmt.Errorf("模型接口返回 %d：%s", resp.StatusCode, Truncate(string(raw), 200))
 	}
 	var out struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("解析模型响应失败：%w", err)
+		return "", "", fmt.Errorf("解析模型响应失败：%w", err)
 	}
 	if len(out.Choices) == 0 {
-		return "", errors.New("模型未返回内容")
+		return "", "", errors.New("模型未返回内容")
 	}
-	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+	return strings.TrimSpace(out.Choices[0].Message.Content), out.Choices[0].FinishReason, nil
 }
 
 // JSON 从模型输出中提取第一个 JSON 对象并解析到 v（容忍代码块包裹与前后多余文字）。

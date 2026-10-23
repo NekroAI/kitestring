@@ -122,14 +122,9 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 	}
 	system := "你是开发进度速记员。根据用户给 AI 编程助手的最后一条指令和助手这一轮的最后回复，输出一个 JSON 对象，只包含以下字段：\n" + strings.Join(fields, "\n") + "\n用中文，简洁具体，不要客套。只输出 JSON。"
 	user := fmt.Sprintf("最后一条指令：\n%s\n\n助手最后回复：\n%s", prompt, reply)
-	text, err := summary.Chat(ctx, s.Summary, system, user, 300)
-	if err != nil {
-		h.log.Warn("生成会话摘要失败", "session", key, "err", err)
-		return
-	}
 	var out struct{ Summary, Title, Done, Ask string }
-	if err := summary.JSON(text, &out); err != nil {
-		h.log.Warn("解析会话摘要失败", "session", key, "err", err)
+	if err := summary.ChatJSON(ctx, s.Summary, system, user, 600, &out); err != nil {
+		h.log.Warn("生成会话摘要失败", "session", key, "err", err)
 		return
 	}
 	a := store.SessionAI{Summary: summary.Clean(out.Summary, 80), Title: summary.Clean(titleNoise.Replace(out.Title), 20), DigestDone: summary.Clean(out.Done, 80), DigestAsk: summary.Clean(out.Ask, 80)}
