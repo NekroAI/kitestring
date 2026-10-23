@@ -104,7 +104,7 @@ func TestAdvisorNotResident(t *testing.T) {
 	}
 	e.waitFor("正常结束", func() bool { return e.session("claude:adv-1").State == store.StateWaitReply })
 	p := roles.Prompt(roles.Advisor)
-	for _, want := range []string{"默认", "常驻", "不用常驻"} {
+	for _, want := range []string{"默认", "常驻", "不用常驻", "decision_raise"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("顾问提示词缺少 %q", want)
 		}
