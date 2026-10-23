@@ -121,7 +121,12 @@ function invalidateTopics(qc: QueryClient, topics: string[]) {
   }
 }
 
+// 服务端每 20 秒发一次心跳；超过这么久什么都没收到，就认定连接已经悄悄断了（手机切后台再回来常见）。
+const SILENT_MS = 50_000
+
 // useLiveUpdates 订阅 /api/stream，收到 changed 事件时让对应查询失效；断线自动重连。
+// 浏览器在切后台、换网络后常常留着一条“看似打开、其实已断”的连接，不报错也不重连（R-65）：
+// 心跳超时、回到前台、网络恢复时都主动重连，并在重连后补拉全部数据。
 export function useLiveUpdates(enabled: boolean) {
   const qc = useQueryClient()
   const [connected, setConnected] = useState(true)
@@ -131,17 +136,44 @@ export function useLiveUpdates(enabled: boolean) {
     let timer: number | undefined
     let stopped = false
     let everConnected = false
+    let lastSeen = Date.now()
+    const seen = () => {
+      lastSeen = Date.now()
+    }
+
+    const reconnect = () => {
+      if (stopped) return
+      es?.close()
+      es = null
+      if (timer) window.clearTimeout(timer)
+      timer = undefined
+      connect()
+    }
+    // 回到前台 / 网络恢复：连接可能早就断了，静默太久就直接重连（重连后会补拉）
+    const onWake = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastSeen > 20_000) reconnect()
+    }
+    const watchdog = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && Date.now() - lastSeen > SILENT_MS) reconnect()
+    }, 10_000)
+    document.addEventListener('visibilitychange', onWake)
+    window.addEventListener('online', reconnect)
+    window.addEventListener('pageshow', onWake)
 
     const connect = () => {
       if (stopped) return
+      seen()
       es = new EventSource('/api/stream')
+      es.addEventListener('ping', seen)
       es.addEventListener('hello', () => {
+        seen()
         setConnected(true)
         // 重连后补齐断线期间错过的变化。
         if (everConnected) void qc.invalidateQueries()
         everConnected = true
       })
       es.addEventListener('changed', (ev) => {
+        seen()
         let raw = (ev as MessageEvent<string>).data
         try {
           raw = JSON.parse(raw) as string
@@ -164,6 +196,10 @@ export function useLiveUpdates(enabled: boolean) {
     return () => {
       stopped = true
       if (timer) window.clearTimeout(timer)
+      window.clearInterval(watchdog)
+      document.removeEventListener('visibilitychange', onWake)
+      window.removeEventListener('online', reconnect)
+      window.removeEventListener('pageshow', onWake)
       es?.close()
     }
   }, [enabled, qc])

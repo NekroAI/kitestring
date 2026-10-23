@@ -48,7 +48,8 @@ func (b *broker) serve(w http.ResponseWriter, r *http.Request) {
 	}()
 	fmt.Fprint(w, "retry: 3000\nevent: hello\ndata: {}\n\n")
 	fl.Flush()
-	ping := time.NewTicker(25 * time.Second)
+	// 心跳用具名事件而不是注释：网页能看到它，据此发现“连接还开着、其实已经断了”的情况（R-65）
+	ping := time.NewTicker(20 * time.Second)
 	defer ping.Stop()
 	for {
 		select {
@@ -58,7 +59,7 @@ func (b *broker) serve(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "event: changed\ndata: %q\n\n", msg)
 			fl.Flush()
 		case <-ping.C:
-			fmt.Fprint(w, ": ping\n\n")
+			fmt.Fprint(w, "event: ping\ndata: {}\n\n")
 			fl.Flush()
 		}
 	}
