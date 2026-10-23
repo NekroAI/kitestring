@@ -3,6 +3,8 @@ import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type NotifyConfig, type ReqFields } from '../api/client'
 import { qk } from '../api/queries'
+import { t } from '../i18n'
+import { uploadsBusy } from '../ui/attach'
 
 const planKeys = ['plans', 'requirements', 'decisions', 'sessions']
 
@@ -31,23 +33,31 @@ export function useActions() {
       return undefined
     }
   }, [refresh])
+  // 带附件的发送：附件没传完就先不发，否则发出去的内容里少了它
+  const send = useCallback(<T,>(fn: () => Promise<T>, keys: string[]) => {
+    if (uploadsBusy()) {
+      toast(t.attach.wait)
+      return Promise.resolve(undefined)
+    }
+    return run(fn, keys)
+  }, [run])
 
   return {
     answer: (answers: { ref: string; answer: string; files?: string[] }[]) =>
-      run(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
+      send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
     reassign: (ref: string, sessionKey: string) =>
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
     closeDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: {} })), ['decisions', 'sessions']),
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
-      run(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions']),
+      send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions']),
     note: (ref: string, comment: string, files: string[]) =>
-      run(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions']),
+      send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions']),
     assign: (ref: string, sessionKey: string, comment = '') =>
       run(() => unwrap(api.POST('/api/requirements/{ref}/assign', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions', 'sessions']),
     markDone: (key: string, done: boolean) => run(() => unwrap(api.POST('/api/sessions/{key}/done', { params: { path: { key } }, body: { done } })), ['sessions']),
     resendDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/resend', { params: { path: { ref } }, body: {} })), ['decisions']),
 
-    createReq: (body: ReqFields) => run(() => unwrap(api.POST('/api/requirements', { body })), ['requirements']),
+    createReq: (body: ReqFields) => send(() => unwrap(api.POST('/api/requirements', { body })), ['requirements']),
     updateReq: (ref: string, body: ReqFields) => run(() => unwrap(api.PUT('/api/requirements/{ref}', { params: { path: { ref } }, body })), ['requirements', 'sessions']),
     deleteReq: (ref: string) => run(() => unwrap(api.DELETE('/api/requirements/{ref}', { params: { path: { ref } } })), ['requirements', 'sessions']),
     linkReq: (ref: string, sessionKey: string, unlink = false) =>
@@ -56,12 +66,12 @@ export function useActions() {
     createPlan: (body: PlanBody & { start?: boolean }) => run(() => unwrap(api.POST('/api/plans', { body: { ...body, stages: body.stages ?? [] } })), planKeys),
     updatePlan: (ref: string, body: PlanBody) => run(() => unwrap(api.PUT('/api/plans/{ref}', { params: { path: { ref } }, body })), planKeys),
     deletePlan: (ref: string) => run(() => unwrap(api.DELETE('/api/plans/{ref}', { params: { path: { ref } } })), planKeys),
-    startPlan: (ref: string, comment = '', files: string[] = []) => run(() => unwrap(api.POST('/api/plans/{ref}/start', { params: { path: { ref } }, body: { comment, files } })), planKeys),
-    rejectPlan: (ref: string, comment = '', files: string[] = []) => run(() => unwrap(api.POST('/api/plans/{ref}/reject', { params: { path: { ref } }, body: { comment, files } })), planKeys),
+    startPlan: (ref: string, comment = '', files: string[] = []) => send(() => unwrap(api.POST('/api/plans/{ref}/start', { params: { path: { ref } }, body: { comment, files } })), planKeys),
+    rejectPlan: (ref: string, comment = '', files: string[] = []) => send(() => unwrap(api.POST('/api/plans/{ref}/reject', { params: { path: { ref } }, body: { comment, files } })), planKeys),
     passStage: (ref: string, seq: number, comment = '', files: string[] = []) =>
-      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/pass', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
+      send(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/pass', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
     reviseStage: (ref: string, seq: number, comment: string, files: string[] = []) =>
-      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/revise', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
+      send(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/revise', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
 
     createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions']),
     revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions']),

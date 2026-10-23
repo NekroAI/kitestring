@@ -8,7 +8,7 @@ import { cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
-import { AttachZone, fileUrl, Thumbs, ZoomButton } from '../ui/attach'
+import { AttachZone, fileUrl, Thumbs, uploadsBusy, useUploading, ZoomButton } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
@@ -97,7 +97,11 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   }, [draft.choice, draft.noteOpen])
 
   const choose = (c: number | 'other') => setDraft(d.code, { choice: draft.choice === c ? null : c })
-  const submit = () => answer && send([{ code: d.code, answer, files: draft.files?.map((f) => f.id) }])
+  const uploading = useUploading()
+  const submit = () => {
+    if (uploadsBusy()) return void toast(t.attach.wait) // 附件没传完先不发
+    if (answer) send([{ code: d.code, answer, files: draft.files?.map((f) => f.id) }])
+  }
   const onKey = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
@@ -301,7 +305,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
               </span>
             </Tip>
           )}
-          <Button variant="primary" size="sm" className="h-9 px-4" disabled={!answer} onClick={submit} icon={<CornerDownLeft className="size-4" />}>
+          <Button variant="primary" size="sm" className="h-9 px-4" disabled={!answer || uploading} onClick={submit} icon={<CornerDownLeft className="size-4" />}>
             {t.decision.send}
           </Button>
         </div>

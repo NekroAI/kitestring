@@ -233,7 +233,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                 {s.requirements.map((r) => (
                   <div key={r.id} className="flex items-center gap-2 px-3 py-2">
                     <button onClick={() => openReq(r.code)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                      <span className="font-mono text-[11px] font-semibold text-accent">{r.code}</span>
+                      <span className="shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap text-accent">{r.code}</span>
                       <span className="truncate text-sm text-fg">{r.title}</span>
                     </button>
                     {(() => {

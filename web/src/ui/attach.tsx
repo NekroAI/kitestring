@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, animate as animateValue, motion, useMotionValue, useMotionValueEvent, useTransform, type AnimationPlaybackControls } from 'motion/react'
 import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
@@ -16,15 +16,64 @@ export type FileRef = { id: string; name: string; mime: string; size: number }
 
 export const fileUrl = (id: string) => `/api/files/${encodeURIComponent(id)}`
 
-async function uploadOne(file: File): Promise<FileRef> {
-  const fd = new FormData()
-  fd.append('file', file, file.name || 'image.png')
-  const res = await fetch('/api/files', { method: 'POST', body: fd, credentials: 'same-origin' })
-  const body = await res.json().catch(() => null)
-  // 413 且不是 Hub 的 JSON：被 Hub 前面的反向代理拦下了
-  if (res.status === 413 && !body) throw new Error(t.attach.proxyTooLarge)
-  if (!res.ok) throw new Error((body as { detail?: string } | null)?.detail || t.attach.failed)
-  return body as FileRef
+// 正在上传的附件数：没传完时不让发送（否则发出去的留言里没有这个附件）。
+let uploading = 0
+const listeners = new Set<() => void>()
+const setUploading = (d: number) => {
+  uploading += d
+  listeners.forEach((f) => f())
+}
+export const uploadsBusy = () => uploading > 0
+export const useUploading = () =>
+  useSyncExternalStore(
+    (f) => (listeners.add(f), () => listeners.delete(f)),
+    () => uploading > 0,
+  )
+
+// 卡住多久算失败：上传途中这么久没有进度，或传完后这么久等不到 Hub 回应
+const STALL_MS = 45_000
+
+// uploadOne 上传一个文件，onProgress 报告 0～1 的进度。
+// 用 XHR 而不是 fetch：要上传进度；连接被反向代理掐断（例如超过它的大小上限）时也能及时报错，不会一直转圈。
+function uploadOne(file: File, onProgress: (p: number) => void): Promise<FileRef> {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData()
+    fd.append('file', file, file.name || 'image.png')
+    const xhr = new XMLHttpRequest()
+    let timer = 0
+    const arm = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => xhr.abort(), STALL_MS)
+    }
+    const fail = (msg: string) => {
+      window.clearTimeout(timer)
+      reject(new Error(msg))
+    }
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total)
+      arm()
+    }
+    xhr.upload.onload = arm
+    xhr.onload = () => {
+      window.clearTimeout(timer)
+      let body: unknown = null
+      try {
+        body = JSON.parse(xhr.responseText)
+      } catch {
+        /* 不是 Hub 的 JSON */
+      }
+      // 413 且不是 Hub 的 JSON：被 Hub 前面的反向代理拦下了
+      if (xhr.status === 413 && !body) return reject(new Error(t.attach.proxyTooLarge))
+      if (xhr.status < 200 || xhr.status >= 300) return reject(new Error((body as { detail?: string } | null)?.detail || t.attach.failed))
+      resolve(body as FileRef)
+    }
+    xhr.onerror = () => fail(t.attach.broken)
+    xhr.onabort = () => fail(t.attach.stalled)
+    xhr.open('POST', '/api/files')
+    xhr.withCredentials = true
+    xhr.send(fd)
+    arm()
+  })
 }
 
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime'
@@ -35,7 +84,7 @@ const accepted = (f: File) => f.type.startsWith('image/') || f.type === 'video/m
 // useAttach：管理一组附图的上传状态。
 export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
   const limits = useSettings().data // 上限在设置里调（R-72）；没拿到时交给 Hub 检查
-  const [pending, setPending] = useState<{ key: string; url: string; video: boolean }[]>([])
+  const [pending, setPending] = useState<{ key: string; url: string; video: boolean; progress: number }[]>([])
   const latest = useRef(value)
   latest.current = value
 
@@ -54,9 +103,10 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
         }
         const key = `${f.name}-${f.size}-${Math.random()}`
         const url = URL.createObjectURL(f)
-        setPending((p) => [...p, { key, url, video: isVideo(f.type) }])
+        setPending((p) => [...p, { key, url, video: isVideo(f.type), progress: 0 }])
+        setUploading(1)
         try {
-          added.push(await uploadOne(f))
+          added.push(await uploadOne(f, (progress) => setPending((p) => p.map((x) => (x.key === key ? { ...x, progress } : x)))))
           const cur = latest.current
           const next = [...cur, ...added.filter((a) => !cur.some((c) => c.id === a.id))]
           latest.current = next
@@ -64,6 +114,7 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
         } catch (e) {
           toast.error(e instanceof Error ? e.message : t.attach.failed)
         } finally {
+          setUploading(-1)
           setPending((p) => p.filter((x) => x.key !== key))
           URL.revokeObjectURL(url)
         }
@@ -571,7 +622,12 @@ export function AttachZone({ value, onChange, children, className, compact, inco
         {pending.map((p) => (
           <span key={p.key} className="relative size-12 overflow-hidden rounded-lg border border-line">
             {p.video ? <video src={p.url} muted className="size-full object-cover opacity-50" /> : <img src={p.url} alt="" className="size-full object-cover opacity-50" />}
-            <Loader2 className="absolute inset-0 m-auto size-4 animate-spin text-fg" />
+            {p.progress > 0 && p.progress < 1 ? (
+              <span className="absolute inset-0 m-auto flex items-center justify-center text-[11px] font-semibold text-fg tabular">{Math.round(p.progress * 100)}%</span>
+            ) : (
+              <Loader2 className="absolute inset-0 m-auto size-4 animate-spin text-fg" />
+            )}
+            <span className="absolute inset-x-0 bottom-0 h-1 bg-accent transition-[width]" style={{ width: `${p.progress * 100}%` }} />
           </span>
         ))}
         {!compact && <AddImageButton onPick={() => input.current?.click()} />}

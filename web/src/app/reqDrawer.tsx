@@ -8,7 +8,7 @@ import { useDecisions, useProjects, useRequirement, useRequirements, useSessions
 import { t } from '../i18n'
 import { noKbd, cx, relTime, useNow, usePref } from '../lib/util'
 import { Button, ErrorState, Skeleton, Textarea, Tip } from '../ui/base'
-import { AttachZone, type FileRef } from '../ui/attach'
+import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
 import { Collapse } from '../ui/motion'
 import { Menu, Panel, useConfirm } from '../ui/overlay'
@@ -232,6 +232,7 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
   const { review, note } = useActions()
   const own = useOwnership()(r)
   const [busy, wrap] = useBusy()
+  const uploading = useUploading()
   const [text, setText] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
   const reviewing = r.status === 'review'
@@ -292,7 +293,7 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
         <div className="min-w-0 flex-1">{hint}</div>
         {reviewing ? (
           <>
-            <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy} icon={<Undo2 className="size-4" />} onClick={revise}>
+            <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy || uploading} icon={<Undo2 className="size-4" />} onClick={revise}>
               {t.review.sendRevise}
             </Button>
             <Tip content={dirty ? t.review.passWithHint : undefined}>
@@ -306,7 +307,7 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
         ) : (
           <>
             {r.status !== 'done' && r.status !== 'shelved' && <AssignButton code={r.code} projectId={r.project_id} />}
-            <Button variant="primary" disabled={!dirty} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>
+            <Button variant="primary" disabled={!dirty || uploading} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>
               {t.reqs.noteSend}
             </Button>
           </>

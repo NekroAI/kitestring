@@ -6,7 +6,7 @@ import { useRequirement } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
 import { Button, Textarea, Tip } from '../ui/base'
-import { AttachZone, Thumbs, type FileRef } from '../ui/attach'
+import { AttachZone, Thumbs, useUploading, type FileRef } from '../ui/attach'
 import { Collapse, Item, List } from '../ui/motion'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
@@ -24,6 +24,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
   const { review } = useActions()
   const openReq = useOpenReq()
   const [busy, wrap] = useBusy()
+  const uploading = useUploading()
   const [editing, setEditing] = useState(false)
   const [comment, setComment] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
@@ -139,7 +140,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
                 </Button>
               </span>
             </Tip>
-            <Button size="sm" variant="primary" loading={busy} disabled={!comment.trim() && !files.length} onClick={revise}>
+            <Button size="sm" variant="primary" loading={busy} disabled={(!comment.trim() && !files.length) || uploading} onClick={revise}>
               {t.review.sendRevise}
             </Button>
           </div>
