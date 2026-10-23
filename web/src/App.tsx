@@ -29,12 +29,12 @@ export default function App() {
       </div>
     )
 
-  const { logged_in, initialized, version } = auth.data
+  const { logged_in, initialized, version, passkey_origins } = auth.data
   const next = loc.pathname === '/login' ? '/' : loc.pathname + loc.search
 
   return (
     <Routes>
-      <Route path="/login" element={logged_in ? <Navigate to={new URLSearchParams(loc.search).get('next') || '/'} replace /> : <LoginPage initialized={initialized} />} />
+      <Route path="/login" element={logged_in ? <Navigate to={new URLSearchParams(loc.search).get('next') || '/'} replace /> : <LoginPage initialized={initialized} passkey={(passkey_origins ?? []).includes(window.location.origin)} />} />
       <Route element={logged_in ? <Shell /> : <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />}>
         <Route index element={<WorkbenchPage />} />
         <Route path="sessions" element={<Navigate to="/" replace />} />

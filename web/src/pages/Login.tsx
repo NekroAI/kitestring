@@ -6,8 +6,10 @@ import { qk } from '../api/queries'
 import { t } from '../i18n'
 import { Logo } from '../app/Shell'
 import { Button, Field, Input } from '../ui/base'
+import { KeyRound } from 'lucide-react'
+import { loginWithPasskey, passkeySupported } from '../lib/passkey'
 
-export default function LoginPage({ initialized }: { initialized: boolean }) {
+export default function LoginPage({ initialized, passkey }: { initialized: boolean; passkey?: boolean }) {
   const qc = useQueryClient()
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
@@ -27,6 +29,19 @@ export default function LoginPage({ initialized }: { initialized: boolean }) {
       await qc.invalidateQueries({ queryKey: qk.auth })
     } catch (e) {
       setErr(errMsg(e))
+      setBusy(false)
+    }
+  }
+
+  // passkey 登录（R-7）：这个地址登记过 passkey 时才显示，密码登录照常可用
+  const viaPasskey = async () => {
+    setErr('')
+    setBusy(true)
+    try {
+      await loginWithPasskey()
+      await qc.invalidateQueries({ queryKey: qk.auth })
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'NotAllowedError')) setErr(errMsg(e))
       setBusy(false)
     }
   }
@@ -57,6 +72,11 @@ export default function LoginPage({ initialized }: { initialized: boolean }) {
           <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy} disabled={!pw}>
             {initialized ? t.login.login : t.login.setup}
           </Button>
+          {initialized && passkey && passkeySupported() && (
+            <Button type="button" size="lg" className="w-full" disabled={busy} onClick={() => void viaPasskey()} icon={<KeyRound className="size-4" />}>
+              {t.login.passkey}
+            </Button>
+          )}
         </form>
         <p className="mt-6 text-center text-xs text-fg-3">{t.app.slogan}</p>
       </motion.div>

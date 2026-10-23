@@ -114,6 +114,16 @@ func (l *loginLimiter) attempt(ip string) time.Duration {
 	return 0
 }
 
+// locked 只查看是否在锁定中、还剩多久，不计入尝试（passkey 登录的“开始”一步用）。
+func (l *loginLimiter) locked(ip string) time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if e := l.entries[ip]; e != nil {
+		return max(e.lockedUntil.Sub(l.now()), 0)
+	}
+	return 0
+}
+
 // failed 记录这次尝试失败；达到上限时开始锁定，返回是否刚进入锁定。
 func (l *loginLimiter) failed(ip string) bool {
 	l.mu.Lock()

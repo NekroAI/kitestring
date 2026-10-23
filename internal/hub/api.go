@@ -36,6 +36,11 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
+	// passkey（R-7）：登记要先登录；登录本身不需要
+	root.Handle("POST /api/auth/passkey/begin", http.HandlerFunc(h.handlePasskeyLoginBegin))
+	root.Handle("POST /api/auth/passkey/finish", http.HandlerFunc(h.handlePasskeyLoginFinish))
+	root.Handle("POST /api/passkeys/register/begin", h.requireWeb(http.HandlerFunc(h.handlePasskeyRegisterBegin)))
+	root.Handle("POST /api/passkeys/register/finish", h.requireWeb(http.HandlerFunc(h.handlePasskeyRegisterFinish)))
 	root.Handle("/api/agent/", h.requireDevice(agentMux))
 	root.Handle("/api/device/ws", h.requireDevice(http.HandlerFunc(h.serveDeviceWS)))
 	root.Handle("/api/stream", h.requireWeb(http.HandlerFunc(h.broker.serve)))
@@ -109,6 +114,7 @@ type authStatus struct {
 		Initialized bool   `json:"initialized"`
 		LoggedIn    bool   `json:"logged_in"`
 		Version     string `json:"version"`
+		PasskeyOrigins []string `json:"passkey_origins" doc:"登记过 passkey 的网页来源，登录页据此显示 passkey 登录（R-7）"`
 	}
 }
 
@@ -139,6 +145,7 @@ func (h *Hub) registerPublic(api huma.API) {
 			}
 			out.Body.Initialized = set
 			out.Body.Version = version.Version
+			out.Body.PasskeyOrigins = h.passkeyOrigins(ctx)
 			if in.Session != "" {
 				out.Body.LoggedIn, _ = h.store.ValidWebSession(ctx, HashToken(in.Session))
 			}
@@ -545,6 +552,45 @@ func (h *Hub) registerWeb(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("projects")
+			return ok(), nil
+		})
+	// passkey 管理（R-7）
+	huma.Register(api, huma.Operation{OperationID: "list-passkeys", Method: http.MethodGet, Path: "/api/passkeys", Tags: tag("auth"), Summary: "已登记的 passkey"},
+		func(ctx context.Context, _ *empty) (*struct {
+			Body struct {
+				Passkeys []store.Passkey `json:"passkeys"`
+			}
+		}, error) {
+			out := &struct {
+				Body struct {
+					Passkeys []store.Passkey `json:"passkeys"`
+				}
+			}{}
+			var err error
+			out.Body.Passkeys, err = h.store.ListPasskeys(ctx)
+			return out, err
+		})
+	huma.Register(api, huma.Operation{OperationID: "update-passkey", Method: http.MethodPut, Path: "/api/passkeys/{id}", Tags: tag("auth"), Summary: "重命名 passkey"},
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body struct {
+				Name string `json:"name" minLength:"1"`
+			}
+		}) (*okBody, error) {
+			if err := h.store.RenamePasskey(ctx, in.ID, in.Body.Name); err != nil {
+				return nil, err
+			}
+			h.broker.publish("settings")
+			return ok(), nil
+		})
+	huma.Register(api, huma.Operation{OperationID: "delete-passkey", Method: http.MethodDelete, Path: "/api/passkeys/{id}", Tags: tag("auth"), Summary: "删除 passkey"},
+		func(ctx context.Context, in *struct {
+			ID string `path:"id"`
+		}) (*okBody, error) {
+			if err := h.store.DeletePasskey(ctx, in.ID); err != nil {
+				return nil, err
+			}
+			h.broker.publish("settings")
 			return ok(), nil
 		})
 	// 系统推送（R-49）

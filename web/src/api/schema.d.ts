@@ -362,6 +362,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 已登记的 passkey */
+        get: operations["list-passkeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/passkeys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 重命名 passkey */
+        put: operations["update-passkey"];
+        post?: never;
+        /** 删除 passkey */
+        delete: operations["delete-passkey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/password": {
         parameters: {
             query?: never;
@@ -912,6 +947,8 @@ export interface components {
         AuthStatusBody: {
             initialized: boolean;
             logged_in: boolean;
+            /** @description 登记过 passkey 的网页来源，登录页据此显示 passkey 登录（R-7） */
+            passkey_origins: string[] | null;
             version: string;
         };
         BarkConfig: {
@@ -1106,6 +1143,9 @@ export interface components {
             session_key: string;
             unlink?: boolean;
         };
+        "List-passkeysResponse": {
+            passkeys: components["schemas"]["Passkey"][] | null;
+        };
         LoginOutBody: {
             ok: boolean;
         };
@@ -1127,6 +1167,15 @@ export interface components {
         };
         OkBodyBody: {
             ok: boolean;
+        };
+        Passkey: {
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            /** Format: date-time */
+            last_used_at?: string;
+            name: string;
+            origin: string;
         };
         PasswordInBody: {
             password: string;
@@ -1448,6 +1497,9 @@ export interface components {
             /** Format: date-time */
             at: string;
             label: string;
+        };
+        "Update-passkeyRequest": {
+            name: string;
         };
         "Update-workspaceRequest": {
             name: string;
@@ -2254,6 +2306,101 @@ export interface operations {
                 "application/json": components["schemas"]["NotifyConfig"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["List-passkeysResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "update-passkey": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Update-passkeyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-passkey": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

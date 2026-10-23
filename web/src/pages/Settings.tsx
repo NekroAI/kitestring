@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
 import { qk, useDevices, useProjects, usePush, useSettings } from '../api/queries'
 import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
+import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
 import { copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
@@ -625,6 +626,69 @@ function Appearance() {
 
 // ---------- 账户 ----------
 
+// passkey（R-7）：登记、查看、删除。passkey 绑定在当前网址上，换了网址要重新登记。
+function Passkeys() {
+  const q = useQuery({ queryKey: ['settings', 'passkeys'], queryFn: () => unwrap(api.GET('/api/passkeys')), select: (d) => d.passkeys ?? [] })
+  const qc = useQueryClient()
+  const confirm = useConfirm()
+  const now = useNow()
+  const [busy, wrap] = useBusy()
+  const here = (q.data ?? []).filter((p) => p.origin === window.location.origin)
+  const others = (q.data ?? []).filter((p) => p.origin !== window.location.origin)
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ['settings', 'passkeys'] })
+    void qc.invalidateQueries({ queryKey: qk.auth })
+  }
+  const add = () =>
+    wrap(async () => {
+      try {
+        await registerPasskey()
+        toast.success(t.settings.passkey.added)
+      } catch (e) {
+        if (!(e instanceof DOMException && e.name === 'NotAllowedError')) toast.error(errMsg(e))
+      }
+      refresh()
+    })
+  const remove = async (id: string, name: string) => {
+    if (!(await confirm({ title: t.settings.passkey.removeConfirm(name), description: t.settings.passkey.removeBody, confirmText: t.common.delete, danger: true }))) return
+    try {
+      await unwrap(api.DELETE('/api/passkeys/{id}', { params: { path: { id } } }))
+      refresh()
+    } catch (e) {
+      toast.error(errMsg(e))
+    }
+  }
+  const row = (p: (typeof here)[number]) => (
+    <div key={p.id} className="flex items-center gap-3 py-2.5">
+      <KeyRound className="size-4 shrink-0 text-fg-3" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm text-fg">{p.name}</div>
+        <div className="truncate text-xs text-fg-3">
+          {p.last_used_at ? t.settings.passkey.used(relTime(p.last_used_at, now)) : t.settings.passkey.created(relTime(p.created_at, now))}
+          {p.origin !== window.location.origin && ` · ${p.origin}`}
+        </div>
+      </div>
+      <Button size="icon-sm" variant="ghost" aria-label={t.common.delete} onClick={() => void remove(p.id, p.name)}>
+        <Trash2 className="size-3.5" />
+      </Button>
+    </div>
+  )
+  return (
+    <Card className="p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <div className="text-sm font-semibold text-fg">{t.settings.passkey.title}</div>
+        <span className="ml-auto">
+          <Button size="sm" loading={busy} disabled={!passkeySupported()} onClick={() => void add()} icon={<Plus className="size-3.5" />}>
+            {t.settings.passkey.add}
+          </Button>
+        </span>
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-fg-3">{passkeySupported() ? t.settings.passkey.hint : t.settings.passkey.unsupported}</p>
+      {(here.length > 0 || others.length > 0) && <div className="mt-2 divide-y divide-line">{[...here, ...others].map(row)}</div>}
+    </Card>
+  )
+}
+
 function Account({ version }: { version: string }) {
   const q = useSettings()
   const save = useSaveSettings()
@@ -658,6 +722,7 @@ function Account({ version }: { version: string }) {
           </div>
         </Field>
       </Card>
+      <Passkeys />
       <Card className="space-y-4 p-4 sm:p-5">
         <div className="text-sm font-semibold text-fg">{t.settings.account.password}</div>
         <div className="grid gap-3 sm:grid-cols-2">

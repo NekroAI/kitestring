@@ -136,6 +136,7 @@ export const zh = {
     setup: '完成',
     mismatch: '两次输入的密码不一致',
     tooShort: '密码至少 8 位',
+    passkey: '用 passkey 登录',
   },
 
   home: {
@@ -677,6 +678,17 @@ export const zh = {
       empty: '还没有设备',
     },
 
+    passkey: {
+      title: 'Passkey',
+      hint: '用面容 / 指纹 / 设备密码登录，不用输密码；密码登录照常可用。passkey 绑定在当前网址上，换网址要重新登记。',
+      unsupported: '这个浏览器（或当前不是 https 网址）不支持 passkey',
+      add: '添加 passkey',
+      added: '已添加 passkey，下次登录可以直接用它',
+      used: (when: string) => `${when}用过`,
+      created: (when: string) => `${when}添加`,
+      removeConfirm: (name: string) => `删除 passkey「${name}」？`,
+      removeBody: '删除后不能再用它登录，也建议到系统的密码管理里一并删除这条 passkey。',
+    },
     push: {
       title: '系统推送',
       hint: '不装任何 App，直接收系统通知：等你授权 / 回答 / 待验收时推送，点开直达。规则和下面的通知事件一致。',

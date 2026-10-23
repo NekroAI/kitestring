@@ -195,3 +195,14 @@ CREATE TABLE IF NOT EXISTS push_subs (
 	created_at TEXT NOT NULL,
 	last_ok_at TEXT NOT NULL DEFAULT ''
 );
+
+-- passkey（R-7）：只存公钥与计数器等验证所需的数据（webauthn.Credential 的 JSON），不存任何秘密
+CREATE TABLE IF NOT EXISTS passkeys (
+	id           TEXT PRIMARY KEY, -- 凭据 ID（base64url）
+	name         TEXT NOT NULL DEFAULT '',
+	origin       TEXT NOT NULL,     -- 注册时的网页来源，登录只接受这些来源
+	rp_id        TEXT NOT NULL,
+	credential   TEXT NOT NULL,
+	created_at   TEXT NOT NULL,
+	last_used_at TEXT NOT NULL DEFAULT ''
+);

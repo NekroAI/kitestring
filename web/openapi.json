@@ -318,6 +318,16 @@
           "logged_in": {
             "type": "boolean"
           },
+          "passkey_origins": {
+            "description": "登记过 passkey 的网页来源，登录页据此显示 passkey 登录（R-7）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "version": {
             "type": "string"
           }
@@ -325,7 +335,8 @@
         "required": [
           "initialized",
           "logged_in",
-          "version"
+          "version",
+          "passkey_origins"
         ],
         "type": "object"
       },
@@ -990,6 +1001,24 @@
         ],
         "type": "object"
       },
+      "List-passkeysResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "passkeys": {
+            "items": {
+              "$ref": "#/components/schemas/Passkey"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "passkeys"
+        ],
+        "type": "object"
+      },
       "LoginOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -1076,6 +1105,35 @@
         },
         "required": [
           "ok"
+        ],
+        "type": "object"
+      },
+      "Passkey": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "origin",
+          "created_at"
         ],
         "type": "object"
       },
@@ -2331,6 +2389,19 @@
         ],
         "type": "object"
       },
+      "Update-passkeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "Update-workspaceRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3502,6 +3573,127 @@
         "summary": "向指定渠道配置发送测试通知",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/passkeys": {
+      "get": {
+        "operationId": "list-passkeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List-passkeysResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "已登记的 passkey",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/passkeys/{id}": {
+      "delete": {
+        "operationId": "delete-passkey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "删除 passkey",
+        "tags": [
+          "auth"
+        ]
+      },
+      "put": {
+        "operationId": "update-passkey",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Update-passkeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "重命名 passkey",
+        "tags": [
+          "auth"
         ]
       }
     },
