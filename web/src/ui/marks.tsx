@@ -50,20 +50,6 @@ export function StatusPill({ state, since, now, compact }: { state: string; sinc
   return show ? <Tip content={t.stateSince(t.state[state] ?? state, duration(since, now), absTime(since))}>{pill}</Tip> : pill
 }
 
-const phaseStyle: Record<string, string> = {
-  planning: 'text-accent',
-  implementing: 'text-run',
-  debugging: 'text-wait',
-  testing: 'text-reply',
-  done: 'text-run',
-  blocked: 'text-danger',
-}
-
-export function PhaseBadge({ phase }: { phase: string }) {
-  if (!t.phase[phase]) return null
-  return <span className={cx('shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-[11px] font-medium', phaseStyle[phase])}>{t.phase[phase]}</span>
-}
-
 // presence：常驻身份（PM / 开发）的在线状态（R-84）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；
 // 结束了一轮却没挂上 ks wait、已结束或失联为离线。其它身份不需要常驻，返回空。
 type RoleSession = { role?: string; state: string; state_detail?: string; parked?: boolean; done_at?: string | null; last_active_at?: string }

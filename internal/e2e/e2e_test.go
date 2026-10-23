@@ -327,7 +327,10 @@ func fakeModel(t *testing.T) (*httptest.Server, *int) {
 		case strings.Contains(sys, "第一条指令"):
 			out = "登录页记住我"
 		case strings.Contains(sys, "输出一个 JSON"):
-			out = "```json\n{\"summary\":\"已加记住我复选框\",\"phase\":\"testing\",\"done\":\"加了复选框和测试\",\"ask\":\"有效期选 7 天还是 30 天\"}\n```"
+			if strings.Contains(sys, "phase") {
+				t.Errorf("每轮小结提示词不应再要求输出 phase（R-125）：%s", sys)
+			}
+			out = "```json\n{\"summary\":\"已加记住我复选框\",\"done\":\"加了复选框和测试\",\"ask\":\"有效期选 7 天还是 30 天\"}\n```"
 		case strings.Contains(sys, "短标题"):
 			out = "“记住我”有效期"
 		case strings.Contains(sys, "回顾"):
@@ -370,7 +373,7 @@ func TestAIFeatures(t *testing.T) {
 	hook(t, "claude", map[string]any{"session_id": "ai-2", "cwd": cwd, "hook_event_name": "Stop", "last_assistant_message": "已在登录表单加了记住我复选框并补了测试，有效期你想用多久？"})
 	e.waitFor("一轮结束后生成摘要、阶段与要点", func() bool {
 		s := e.session("claude:ai-2")
-		return s.Summary == "已加记住我复选框" && s.Phase == "testing" && s.DigestDone == "加了复选框和测试" && s.DigestAsk == "有效期选 7 天还是 30 天"
+		return s.Summary == "已加记住我复选框" && s.DigestDone == "加了复选框和测试" && s.DigestAsk == "有效期选 7 天还是 30 天"
 	})
 
 	hook(t, "claude", map[string]any{"session_id": "ai-2", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "30 天", "prompt_id": "p2"})

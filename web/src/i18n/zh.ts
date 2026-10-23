@@ -83,14 +83,6 @@ export const zh = {
     parked: '待命',
   } as Record<string, string>,
   stateSince: (label: string, dur: string, at: string) => `${label} ${dur}（自 ${at}）`,
-  phase: {
-    planning: '规划中',
-    implementing: '实现中',
-    debugging: '排查中',
-    testing: '测试中',
-    done: '已完成',
-    blocked: '遇到问题',
-  } as Record<string, string>,
   role: {
     pm: 'PM',
     dev: '开发',

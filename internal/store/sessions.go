@@ -52,7 +52,6 @@ type Session struct {
 	Worktree         bool             `json:"worktree"`
 	Activity         []int            `json:"activity"`    // 最近 60 分钟每 5 分钟的事件数，旧 → 新
 	Title            string           `json:"title"`       // 模型生成的会话标题
-	Phase            string           `json:"phase"`       // 模型判断的阶段：planning implementing debugging testing done blocked
 	DigestDone       string           `json:"digest_done"` // 等你回复时：这一轮做了什么
 	DigestAsk        string           `json:"digest_ask"`  // 等你回复时：在等你决定什么
 	StartedAt        time.Time        `json:"started_at"`
@@ -90,7 +89,7 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role,
+	s.title, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
@@ -101,7 +100,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role,
+		&x.Title, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
@@ -283,7 +282,7 @@ func (s *Store) SetSessionDone(ctx context.Context, key string, done bool) error
 
 // SessionAI 是模型生成的会话信息；空字段表示不修改。
 type SessionAI struct {
-	Summary, Title, Phase, DigestDone, DigestAsk string
+	Summary, Title, DigestDone, DigestAsk string
 }
 
 // SetSessionAI 更新模型生成的字段（异步生成完成后调用）。
@@ -291,11 +290,10 @@ func (s *Store) SetSessionAI(ctx context.Context, key string, a SessionAI) error
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET
 		summary = CASE WHEN ? <> '' THEN ? ELSE summary END,
 		title = CASE WHEN ? <> '' THEN ? ELSE title END,
-		phase = CASE WHEN ? <> '' THEN ? ELSE phase END,
 		digest_done = CASE WHEN ? <> '' THEN ? ELSE digest_done END,
 		digest_ask = CASE WHEN ? <> '' THEN ? ELSE digest_ask END
 		WHERE key = ?`,
-		a.Summary, a.Summary, a.Title, a.Title, a.Phase, a.Phase, a.DigestDone, a.DigestDone, a.DigestAsk, a.DigestAsk, key)
+		a.Summary, a.Summary, a.Title, a.Title, a.DigestDone, a.DigestDone, a.DigestAsk, a.DigestAsk, key)
 	return err
 }
 

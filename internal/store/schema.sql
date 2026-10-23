@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	compactions    INTEGER NOT NULL DEFAULT 0,
 	worktree       INTEGER NOT NULL DEFAULT 0,
 	title          TEXT NOT NULL DEFAULT '',
-	phase          TEXT NOT NULL DEFAULT '',
+	phase          TEXT NOT NULL DEFAULT '', -- 已停用（R-125）：不再让模型猜阶段
 	digest_done    TEXT NOT NULL DEFAULT '',
 	digest_ask     TEXT NOT NULL DEFAULT '',
 	started_at     TEXT NOT NULL,

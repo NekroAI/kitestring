@@ -1809,7 +1809,6 @@ export interface components {
             /** Format: int64 */
             pending_decisions: number;
             permission_mode: string;
-            phase: string;
             project_id?: string;
             project_name?: string;
             recent_tools: components["schemas"]["ToolAct"][] | null;

@@ -30,9 +30,6 @@ func (f AIFeatures) needsReply() bool { return f.Summary || f.Title || f.Digest 
 // titleNoise 去掉标题里的引号与问号（模型常常不遵守“不要标点”）。
 var titleNoise = strings.NewReplacer("“", "", "”", "", "\"", "", "「", "", "」", "", "？", "", "?", "", "《", "", "》", "")
 
-// 会话阶段（模型判断）。
-var phases = map[string]bool{"planning": true, "implementing": true, "debugging": true, "testing": true, "done": true, "blocked": true}
-
 // aiGuard 防止同一会话同类任务并发重复调用模型。
 type aiGuard struct {
 	mu   sync.Mutex
@@ -93,7 +90,8 @@ func (h *Hub) aiOnPrompt(key, prompt string) {
 	}
 }
 
-// aiOnStop 在一轮结束时，按开启的功能一次调用生成摘要、标题与阶段、等你回复要点。
+// aiOnStop 在一轮结束时，按开启的功能一次调用生成摘要、标题、等你回复要点。
+// 不再让模型猜“阶段”：它只反映最后一轮说了什么、待命后不会刷新，与状态胶囊和需求印记重复且常常过时（R-125）。
 func (h *Hub) aiOnStop(key, prompt, reply string) {
 	s, ok := h.aiSettings()
 	if !ok || !s.AI.needsReply() || !h.ai.try("stop:"+key) {
@@ -112,7 +110,6 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 		fields = append(fields, `"summary": 一句话说明这个会话目前进行到哪了，不超过 40 字`)
 	}
 	if s.AI.Title {
-		fields = append(fields, `"phase": 当前阶段，取值之一：planning（规划/调研）、implementing（实现中）、debugging（排查问题）、testing（测试验证）、done（本项工作已完成）、blocked（遇到无法自行解决的问题）`)
 		// 标题随会话手上的事更新：一个会话常常连着做好几件事，第一条指令起的标题很快就过时了（R-71）
 		if x.Title == "" {
 			fields = append(fields, `"title": 不超过 12 个汉字的任务标题，概括这个会话现在在做的事，不要标点`)
@@ -130,15 +127,12 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 		h.log.Warn("生成会话摘要失败", "session", key, "err", err)
 		return
 	}
-	var out struct{ Summary, Phase, Title, Done, Ask string }
+	var out struct{ Summary, Title, Done, Ask string }
 	if err := summary.JSON(text, &out); err != nil {
 		h.log.Warn("解析会话摘要失败", "session", key, "err", err)
 		return
 	}
 	a := store.SessionAI{Summary: summary.Clean(out.Summary, 80), Title: summary.Clean(titleNoise.Replace(out.Title), 20), DigestDone: summary.Clean(out.Done, 80), DigestAsk: summary.Clean(out.Ask, 80)}
-	if p := strings.TrimSpace(strings.ToLower(out.Phase)); phases[p] {
-		a.Phase = p
-	}
 	if !s.AI.Summary {
 		a.Summary = ""
 	}

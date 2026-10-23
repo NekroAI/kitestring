@@ -2966,9 +2966,6 @@
           "permission_mode": {
             "type": "string"
           },
-          "phase": {
-            "type": "string"
-          },
           "project_id": {
             "type": "string"
           },
@@ -3073,7 +3070,6 @@
           "worktree",
           "activity",
           "title",
-          "phase",
           "digest_done",
           "digest_ask",
           "started_at",
