@@ -240,6 +240,7 @@ export const zh = {
     givePick: '选一条需求交给它开工',
     giveNew: '新建',
     unlink: '取消关联',
+    reqBeside: '会话里的需求',
     noReqs: '未关联需求',
     decisions: '决策记录',
     timeline: '活动记录',

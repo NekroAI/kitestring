@@ -1,18 +1,19 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown, ChevronRight, Copy, MonitorDot, Plus, RefreshCw, Send, Unlink, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
 import { t } from '../i18n'
 import { Collapse, Item, List } from '../ui/motion'
-import { absTime, clockTime, copyText, cx, duration, relTime, shortPath, useNow } from '../lib/util'
+import { absTime, clockTime, copyText, cx, duration, relTime, shortPath, useMedia, useNow } from '../lib/util'
 import { Badge, Button, ErrorState, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { Md } from '../ui/markdown'
 import { displayState, PhaseBadge, RoleBadge, Sparkline, StatusPill, ToolMark } from '../ui/marks'
 import { useActions } from './actions'
 import { DecisionComposer, DecisionRow } from './DecisionCard'
-import { useOpenReq } from './nav'
+import { SideReqContext, useOpenReq } from './nav'
+import { ReqView } from './reqDrawer'
 import { CtxRing, ctxLoad, useAssign } from './assign'
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
@@ -168,6 +169,13 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const ownership = useOwnership()
   const [creating, setCreating] = useState(false)
   const openReq = useOpenReq()
+  // 宽屏：点需求在会话抽屉左侧再开一层（和计划里同一机制与断点），窄屏仍走全局需求抽屉
+  const roomy = useMedia('(min-width: 1140px)')
+  const [sel, setSel] = useState<string | null>(null)
+  useEffect(() => setSel(null), [sessionKey])
+  const shown = roomy ? sel : null
+  const openGlobal = openReq
+  const side = useMemo(() => (roomy ? (c: string) => setSel((cur) => (cur === c ? null : c)) : null), [roomy])
   const s: Session | undefined = q.data?.session
   const mine = (decisions.data ?? []).filter((d) => d.session_key === sessionKey)
   const pending = mine.filter((d) => d.status === 'pending')
@@ -186,7 +194,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const lastAt = events.reduce((m, e) => (e.time && e.time > m ? e.time : m), '')
   const reqRow = (r: Session['requirements'][number]) => (
     <div key={r.id} className="flex items-center gap-2 px-3 py-2">
-      <button onClick={() => openReq(r.code)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+      <button onClick={() => (side ? side(r.code) : openGlobal(r.code))} className={cx('flex min-w-0 flex-1 items-center gap-2 rounded-md text-left', shown === r.code && 'bg-accent-soft/60 ring-1 ring-accent/30')}>
         <span className="shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap text-accent">{r.code}</span>
         <span className="truncate text-sm text-fg">{r.title}</span>
       </button>
@@ -200,9 +208,28 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
     </div>
   )
 
+  const aside = shown ? (
+    <ReqView
+      key={shown}
+      refId={shown}
+      top={
+        <div className="flex shrink-0 items-center gap-2 px-4 pt-3 sm:px-5">
+          <span className="font-mono text-[11px] font-semibold text-fg-3">{shown}</span>
+          <span className="text-xs text-fg-3">{t.session.reqBeside}</span>
+          <span className="flex-1" />
+          <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={() => setSel(null)}>
+            <X className="size-4" />
+          </Button>
+        </div>
+      }
+    />
+  ) : undefined
+
   return (
+    <SideReqContext value={side}>
     <Panel
       open={!!sessionKey}
+      aside={aside}
       onClose={onClose}
       wide
       title={
@@ -401,5 +428,6 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
         </>
       )}
     </Panel>
+    </SideReqContext>
   )
 }

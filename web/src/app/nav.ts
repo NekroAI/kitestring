@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { createContext, useCallback, useContext } from 'react'
 import { useSearchParams } from 'react-router'
 
 // 详情面板通过 URL 参数打开（?s=会话键、?r=需求编号），任何页面都能打开、链接可分享。
@@ -17,9 +17,13 @@ export function useOpenSession() {
   )
 }
 
+// 并排打开：宽屏下某个抽屉（如会话详情）把“点需求”接过去，在它左侧再开一层，自己保持不动。
+export const SideReqContext = createContext<((ref: string) => void) | null>(null)
+
 export function useOpenReq() {
   const [, setParams] = useSearchParams()
-  return useCallback(
+  const side = useContext(SideReqContext)
+  const open = useCallback(
     (ref: string) =>
       setParams((p) => {
         const n = new URLSearchParams(p)
@@ -29,6 +33,7 @@ export function useOpenReq() {
       }),
     [setParams],
   )
+  return side ?? open
 }
 
 export function useOpenPlan() {
