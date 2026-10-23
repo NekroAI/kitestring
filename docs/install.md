@@ -1,5 +1,7 @@
 # Install Kitestring
 
+English · [中文](https://github.com/NekroAI/kitestring/blob/main/docs/install.zh-CN.md)
+
 Kitestring is a single binary, `ks`, for macOS and Linux (arm64 and x64). One always-on machine runs the **Hub**; every machine where you run Claude Code or Codex runs the **daemon**.
 
 ## 1. Install `ks`
@@ -41,3 +43,11 @@ Start a Claude Code or Codex session and it shows up on the board within seconds
 Re-run the install script, then restart the services: on macOS run `ks install` again; on Linux run `systemctl --user restart kitestring-daemon` (and `kitestring-hub` on the Hub machine).
 
 All local data lives in `~/.kitestring` (override with `KS_HOME`) and is kept across updates.
+
+## Build from source
+
+```sh
+# Requires Go 1.27+, Node 22+, pnpm
+cd web && pnpm install && pnpm build && cd ..
+make build        # output: bin/ks, with the web UI embedded
+```

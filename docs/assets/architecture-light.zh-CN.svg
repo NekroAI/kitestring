@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Helvetica, Arial, sans-serif">
+<defs>
+<filter id="sh" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="rgb(70 50 18 / 0.10)"/></filter>
+<marker id="ac" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9 z" fill="#2f5d8c"/></marker>
+<marker id="se" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1,1 L9,5 L1,9 z" fill="#b5382a"/></marker>
+</defs>
+<rect width="960" height="560" rx="20" fill="#f4f0e6"/>
+<text x="28" y="48" font-size="13" font-weight="600" fill="#776f5f" text-anchor="start">你的各台设备</text>
+<rect x="28" y="74" width="278" height="150" rx="14" fill="#fbf8f1" stroke="#e3dccb" filter="url(#sh)"/>
+<circle cx="48" cy="98" r="4" fill="#2f7a5b"/>
+<text x="60" y="103" font-size="14" font-weight="600" fill="#23211d" text-anchor="start">MacBook Pro</text>
+<rect x="44" y="118" width="118" height="30" rx="8" fill="#ece6d9"/>
+<text x="103.0" y="138.0" font-size="13" font-weight="600" fill="#4f493c" text-anchor="middle">Claude Code</text>
+<rect x="172" y="118" width="118" height="30" rx="8" fill="#ece6d9"/>
+<text x="231.0" y="138.0" font-size="13" font-weight="600" fill="#4f493c" text-anchor="middle">Codex</text>
+<line x1="167.0" y1="154" x2="167.0" y2="172" stroke="#d3c9b3" stroke-width="1.5" stroke-dasharray="3 3"/>
+<text x="177.0" y="168" font-size="11" font-weight="500" fill="#776f5f" text-anchor="start">hooks · MCP</text>
+<rect x="44" y="176" width="246" height="32" rx="8" fill="#e3eaf2"/>
+<text x="167.0" y="197.0" font-size="13" font-weight="600" fill="#2f5d8c" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ks daemon</text>
+<rect x="28" y="246" width="278" height="150" rx="14" fill="#fbf8f1" stroke="#e3dccb" filter="url(#sh)"/>
+<circle cx="48" cy="270" r="4" fill="#2f7a5b"/>
+<text x="60" y="275" font-size="14" font-weight="600" fill="#23211d" text-anchor="start">Mac mini</text>
+<rect x="44" y="290" width="118" height="30" rx="8" fill="#ece6d9"/>
+<text x="103.0" y="310.0" font-size="13" font-weight="600" fill="#4f493c" text-anchor="middle">Claude Code</text>
+<rect x="172" y="290" width="118" height="30" rx="8" fill="#ece6d9"/>
+<text x="231.0" y="310.0" font-size="13" font-weight="600" fill="#4f493c" text-anchor="middle">Codex</text>
+<line x1="167.0" y1="326" x2="167.0" y2="344" stroke="#d3c9b3" stroke-width="1.5" stroke-dasharray="3 3"/>
+<text x="177.0" y="340" font-size="11" font-weight="500" fill="#776f5f" text-anchor="start">hooks · MCP</text>
+<rect x="44" y="348" width="246" height="32" rx="8" fill="#e3eaf2"/>
+<text x="167.0" y="369.0" font-size="13" font-weight="600" fill="#2f5d8c" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ks daemon</text>
+<rect x="28" y="418" width="278" height="44" rx="14" fill="none" stroke="#d3c9b3" stroke-dasharray="5 5"/>
+<text x="167.0" y="445" font-size="13" font-weight="500" fill="#776f5f" text-anchor="middle">+ 想接几台接几台</text>
+<rect x="390" y="74" width="216" height="388" rx="14" fill="#fbf8f1" stroke="#d3c9b3" filter="url(#sh)"/>
+<g transform="translate(472.0 96) scale(0.40625) rotate(-10 64 64)"><polygon points="64,10 22,54 64,54" fill="#D9503D"/><polygon points="64,10 64,54 106,54" fill="#EE7A60"/><polygon points="22,54 64,118 64,54" fill="#A9311F"/><polygon points="64,54 64,118 106,54" fill="#C2402D"/></g>
+<text x="498.0" y="176" font-size="18" font-weight="700" fill="#23211d" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">ks hub</text>
+<text x="498.0" y="198" font-size="12" font-weight="400" fill="#776f5f" text-anchor="middle">一台常开的机器</text>
+<rect x="408" y="224" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
+<rect x="420" y="237" width="8" height="8" rx="2" fill="#2f5d8c"/>
+<text x="438" y="246" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">会话墙</text>
+<rect x="408" y="272" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
+<rect x="420" y="285" width="8" height="8" rx="2" fill="#b5382a"/>
+<text x="438" y="294" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">决策收件箱</text>
+<rect x="408" y="320" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
+<rect x="420" y="333" width="8" height="8" rx="2" fill="#2f5d8c"/>
+<text x="438" y="342" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">需求看板</text>
+<rect x="408" y="368" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
+<rect x="420" y="381" width="8" height="8" rx="2" fill="#2f5d8c"/>
+<text x="438" y="390" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">计划</text>
+<text x="498.0" y="444" font-size="11" font-weight="500" fill="#776f5f" text-anchor="middle">SQLite · 网页 · 系统推送</text>
+<line x1="292" y1="185" x2="386" y2="185" stroke="#2f5d8c" stroke-width="2" marker-end="url(#ac)"/>
+<line x1="390" y1="199" x2="296" y2="199" stroke="#b5382a" stroke-width="2" marker-end="url(#se)"/>
+<line x1="292" y1="357" x2="386" y2="357" stroke="#2f5d8c" stroke-width="2" marker-end="url(#ac)"/>
+<line x1="390" y1="371" x2="296" y2="371" stroke="#b5382a" stroke-width="2" marker-end="url(#se)"/>
+<text x="341.0" y="176" font-size="11" font-weight="600" fill="#2f5d8c" text-anchor="middle">事件</text>
+<text x="341.0" y="218" font-size="11" font-weight="600" fill="#b5382a" text-anchor="middle">决策</text>
+<rect x="680" y="74" width="252" height="388" rx="14" fill="#fbf8f1" stroke="#e3dccb" filter="url(#sh)"/>
+<text x="702" y="108" font-size="16" font-weight="700" fill="#23211d" text-anchor="start">你</text>
+<text x="702" y="128" font-size="12" font-weight="400" fill="#776f5f" text-anchor="start">任意浏览器、手机或 iPad</text>
+<rect x="702" y="146" width="150" height="96" rx="8" fill="#f4f0e6" stroke="#d3c9b3"/>
+<line x1="702" y1="162" x2="852" y2="162" stroke="#e3dccb"/>
+<circle cx="712" cy="154" r="2.5" fill="#b5382a"/>
+<circle cx="721" cy="154" r="2.5" fill="#d3c9b3"/>
+<circle cx="730" cy="154" r="2.5" fill="#d3c9b3"/>
+<rect x="712" y="172" width="38" height="60" rx="4" fill="#fbf8f1" stroke="#e3dccb"/>
+<rect x="717" y="178" width="20" height="4" rx="2" fill="#2f7a5b"/>
+<rect x="717" y="188" width="28" height="3" rx="1.5" fill="#e3dccb"/>
+<rect x="717" y="196" width="22" height="3" rx="1.5" fill="#e3dccb"/>
+<rect x="758" y="172" width="38" height="60" rx="4" fill="#fbf8f1" stroke="#e3dccb"/>
+<rect x="763" y="178" width="20" height="4" rx="2" fill="#b5382a"/>
+<rect x="763" y="188" width="28" height="3" rx="1.5" fill="#e3dccb"/>
+<rect x="763" y="196" width="22" height="3" rx="1.5" fill="#e3dccb"/>
+<rect x="804" y="172" width="38" height="60" rx="4" fill="#fbf8f1" stroke="#e3dccb"/>
+<rect x="809" y="178" width="20" height="4" rx="2" fill="#2f5d8c"/>
+<rect x="809" y="188" width="28" height="3" rx="1.5" fill="#e3dccb"/>
+<rect x="809" y="196" width="22" height="3" rx="1.5" fill="#e3dccb"/>
+<rect x="870" y="150" width="48" height="88" rx="9" fill="#f4f0e6" stroke="#d3c9b3"/>
+<rect x="876" y="164" width="36" height="22" rx="4" fill="#f6e6e0" stroke="#b5382a" stroke-width="1"/>
+<rect x="881" y="171" width="20" height="3" rx="1.5" fill="#b5382a"/>
+<rect x="881" y="178" width="14" height="3" rx="1.5" fill="#b5382a"/>
+<rect x="876" y="192" width="36" height="12" rx="3" fill="#fbf8f1" stroke="#e3dccb"/>
+<rect x="876" y="208" width="36" height="12" rx="3" fill="#fbf8f1" stroke="#e3dccb"/>
+<circle cx="710" cy="284" r="9" fill="#ece6d9"/>
+<path d="M706,284 l3,3 l5,-6" fill="none" stroke="#776f5f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="728" y="289" font-size="13" font-weight="500" fill="#4f493c" text-anchor="start">看清每个 agent 在做什么</text>
+<circle cx="710" cy="320" r="9" fill="#f6e6e0"/>
+<path d="M706,320 l3,3 l5,-6" fill="none" stroke="#b5382a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="728" y="325" font-size="13" font-weight="500" fill="#4f493c" text-anchor="start">回答决策</text>
+<circle cx="710" cy="356" r="9" fill="#ece6d9"/>
+<path d="M706,356 l3,3 l5,-6" fill="none" stroke="#776f5f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="728" y="361" font-size="13" font-weight="500" fill="#4f493c" text-anchor="start">验收成果</text>
+<circle cx="710" cy="392" r="9" fill="#ece6d9"/>
+<path d="M706,392 l3,3 l5,-6" fill="none" stroke="#776f5f" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="728" y="397" font-size="13" font-weight="500" fill="#4f493c" text-anchor="start">交出下一件事</text>
+<line x1="606" y1="241.0" x2="676" y2="241.0" stroke="#2f5d8c" stroke-width="2" marker-end="url(#ac)"/>
+<line x1="680" y1="255.0" x2="610" y2="255.0" stroke="#b5382a" stroke-width="2" marker-end="url(#se)"/>
+<text x="643.0" y="232.0" font-size="11" font-weight="600" fill="#2f5d8c" text-anchor="middle">实时推送</text>
+<text x="643.0" y="274.0" font-size="11" font-weight="600" fill="#b5382a" text-anchor="middle">答复</text>
+<rect x="28" y="498" width="904" height="40" rx="12" fill="#fbf8f1" stroke="#e3dccb"/>
+<circle cx="54.0" cy="518" r="10" fill="#b5382a"/>
+<text x="54.0" y="522.5" font-size="12" font-weight="700" fill="#fbf6ec" text-anchor="middle">1</text>
+<text x="72.0" y="523" font-size="13" font-weight="500" fill="#4f493c" text-anchor="start">Agent 干活，遇事提出决策</text>
+<path d="M315.3333333333333,512 l6,6 l-6,6" fill="none" stroke="#d3c9b3" stroke-width="1.8" stroke-linecap="round"/>
+<circle cx="355.3333333333333" cy="518" r="10" fill="#b5382a"/>
+<text x="355.3333333333333" y="522.5" font-size="12" font-weight="700" fill="#fbf6ec" text-anchor="middle">2</text>
+<text x="373.3333333333333" y="523" font-size="13" font-weight="500" fill="#4f493c" text-anchor="start">你在任意设备上作答</text>
+<path d="M616.6666666666666,512 l6,6 l-6,6" fill="none" stroke="#d3c9b3" stroke-width="1.8" stroke-linecap="round"/>
+<circle cx="656.6666666666666" cy="518" r="10" fill="#b5382a"/>
+<text x="656.6666666666666" y="522.5" font-size="12" font-weight="700" fill="#fbf6ec" text-anchor="middle">3</text>
+<text x="674.6666666666666" y="523" font-size="13" font-weight="500" fill="#4f493c" text-anchor="start">答复注入 agent 的下一轮</text>
+</svg>
