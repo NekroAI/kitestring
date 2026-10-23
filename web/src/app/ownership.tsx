@@ -29,7 +29,8 @@ export function useOwnership() {
   const autoOff = (pid?: string) => !!pid && projects.data?.projects.find((p) => p.id === pid)?.auto_dispatch === false
 
   return (r: Requirement): Own | null => {
-    if (r.stage_status === 'locked' && r.stage_seq) return { tone: 'locked', short: t.own.lockedShort, text: t.own.locked(r.plan_code ?? '', r.stage_seq - 1) }
+    if (r.stage_status === 'locked' && r.stage_seq)
+      return { tone: 'locked', short: t.own.lockedShort, text: r.stage_seq > 1 ? t.own.locked(r.plan_code ?? '', r.stage_seq - 1) : t.own.planNotStarted(r.plan_code ?? '') }
     if (r.status === 'draft') return { tone: 'draft', short: t.own.draftShort, text: t.own.draft }
     if (r.status === 'in_progress') {
       const s = owner(r)

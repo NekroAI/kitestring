@@ -454,6 +454,7 @@ export const zh = {
     draft: '草稿 · 你确认（改为待开始）后才会排进会话的待办',
     lockedShort: '排在后面',
     locked: (plan: string, n: number) => `排在计划 ${plan} 阶段 ${n} 之后，那一阶段通过后才开始`,
+    planNotStarted: (plan: string) => `属于计划 ${plan}，计划开始（或你批准）后按阶段推进`,
     queuedShort: '排队中',
     queuedRunning: (who: string, n: number) => `排队中 · 「${who}」这一轮做完后一起送达（共 ${n} 条）`,
     queuedSoon: (who: string, n: number) => `排队中 · 马上一起送给「${who}」（共 ${n} 条）`,

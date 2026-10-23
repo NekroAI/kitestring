@@ -151,7 +151,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
           </Tip>
         )}
         {own ? (
-          <OwnBadge own={own} />
+          own.tone !== 'locked' && <OwnBadge own={own} />
         ) : actor && r.status !== 'done' && r.status !== 'shelved' && (
           <Badge tone={r.next_actor === 'user' ? 'reply' : 'outline'} icon={r.next_actor === 'user' ? <User className="size-3" /> : <Bot className="size-3" />}>
             {actor}

@@ -120,7 +120,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
             </span>
           </Tip>
         )}
-        {own && <OwnBadge own={own} className="max-sm:hidden" />}
+        {own && own.tone !== 'locked' && <OwnBadge own={own} className="max-sm:hidden" />}
         {!own && r.next_actor === 'user' && r.status !== 'done' && (
           <Tip content={t.nextActor.user}>
             <span className="inline-flex text-reply">

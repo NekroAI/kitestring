@@ -20,7 +20,7 @@ import { ReqTimeline } from './reqTimeline'
 import { AssignButton } from './assign'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
-import { OwnLine } from './ownership'
+import { OwnLine, useOwnership } from './ownership'
 
 // 需求抽屉：从上到下是“需求是什么”（固定）→ 来回的记录（滚动，最新在下）→ 轮到你做的事（固定在底部）。
 // 验收时可以在同一个抽屉里连续处理同一项目的待验收：通过后自动滑到下一条，顶部左右按钮切换。
@@ -230,6 +230,7 @@ function Brief({ r }: { r: Requirement }) {
 // 其它状态——可以随时给 Agent 留言（只送达，不改需求状态）。
 function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: Requirement; onPassed?: (code: string) => void; pending: number; onJump: () => void; incoming?: File[]; onIncoming?: () => void }) {
   const { review, note } = useActions()
+  const own = useOwnership()(r)
   const [busy, wrap] = useBusy()
   const [text, setText] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
@@ -271,7 +272,7 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
   ) : (
     <span className="flex min-w-0 items-center gap-2 text-xs text-fg-3">
       <span className={cx('size-2 shrink-0 rotate-45 rounded-[1.5px]', statusCls[r.status]?.dot)} />
-      <span className="truncate">{reviewing ? (dirty ? t.review.hintRevise : t.review.hintPass) : (t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
+      <span className="truncate">{reviewing ? (dirty ? t.review.hintRevise : t.review.hintPass) : (own?.short ?? t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
     </span>
   )
   return (
