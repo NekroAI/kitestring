@@ -36,13 +36,16 @@ function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => 
 // useKeyboardBox：手机键盘弹出时可见区域的高度与键盘高度（R-72）。
 // vaul 自带的 repositionInputs 会在 iOS 上改抽屉高度、键盘收起后不一定恢复，导致抽屉被压成一条或下半截透明；
 // 这里关掉它，自己按 visualViewport 算：抽屉底边贴住键盘上沿，高度不超过可见区域。
+// iOS 聚焦输入框时还会把整页往上平移（visualViewport.offsetTop > 0），和我们重新排版叠在一起就是“连跳”；
+// 弹出层是固定定位、本来就能看到输入框，所以把这次平移撤回去。
 function useKeyboardBox(active: boolean) {
   const [box, setBox] = useState<{ kb: number; vh: number } | null>(null)
   useEffect(() => {
     const vv = window.visualViewport
     if (!active || !vv) return
     const update = () => {
-      const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+      if (vv.offsetTop > 0 || window.scrollY > 0) window.scrollTo(0, 0)
+      const kb = Math.max(0, Math.round(window.innerHeight - vv.height))
       setBox(kb > 60 ? { kb, vh: Math.round(vv.height) } : null) // 小于 60px 的差值是地址栏伸缩，不算键盘
     }
     update()
@@ -54,6 +57,45 @@ function useKeyboardBox(active: boolean) {
     }
   }, [active])
   return box
+}
+
+// FullSheet：手机上的全屏编辑页（R-72）。顶部固定、只改高度：键盘升起时只是从下面“截短”，
+// 标题栏和正在写的内容都不动，不会像底部抽屉那样跟着键盘上下跳。header 里放取消 / 提交，键盘挡不住。
+export function FullSheet({ open, onClose, title, header, children }: { open: boolean; onClose: () => void; title: string; header: ReactNode; children: ReactNode }) {
+  const kb = useKeyboardBox(open)
+  const body = useRef<HTMLDivElement>(null)
+  // 键盘升起后，把正在输入的框滚到可见区域（在页内滚，不让系统平移整页）
+  useEffect(() => {
+    if (!kb) return
+    const el = document.activeElement as HTMLElement | null
+    if (el && body.current?.contains(el)) el.scrollIntoView({ block: 'nearest' })
+  }, [kb])
+  return (
+    <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+      <AnimatePresence>
+        {open && (
+          <RDialog.Portal forceMount>
+            <RDialog.Content forceMount asChild aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', stiffness: 420, damping: 42 }}
+                style={{ height: kb ? kb.vh : '100dvh' }}
+                className="fixed inset-x-0 top-0 z-50 flex flex-col bg-surface outline-none"
+              >
+                <RDialog.Title className="sr-only">{title}</RDialog.Title>
+                <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">{header}</div>
+                <div ref={body} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  {children}
+                </div>
+              </motion.div>
+            </RDialog.Content>
+          </RDialog.Portal>
+        )}
+      </AnimatePresence>
+    </RDialog.Root>
+  )
 }
 
 export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode }) {
@@ -114,7 +156,8 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
     )
   }
   return (
-    <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()} repositionInputs={false}>
+    // noBodyStyles：不让 vaul 把页面固定住再恢复滚动位置——关掉抽屉时底下的列表会因此跳两下
+    <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()} repositionInputs={false} noBodyStyles>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/30 dark:bg-black/50" />
         <Drawer.Content

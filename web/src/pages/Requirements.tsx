@@ -134,7 +134,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
           <StatusMenu r={r} />
         </span>
         <PriorityDot p={r.priority} />
-        <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
+        <span className="w-10 shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap text-fg-3">{r.code}</span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
         <PlanBadge r={r} className="max-sm:hidden" />
         <DesignBadge r={r} className="max-sm:hidden" />

@@ -471,6 +471,7 @@ export const zh = {
   },
   assign: {
     button: '交给会话',
+    sendShort: '交出',
     createAndSend: '新建并交出',
     title: '交给哪个会话开工',
     field: '交给',

@@ -5,9 +5,9 @@ import type { ReqFields, Requirement } from '../api/client'
 import { useProjects, useSessions } from '../api/queries'
 import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from './assign'
 import { t } from '../i18n'
-import { cx, loadPref, savePref, usePref } from '../lib/util'
+import { cx, loadPref, savePref, useDesktop, usePref } from '../lib/util'
 import { Badge, Button, Card, Switch, Textarea, Tip } from '../ui/base'
-import { Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
+import { FullSheet, Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
 import { displayState, PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
@@ -248,7 +248,8 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
       if (to && send) await assign(r.code, to)
       else {
         if (to) await linkReq(r.code, to.key)
-        toast.success(to ? t.reqs.createdLinked(r.code, targetLabel(to)) : t.reqs.created(r.code))
+        // 建完直接打开这条需求时不再弹提示：它就在眼前，提示条反而盖住抽屉（R-72）
+        if (more || defaultSession) toast.success(to ? t.reqs.createdLinked(r.code, targetLabel(to)) : t.reqs.created(r.code))
       }
       if (more) {
         setF({ ...blank(), project_id: f.project_id, status: f.status, priority: f.priority, kind: f.kind })
@@ -258,37 +259,27 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
         if (!defaultSession) openReq(r.code) // 从会话详情新建时留在会话详情，新需求出现在它的需求里
       }
     })
+  const desktop = useDesktop()
   const proj = projects.data?.projects.find((p) => p.id === f.project_id)
   const chip = 'inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-2 transition hover:border-line-strong hover:text-fg active:scale-[0.97]'
-  return (
-    <Panel open={open} onClose={onClose} wide bare title={t.reqs.newTitle}>
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-            e.preventDefault()
-            void submit(true)
-          }
-        }}
-      >
-        <div className="flex shrink-0 items-center gap-2 px-5 pt-4 pb-2">
-          <h2 className="font-display text-lg text-fg">{t.reqs.newTitle}</h2>
-          <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-fg-3">
-            <Switch checked={more} onChange={setMore} />
-            {t.reqs.createMore}
-          </label>
-          <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={onClose}>
-            <X className="size-4" />
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">
-          <input
-            autoFocus
-            value={f.title}
-            placeholder={t.reqs.titlePlaceholder}
-            onChange={(e) => setF({ ...f, title: e.target.value })}
-            className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3"
-          />
+  // 手机上不挂轻点提示：一点就弹出的提示会盖住旁边的状态、优先级
+  const designToggle = (
+              <button aria-pressed={f.kind === 'design'} onClick={() => setF({ ...f, kind: f.kind === 'design' ? 'feature' : 'design' })} className={cx(chip, f.kind === 'design' && 'border-accent/50 bg-accent-soft text-accent hover:text-accent')}>
+                <Palette className="size-3.5" />
+                {t.design.toggle}
+              </button>
+  )
+  const titleInput = (
+    <input
+      autoFocus
+      value={f.title}
+      placeholder={t.reqs.titlePlaceholder}
+      onChange={(e) => setF({ ...f, title: e.target.value })}
+      className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3"
+    />
+  )
+  const fields = (
+    <>
           <section>
             <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
             <AttachZone value={files} onChange={setFiles} compact>
@@ -329,20 +320,16 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
               }
               items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...(projects.data?.projects ?? []).filter((p) => !p.hidden || p.id === f.project_id).sort((a, b) => Number(b.id === lastUsed) - Number(a.id === lastUsed)).map((p) => ({ label: p.name, hint: p.id === lastUsed ? [t.reqs.lastUsed, p.remote].filter(Boolean).join(t.common.sep) : p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
             />
-            <Tip content={t.design.makeHint}>
-              <button aria-pressed={f.kind === 'design'} onClick={() => setF({ ...f, kind: f.kind === 'design' ? 'feature' : 'design' })} className={cx(chip, f.kind === 'design' && 'border-accent/50 bg-accent-soft text-accent hover:text-accent')}>
-                <Palette className="size-3.5" />
-                {t.design.toggle}
-              </button>
-            </Tip>
+            {desktop ? <Tip content={t.design.makeHint}>{designToggle}</Tip> : designToggle}
           </div>
 
           <section>
             <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.acceptance}</h3>
             <Textarea minRows={3} value={f.acceptance ?? ''} placeholder={t.reqs.acceptancePlaceholder} onChange={(e) => setF({ ...f, acceptance: e.target.value })} />
           </section>
-        </div>
-        <div className="shrink-0 space-y-3 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+    </>
+  )
+  const targetRow = (
           <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
             <Send className="size-4 shrink-0 text-fg-3" />
             <span className="shrink-0 text-[13px] text-fg-3">{t.assign.field}</span>
@@ -360,6 +347,69 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
               items={[{ label: t.assign.nobody, checked: !to, onSelect: () => setTarget(null) }, { type: 'separator' }, ...targetItems(all, f.project_id, (s) => setTarget(s.key), { checked: to?.key })]}
             />
           </div>
+  )
+  const moreToggle = (
+    <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-fg-3">
+            <Switch checked={more} onChange={setMore} />
+            {t.reqs.createMore}
+          </label>
+  )
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      void submit(true)
+    }
+  }
+  // 手机：全屏编辑页，提交按钮在顶栏（键盘挡不住），交给谁、连续新建放在内容末尾（R-72）
+  if (!desktop)
+    return (
+      <FullSheet
+        open={open}
+        onClose={onClose}
+        title={t.reqs.newTitle}
+        header={
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              {t.common.cancel}
+            </Button>
+            <span className="min-w-0 flex-1 truncate text-center text-[15px] font-semibold text-fg">{t.reqs.newTitle}</span>
+            <Button variant="primary" loading={busy} disabled={!f.title.trim()} onClick={() => void submit(true)} icon={to ? <Send className="size-4" /> : <Plus className="size-4" />}>
+              {to ? t.assign.sendShort : t.common.create}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))]" onKeyDown={onKeyDown}>
+          {titleInput}
+          {fields}
+          {targetRow}
+          <div className="flex items-center gap-3">
+            {moreToggle}
+            {to && (
+              <Button size="sm" variant="ghost" className="-mr-2" disabled={!f.title.trim() || busy} onClick={() => void submit(false)}>
+                {t.reqs.createOnly}
+              </Button>
+            )}
+          </div>
+        </div>
+      </FullSheet>
+    )
+  return (
+    <Panel open={open} onClose={onClose} wide bare title={t.reqs.newTitle}>
+      <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKeyDown}>
+        <div className="flex shrink-0 items-center gap-2 px-5 pt-4 pb-2">
+          <h2 className="font-display text-lg text-fg">{t.reqs.newTitle}</h2>
+          {moreToggle}
+          <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={onClose}>
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">
+          {titleInput}
+          {fields}
+        </div>
+        <div className="shrink-0 space-y-3 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+          {targetRow}
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-xs text-fg-3 max-sm:hidden">{to ? t.reqs.createHintTo : t.reqs.createHint}</span>
             {to ? (

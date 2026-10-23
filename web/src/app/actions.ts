@@ -59,7 +59,14 @@ export function useActions() {
 
     createReq: (body: ReqFields) => send(() => unwrap(api.POST('/api/requirements', { body })), ['requirements']),
     updateReq: (ref: string, body: ReqFields) => run(() => unwrap(api.PUT('/api/requirements/{ref}', { params: { path: { ref } }, body })), ['requirements', 'sessions']),
-    deleteReq: (ref: string) => run(() => unwrap(api.DELETE('/api/requirements/{ref}', { params: { path: { ref } } })), ['requirements', 'sessions']),
+    // 删除：先从列表缓存里拿掉这一条、丢掉它的详情，再刷新别的——否则展开着的那一行会先去拉详情，闪出“记录不存在”
+    deleteReq: (ref: string) =>
+      run(async () => {
+        const r = await unwrap(api.DELETE('/api/requirements/{ref}', { params: { path: { ref } } }))
+        qc.setQueryData(qk.requirements, (d: { requirements?: { code: string }[] | null } | undefined) => d && { ...d, requirements: (d.requirements ?? []).filter((x) => x.code !== ref) })
+        qc.removeQueries({ queryKey: qk.requirement(ref) })
+        return r
+      }, ['sessions', 'plans']),
     linkReq: (ref: string, sessionKey: string, unlink = false) =>
       run(() => unwrap(api.POST('/api/requirements/{ref}/links', { params: { path: { ref } }, body: { session_key: sessionKey, unlink } })), ['requirements', 'sessions']),
 

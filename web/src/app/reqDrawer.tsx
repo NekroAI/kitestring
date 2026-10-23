@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ReqFields, Requirement } from '../api/client'
+import { ApiError, type ReqFields, type Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { noKbd, cx, relTime, useNow, usePref } from '../lib/util'
@@ -58,7 +58,7 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
     <AnnotateTarget.Provider value={(f) => setIncoming((x) => [...x, f])}>
     <div className="flex min-h-0 flex-1 flex-col">
       {top}
-      {q.isError ? (
+      {q.isError && q.error instanceof ApiError && q.error.status === 404 ? null : q.isError ? ( // 刚被删除：列表马上会收起这一条，不闪报错
         <div className="p-5">
           <ErrorState error={q.error} onRetry={() => q.refetch()} />
         </div>

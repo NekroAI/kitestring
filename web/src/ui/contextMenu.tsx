@@ -65,11 +65,12 @@ function Sheet({ items, open, onClose }: { items: CtxItem[]; open: boolean; onCl
   }
   const row = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] active:bg-hover disabled:opacity-40'
   return (
-    <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()} onAnimationEnd={() => !open && setSub(null)}>
+    // handleOnly：只有顶部把手能拖。整块可拖时，点菜单项手指稍微一动就被当成拖动，点击被吞掉、面板弹一下又回来
+    <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()} onAnimationEnd={() => !open && setSub(null)} handleOnly noBodyStyles>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-[60] bg-black/40" />
         <Drawer.Content aria-describedby={undefined} className="fixed inset-x-0 bottom-0 z-[60] max-h-[85dvh] overflow-y-auto rounded-t-3xl border-t border-line bg-surface px-3 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] outline-none">
-          <div className="mx-auto mt-1 mb-2 h-1.5 w-10 rounded-full bg-line-strong" />
+          <Drawer.Handle className="mx-auto mt-1 mb-2 !h-1.5 !w-10 !rounded-full !bg-line-strong" />
           <Drawer.Title className="sr-only">{t.common.more}</Drawer.Title>
           {items.map((it, i) =>
             it.type === 'separator' ? (
