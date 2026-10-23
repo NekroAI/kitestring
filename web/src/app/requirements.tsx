@@ -12,6 +12,7 @@ import { displayState, PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
+import { sessionTitle } from './SessionCard'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
 import { OwnBadge, useOwnership } from './ownership'
@@ -158,10 +159,10 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
           </Badge>
         )}
         {r.sessions.length > 0 && (
-          <Tip content={t.reqs.sessionsTip(r.sessions.length)}>
-            <span className="inline-flex items-center gap-1 text-xs text-fg-3 tabular">
-              <Monitor className="size-3.5" />
-              {r.sessions.length}
+          <Tip content={own?.session ? own.text : t.reqs.sessionsTip(r.sessions.length)}>
+            <span className="inline-flex min-w-0 items-center gap-1 text-xs text-fg-3 tabular">
+              <Monitor className="size-3.5 shrink-0" />
+              {own?.session ? <span className="max-w-[12em] truncate">{sessionTitle(own.session)}</span> : r.sessions.length}
             </span>
           </Tip>
         )}

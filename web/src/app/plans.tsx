@@ -259,8 +259,8 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
       ) : (
         <p className="text-[13px] text-fg-3">{t.plan.noSummary}</p>
       )}
-      <AttachZone value={files} onChange={setFiles} className="mt-3">
-        <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.comment} className="bg-surface" />
+      <AttachZone value={files} onChange={setFiles} compact className="mt-3">
+        <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.comment} className="bg-surface pr-10" />
       </AttachZone>
       {x.paused && <p className="mt-2 text-xs text-danger">{t.plan.pausedHint}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -445,8 +445,8 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
               <div className="shrink-0 space-y-2.5 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
                 <p className="text-xs text-fg-3">{approval ? t.plan.approveHint : t.plan.startHint}</p>
                 {approval && (
-                  <AttachZone value={files} onChange={setFiles}>
-                    <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.approveNote} />
+                  <AttachZone value={files} onChange={setFiles} compact>
+                    <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.approveNote} className="pr-10" />
                   </AttachZone>
                 )}
                 <div className="flex items-center justify-end gap-2">

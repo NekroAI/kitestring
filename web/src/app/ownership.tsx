@@ -1,9 +1,10 @@
-import { CircleDashed, Clock3, Inbox, Loader, Lock, PauseCircle, UserX } from 'lucide-react'
+import { ChevronRight, CircleDashed, Clock3, Inbox, Loader, Lock, PauseCircle, UserX } from 'lucide-react'
 import type { Requirement, Session } from '../api/client'
 import { useDecisions, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { displayState } from '../ui/marks'
+import { StatusDot, displayState } from '../ui/marks'
+import { useOpenSession } from './nav'
 import { sessionTitle } from './SessionCard'
 
 // 这条需求现在谁在管、什么时候会动（R-66）。和后端的排队规则一一对应：
@@ -76,14 +77,27 @@ export function OwnBadge({ own, className }: { own: Own; className?: string }) {
 }
 
 // OwnLine：需求详情顶部常驻的一行，说清现在谁在管、什么时候会动（没人接手时用底部的“交给会话”）。
+// 有负责的会话时，后面跟一个可点的会话名（带设备），点开会话详情（R-71）。
 export function OwnLine({ r }: { r: Requirement }) {
   const own = useOwnership()(r)
+  const openSession = useOpenSession()
   if (!own) return null
   const Icon = toneIcon[own.tone]
+  const s = own.session
   return (
     <div className={cx('mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg px-2.5 py-1.5 text-[13px]', toneCls[own.tone])}>
       <Icon className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1">{own.text}</span>
+      {s && (
+        <button
+          onClick={() => openSession(s.key)}
+          className="-my-0.5 inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md bg-surface/70 py-0.5 pr-1 pl-2 text-fg-2 transition hover:bg-surface hover:text-fg"
+        >
+          <StatusDot state={s.state} />
+          <span className="truncate">{[sessionTitle(s), s.device_name].filter(Boolean).join(t.common.sep)}</span>
+          <ChevronRight className="size-3.5 shrink-0 text-fg-3" />
+        </button>
+      )}
     </div>
   )
 }

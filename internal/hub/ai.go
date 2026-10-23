@@ -113,8 +113,11 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 	}
 	if s.AI.Title {
 		fields = append(fields, `"phase": 当前阶段，取值之一：planning（规划/调研）、implementing（实现中）、debugging（排查问题）、testing（测试验证）、done（本项工作已完成）、blocked（遇到无法自行解决的问题）`)
+		// 标题随会话手上的事更新：一个会话常常连着做好几件事，第一条指令起的标题很快就过时了（R-71）
 		if x.Title == "" {
-			fields = append(fields, `"title": 不超过 12 个汉字的任务标题，不要标点`)
+			fields = append(fields, `"title": 不超过 12 个汉字的任务标题，概括这个会话现在在做的事，不要标点`)
+		} else {
+			fields = append(fields, fmt.Sprintf(`"title": 会话原标题是「%s」；如果还贴合这一轮在做的事就原样输出，否则改成不超过 12 个汉字、概括现在在做的事的新标题，不要标点`, x.Title))
 		}
 	}
 	if s.AI.Digest {
