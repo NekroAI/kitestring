@@ -127,8 +127,19 @@ export const zh = {
     P3: '低',
   } as Record<string, string>,
   desk: {
-    counts: (act: number, run: number, parked: number, reply: number) =>
-      [act ? `${act} 件要你处理` : '没有要你处理的事', run && `${run} 个在跑`, parked && `${parked} 个待命`, reply && `${reply} 个久未回复`].filter(Boolean).join(' · '),
+    counts: (act: number, run: number, parked: number, reply: number, asks = 0) =>
+      [act ? `${act} 件要你处理` : '没有要你处理的事', asks && `${asks} 个在等你回复`, run && `${run} 个在跑`, parked && `${parked} 个待命`, reply && `${reply} 个久未回复`].filter(Boolean).join(' · '),
+    // 「在等你回复」（R-117）：最后一条回复在问你、却没提正式决策的会话。放在「要你处理」档，但不计入件数
+    asks: (n: number) => `另有 ${n} 个在等你回复`,
+    asksTip: '它最后的回复在问你，但没有提正式的决策，不计入件数',
+    awaiting: '在等你回复',
+    awaitingHint: '它最后的回复在问你，但没有提正式的决策',
+    fullReply: '看全文',
+    replyPlaceholder: '直接回复它',
+    replyParked: '它挂着等待，回复后立刻接着干',
+    replyIdle: '它这一轮已结束，回复在你下次给它发消息时送达',
+    replySend: '回复',
+    replySent: (parked: boolean) => (parked ? '已回复，它会立刻接着干' : '已回复，会在你下次给它发消息时送达'),
     tier: { act: '要你处理', run: '在跑', rest: '待命 / 空闲 / 久未回复' },
     ended: (n: number) => `已结束 ${n}`,
     dotTip: { act: '要你处理', run: '在跑', park: '待命' } as Record<string, string>,

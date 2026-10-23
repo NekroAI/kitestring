@@ -250,6 +250,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/sessions/{key}/wait-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ks wait 开始时自查：名下有没有用户能在面板上推进的事项，没有时返回提示（R-117） */
+        post: operations["agent-wait-check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/team": {
         parameters: {
             query?: never;
@@ -985,6 +1002,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{key}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 回复在等你回复的会话（送达方式同留言） */
+        post: operations["reply-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -1149,6 +1183,10 @@ export interface components {
             session_key?: string;
             /** @enum {string} */
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
+        };
+        "Agent-wait-checkRequest": {
+            /** @description 对话记录里最新的一段回复；不传时用上一轮结束时的最后回复 */
+            text?: string;
         };
         "Agent-withdraw-decisionRequest": {
             /** @description 撤回原因 */
@@ -1781,6 +1819,10 @@ export interface components {
             /** Format: date-time */
             to: string;
         };
+        "Reply-sessionRequest": {
+            comment?: string;
+            files?: string[] | null;
+        };
         ReqCreatedOutBody: {
             acceptance: string;
             code: string;
@@ -1943,6 +1985,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             recent_tools: components["schemas"]["ToolAct"][] | null;
+            reply_ask?: string;
             requirements: components["schemas"]["RequirementRef"][] | null;
             /** @enum {string} */
             role: "" | "pm" | "dev" | "advisor" | "reviewer";
@@ -2107,6 +2150,21 @@ export interface components {
         "Update-workspaceRequest": {
             name: string;
             notify: components["schemas"]["NotifyConfig"];
+        };
+        WaitCheck: {
+            /** @description 判断依据：最后一条回复的最后一段 */
+            ask?: string;
+            /** @description 最后一条回复看起来在问用户 */
+            asking: boolean;
+            /** @description 要输出给 Agent 的提示；有待处理事项时为空 */
+            hint?: string;
+            /** @description 这些事项，如「D-12 待你答复」「R-3 待验收」 */
+            items: string[] | null;
+            /**
+             * Format: int64
+             * @description 名下等用户处理的事项件数
+             */
+            pending: number;
         };
         WeComConfig: {
             webhook: string;
@@ -2675,6 +2733,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-wait-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-wait-checkRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaitCheck"];
                 };
             };
             /** @description Error */
@@ -4390,6 +4483,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionDetailOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "reply-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Reply-sessionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
                 };
             };
             /** @description Error */

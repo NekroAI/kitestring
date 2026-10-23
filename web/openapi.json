@@ -327,6 +327,16 @@
         ],
         "type": "object"
       },
+      "Agent-wait-checkRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "description": "对话记录里最新的一段回复；不传时用上一轮结束时的最后回复",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Agent-withdraw-decisionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2639,6 +2649,24 @@
         ],
         "type": "object"
       },
+      "Reply-sessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ReqCreatedOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -3283,6 +3311,9 @@
               "null"
             ]
           },
+          "reply_ask": {
+            "type": "string"
+          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/RequirementRef"
@@ -3897,6 +3928,44 @@
         "required": [
           "name",
           "notify"
+        ],
+        "type": "object"
+      },
+      "WaitCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "ask": {
+            "description": "判断依据：最后一条回复的最后一段",
+            "type": "string"
+          },
+          "asking": {
+            "description": "最后一条回复看起来在问用户",
+            "type": "boolean"
+          },
+          "hint": {
+            "description": "要输出给 Agent 的提示；有待处理事项时为空",
+            "type": "string"
+          },
+          "items": {
+            "description": "这些事项，如「D-12 待你答复」「R-3 待验收」",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "pending": {
+            "description": "名下等用户处理的事项件数",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pending",
+          "items",
+          "asking"
         ],
         "type": "object"
       },
@@ -4767,6 +4836,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/sessions/{key}/wait-check": {
+      "post": {
+        "operationId": "agent-wait-check",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-wait-checkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WaitCheck"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "ks wait 开始时自查：名下有没有用户能在面板上推进的事项，没有时返回提示（R-117）",
         "tags": [
           "agent"
         ]
@@ -7071,6 +7191,57 @@
           }
         },
         "summary": "手动标记 / 取消“已完成”（你再给它发消息时自动取消）",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{key}/reply": {
+      "post": {
+        "operationId": "reply-session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reply-sessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "回复在等你回复的会话（送达方式同留言）",
         "tags": [
           "sessions"
         ]

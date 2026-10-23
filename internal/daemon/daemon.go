@@ -65,8 +65,9 @@ type toolUse struct {
 
 // sessionInfo 缓存每个会话不常变化的信息。
 type sessionInfo struct {
-	client string
-	model  string
+	client     string
+	model      string
+	transcript string // 对话记录文件；ks wait 开始时从这里读最新一段回复（R-117）
 }
 
 // New 创建 daemon。
@@ -116,6 +117,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /status", d.handleStatus)
 	mux.HandleFunc("GET /session", d.handleSessionLookup)
 	mux.HandleFunc("GET /wait", d.handleWait)
+	mux.HandleFunc("GET /wait/check", d.handleWaitCheck)
 	mux.Handle("/agent/", d.watchTools(d.proxy))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
@@ -411,6 +413,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if model != "" {
 		info.model = model
 	}
+	if tp := str(p, "transcript_path"); tp != "" {
+		info.transcript = tp
+	}
 	ev.Client = info.client
 	if ev.Model == "" {
 		ev.Model = info.model
@@ -557,13 +562,17 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback, notes, assigns, plans, queue, roleNotes, reviewTasks, tells []protocol.Decision
+	var answers, feedback, notes, replies, assigns, plans, queue, roleNotes, reviewTasks, tells []protocol.Decision
 	for _, dec := range fresh {
 		switch dec.Kind {
 		case "feedback":
 			feedback = append(feedback, dec)
 		case "note":
-			notes = append(notes, dec)
+			if dec.ReqCode == "" { // 工作台上直接回复会话（R-117），不关联需求
+				replies = append(replies, dec)
+			} else {
+				notes = append(notes, dec)
+			}
 		case "assign":
 			assigns = append(assigns, dec)
 		case "plan":
@@ -625,6 +634,12 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			d.writeItem(&b, dec)
 		}
 	}
+	if len(replies) > 0 {
+		b.WriteString("[Kitestring] 用户在 Kitestring 工作台上回复了你的最后一条消息，请据此继续：\n")
+		for _, dec := range replies {
+			d.writeItem(&b, dec)
+		}
+	}
 	if len(notes) > 0 {
 		b.WriteString("[Kitestring] 用户对以下需求留言，请结合当前工作处理（需求状态不变）：\n")
 		for _, dec := range notes {
@@ -666,7 +681,11 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 	case "feedback":
 		fmt.Fprintf(b, "- %s「%s」修改意见：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "note":
-		fmt.Fprintf(b, "- %s「%s」留言：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+		if dec.ReqCode == "" {
+			fmt.Fprintf(b, "- 用户回复：%s\n", dec.Answer)
+		} else {
+			fmt.Fprintf(b, "- %s「%s」留言：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+		}
 	case "plan":
 		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "queue":

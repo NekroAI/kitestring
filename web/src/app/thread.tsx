@@ -15,6 +15,7 @@ import { LiveFeed, Ticker } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { Linkify } from '../ui/refmark'
+import { awaitingReply, ReplyBox } from './replyBox'
 
 // SessionLine：会话在做什么的一行描述（摘要 → 最后动作 → 你最后说的话）。
 function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean } | null {
@@ -78,9 +79,15 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
   const ds = s ? displayState(s) : 'idle'
   const st = stateStyle[ds] ?? stateStyle.idle
   // 决策、转交放右栏就地作答；验收带证据和截图，横跨整张卡放在下面，窄栏里放不开
-  const side = th.decisions.length > 0 || th.orphans.length > 0
+  const asks = awaitingReply(s)
+  const side = th.decisions.length > 0 || th.orphans.length > 0 || asks
   const items = side && (
     <List space={12}>
+      {asks && (
+        <Item key="reply" space={12} layout>
+          <ReplyBox s={s} />
+        </Item>
+      )}
       {th.decisions.map((d) => (
         <Item key={d.id} space={12} layout>
           <DecisionComposer d={d} embedded />

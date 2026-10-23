@@ -43,6 +43,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentNeed(agentAPI)
 	h.registerAgentBrief(agentAPI)
 	h.registerAgentTell(agentAPI)
+	h.registerAgentWaitCheck(agentAPI)
+	h.registerSessionReply(webAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -94,6 +96,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentNeed(api)
 	h.registerAgentBrief(api)
 	h.registerAgentTell(api)
+	h.registerAgentWaitCheck(api)
+	h.registerSessionReply(api)
 	return api.OpenAPI()
 }
 

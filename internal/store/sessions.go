@@ -54,6 +54,7 @@ type Session struct {
 	Title            string           `json:"title"`       // 模型生成的会话标题
 	DigestDone       string           `json:"digest_done"` // 等你回复时：这一轮做了什么
 	DigestAsk        string           `json:"digest_ask"`  // 等你回复时：在等你决定什么
+	ReplyAsk         string           `json:"reply_ask,omitempty"` // 最后一条回复在问你时，它的最后一段（R-117）；你回复后清空
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
 	EndedAt          *time.Time       `json:"ended_at,omitempty"`
@@ -89,7 +90,7 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role,
+	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
@@ -100,7 +101,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role,
+		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
@@ -322,7 +323,13 @@ func (s *Store) SetLastReply(ctx context.Context, key, text string, at time.Time
 	} else if cur != nil && cur.At.After(at) {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET last_reply = ?, last_reply_at = ? WHERE key = ?`, text, ts(at), key)
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET last_reply = ?, last_reply_at = ?, reply_ask = ? WHERE key = ?`, text, ts(at), AskTail(text), key)
+	return err
+}
+
+// ClearReplyAsk：你已经回复了它（终端里发了消息，或在工作台回复），不再算“在等你回复”（R-117）。
+func (s *Store) ClearReplyAsk(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET reply_ask = '' WHERE key = ?`, key)
 	return err
 }
 

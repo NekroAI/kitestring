@@ -56,6 +56,9 @@ export function useActions() {
       run(() => unwrap(api.POST('/api/requirements/{ref}/assign', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions', 'sessions']),
     askReview: (ref: string, sessionKey: string, comment = '') =>
       run(() => unwrap(api.POST('/api/requirements/{ref}/reviewer', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions']),
+    // 回复在等你回复的会话（R-117）：送达方式同留言，挂着 ks wait 时立刻唤醒
+    replySession: (key: string, comment: string, files: string[]) =>
+      send(() => unwrap(api.POST('/api/sessions/{key}/reply', { params: { path: { key } }, body: { comment, files } })), ['sessions', 'decisions']),
     markDone: (key: string, done: boolean) => run(() => unwrap(api.POST('/api/sessions/{key}/done', { params: { path: { key } }, body: { done } })), ['sessions']),
     resendDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/resend', { params: { path: { ref } }, body: {} })), ['decisions']),
 

@@ -251,6 +251,9 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		if next.DigestDone != "" || next.DigestAsk != "" {
 			_ = h.store.ClearDigest(ctx, key)
 		}
+		if next.ReplyAsk != "" { // 你在终端里回了它，不再算在等你回复（R-117）
+			_ = h.store.ClearReplyAsk(ctx, key)
+		}
 		go h.aiOnPrompt(key, ev.Prompt)
 	case ev.Name == "Stop" && ev.LastReply != "":
 		go h.aiOnStop(key, next.LastPrompt, ev.LastReply)

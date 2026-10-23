@@ -16,6 +16,7 @@ import { SessionRow, ThreadCard } from '../app/thread'
 import { PlanCard } from '../app/plans'
 import { asking, Briefs, PlanChips, PlansRail, RecentRail, TeamRail, useTodo } from '../app/desk'
 import { ProjGlyph } from '../ui/refmark'
+import { awaitingReply } from '../app/replyBox'
 
 // 工作台（R-147，D-151）：一个会话视图，按状态自动分三档——
 //   要你处理（大卡，就地作答）→ 在跑（中卡，实时动作）→ 待命 / 空闲 / 久未回复（一行）；已结束折叠在最底下。
@@ -77,12 +78,16 @@ function useTiers(wb: ReturnType<typeof useWorkbench>, k: string): Tiers {
     for (const g of wb.projects) {
       for (const th of g.threads) {
         const s = th.s
-        const act = th.decisions.length > 0 || th.reviews.length > 0 || th.orphans.length > 0 || (!!s && asking(s))
+        // 在等你回复（R-117）：最后回复在问你、没提正式决策的会话也进这一档，但不计入件数
+        const act = th.decisions.length > 0 || th.reviews.length > 0 || th.orphans.length > 0 || (!!s && asking(s)) || awaitingReply(s)
         if (act) {
           if (match(s, k) || !s) out.act.push({ key: th.key, pk: g.key, name: g.name, th })
         } else if (s) place(s, g)
       }
-      for (const s of g.active) place(s, g)
+      for (const s of g.active) {
+        if (awaitingReply(s) && match(s, k)) out.act.push({ key: s.key, pk: g.key, name: g.name, th: { key: s.key, s, decisions: [], reviews: [], orphans: [], urgency: 5, items: 0 } })
+        else place(s, g)
+      }
       for (const s of g.ended) place(s, g)
     }
     if (!k)
@@ -107,11 +112,12 @@ function byProject<T extends { pk: string; name: string }>(items: T[]) {
 
 // ---------- 版面 ----------
 
-function TierTitle({ title, count }: { title: string; count: number }) {
+function TierTitle({ title, count, extra }: { title: string; count: number; extra?: React.ReactNode }) {
   return (
     <div className="mb-3 flex items-center gap-2.5">
       <h2 className="shrink-0 text-[13px] font-semibold text-fg-2">{title}</h2>
       <span className="text-xs text-fg-3 tabular">{count}</span>
+      {extra}
       <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
     </div>
   )
@@ -138,11 +144,11 @@ function Moving({ id, children, className, flash }: { id: string; children: Reac
 }
 
 // count：标题旁的数字；「要你处理」档按件数算（同一张大卡里可能有好几件），与页头、侧栏角标一致。
-function Section<T extends { pk: string; name: string; key: string }>({ title, items, multi, render, wrap, count }: { title: string; items: T[]; multi: boolean; render: (x: T) => React.ReactNode; wrap?: string; count?: number }) {
+function Section<T extends { pk: string; name: string; key: string }>({ title, items, multi, render, wrap, count, extra }: { title: string; items: T[]; multi: boolean; render: (x: T) => React.ReactNode; wrap?: string; count?: number; extra?: React.ReactNode }) {
   if (!items.length) return null
   return (
     <section className="mb-8">
-      <TierTitle title={title} count={count ?? items.length} />
+      <TierTitle title={title} count={count ?? items.length} extra={extra} />
       <div className="space-y-4">
         {byProject(items).map((g) => (
           <div key={g.pk}>
@@ -233,6 +239,8 @@ export default function WorkbenchPage() {
 
   const parked = tiers.rest.filter((x) => displayState(x.s) === 'parked').length
   const replies = tiers.rest.filter((x) => displayState(x.s) === 'waiting_reply').length
+  // 只是在等你回复、没有正式事项的会话：在「要你处理」档里，但件数只算正式事项（R-147 口径不变），单独标注
+  const asks = tiers.act.filter((x) => x.th && awaitingReply(x.th.s) && !x.th.decisions.length && !x.th.reviews.length && !x.th.orphans.length && !(x.th.s && asking(x.th.s))).length
   const projectsSeen = new Set([...tiers.act, ...tiers.run, ...tiers.rest].map((x) => x.pk))
   const multi = projectsSeen.size > 1
   const todoOnly = filter === 'todo'
@@ -259,6 +267,13 @@ export default function WorkbenchPage() {
       <Section
         title={t.desk.tier.act}
         count={todo.length}
+        extra={
+          asks > 0 && (
+            <Tip content={t.desk.asksTip}>
+              <span className="rounded-full bg-reply-soft px-2 py-0.5 text-xs text-reply">{t.desk.asks(asks)}</span>
+            </Tip>
+          )
+        }
         items={tiers.act}
         multi={multi}
         render={(x) => (
@@ -330,7 +345,7 @@ export default function WorkbenchPage() {
     <>
       <PageHeader
         title={t.home.title}
-        subtitle={wb.loading ? ' ' : t.desk.counts(todo.length, tiers.run.length, parked, replies)}
+        subtitle={wb.loading ? ' ' : t.desk.counts(todo.length, tiers.run.length, parked, replies, asks)}
         actions={
           recapOn && (
             <Button icon={<History className="size-4" />} onClick={() => setRecap(true)}>

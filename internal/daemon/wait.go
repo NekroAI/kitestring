@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -182,4 +185,108 @@ func instanceAlive(inst string) bool {
 		return false // ps 找不到该进程时以非零退出
 	}
 	return strings.Join(strings.Fields(string(out)), " ") == start
+}
+
+// handleWaitCheck：ks wait 开始前的自查（R-117）。从对话记录里读最新一段回复，连同会话键交给 Hub，
+// Hub 返回名下待处理事项与要输出的提示；Hub 连不上时返回空（不影响等待）。
+func (d *Daemon) handleWaitCheck(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	w.Header().Set("Content-Type", "application/json")
+	key := q.Get("session_key")
+	if key == "" {
+		ppid, _ := strconv.Atoi(q.Get("ppid"))
+		if inst := d.agentInstance(ppid); inst != "" {
+			d.mu.Lock()
+			key = d.instances[inst]
+			d.mu.Unlock()
+		}
+	}
+	if key == "" {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	d.mu.Lock()
+	tp := ""
+	if info := d.sessions[key]; info != nil {
+		tp = info.transcript
+	}
+	d.mu.Unlock()
+	body, _ := json.Marshal(map[string]string{"text": latestReply(tp)})
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/sessions/"+url.PathEscape(key)+"/wait-check", bytes.NewReader(body))
+	if err != nil {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+d.cfg.Token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 1<<20))
+}
+
+// latestReply 从对话记录尾部读出 Agent 最新的一段文字回复（Claude Code 与 Codex 的格式都认）；读不到时返回空。
+// Claude Code 在后台运行 ks wait 时这一轮还没结束，最新的回复只在对话记录里，Hub 存的还是上一轮的。
+func latestReply(path string) string {
+	buf := readTail(path, 512<<10)
+	if len(buf) == 0 {
+		return ""
+	}
+	lines := bytes.Split(buf, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
+		if len(line) == 0 || line[0] != '{' {
+			continue
+		}
+		var x struct {
+			Type    string `json:"type"`
+			Message struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+			Payload struct {
+				Type    string          `json:"type"`
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal(line, &x) != nil {
+			continue
+		}
+		var content json.RawMessage
+		switch {
+		case x.Type == "assistant" && x.Message.Role == "assistant": // Claude Code
+			content = x.Message.Content
+		case x.Type == "response_item" && x.Payload.Type == "message" && x.Payload.Role == "assistant": // Codex
+			content = x.Payload.Content
+		default:
+			continue
+		}
+		var parts []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(content, &parts) != nil {
+			continue
+		}
+		var texts []string
+		for _, p := range parts {
+			if (p.Type == "text" || p.Type == "output_text") && strings.TrimSpace(p.Text) != "" {
+				texts = append(texts, strings.TrimSpace(p.Text))
+			}
+		}
+		if len(texts) > 0 {
+			return strings.Join(texts, "\n\n")
+		}
+	}
+	return ""
 }
