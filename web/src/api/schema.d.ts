@@ -150,6 +150,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/sessions/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["agent-set-role"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/sessions/{key}/link": {
         parameters: {
             query?: never;
@@ -893,6 +909,14 @@ export interface components {
         "Agent-link-sessionRequest": {
             requirement: string;
         };
+        "Agent-set-roleRequest": {
+            /**
+             * @description pm / dev / advisor / reviewer；空为清除身份
+             * @enum {string}
+             */
+            role: "" | "pm" | "dev" | "advisor" | "reviewer";
+            session_key: string;
+        };
         "Agent-submit-stageRequest": {
             session_key?: string;
             summary: string;
@@ -984,7 +1008,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1363,6 +1387,16 @@ export interface components {
             feedback: components["schemas"]["Decision"][] | null;
             requirements: components["schemas"]["Requirement"][] | null;
         };
+        RoleOutBody: {
+            /** @description 因本次接管 PM 被降为无身份的会话 */
+            demoted: string[] | null;
+            /** @description 身份中文名；无身份时为空 */
+            label: string;
+            /** @description 身份提示词，ks role 直接打印给 Agent */
+            prompt: string;
+            role: string;
+            session_key: string;
+        };
         Session: {
             activity: number[] | null;
             branch: string;
@@ -1404,6 +1438,8 @@ export interface components {
             project_name?: string;
             recent_tools: components["schemas"]["ToolAct"][] | null;
             requirements: components["schemas"]["RequirementRef"][] | null;
+            /** @enum {string} */
+            role: "" | "pm" | "dev" | "advisor" | "reviewer";
             session_id: string;
             /** Format: date-time */
             started_at: string;
@@ -1871,6 +1907,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-set-role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-set-roleRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleOutBody"];
                 };
             };
             /** @description Error */

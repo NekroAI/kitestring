@@ -45,7 +45,15 @@ func Run(args []string, stdin io.Reader, stdout io.Writer) int {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
 	var resp protocol.HookResponse
-	if err := client.New(Timeout).Do(ctx, "POST", "/hook", req, &resp); err != nil || resp.Context == "" {
+	if err := client.New(Timeout).Do(ctx, "POST", "/hook", req, &resp); err != nil {
+		return 0
+	}
+	if resp.Block != "" {
+		// Stop hook 拦下结束：Claude Code 与 Codex 都认 decision=block，reason 交给 Agent 继续处理（R-83）
+		_ = json.NewEncoder(stdout).Encode(map[string]any{"decision": "block", "reason": resp.Block})
+		return 0
+	}
+	if resp.Context == "" {
 		return 0
 	}
 	name, _ := payload["hook_event_name"].(string)

@@ -67,6 +67,7 @@ type Session struct {
 	ToolsStale       string           `json:"tools_stale"`       // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
 	ContextTokens    int              `json:"context_tokens"`    // 最近一轮结束时的上下文 token 数（R-60）
 	ContextMax       int              `json:"context_max"`       // 上下文窗口；不知道时为 0
+	Role             string           `json:"role" enum:",pm,dev,advisor,reviewer"` // 会话身份（R-82）：pm 开发 dev 顾问 advisor 审查员 reviewer，空为无身份
 	RecentTools      []ToolAct        `json:"recent_tools"`      // 最近几次工具调用，旧 → 新（工作台滚动展示）
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
@@ -89,7 +90,7 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max,
+	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
@@ -100,7 +101,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax,
+		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
@@ -488,4 +489,85 @@ func (s *Store) fillActivity(ctx context.Context, x *Session) error {
 		}
 	}
 	return rows.Err()
+}
+
+// SetRole 设置会话身份（R-82）。同一项目只保留一个 PM：设为 pm 时，同项目原来的 PM 降为无身份，
+// 返回被降级的会话键。会话不属于任何项目时不做唯一性处理。
+func (s *Store) SetRole(ctx context.Context, key, role string) (demoted []string, err error) {
+	err = s.tx(ctx, func(t *sql.Tx) error {
+		var project sql.NullString
+		if err := t.QueryRowContext(ctx, `SELECT project_id FROM sessions WHERE key = ?`, key).Scan(&project); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if role == "pm" && project.Valid && project.String != "" {
+			rows, err := t.QueryContext(ctx, `SELECT key FROM sessions WHERE project_id = ? AND role = 'pm' AND key <> ?`, project.String, key)
+			if err != nil {
+				return err
+			}
+			for rows.Next() {
+				var k string
+				if err := rows.Scan(&k); err != nil {
+					rows.Close()
+					return err
+				}
+				demoted = append(demoted, k)
+			}
+			rows.Close()
+			if _, err := t.ExecContext(ctx, `UPDATE sessions SET role = '' WHERE project_id = ? AND role = 'pm' AND key <> ?`, project.String, key); err != nil {
+				return err
+			}
+		}
+		_, err := t.ExecContext(ctx, `UPDATE sessions SET role = ? WHERE key = ?`, role, key)
+		return err
+	})
+	return demoted, err
+}
+
+// RolesForDevice 返回该设备上有身份的会话：会话键 → 身份，下发给 daemon 用于注入与常驻检查。
+func (s *Store) RolesForDevice(ctx context.Context, deviceID string) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, role FROM sessions WHERE device_id = ? AND role <> ''`, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, r string
+		if err := rows.Scan(&k, &r); err != nil {
+			return nil, err
+		}
+		out[k] = r
+	}
+	return out, rows.Err()
+}
+
+// Presence 是常驻身份（PM / 开发）的在线状态（R-84 / R-86）：挂着 ks wait 为待命；在跑、等授权、在问你为工作中；
+// 一轮结束却没挂 ks wait、已结束或失联为离线。其它身份返回空。
+func (x Session) Presence() string {
+	if x.Role != "pm" && x.Role != "dev" {
+		return ""
+	}
+	switch {
+	case x.State == StateEnded || x.State == StateLost:
+		return "offline"
+	case x.Parked || x.State == StateParked:
+		return "standby"
+	case x.State == StateRunning || x.State == StateBackground || x.State == StateWaitApproval:
+		return "working"
+	case x.State == StateWaitReply && askingUser(x.StateDetail):
+		return "working"
+	}
+	return "offline"
+}
+
+func askingUser(detail string) bool {
+	for _, p := range []string{"AskUserQuestion", "ExitPlanMode", "request_user_input"} {
+		if strings.HasPrefix(detail, p) {
+			return true
+		}
+	}
+	return false
 }

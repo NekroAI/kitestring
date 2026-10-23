@@ -362,6 +362,10 @@ func (h *Hub) staleDelivered(ctx context.Context, list []store.Decision) map[str
 			stale[d.ID] = d.PlanID != "" && (latest[d.PlanID] != d.ID || !plans[d.PlanID])
 			continue
 		}
+		if d.Kind == store.KindRole {
+			stale[d.ID] = true // 身份变更只送达一次；压缩后补发的是当前身份的提示词
+			continue
+		}
 		if d.RequirementID == "" {
 			continue
 		}

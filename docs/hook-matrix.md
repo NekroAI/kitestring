@@ -69,3 +69,18 @@
 - Claude `--resume` 恢复会话后 `session_id` 保持不变（M2 实测），Codex 文档同样说明恢复为同一会话。
 - hook 退出码 2 在两边都表示“阻止”：hook 命令配错导致进程以 2 退出时会拦住用户的 prompt（M2 实测），因此 `ks` 永不以 2 退出。
 - Codex 0.163.0-alpha 的 `exec` 在 stdin 不是终端时会等待 stdin 结束，与 hook 无关，仅影响测试脚本。
+
+## 7. Stop hook 拦下结束（R-83 实测）
+
+验证日期：2026-10-23。被测版本：Claude Code 2.1.285；Codex CLI 0.159.3。方法：会话执行 `ks role pm|dev` 后直接结束本轮，由 `ks hook <tool> Stop` 输出 `{"decision":"block","reason":"…"}`。
+
+| 项 | Claude Code 2.1.285 | Codex 0.159.3 |
+|---|---|---|
+| `decision: block` 拦下结束 | ✅ 实测：本轮继续，`reason` 作为反馈交给模型（界面显示为 “Stop hook error: …”） | ✅ 实测：本轮继续，`reason` 以 `hook_prompt` 注入 |
+| 被拦后按提示挂上 `ks wait` | ✅ 后台运行，第二次 Stop 放行（交互式与 `-p` 均实测） | ✅ 前台运行；同一轮内继续 |
+| `ks wait` 超时后续等 | ✅ 交互式实测：后台任务结束触发新一轮，Agent 按超时提示重新挂上 | ✅ 每次前台等待结束后 Stop 再被拦，同一轮内反复续等 |
+
+结论：
+- 两边都能用 Stop hook 保证 PM / 开发常驻在线。Kitestring 的规则：身份为 PM 或开发、daemon 上没有该会话的 `ks wait` 时拦下（先宽限 1 秒，避开后台 `ks wait` 刚启动的竞态）；挂上 `ks wait` 或用户发新消息时计数清零，连续拦 2 次仍不挂就放行。被拦下的那次 Stop 不上报 Hub，网页不会闪成“等你回复”。
+- Codex 的代价：它没有后台任务，常驻等于“一轮永不结束”，每次等待结束（最长 30 分钟）都要带着当前上下文再调一次模型。实测 1 分钟一续，约 11 次累计输入 74 万 token（97% 命中缓存）；按 30 分钟一续，一天约 48 次。规模小的项目可以用 Codex 做开发会话；PM 推荐用 Claude Code（后台等待，等待期间不调模型）。
+- 没有身份的会话不受影响（e2e：`TestResidentStopGuard`）。

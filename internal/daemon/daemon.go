@@ -25,6 +25,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/summary"
 	"github.com/NekroAI/kitestring/internal/version"
 )
@@ -50,6 +51,8 @@ type Daemon struct {
 	toolCond  *sync.Cond // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
 	instances map[string]string // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
 	waiting   map[string]int64  // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
+	roles     map[string]string // 会话键 → 身份（Hub 下发，R-82）
+	stopBlocks map[string]int   // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
 	waitSeq   int64
 	tools     toolsState // 各会话的 Kitestring 工具版本（R-59）
 }
@@ -78,7 +81,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}, tools: newToolsState()}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, tools: newToolsState()}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -250,6 +253,10 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		d.decisions = e.Decisions
 		d.toolCond.Broadcast() // 唤醒挂起等待的 ks wait
 		d.mu.Unlock()
+	case protocol.MsgRoles:
+		d.mu.Lock()
+		d.roles = e.Roles
+		d.mu.Unlock()
 	case protocol.MsgConfig:
 		if e.Config != nil {
 			d.mu.Lock()
@@ -292,11 +299,20 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if block := d.stopGuard(ev); block != "" {
+		// 这一轮没有真正结束，不上报 Stop（否则网页会闪一下“等你回复”，还会推送通知）
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(protocol.HookResponse{Block: block})
+		return
+	}
 	ev.Tools = d.toolsForEvent(protocol.SessionKey(ev.Tool, ev.SessionID))
 	if err := d.q.pushEvent(ev); err != nil {
 		d.log.Warn("事件入队失败", "err", err)
 	}
 	resp := protocol.HookResponse{Context: d.injection(ev)}
+	if p := d.rolePrompt(ev); p != "" {
+		resp.Context = p + resp.Context
+	}
 	if ev.Name == "UserPromptSubmit" {
 		if note := d.toolsNote(protocol.SessionKey(ev.Tool, ev.SessionID)); note != "" {
 			resp.Context = note + resp.Context
@@ -530,7 +546,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback, notes, assigns, plans, queue []protocol.Decision
+	var answers, feedback, notes, assigns, plans, queue, roleNotes []protocol.Decision
 	for _, dec := range fresh {
 		switch dec.Kind {
 		case "feedback":
@@ -543,9 +559,14 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			plans = append(plans, dec)
 		case "queue":
 			queue = append(queue, dec)
+		case "role":
+			roleNotes = append(roleNotes, dec)
 		default:
 			answers = append(answers, dec)
 		}
+	}
+	for _, dec := range roleNotes {
+		fmt.Fprintf(&b, "[Kitestring] %s\n", dec.Answer)
 	}
 	if len(answers) > 0 {
 		b.WriteString("[Kitestring] 用户已对你之前提出的决策作出答复，请据此继续推进：\n")
@@ -599,6 +620,17 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		}
 	}
 	return text
+}
+
+// rolePrompt：有身份的会话恢复或压缩上下文后，补发身份提示词（R-82）。
+func (d *Daemon) rolePrompt(ev protocol.Event) string {
+	if ev.Name != "SessionStart" || (ev.Source != "resume" && ev.Source != "compact") {
+		return ""
+	}
+	d.mu.Lock()
+	role := d.roles[protocol.SessionKey(ev.Tool, ev.SessionID)]
+	d.mu.Unlock()
+	return roles.Prompt(role)
 }
 
 // writeItem 写一条答复或修改意见；附件给出本地路径，agent 可直接读取。
@@ -742,9 +774,20 @@ func (d *Daemon) lookupToolUse(id string, wait time.Duration) string {
 }
 
 // handleSessionLookup：ks mcp 用本次调用的 tool_use_id 查询会话（Claude Code 恢复会话后，MCP 进程环境里的会话 ID 会过期）。
+// 也可以用 ppid（ks 命令的父进程）查：沿父进程找到 Agent 进程，再按它最近一次 hook 对应的会话（ks role 用）。
 func (d *Daemon) handleSessionLookup(w http.ResponseWriter, r *http.Request) {
-	key := d.lookupToolUse(r.URL.Query().Get("tool_use_id"), time.Second)
-	d.noteTools(key, r.Header.Get(versionHeader)) // Claude 的 MCP 每次调用都先来这里查会话
+	q := r.URL.Query()
+	var key string
+	if ppid, _ := strconv.Atoi(q.Get("ppid")); ppid > 0 {
+		if inst := d.agentInstance(ppid); inst != "" {
+			d.mu.Lock()
+			key = d.instances[inst]
+			d.mu.Unlock()
+		}
+	} else {
+		key = d.lookupToolUse(q.Get("tool_use_id"), time.Second)
+		d.noteTools(key, r.Header.Get(versionHeader)) // Claude 的 MCP 每次调用都先来这里查会话
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"session_key": key})
 }

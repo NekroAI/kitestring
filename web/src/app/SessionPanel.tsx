@@ -8,7 +8,7 @@ import { Collapse, Item, List } from '../ui/motion'
 import { absTime, clockTime, copyText, cx, duration, relTime, shortPath, useNow } from '../lib/util'
 import { Badge, Button, ErrorState, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
-import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark } from '../ui/marks'
+import { displayState, PhaseBadge, RoleBadge, Sparkline, StatusPill, ToolMark } from '../ui/marks'
 import { useActions } from './actions'
 import { DecisionComposer, DecisionRow } from './DecisionCard'
 import { useOpenReq } from './nav'
@@ -168,6 +168,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           <span className="flex items-center gap-2.5">
             <ToolMark tool={s.tool} size="sm" />
             <span className="truncate">{sessionTitle(s)}</span>
+            <RoleBadge s={s} />
             <PhaseBadge phase={s.phase} />
           </span>
         ) : (

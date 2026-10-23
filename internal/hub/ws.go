@@ -89,6 +89,7 @@ func (h *Hub) serveDeviceWS(w http.ResponseWriter, r *http.Request) {
 		c.send(protocol.Envelope{Type: protocol.MsgConfig, Config: &cfg})
 	}
 	h.pushDecisions(ctx, dev.ID)
+	h.pushRoles(ctx, dev.ID)
 
 	for {
 		var e protocol.Envelope

@@ -266,7 +266,9 @@ func runWait(args []string) error {
 	case "delivered":
 		fmt.Print(res.Text)
 	case "timeout":
-		if codex {
+		if res.Resident {
+			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。你需要常驻在线：重新运行 ks wait 继续待命%s。\n", waited, map[bool]string{true: "", false: "（在后台运行）"}[codex])
+		} else if codex {
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。请结束本轮：用一两句话说明做到哪、在等用户什么；不要再运行 ks wait 续等。用户在 Kitestring 上答复后，会在下次对话时送达给你。\n", waited)
 		} else {
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。可以结束本轮；用户回来后会在对话里继续。\n", waited)

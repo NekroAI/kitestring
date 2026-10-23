@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -136,8 +137,8 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		x.Parked = false
 		x.ParkedUntil = nil
 		if x.State == store.StateParked {
-			if ev.Reason == "delivered" {
-				x.State = store.StateRunning // 收到你的答复，马上继续
+			if ev.Reason == "delivered" || (ev.Reason == "timeout" && roles.Resident(x.Role)) {
+				x.State = store.StateRunning // 收到你的答复，马上继续；常驻的 PM / 开发超时后会接着等，不算等你（R-83）
 			} else {
 				x.State = store.StateWaitReply
 			}

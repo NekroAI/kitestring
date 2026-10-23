@@ -64,6 +64,41 @@ export function PhaseBadge({ phase }: { phase: string }) {
   return <span className={cx('shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-[11px] font-medium', phaseStyle[phase])}>{t.phase[phase]}</span>
 }
 
+// presence：常驻身份（PM / 开发）的在线状态（R-84）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；
+// 结束了一轮却没挂上 ks wait、已结束或失联为离线。其它身份不需要常驻，返回空。
+type RoleSession = { role?: string; state: string; state_detail?: string; parked?: boolean; done_at?: string | null; last_active_at?: string }
+export function presence(s: RoleSession): '' | 'standby' | 'working' | 'offline' {
+  if (s.role !== 'pm' && s.role !== 'dev') return ''
+  if (s.state === 'ended' || s.state === 'lost') return 'offline'
+  if (s.parked || s.state === 'parked') return 'standby'
+  const ds = displayState(s)
+  if (ds === 'running' || ds === 'background' || ds === 'waiting_approval' || ds === 'waiting_answer') return 'working'
+  return 'offline'
+}
+
+export const presenceDot: Record<string, string> = { standby: 'bg-run', working: 'bg-accent', offline: 'bg-fg-3/50' }
+
+// RoleBadge：会话身份（R-82）；PM / 开发带在线状态点，离线时直接写出来（R-84）。
+export function RoleBadge({ s }: { s: RoleSession }) {
+  const role = s.role
+  if (!role || !t.role[role]) return null
+  const p = presence(s)
+  return (
+    <Tip content={p ? `${t.roleTip[role]}${t.common.sep}${t.presence[p]}` : t.roleTip[role]}>
+      <span
+        className={cx(
+          'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold',
+          p === 'offline' ? 'bg-sunken text-fg-3' : 'bg-accent-soft text-accent',
+        )}
+      >
+        {p && <span className={cx('size-1.5 rounded-full', presenceDot[p])} />}
+        {t.role[role]}
+        {p === 'offline' && <span className="font-normal">{t.presence.offline}</span>}
+      </span>
+    </Tip>
+  )
+}
+
 // ToolMark：Claude Code / Codex 的品牌标记，放在统一的柔和底板上。
 export function ToolMark({ tool, size = 'md' }: { tool: string; size?: 'sm' | 'md' | 'lg' }) {
   const box = size === 'sm' ? 'size-5 rounded-md' : size === 'lg' ? 'size-9 rounded-xl' : 'size-8 rounded-[10px]'

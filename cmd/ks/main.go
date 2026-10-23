@@ -46,6 +46,7 @@ agent 调用：
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结
   decision raise ...     提出决策
+  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / 开发 / 顾问 / 审查员），打印身份提示词
   wait [--timeout 1h]    挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）
 
   version                打印版本
@@ -87,6 +88,8 @@ func main() {
 		err = runDecision(args)
 	case "wait":
 		err = runWait(args)
+	case "role":
+		err = runRole(args)
 	case "help", "--help", "-h":
 		fmt.Println(usage)
 	default:
@@ -126,7 +129,8 @@ func runHub(args []string) error {
 	fs := flag.NewFlagSet("hub", flag.ContinueOnError)
 	addr := fs.String("addr", "0.0.0.0:7310", "监听地址")
 	data := fs.String("data", "", "数据库路径（默认 ~/.kitestring/hub.db）")
-	if err := fs.Parse(args); err != nil {
+	// 参数可写在位置参数之后（如 device-add <名称> --data x）：否则会静默落到默认数据库
+	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 

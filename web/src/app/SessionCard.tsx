@@ -34,7 +34,7 @@ const shortClock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, 
 import { Card, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { CtxMark } from './assign'
-import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
+import { displayState, PhaseBadge, RoleBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer } from './DecisionCard'
 import { LiveFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
@@ -206,6 +206,7 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[15px] font-semibold text-fg">{sessionTitle(s)}</span>
+            <RoleBadge s={s} />
             <PhaseBadge phase={s.phase} />
             <span className="ml-auto shrink-0 pl-1">
               <StatusPill state={ds} since={s.state_since} now={now} />

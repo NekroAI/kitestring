@@ -31,6 +31,7 @@ type WaitResult struct {
 	Text    string `json:"text,omitempty"`
 	Session string `json:"session_key,omitempty"`
 	Timeout string `json:"timeout,omitempty"` // 实际用的最长等待时间
+	Resident bool  `json:"resident,omitempty"` // 会话是 PM / 开发，要求常驻在线：超时后接着等（R-83）
 	Error   string `json:"error,omitempty"`
 }
 
@@ -64,6 +65,7 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	d.waitSeq++
 	my := d.waitSeq
 	d.waiting[key] = my
+	delete(d.stopBlocks, key) // 已按要求挂上，不再算连续拦下
 	d.toolCond.Broadcast() // 让同一会话较早的等待退出
 	d.mu.Unlock()
 	d.reportWait(tool, sid, protocol.EventWait, "", &until)
@@ -98,7 +100,7 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	}
 	d.mu.Unlock()
 
-	res := WaitResult{Reason: reason, Session: key, Timeout: timeout.String()}
+	res := WaitResult{Reason: reason, Session: key, Timeout: timeout.String(), Resident: d.resident(key)}
 	if reason == "delivered" {
 		res.Text = d.injection(protocol.Event{Name: "UserPromptSubmit", Tool: tool, SessionID: sid, TurnID: "ks-wait"})
 	}

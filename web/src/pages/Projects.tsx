@@ -8,7 +8,7 @@ import { t } from '../i18n'
 import { cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
 import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input } from '../ui/base'
 import { Menu, Modal, useConfirm } from '../ui/overlay'
-import { displayState } from '../ui/marks'
+import { displayState, presence, presenceDot } from '../ui/marks'
 import { Item, List } from '../ui/motion'
 import { useActions } from '../app/actions'
 import { useOpenReq } from '../app/nav'
@@ -146,6 +146,27 @@ function Section({ title, right, children }: { title: string; right?: ReactNode;
   )
 }
 
+// Team：这个项目有没有 PM、几个开发在线（R-84）。没有任何身份会话时不显示。
+function Team({ sessions }: { sessions: Session[] }) {
+  const pm = sessions.filter((s) => s.role === 'pm').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
+  const devs = sessions.filter((s) => s.role === 'dev' && s.state !== 'ended')
+  const online = devs.filter((s) => presence(s) !== 'offline').length
+  if (!pm && !devs.length) return null
+  const pp = pm ? presence(pm) : 'offline'
+  return (
+    <span className="flex shrink-0 items-center gap-3 text-xs text-fg-3">
+      <span className="flex items-center gap-1.5">
+        <span className={cx('size-1.5 rounded-full', presenceDot[pp])} />
+        {pm ? t.projects.pm(t.presence[pp]) : t.projects.noPm}
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className={cx('size-1.5 rounded-full', online ? presenceDot.standby : presenceDot.offline)} />
+        {t.projects.devs(online, devs.length)}
+      </span>
+    </span>
+  )
+}
+
 function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const openReq = useOpenReq()
   const navigate = useNavigate()
@@ -213,7 +234,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
         </div>
       </div>
 
-      <Section title={t.projects.now}>
+      <Section title={t.projects.now} right={<Team sessions={p.sessions} />}>
         {live.length ? (
           <Card className="@container p-1.5">
             <List>

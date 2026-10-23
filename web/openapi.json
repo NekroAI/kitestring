@@ -98,6 +98,31 @@
         ],
         "type": "object"
       },
+      "Agent-set-roleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "description": "pm / dev / advisor / reviewer；空为清除身份",
+            "enum": [
+              "",
+              "pm",
+              "dev",
+              "advisor",
+              "reviewer"
+            ],
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "role"
+        ],
+        "type": "object"
+      },
       "Agent-submit-stageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -467,7 +492,8 @@
               "note",
               "assign",
               "plan",
-              "queue"
+              "queue",
+              "role"
             ],
             "type": "string"
           },
@@ -1883,6 +1909,43 @@
         ],
         "type": "object"
       },
+      "RoleOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "demoted": {
+            "description": "因本次接管 PM 被降为无身份的会话",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "身份中文名；无身份时为空",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "身份提示词，ks role 直接打印给 Agent",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "role",
+          "label",
+          "prompt",
+          "demoted"
+        ],
+        "type": "object"
+      },
       "Session": {
         "additionalProperties": false,
         "properties": {
@@ -2005,6 +2068,16 @@
               "null"
             ]
           },
+          "role": {
+            "enum": [
+              "",
+              "pm",
+              "dev",
+              "advisor",
+              "reviewer"
+            ],
+            "type": "string"
+          },
           "session_id": {
             "type": "string"
           },
@@ -2085,6 +2158,7 @@
           "tools_stale",
           "context_tokens",
           "context_max",
+          "role",
           "recent_tools",
           "requirements",
           "pending_decisions"
@@ -2957,6 +3031,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Requirement"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/sessions/role": {
+      "post": {
+        "operationId": "agent-set-role",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-set-roleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleOutBody"
                 }
               }
             },

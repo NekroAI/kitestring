@@ -103,6 +103,7 @@ const (
 	MsgDecisions = "decisions" // hub → daemon：待注入决策全集（覆盖式）
 	MsgDelivered = "delivered" // daemon → hub：决策已注入
 	MsgConfig    = "config"    // hub → daemon：下发给设备的运行配置
+	MsgRoles     = "roles"     // hub → daemon：本设备上有身份的会话全集（覆盖式，R-82）
 )
 
 // DeviceConfig 是 Hub 下发给 daemon 的运行配置。
@@ -120,6 +121,7 @@ type Envelope struct {
 	Decisions []Decision    `json:"decisions,omitempty"`
 	Delivered []Delivery    `json:"delivered,omitempty"`
 	Config    *DeviceConfig `json:"config,omitempty"`
+	Roles     map[string]string `json:"roles,omitempty"` // 会话键 → 身份
 }
 
 // Hello 是 daemon 连接后上报的设备信息。
@@ -149,4 +151,6 @@ type HookRequest struct {
 // HookResponse 是 daemon 给 hook 的回复；Context 非空时由 hook 作为 additionalContext 输出。
 type HookResponse struct {
 	Context string `json:"context,omitempty"`
+	// Block 非空时 hook 拦下这次结束（Stop），并把它作为理由交给 Agent 继续处理（R-83）
+	Block string `json:"block,omitempty"`
 }

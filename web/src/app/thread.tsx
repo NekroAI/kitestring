@@ -4,7 +4,7 @@ import type { Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, usePref } from '../lib/util'
 import { Card, Tip } from '../ui/base'
-import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
+import { displayState, PhaseBadge, RoleBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import type { Thread } from './inbox'
 import { useOpenSession } from './nav'
@@ -47,7 +47,8 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-fg">{sessionTitle(s)}</span>
           {showProject && s.project_name && <span className="shrink-0 text-xs text-fg-3">{s.project_name}</span>}
-          <PhaseBadge phase={s.phase} />
+          <RoleBadge s={s} />
+            <PhaseBadge phase={s.phase} />
         </div>
         {a && (
           <Ticker id={a.text} className={cx('mt-0.5 h-5 text-[13px] text-fg-3', a.mono && 'font-mono text-[12px]')}>
@@ -110,7 +111,8 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate text-[15px] font-semibold text-fg">{sessionTitle(s)}</span>
-                <PhaseBadge phase={s.phase} />
+                <RoleBadge s={s} />
+            <PhaseBadge phase={s.phase} />
                 <span className="ml-auto shrink-0 pl-1">
                   <StatusPill state={ds} since={s.state_since} now={now} />
                 </span>

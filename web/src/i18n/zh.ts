@@ -91,6 +91,19 @@ export const zh = {
     done: '已完成',
     blocked: '遇到问题',
   } as Record<string, string>,
+  role: {
+    pm: 'PM',
+    dev: '开发',
+    advisor: '顾问',
+    reviewer: '审查员',
+  } as Record<string, string>,
+  roleTip: {
+    pm: '项目经理：接需求、分派、跟进验收；常驻在线',
+    dev: '开发：实现分派来的需求；常驻在线',
+    advisor: '顾问：陪你讨论、记需求草稿，不派活',
+    reviewer: '审查员：只做审查分析，意见挂在需求上',
+  } as Record<string, string>,
+  presence: { standby: '在线待命', working: '工作中', offline: '离线' } as Record<string, string>,
   permMode: {
     plan: '计划模式',
     acceptEdits: '自动接受编辑',
@@ -424,6 +437,9 @@ export const zh = {
     deploy: '部署',
   } as Record<string, string>,
   projects: {
+    pm: (state: string) => `PM ${state}`,
+    noPm: '没有 PM',
+    devs: (online: number, total: number) => (total ? `开发 ${online} / ${total} 在线` : '没有开发'),
     autoDispatch: '会话空闲时自动送达待开始的需求',
     autoDispatchHint: '你确认为待开始的需求，会在关联的会话一轮做完或待命时整批送过去（一次最多 10 条）；关掉后需要你手动交出',
     title: '项目',
