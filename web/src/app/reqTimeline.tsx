@@ -256,14 +256,31 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             <>
               {t.timeline.decision}
               <RefChip code={d.code} status={d.status} link={false} />
+              {d.status === 'closed' && <Badge tone="neutral">{t.timeline.withdrawn}</Badge>}
             </>
           }
           at={d.answered_at ?? d.created_at}
           now={now}
+          muted={d.status === 'closed'}
         >
           <p className="text-sm text-fg">
             <Linkify text={d.short_title || d.question} />
           </p>
+          {d.status === 'closed' && (d.close_reason || d.replaced_by) && (
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-2">
+              {d.close_reason && (
+                <span>
+                  {t.timeline.withdrawnReason}：<Linkify text={d.close_reason} />
+                </span>
+              )}
+              {d.replaced_by && (
+                <span className="inline-flex items-center gap-1">
+                  {t.timeline.replacedBy}
+                  <RefChip code={d.replaced_by} />
+                </span>
+              )}
+            </p>
+          )}
           {d.answer && (
             <Quote cls="bg-sunken/70">
               <span className="mr-1.5 text-fg-3">{t.timeline.answer}</span>

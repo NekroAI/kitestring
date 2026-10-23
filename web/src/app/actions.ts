@@ -47,7 +47,7 @@ export function useActions() {
       send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
     reassign: (ref: string, sessionKey: string) =>
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
-    closeDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: {} })), ['decisions', 'sessions']),
+    closeDecision: (ref: string, why: { reason?: string; replaced_by?: string } = {}) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: why })), ['decisions', 'sessions', 'requirements']),
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
       send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions']),
     note: (ref: string, comment: string, files: string[]) =>

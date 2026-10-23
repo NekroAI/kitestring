@@ -53,6 +53,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/decisions/{ref}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent 撤回自己提的、还没答复的决策（R-136） */
+        post: operations["agent-withdraw-decision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/plans": {
         parameters: {
             query?: never;
@@ -1133,6 +1150,13 @@ export interface components {
             /** @enum {string} */
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
         };
+        "Agent-withdraw-decisionRequest": {
+            /** @description 撤回原因 */
+            reason?: string;
+            /** @description 取代它的决策编号，如 D-142 */
+            replaced_by?: string;
+            session_key?: string;
+        };
         AgentDecisionInBody: {
             /** @description 请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言 */
             approval?: boolean;
@@ -1250,6 +1274,7 @@ export interface components {
             assigned_by?: string;
             blocks?: components["schemas"]["Block"][] | null;
             choices?: number[] | null;
+            close_reason?: string;
             code: string;
             context: string;
             context_files: components["schemas"]["FileRef"][] | null;
@@ -1272,6 +1297,7 @@ export interface components {
             project_name?: string;
             question: string;
             recommendation: string;
+            replaced_by?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
@@ -1292,6 +1318,7 @@ export interface components {
             block_warnings?: string[] | null;
             blocks?: components["schemas"]["Block"][] | null;
             choices?: number[] | null;
+            close_reason?: string;
             code: string;
             context: string;
             context_files: components["schemas"]["FileRef"][] | null;
@@ -1314,6 +1341,7 @@ export interface components {
             project_name?: string;
             question: string;
             recommendation: string;
+            replaced_by?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
@@ -2198,6 +2226,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-withdraw-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-withdraw-decisionRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {

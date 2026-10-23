@@ -263,9 +263,28 @@ func runReq(args []string) error {
 	}
 }
 
+// runWithdraw：ks decision withdraw D-x [--reason 原因] [--replaced-by D-y]（R-136）。
+func runWithdraw(args []string) error {
+	fs := flag.NewFlagSet("decision withdraw", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
+	reason := fs.String("reason", "", "撤回原因")
+	replaced := fs.String("replaced-by", "", "取代它的决策编号，如 D-142")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() < 1 {
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]（只能撤回自己提的、用户还没答复的决策）")
+	}
+	_, err := agentCallOut("POST", "/agent/decisions/"+url.PathEscape(fs.Arg(0))+"/withdraw", compact(map[string]any{"session_key": cliSession(*session), "reason": *reason, "replaced_by": *replaced}))
+	return err
+}
+
 func runDecision(args []string) error {
+	if len(args) >= 1 && args[0] == "withdraw" {
+		return runWithdraw(args[1:])
+	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")

@@ -74,6 +74,8 @@ type Decision struct {
 	AnsweredAt       *time.Time `json:"answered_at,omitempty"`
 	DeliveredAt      *time.Time `json:"delivered_at,omitempty"`
 	DeliveredTurn    string     `json:"delivered_turn,omitempty"`
+	CloseReason      string     `json:"close_reason,omitempty"` // 撤回 / 关闭时写的原因（R-136）
+	ReplacedBy       string     `json:"replaced_by,omitempty"`  // 取代它的决策编号，如 D-142（R-136）
 }
 
 func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
@@ -81,7 +83,7 @@ func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
-	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by
+	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -96,7 +98,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var answered, delivered sql.NullString
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
-		&d.PlanID, &pseq, &d.AssignedBy)
+		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy)
 	d.Code = decCode(seq)
 	if pseq > 0 {
 		d.PlanCode = planCode(pseq)
@@ -288,17 +290,52 @@ func (s *Store) DecisionsBetween(ctx context.Context, from, to time.Time) ([]Dec
 	return s.queryDecs(ctx, decSelect+` WHERE (x.created_at >= ? AND x.created_at <= ?) OR (x.answered_at >= ? AND x.answered_at <= ?) ORDER BY x.seq`, ts(from), ts(to), ts(from), ts(to))
 }
 
-// CloseDecision 关闭决策，不再注入。
-func (s *Store) CloseDecision(ctx context.Context, ref string) (Decision, error) {
+// CloseDecision 关闭决策，不再注入。reason 与 replacedBy（取代它的决策编号）可为空，写入后在时间线上显示（R-136）。
+func (s *Store) CloseDecision(ctx context.Context, ref, reason, replacedBy string) (Decision, error) {
 	d, err := s.GetDecision(ctx, ref)
 	if err != nil {
 		return d, err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ? WHERE id = ?`, DecClosed, d.ID)
+	replacedBy = strings.TrimSpace(replacedBy)
+	if replacedBy != "" {
+		nd, err := s.GetDecision(ctx, replacedBy)
+		if err != nil {
+			return d, fmt.Errorf("取代它的决策不存在：%s", replacedBy)
+		}
+		if nd.ID == d.ID {
+			return d, errors.New("不能被自己取代")
+		}
+		replacedBy = nd.Code
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, close_reason = ?, replaced_by = ? WHERE id = ?`, DecClosed, strings.TrimSpace(reason), replacedBy, d.ID)
 	if err != nil {
 		return d, err
 	}
 	return s.GetDecision(ctx, d.ID)
+}
+
+// WithdrawDecision 是 Agent 撤回自己提的、还没答复的决策（R-136）：只能撤回本会话提的 decision 类、
+// 状态为待决策的那条；已答复、已接收或已关闭的不能撤回。
+func (s *Store) WithdrawDecision(ctx context.Context, ref, sessionKey, reason, replacedBy string) (Decision, error) {
+	d, err := s.GetDecision(ctx, ref)
+	if err != nil {
+		return d, err
+	}
+	owner := d.OriginSession
+	if owner == "" {
+		owner = d.SessionKey
+	}
+	switch {
+	case d.Kind != KindDecision:
+		return d, fmt.Errorf("%s 不是决策，不能撤回", d.Code)
+	case sessionKey == "" || owner != sessionKey:
+		return d, fmt.Errorf("%s 不是本会话提的，只能撤回自己提的决策", d.Code)
+	case d.Status == DecClosed:
+		return d, fmt.Errorf("%s 已关闭", d.Code)
+	case d.Status != DecPending:
+		return d, fmt.Errorf("%s 用户已答复，不能撤回", d.Code)
+	}
+	return s.CloseDecision(ctx, ref, reason, replacedBy)
 }
 
 // DecisionsForDevice 返回目标会话位于该设备的待注入决策：“已决策待接收”的全部，

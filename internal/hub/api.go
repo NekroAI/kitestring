@@ -831,8 +831,8 @@ func (h *Hub) registerWeb(api huma.API) {
 	decisionAction("resend-decision", "resend", func(ctx context.Context, ref string, _ map[string]string) (store.Decision, error) {
 		return h.store.ResendDecision(ctx, ref)
 	})
-	decisionAction("close-decision", "close", func(ctx context.Context, ref string, _ map[string]string) (store.Decision, error) {
-		return h.store.CloseDecision(ctx, ref)
+	decisionAction("close-decision", "close", func(ctx context.Context, ref string, b map[string]string) (store.Decision, error) {
+		return h.store.CloseDecision(ctx, ref, b["reason"], b["replaced_by"])
 	})
 
 	// 需求看板
@@ -1271,6 +1271,22 @@ func (h *Hub) registerAgent(api huma.API) {
 		func(ctx context.Context, in *refPath) (*decisionOut, error) {
 			d, err := h.store.GetDecision(ctx, in.Ref)
 			return &decisionOut{Body: d}, apiErr(err)
+		})
+	huma.Register(api, huma.Operation{OperationID: "agent-withdraw-decision", Method: http.MethodPost, Path: "/api/agent/decisions/{ref}/withdraw", Tags: tag, Summary: "Agent 撤回自己提的、还没答复的决策（R-136）"},
+		func(ctx context.Context, in *struct {
+			Ref  string `path:"ref"`
+			Body struct {
+				SessionKey string `json:"session_key,omitempty"`
+				Reason     string `json:"reason,omitempty" doc:"撤回原因"`
+				ReplacedBy string `json:"replaced_by,omitempty" doc:"取代它的决策编号，如 D-142"`
+			}
+		}) (*decisionOut, error) {
+			d, err := h.store.WithdrawDecision(ctx, in.Ref, in.Body.SessionKey, in.Body.Reason, in.Body.ReplacedBy)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			h.decisionsChanged(ctx, d)
+			return &decisionOut{Body: d}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-link-session", Method: http.MethodPost, Path: "/api/agent/sessions/{key}/link", Tags: tag},
 		func(ctx context.Context, in *struct {

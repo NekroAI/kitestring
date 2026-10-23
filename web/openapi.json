@@ -327,6 +327,23 @@
         ],
         "type": "object"
       },
+      "Agent-withdraw-decisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "撤回原因",
+            "type": "string"
+          },
+          "replaced_by": {
+            "description": "取代它的决策编号，如 D-142",
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AgentDecisionInBody": {
         "additionalProperties": false,
         "properties": {
@@ -796,6 +813,9 @@
               "null"
             ]
           },
+          "close_reason": {
+            "type": "string"
+          },
           "code": {
             "type": "string"
           },
@@ -894,6 +914,9 @@
             "type": "string"
           },
           "recommendation": {
+            "type": "string"
+          },
+          "replaced_by": {
             "type": "string"
           },
           "requirement_code": {
@@ -1000,6 +1023,9 @@
               "null"
             ]
           },
+          "close_reason": {
+            "type": "string"
+          },
           "code": {
             "type": "string"
           },
@@ -1098,6 +1124,9 @@
             "type": "string"
           },
           "recommendation": {
+            "type": "string"
+          },
+          "replaced_by": {
             "type": "string"
           },
           "requirement_code": {
@@ -4112,6 +4141,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/decisions/{ref}/withdraw": {
+      "post": {
+        "operationId": "agent-withdraw-decision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-withdraw-decisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Agent 撤回自己提的、还没答复的决策（R-136）",
         "tags": [
           "agent"
         ]

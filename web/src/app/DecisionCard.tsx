@@ -6,7 +6,7 @@ import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
-import { Menu } from '../ui/overlay'
+import { Menu, useConfirm } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
 import { AttachZone, fileUrl, Thumbs, uploadsBusy, useUploading, ZoomButton } from '../ui/attach'
 import { BlockList } from '../ui/blocks'
@@ -73,6 +73,13 @@ function Context({ text, expanded }: { text: string; expanded?: boolean }) {
 export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: boolean }) {
   const now = useNow()
   const { drafts, setDraft, queued, send, cancel } = useOutbox()
+  const { closeDecision } = useActions()
+  const confirm = useConfirm()
+  const closeIt = async () => {
+    if (await confirm({ title: `${t.decision.closeIt} ${d.code}`, description: t.decision.closeConfirm, confirmText: t.decision.closeIt, danger: true })) {
+      if (await closeDecision(d.code)) toast(t.decision.closed)
+    }
+  }
   const draft = drafts[d.code] ?? emptyDraft
   const options = useMemo(() => d.options ?? [], [d.options])
   const rec = d.recommendation?.trim() ?? ''
@@ -316,6 +323,9 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
               </Button>
             </Tip>
           )}
+          <Button size="sm" variant="ghost" className="text-fg-3 hover:text-danger" onClick={closeIt}>
+            {t.decision.closeIt}
+          </Button>
           <span className="ml-auto" />
           {options.length > 0 && !multi && (
             <Tip content={t.decision.keyTip}>

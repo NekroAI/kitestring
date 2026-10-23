@@ -24,7 +24,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 会话身份：用户说“接管 PM / 做开发（Dev）/ 当顾问（Adv）/ 当审查员（Rev）”之类的话时，运行 shell 命令 ks role pm|dev|advisor|reviewer，按它输出的身份提示词工作。
 - 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（草稿 / 待开始的需求会自动变为进行中）。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
-- 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
+- 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
 - 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
@@ -135,6 +135,12 @@ type evidenceIn struct {
 	Link    string           `json:"link,omitempty" jsonschema:"链接或文件路径"`
 	Images  []string         `json:"images,omitempty" jsonschema:"本机截图等图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时会直接看到。已经放进 figure / compare 块的图不用再列"`
 	Videos  []string         `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
+}
+
+type decisionWithdrawIn struct {
+	Decision   string `json:"decision" jsonschema:"要撤回的决策编号，如 D-135"`
+	Reason     string `json:"reason,omitempty" jsonschema:"撤回原因，一句话（显示在需求时间线上）"`
+	ReplacedBy string `json:"replaced_by,omitempty" jsonschema:"取代它的新决策编号，如 D-141；写了之后旧决策卡片会带跳转到新决策的链接"`
 }
 
 type decisionIn struct {
@@ -253,6 +259,23 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			for _, n := range out.Notices {
 				msg += "\n注意：" + n
+			}
+			return text(msg), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_withdraw", Description: "撤回自己提的、用户还没答复的决策：提错了、要修订时用，不要再提一条并在标题写“请忽略上一条”。撤回后从用户面板消失，在需求时间线留一条“已撤回”；修订时先 decision_raise 发新的，再用 replaced_by 指向它。只能撤回本会话提的；用户已答复的不能撤回。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in decisionWithdrawIn) (*mcp.CallToolResult, any, error) {
+			body := map[string]any{"reason": in.Reason, "replaced_by": in.ReplacedBy, "session_key": t.sessionKey(ctx, req)}
+			dropEmpty(body)
+			var out struct {
+				Code       string `json:"code"`
+				ReplacedBy string `json:"replaced_by"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/decisions/"+url.PathEscape(in.Decision)+"/withdraw", body, &out); err != nil {
+				return nil, nil, err
+			}
+			msg := "已撤回 " + out.Code
+			if out.ReplacedBy != "" {
+				msg += "，由 " + out.ReplacedBy + " 取代"
 			}
 			return text(msg), nil, nil
 		})
