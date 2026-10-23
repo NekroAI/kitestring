@@ -452,10 +452,37 @@ html [data-sonner-toaster] [data-close-button] {
 .ctx-target {
   -webkit-touch-callout: none;
 }
+/* 触屏：界面本身不可选（否则长按空白处会选中整屏），正文段落和输入框仍可选 */
 @media (pointer: coarse) {
-  .ctx-target {
+  body {
     -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
+  }
+  p,
+  pre,
+  .whitespace-pre-wrap,
+  .select-text {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .ctx-target,
+  .ctx-target * {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+  /* iOS 聚焦字号小于 16px 的输入框会自动放大页面 */
+  input:not([type='checkbox']):not([type='radio']),
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }
 

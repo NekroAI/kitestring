@@ -18,6 +18,22 @@ initTheme()
 // 看图器用指针事件自己算缩放，不受影响。
 document.addEventListener('gesturestart', (e) => e.preventDefault())
 document.addEventListener('touchmove', (e) => e.touches.length > 1 && e.preventDefault(), { passive: false })
+// 连点两下会触发 iOS 的双击放大：第二下拦掉默认行为，自己补发点击。看图器、批注板（touch-none）自己处理双击。
+let lastTap = { t: 0, x: 0, y: 0 }
+document.addEventListener(
+  'touchend',
+  (e) => {
+    const p = e.changedTouches[0]
+    if (!p || e.touches.length) return
+    const quick = e.timeStamp - lastTap.t < 350 && Math.abs(p.clientX - lastTap.x) < 40 && Math.abs(p.clientY - lastTap.y) < 40
+    lastTap = { t: e.timeStamp, x: p.clientX, y: p.clientY }
+    const el = e.target as HTMLElement
+    if (!quick || el.closest('input, textarea, select, [contenteditable], .touch-none')) return
+    e.preventDefault()
+    el.click()
+  },
+  { passive: false },
+)
 
 const queryClient = new QueryClient({
   defaultOptions: {
