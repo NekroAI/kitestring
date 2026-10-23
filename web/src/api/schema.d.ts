@@ -335,6 +335,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/status-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 需求状态变更历史：按需求 / 项目 / 时间段查（R-153） */
+        get: operations["agent-list-status-changes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/team": {
         parameters: {
             query?: never;
@@ -1206,6 +1223,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/status-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 需求状态变更历史：按需求 / 项目 / 时间段查（R-153） */
+        get: operations["list-status-changes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces": {
         parameters: {
             query?: never;
@@ -1815,6 +1849,7 @@ export interface components {
             stage_status?: string;
             stage_title?: string;
             status: string;
+            status_changes?: components["schemas"]["StatusChange"][] | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -1976,6 +2011,7 @@ export interface components {
             stage_status?: string;
             stage_title?: string;
             status: string;
+            status_changes?: components["schemas"]["StatusChange"][] | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -2332,6 +2368,7 @@ export interface components {
             stage_status?: string;
             stage_title?: string;
             status: string;
+            status_changes?: components["schemas"]["StatusChange"][] | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -2388,6 +2425,7 @@ export interface components {
             stage_status?: string;
             stage_title?: string;
             status: string;
+            status_changes?: components["schemas"]["StatusChange"][] | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -2578,6 +2616,32 @@ export interface components {
             title: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        StatusChange: {
+            /**
+             * @description 操作者：你 / Agent 会话 / 系统
+             * @enum {string}
+             */
+            actor: "user" | "agent" | "system";
+            /** Format: date-time */
+            at: string;
+            /** @description 原状态；新建需求时为空 */
+            from: string;
+            id: string;
+            /** @description 关联记录的编号：D-x 是这次放行、退回修改、撤回的那条放行；P-x 是计划 */
+            ref?: string;
+            requirement_code?: string;
+            requirement_id: string;
+            /** @description 会话当时的身份：pm / dev / advisor / reviewer */
+            role?: string;
+            /** @description 操作的会话键（Agent 操作时） */
+            session?: string;
+            to: string;
+            /** @description 经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 */
+            via: string;
+        };
+        StatusChangesOutBody: {
+            changes: components["schemas"]["StatusChange"][] | null;
         };
         "Subscribe-pushRequest": {
             auth: string;
@@ -3382,6 +3446,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WaitCheck"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-list-status-changes": {
+        parameters: {
+            query?: {
+                /** @description 需求编号（R-12）或 ID */
+                requirement?: string;
+                project_id?: string;
+                /** @description 起始时间（RFC 3339，含） */
+                since?: string;
+                /** @description 结束时间（RFC 3339，含） */
+                until?: string;
+                /** @description 最多返回多少条，0 = 不限 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusChangesOutBody"];
                 };
             };
             /** @description Error */
@@ -5421,6 +5524,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SummaryTestOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-status-changes": {
+        parameters: {
+            query?: {
+                /** @description 需求编号（R-12）或 ID */
+                requirement?: string;
+                project_id?: string;
+                /** @description 起始时间（RFC 3339，含） */
+                since?: string;
+                /** @description 结束时间（RFC 3339，含） */
+                until?: string;
+                /** @description 最多返回多少条，0 = 不限 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusChangesOutBody"];
                 };
             };
             /** @description Error */

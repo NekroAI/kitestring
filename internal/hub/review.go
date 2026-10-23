@@ -71,7 +71,7 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 		}
 		switch it.Verdict {
 		case "accept":
-			if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqDone); err != nil {
+			if r, err = h.store.SetRequirementStatus(store.WithActor(ctx, store.Actor{Via: "accept"}), r.ID, store.ReqDone); err != nil {
 				return nil, apiErr(err)
 			}
 			for _, k := range r.Sessions {
@@ -112,7 +112,7 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 				return nil, huma.Error400BadRequest(r.Code + "：请写下修改意见或附上图片")
 			}
 			before := r
-			if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
+			if r, err = h.store.SetRequirementStatus(store.WithActor(ctx, store.Actor{Via: "revise"}), r.ID, store.ReqInProgress); err != nil {
 				return nil, apiErr(err)
 			}
 			h.reopenStage(ctx, before, r.Status)
@@ -122,6 +122,9 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 			})
 			if err != nil {
 				return nil, apiErr(err)
+			}
+			if r.Status != before.Status {
+				_ = h.store.LinkLastStatusChange(ctx, r.ID, d.Code) // 状态变化与这条修改意见互相引用（R-153）
 			}
 			out.Body.Feedback = append(out.Body.Feedback, d)
 			if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
@@ -198,7 +201,11 @@ func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment, by stri
 		return store.Decision{}, apiErr(err)
 	}
 	if r.Status == store.ReqDraft || r.Status == store.ReqDone || r.Status == store.ReqShelved {
-		if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqReady); err != nil {
+		actx := store.WithActor(ctx, store.Actor{Via: "assign"})
+		if by != "" {
+			actx = store.WithActor(ctx, store.Actor{Kind: store.ActorAgent, Session: by, Via: "assign"}) // PM 派活
+		}
+		if r, err = h.store.SetRequirementStatus(actx, r.ID, store.ReqReady); err != nil {
 			return store.Decision{}, apiErr(err)
 		}
 	}

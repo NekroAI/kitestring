@@ -52,13 +52,15 @@ func (h *Hub) releaseCheck(ctx context.Context, r store.Requirement, callerKey, 
 
 // release 把草稿放行为待开始并留下放行记录。调用前先 releaseCheck。
 func (h *Hub) release(ctx context.Context, r store.Requirement, x store.Session, reason string) (store.Requirement, error) {
-	nr, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqReady)
+	nr, err := h.store.SetRequirementStatus(store.WithActor(ctx, store.Actor{Kind: store.ActorAgent, Session: x.Key, Role: x.Role, Via: "release"}), r.ID, store.ReqReady)
 	if err != nil {
 		return nr, apiErr(err)
 	}
-	if _, err := h.store.CreateRelease(ctx, nr, x.Key, x.Role, strings.TrimSpace(reason)); err != nil {
+	d, err := h.store.CreateRelease(ctx, nr, x.Key, x.Role, strings.TrimSpace(reason))
+	if err != nil {
 		return nr, apiErr(err)
 	}
+	_ = h.store.LinkLastStatusChange(ctx, nr.ID, d.Code) // 状态变化与放行记录互相引用（R-153）
 	return h.store.GetRequirement(ctx, nr.ID)
 }
 
@@ -129,7 +131,7 @@ func (h *Hub) registerRelease(api huma.API) {
 			if before.Status != store.ReqReady && before.Status != store.ReqInProgress && before.Status != store.ReqBlocked {
 				return nil, huma.Error400BadRequest(before.Code + " 已经交验收、完成、搁置或是草稿，不能撤回放行")
 			}
-			if _, err := h.store.SetRequirementStatus(ctx, before.ID, store.ReqDraft); err != nil {
+			if _, err := h.store.SetRequirementStatus(store.WithActor(ctx, store.Actor{Via: "withdraw", Ref: before.Release.Code}), before.ID, store.ReqDraft); err != nil {
 				return nil, apiErr(err)
 			}
 			h.withdrawRelease(ctx, before, "", in.Body.Reason)

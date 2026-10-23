@@ -1981,6 +1981,15 @@
           "status": {
             "type": "string"
           },
+          "status_changes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "title": {
             "type": "string"
           },
@@ -2490,6 +2499,15 @@
           },
           "status": {
             "type": "string"
+          },
+          "status_changes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -3788,6 +3806,15 @@
           "status": {
             "type": "string"
           },
+          "status_changes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "title": {
             "type": "string"
           },
@@ -4027,6 +4054,15 @@
           },
           "status": {
             "type": "string"
+          },
+          "status_changes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -4746,6 +4782,84 @@
           "stages",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "StatusChange": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "操作者：你 / Agent 会话 / 系统",
+            "enum": [
+              "user",
+              "agent",
+              "system"
+            ],
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "description": "原状态；新建需求时为空",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ref": {
+            "description": "关联记录的编号：D-x 是这次放行、退回修改、撤回的那条放行；P-x 是计划",
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_id": {
+            "type": "string"
+          },
+          "role": {
+            "description": "会话当时的身份：pm / dev / advisor / reviewer",
+            "type": "string"
+          },
+          "session": {
+            "description": "操作的会话键（Agent 操作时）",
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "via": {
+            "description": "经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "requirement_id",
+          "from",
+          "to",
+          "actor",
+          "via",
+          "at"
+        ],
+        "type": "object"
+      },
+      "StatusChangesOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "changes"
         ],
         "type": "object"
       },
@@ -6077,6 +6191,88 @@
           }
         },
         "summary": "ks wait 开始时自查：名下有没有用户能在面板上推进的事项，没有时返回提示（R-117）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/status-changes": {
+      "get": {
+        "operationId": "agent-list-status-changes",
+        "parameters": [
+          {
+            "description": "需求编号（R-12）或 ID",
+            "explode": false,
+            "in": "query",
+            "name": "requirement",
+            "schema": {
+              "description": "需求编号（R-12）或 ID",
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "起始时间（RFC 3339，含）",
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "description": "起始时间（RFC 3339，含）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "结束时间（RFC 3339，含）",
+            "explode": false,
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "description": "结束时间（RFC 3339，含）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回多少条，0 = 不限",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "最多返回多少条，0 = 不限",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusChangesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "需求状态变更历史：按需求 / 项目 / 时间段查（R-153）",
         "tags": [
           "agent"
         ]
@@ -8801,6 +8997,88 @@
         "summary": "用一段固定的示例对话调用摘要模型，验证配置是否可用",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/status-changes": {
+      "get": {
+        "operationId": "list-status-changes",
+        "parameters": [
+          {
+            "description": "需求编号（R-12）或 ID",
+            "explode": false,
+            "in": "query",
+            "name": "requirement",
+            "schema": {
+              "description": "需求编号（R-12）或 ID",
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "起始时间（RFC 3339，含）",
+            "explode": false,
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "description": "起始时间（RFC 3339，含）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "结束时间（RFC 3339，含）",
+            "explode": false,
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "description": "结束时间（RFC 3339，含）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多返回多少条，0 = 不限",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "最多返回多少条，0 = 不限",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusChangesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "需求状态变更历史：按需求 / 项目 / 时间段查（R-153）",
+        "tags": [
+          "requirements"
         ]
       }
     },

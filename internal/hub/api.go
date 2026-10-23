@@ -52,6 +52,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentMorning(agentAPI)
 	h.registerAgentWaitCheck(agentAPI)
 	h.registerSessionReply(webAPI)
+	h.registerStatusWeb(webAPI)
+	h.registerStatusAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -111,6 +113,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentMorning(api)
 	h.registerAgentWaitCheck(api)
 	h.registerSessionReply(api)
+	h.registerStatusWeb(api)
+	h.registerStatusAgent(api)
 	return api.OpenAPI()
 }
 
@@ -903,7 +907,11 @@ func (h *Hub) registerWeb(api huma.API) {
 				return nil, err
 			}
 			r.ID = cur.ID
-			r, err = h.store.UpdateRequirement(ctx, r)
+			uctx := ctx
+			if r.Status == store.ReqDraft && cur.Status != store.ReqDraft && cur.Release != nil {
+				uctx = store.WithActor(ctx, store.Actor{Via: "withdraw", Ref: cur.Release.Code})
+			}
+			r, err = h.store.UpdateRequirement(uctx, r)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -1123,7 +1131,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			if ex, err := h.store.OpenRequirementByTitle(ctx, r.ProjectID, r.Title); err == nil {
 				notices = append(notices, fmt.Sprintf("同项目已有同名未关闭需求 %s，这次仍新建了；如果是重复，请搁置新建的这条，改在 %s 上继续", ex.Code, ex.Code))
 			}
-			r, err = h.store.CreateRequirement(ctx, r)
+			r, err = h.store.CreateRequirement(store.WithActor(ctx, store.Actor{Session: in.Body.SessionKey}), r)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -1152,6 +1160,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
+			ctx = store.WithActor(ctx, store.Actor{Session: in.Body.SessionKey})
 			if in.Body.Status == store.ReqReady {
 				// 放行（R-166）：只有 PM / Adv、项目开关打开、从草稿、写了理由才行；不关联放行的会话，需求照常归原会话或 PM
 				x, err := h.releaseCheck(ctx, before, in.Body.SessionKey, in.Body.Reason)
@@ -1166,7 +1175,11 @@ func (h *Hub) registerAgent(api huma.API) {
 				h.kick(ctx, r.ID)
 				return &reqOut{Body: r}, nil
 			}
-			r, err := h.store.SetRequirementStatus(ctx, before.ID, in.Body.Status)
+			sctx := ctx
+			if in.Body.Status == store.ReqDraft && before.Release != nil {
+				sctx = store.WithActor(ctx, store.Actor{Via: "withdraw", Ref: before.Release.Code}) // 改回草稿 = 撤回放行
+			}
+			r, err := h.store.SetRequirementStatus(sctx, before.ID, in.Body.Status)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -1366,6 +1379,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				return nil, apiErr(err)
 			}
 			out := &linkOut{}
+			ctx = store.WithActor(ctx, store.Actor{Session: x.Key, Via: "link"})
 			// Agent 关联会话就是开始做了：待开始的需求自动进入进行中（R-35）。
 			// 草稿要先放行（R-166）：项目开了放行时记一次放行（理由「开始做 R-x」）再进入进行中；没开时只关联、不改状态
 			switch r.Status {

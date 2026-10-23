@@ -165,6 +165,7 @@ func stageName(st store.Stage) string { return fmt.Sprintf("阶段 %d「%s」", 
 // unlockStage 让阶段进入进行中：其中没做完的需求交给负责会话（关联、待开始并送达）；
 // 没有负责会话时只把草稿改为待开始，等你手动交出。
 func (h *Hub) unlockStage(ctx context.Context, x store.Plan, st store.Stage) error {
+	ctx = store.WithActor(ctx, store.Actor{Kind: store.ActorSystem, Via: "plan", Ref: x.Code}) // 阶段解锁是纸鸢自动做的（R-153）
 	if err := h.store.SetStageStatus(ctx, st.ID, store.StageActive, ""); err != nil {
 		return err
 	}
@@ -345,7 +346,7 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store
 	}
 	for _, r := range st.Requirements {
 		if r.Status == store.ReqReview {
-			done, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqDone)
+			done, err := h.store.SetRequirementStatus(store.WithActor(ctx, store.Actor{Via: "plan", Ref: x.Code}), r.ID, store.ReqDone)
 			if err != nil {
 				return x, err
 			}

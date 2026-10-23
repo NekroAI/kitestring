@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { CheckCheck, FileCheck2, HelpCircle, LockOpen, MessageSquareText, PencilLine, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
+import { ArrowRightLeft, CheckCheck, FileCheck2, HelpCircle, LockOpen, MessageSquareText, PencilLine, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Decision, Requirement } from '../api/client'
+import type { Decision, Requirement, StatusChange } from '../api/client'
 import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Tip } from '../ui/base'
@@ -77,6 +77,26 @@ function ReviewBody({ text }: { text: string }) {
   )
 }
 
+// 状态变化（R-153）：「草稿 → 待开始」两枚小标签
+const statusTone: Record<string, 'neutral' | 'accent' | 'run' | 'wait' | 'danger'> = {
+  draft: 'neutral',
+  ready: 'accent',
+  in_progress: 'run',
+  blocked: 'danger',
+  review: 'wait',
+  done: 'run',
+  shelved: 'neutral',
+}
+function StatusFlow({ c }: { c: StatusChange }) {
+  return (
+    <span className="inline-flex items-center gap-1 font-normal">
+      {c.from && <Badge tone={statusTone[c.from]}>{t.reqStatus[c.from] ?? c.from}</Badge>}
+      {c.from && <span className="text-fg-3">→</span>}
+      <Badge tone={statusTone[c.to]}>{t.reqStatus[c.to] ?? c.to}</Badge>
+    </span>
+  )
+}
+
 function Quote({ children, cls }: { children: ReactNode; cls: string }) {
   return <p className={cx('rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-fg', cls)}>{children}</p>
 }
@@ -136,13 +156,38 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   const bounds = revises.map((f) => f.answered_at ?? f.created_at)
   const roundOf = (at: string) => 1 + bounds.filter((b) => b <= at).length
   const current = 1 + revises.length
+  // 状态变更历史（R-153）。放行、退回修改的那次变化引用了对应记录（ref = D-x），并进那条记录的节点里显示；
+  // 新建时的初始状态并进「提出了这条需求」；其余每次变化单独一个节点。旧需求没有记录，照旧显示
+  const changes = r.status_changes ?? []
+  const merged = new Map<string, StatusChange>()
+  for (const c of changes) {
+    if (c.ref && (c.via === 'release' || c.via === 'revise') && mine.some((f) => f.code === c.ref)) merged.set(c.ref, c)
+  }
+  const created = changes.find((c) => c.via === 'create')
+  const flowOf = (code: string) => {
+    const c = merged.get(code)
+    return c ? <StatusFlow c={c} /> : null
+  }
 
   const entries: Entry[] = [
     {
       at: r.created_at,
       key: 'create',
       round: 1,
-      node: <Node icon={<Sparkles />} tone={tone.create} title={r.created_by === 'agent' ? t.timeline.createdAgent : t.timeline.createdUser} at={r.created_at} now={now} />,
+      node: (
+        <Node
+          icon={<Sparkles />}
+          tone={tone.create}
+          title={
+            <>
+              {r.created_by === 'agent' ? t.timeline.createdAgent : t.timeline.createdUser}
+              {created && created.to !== 'draft' && <StatusFlow c={created} />}
+            </>
+          }
+          at={r.created_at}
+          now={now}
+        />
+      ),
     },
   ]
   for (const e of r.evidence ?? []) {
@@ -275,6 +320,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
               <>
                 {t.timeline.release(role)}
                 <span className="truncate font-normal text-fg-3">{who(f.assigned_by)}</span>
+                {flowOf(f.code)}
                 {withdrawn && <Badge tone="neutral">{t.timeline.withdrawn}</Badge>}
               </>
             }
@@ -343,6 +389,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           title={
             <>
               {note ? t.timeline.note : t.timeline.revise}
+              {flowOf(f.code)}
               <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
             </>
           }
@@ -423,7 +470,48 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       ),
     })
   }
-  if (r.status === 'done') {
+  for (const c of changes) {
+    if (c.via === 'create' || (c.ref && merged.get(c.ref) === c)) continue
+    const accept = c.to === 'done' && c.actor === 'user'
+    let actor: ReactNode
+    if (c.actor === 'user') actor = t.timeline.byUser
+    else if (c.actor === 'agent')
+      actor = (
+        <>
+          {t.role[c.role ?? ''] || 'Agent'}
+          {who(c.session) && <span className="truncate font-normal text-fg-3">{who(c.session)}</span>}
+        </>
+      )
+    else actor = t.timeline.bySystem
+    const via = t.timeline.via[c.via]
+    entries.push({
+      at: c.at,
+      key: c.id,
+      round: roundOf(c.at),
+      node: (
+        <Node
+          icon={accept ? <CheckCheck /> : <ArrowRightLeft />}
+          tone={accept ? tone.done : tone.create}
+          title={
+            <>
+              {accept ? t.timeline.done : actor}
+              {!accept && <span className="font-normal text-fg-3">{t.timeline.changed}</span>}
+              <StatusFlow c={c} />
+              {(via || c.ref) && (
+                <span className="inline-flex items-center gap-1 font-normal text-fg-3">
+                  {via}
+                  {c.ref && <RefChip code={c.ref} />}
+                </span>
+              )}
+            </>
+          }
+          at={c.at}
+          now={now}
+        />
+      ),
+    })
+  }
+  if (r.status === 'done' && !changes.some((c) => c.to === 'done')) {
     entries.push({ at: r.updated_at, key: 'done', round: current, node: <Node icon={<CheckCheck />} tone={tone.done} title={t.timeline.done} at={r.updated_at} now={now} /> })
   }
   entries.sort((a, b) => a.at.localeCompare(b.at))

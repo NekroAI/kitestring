@@ -68,9 +68,11 @@ type Requirement struct {
 	Reviews          []Evidence `json:"reviews,omitempty"`  // 审查员的审查意见（R-88）：不改状态、不算验收证据
 	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
 	// Release：最近一次没撤回的放行（R-166）——PM / Adv 把草稿改为待开始时留下的记录：谁、什么身份、为什么
-	Release   *Release  `json:"release,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Release *Release `json:"release,omitempty"`
+	// StatusChanges：状态变更历史（R-153），时间正序；上线前的旧需求没有
+	StatusChanges []StatusChange `json:"status_changes,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 // Evidence 是需求的验收证据。
@@ -208,7 +210,10 @@ func (s *Store) CreateRequirement(ctx context.Context, r Requirement) (Requireme
 		n := now()
 		_, err := t.ExecContext(ctx, `INSERT INTO requirements(id, seq, project_id, title, detail, status, priority, source, acceptance, doc_link, files, created_by, kind, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id, seq, nullStr(r.ProjectID), r.Title, r.Detail, r.Status, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), r.CreatedBy, normKind(r.Kind), n, n)
-		return err
+		if err != nil {
+			return err
+		}
+		return recordStatus(WithActor(ctx, Actor{Via: "create"}), t, id, "", r.Status)
 	})
 	if err != nil {
 		return r, err
@@ -238,6 +243,9 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 		return r, err
 	}
 	if r.Reviews, err = s.ListReviews(ctx, r.ID); err != nil {
+		return r, err
+	}
+	if r.StatusChanges, err = s.ListStatusChanges(ctx, StatusQuery{RequirementID: r.ID}); err != nil {
 		return r, err
 	}
 	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask, KindRelease, KindEdit)
@@ -338,6 +346,11 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 		// 状态一变，“已交给某会话”的记录就作废：再回到待开始时重新排队
 		if _, err := t.ExecContext(ctx, `UPDATE requirements SET status = ?, offered_to = CASE WHEN status = ? THEN offered_to ELSE '' END, offered_at = CASE WHEN status = ? THEN offered_at ELSE '' END, updated_at = ? WHERE id = ?`, status, status, status, now(), cur.ID); err != nil {
 			return err
+		}
+		if cur.Status != status {
+			if err := recordStatus(ctx, t, cur.ID, cur.Status, status); err != nil {
+				return err
+			}
 		}
 		if cur.Status == ReqReview && status != ReqDone && status != ReqReview {
 			_, err := t.ExecContext(ctx, `UPDATE evidence SET voided = 1 WHERE requirement_id = ?`, cur.ID)

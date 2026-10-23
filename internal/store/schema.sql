@@ -235,3 +235,20 @@ CREATE TABLE IF NOT EXISTS review_advice (
 	by_session     TEXT NOT NULL,
 	at             TEXT NOT NULL
 );
+
+-- 需求状态变更历史（R-153）：每次换状态一行。actor：user 你 / agent 会话 / system 系统；via 是经由（网页、Agent 工具、放行……）；
+-- ref 是关联记录的编号（放行、退回修改等，D-x）。只从上线起记录
+CREATE TABLE IF NOT EXISTS status_changes (
+	id             TEXT PRIMARY KEY,
+	requirement_id TEXT NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+	from_status    TEXT NOT NULL,
+	to_status      TEXT NOT NULL,
+	actor          TEXT NOT NULL,
+	session_key    TEXT NOT NULL DEFAULT '',
+	role           TEXT NOT NULL DEFAULT '',
+	via            TEXT NOT NULL DEFAULT '',
+	ref            TEXT NOT NULL DEFAULT '',
+	at             TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS status_changes_req ON status_changes(requirement_id, at);
+CREATE INDEX IF NOT EXISTS status_changes_at ON status_changes(at);

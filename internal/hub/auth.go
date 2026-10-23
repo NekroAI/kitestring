@@ -117,7 +117,7 @@ func (h *Hub) requireWeb(next http.Handler) http.Handler {
 			writeErr(w, http.StatusUnauthorized, "未登录")
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(store.WithActor(r.Context(), store.Actor{Kind: store.ActorUser, Via: "web"}))) // 状态变更记为你在网页上操作（R-153）
 	})
 }
 
@@ -134,7 +134,8 @@ func (h *Hub) requireDevice(next http.Handler) http.Handler {
 			writeErr(w, http.StatusUnauthorized, "设备 token 无效或已吊销")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), deviceKey, dev)))
+		ctx := store.WithActor(context.WithValue(r.Context(), deviceKey, dev), store.Actor{Kind: store.ActorAgent, Via: "agent"})
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
