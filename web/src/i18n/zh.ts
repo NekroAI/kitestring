@@ -995,6 +995,7 @@ export const zh = {
       devices: '设备',
       notify: '通知',
       projects: '项目',
+      prompts: '身份提示词',
       ai: '智能',
       appearance: '外观',
       account: '账户',
@@ -1085,6 +1086,23 @@ export const zh = {
       testOk: '已发送',
       noChannel: '未设置',
       deleteConfirm: (name: string) => `删除工作空间「${name}」？其中的项目会回到默认。`,
+    },
+
+    prompts: {
+      hint: '会话声明身份（ks role）和恢复 / 压缩上下文后，纸鸢会把对应身份的提示词注入给 Agent。这里可以改写正文；身份抬头固定。只有你能在这里改，Agent 改不了。改完下一次注入立即生效。',
+      custom: '已改写',
+      builtin: '默认模板',
+      outdated: '默认模板已更新',
+      outdatedHint: '你改写之后，内置的默认模板又更新了。点「对比默认模板」查看新版，需要的话把新内容并进你的版本，或直接恢复默认。',
+      showDefault: '对比默认模板',
+      hideDefault: '收起默认模板',
+      defaultTitle: '当前默认模板',
+      restore: '恢复默认',
+      restoreConfirm: (name: string) => `恢复「${name}」的默认提示词？你改写的内容会被丢弃。`,
+      saved: '已保存，下一次注入立即生效',
+      restored: '已恢复默认',
+      empty: '提示词不能为空；想用回默认模板请点「恢复默认」',
+      chars: (n: number) => `${n} 字`,
     },
 
     projects: {

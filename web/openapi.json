@@ -4910,6 +4910,44 @@
         ],
         "type": "object"
       },
+      "RolePromptView": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "正在使用的正文：改写过的是改写版，否则等于默认模板",
+            "type": "string"
+          },
+          "custom": {
+            "description": "是否已被改写",
+            "type": "boolean"
+          },
+          "default": {
+            "description": "当前版本内置的默认模板正文",
+            "type": "string"
+          },
+          "label": {
+            "description": "显示名（PM / Dev / Adv / Rev）",
+            "type": "string"
+          },
+          "outdated": {
+            "description": "改写之后默认模板又更新了（可对比默认模板，或恢复默认）",
+            "type": "boolean"
+          },
+          "role": {
+            "description": "pm / dev / advisor / reviewer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "label",
+          "default",
+          "body",
+          "custom",
+          "outdated"
+        ],
+        "type": "object"
+      },
       "Session": {
         "additionalProperties": false,
         "properties": {
@@ -5194,6 +5232,19 @@
           "sessions",
           "devices",
           "rev"
+        ],
+        "type": "object"
+      },
+      "Set-role-promptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "description": "提示词正文（不含固定的身份抬头）；与默认模板一致时等同于恢复默认",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
         ],
         "type": "object"
       },
@@ -9737,6 +9788,145 @@
         "summary": "验收：逐条通过或提修改意见",
         "tags": [
           "requirements"
+        ]
+      }
+    },
+    "/api/role-prompts": {
+      "get": {
+        "operationId": "list-role-prompts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RolePromptView"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "四种身份的提示词（默认模板与改写版，R-98）",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/role-prompts/{role}": {
+      "delete": {
+        "operationId": "reset-role-prompt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pm",
+                "dev",
+                "advisor",
+                "reviewer"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolePromptView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "恢复某个身份的默认提示词（R-98）",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "set-role-prompt",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "enum": [
+                "pm",
+                "dev",
+                "advisor",
+                "reviewer"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Set-role-promptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolePromptView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "改写某个身份的提示词（只有网页能改，R-98）",
+        "tags": [
+          "settings"
         ]
       }
     },

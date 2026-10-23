@@ -131,13 +131,14 @@ type File struct {
 
 // WS 消息类型。
 const (
-	MsgHello     = "hello"     // daemon → hub：设备信息
-	MsgEvents    = "events"    // daemon → hub：批量事件
-	MsgAck       = "ack"       // hub → daemon：已持久化的事件 ID
-	MsgDecisions = "decisions" // hub → daemon：待注入决策全集（覆盖式）
-	MsgDelivered = "delivered" // daemon → hub：决策已注入
-	MsgConfig    = "config"    // hub → daemon：下发给设备的运行配置
-	MsgRoles     = "roles"     // hub → daemon：本设备上有身份的会话全集（覆盖式，R-82）
+	MsgHello       = "hello"        // daemon → hub：设备信息
+	MsgEvents      = "events"       // daemon → hub：批量事件
+	MsgAck         = "ack"          // hub → daemon：已持久化的事件 ID
+	MsgDecisions   = "decisions"    // hub → daemon：待注入决策全集（覆盖式）
+	MsgDelivered   = "delivered"    // daemon → hub：决策已注入
+	MsgConfig      = "config"       // hub → daemon：下发给设备的运行配置
+	MsgRoles       = "roles"        // hub → daemon：本设备上有身份的会话全集（覆盖式，R-82）
+	MsgRolePrompts = "role_prompts" // hub → daemon：用户改写过的身份提示词全集（覆盖式，R-98）
 )
 
 // DeviceConfig 是 Hub 下发给 daemon 的运行配置。
@@ -156,6 +157,8 @@ type Envelope struct {
 	Delivered []Delivery        `json:"delivered,omitempty"`
 	Config    *DeviceConfig     `json:"config,omitempty"`
 	Roles     map[string]string `json:"roles,omitempty"` // 会话键 → 身份
+	// RolePrompts：身份 → 用户改写后的提示词正文（只含改写过的；没有的身份用内置默认模板，R-98）。
+	RolePrompts map[string]string `json:"role_prompts,omitempty"`
 }
 
 // Hello 是 daemon 连接后上报的设备信息。

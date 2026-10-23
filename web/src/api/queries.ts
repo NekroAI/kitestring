@@ -17,6 +17,7 @@ export const qk = {
   devices: ['devices'] as const,
   projects: ['projects'] as const,
   settings: ['settings'] as const,
+  rolePrompts: ['role-prompts'] as const,
 }
 
 export function useAuthStatus() {

@@ -2,7 +2,9 @@
 package roles
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -43,20 +45,37 @@ func Label(role string) string { return labels[role] }
 // Resident 判断该身份是否要求常驻在线（挂着 ks wait，R-83）。
 func Resident(role string) bool { return role == PM || role == Dev }
 
-// Prompt 返回注入给 Agent 的身份提示词；无身份时为空。
-func Prompt(role string) string {
-	var body string
+// DefaultBody 返回内置默认模板正文（编译进 ks）；无身份时为空。
+func DefaultBody(role string) string {
 	switch role {
 	case PM:
-		body = pmPrompt
+		return strings.TrimSpace(pmPrompt)
 	case Dev:
-		body = devPrompt
+		return strings.TrimSpace(devPrompt)
 	case Advisor:
-		body = advisorPrompt
+		return strings.TrimSpace(advisorPrompt)
 	case Reviewer:
-		body = reviewerPrompt
-	default:
+		return strings.TrimSpace(reviewerPrompt)
+	}
+	return ""
+}
+
+// BodyHash 是默认模板正文的指纹，用来判断“默认模板是否在用户改写之后又更新了”（R-98）。
+func BodyHash(body string) string {
+	h := sha256.Sum256([]byte(strings.TrimSpace(body)))
+	return hex.EncodeToString(h[:8])
+}
+
+// Compose 把正文拼上固定的身份抬头（抬头不可改写）；body 为空时用默认模板。
+func Compose(role, body string) string {
+	if labels[role] == "" {
 		return ""
+	}
+	if strings.TrimSpace(body) == "" {
+		body = DefaultBody(role)
 	}
 	return fmt.Sprintf("[Kitestring] 你的会话身份：%s（%s，用户可在 Kitestring 上看到；改身份用 ks role）。\n%s", labels[role], cnames[role], strings.TrimSpace(body)+"\n")
 }
+
+// Prompt 返回注入给 Agent 的默认身份提示词；无身份时为空。用户改写过的版本由 Hub 下发（R-98）。
+func Prompt(role string) string { return Compose(role, "") }

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
+import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
 import { qk, useDevices, useProjects, usePush, useSettings } from '../api/queries'
@@ -10,15 +10,16 @@ import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
 import { absTime, copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
-import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Tip } from '../ui/base'
+import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
 
-type Tab = 'devices' | 'notify' | 'projects' | 'ai' | 'appearance' | 'account'
+type Tab = 'devices' | 'notify' | 'projects' | 'prompts' | 'ai' | 'appearance' | 'account'
 const tabs: { id: Tab; icon: LucideIcon }[] = [
   { id: 'devices', icon: Monitor },
   { id: 'notify', icon: Bell },
   { id: 'projects', icon: FolderGit2 },
+  { id: 'prompts', icon: ScrollText },
   { id: 'ai', icon: Sparkles },
   { id: 'appearance', icon: Palette },
   { id: 'account', icon: User },
@@ -774,6 +775,89 @@ function Passkeys() {
   )
 }
 
+// ---------- 身份提示词（R-98） ----------
+
+type RolePrompt = Schemas['RolePromptView']
+
+function RolePromptCard({ rp }: { rp: RolePrompt }) {
+  const L = t.settings.prompts
+  const qc = useQueryClient()
+  const confirm = useConfirm()
+  const [text, setText] = useState(rp.body)
+  const [showDefault, setShowDefault] = useState(false)
+  const [busy, wrap] = useBusy()
+  useEffect(() => setText(rp.body), [rp.body])
+  const refresh = () => qc.invalidateQueries({ queryKey: qk.rolePrompts })
+  const save = () =>
+    wrap(async () => {
+      if (!text.trim()) return void toast.error(L.empty)
+      try {
+        await unwrap(api.PUT('/api/role-prompts/{role}', { params: { path: { role: rp.role as 'pm' } }, body: { body: text } }))
+        await refresh()
+        toast.success(L.saved)
+      } catch (e) {
+        toast.error(errMsg(e))
+      }
+    })
+  const restore = async () => {
+    if (!(await confirm({ title: L.restore, description: L.restoreConfirm(rp.label), confirmText: L.restore, danger: true }))) return
+    await wrap(async () => {
+      try {
+        await unwrap(api.DELETE('/api/role-prompts/{role}', { params: { path: { role: rp.role as 'pm' } } }))
+        await refresh()
+        toast.success(L.restored)
+      } catch (e) {
+        toast.error(errMsg(e))
+      }
+    })
+  }
+  return (
+    <Card className="space-y-3 p-4 sm:p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="text-sm font-semibold text-fg">{rp.label}</div>
+        <span className="text-xs text-fg-3">{t.settings.prompts.chars(text.length)}</span>
+        <Badge tone={rp.custom ? 'accent' : 'neutral'}>{rp.custom ? L.custom : L.builtin}</Badge>
+        {rp.outdated && <Badge tone="wait">{L.outdated}</Badge>}
+      </div>
+      {rp.outdated && <p className="text-xs text-fg-3">{L.outdatedHint}</p>}
+      <Textarea minRows={8} value={text} onChange={(e) => setText(e.target.value)} className="max-h-[28rem] overflow-y-auto font-mono text-xs" />
+      {showDefault && (
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium text-fg-2">{L.defaultTitle}</div>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-sunken p-3 font-mono text-xs leading-relaxed text-fg-2">{rp.default}</pre>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {rp.custom && (
+          <Button variant="ghost" onClick={() => setShowDefault((v) => !v)}>
+            {showDefault ? L.hideDefault : L.showDefault}
+          </Button>
+        )}
+        <Button icon={<RotateCcw className="size-4" />} disabled={!rp.custom || busy} onClick={restore}>
+          {L.restore}
+        </Button>
+        <Button variant="primary" loading={busy} disabled={text.trim() === rp.body.trim()} onClick={save}>
+          {t.common.save}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
+function RolePrompts() {
+  const q = useQuery({ queryKey: qk.rolePrompts, queryFn: () => unwrap(api.GET('/api/role-prompts')) })
+  if (q.isLoading) return <Skeleton className="h-64 w-full" />
+  if (q.error) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+  return (
+    <div className="max-w-3xl space-y-4">
+      <p className="text-xs text-fg-3">{t.settings.prompts.hint}</p>
+      {(q.data ?? []).map((rp) => (
+        <RolePromptCard key={rp.role} rp={rp} />
+      ))}
+    </div>
+  )
+}
+
 // 附件大小上限（R-72）：图片、录屏分开设，网页和 Agent 上传都按这里的值检查。
 function UploadLimits() {
   const q = useSettings()
@@ -887,6 +971,7 @@ export default function SettingsPage({ version }: { version: string }) {
     devices: <Devices />,
     notify: <Notify />,
     projects: <Navigate to="/projects" replace />,
+    prompts: <RolePrompts />,
     ai: <AI />,
     appearance: <Appearance />,
     account: <Account version={version} />,

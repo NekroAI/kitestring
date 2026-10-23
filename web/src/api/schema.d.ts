@@ -1243,6 +1243,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/role-prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 四种身份的提示词（默认模板与改写版，R-98） */
+        get: operations["list-role-prompts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/role-prompts/{role}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 改写某个身份的提示词（只有网页能改，R-98） */
+        put: operations["set-role-prompt"];
+        post?: never;
+        /** 恢复某个身份的默认提示词（R-98） */
+        delete: operations["reset-role-prompt"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -2834,6 +2869,20 @@ export interface components {
             role: string;
             session_key: string;
         };
+        RolePromptView: {
+            /** @description 正在使用的正文：改写过的是改写版，否则等于默认模板 */
+            body: string;
+            /** @description 是否已被改写 */
+            custom: boolean;
+            /** @description 当前版本内置的默认模板正文 */
+            default: string;
+            /** @description 显示名（PM / Dev / Adv / Rev） */
+            label: string;
+            /** @description 改写之后默认模板又更新了（可对比默认模板，或恢复默认） */
+            outdated: boolean;
+            /** @description pm / dev / advisor / reviewer */
+            role: string;
+        };
         Session: {
             activity: number[] | null;
             branch: string;
@@ -2910,6 +2959,10 @@ export interface components {
              */
             rev: number;
             sessions: components["schemas"]["Session"][] | null;
+        };
+        "Set-role-promptRequest": {
+            /** @description 提示词正文（不含固定的身份抬头）；与默认模板一致时等同于恢复默认 */
+            body: string;
         };
         SettingsInBody: {
             ai: components["schemas"]["AIFeatures"];
@@ -5911,6 +5964,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReviewOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-role-prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolePromptView"][] | null;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-role-prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role: "pm" | "dev" | "advisor" | "reviewer";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Set-role-promptRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolePromptView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "reset-role-prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role: "pm" | "dev" | "advisor" | "reviewer";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RolePromptView"];
                 };
             };
             /** @description Error */
