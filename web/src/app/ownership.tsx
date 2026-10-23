@@ -26,7 +26,7 @@ export function useOwnership() {
   const owner = (r: Requirement) =>
     r.sessions
       .map((k) => byKey.get(k))
-      .filter(live)
+      .filter((s) => live(s) && s!.role !== 'advisor' && s!.role !== 'reviewer') // 退回意见也不送顾问 / 审查员（R-167）
       // PM 只管派活：需求同时关联了开发等其他会话时，看板显示真正在做的那个（R-86）
       .sort((a, b) => Number(a!.role === 'pm') - Number(b!.role === 'pm') || b!.last_active_at.localeCompare(a!.last_active_at))[0]
   // 排队归属：和后端 queueOwner 一致，跳过顾问 / 审查员（R-150）

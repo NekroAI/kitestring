@@ -36,6 +36,8 @@ type reviewOut struct {
 
 // feedbackTarget 选出修改意见送达的会话：优先最近活跃且未结束的关联会话，否则最近活跃的关联会话。
 // 项目有 PM（没结束）时，退回意见一律交给 PM，由它判断自己处理还是转派（R-85）。
+// 没有 PM 时送给最近在做的开发 / 无身份会话；顾问、审查员一律跳过（和 R-150 一致），都没有就返回空，
+// 意见留在需求上，看板提示没人接手，由你手动交出（R-167）。
 func (h *Hub) feedbackTarget(ctx context.Context, r store.Requirement) string {
 	if pm := h.projectPM(ctx, r.ProjectID); pm != "" {
 		return pm
@@ -43,8 +45,8 @@ func (h *Hub) feedbackTarget(ctx context.Context, r store.Requirement) string {
 	var best, fallback store.Session
 	for _, k := range r.Sessions {
 		x, err := h.store.GetSession(ctx, k)
-		if err != nil {
-			continue
+		if err != nil || !queueRole(x.Role) {
+			continue // 顾问 / 审查员不接退回意见（R-167）
 		}
 		if fallback.Key == "" || x.LastActiveAt.After(fallback.LastActiveAt) {
 			fallback = x
