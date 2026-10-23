@@ -382,10 +382,18 @@ func runWait(args []string) error {
 	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
 	timeout := fs.Duration("timeout", 0, "最长等待时间，如 30m、2h。不填：Claude Code 1 小时（最长 12h），Codex 30 分钟（也是上限）")
+	on := fs.String("on", "", "还要被哪些项目事件唤醒（R-164）：decision（有人提决策）、review（交验收）、blocked（需求受阻）、stage（阶段交小结），逗号分隔；none 不订阅，default 按身份默认（Adv：decision,review；PM：review,blocked；其它不订阅）。不填沿用上次")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	q := url.Values{}
+	if *on != "" {
+		v, err := protocol.ParseWaitOn(*on)
+		if err != nil {
+			return err
+		}
+		q.Set("on", v)
+	}
 	if *timeout > 0 {
 		q.Set("timeout", timeout.String())
 	}
@@ -404,6 +412,9 @@ func runWait(args []string) error {
 	}
 	ccancel()
 	fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
+	if v := q.Get("on"); v != "" && v != protocol.OnNone && v != protocol.OnDefault {
+		fmt.Fprintf(os.Stderr, "[Kitestring] 另外订阅了本项目的事件：%s；发生时也会唤醒你。\n", v)
+	}
 	// daemon 重启（例如升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒。
 	ctx := signalContext()
 	limit := daemon.MaxWait

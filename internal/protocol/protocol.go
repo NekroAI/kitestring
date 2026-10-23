@@ -70,6 +70,8 @@ type Event struct {
 	ContextMax int `json:"context_max,omitempty"`
 	// Until：ks wait 开始时（KsWait）最长等到什么时候（R-74）
 	Until *time.Time `json:"until,omitempty"`
+	// WaitOn：ks wait --on 给的订阅（R-164），规整后的逗号列表；空表示沿用上次，"default" 恢复按身份的默认，"none" 不订阅
+	WaitOn string `json:"wait_on,omitempty"`
 }
 
 // ReplyMax 是随 Stop 上送的最后回复的字数上限（R-109）。

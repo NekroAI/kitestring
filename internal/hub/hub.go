@@ -208,8 +208,29 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		}
 	}
 	next := applyEvent(prev, dev.ID, projectID, ev)
+	// ks wait --on 改订阅（R-164）；default 恢复按身份默认。先于“挂起”存下，看到待命时订阅已生效
+	setWaitOn := func() error {
+		if ev.Name != protocol.EventWait || ev.WaitOn == "" {
+			return nil
+		}
+		v := ev.WaitOn
+		if v == protocol.OnDefault {
+			v = ""
+		}
+		return h.store.SetWaitOn(ctx, key, v)
+	}
+	if prev != nil {
+		if err := setWaitOn(); err != nil {
+			return err
+		}
+	}
 	if err := h.store.SaveSession(ctx, next); err != nil {
 		return err
+	}
+	if prev == nil {
+		if err := setWaitOn(); err != nil {
+			return err
+		}
 	}
 	defer h.sessionChanged(key) // 存完工具版本、上下文占用等再推
 	if ev.Name == "Stop" && reply != "" {

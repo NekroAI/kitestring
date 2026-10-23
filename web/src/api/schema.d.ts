@@ -1512,6 +1512,7 @@ export interface components {
             turn_id?: string;
             /** Format: date-time */
             until?: string;
+            wait_on?: string;
         };
         Evidence: {
             /** Format: date-time */

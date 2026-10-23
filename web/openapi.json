@@ -1475,6 +1475,9 @@
           "until": {
             "format": "date-time",
             "type": "string"
+          },
+          "wait_on": {
+            "type": "string"
           }
         },
         "required": [

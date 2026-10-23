@@ -1,0 +1,137 @@
+package e2e
+
+import (
+	"context"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/NekroAI/kitestring/internal/client"
+	"github.com/NekroAI/kitestring/internal/daemon"
+	"github.com/NekroAI/kitestring/internal/store"
+)
+
+// parkWaitOn 让会话挂上 ks wait --on on（on 为空时不带 --on）。
+func parkWaitOn(t *testing.T, e *env, c *client.Client, key, on string) chan daemon.WaitResult {
+	t.Helper()
+	if on == "" {
+		return parkWait(t, e, c, key)
+	}
+	done := make(chan daemon.WaitResult, 1)
+	go func() {
+		var res daemon.WaitResult
+		_ = c.Do(context.Background(), "GET", "/wait?session_key="+key+"&timeout=20s&on="+on, nil, &res)
+		done <- res
+	}()
+	e.waitFor(key+" 挂起", func() bool { return len(done) > 0 || e.session(key).Parked })
+	return done
+}
+
+// asleep：等待中的会话在一小段时间内没有被唤醒。
+func asleep(t *testing.T, done chan daemon.WaitResult, who string) {
+	t.Helper()
+	select {
+	case res := <-done:
+		t.Fatalf("%s 不应被唤醒：%+v", who, res)
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// 事件订阅（R-164）：Adv 默认订阅 decision / review，PM 默认订阅 review / blocked；
+// 别的会话提决策、交验收、设为受阻时，订阅了的等待中会话被唤醒并收到一句说明；没订阅的（无身份、Dev）不被唤醒；
+// 交验收不给已收到派活通知的 PM 重复送；--on 改订阅、不填沿用上次、none 不订阅；不进用户收件箱。
+func TestWaitSubscribe(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	c := client.New(30 * time.Second)
+	ctx := context.Background()
+	for _, sid := range []string{"pm", "adv", "dev", "plain"} {
+		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
+	}
+	e.waitFor("会话入库", func() bool { return e.session("claude:plain").Key != "" })
+	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "advisor"}, {"claude:dev", "dev"}} {
+		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	woke(t, parkWait(t, e, c, "claude:pm"), "已上线待命") // 先收掉开发上线的消息（R-116）
+
+	// 开发向用户提决策 → Adv（默认订阅 decision）被唤醒；PM、无身份会话不被唤醒
+	pmW, advW, plainW := parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv"), parkWait(t, e, c, "claude:plain")
+	before := pendingCount(e)
+	var d store.Decision
+	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"session_key": "claude:dev", "question": "导出用 CSV 还是 Excel？", "options": []string{"CSV", "Excel"}}, &d); err != nil {
+		t.Fatal(err)
+	}
+	woke(t, advW, "团队消息", "订阅的事件", "decision", d.Code, "导出用 CSV 还是 Excel", "claude:dev", "不是派给你的活")
+	asleep(t, pmW, "PM（没订阅 decision）")
+	asleep(t, plainW, "无身份会话")
+	if n := pendingCount(e); n != before+1 {
+		t.Fatalf("用户收件箱只应多出开发提的那条决策：%d → %d", before, n)
+	}
+
+	// 开发把需求设为受阻 → PM（默认订阅 blocked）被唤醒；Adv 不被唤醒
+	var r store.Requirement
+	if err := c.Do(ctx, "POST", "/agent/requirements", map[string]any{"title": "导出 CSV", "session_key": "claude:dev"}, &r); err != nil {
+		t.Fatal(err)
+	}
+	advW = parkWait(t, e, c, "claude:adv")
+	advTells := tellCount(e, "claude:adv")
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "blocked", "session_key": "claude:dev"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	woke(t, pmW, "订阅的事件", "blocked", r.Code, "受阻", "claude:dev")
+	asleep(t, advW, "Adv（没订阅 blocked）")
+	if n := tellCount(e, "claude:adv"); n != advTells {
+		t.Fatalf("Adv 不应收到受阻消息：%d → %d", advTells, n)
+	}
+
+	// 开发交验收 → PM 只收到一条（派活通知，不重复），Adv 收到订阅消息；无身份会话不被唤醒
+	pmW = parkWait(t, e, c, "claude:pm")
+	pmTells := tellCount(e, "claude:pm")
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review", "session_key": "claude:dev"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	woke(t, pmW, "已交验收", r.Code)
+	woke(t, advW, "订阅的事件", "review", r.Code, "已交验收")
+	asleep(t, plainW, "无身份会话")
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
+		t.Fatalf("交验收 PM 只应收到一条：%d → %d", pmTells, n)
+	}
+
+	// 无身份会话用 --on blocked 订阅 → 被唤醒；再挂 ks wait 不带 --on 沿用上次；--on none 后不再被唤醒
+	blocked := func(ref string) {
+		t.Helper()
+		for _, st := range []string{"in_progress", "blocked"} {
+			if err := c.Do(ctx, "POST", "/agent/requirements/"+ref+"/status", map[string]any{"status": st, "session_key": "claude:dev"}, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	e.call("POST", "/api/sessions/claude:plain/reply", map[string]any{"comment": "换个订阅"}, nil) // 先把上一次等待唤醒，下一次挂起看得出来
+	woke(t, plainW, "换个订阅")
+	plainW = parkWaitOn(t, e, c, "claude:plain", "blocked")
+	blocked(r.Code)
+	woke(t, plainW, "订阅的事件", "blocked", r.Code)
+	plainW = parkWait(t, e, c, "claude:plain")
+	blocked(r.Code)
+	woke(t, plainW, "blocked", r.Code)
+	plainW = parkWaitOn(t, e, c, "claude:plain", "none")
+	n0 := tellCount(e, "claude:plain")
+	blocked(r.Code)
+	asleep(t, plainW, "--on none 的会话")
+	if n := tellCount(e, "claude:plain"); n != n0 {
+		t.Fatalf("--on none 后不应再收到：%d → %d", n0, n)
+	}
+
+	// 开发（默认不订阅）不被别人的事件唤醒：PM 提决策，挂着 ks wait 的开发不醒
+	devW := parkWait(t, e, c, "claude:dev")
+	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"session_key": "claude:pm", "question": "要不要加分页？", "options": []string{"要", "不要"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	asleep(t, devW, "Dev（默认不订阅）")
+	if n := pendingCount(e); n != before+2 {
+		t.Fatalf("订阅消息不应进用户收件箱：%d → %d", before, n)
+	}
+}

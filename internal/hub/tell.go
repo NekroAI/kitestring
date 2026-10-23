@@ -88,19 +88,21 @@ func reviewNote(r store.Requirement, by string) string {
 	return b.String() + "（没有附证据）。等用户验收；需要细节用 req_get。"
 }
 
-// onReview：需求刚进入待验收，告诉派活的 PM。PM 自己交的不送。
-func (h *Hub) onReview(ctx context.Context, ref, by string) {
+// onReview：需求刚进入待验收，告诉派活的 PM。PM 自己交的不送。返回送到的 PM（没送时为空）。
+func (h *Hub) onReview(ctx context.Context, ref, by string) string {
 	r, err := h.store.GetRequirement(ctx, ref)
 	if err != nil || r.ProjectID == "" {
-		return
+		return ""
 	}
 	to := h.assigner(ctx, r)
 	if to == "" || to == by {
-		return
+		return ""
 	}
 	if _, err := h.tell(ctx, to, r.ProjectID, r.ID, reviewNote(r, by)); err != nil {
 		h.log.Warn("通知 PM 交验收失败", "err", err)
+		return ""
 	}
+	return to
 }
 
 // sessionName 是消息里称呼会话的方式：标题（没有就用设备与工具）加会话键。

@@ -71,7 +71,7 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	delete(d.stopBlocks, key) // 已按要求挂上，不再算连续拦下
 	d.toolCond.Broadcast() // 让同一会话较早的等待退出
 	d.mu.Unlock()
-	d.reportWait(tool, sid, protocol.EventWait, "", &until)
+	d.reportWait(tool, sid, protocol.EventWait, "", &until, waitOn(q.Get("on")))
 
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
@@ -108,9 +108,21 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 		res.Text = d.injection(protocol.Event{Name: "UserPromptSubmit", Tool: tool, SessionID: sid, TurnID: "ks-wait"})
 	}
 	if reason != "replaced" {
-		d.reportWait(tool, sid, protocol.EventWaitEnd, reason, nil)
+		d.reportWait(tool, sid, protocol.EventWaitEnd, reason, nil, "")
 	}
 	_ = json.NewEncoder(w).Encode(res)
+}
+
+// waitOn 规整 /wait 的 on 参数；空或不合法时返回空（沿用上次的订阅）。
+func waitOn(v string) string {
+	if v == "" {
+		return ""
+	}
+	out, err := protocol.ParseWaitOn(v)
+	if err != nil {
+		return ""
+	}
+	return out
 }
 
 // hasFreshLocked：该会话是否有还没送达的答复 / 修改意见 / 留言。调用方持有 d.mu。
@@ -124,8 +136,9 @@ func (d *Daemon) hasFreshLocked(key string) bool {
 }
 
 // reportWait 把等待开始 / 结束作为合成事件上报，Hub 据此显示“挂起等你”。
-func (d *Daemon) reportWait(tool, sid, name, reason string, until *time.Time) {
-	ev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: tool, Name: name, SessionID: sid, Reason: reason, Until: until}
+// waitOn 是 ks wait 开始时随事件上报的订阅（R-164）；不认识的值当作没给（沿用上次）。
+func (d *Daemon) reportWait(tool, sid, name, reason string, until *time.Time, waitOn string) {
+	ev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: tool, Name: name, SessionID: sid, Reason: reason, Until: until, WaitOn: waitOn}
 	if err := d.q.pushEvent(ev); err != nil {
 		d.log.Warn("上报挂起等待失败", "err", err)
 	}

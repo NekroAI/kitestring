@@ -304,6 +304,41 @@ func (s *Store) SetToolsStale(ctx context.Context, key, v string) error {
 	return err
 }
 
+// SetWaitOn 记下会话 ks wait --on 的订阅（R-164）：空为按身份默认，"none" 为不订阅，其它为逗号分隔的事件。
+func (s *Store) SetWaitOn(ctx context.Context, key, v string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET wait_on = ? WHERE key = ?`, v, key)
+	return err
+}
+
+// Subscriber 是可能订阅了项目事件的会话（R-164）。
+type Subscriber struct {
+	Key    string
+	Role   string
+	WaitOn string
+}
+
+// WaitSubscribers 列出项目里在线（挂着 ks wait 或正在跑）、有身份或给过 --on 的会话，最近活跃的在前。
+// 一轮结束没挂 ks wait、已结束、失联、你标为已完成的不算：不在线时不给它攒消息。
+func (s *Store) WaitSubscribers(ctx context.Context, projectID string) ([]Subscriber, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, role, wait_on FROM sessions
+		WHERE project_id = ? AND (role <> '' OR wait_on <> '') AND done_at = '' AND state NOT IN (?, ?)
+			AND (parked = 1 OR state IN (?, ?, ?, ?))
+		ORDER BY last_active_at DESC`, projectID, StateEnded, StateLost, StateParked, StateRunning, StateBackground, StateWaitApproval)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Subscriber{}
+	for rows.Next() {
+		var x Subscriber
+		if err := rows.Scan(&x.Key, &x.Role, &x.WaitOn); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
 // SetContext 记下会话最近一轮结束时的上下文占用。
 func (s *Store) SetContext(ctx context.Context, key string, used, window int) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET context_tokens = ?, context_max = ? WHERE key = ?`, used, window, key)

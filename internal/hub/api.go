@@ -1161,8 +1161,14 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			h.refreshDelivered(ctx, r)
 			h.broker.publish("requirements", "sessions", "plans")
-			if r.Status == store.ReqReview && before.Status != store.ReqReview {
-				h.onReview(ctx, r.ID, in.Body.SessionKey) // 告诉派活的 PM（R-135）
+			if r.Status != before.Status && (r.Status == store.ReqReview || r.Status == store.ReqBlocked) {
+				told := ""
+				if r.Status == store.ReqReview {
+					told = h.onReview(ctx, r.ID, in.Body.SessionKey) // 告诉派活的 PM（R-135）
+				}
+				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
+					h.onStatusEvent(ctx, full, in.Body.SessionKey, told) // 订阅了交验收 / 受阻的会话（R-164）
+				}
 			}
 			if r.Status == store.ReqReview {
 				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
@@ -1291,6 +1297,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			h.broker.publish("decisions", "sessions", "requirements")
 			go h.aiOnDecision(d)
+			h.onDecisionRaised(ctx, d) // 订阅了 decision 的会话（R-164）
 			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
 			out := &decisionRaisedOut{}
 			out.Body.Decision = d

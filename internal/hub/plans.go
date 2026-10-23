@@ -668,6 +668,9 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 		}) (*stageSubmittedOut, error) {
 			bs, warns := blocks.Parse(in.Body.Blocks, h.blockFile(ctx))
 			x, err := h.submitStage(ctx, in.Ref, in.Seq, in.Body.Summary, bs)
+			if err == nil {
+				h.onStageSubmitted(ctx, x, in.Seq, in.Body.SessionKey) // 订阅了 stage 的会话（R-164）
+			}
 			out := &stageSubmittedOut{}
 			out.Body.Plan = x
 			out.Body.BlockWarnings = warns
