@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, animate as animateValue, motion, useMotionValue, useMotionValueEvent, useTransform, type AnimationPlaybackControls } from 'motion/react'
+import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
 import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
 import { Annotator, shield, useAnnotateTarget } from './annotate'
@@ -145,21 +146,117 @@ export function Thumbs({ files, size }: { files?: FileRef[] | null; size?: 'sm' 
   )
 }
 
+// Lightbox：看大图。同组图片排成一条胶片带（R-69）：手指 / 触控板拖多少，带子就跟着走多少；
+// 松手按位移与速度决定翻页还是弹回，弹簧动画随时可被新的手势打断、从当前位置接着拖（像 macOS 的可中断动画）。
+// 一次手势最多走一页：触控板的惯性滚动到了一页的边界就直接落定，不会连翻。
 function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; children: ReactNode }) {
   const [open, setOpen] = useState(false)
-  const [cur, setCur] = useState(f)
   const stop = (e: SyntheticEvent) => e.stopPropagation()
   // 同组里能看的（图片、录屏）；不在组里就只看这一张
   const list = group?.some((x) => x.id === f.id) ? group : [f]
-  const i = Math.max(0, list.findIndex((x) => x.id === cur.id))
-  const go = (d: number) => setCur(list[(i + d + list.length) % list.length])
-  // 触控板滑动的锁放在这里：切换时看图器会重建，锁要跨过这次重建，否则惯性滚动会连翻好几张
-  const wheel = useRef<WheelLock>({ swipe: 0, locked: false, idle: undefined })
+  const start = Math.max(0, list.findIndex((x) => x.id === f.id))
+  const n = list.length
+  const at = (k: number) => list[(((start + k) % n) + n) % n]
+  const [W, setW] = useState(() => (typeof window === 'undefined' ? 1000 : window.innerWidth))
+  useEffect(() => {
+    const onResize = () => setW(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  const pos = useMotionValue(0) // 胶片带位置：第 k 页在 k * W
+  const trackX = useTransform(pos, (v) => -v)
+  const [k, setK] = useState(0)
+  useMotionValueEvent(pos, 'change', (v) => setK(Math.round(v / W)))
+  const anim = useRef<AnimationPlaybackControls | null>(null)
+  const gesture = useRef<Gesture | null>(null)
+  const [host, setHost] = useState<HTMLDivElement | null>(null)
+
+  const aim = useRef<number | null>(null) // 正在弹向的那一页：动画中途再翻页时从它往后数
+  const snapTo = (page: number, velocity = 0) => {
+    anim.current?.stop()
+    aim.current = page
+    anim.current = animateValue(pos, page * W, { type: 'spring', stiffness: 380, damping: 38, velocity, onComplete: () => (aim.current = null) })
+  }
+  const go = (d: number) => snapTo((aim.current ?? Math.round(pos.get() / W)) + d)
+  // 拖动开始：打断正在进行的动画，从当前位置接着走
+  const begin = () => {
+    anim.current?.stop()
+    aim.current = null
+    const from = pos.get()
+    gesture.current = { from, page: Math.round(from / W), acc: 0, samples: [{ t: performance.now(), v: from }] }
+  }
+  // dx：手指 / 触控板相对开始时的水平位移（向左为负，即往下一张）
+  const move = (dx: number) => {
+    const g = gesture.current
+    if (!g || g.done) return
+    const v = clamp(g.from - dx, (g.page - 1) * W, (g.page + 1) * W)
+    pos.set(v)
+    g.samples.push({ t: performance.now(), v })
+    if (g.samples.length > 6) g.samples.shift()
+  }
+  const end = () => {
+    const g = gesture.current
+    gesture.current = null
+    if (!g || g.done) return
+    const [a, b] = [g.samples[0], g.samples[g.samples.length - 1]]
+    const vel = b.t > a.t ? ((b.v - a.v) / (b.t - a.t)) * 1000 : 0 // px/s，正数是往下一张
+    const off = pos.get() - g.page * W
+    const fling = g.wheel ? 1500 : 400 // 触控板日常滑动本身就快，甩动门槛要高，免得轻轻一碰就翻页
+    const page = vel > fling || off > W * 0.22 ? g.page + 1 : vel < -fling || off < -W * 0.22 ? g.page - 1 : g.page
+    snapTo(page, vel)
+  }
+  // 触控板：没有“松手”事件，滚轮停下约 120ms 视为结束；走满一页立即落定，余下的惯性滚动忽略
+  const wheel = (dx: number) => {
+    if (!gesture.current) {
+      begin()
+      gesture.current!.wheel = true
+    }
+    const g = gesture.current!
+    window.clearTimeout(g.idle)
+    g.idle = window.setTimeout(() => {
+      if (gesture.current !== g) return
+      if (g.done) gesture.current = null
+      else end()
+    }, 120)
+    if (g.done) return
+    g.acc -= dx
+    move(g.acc)
+    if (Math.abs(pos.get() - g.page * W) >= W - 1) {
+      g.done = true
+      snapTo(Math.round(pos.get() / W))
+    }
+  }
+  useEffect(() => {
+    if (!open) return
+    // 看图时左右键归看图器：先于后面的需求抽屉（它也用左右键切换需求）拿到并拦下
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      e.stopImmediatePropagation()
+      if (n > 1) go(e.key === 'ArrowRight' ? 1 : -1)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, n, W])
+  // 预取前后两张，切换时不闪白
+  useEffect(() => {
+    if (!open || n < 2) return
+    for (const x of [at(k + 1), at(k - 1), at(k + 2), at(k - 2)]) if (!isVideo(x.mime)) new Image().src = fileUrl(x.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, k])
+
+  const cur = at(k)
+  const nav: Nav | undefined = n > 1 ? { i: (((start + k) % n) + n) % n, n, go, begin, move, end, wheel } : undefined
+  const pages = n > 1 ? [k - 1, k, k + 1] : [0]
   return (
     <Dialog.Root
       open={open}
       onOpenChange={(o) => {
-        if (o) setCur(f)
+        if (o) {
+          anim.current?.stop()
+          pos.set(0)
+          setK(0)
+        }
         setOpen(o)
       }}
     >
@@ -172,9 +269,16 @@ function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; child
             <Dialog.Overlay asChild forceMount>
               <motion.div className="fixed inset-0 z-[70] bg-black/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
             </Dialog.Overlay>
-            <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[70] outline-none">
+            <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[70] overflow-hidden outline-none">
               <Dialog.Title className="sr-only">{cur.name}</Dialog.Title>
-              <Viewer key={cur.id} f={cur} onClose={() => setOpen(false)} nav={list.length > 1 ? { i, n: list.length, go, next: list[(i + 1) % list.length], prev: list[(i - 1 + list.length) % list.length], wheel: wheel.current } : undefined} />
+              <motion.div className="absolute inset-0" style={{ x: trackX }}>
+                {pages.map((j) => (
+                  <div key={j} className="absolute inset-0" style={{ transform: `translateX(${j * W}px)` }}>
+                    <Viewer f={at(j)} active={j === k} intro={j === 0} chromeHost={host} onClose={() => setOpen(false)} nav={nav} />
+                  </div>
+                ))}
+              </motion.div>
+              <div ref={setHost} className="pointer-events-none absolute inset-0" />
             </Dialog.Content>
           </Dialog.Portal>
         )}
@@ -185,13 +289,13 @@ function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; child
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 type View = { s: number; x: number; y: number }
+type Gesture = { from: number; page: number; acc: number; samples: { t: number; v: number }[]; idle?: number; done?: boolean; wheel?: boolean }
 
-// Viewer：看大图。触控板双指捏合缩放、双指移动平移；触屏双指缩放、单指拖动、下滑关闭；双击放大 / 复原。
-// nav：同组切换。左右箭头、键盘 ← →、触屏左右滑（未放大时）、触控板双指左右滑。
-type WheelLock = { swipe: number; locked: boolean; idle: number | undefined }
-type Nav = { i: number; n: number; go: (d: number) => void; next: FileRef; prev: FileRef; wheel: WheelLock }
+// Viewer：胶片带上的一页。触控板双指捏合缩放、双指移动平移；触屏双指缩放、单指拖动、下滑关闭；双击放大 / 复原。
+// 没放大时，左右拖动（触屏）和双指左右滑（触控板）交给胶片带翻页。按钮、页码等只由当前页画在胶片带外面（chromeHost）。
+type Nav = { i: number; n: number; go: (d: number) => void; begin: () => void; move: (dx: number) => void; end: () => void; wheel: (dx: number) => void }
 
-function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Nav }) {
+function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { f: FileRef; onClose: () => void; nav?: Nav; active?: boolean; intro?: boolean; chromeHost?: HTMLElement | null }) {
   const box = useRef<HTMLDivElement>(null)
   const [v, setV] = useState<View>({ s: 1, x: 0, y: 0 })
   const [smooth, setSmooth] = useState(false)
@@ -199,7 +303,7 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
   cur.current = v
   const pts = useRef(new Map<number, { x: number; y: number }>())
   const pinch = useRef<{ d: number; c: { x: number; y: number }; base: View } | null>(null)
-  const drag = useRef<{ x: number; y: number; base: View; touch: boolean } | null>(null)
+  const drag = useRef<{ x: number; y: number; base: View; touch: boolean; axis?: 'x' | 'y' } | null>(null)
   const moved = useRef(false)
   const target = useAnnotateTarget()
   const [annotating, setAnnotating] = useState(false)
@@ -226,46 +330,15 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
   const navRef = useRef(nav)
   navRef.current = nav
   useEffect(() => {
-    // 看图时左右键归看图器：先于后面的需求抽屉（它也用左右键切换需求）拿到并拦下
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
-      e.stopImmediatePropagation()
-      if (!navRef.current || cur.current.s > 1) return
-      navRef.current.go(e.key === 'ArrowRight' ? 1 : -1)
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [])
-  // 预取相邻两张，切换时不闪白
-  useEffect(() => {
-    for (const x of [nav?.next, nav?.prev]) if (x && !isVideo(x.mime)) new Image().src = fileUrl(x.id)
-  }, [nav?.next, nav?.prev])
-
-  useEffect(() => {
     const el = box.current
     if (!el || video) return
-    // 触控板：捏合是带 ctrlKey 的滚轮事件，双指移动是普通滚轮事件；没放大时双指左右滑切换同组图片。
-    // 一次滑动只翻一张：翻过之后锁住，直到滚轮事件停下来（惯性滚动结束）约 200ms 才解锁（R-69）
+    // 触控板：捏合是带 ctrlKey 的滚轮事件，双指移动是普通滚轮事件；没放大时双指左右滑交给胶片带跟手翻页。
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const p = rel(e.clientX, e.clientY)
       if (e.ctrlKey) setV(zoomAt(cur.current.s * Math.exp(-e.deltaY * 0.01), p.x, p.y))
       else if (cur.current.s > 1) setV({ ...cur.current, x: cur.current.x - e.deltaX, y: cur.current.y - e.deltaY })
-      else if (navRef.current && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        const w = navRef.current.wheel
-        window.clearTimeout(w.idle)
-        w.idle = window.setTimeout(() => {
-          w.locked = false
-          w.swipe = 0
-        }, 200)
-        if (w.locked) return
-        w.swipe += e.deltaX
-        if (Math.abs(w.swipe) > 60) {
-          navRef.current.go(w.swipe > 0 ? 1 : -1)
-          w.swipe = 0
-          w.locked = true
-        }
-      }
+      else if (navRef.current && Math.abs(e.deltaX) > Math.abs(e.deltaY)) navRef.current.wheel(e.deltaX) // 跟手翻页（R-69）
     }
     // Safari 的触控板捏合走手势事件。
     let gBase = cur.current
@@ -321,9 +394,15 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
     const dx = e.clientX - g.x
     const dy = e.clientY - g.y
     if (Math.abs(dx) + Math.abs(dy) > 4) moved.current = true
-    if (g.base.s > 1) setV({ ...g.base, x: g.base.x + dx, y: g.base.y + dy })
-    else if (g.touch && nav && Math.abs(dx) > Math.abs(dy)) setV({ s: 1, x: dx, y: 0 }) // 触屏左右滑切换
-    else if (g.touch) setV({ s: 1, x: 0, y: Math.max(0, dy) }) // 触屏下滑关闭
+    if (g.base.s > 1) return setV({ ...g.base, x: g.base.x + dx, y: g.base.y + dy })
+    if (!g.touch) return
+    // 先看手指往哪个方向走：左右交给胶片带跟手翻页，向下是关闭
+    if (!g.axis && Math.abs(dx) + Math.abs(dy) > 6) {
+      g.axis = nav && Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
+      if (g.axis === 'x') nav!.begin()
+    }
+    if (g.axis === 'x') nav!.move(dx)
+    else if (g.axis === 'y') setV({ s: 1, x: 0, y: Math.max(0, dy) })
   }
   const onUp = (e: ReactPointerEvent) => {
     pts.current.delete(e.pointerId)
@@ -335,11 +414,7 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
     }
     const g = drag.current
     drag.current = null
-    if (g && g.base.s === 1 && cur.current.x !== 0) {
-      if (nav && Math.abs(cur.current.x) > 70) nav.go(cur.current.x < 0 ? 1 : -1)
-      else animate({ s: 1, x: 0, y: 0 })
-      return
-    }
+    if (g?.axis === 'x') return nav?.end()
     if (g && g.base.s === 1 && cur.current.y > 0) {
       if (cur.current.y > 120) onClose()
       else animate({ s: 1, x: 0, y: 0 })
@@ -365,7 +440,7 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
         className={cx('absolute inset-0 flex items-center justify-center overflow-hidden p-4 select-none', !video && 'touch-none', v.s > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in')}
         style={{ opacity: fade }}
       >
-        <motion.div initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }} className="pointer-events-none flex max-h-full max-w-full items-center justify-center">
+        <motion.div initial={intro ? { opacity: 0, scale: 0.94 } : false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }} className="pointer-events-none flex max-h-full max-w-full items-center justify-center">
           {video ? (
             <video src={fileUrl(f.id)} controls autoPlay playsInline className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg bg-black shadow-pop" />
           ) : (
@@ -379,12 +454,17 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
           )}
         </motion.div>
       </div>
+      {/* 按钮、页码、底栏只由当前页画在胶片带外面，翻页时不跟着带子跑 */}
+      {active &&
+        chromeHost &&
+        createPortal(
+          <>
       {nav && (
         <>
-          <button aria-label={t.attach.prev} onClick={() => nav.go(-1)} className="absolute top-1/2 left-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
+          <button aria-label={t.attach.prev} onClick={() => nav.go(-1)} className="pointer-events-auto absolute top-1/2 left-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
             <ChevronLeft className="size-6" />
           </button>
-          <button aria-label={t.attach.next} onClick={() => nav.go(1)} className="absolute top-1/2 right-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
+          <button aria-label={t.attach.next} onClick={() => nav.go(1)} className="pointer-events-auto absolute top-1/2 right-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
             <ChevronRight className="size-6" />
           </button>
         </>
@@ -417,6 +497,9 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
           {video ? t.attach.originalFile : t.attach.original}
         </a>
       </motion.div>
+          </>,
+          chromeHost,
+        )}
       {target && (
         <Annotator
           src={fileUrl(f.id)}
