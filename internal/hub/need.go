@@ -51,18 +51,18 @@ func (h *Hub) requestDevs(ctx context.Context, projectID string, n int, reason s
 	return nil
 }
 
-// checkNeed：项目的在线开发够数了，清除提醒。
-func (h *Hub) checkNeed(ctx context.Context, projectID string) {
+// checkNeed：项目的在线开发够数了，清除提醒；cleared 为 true 时 need 是清除前要的个数。
+func (h *Hub) checkNeed(ctx context.Context, projectID string) (need int, cleared bool) {
 	if projectID == "" {
-		return
+		return 0, false
 	}
 	p, err := h.store.GetProject(ctx, projectID)
 	if err != nil || p.NeedDevs == 0 {
-		return
+		return 0, false
 	}
 	list, err := h.store.RoleSessions(ctx, projectID)
 	if err != nil {
-		return
+		return 0, false
 	}
 	online := 0
 	for _, x := range list {
@@ -73,8 +73,10 @@ func (h *Hub) checkNeed(ctx context.Context, projectID string) {
 	if online >= p.NeedDevs {
 		if err := h.store.SetNeedDevs(ctx, projectID, 0, ""); err == nil {
 			h.broker.publish("projects")
+			return p.NeedDevs, true
 		}
 	}
+	return 0, false
 }
 
 func (h *Hub) registerAgentNeed(api huma.API) {

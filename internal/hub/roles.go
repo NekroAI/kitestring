@@ -86,7 +86,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, error) {
 		h.pushRoles(ctx, dev)
 	}
 	if role == roles.Dev {
-		h.checkNeed(ctx, x.ProjectID)
+		h.devUp(ctx, key, x.Role != roles.Dev) // 新声明的开发报上线；够数时清除 need_devs 提醒并告诉 PM（R-116）
 	}
 	h.sessionChanged(key)
 	return demoted, nil

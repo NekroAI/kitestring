@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -109,6 +110,47 @@ func sessionName(x store.Session) string {
 		name = x.DeviceName + " 上的 " + x.Tool + " 会话"
 	}
 	return fmt.Sprintf("「%s」（%s）", brief(name, 30), x.Key)
+}
+
+// devUp：开发在本项目上线时告诉项目 PM「开发 X 已上线待命，可以 req_assign」（R-116）：
+// 声明开发身份，或这次在线以来第一次挂上 ks wait（announce = true，每次在线只报一次，离线后重新计）；
+// 在线开发够数、need_devs 提醒被清除时也报（announce = false 时只在清除时送）。项目没有 PM 时不送。
+func (h *Hub) devUp(ctx context.Context, key string, announce bool) {
+	x, err := h.store.GetSession(ctx, key)
+	if err != nil || x.ProjectID == "" || x.Role != roles.Dev {
+		return
+	}
+	need, cleared := h.checkNeed(ctx, x.ProjectID)
+	if announce {
+		h.mu.Lock()
+		if _, seen := h.notified["devup|"+key]; seen {
+			announce = false
+		} else {
+			h.notified["devup|"+key] = time.Now()
+		}
+		h.mu.Unlock()
+	}
+	if !announce && !cleared {
+		return
+	}
+	pm := h.projectPM(ctx, x.ProjectID)
+	if pm == "" || pm == key {
+		return
+	}
+	text := fmt.Sprintf("Dev %s 已上线待命，可以 req_assign 派活。", sessionName(x))
+	if cleared {
+		text += fmt.Sprintf("在线 Dev 已够 need_devs 要的 %d 个，提醒已清除。", need)
+	}
+	if _, err := h.tell(ctx, pm, x.ProjectID, "", text); err != nil {
+		h.log.Warn("通知 PM 开发上线失败", "err", err)
+	}
+}
+
+// devDown：开发离线了，下次上线重新报。
+func (h *Hub) devDown(key string) {
+	h.mu.Lock()
+	delete(h.notified, "devup|"+key)
+	h.mu.Unlock()
 }
 
 type tellOut struct {

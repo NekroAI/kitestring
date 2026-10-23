@@ -255,8 +255,15 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	case ev.Name == "Stop" && ev.LastReply != "":
 		go h.aiOnStop(key, next.LastPrompt, ev.LastReply)
 	}
-	if next.Role == roles.Dev && next.Presence() != "offline" && (prev == nil || prev.Presence() == "offline") {
-		h.checkNeed(ctx, next.ProjectID) // 开发上线了：够数就清除“需要开发”的提醒（R-87）
+	if next.Role == roles.Dev {
+		online, wasOnline := next.Presence() != "offline", prev != nil && prev.Presence() != "offline"
+		switch {
+		case online && (!wasOnline || ev.Name == protocol.EventWait):
+			// 开发上线了：够数就清除“需要开发”的提醒（R-87）；这次在线第一次挂上 ks wait 时告诉 PM（R-116）
+			h.devUp(ctx, key, ev.Name == protocol.EventWait)
+		case !online && wasOnline:
+			h.devDown(key)
+		}
 	}
 	// 一轮做完或挂起待命：把排给它的待开始需求整批送过去（R-66）
 	if (ev.Name == "Stop" || ev.Name == protocol.EventWait) && next.State != store.StateEnded {
