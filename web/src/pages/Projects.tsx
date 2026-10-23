@@ -14,6 +14,7 @@ import { useActions } from '../app/actions'
 import { useOpenReq } from '../app/nav'
 import { NewReqModal, statusCls } from '../app/requirements'
 import { SessionRow } from '../app/thread'
+import { Linkify, ReqGlyph } from '../ui/refmark'
 
 // 项目：左侧项目列表常驻，右侧回答“这个项目现在怎样”（D-20 选定 B 主从双栏；窄屏退化为列表 → 详情）。
 
@@ -311,7 +312,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
                 {counts.map(([s, n]) => (
                   <span key={s} className="flex items-center gap-1.5 text-fg-2">
-                    <span className={cx('size-2 rounded-full', statusCls[s].dot)} />
+                    <ReqGlyph status={s} />
                     {t.reqStatus[s]} <span className="tabular">{n}</span>
                   </span>
                 ))}
@@ -334,8 +335,9 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
           <Card className="divide-y divide-dashed divide-line px-4 py-1">
             {recent.map((e, i) => (
               <button key={i} onClick={() => e.code && openReq(e.code)} className="flex w-full items-center gap-3 py-2.5 text-left text-sm text-fg-2 hover:text-fg">
-                <span className={cx('inline-block size-[7px] shrink-0 rotate-45 rounded-[1.5px]', e.dot)} />
-                <span className="min-w-0 flex-1 truncate">{e.text}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  <Linkify text={e.text} />
+                </span>
                 <span className="shrink-0 text-xs text-fg-3 tabular">{relTime(e.at, now)}</span>
               </button>
             ))}

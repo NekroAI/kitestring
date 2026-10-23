@@ -14,6 +14,7 @@ import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
 import { useOpenReq, useOpenSession } from './nav'
 import { targetItems } from './assign'
+import { Linkify, RefChip } from '../ui/refmark'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
 function recIndex(options: string[], rec: string): number {
@@ -27,10 +28,6 @@ function recIndex(options: string[], rec: string): number {
   })
 }
 
-function CodeChip({ code }: { code: string }) {
-  return <span className="rounded-md bg-sunken px-1.5 py-0.5 font-mono text-[11px] font-semibold text-fg-2">{code}</span>
-}
-
 // 来源行：独立展示时显示项目与设备；嵌在会话卡片里时只显示编号、需求与时间。
 function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boolean }) {
   const openSession = useOpenSession()
@@ -38,7 +35,7 @@ function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boo
   const tool = d.session_key?.split(':')[0] ?? ''
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-fg-3">
-      <CodeChip code={d.code} />
+      <RefChip code={d.code} status={d.status} link={false} />
       {!embedded && d.session_key && (
         <button onClick={() => openSession(d.session_key!)} className="inline-flex min-w-0 items-center gap-1.5 hover:text-fg">
           {tool && <ToolMark tool={tool} size="sm" />}
@@ -46,9 +43,7 @@ function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boo
         </button>
       )}
       {d.requirement_code && (
-        <button onClick={() => openReq(d.requirement_code!)} className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] font-semibold text-accent hover:brightness-95">
-          {d.requirement_code}
-        </button>
+        <RefChip code={d.requirement_code} onOpen={openReq} />
       )}
       <span className="ml-auto tabular">{relTime(d.created_at, now)}</span>
     </div>
@@ -60,7 +55,9 @@ function Context({ text }: { text: string }) {
   const long = text.length > 140 || text.split('\n').length > 3
   return (
     <div className="text-sm leading-relaxed text-fg-2">
-      <div className={cx('break-words whitespace-pre-wrap', !open && long && 'line-clamp-3')}>{text}</div>
+      <div className={cx('break-words whitespace-pre-wrap', !open && long && 'line-clamp-3')}>
+        <Linkify text={text} />
+      </div>
       {long && (
         <button onClick={() => setOpen(!open)} className="mt-0.5 text-[13px] font-medium text-accent hover:underline">
           {open ? t.common.collapse : t.common.showAll}
@@ -384,7 +381,9 @@ export function DecisionRow({ d }: { d: Decision }) {
   return (
     <div className="border-b border-line last:border-0">
       <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-hover/60">
-        <span className="w-9 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{d.code}</span>
+        <span className="w-[68px] shrink-0">
+          <RefChip code={d.code} status={d.status} link={false} />
+        </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm text-fg">{d.short_title || d.question}</span>
           {d.answer && <span className="block truncate text-[13px] text-fg-3">{d.answer}</span>}

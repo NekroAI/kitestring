@@ -15,6 +15,7 @@ import { Callout, ReqCount, sessionTitle, toolIcon } from './SessionCard'
 import { Ticker } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
+import { Linkify } from '../ui/refmark'
 
 // SessionLine：会话在做什么的一行描述（摘要 → 最后动作 → 你最后说的话）。
 function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean } | null {
@@ -53,7 +54,7 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
         {a && (
           <Ticker id={a.text} className={cx('mt-0.5 h-5 text-[13px] text-fg-3', a.mono && 'font-mono text-[12px]')}>
             {a.icon}
-            <span className="truncate">{a.text}</span>
+            <span className="truncate">{a.mono ? a.text : <Linkify text={a.text} />}</span>
           </Ticker>
         )}
       </div>
@@ -143,7 +144,9 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
             </div>
           </div>
           {(s.summary || s.last_prompt) && !(ds === 'waiting_reply' && (s.digest_done || s.digest_ask)) && (
-            <p className="line-clamp-2 text-sm leading-relaxed text-fg-2">{s.summary || s.last_prompt}</p>
+            <p className="line-clamp-2 text-sm leading-relaxed text-fg-2">
+              <Linkify text={s.summary || s.last_prompt} />
+            </p>
           )}
           <Callout s={s} />
         </div>

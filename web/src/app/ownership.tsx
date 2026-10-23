@@ -6,6 +6,7 @@ import { cx } from '../lib/util'
 import { StatusDot, displayState } from '../ui/marks'
 import { useOpenSession } from './nav'
 import { sessionTitle } from './SessionCard'
+import { Linkify } from '../ui/refmark'
 
 // 这条需求现在谁在管、什么时候会动（R-66）。和后端的排队规则一一对应：
 // 待开始的需求归关联会话里最近活跃、没结束 / 没被收起的那个；它空闲时整批送达；没有这样的会话就是“没人接手”。
@@ -91,7 +92,9 @@ export function OwnLine({ r }: { r: Requirement }) {
     <div className={cx('mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg px-2.5 py-1.5 text-[13px]', toneCls[own.tone])}>
       <Icon className="size-3.5 shrink-0" />
       {/* 基准宽度：窄屏放不下时会话按钮换到下一行，而不是把说明挤成一列（R-72） */}
-      <span className="min-w-0 flex-1 basis-[13rem]">{own.text}</span>
+      <span className="min-w-0 flex-1 basis-[13rem]">
+        <Linkify text={own.text} />
+      </span>
       {s && (
         <button
           onClick={() => openSession(s.key)}

@@ -13,6 +13,7 @@ import { useActions, useBusy } from './actions'
 import { useOpenReq } from './nav'
 import { useReqMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
+import { Linkify, RefChip } from '../ui/refmark'
 
 // evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
 export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
@@ -77,7 +78,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
             <div className="text-sm font-medium text-reply">{t.reqs.reviewBanner}</div>
           ) : (
             <div className="flex max-w-full items-center gap-2">
-              <span className="shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
+              <RefChip code={r.code} status={r.status} link={false} />
               <span className="truncate text-sm font-medium text-fg transition-colors group-hover/review:text-accent">{r.title}</span>
               <ChevronRight className="size-3.5 shrink-0 text-fg-3 transition-transform group-hover/review:translate-x-0.5 group-hover/review:text-accent" />
             </div>
@@ -87,7 +88,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
               {evidence.slice(-3).map((e) => (
                 <li key={e.id} className="text-[13px] text-fg-2">
                   <span className="mr-1.5 rounded bg-run-soft px-1 text-[11px] font-medium text-run">{evidenceKind(e.kind)}</span>
-                  {e.summary}
+                  <Linkify text={e.summary} />
                   <span className="ml-1.5 text-xs text-fg-3">{relTime(e.created_at, now)}</span>
                   {!!e.files?.length && (
                     <div className="mt-1.5 w-fit" onClick={stop} onKeyDown={stop}>

@@ -44,6 +44,7 @@
   --danger-soft: #f7e1e4;
   --idle: #6f6a5c;
   --idle-soft: #ece6d9;
+  --lit: rgb(47 93 140 / 0.16);
   color-scheme: light;
 }
 
@@ -81,6 +82,7 @@
   --danger-soft: #43282f;
   --idle: #a29c8c;
   --idle-soft: #2e3446;
+  --lit: rgb(141 179 226 / 0.2);
   color-scheme: dark;
 }
 
@@ -574,3 +576,6 @@ nav.fixed {
 /* 窄屏不把“R-108”“待验收”这种短格拆成两行：前几列不换行，最后一列留够宽度换行，放不下时表格自己横向滚动 */
 .md th, .md td:not(:last-child) { white-space: nowrap; }
 .md td:last-child { min-width: 12em; }
+
+/* 印记（R-96）：悬停或聚焦任一编号，同页所有同一对象一起亮起来。 */
+.ref-chip.lit { background: var(--lit); border-color: var(--accent); }

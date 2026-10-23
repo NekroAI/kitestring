@@ -6,7 +6,7 @@ import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
 import { t } from '../i18n'
 import { Collapse, Item, List } from '../ui/motion'
 import { absTime, clockTime, copyText, cx, duration, relTime, shortPath, useMedia, useNow } from '../lib/util'
-import { Badge, Button, ErrorState, Skeleton, Tip } from '../ui/base'
+import { Button, ErrorState, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { Md } from '../ui/markdown'
 import { displayState, PhaseBadge, RoleBadge, Sparkline, StatusPill, ToolMark } from '../ui/marks'
@@ -18,6 +18,7 @@ import { CtxRing, ctxLoad, useAssign } from './assign'
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
+import { Linkify, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 
 function Section({ title, children, right }: { title: ReactNode; children: ReactNode; right?: ReactNode }) {
   return (
@@ -195,12 +196,12 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const reqRow = (r: Session['requirements'][number]) => (
     <div key={r.id} className="flex items-center gap-2 px-3 py-2">
       <button onClick={() => (side ? side(r.code) : openGlobal(r.code))} className={cx('flex min-w-0 flex-1 items-center gap-2 rounded-md text-left', shown === r.code && 'bg-accent-soft/60 ring-1 ring-accent/30')}>
-        <span className="shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap text-accent">{r.code}</span>
+        <RefChip code={r.code} status={r.status} link={false} />
         <span className="truncate text-sm text-fg">{r.title}</span>
       </button>
       {(() => {
         const own = full.get(r.id) && ownership(full.get(r.id)!)
-        return own && own.session?.key === s?.key && own.tone !== 'working' ? <OwnBadge own={own} /> : <Badge>{t.reqStatus[r.status]}</Badge>
+        return own && own.session?.key === s?.key && own.tone !== 'working' ? <OwnBadge own={own} /> : <ReqStatus status={r.status} />
       })()}
       <Button size="icon-sm" variant="ghost" aria-label={t.session.unlink} title={t.session.unlink} onClick={() => s && void linkReq(r.code, s.key, true)}>
         <Unlink className="size-3.5" />
@@ -214,7 +215,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
       refId={shown}
       top={
         <div className="flex shrink-0 items-center gap-2 px-4 pt-3 sm:px-5">
-          <span className="font-mono text-[11px] font-semibold text-fg-3">{shown}</span>
+          <RefChip code={shown} link={false} />
           <span className="text-xs text-fg-3">{t.session.reqBeside}</span>
           <span className="flex-1" />
           <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={() => setSel(null)}>
@@ -285,13 +286,17 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
               {s.summary && (
                 <div>
                   <div className="text-xs text-fg-3">{t.session.summary}</div>
-                  <p className="mt-0.5 text-sm leading-relaxed text-fg">{s.summary}</p>
+                  <p className="mt-0.5 text-sm leading-relaxed text-fg">
+                    <Linkify text={s.summary} />
+                  </p>
                 </div>
               )}
               {s.last_prompt && (
                 <div>
                   <div className="text-xs text-fg-3">{t.session.lastPrompt}</div>
-                  <p className="mt-0.5 text-sm leading-relaxed break-words text-fg-2">{s.last_prompt}</p>
+                  <p className="mt-0.5 text-sm leading-relaxed break-words text-fg-2">
+                    <Linkify text={s.last_prompt} />
+                  </p>
                 </div>
               )}
               {s.last_tool && (
@@ -337,6 +342,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                     { type: 'label', label: t.session.givePick },
                     ...givable.slice(0, 30).map((r) => ({
                       label: `${r.code} ${r.title}`,
+                      icon: <ReqGlyph status={r.status} />,
                       hint: [t.reqStatus[r.status], r.priority, r.project_id !== s.project_id && r.project_name].filter(Boolean).join(t.common.sep),
                       onSelect: () => void assign(r.code, s),
                     })),

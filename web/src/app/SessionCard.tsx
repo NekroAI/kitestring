@@ -1,14 +1,12 @@
-import { memo, type ReactNode } from 'react'
+import { memo, type ComponentType, type ReactNode } from 'react'
 import {
   Bot,
   CheckCircle2,
   ChevronDown,
   Hourglass,
-  ListTodo,
   Eye,
   FileCode2,
   FileText,
-  FolderGit2,
   GitBranch,
   Globe,
   HelpCircle,
@@ -40,6 +38,7 @@ import { LiveFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { useOpenReq, useOpenSession } from './nav'
+import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 
 // 工具名 → 图标。
 export function toolIcon(label: string): LucideIcon {
@@ -66,7 +65,7 @@ export function sessionTitle(s: Session): string {
   return s.title || s.project_name || shortPath(s.cwd, 28) || t.session.noProject
 }
 
-function Meta({ icon: Icon, tip, children, className }: { icon: LucideIcon; tip: string; children: ReactNode; className?: string }) {
+function Meta({ icon: Icon, tip, children, className }: { icon: LucideIcon | ComponentType<{ className?: string }>; tip: string; children: ReactNode; className?: string }) {
   return (
     <Tip content={tip}>
       <span className={cx('inline-flex min-w-0 items-center gap-1', className)}>
@@ -140,13 +139,17 @@ export function Callout({ s }: { s: Session }) {
         {s.digest_done && (
           <div className="flex items-start gap-2">
             <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-run" />
-            <span className="leading-relaxed text-fg">{s.digest_done}</span>
+            <span className="leading-relaxed text-fg">
+              <Linkify text={s.digest_done} />
+            </span>
           </div>
         )}
         {s.digest_ask && (
           <div className="flex items-start gap-2">
             <HelpCircle className="mt-0.5 size-4 shrink-0 text-reply" />
-            <span className="leading-relaxed font-medium text-fg">{s.digest_ask}</span>
+            <span className="leading-relaxed font-medium text-fg">
+              <Linkify text={s.digest_ask} />
+            </span>
           </div>
         )}
       </div>
@@ -214,7 +217,7 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
           </div>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-fg-3">
             {s.title && s.project_name && (
-              <Meta icon={FolderGit2} tip={s.cwd}>
+              <Meta icon={ProjGlyph} tip={s.cwd}>
                 {s.project_name}
               </Meta>
             )}
@@ -246,14 +249,14 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
                 <MessageSquare className="mr-1.5 mb-0.5 inline size-3.5 text-fg-3" />
               </Tip>
             )}
-            {headline}
+            <Linkify text={headline} />
           </p>
           {showPrompt && (
             <p className="mt-1 line-clamp-1 text-[13px] text-fg-3">
               <Tip content={t.session.you}>
                 <MessageSquare className="mr-1.5 mb-0.5 inline size-3.5" />
               </Tip>
-              {s.last_prompt}
+              <Linkify text={s.last_prompt} />
             </p>
           )}
         </div>
@@ -341,26 +344,31 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
   )
 })
 
-// ReqCount：会话关联的需求只显示数量，悬停列出。
+// ReqCount：会话手上没做完的需求，直接列出印记；超过两条时其余收进“+n”菜单（R-96）。
 export function ReqCount({ s }: { s: Session }) {
   const openReq = useOpenReq()
   const open = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
   if (!open.length) return null
-  const chip = (
-    <button
-      onClick={(e) => {
-        e.stopPropagation()
-        if (open.length === 1) openReq(open[0].code)
-      }}
-      onPointerDown={(e) => e.stopPropagation()}
-      className="inline-flex items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-xs text-accent transition hover:brightness-95 active:scale-95 pointer-coarse:py-1"
-    >
-      <ListTodo className="size-3.5" />
-      <span className="tabular">{t.thread.reqs(open.length)}</span>
-      {open.length > 1 && <ChevronDown className="size-3 opacity-70" />}
-    </button>
+  const shown = open.length > 2 ? open.slice(0, 1) : open
+  const rest = open.slice(shown.length)
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+      {shown.map((r) => (
+        <RefChip key={r.id} code={r.code} status={r.status} title={r.title} onOpen={openReq} />
+      ))}
+      {rest.length > 0 && (
+        <Menu
+          align="start"
+          width="w-72"
+          trigger={
+            <button onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-0.5 rounded-md border border-line bg-surface-2 px-1.5 text-[11px] leading-[18px] font-semibold text-fg-2 transition hover:border-accent pointer-coarse:py-0.5">
+              {t.ref.more(rest.length)}
+              <ChevronDown className="size-3 opacity-70" />
+            </button>
+          }
+          items={rest.map((r) => ({ label: r.title, hint: r.code, icon: <ReqGlyph status={r.status} />, onSelect: () => openReq(r.code) }))}
+        />
+      )}
+    </span>
   )
-  // 一个需求：点了直接打开；多个：点开菜单选（触屏上没有悬停提示，也能用）。
-  if (open.length === 1) return <Tip content={`${open[0].code} ${open[0].title}`}>{chip}</Tip>
-  return <Menu align="start" width="w-72" trigger={chip} items={open.map((r) => ({ label: r.title, hint: r.code, icon: <ListTodo />, onSelect: () => openReq(r.code) }))} />
 }

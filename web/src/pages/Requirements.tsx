@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Columns3, FolderGit2, List, ListPlus, MessageCircleQuestion, Milestone, Plus, Search, User } from 'lucide-react'
+import { ChevronDown, ChevronRight, Columns3, List, ListPlus, MessageCircleQuestion, Milestone, Plus, Search } from 'lucide-react'
 import type { Requirement } from '../api/client'
 import { useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
@@ -15,7 +15,8 @@ import { useTouchDrag } from '../ui/touchDrag'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
 import { PriorityDot } from '../ui/marks'
 import { Menu } from '../ui/overlay'
-import { boardStatuses, closedStatuses, NewReqModal, ReqCard, StatusMenu, statusCls, useSetStatus } from '../app/requirements'
+import { boardStatuses, closedStatuses, NewReqModal, ReqCard, StatusMenu, useSetStatus } from '../app/requirements'
+import { ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
 
 const prio: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
 const sortReqs = (a: Requirement, b: Requirement) => (prio[a.priority] ?? 9) - (prio[b.priority] ?? 9) || b.updated_at.localeCompare(a.updated_at)
@@ -49,7 +50,7 @@ type TD = ReturnType<typeof useTouchDrag> | null
 function Ghost({ r }: { r: Requirement }) {
   return (
     <div className="rounded-xl border border-accent/40 bg-surface p-3 text-sm">
-      <div className="font-mono text-[11px] font-semibold text-fg-3">{r.code}</div>
+      <RefChip code={r.code} status={r.status} link={false} />
       <div className="mt-0.5 line-clamp-2 font-medium text-fg">{r.title}</div>
     </div>
   )
@@ -76,7 +77,7 @@ function Column({ status, items, onDrop, td }: { status: string; items: Requirem
       className={cx('flex min-h-[240px] min-w-0 flex-1 flex-col rounded-2xl p-2 transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : 'bg-sunken/70')}
     >
       <div className="flex items-center gap-2 px-2 pt-1 pb-2.5">
-        <span className={cx('size-2 rounded-full', statusCls[status].dot)} />
+        <ReqGlyph status={status} />
         <span className="text-[13px] font-semibold text-fg">{t.reqStatus[status]}</span>
         <span className="text-xs text-fg-3 tabular">{items.length}</span>
       </div>
@@ -101,7 +102,7 @@ function StatusSection({ status, items, onDrop, td }: { status: string; items: R
   return (
     <section {...props} data-drop={status} className={cx('@container rounded-2xl p-2 transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : '')}>
       <div className="flex items-center gap-2 px-1 pb-2.5">
-        <span className={cx('size-2 rounded-full', statusCls[status].dot)} />
+        <ReqGlyph status={status} />
         <span className="text-[13px] font-semibold text-fg">{t.reqStatus[status]}</span>
         <span className="text-xs text-fg-3 tabular">{items.length}</span>
       </div>
@@ -134,7 +135,9 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
           <StatusMenu r={r} />
         </span>
         <PriorityDot p={r.priority} />
-        <span className="w-10 shrink-0 font-mono text-[11px] font-semibold whitespace-nowrap text-fg-3">{r.code}</span>
+        <span className="w-[68px] shrink-0">
+          <RefChip code={r.code} status={r.status} link={false} />
+        </span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
         <PlanBadge r={r} className="max-sm:hidden" />
         <DesignBadge r={r} className="max-sm:hidden" />
@@ -148,11 +151,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
         )}
         {own && own.tone !== 'locked' && <OwnBadge own={own} className="max-sm:hidden" />}
         {!own && r.next_actor === 'user' && r.status !== 'done' && (
-          <Tip content={t.nextActor.user}>
-            <span className="inline-flex text-reply">
-              <User className="size-3.5" />
-            </span>
-          </Tip>
+          <TurnSeal />
         )}
         <span className="hidden w-20 shrink-0 text-right text-xs text-fg-3 sm:block">{relTime(r.updated_at, now)}</span>
       </div>
@@ -179,7 +178,7 @@ function ListView({ items, statuses, projects }: { items: Requirement[]; statuse
         .map(([pid, rs]) => (
           <section key={pid || 'none'} className="rise">
             <div className="mb-2 flex items-center gap-2.5 px-1">
-              <FolderGit2 className="size-4 text-fg-3" />
+              <ProjGlyph className="size-4" />
               <h2 className="font-display text-[17px] font-semibold text-fg">{name(pid)}</h2>
               <span className="text-xs text-fg-3 tabular">{rs.length}</span>
             </div>
@@ -327,7 +326,16 @@ export default function RequirementsPage() {
       ) : (
         <>
           <div className="-mx-4 mb-4 overflow-x-auto px-4">
-            <Segmented id="req-mobile" size="sm" value={mobileStatus} onChange={setMobileStatus} dropTargets={coarse} over={td?.over} options={statuses.map((s) => ({ value: s, label: t.reqStatus[s], count: byStatus(s).length }))} />
+            <Segmented id="req-mobile" size="sm" value={mobileStatus} onChange={setMobileStatus} dropTargets={coarse} over={td?.over} options={statuses.map((s) => ({
+                value: s,
+                label: (
+                  <span className="inline-flex items-center gap-1">
+                    <ReqGlyph status={s} />
+                    {t.reqStatus[s]}
+                  </span>
+                ),
+                count: byStatus(s).length,
+              }))} />
           </div>
           <MotionList space={10}>
             {byStatus(mobileStatus).map((r) => (

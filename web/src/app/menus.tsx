@@ -10,7 +10,8 @@ import { useActions } from './actions'
 import { useSessions } from '../api/queries'
 import { assignItems, useAssign } from './assign'
 import { useOpenReq, useOpenSession } from './nav'
-import { allStatuses, priorities, statusCls, toFields, useSetStatus } from './requirements'
+import { allStatuses, priorities, toFields, useSetStatus } from './requirements'
+import { ReqGlyph } from '../ui/refmark'
 import { sessionTitle } from './SessionCard'
 
 const copy = async (text: string) => (await copyText(text)) && toast.success(t.common.copied)
@@ -74,7 +75,7 @@ export function useReqMenu() {
       type: 'sub',
       label: t.menu.status,
       icon: <CircleDot />,
-      items: allStatuses.map((st) => ({ label: t.reqStatus[st], checked: st === r.status, icon: <span className={`size-2 rounded-full ${statusCls[st].dot}`} />, onSelect: () => void setStatus(r, st) })),
+      items: allStatuses.map((st) => ({ label: t.reqStatus[st], checked: st === r.status, icon: <ReqGlyph status={st} />, onSelect: () => void setStatus(r, st) })),
     },
     {
       type: 'sub',

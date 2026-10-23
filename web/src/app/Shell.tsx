@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router'
+import { RefIndexProvider } from '../ui/refmark'
 import { FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Settings2, WifiOff } from 'lucide-react'
 import { useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
@@ -177,6 +178,7 @@ export function Shell() {
   }, [wb.todo])
 
   return (
+    <RefIndexProvider>
     <div className="min-h-dvh">
       <Sidebar todo={wb.todo} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
@@ -190,5 +192,6 @@ export function Shell() {
       <ReqPanel refId={req} onClose={close} />
       <PlanPanel code={plan} onClose={close} />
     </div>
+    </RefIndexProvider>
   )
 }

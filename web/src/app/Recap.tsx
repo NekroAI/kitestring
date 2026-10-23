@@ -5,6 +5,7 @@ import { t } from '../i18n'
 import { absTime, cx } from '../lib/util'
 import { Button, Empty, ErrorState, Segmented, Skeleton } from '../ui/base'
 import { Panel } from '../ui/overlay'
+import { Linkify } from '../ui/refmark'
 
 type Range = 'h4' | 'today' | 'night' | 'h24'
 
@@ -39,12 +40,12 @@ function inline(text: string): ReactNode[] {
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
-    if (m.index > last) out.push(text.slice(last, m.index))
+    if (m.index > last) out.push(<Linkify key={`t${m.index}`} text={text.slice(last, m.index)} />)
     const tok = m[0]
     out.push(tok.startsWith('**') ? <strong key={m.index} className="font-semibold text-fg">{tok.slice(2, -2)}</strong> : <code key={m.index} className="rounded bg-sunken px-1 font-mono text-[12px]">{tok.slice(1, -1)}</code>)
     last = m.index + tok.length
   }
-  if (last < text.length) out.push(text.slice(last))
+  if (last < text.length) out.push(<Linkify key="tail" text={text.slice(last)} />)
   return out
 }
 

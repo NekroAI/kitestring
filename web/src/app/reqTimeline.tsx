@@ -11,6 +11,7 @@ import { DecisionComposer } from './DecisionCard'
 import { evidenceKind } from './review'
 import { useSessions } from '../api/queries'
 import { sessionTitle } from './SessionCard'
+import { Linkify, RefChip } from '../ui/refmark'
 
 // 需求进展：一条竖向时间线，从上往下按时间排，最新在最下面（紧挨底部的输入区）。
 // 每次退回修改开启新的一轮，复杂需求反复几轮也能看清来龙去脉；留言不开新一轮。
@@ -116,7 +117,9 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           now={now}
           muted={e.voided}
         >
-          <p className="text-sm leading-relaxed break-words text-fg">{e.summary}</p>
+          <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">
+            <Linkify text={e.summary} />
+          </p>
           {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
           {!!e.files?.length && <Thumbs files={e.files} />}
         </Node>
@@ -216,7 +219,9 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           at={at}
           now={now}
         >
-          {f.answer && <Quote cls={note ? 'bg-accent-soft/60' : 'bg-reply-soft/60'}>{f.answer}</Quote>}
+          {f.answer && <Quote cls={note ? 'bg-accent-soft/60' : 'bg-reply-soft/60'}>
+              <Linkify text={f.answer} />
+            </Quote>}
           {!!f.answer_files?.length && <Thumbs files={f.answer_files} size="sm" />}
         </Node>
       ),
@@ -247,17 +252,19 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           title={
             <>
               {t.timeline.decision}
-              <span className="font-mono text-[11px] text-fg-3">{d.code}</span>
+              <RefChip code={d.code} status={d.status} link={false} />
             </>
           }
           at={d.answered_at ?? d.created_at}
           now={now}
         >
-          <p className="text-sm text-fg">{d.short_title || d.question}</p>
+          <p className="text-sm text-fg">
+            <Linkify text={d.short_title || d.question} />
+          </p>
           {d.answer && (
             <Quote cls="bg-sunken/70">
               <span className="mr-1.5 text-fg-3">{t.timeline.answer}</span>
-              {d.answer}
+              <Linkify text={d.answer} />
             </Quote>
           )}
           {!!d.answer_files?.length && <Thumbs files={d.answer_files} size="sm" />}

@@ -78,20 +78,27 @@ export function presence(s: RoleSession): '' | 'standby' | 'working' | 'offline'
 
 export const presenceDot: Record<string, string> = { standby: 'bg-run', working: 'bg-accent', offline: 'bg-fg-3/50' }
 
-// RoleBadge：会话身份（R-82）；PM / 开发带在线状态点，离线时直接写出来（R-84）。
+const roleChar: Record<string, string> = { pm: 'P', dev: '开', advisor: '顾', reviewer: '审' }
+
+// SessAvatar：会话是一个圆，里面写身份；常驻身份右下角带在线点（离线为灰）。
+export function SessAvatar({ role, presence, className }: { role?: string; presence?: string; className?: string }) {
+  return (
+    <span className={cx('relative inline-grid size-[18px] shrink-0 place-items-center rounded-full border border-line-strong bg-sunken text-[10px] leading-none font-bold text-fg-2', className)} aria-hidden>
+      {roleChar[role ?? ''] ?? '·'}
+      {presence && <span className={cx('absolute -right-0.5 -bottom-0.5 size-[7px] rounded-full border-[1.5px] border-surface', presenceDot[presence])} />}
+    </span>
+  )
+}
+
+// RoleBadge：会话身份（R-82）。圆形头像里写身份，PM / 开发右下角带在线点，离线时直接写出来（R-84、R-96）。
 export function RoleBadge({ s }: { s: RoleSession }) {
   const role = s.role
   if (!role || !t.role[role]) return null
   const p = presence(s)
   return (
     <Tip content={p ? `${t.roleTip[role]}${t.common.sep}${t.presence[p]}` : t.roleTip[role]}>
-      <span
-        className={cx(
-          'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold',
-          p === 'offline' ? 'bg-sunken text-fg-3' : 'bg-accent-soft text-accent',
-        )}
-      >
-        {p && <span className={cx('size-1.5 rounded-full', presenceDot[p])} />}
+      <span className={cx('inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold', p === 'offline' ? 'text-fg-3' : 'text-fg-2')}>
+        <SessAvatar role={role} presence={p || undefined} />
         {t.role[role]}
         {p === 'offline' && <span className="font-normal">{t.presence.offline}</span>}
       </span>

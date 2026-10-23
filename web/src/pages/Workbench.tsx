@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { Archive, CheckCheck, FolderGit2, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import { Archive, CheckCheck, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
 import type { Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
@@ -15,6 +15,7 @@ import { SessionCard, sessionTitle } from '../app/SessionCard'
 import { SessionRow, ThreadCard } from '../app/thread'
 import { Item, List } from '../ui/motion'
 import { PlanAttention } from '../app/plans'
+import { ProjGlyph } from '../ui/refmark'
 
 type Filter = 'all' | 'todo'
 
@@ -100,7 +101,7 @@ function ProjectCards({ g, filter, k, now }: { g: ProjectGroup; filter: Filter; 
   if (!list.length) return null
   return (
     <section>
-      <GroupHeader icon={<FolderGit2 />} title={g.name || t.thread.noProject} count={list.length} href={projectHref(g.key)} />
+      <GroupHeader icon={<ProjGlyph />} title={g.name || t.thread.noProject} count={list.length} href={projectHref(g.key)} />
       <div className="@container">
         <List className="grid grid-cols-1 gap-x-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
           {list.map((s) => (
@@ -123,7 +124,7 @@ function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Fil
   return (
     <section>
       <GroupHeader
-        icon={<FolderGit2 />}
+        icon={<ProjGlyph />}
         title={g.name || t.thread.noProject}
         href={projectHref(g.key)}
         right={

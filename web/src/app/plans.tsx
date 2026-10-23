@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, FolderGit2, Lock, Milestone, MoreHorizontal, Pencil, Plus, Send, Trash2, Undo2, X, Zap } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Lock, Milestone, MoreHorizontal, Pencil, Plus, Send, Trash2, Undo2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Plan, PlanReq, Requirement, Session, Stage } from '../api/client'
 import { usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
@@ -14,7 +14,7 @@ import { useActions, useBusy, type PlanBody } from './actions'
 import { targetGroup, targetItems, targetLabel } from './assign'
 import { useOpenPlan } from './nav'
 import { ReqView } from './reqDrawer'
-import { statusCls } from './requirements'
+import { Linkify, ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 
 // 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
 // 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（通过 / 退回）和编辑。
@@ -105,7 +105,7 @@ export function PlanCard({ x }: { x: Plan }) {
       className={cx('cursor-pointer p-4 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', state.needsYou && 'border-reply/35 ring-1 ring-reply/25', x.status === 'draft' && x.created_by === 'agent' && 'border-dashed')}
     >
       <div className="flex items-center gap-2.5">
-        <span className="font-mono text-[11px] font-semibold text-fg-3">{x.code}</span>
+        <RefChip code={x.code} status={x.status} link={false} />
         <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-fg">{x.title}</span>
         <PlanChip x={x} />
       </div>
@@ -114,7 +114,7 @@ export function PlanCard({ x }: { x: Plan }) {
         <span>{progressText(x)}</span>
         {x.project_name && (
           <span className="inline-flex items-center gap-1">
-            <FolderGit2 className="size-3.5" />
+            <ProjGlyph />
             {x.project_name}
           </span>
         )}
@@ -178,18 +178,18 @@ export function PlanBadge({ r, className }: { r: Requirement; className?: string
   if (!r.plan_code || !r.stage_seq) return null
   const locked = r.stage_status === 'locked'
   return (
-    <Tip content={locked ? t.plan.lockedHint(r.stage_seq - 1) : t.plan.badgeTip(r.plan_code, t.plan.stageName(r.stage_seq, r.stage_title ?? ''))}>
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          open(r.plan_code!)
-        }}
-        className={cx('inline-flex shrink-0 items-center gap-1 rounded-md bg-sunken px-1.5 py-0.5 text-xs font-medium transition hover:text-accent', locked ? 'text-fg-3' : 'text-fg-2', className)}
-      >
-        {locked ? <Lock className="size-3" /> : <Milestone className="size-3.5" />}
-        {t.plan.badge(r.plan_code, r.stage_seq)}
-      </button>
-    </Tip>
+    <RefChip
+      code={r.plan_code}
+      onOpen={open}
+      className={className}
+      hint={locked ? t.plan.lockedHint(r.stage_seq - 1) : t.plan.stageName(r.stage_seq, r.stage_title ?? '')}
+      suffix={
+        <>
+          {locked && <Lock className="size-3" />}
+          {t.ref.stage(r.stage_seq)}
+        </>
+      }
+    />
   )
 }
 
@@ -203,15 +203,14 @@ function PlanReqRow({ r, locked, picked, onPick }: { r: PlanReq; locked: boolean
     <div className={cx('rounded-xl border bg-surface transition-colors', picked ? 'border-accent/60 bg-accent-soft/50 ring-1 ring-accent/30' : inline ? 'border-line-strong shadow-card' : 'border-line hover:border-line-strong')}>
       <button onClick={() => (onPick ? onPick() : setOpen(!open))} className="flex w-full items-center gap-2.5 px-3 py-2 text-left">
         <ChevronRight className={cx('size-3.5 shrink-0 text-fg-3 transition-transform', (inline || picked) && 'rotate-90', picked && 'text-accent')} />
-        <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
+        <span className="w-[68px] shrink-0">
+          <RefChip code={r.code} status={r.status} link={false} />
+        </span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
         {locked && r.status !== 'done' ? (
           <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-xs text-fg-3">{t.plan.stageState.locked}</span>
         ) : (
-          <span className={cx('inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium', statusCls[r.status]?.pill)}>
-            {r.status === 'done' && <Check className="size-3" />}
-            {t.reqStatus[r.status]}
-          </span>
+          <ReqStatus status={r.status} />
         )}
       </button>
       <Collapse show={inline}>
@@ -255,7 +254,7 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
       {st.summary ? (
         <>
           <div className="text-xs font-semibold text-reply">{t.plan.summary}</div>
-          <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap text-fg-2">{st.summary}</p>
+          <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap text-fg-2"><Linkify text={st.summary} /></p>
         </>
       ) : (
         <p className="text-[13px] text-fg-3">{t.plan.noSummary}</p>
@@ -398,8 +397,10 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
       refId={shown}
       top={
         <div className="flex shrink-0 items-center gap-2 px-4 pt-3 sm:px-5">
-          <span className="font-mono text-[11px] font-semibold text-fg-3">{shown}</span>
-          <span className="text-xs text-fg-3">{t.plan.inPlan(x!.code)}</span>
+          <RefChip code={shown} link={false} />
+          <span className="text-xs text-fg-3">
+            <Linkify text={t.plan.inPlan(x!.code)} />
+          </span>
           <span className="flex-1" />
           <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={() => setSel(null)}>
             <X className="size-4" />
@@ -415,7 +416,7 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
         {x ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
-              <span className="font-mono text-[11px] font-semibold text-fg-3">{x.code}</span>
+              <RefChip code={x.code} status={x.status} link={false} />
               <PlanChip x={x} />
               <span className="flex-1" />
               <Menu
@@ -432,7 +433,7 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-6">
               <h2 className="font-display text-[22px] leading-snug text-fg">{x.title}</h2>
-              {x.goal && <p className="mt-1.5 text-sm leading-relaxed text-fg-3">{x.goal}</p>}
+              {x.goal && <p className="mt-1.5 text-sm leading-relaxed text-fg-3"><Linkify text={x.goal} /></p>}
               <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <OwnerMenu owner={owner} projectId={x.project_id} sessions={all} onPick={(key) => void updatePlan(x.code, bodyOf(x, { owner_session: key }))} className="-ml-2 max-w-[320px] bg-accent-soft/70 text-accent hover:bg-accent-soft" />
                 <span className="text-xs text-fg-3">{owner ? t.plan.autoNext : t.plan.ownerHint}</span>
@@ -541,7 +542,7 @@ function StageEditor({
       <div className="mt-2 space-y-1.5 pl-8">
         {st.reqs.map((r) => (
           <div key={r.key} className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-1.5">
-            <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.ref ?? '新'}</span>
+            <span className="w-[68px] shrink-0">{r.ref ? <RefChip code={r.ref} status={r.status} link={false} /> : <span className="text-xs text-fg-3">{t.plan.newReq}</span>}</span>
             <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
             {stages.length > 1 && (
               <Menu
@@ -579,7 +580,7 @@ function StageEditor({
                 {t.plan.pickReq}
               </Button>
             }
-            items={candidates.length ? candidates.slice(0, 40).map((r) => ({ label: `${r.code}  ${r.title}`, hint: [t.reqStatus[r.status], r.project_name].filter(Boolean).join(t.common.sep), onSelect: () => onChange({ ...st, reqs: [...st.reqs, { key: nk(), ref: r.code, title: r.title, status: r.status }] }) })) : [{ label: t.plan.noCandidates, disabled: true, onSelect: () => {} }]}
+            items={candidates.length ? candidates.slice(0, 40).map((r) => ({ label: `${r.code}  ${r.title}`, icon: <ReqGlyph status={r.status} />, hint: [t.reqStatus[r.status], r.project_name].filter(Boolean).join(t.common.sep), onSelect: () => onChange({ ...st, reqs: [...st.reqs, { key: nk(), ref: r.code, title: r.title, status: r.status }] }) })) : [{ label: t.plan.noCandidates, disabled: true, onSelect: () => {} }]}
           />
         </div>
       </div>
@@ -655,7 +656,10 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
     <Panel open={open} onClose={onClose} wide bare title={plan ? t.plan.edit : t.plan.new}>
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center gap-2 px-5 pt-4 pb-2">
-          <h2 className="font-display text-lg text-fg">{plan ? `${t.plan.edit} · ${plan.code}` : t.plan.new}</h2>
+          <h2 className="flex items-center gap-2 font-display text-lg text-fg">
+            {plan ? t.plan.edit : t.plan.new}
+            {plan && <RefChip code={plan.code} status={plan.status} link={false} />}
+          </h2>
           <span className="flex-1" />
           <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={onClose}>
             <X className="size-4" />
@@ -669,7 +673,7 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
               align="start"
               trigger={
                 <button className={chip}>
-                  <FolderGit2 className="size-3.5 opacity-70" />
+                  <ProjGlyph />
                   <span className="truncate">{proj?.name ?? t.reqs.noProject}</span>
                   <ChevronDown className="size-3 opacity-60" />
                 </button>

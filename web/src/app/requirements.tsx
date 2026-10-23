@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bot, ChevronDown, FolderGit2, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, User, X, Zap } from 'lucide-react'
+import { Bot, ChevronDown, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useProjects, useSessions } from '../api/queries'
@@ -18,32 +18,15 @@ import { PlanBadge } from './plans'
 import { OwnBadge, useOwnership } from './ownership'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from './menus'
+import { ProjGlyph, RefChip, ReqGlyph, statusCls, TurnSeal } from '../ui/refmark'
 
 export const boardStatuses = ['draft', 'ready', 'in_progress', 'blocked', 'review'] as const
 export const closedStatuses = ['done', 'shelved'] as const
 export const allStatuses = [...boardStatuses, ...closedStatuses]
 export const priorities = ['P0', 'P1', 'P2', 'P3']
 
-export const statusTone: Record<string, 'neutral' | 'accent' | 'run' | 'wait' | 'reply' | 'danger' | 'idle'> = {
-  draft: 'idle',
-  ready: 'accent',
-  in_progress: 'run',
-  blocked: 'danger',
-  review: 'reply',
-  done: 'neutral',
-  shelved: 'neutral',
-}
-
-// 状态的完整类名（Tailwind 需要静态可见的类名，不能拼接）。
-export const statusCls: Record<string, { pill: string; dot: string }> = {
-  draft: { pill: 'bg-idle-soft text-idle', dot: 'bg-idle' },
-  ready: { pill: 'bg-accent-soft text-accent', dot: 'bg-accent' },
-  in_progress: { pill: 'bg-run-soft text-run', dot: 'bg-run' },
-  blocked: { pill: 'bg-danger-soft text-danger', dot: 'bg-danger' },
-  review: { pill: 'bg-reply-soft text-reply', dot: 'bg-reply' },
-  done: { pill: 'bg-sunken text-fg-2', dot: 'bg-fg-3' },
-  shelved: { pill: 'bg-sunken text-fg-3', dot: 'bg-line-strong' },
-}
+// 状态配色与纸片印记统一放在 ui/refmark（R-96）。
+export { statusCls } from '../ui/refmark'
 
 export function toFields(r: Requirement, patch: Partial<ReqFields> = {}): ReqFields {
   return {
@@ -83,7 +66,7 @@ export function statusItems(r: Requirement, setStatus: (r: Requirement, s: strin
     label: t.reqStatus[s],
     hint: t.reqStatusHint[s],
     checked: s === r.status,
-    icon: <span className={cx('size-2 rounded-full', statusCls[s].dot)} />,
+    icon: <ReqGlyph status={s} />,
     onSelect: () => void setStatus(r, s),
   }))
 }
@@ -125,7 +108,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
     >
       <div className="flex items-center gap-2 text-xs text-fg-3">
         <PriorityDot p={r.priority} />
-        <span className="font-mono text-[11px] font-semibold">{r.code}</span>
+        <RefChip code={r.code} status={r.status} link={false} />
         {r.project_name && <span className="truncate">{r.project_name}</span>}
         <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
           <Menu
@@ -156,9 +139,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
           // 谁在做、到哪一步合成一个徽章，会话名跟在后面，放不下就截断（R-77）
           own.tone !== 'locked' && <OwnBadge own={own} who={own.session ? sessionTitle(own.session) : undefined} className="max-w-full min-w-0" />
         ) : actor && r.status !== 'done' && r.status !== 'shelved' && (
-          <Badge tone={r.next_actor === 'user' ? 'reply' : 'outline'} icon={r.next_actor === 'user' ? <User className="size-3" /> : <Bot className="size-3" />}>
-            {actor}
-          </Badge>
+          r.next_actor === 'user' ? <TurnSeal /> : <Badge tone="outline" icon={<Bot className="size-3" />}>{actor}</Badge>
         )}
         {r.sessions.length > 0 && !own?.session && (
           <Tip content={t.reqs.sessionsTip(r.sessions.length)}>
@@ -293,7 +274,7 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
               align="start"
               trigger={
                 <button className={chip}>
-                  <span className={cx('size-2 rounded-full', statusCls[f.status ?? 'ready'].dot)} />
+                  <ReqGlyph status={f.status ?? 'ready'} />
                   {t.reqStatus[f.status ?? 'ready']}
                   <ChevronDown className="size-3 opacity-60" />
                 </button>
@@ -315,7 +296,7 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
               align="start"
               trigger={
                 <button className={chip}>
-                  <FolderGit2 className="size-3.5 opacity-70" />
+                  <ProjGlyph />
                   <span className="truncate">{proj?.name ?? t.reqs.noProject}</span>
                   <ChevronDown className="size-3 opacity-60" />
                 </button>
