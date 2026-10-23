@@ -45,6 +45,7 @@ agent 调用：
   mcp                    stdio MCP server
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
   req assign <R-x> --to <会话|auto>   PM 把需求交给开发
+  req review <R-x> <意见> [--image]   审查员交审查意见（不改需求状态）
   team                   工人池：本项目的 PM 与开发会话（在线状态、上下文、手上的需求）
   team need <数量> --reason ...   PM 提醒用户开开发会话
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结

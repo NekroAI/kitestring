@@ -63,6 +63,7 @@ type Requirement struct {
 	OfferedTo        string     `json:"offered_to,omitempty"`   // 待开始时已交给哪个会话（交出或排队送达）；状态一变就清空
 	OfferedAt        *time.Time `json:"offered_at,omitempty"`
 	Evidence         []Evidence `json:"evidence,omitempty"`
+	Reviews          []Evidence `json:"reviews,omitempty"`  // 审查员的审查意见（R-88）：不改状态、不算验收证据
 	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
@@ -193,7 +194,10 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 	if r.Evidence, err = s.ListEvidence(ctx, r.ID); err != nil {
 		return r, err
 	}
-	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign)
+	if r.Reviews, err = s.ListReviews(ctx, r.ID); err != nil {
+		return r, err
+	}
+	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask)
 	return r, err
 }
 
@@ -355,9 +359,22 @@ func (s *Store) AddEvidence(ctx context.Context, e Evidence) (Evidence, error) {
 	return e, err
 }
 
-// ListEvidence 列出需求的证据。
+// EvidenceReview 是审查意见在 evidence 表里的 kind（R-88）。审查意见和证据同形（摘要、附图、会话、时间），
+// 复用同一张表免迁移；读出时分开：ListEvidence 不含审查意见，ListReviews 只含审查意见。
+const EvidenceReview = "review"
+
+// ListEvidence 列出需求的证据（不含审查意见）。
 func (s *Store) ListEvidence(ctx context.Context, reqID string) ([]Evidence, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, voided, created_at FROM evidence WHERE requirement_id = ? ORDER BY created_at`, reqID)
+	return s.listEvidence(ctx, reqID, "kind <> ?")
+}
+
+// ListReviews 列出需求的审查意见（R-88）。
+func (s *Store) ListReviews(ctx context.Context, reqID string) ([]Evidence, error) {
+	return s.listEvidence(ctx, reqID, "kind = ?")
+}
+
+func (s *Store) listEvidence(ctx context.Context, reqID, cond string) ([]Evidence, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, voided, created_at FROM evidence WHERE requirement_id = ? AND `+cond+` ORDER BY created_at`, reqID, EvidenceReview)
 	if err != nil {
 		return nil, err
 	}

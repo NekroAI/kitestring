@@ -557,7 +557,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback, notes, assigns, plans, queue, roleNotes []protocol.Decision
+	var answers, feedback, notes, assigns, plans, queue, roleNotes, reviewTasks []protocol.Decision
 	for _, dec := range fresh {
 		switch dec.Kind {
 		case "feedback":
@@ -572,6 +572,8 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			queue = append(queue, dec)
 		case "role":
 			roleNotes = append(roleNotes, dec)
+		case "review_task":
+			reviewTasks = append(reviewTasks, dec)
 		default:
 			answers = append(answers, dec)
 		}
@@ -600,6 +602,12 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	if len(assigns) > 0 {
 		b.WriteString("[Kitestring] 用户把以下需求交给你（已关联本会话，状态为待开始）。开始做时先调用 session_link_req，需求会变为进行中；完成后附上证据并设为待验收：\n")
 		for _, dec := range assigns {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(reviewTasks) > 0 {
+		b.WriteString("[Kitestring] 用户请你审查以下需求（审查任务）：只做审查分析，不要改代码、不要改需求状态、不要 session_link_req；用 req_get 读需求和证据，审查完用 review_submit（命令行 ks req review）把审查意见交到需求上：\n")
+		for _, dec := range reviewTasks {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -655,7 +663,7 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "queue":
 		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
-	case "assign":
+	case "assign", "review_task":
 		fmt.Fprintf(b, "- %s「%s」\n", dec.ReqCode, oneLine(dec.ReqTitle))
 		for _, line := range strings.Split(dec.Answer, "\n") {
 			if line = strings.TrimSpace(line); line != "" {

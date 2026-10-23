@@ -151,6 +151,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/requirements/{ref}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 审查员交审查意见（R-88）：不改需求状态，不拦截验收 */
+        post: operations["agent-submit-review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/requirements/{ref}/status": {
         parameters: {
             query?: never;
@@ -817,6 +834,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/requirements/{ref}/reviewer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 把需求交给审查员审查（R-88）：只送达审查任务，不改状态、不关联会话 */
+        post: operations["ask-review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reviews": {
         parameters: {
             query?: never;
@@ -1004,6 +1038,14 @@ export interface components {
             role: "" | "pm" | "dev" | "advisor" | "reviewer";
             session_key: string;
         };
+        "Agent-submit-reviewRequest": {
+            /** @description 附图 ID（先上传到 /api/agent/files） */
+            files?: string[] | null;
+            /** @description 提交意见的会话（身份必须是 reviewer） */
+            session_key: string;
+            /** @description 审查意见（可用 Markdown） */
+            summary: string;
+        };
         "Agent-submit-stageRequest": {
             session_key?: string;
             summary: string;
@@ -1047,6 +1089,12 @@ export interface components {
         };
         AnswersInBody: {
             answers: components["schemas"]["Item"][] | null;
+        };
+        "Ask-reviewRequest": {
+            /** @description 交代给审查员的话，例如重点看哪里 */
+            comment?: string;
+            /** @description 审查员会话键（身份必须是 reviewer） */
+            session_key: string;
         };
         "Assign-requirementRequest": {
             comment?: string;
@@ -1105,7 +1153,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1464,6 +1512,7 @@ export interface components {
             priority: string;
             project_id?: string;
             project_name?: string;
+            reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
             /** Format: int64 */
@@ -2032,6 +2081,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Agent-attach-evidenceRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-submit-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-submit-reviewRequest"];
             };
         };
         responses: {
@@ -3623,6 +3707,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Note-requirementRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "ask-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Ask-reviewRequest"];
             };
         };
         responses: {

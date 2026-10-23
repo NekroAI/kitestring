@@ -18,6 +18,7 @@ import { useOpenSession } from './nav'
 import { EditableText, priorities, StatusMenu, statusCls, toFields } from './requirements'
 import { ReqTimeline } from './reqTimeline'
 import { AssignButton } from './assign'
+import { ReviewerButton } from './reviewer'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
 import { OwnLine, useOwnership } from './ownership'
@@ -41,7 +42,7 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
  const scroller = useRef<HTMLDivElement>(null)
   // 看图时“标注并附上”：标注后的图片送进底部输入区
   const [incoming, setIncoming] = useState<File[]>([])
-  const count = (r?.evidence?.length ?? 0) + (r?.feedback?.length ?? 0) + related.length
+  const count = (r?.evidence?.length ?? 0) + (r?.reviews?.length ?? 0) + (r?.feedback?.length ?? 0) + related.length
 
   // 打开时停在最新的记录；有新记录时，如果本来就在底部附近就跟上去。
   const stick = useRef(true)
@@ -293,6 +294,7 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
       </AttachZone>
       <div className="mt-2.5 flex items-center gap-2">
         <div className="min-w-0 flex-1">{hint}</div>
+        {r.status !== 'shelved' && <ReviewerButton code={r.code} projectId={r.project_id} projectName={r.project_name} />}
         {reviewing ? (
           <>
             <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy || uploading} icon={<Undo2 className="size-4" />} onClick={revise}>

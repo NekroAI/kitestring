@@ -384,6 +384,12 @@ func (h *Hub) staleDelivered(ctx context.Context, list []store.Decision) map[str
 		if d.RequirementID == "" {
 			continue
 		}
+		if d.Kind == store.KindReviewTask {
+			// 审查任务：需求搁置 / 删除，或审查员已经交过意见，就不再补发（R-88）
+			r, err := h.store.GetRequirement(ctx, d.RequirementID)
+			stale[d.ID] = err != nil || r.Status == store.ReqShelved || reviewDone(r, d)
+			continue
+		}
 		switch st := status(d.RequirementID); {
 		case st == "" || st == store.ReqDone || st == store.ReqShelved:
 			stale[d.ID] = true

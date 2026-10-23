@@ -30,12 +30,14 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerPublic(publicAPI)
 	h.registerWeb(webAPI)
 	h.registerReview(webAPI)
+	h.registerReviewerWeb(webAPI)
 	h.registerPlans(webAPI)
 	h.registerNeedWeb(webAPI)
 	h.registerAgent(agentAPI)
 	h.registerAgentPlans(agentAPI)
 	h.registerAgentRoles(agentAPI)
 	h.registerAgentTeam(agentAPI)
+	h.registerReviewerAgent(agentAPI)
 	h.registerAgentNeed(agentAPI)
 
 	root := http.NewServeMux()
@@ -77,12 +79,14 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerPublic(api)
 	h.registerWeb(api)
 	h.registerReview(api)
+	h.registerReviewerWeb(api)
 	h.registerPlans(api)
 	h.registerNeedWeb(api)
 	h.registerAgent(api)
 	h.registerAgentPlans(api)
 	h.registerAgentRoles(api)
 	h.registerAgentTeam(api)
+	h.registerReviewerAgent(api)
 	h.registerAgentNeed(api)
 	return api.OpenAPI()
 }
@@ -1089,6 +1093,9 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			// 标成截图 / 录屏却没附文件，用户验收时会看不到任何东西：直接拒绝，让 agent 补上附件。
 			switch strings.ToLower(in.Body.Kind) {
+			case store.EvidenceReview:
+				// 审查意见走 review_submit（R-88）：只有审查员能交，且不算验收证据
+				return nil, huma.Error400BadRequest("审查意见请用 review_submit（命令行 ks req review）提交，只有审查员会话能交；验收证据换一个 kind，例如 test、manual")
 			case "screenshot", "video", "recording":
 				if len(files) == 0 {
 					return nil, huma.Error400BadRequest("证据类型为 " + in.Body.Kind + " 时必须附上图片或录屏（MCP 用 images / videos，命令行用 --image / --video）")

@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react'
-import { CheckCheck, FileCheck2, HelpCircle, MessageSquareText, Send, Sparkles, Undo2 } from 'lucide-react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { CheckCheck, FileCheck2, HelpCircle, MessageSquareText, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
 import type { Decision, Requirement } from '../api/client'
 import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Tip } from '../ui/base'
 import { Thumbs } from '../ui/attach'
+import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
 import { DecisionComposer } from './DecisionCard'
 import { evidenceKind } from './review'
@@ -19,6 +20,7 @@ type Entry = { at: string; key: string; round: number; node: ReactNode }
 const tone = {
   create: 'bg-sunken text-fg-3',
   evidence: 'bg-run-soft text-run',
+  review: 'bg-wait-soft text-wait',
   revise: 'bg-reply-soft text-reply',
   note: 'bg-accent-soft text-accent',
   decision: 'bg-accent-soft text-accent',
@@ -42,6 +44,30 @@ function Node({ icon, tone: cls, title, at, now, muted, children }: { icon: Reac
         </div>
         {children && <div className="mt-1.5 space-y-2">{children}</div>}
       </div>
+    </div>
+  )
+}
+
+// ReviewBody：审查意见正文（Markdown）。长意见先收起到一屏左右，点“展开全部”看完整内容。
+function ReviewBody({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [long, setLong] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el) setLong(el.scrollHeight > el.clientHeight + 4)
+  }, [text])
+  return (
+    <div className="rounded-xl border border-wait/25 bg-wait-soft/40 text-sm leading-relaxed break-words text-fg">
+      <div ref={ref} className={cx('relative px-3 py-2', !open && 'max-h-80 overflow-hidden')}>
+        <Md text={text} />
+        {long && !open && <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-wait-soft to-transparent" />}
+      </div>
+      {long && (
+        <button onClick={() => setOpen(!open)} className="w-full border-t border-wait/20 px-3 py-1.5 text-left text-xs font-medium text-wait transition hover:opacity-80">
+          {open ? t.reviewer.less : t.reviewer.more}
+        </button>
+      )}
     </div>
   )
 }
@@ -97,8 +123,58 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       ),
     })
   }
+  // 审查意见（R-88）：审查员给的参考，和验收证据分开标明，不开新一轮
+  for (const e of r.reviews ?? []) {
+    entries.push({
+      at: e.created_at,
+      key: e.id,
+      round: roundOf(e.created_at),
+      node: (
+        <Node
+          icon={<ScanSearch />}
+          tone={tone.review}
+          title={
+            <>
+              {t.reviewer.review}
+              <Badge tone="wait">{t.reviewer.badge}</Badge>
+              <span className="truncate font-normal text-fg-3">{who(e.session_key)}</span>
+            </>
+          }
+          at={e.created_at}
+          now={now}
+          muted={e.voided}
+        >
+          <ReviewBody text={e.summary} />
+          {!!e.files?.length && <Thumbs files={e.files} />}
+        </Node>
+      ),
+    })
+  }
   for (const f of mine) {
     const at = f.answered_at ?? f.created_at
+    if (f.kind === 'review_task') {
+      entries.push({
+        at,
+        key: f.id,
+        round: roundOf(at),
+        node: (
+          <Node
+            icon={<ScanSearch />}
+            tone={tone.review}
+            title={
+              <>
+                {t.reviewer.timeline}
+                <span className="truncate font-normal text-fg-3">{who(f.session_key) || f.device_name}</span>
+                <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
+              </>
+            }
+            at={at}
+            now={now}
+          />
+        ),
+      })
+      continue
+    }
     if (f.kind === 'assign') {
       entries.push({
         at,

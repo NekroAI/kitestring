@@ -24,13 +24,14 @@ const (
 // 决策类型：agent 提出的决策；用户对需求的修改意见、留言（创建即为“已决策待接收”，沿用同一条送达通道）。
 // 修改意见会把需求退回进行中并开启新一轮；留言只送达，不改需求状态。
 const (
-	KindDecision = "decision"
-	KindFeedback = "feedback"
-	KindNote     = "note"
-	KindAssign   = "assign" // 你把需求交给某个会话开工
-	KindPlan     = "plan"   // 计划进展（开工、阶段通过 / 退回、未获批准），送达计划的负责会话
-	KindQueue    = "queue"  // 会话空闲时整批送达的待开始需求（R-66）
-	KindRole     = "role"   // 会话身份变更通知，例如 PM 被新会话接管（R-82）
+	KindDecision   = "decision"
+	KindFeedback   = "feedback"
+	KindNote       = "note"
+	KindAssign     = "assign"      // 你把需求交给某个会话开工
+	KindPlan       = "plan"        // 计划进展（开工、阶段通过 / 退回、未获批准），送达计划的负责会话
+	KindQueue      = "queue"       // 会话空闲时整批送达的待开始需求（R-66）
+	KindRole       = "role"        // 会话身份变更通知，例如 PM 被新会话接管（R-82）
+	KindReviewTask = "review_task" // 你把需求交给审查员审查（R-88）：只送达，不改需求状态
 )
 
 // Decision 是一条待用户决策的问题。
@@ -39,7 +40,7 @@ type Decision struct {
 	Code             string      `json:"code"`
 	SessionKey       string      `json:"session_key,omitempty"`
 	OriginSession    string      `json:"origin_session,omitempty"`
-	AssignedBy       string      `json:"assigned_by,omitempty"` // 交出需求的会话（PM 派活时为 PM，R-86）；你在网页上交出时为空
+	AssignedBy       string      `json:"assigned_by,omitempty"`   // 交出需求的会话（PM 派活时为 PM，R-86）；你在网页上交出时为空
 	SessionState     string      `json:"session_state,omitempty"` // 目标会话当前状态
 	DeviceName       string      `json:"device_name,omitempty"`
 	ProjectID        string      `json:"project_id,omitempty"`
@@ -56,7 +57,7 @@ type Decision struct {
 	ContextFiles     []FileRef   `json:"context_files"` // 问题本身附带的图（例如待批准的方案图）
 	Recommendation   string      `json:"recommendation"`
 	ShortTitle       string      `json:"short_title"` // 模型生成的短标题
-	Kind             string      `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role"`
+	Kind             string      `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task"`
 	AnswerFiles      []FileRef   `json:"answer_files"`
 	RequirementTitle string      `json:"requirement_title,omitempty"`
 	Status           string      `json:"status"`
@@ -120,7 +121,7 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			return err
 		}
 		n := now()
-		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole {
+		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole || d.Kind == KindReviewTask {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
 			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?, ?)`,
 				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy)

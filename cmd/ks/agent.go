@@ -86,7 +86,7 @@ func attachFiles(body map[string]any, paths []string) error {
 
 func runReq(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("用法：ks req list|get|create|status|evidence|assign ...")
+		return fmt.Errorf("用法：ks req list|get|create|status|evidence|assign|review ...")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("req "+sub, flag.ContinueOnError)
@@ -102,7 +102,7 @@ func runReq(args []string) error {
 	to := fs.String("to", "", "assign：交给哪个开发会话（tool:session_id），auto 由 hub 挑")
 	comment := fs.String("comment", "", "assign：交代给开发的话")
 	var images, videos stringList
-	fs.Var(&images, "image", "create / evidence：附图路径，可重复")
+	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
@@ -152,6 +152,16 @@ func runReq(args []string) error {
 			return fmt.Errorf("用法：ks req assign <R-编号> --to <开发会话键|auto> [--comment 交代]")
 		}
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/assign", compact(map[string]any{"session_key": currentSession(*session), "to": *to, "comment": *comment}))
+	case "review":
+		// 审查员交审查意见（R-88）：ks req review R-12 <意见> [--image 截图.png]；不改需求状态
+		if fs.NArg() < 2 {
+			return fmt.Errorf("用法：ks req review <R-编号> <审查意见> [--image 截图.png]（只有审查员会话能交）")
+		}
+		body := map[string]any{"summary": fs.Arg(1), "session_key": currentSession(*session)}
+		if err := attachFiles(body, images); err != nil {
+			return err
+		}
+		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/reviews", compact(body))
 	case "link":
 		if fs.NArg() < 1 || key == "" {
 			return fmt.Errorf("用法：ks req link <R-编号> [--session tool:id]")

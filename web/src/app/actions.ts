@@ -54,6 +54,8 @@ export function useActions() {
       send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions']),
     assign: (ref: string, sessionKey: string, comment = '') =>
       run(() => unwrap(api.POST('/api/requirements/{ref}/assign', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions', 'sessions']),
+    askReview: (ref: string, sessionKey: string, comment = '') =>
+      run(() => unwrap(api.POST('/api/requirements/{ref}/reviewer', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions']),
     markDone: (key: string, done: boolean) => run(() => unwrap(api.POST('/api/sessions/{key}/done', { params: { path: { key } }, body: { done } })), ['sessions']),
     resendDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/resend', { params: { path: { ref } }, body: {} })), ['decisions']),
 

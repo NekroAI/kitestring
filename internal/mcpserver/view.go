@@ -42,6 +42,12 @@ type reqView struct {
 		Files   []fileView `json:"files"`
 		Voided  bool       `json:"voided"`
 	} `json:"evidence"`
+	Reviews []struct {
+		SessionKey string     `json:"session_key"`
+		Summary    string     `json:"summary"`
+		Files      []fileView `json:"files"`
+		Voided     bool       `json:"voided"`
+	} `json:"reviews"`
 	Feedback []struct {
 		Code        string     `json:"code"`
 		Kind        string     `json:"kind"`
@@ -87,7 +93,7 @@ func (r reqView) line() string {
 	return fmt.Sprintf("%s「%s」%s", r.Code, r.Title, strings.Join(nonEmpty(parts), " · "))
 }
 
-var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展"}
+var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给审查员"}
 
 // String 是 req_get 的默认输出：要点按行，附图另以图片返回。
 func (r reqView) String() string {
@@ -120,6 +126,19 @@ func (r reqView) String() string {
 			b.WriteString(s + "\n")
 		}
 	}
+	if len(r.Reviews) > 0 {
+		fmt.Fprintf(&b, "审查意见（%d 条，审查员给的参考，不改状态）：\n", len(r.Reviews))
+		for _, e := range r.Reviews {
+			s := "  - " + summary.Truncate(strings.Join(strings.Fields(e.Summary), " "), 300)
+			if e.Voided {
+				s += "（上一轮）"
+			}
+			if len(e.Files) > 0 {
+				s += fmt.Sprintf("（%d 个附件）", len(e.Files))
+			}
+			b.WriteString(s + "\n")
+		}
+	}
 	var fb []string
 	for _, f := range r.Feedback {
 		when := ""
@@ -134,7 +153,7 @@ func (r reqView) String() string {
 				ans = "答复：" + f.Answer
 			}
 			s = fmt.Sprintf("  - %s%s 决策：%s → %s", when, f.Code, oneLine(f.Question), ans)
-		case "assign", "queue", "plan":
+		case "assign", "queue", "plan", "review_task":
 			continue // 流转记录，状态已在上面
 		default:
 			s = fmt.Sprintf("  - %s%s %s：%s", when, f.Code, fbLabel[f.Kind], f.Answer)

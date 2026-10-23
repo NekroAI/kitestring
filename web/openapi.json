@@ -173,6 +173,35 @@
         ],
         "type": "object"
       },
+      "Agent-submit-reviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "description": "附图 ID（先上传到 /api/agent/files）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "session_key": {
+            "description": "提交意见的会话（身份必须是 reviewer）",
+            "type": "string"
+          },
+          "summary": {
+            "description": "审查意见（可用 Markdown）",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "summary"
+        ],
+        "type": "object"
+      },
       "Agent-submit-stageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -353,6 +382,24 @@
         },
         "required": [
           "answers"
+        ],
+        "type": "object"
+      },
+      "Ask-reviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "description": "交代给审查员的话，例如重点看哪里",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "审查员会话键（身份必须是 reviewer）",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
         ],
         "type": "object"
       },
@@ -573,7 +620,8 @@
               "assign",
               "plan",
               "queue",
-              "role"
+              "role",
+              "review_task"
             ],
             "type": "string"
           },
@@ -1864,6 +1912,15 @@
           },
           "project_name": {
             "type": "string"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "sessions": {
             "items": {
@@ -3258,6 +3315,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/requirements/{ref}/reviews": {
+      "post": {
+        "operationId": "agent-submit-review",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-submit-reviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Requirement"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "审查员交审查意见（R-88）：不改需求状态，不拦截验收",
         "tags": [
           "agent"
         ]
@@ -5407,6 +5515,57 @@
           }
         },
         "summary": "给需求留言（只送达，不改状态）",
+        "tags": [
+          "requirements"
+        ]
+      }
+    },
+    "/api/requirements/{ref}/reviewer": {
+      "post": {
+        "operationId": "ask-review",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Ask-reviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "把需求交给审查员审查（R-88）：只送达审查任务，不改状态、不关联会话",
         "tags": [
           "requirements"
         ]

@@ -37,6 +37,7 @@ func Run(ctx context.Context) error {
 	t := &tools{c: client.New(20 * time.Second)}
 	t.register(s)
 	t.registerTeam(s)
+	t.registerReview(s)
 	return s.Run(ctx, &mcp.StdioTransport{})
 }
 
