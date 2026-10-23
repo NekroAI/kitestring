@@ -285,19 +285,42 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store
 	if err := h.store.SetStageStatus(ctx, st.ID, store.StagePassed, ""); err != nil {
 		return x, err
 	}
+	// 后面的阶段如果需求都已逐条验收完成（在阶段解锁前就单独验收了），一并自动通过，推进到第一个还有活的阶段（D-60）
+	msg := stageName(st) + "已验收通过。"
+	var auto []string
 	next, ok := x.Stage(seq + 1)
+	for ok && allDone(next) {
+		if err := h.store.SetStageStatus(ctx, next.ID, store.StagePassed, ""); err != nil {
+			return x, err
+		}
+		auto = append(auto, stageName(next))
+		next, ok = x.Stage(next.Seq + 1)
+	}
+	if len(auto) > 0 {
+		msg += strings.Join(auto, "、") + "的需求都已逐条验收，自动通过。"
+	}
 	if !ok {
 		if err := h.store.SetPlanStatus(ctx, x.ID, store.PlanDone); err != nil {
 			return x, err
 		}
-		h.planMsg(ctx, x, withComment(stageName(st)+"已验收通过，计划全部完成。", n), n.files...)
+		h.planMsg(ctx, x, withComment(msg+"计划全部完成。", n), n.files...)
 		return h.planChanged(ctx, x.ID)
 	}
-	h.planMsg(ctx, x, withComment(fmt.Sprintf("%s已验收通过。现在进入%s，其中的需求已交给你。%s", stageName(st), stageName(next), stageHowTo), n), n.files...)
+	h.planMsg(ctx, x, withComment(fmt.Sprintf("%s现在进入%s，其中的需求已交给你。%s", msg, stageName(next), stageHowTo), n), n.files...)
 	if err := h.unlockStage(ctx, x, next); err != nil {
 		return x, err
 	}
 	return h.planChanged(ctx, x.ID)
+}
+
+// allDone：阶段里有需求、且全部已完成。
+func allDone(st store.Stage) bool {
+	for _, r := range st.Requirements {
+		if r.Status != store.ReqDone {
+			return false
+		}
+	}
+	return len(st.Requirements) > 0
 }
 
 // reviseStage：退回整个阶段，附意见；阶段回到进行中。

@@ -228,7 +228,8 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
   const [comment, setComment] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
   const ids = () => files.map((f) => f.id)
-  const next = x.stages.find((s) => s.seq === st.seq + 1)?.seq ?? null
+  // 后面需求都已完成的阶段会一并自动通过（D-60），按钮写真正会开始的那一阶段
+  const next = x.stages.find((s) => s.seq > st.seq && !(s.requirements.length > 0 && s.requirements.every((r) => r.status === 'done')))?.seq ?? null
   const together = st.requirements.filter((r) => r.status === 'review').map((r) => r.code)
   const ready = stageFinished(st)
   if (!ready && st.status !== 'review') return null

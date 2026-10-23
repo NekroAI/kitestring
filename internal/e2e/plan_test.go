@@ -225,3 +225,30 @@ func TestAgentPlanNeedsApproval(t *testing.T) {
 		return strings.Contains(out, "计划已获用户批准，开始") && strings.Contains(out, "列出回调路径")
 	})
 }
+
+// D-60：后面阶段的需求在解锁前就被逐条验收完了，通过前一阶段时一并自动通过，计划不再卡住。
+func TestPlanAutoPassFinishedStages(t *testing.T) {
+	e := setup(t)
+	var x store.Plan
+	e.call("POST", "/api/plans", map[string]any{"title": "三段", "stages": []map[string]any{
+		{"title": "一", "requirements": []map[string]any{{"title": "甲"}}},
+		{"title": "二", "requirements": []map[string]any{{"title": "乙"}}},
+		{"title": "三", "requirements": []map[string]any{{"title": "丙"}}},
+	}}, &x)
+	e.call("POST", "/api/plans/"+x.Code+"/start", map[string]any{}, &x)
+	code := func(i int) string { return x.Stages[i].Requirements[0].Code }
+	a, b, c := code(0), code(1), code(2)
+	// 阶段 2 的需求在未解锁时被单独验收；阶段 3 还没做
+	e.call("PUT", "/api/requirements/"+b, map[string]any{"title": "乙", "status": "done"}, nil)
+	e.call("PUT", "/api/requirements/"+a, map[string]any{"title": "甲", "status": "review"}, nil)
+	e.call("POST", "/api/plans/"+x.Code+"/stages/1/pass", map[string]any{}, &x)
+	if x.Stages[1].Status != store.StagePassed || x.Stages[2].Status != store.StageActive || x.Current != 3 {
+		t.Fatalf("阶段 2 应自动通过、阶段 3 解锁：%s %s current=%d", x.Stages[1].Status, x.Stages[2].Status, x.Current)
+	}
+	// 阶段 3 也验收完 → 通过阶段 3 后计划完成
+	e.call("PUT", "/api/requirements/"+c, map[string]any{"title": "丙", "status": "review"}, nil)
+	e.call("POST", "/api/plans/"+x.Code+"/stages/3/pass", map[string]any{}, &x)
+	if x.Status != store.PlanDone {
+		t.Fatalf("计划应完成：%s", x.Status)
+	}
+}
