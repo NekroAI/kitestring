@@ -83,7 +83,7 @@ export function FullSheet({ open, onClose, title, header, children }: { open: bo
   )
 }
 
-export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode }) {
+export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean | 'xl'; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode }) {
   const desktop = useDesktop()
   if (desktop) {
     return (
@@ -110,7 +110,13 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className={cx('flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop', wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]')}>
+            <div
+              className={cx(
+                'flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop transition-[width] duration-300 ease-out',
+                // xl：验收视图要左右两栏（R-111）；旁边并排开着别的抽屉时仍用普通宽度
+                wide === 'xl' && !aside ? 'w-[min(1100px,calc(100vw-1rem))]' : wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]',
+              )}
+            >
             {bare ? (
               <>
                 <RDialog.Title className="sr-only">{title}</RDialog.Title>

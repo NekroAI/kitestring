@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useRef, useState, type ReactNode } from 'react'
 import { Maximize2 } from 'lucide-react'
 import type { Block, BlockItem } from '../api/client'
 import { t } from '../i18n'
@@ -45,6 +45,12 @@ export function Score({ items, className, label = true }: { items: BlockItem[]; 
   )
 }
 
+// ScoreCount：只有达标数与总数时（阶段验收汇总）画同样的小方块。
+export function ScoreCount({ pass, total, className }: { pass: number; total: number; className?: string }) {
+  const items = Array.from({ length: total }, (_, k) => ({ result: k < pass ? 'pass' : 'ask' }) as BlockItem)
+  return <Score items={items} className={className} label={false} />
+}
+
 // criteriaOf：从需求的验收标准里按编号取出各条（“1. …”“2、…”），清单项只写了 criterion 时用来补文字。
 export function criteriaOf(acceptance?: string): Record<number, string> {
   const out: Record<number, string> = {}
@@ -82,7 +88,7 @@ export function Checklist({
             disabled={!can}
             onClick={() => can && onSee!(it.see!, k)}
             className={cx(
-              'grid w-full grid-cols-[18px_1fr_auto] items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors disabled:cursor-default',
+              'grid w-full grid-cols-[18px_1fr_auto] items-start gap-2.5 rounded-lg px-2.5 py-2 text-left @max-[680px]:py-1.5 transition-colors disabled:cursor-default',
               can && 'cursor-pointer hover:bg-hover',
               active === k && 'bg-hover',
             )}
@@ -94,7 +100,7 @@ export function Checklist({
                 <Linkify text={text} />
               </span>
               {it.why && (
-                <span className="mt-0.5 block text-[13px] break-words text-fg-3">
+                <span className="mt-0.5 block text-[13px] break-words text-fg-3 @max-[680px]:line-clamp-1">
                   <Linkify text={it.why} />
                 </span>
               )}
@@ -123,26 +129,92 @@ function Media({ f, className }: { f: FileRef; className?: string }) {
   )
 }
 
-// Compare：前后对比，拖动分界线看改了什么（clip-path 加一个透明的 range input，键盘也能调）。
+// Compare：前后对比。拖动图片移动分界线；下面的“之前 / 对半 / 之后”一点切换（D-131）。
+// 图上的“之前 / 之后”标签默认隐藏，点一下图片显示（半透明，不挡内容），再点一下隐藏（R-111 退回意见）。
+// 拖动和点按用指针事件自己分：移动超过 4px 算拖动，否则算点按；键盘用一个看不见的 range 调。
 export function Compare({ before, after }: { before: FileRef; after: FileRef }) {
   const [cut, setCut] = useState(50)
+  const [jump, setJump] = useState(false) // 点按切换时带过渡，拖动时跟手
+  const [tags, setTags] = useState(false)
   const [ratio, setRatio] = useState<number | null>(null)
+  const drag = useRef<{ x: number; moved: boolean } | null>(null)
+  const go = (v: number) => {
+    setJump(true)
+    setCut(v)
+  }
+  const at = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100))
+  }
+  const ease = jump ? 'clip-path .28s ease, left .28s ease' : undefined
+  const tag = 'pointer-events-none absolute top-2 rounded-[5px] bg-black/35 px-1.5 py-px text-[11px] font-semibold text-white/90 backdrop-blur-[2px] transition-opacity duration-200'
+  const seg = [
+    { v: 100, label: t.blocks.before },
+    { v: 50, label: t.blocks.half },
+    { v: 0, label: t.blocks.after },
+  ]
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-line bg-sunken" style={{ aspectRatio: ratio ?? 16 / 10 }}>
-      <img src={fileUrl(before.id)} alt={`${t.blocks.before}：${before.name}`} onLoad={(e) => setRatio(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight || null)} className="absolute inset-0 size-full object-cover object-top-left" />
-      <img src={fileUrl(after.id)} alt={`${t.blocks.after}：${after.name}`} className="absolute inset-0 size-full object-cover object-top-left" style={{ clipPath: `inset(0 0 0 ${cut}%)` }} />
-      <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-seal" style={{ left: `${cut}%` }} />
-      <span className="pointer-events-none absolute top-2 left-2 rounded-[5px] border border-line bg-surface px-1.5 py-px text-[11px] font-bold text-fg-2">{t.blocks.before}</span>
-      <span className="pointer-events-none absolute top-2 right-2 rounded-[5px] border border-line bg-surface px-1.5 py-px text-[11px] font-bold text-fg-2">{t.blocks.after}</span>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        value={cut}
-        onChange={(e) => setCut(Number(e.target.value))}
-        aria-label={t.blocks.dragCompare}
-        className="absolute inset-0 m-0 size-full cursor-ew-resize opacity-0 focus-visible:opacity-0"
-      />
+    <div className="grid gap-1.5">
+      <div
+        className="relative cursor-ew-resize touch-pan-y overflow-hidden rounded-[10px] border border-line bg-sunken select-none"
+        style={{ aspectRatio: ratio ?? 16 / 10 }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return
+          drag.current = { x: e.clientX, moved: false }
+          e.currentTarget.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current
+          if (!d) return
+          if (!d.moved && Math.abs(e.clientX - d.x) < 4) return
+          d.moved = true
+          setJump(false)
+          setCut(at(e))
+        }}
+        onPointerUp={() => {
+          if (drag.current && !drag.current.moved) setTags((v) => !v) // 点按：显示 / 隐藏标签
+          drag.current = null
+        }}
+        onPointerCancel={() => (drag.current = null)}
+      >
+        <img src={fileUrl(before.id)} alt={`${t.blocks.before}：${before.name}`} draggable={false} onLoad={(e) => setRatio(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight || null)} className="pointer-events-none absolute inset-0 size-full object-cover object-top-left" />
+        <img src={fileUrl(after.id)} alt={`${t.blocks.after}：${after.name}`} draggable={false} className="pointer-events-none absolute inset-0 size-full object-cover object-top-left" style={{ clipPath: `inset(0 0 0 ${cut}%)`, transition: ease }} />
+        <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-seal" style={{ left: `${cut}%`, transition: ease, opacity: cut === 0 || cut === 100 ? 0 : 1 }} />
+        <span aria-hidden className={cx(tag, 'left-2', tags ? 'opacity-100' : 'opacity-0')}>
+          {t.blocks.before}
+        </span>
+        <span aria-hidden className={cx(tag, 'right-2', tags ? 'opacity-100' : 'opacity-0')}>
+          {t.blocks.after}
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={cut}
+          onChange={(e) => {
+            setJump(false)
+            setCut(Number(e.target.value))
+          }}
+          aria-label={t.blocks.dragCompare}
+          className="sr-only"
+        />
+      </div>
+      <div className="flex justify-center">
+        <div role="radiogroup" aria-label={t.blocks.dragCompare} className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5 text-xs">
+          {seg.map((x) => (
+            <button
+              key={x.v}
+              type="button"
+              role="radio"
+              aria-checked={cut === x.v}
+              onClick={() => go(x.v)}
+              className={cx('rounded-md px-3 py-1 font-medium transition-colors pointer-coarse:px-4 pointer-coarse:py-1.5', cut === x.v ? 'bg-surface text-fg shadow-xs' : 'text-fg-3 hover:text-fg')}
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -277,7 +349,7 @@ function Cap({ children }: { children: ReactNode }) {
 }
 
 // BlockView：画一个块。figNo 是截图的编号；lit 时加高亮框（清单项点过来时）。
-export function BlockView({ block, figNo, lit, criteria }: { block: Block; figNo?: number; lit?: boolean; criteria?: Record<number, string> }) {
+export function BlockView({ block, figNo, lit, criteria, className }: { block: Block; figNo?: number; lit?: boolean; criteria?: Record<number, string>; className?: string }) {
   const b = block
   const typeName = b.type === 'flow' ? t.blocks.flow : b.type === 'metrics' ? t.blocks.metrics : b.type === 'scope' ? t.blocks.scope : b.type === 'options' ? t.blocks.options : b.type === 'table' ? t.blocks.table : b.type === 'checklist' ? t.blocks.checklist : ''
   const cap = b.type === 'figure' || b.type === 'compare' ? b.title : [typeName, b.title].filter(Boolean).join(' · ')
@@ -324,7 +396,7 @@ export function BlockView({ block, figNo, lit, criteria }: { block: Block; figNo
   return (
     <figure
       data-block={b.id}
-      className={cx('grid min-w-0 scroll-mt-20 gap-1.5 rounded-xl outline-offset-4 transition-[outline-color] duration-300', lit ? 'outline-2 outline-accent' : 'outline-2 outline-transparent')}
+      className={cx('grid min-w-0 scroll-mt-20 gap-1.5 rounded-xl outline-offset-4 transition-[outline-color] duration-300', lit ? 'outline-2 outline-accent' : 'outline-2 outline-transparent', className)}
     >
       {cap && <Cap>{cap}</Cap>}
       {body}

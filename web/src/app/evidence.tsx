@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react'
 import type { Block, Evidence, Payload } from '../api/client'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { Thumbs } from '../ui/attach'
+import { fileUrl, Lightbox, Thumbs } from '../ui/attach'
 import { BlockView, Checklist, criteriaOf, figureNumbers, refLabeler, Score } from '../ui/blocks'
 import { Md } from '../ui/markdown'
 import { Linkify } from '../ui/refmark'
@@ -57,15 +57,19 @@ export function EvidenceView({ e, acceptance }: { e: Evidence; acceptance?: stri
   const extra = (e.files ?? []).filter((f) => !used.has(f.id))
   const raw = e.summary && e.summary.trim() !== payloadText(p).trim() ? e.summary : ''
 
+  // 窄处（抽屉、手机）截图排成一条横向胶片，紧跟在结论下面，第一屏就能看到；宽处放在右栏。
+  const shots = side.filter((b) => b.type === 'figure' && b.image)
+
   const see = (id: string, k: number) => {
     if (lit?.k === k) return setLit(null)
     setLit({ id, k })
-    const el = box.current?.querySelector(`[data-block="${CSS.escape(id)}"]`)
-    el?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' })
+    // 同一个块在胶片和右栏各有一份，跳到当前看得见的那份
+    const el = [...(box.current?.querySelectorAll<HTMLElement>(`[data-block="${CSS.escape(id)}"]`) ?? [])].find((x) => x.getClientRects().length > 0)
+    el?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'nearest' })
   }
 
-  const left = (
-    <div className="min-w-0 space-y-3">
+  const main = (
+    <div className="min-w-0 space-y-3 [grid-area:main]">
       {checklist && (
         <div className="space-y-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -85,8 +89,10 @@ export function EvidenceView({ e, acceptance }: { e: Evidence; acceptance?: stri
           ))}
         </div>
       )}
-      {(p.details || !!p.aside?.length || raw) && (
-        <div>
+    </div>
+  )
+  const folds = (p.details || !!p.aside?.length || raw) && (
+        <div className="min-w-0 [grid-area:folds]">
           {p.details && (
             <Fold title={t.blocks.details}>
               <Md text={p.details} className="text-sm" />
@@ -107,13 +113,11 @@ export function EvidenceView({ e, acceptance }: { e: Evidence; acceptance?: stri
             </Fold>
           )}
         </div>
-      )}
-    </div>
   )
   const right = (side.length > 0 || extra.length > 0) && (
-    <div className="min-w-0 space-y-6">
+    <div className="min-w-0 space-y-6 [grid-area:side]">
       {side.map((b) => (
-        <BlockView key={b.id} block={b} figNo={figs[b.id]} lit={lit?.id === b.id} criteria={criteria} />
+        <BlockView key={b.id} block={b} figNo={figs[b.id]} lit={lit?.id === b.id} criteria={criteria} className={shots.includes(b) ? '@max-[680px]:hidden' : undefined} />
       ))}
       {extra.length > 0 && (
         <div className="space-y-1.5">
@@ -126,13 +130,31 @@ export function EvidenceView({ e, acceptance }: { e: Evidence; acceptance?: stri
   return (
     <div ref={box} className="@container space-y-3">
       {p.verdict && (
-        <p className="font-display text-[19px] leading-normal font-semibold text-balance break-words text-fg">
+        <p className="font-display text-[17px] leading-normal font-semibold text-balance break-words text-fg @min-[680px]:text-[19px]">
           <Linkify text={p.verdict} />
         </p>
       )}
-      <div className={cx('grid gap-4', right && '@min-[680px]:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] @min-[680px]:gap-5')}>
-        {left}
+      {shots.length > 0 && (
+        <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 @min-[680px]:hidden">
+          {shots.map((b) => (
+            <Lightbox key={b.id} f={b.image!} group={shots.map((x) => x.image!)}>
+              <button type="button" data-block={b.id} className={cx('relative shrink-0 snap-start overflow-hidden rounded-[10px] border bg-sunken outline-2 outline-offset-2 transition-[outline-color]', lit?.id === b.id ? 'border-accent outline-accent' : 'border-line outline-transparent')}>
+                <img src={fileUrl(b.image!.id)} alt={b.caption || b.image!.name} className={cx('block h-28 w-auto max-w-[78cqw] object-cover object-top-left', shots.length === 1 && 'max-w-full')} />
+                <span className="absolute bottom-1.5 left-1.5 rounded-[5px] bg-black/55 px-1.5 py-px text-[11px] font-semibold text-white">{t.blocks.figure(figs[b.id])}</span>
+              </button>
+            </Lightbox>
+          ))}
+        </div>
+      )}
+      <div
+        className={cx(
+          "grid gap-4 [grid-template-areas:'main'_'side'_'folds']",
+          right && "@min-[680px]:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] @min-[680px]:grid-rows-[auto_1fr] @min-[680px]:gap-x-5 @min-[680px]:[grid-template-areas:'main_side'_'folds_side']",
+        )}
+      >
+        {main}
         {right}
+        {folds}
       </div>
     </div>
   )
@@ -147,5 +169,44 @@ export function EvidenceGist({ e }: { e: Evidence }) {
       <Linkify text={p.verdict || e.summary} />
       {c && <Score items={c.items ?? []} className="ml-2 align-[-1px]" />}
     </span>
+  )
+}
+
+// LegacyEvidence：没有结构化内容的证据，照原文（Markdown）显示。big 时（验收视图）截图放大：宽处在右栏，窄处排成横向胶片。
+export function LegacyEvidence({ e, big }: { e: Evidence; big?: boolean }) {
+  const files = e.files ?? []
+  const imgs = files.filter((f) => f.mime.startsWith('image/'))
+  const rest = files.filter((f) => !imgs.includes(f))
+  if (!big || !imgs.length)
+    return (
+      <div className="space-y-2">
+        <Md text={e.summary} className="text-sm" />
+        <Thumbs files={files} />
+      </div>
+    )
+  return (
+    <div className="@container">
+      <div className="grid gap-4 @min-[680px]:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] @min-[680px]:gap-x-5">
+        <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 @min-[680px]:hidden">
+          {imgs.map((f, k) => (
+            <Lightbox key={f.id} f={f} group={imgs}>
+              <button type="button" className="relative shrink-0 snap-start overflow-hidden rounded-[10px] border border-line bg-sunken">
+                <img src={fileUrl(f.id)} alt={f.name} className={cx('block h-28 w-auto max-w-[78cqw] object-cover object-top-left', imgs.length === 1 && 'max-w-full')} />
+                <span className="absolute bottom-1.5 left-1.5 rounded-[5px] bg-black/55 px-1.5 py-px text-[11px] font-semibold text-white">{t.blocks.figure(k + 1)}</span>
+              </button>
+            </Lightbox>
+          ))}
+        </div>
+        <div className="min-w-0 space-y-2">
+          <Md text={e.summary} className="text-sm" />
+          <Thumbs files={rest} />
+        </div>
+        <div className="min-w-0 space-y-4 @max-[680px]:hidden">
+          {imgs.map((f, k) => (
+            <BlockView key={f.id} block={{ id: f.id, type: 'figure', image: f }} figNo={k + 1} />
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }

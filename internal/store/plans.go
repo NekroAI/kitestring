@@ -69,6 +69,9 @@ type PlanReq struct {
 	Status   string `json:"status"`
 	Priority string `json:"priority"`
 	Kind     string `json:"kind"`
+	// 最近一份结构化证据的验收清单汇总（R-111）：阶段验收时自动显示各条需求的达标数，不让 Agent 重写。没有清单时都是 0。
+	CheckPass  int `json:"check_pass"`
+	CheckTotal int `json:"check_total"`
 }
 
 // StageInput 用于新建 / 重排阶段：ID 为空表示新阶段。
@@ -279,7 +282,9 @@ func (s *Store) fillStages(ctx context.Context, x *Plan) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	rows, err = s.db.QueryContext(ctx, `SELECT r.id, r.seq, r.title, r.status, r.priority, r.kind, r.stage_id FROM requirements r JOIN plan_stages ps ON ps.id = r.stage_id WHERE ps.plan_id = ? ORDER BY r.seq`, x.ID)
+	rows, err = s.db.QueryContext(ctx, `SELECT r.id, r.seq, r.title, r.status, r.priority, r.kind, r.stage_id,
+		COALESCE((SELECT e.payload FROM evidence e WHERE e.requirement_id = r.id AND e.kind <> 'review' AND e.voided = 0 AND e.payload <> '' ORDER BY e.created_at DESC LIMIT 1), '')
+		FROM requirements r JOIN plan_stages ps ON ps.id = r.stage_id WHERE ps.plan_id = ? ORDER BY r.seq`, x.ID)
 	if err != nil {
 		return err
 	}
@@ -291,10 +296,11 @@ func (s *Store) fillStages(ctx context.Context, x *Plan) error {
 	for rows.Next() {
 		var r PlanReq
 		var seq int
-		var sid string
-		if err := rows.Scan(&r.ID, &seq, &r.Title, &r.Status, &r.Priority, &r.Kind, &sid); err != nil {
+		var sid, payload string
+		if err := rows.Scan(&r.ID, &seq, &r.Title, &r.Status, &r.Priority, &r.Kind, &sid, &payload); err != nil {
 			return err
 		}
+		r.CheckPass, r.CheckTotal = blocks.Decode[blocks.Payload](payload).Score()
 		r.Code = reqCode(seq)
 		if i, ok := idx[sid]; ok {
 			x.Stages[i].Requirements = append(x.Stages[i].Requirements, r)

@@ -125,4 +125,8 @@ func TestEvidenceBlocks(t *testing.T) {
 	if len(x.Stages[0].SummaryBlocks) != 1 || x.Stages[0].SummaryBlocks[0].Type != blocks.Metrics {
 		t.Fatalf("阶段小结的块应保存：%+v", x.Stages[0])
 	}
+	// 阶段验收自动汇总：取最近一份结构化证据的清单（R-111）
+	if pr := x.Stages[0].Requirements[0]; pr.CheckPass != 1 || pr.CheckTotal != 2 {
+		t.Fatalf("阶段里的需求应带清单汇总 1/2：%+v", pr)
+	}
 }

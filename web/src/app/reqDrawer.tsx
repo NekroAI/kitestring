@@ -17,6 +17,7 @@ import { useActions, useBusy } from './actions'
 import { useOpenSession } from './nav'
 import { EditableText, priorities, StatusMenu, toFields } from './requirements'
 import { ReqTimeline } from './reqTimeline'
+import { AcceptView } from './accept'
 import { AssignButton } from './assign'
 import { ReviewerButton } from './reviewer'
 import { DesignBadge } from './design'
@@ -45,16 +46,17 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
   const [incoming, setIncoming] = useState<File[]>([])
   const count = (r?.evidence?.length ?? 0) + (r?.reviews?.length ?? 0) + (r?.feedback?.length ?? 0) + related.length
 
-  // 打开时停在最新的记录；有新记录时，如果本来就在底部附近就跟上去。
+  // 待验收时第一屏是验收视图（R-111），从顶上看起；其它状态停在最新的记录，有新记录时如果本来就在底部附近就跟上去。
+  const reviewing = r?.status === 'review'
   const stick = useRef(true)
   useLayoutEffect(() => {
     const el = scroller.current
-    if (el && r) el.scrollTop = el.scrollHeight
-  }, [r?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (el && r) el.scrollTop = reviewing ? 0 : el.scrollHeight
+  }, [r?.id, reviewing]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const el = scroller.current
-    if (el && stick.current) window.setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 320)
-  }, [count])
+    if (el && stick.current && !reviewing) window.setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 320)
+  }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AnnotateTarget.Provider value={(f) => setIncoming((x) => [...x, f])}>
@@ -71,7 +73,7 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
         </div>
       ) : (
         <>
-          <Brief r={r} />
+          <Brief r={r} compact={reviewing} />
           <div
             ref={scroller}
             onScroll={(e) => {
@@ -80,7 +82,7 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
             }}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-bg/40 px-4 py-5 sm:px-5"
           >
-            <ReqTimeline r={r} decisions={related} />
+            {reviewing ? <AcceptView r={r} decisions={related} /> : <ReqTimeline r={r} decisions={related} />}
           </div>
           <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
             <Composer
@@ -88,7 +90,7 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
               r={r}
               onPassed={onPassed}
               pending={related.filter((d) => d.status === 'pending').length}
-              onJump={() => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })}
+              onJump={() => scroller.current?.scrollTo({ top: reviewing ? 0 : scroller.current.scrollHeight, behavior: 'smooth' })}
               incoming={incoming}
               onIncoming={() => setIncoming([])}
             />
@@ -101,7 +103,8 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
 }
 
 // Brief：需求本身——标题、状态、可折叠的说明（描述、验收标准、关联会话、来源）。
-function Brief({ r }: { r: Requirement }) {
+// compact：验收时手机上不显示两行摘要，把第一屏留给证据（说明仍可展开）。
+function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
   const projects = useProjects()
   const sessions = useSessions()
   const { updateReq, linkReq } = useActions()
@@ -121,6 +124,7 @@ function Brief({ r }: { r: Requirement }) {
         <StatusMenu r={r} size="md" />
         <PlanBadge r={r} className="px-2.5 py-1 text-sm" />
         <DesignBadge r={r} className="px-2.5 py-1 text-sm" />
+        <span className={cx('contents', compact && 'max-sm:hidden')}>
         <Menu
           align="start"
           trigger={
@@ -146,6 +150,7 @@ function Brief({ r }: { r: Requirement }) {
             ...(projects.data?.projects ?? []).filter((p) => !p.hidden || p.id === r.project_id).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === r.project_id, onSelect: () => save({ project_id: p.id }) })),
           ]}
         />
+        </span>
         <button onClick={() => setOpen(!open)} className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] text-fg-3 transition hover:bg-hover hover:text-fg">
           {t.reqs.brief}
           <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} />
@@ -153,7 +158,7 @@ function Brief({ r }: { r: Requirement }) {
       </div>
       <OwnLine r={r} />
       {!open && (
-        <button onClick={() => setOpen(true)} className="mt-2 line-clamp-2 w-full text-left text-[13px] leading-relaxed text-fg-3 transition hover:text-fg-2">
+        <button onClick={() => setOpen(true)} className={cx('mt-2 line-clamp-2 w-full text-left text-[13px] leading-relaxed text-fg-3 transition hover:text-fg-2', compact && 'max-sm:hidden')}>
           <Linkify text={r.detail || r.acceptance || t.reqs.briefEmpty} />
         </button>
       )}
@@ -467,7 +472,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
     <Panel
       open={!!refId}
       onClose={onClose}
-      wide
+      wide={cur?.status === 'review' ? 'xl' : true}
       bare
       title={cur ? `${cur.code} ${cur.title}` : t.reqs.title}
       onSwipe={(d) => {

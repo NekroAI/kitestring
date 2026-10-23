@@ -85,10 +85,10 @@ export function MermaidView({ source }: { source: string }) {
       </div>
     )
   if (!svg) return <div className="flex h-24 items-center justify-center text-xs text-fg-3">{t.blocks.flowLoading}</div>
-  // svg 由 mermaid 在 strict 模式下生成并清洗过。窄屏上不把图缩到看不清：最窄 520px，放不下就横向滚动。
+  // svg 由 mermaid 在 strict 模式下生成并清洗过。窄屏上不把图缩到看不清：最窄 480px，放不下就横向滚动。
   return (
     <div className="overflow-x-auto">
-      <div className="[&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:w-full" style={{ minWidth: Math.min(svg.w || 520, 520) }} dangerouslySetInnerHTML={{ __html: svg.html }} />
+      <div className="[&_svg]:mx-auto [&_svg]:block [&_svg]:h-auto [&_svg]:w-full" style={{ minWidth: Math.min(svg.w || 480, 480) }} dangerouslySetInnerHTML={{ __html: svg.html }} />
     </div>
   )
 }

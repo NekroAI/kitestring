@@ -568,6 +568,8 @@ export const zh = {
     off: (who: string) => `这个项目关掉了自动送达 · 需要你交给「${who}」或别的会话`,
   },
   plan: {
+    scores: '各需求达标情况',
+    noChecklist: '没有清单',
     view: '计划',
     new: '新建计划',
     edit: '编辑计划',
@@ -709,6 +711,13 @@ export const zh = {
     noEvidence: 'Agent 没有附证据',
   },
 
+  accept: {
+    earlier: (n: number) => `本轮更早的证据 · ${n}`,
+    oldRound: (k: number, why: string) => `第 ${k} 轮（已退回：${why || '无说明'}）`,
+    revisedWith: '退回意见',
+    all: '全部记录',
+  },
+
   blocks: {
     checklist: '验收清单',
     score: (pass: number, total: number) => `${pass} / ${total} 达标`,
@@ -721,6 +730,7 @@ export const zh = {
     attachments: (n: number) => `其它附件 · ${n}`,
     before: '之前',
     after: '之后',
+    half: '对半',
     dragCompare: '拖动对比之前与之后',
     flow: '流程',
     flowLoading: '正在画流程图…',

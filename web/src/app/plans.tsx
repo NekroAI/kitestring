@@ -12,10 +12,10 @@ import { Collapse, Item, List } from '../ui/motion'
 import { displayState, StatusDot } from '../ui/marks'
 import { useActions, useBusy, type PlanBody } from './actions'
 import { targetGroup, targetItems, targetLabel } from './assign'
-import { useOpenPlan } from './nav'
+import { useOpenPlan, useOpenReq } from './nav'
 import { ReqView } from './reqDrawer'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
-import { BlockList } from '../ui/blocks'
+import { BlockList, ScoreCount } from '../ui/blocks'
 
 // 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
 // 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（通过 / 退回）和编辑。
@@ -252,6 +252,7 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
     })
   return (
     <div className="mt-3 rounded-2xl border border-reply/30 bg-gradient-to-b from-reply-soft to-reply-soft/40 p-3.5">
+      <StageScores st={st} />
       {st.summary ? (
         <>
           <div className="text-xs font-semibold text-reply">{t.plan.summary}</div>
@@ -275,6 +276,31 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
         </Button>
       </div>
       {together.length > 0 && <p className="mt-2 text-xs text-fg-3">{t.plan.passTogether(together.join('、'))}</p>}
+    </div>
+  )
+}
+
+// StageScores：阶段验收时自动汇总各条需求最近一份证据的清单达标数（R-111），Agent 的小结只写跨需求的部分。
+function StageScores({ st }: { st: Stage }) {
+  const openReq = useOpenReq()
+  if (!st.requirements.length) return null
+  return (
+    <div className="mb-3 space-y-0.5">
+      <div className="text-xs font-semibold text-reply">{t.plan.scores}</div>
+      {st.requirements.map((r) => (
+        <button key={r.code} type="button" onClick={() => openReq(r.code)} className="flex w-full min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-surface/70">
+          <RefChip code={r.code} status={r.status} link={false} />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-fg">{r.title}</span>
+          {r.check_total > 0 ? (
+            <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-2 tabular-nums">
+              <ScoreCount pass={r.check_pass} total={r.check_total} />
+              {r.check_pass}/{r.check_total}
+            </span>
+          ) : (
+            <span className="shrink-0 text-xs text-fg-3">{t.plan.noChecklist}</span>
+          )}
+        </button>
+      ))}
     </div>
   )
 }

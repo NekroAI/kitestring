@@ -121,9 +121,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           {hasPayload(e) ? (
             <EvidenceView e={e} acceptance={r.acceptance} />
           ) : (
-            <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">
-              <Linkify text={e.summary} />
-            </p>
+            <Md text={e.summary} className="text-sm leading-relaxed text-fg" />
           )}
           {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
           {!hasPayload(e) && !!e.files?.length && <Thumbs files={e.files} />}

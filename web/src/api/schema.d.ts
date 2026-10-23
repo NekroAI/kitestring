@@ -1571,6 +1571,10 @@ export interface components {
             title: string;
         };
         PlanReq: {
+            /** Format: int64 */
+            check_pass: number;
+            /** Format: int64 */
+            check_total: number;
             code: string;
             id: string;
             kind: string;

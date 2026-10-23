@@ -2104,6 +2104,14 @@
       "PlanReq": {
         "additionalProperties": false,
         "properties": {
+          "check_pass": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "check_total": {
+            "format": "int64",
+            "type": "integer"
+          },
           "code": {
             "type": "string"
           },
@@ -2129,7 +2137,9 @@
           "title",
           "status",
           "priority",
-          "kind"
+          "kind",
+          "check_pass",
+          "check_total"
         ],
         "type": "object"
       },
