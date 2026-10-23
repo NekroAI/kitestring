@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from 'react'
 import { Dialog } from 'radix-ui'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowUpRight, Check, PenLine, Redo2, Square, Type, Undo2, X } from 'lucide-react'
@@ -83,6 +83,22 @@ function draw(ctx: CanvasRenderingContext2D, shapes: Shape[], W: number, H: numb
   }
 }
 
+// shield：全屏浮层（看图、标注）挡住指针 / 触摸事件继续冒泡。浮层虽然渲染在 body 上，React 事件仍沿组件树冒泡，
+// 会被外层抽屉当成“左右滑动切换需求”“下拉关闭”——Apple Pencil 画一笔横线就会把抽屉切走（R-39）。
+const stop = (e: SyntheticEvent) => e.stopPropagation()
+export const shield = {
+  onClick: stop,
+  onPointerDown: stop,
+  onPointerMove: stop,
+  onPointerUp: stop,
+  onPointerCancel: stop,
+  onTouchStart: stop,
+  onTouchMove: stop,
+  onTouchEnd: stop,
+  onMouseDown: stop,
+  onDoubleClick: stop,
+}
+
 // Annotator：全屏标注编辑器。完成时把“原图 + 标注”导出为 PNG 文件交给 onDone。
 export function Annotator({ src, name, open, onClose, onDone }: { src: string; name: string; open: boolean; onClose: () => void; onDone: (f: File) => void }) {
   return (
@@ -93,7 +109,7 @@ export function Annotator({ src, name, open, onClose, onDone }: { src: string; n
             <Dialog.Overlay asChild forceMount>
               <motion.div className="fixed inset-0 z-[80] bg-black/90" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
             </Dialog.Overlay>
-            <Dialog.Content forceMount aria-describedby={undefined} onClick={(e) => e.stopPropagation()} className="fixed inset-0 z-[80] outline-none">
+            <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[80] outline-none">
               <Dialog.Title className="sr-only">{t.annotate.title}</Dialog.Title>
               <Editor src={src} name={name} onClose={onClose} onDone={onDone} />
             </Dialog.Content>

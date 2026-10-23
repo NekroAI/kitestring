@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type Dra
 import { AnimatePresence, motion } from 'motion/react'
 import { Dialog } from 'radix-ui'
 import { ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
-import { Annotator, useAnnotateTarget } from './annotate'
+import { Annotator, shield, useAnnotateTarget } from './annotate'
 import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
@@ -152,7 +152,7 @@ function Lightbox({ f, children }: { f: FileRef; children: ReactNode }) {
             <Dialog.Overlay asChild forceMount>
               <motion.div className="fixed inset-0 z-[70] bg-black/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
             </Dialog.Overlay>
-            <Dialog.Content forceMount aria-describedby={undefined} onClick={stop} className="fixed inset-0 z-[70] outline-none">
+            <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[70] outline-none">
               <Dialog.Title className="sr-only">{f.name}</Dialog.Title>
               <Viewer f={f} onClose={() => setOpen(false)} />
             </Dialog.Content>
