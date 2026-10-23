@@ -530,6 +530,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 系统推送的公钥与已订阅的设备 */
+        get: operations["get-push"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在这台设备上开启系统推送 */
+        post: operations["subscribe-push"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 给某台设备发一条测试推送 */
+        post: operations["test-push"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 关闭某台设备的系统推送（按 ID 或推送地址） */
+        post: operations["delete-push"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recap": {
         parameters: {
             query?: never;
@@ -900,6 +968,9 @@ export interface components {
         DecisionsOutBody: {
             decisions: components["schemas"]["Decision"][] | null;
         };
+        "Delete-pushRequest": {
+            ref: string;
+        };
         Device: {
             /** Format: date-time */
             created_at: string;
@@ -1011,6 +1082,10 @@ export interface components {
             name: string;
             /** Format: int64 */
             size: number;
+        };
+        "Get-pushResponse": {
+            public_key: string;
+            subs: components["schemas"]["PushSub"][] | null;
         };
         Git: {
             available: boolean;
@@ -1140,6 +1215,15 @@ export interface components {
         ProjectsOutBody: {
             projects: components["schemas"]["Project"][] | null;
             workspaces: components["schemas"]["Workspace"][] | null;
+        };
+        PushSub: {
+            /** Format: date-time */
+            created_at: string;
+            endpoint: string;
+            id: string;
+            /** Format: date-time */
+            last_ok_at?: string;
+            name: string;
         };
         RecapInBody: {
             /** Format: date-time */
@@ -1337,6 +1421,12 @@ export interface components {
             requirements: components["schemas"]["PlanReqIn"][] | null;
             title: string;
         };
+        "Subscribe-pushRequest": {
+            auth: string;
+            endpoint: string;
+            name?: string;
+            p256dh: string;
+        };
         SummaryTestOutBody: {
             /** Format: int64 */
             latency_ms: number;
@@ -1346,6 +1436,13 @@ export interface components {
             sample_reply: string;
             /** @description 模型生成的一句话摘要 */
             summary: string;
+        };
+        "Test-pushRequest": {
+            ref: string;
+        };
+        "Test-pushResponse": {
+            /** Format: int64 */
+            sent: number;
         };
         ToolAct: {
             /** Format: date-time */
@@ -2591,6 +2688,136 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Merge-projectRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Get-pushResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "subscribe-push": {
+        parameters: {
+            query?: never;
+            header?: {
+                Origin?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Subscribe-pushRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSub"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "test-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Test-pushRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Test-pushResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Delete-pushRequest"];
             };
         };
         responses: {

@@ -7,12 +7,14 @@ import { ApiError, setUnauthorizedHandler } from './api/client'
 import { qk } from './api/queries'
 import { OutboxProvider } from './app/outbox'
 import { initTheme } from './lib/theme'
+import { registerSW } from './lib/push'
 import { ConfirmProvider } from './ui/overlay'
 import { TipProvider } from './ui/base'
 import App from './App'
 import './index.css'
 
 initTheme()
+registerSW()
 
 // iOS Safari 无视 viewport 的 user-scalable=no：拦下页面级的捏合与多指缩放。
 // 看图器用指针事件自己算缩放，不受影响。

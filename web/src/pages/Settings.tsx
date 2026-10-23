@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
+import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
-import { qk, useDevices, useProjects, useSettings } from '../api/queries'
+import { qk, useDevices, useProjects, usePush, useSettings } from '../api/queries'
+import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
 import { t } from '../i18n'
 import { copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
@@ -318,6 +319,76 @@ function WorkspaceModal({ ws, onClose }: { ws: Workspace | 'new' | null; onClose
   )
 }
 
+// 系统推送（R-49）：这台设备的开关、测试，以及已开启推送的全部设备
+function PushGroup() {
+  const push = usePush()
+  const qc = useQueryClient()
+  const now = useNow()
+  const [busy, wrap] = useBusy()
+  const [st, setSt] = useState<{ state: PushState; endpoint?: string } | null>(null)
+  const refresh = () => void pushState().then(setSt)
+  useEffect(refresh, [])
+  const run = (fn: () => Promise<unknown>, done?: string) =>
+    wrap(async () => {
+      try {
+        await fn()
+        if (done) toast.success(done)
+      } catch (e) {
+        toast.error(errMsg(e))
+      }
+      refresh()
+      void qc.invalidateQueries({ queryKey: ['settings', 'push'] })
+    })
+  const mine = (push.data?.subs ?? []).find((x) => x.endpoint === st?.endpoint)
+  const test = (ref: string) => run(() => unwrap(api.POST('/api/push/test', { body: { ref } })), t.settings.push.testSent)
+  return (
+    <Group title={t.settings.push.title} hint={t.settings.push.hint}>
+      <Card className="divide-y divide-line overflow-hidden">
+        <Row>
+          <BellRing className="size-5 shrink-0 text-fg-3" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-fg">{t.settings.push.thisDevice}</div>
+            <div className="mt-0.5 text-xs leading-relaxed text-fg-3">{st ? t.settings.push.state[st.state] : '…'}</div>
+          </div>
+          {st?.state === 'on' ? (
+            <>
+              <Button size="sm" disabled={busy} onClick={() => void test(st.endpoint!)}>
+                {t.settings.push.test}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(disablePush, t.settings.push.disabled)}>
+                {t.settings.push.disable}
+              </Button>
+            </>
+          ) : (
+            st?.state === 'off' && (
+              <Button size="sm" variant="primary" loading={busy} onClick={() => void run(enablePush, t.settings.push.enabled)}>
+                {t.settings.push.enable}
+              </Button>
+            )
+          )}
+        </Row>
+        {(push.data?.subs ?? [])
+          .filter((x) => x.id !== mine?.id)
+          .map((x) => (
+            <Row key={x.id}>
+              <Smartphone className="size-5 shrink-0 text-fg-3" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-fg">{x.name || t.settings.push.unnamed}</div>
+                <div className="mt-0.5 text-xs text-fg-3">{x.last_ok_at ? t.settings.push.lastOk(relTime(x.last_ok_at, now)) : t.settings.push.since(relTime(x.created_at, now))}</div>
+              </div>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void test(x.id)}>
+                {t.settings.push.test}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => unwrap(api.POST('/api/push/unsubscribe', { body: { ref: x.id } })), t.settings.push.removed)}>
+                {t.settings.push.remove}
+              </Button>
+            </Row>
+          ))}
+      </Card>
+    </Group>
+  )
+}
+
 function Notify() {
   const settings = useSettings()
   const projects = useProjects()
@@ -333,6 +404,7 @@ function Notify() {
 
   return (
     <>
+      <PushGroup />
       <Group
         title={t.settings.notify.workspaces}
         hint={t.settings.notify.workspacesHint}

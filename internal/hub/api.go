@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -190,6 +191,14 @@ func (h *Hub) loginOK(ctx context.Context) (*loginOut, error) {
 }
 
 // ---------- Web 接口 ----------
+
+// decisionPath：决策通知点开去哪——它所在的会话（决策就在会话里答复），没有会话时去工作台。
+func decisionPath(d store.Decision) string {
+	if d.SessionKey != "" {
+		return "/?s=" + url.QueryEscape(d.SessionKey)
+	}
+	return "/"
+}
 
 type sessionsOut struct {
 	Body struct {
@@ -537,6 +546,84 @@ func (h *Hub) registerWeb(api huma.API) {
 			}
 			h.broker.publish("projects")
 			return ok(), nil
+		})
+	// 系统推送（R-49）
+	huma.Register(api, huma.Operation{OperationID: "get-push", Method: http.MethodGet, Path: "/api/push", Tags: tag("projects"), Summary: "系统推送的公钥与已订阅的设备"},
+		func(ctx context.Context, _ *empty) (*struct {
+			Body struct {
+				PublicKey string          `json:"public_key"`
+				Subs      []store.PushSub `json:"subs"`
+			}
+		}, error) {
+			out := &struct {
+				Body struct {
+					PublicKey string          `json:"public_key"`
+					Subs      []store.PushSub `json:"subs"`
+				}
+			}{}
+			var err error
+			if out.Body.PublicKey, _, err = h.vapidKeys(ctx); err != nil {
+				return nil, err
+			}
+			out.Body.Subs, err = h.store.ListPushSubs(ctx)
+			return out, err
+		})
+	huma.Register(api, huma.Operation{OperationID: "subscribe-push", Method: http.MethodPost, Path: "/api/push/subscribe", Tags: tag("projects"), Summary: "在这台设备上开启系统推送"},
+		func(ctx context.Context, in *struct {
+			Origin string `header:"Origin"`
+			Body   struct {
+				Endpoint string `json:"endpoint" minLength:"1"`
+				P256dh   string `json:"p256dh" minLength:"1"`
+				Auth     string `json:"auth" minLength:"1"`
+				Name     string `json:"name,omitempty"`
+			}
+		}) (*struct{ Body store.PushSub }, error) {
+			if !strings.HasPrefix(in.Body.Endpoint, "https://") {
+				return nil, huma.Error400BadRequest("推送地址无效")
+			}
+			p, err := h.store.SavePushSub(ctx, store.PushSub{Endpoint: in.Body.Endpoint, P256dh: in.Body.P256dh, Auth: in.Body.Auth, Name: in.Body.Name, Origin: in.Origin})
+			if err != nil {
+				return nil, err
+			}
+			h.broker.publish("settings")
+			return &struct{ Body store.PushSub }{p}, nil
+		})
+	huma.Register(api, huma.Operation{OperationID: "delete-push", Method: http.MethodPost, Path: "/api/push/unsubscribe", Tags: tag("projects"), Summary: "关闭某台设备的系统推送（按 ID 或推送地址）"},
+		func(ctx context.Context, in *struct {
+			Body struct {
+				Ref string `json:"ref" minLength:"1"`
+			}
+		}) (*okBody, error) {
+			if err := h.store.DeletePushSub(ctx, in.Body.Ref); err != nil {
+				return nil, err
+			}
+			h.broker.publish("settings")
+			return ok(), nil
+		})
+	huma.Register(api, huma.Operation{OperationID: "test-push", Method: http.MethodPost, Path: "/api/push/test", Tags: tag("projects"), Summary: "给某台设备发一条测试推送"},
+		func(ctx context.Context, in *struct {
+			Body struct {
+				Ref string `json:"ref" minLength:"1"`
+			}
+		}) (*struct {
+			Body struct {
+				Sent int `json:"sent"`
+			}
+		}, error) {
+			n, err := h.sendPush(ctx, notify.Message{Event: "test", Title: "纸鸢 · 测试推送", Body: "如果你看到这条通知，说明这台设备的系统推送已开启。"}, "/settings?tab=notify", in.Body.Ref)
+			if err != nil {
+				return nil, huma.Error502BadGateway("推送服务拒绝了这条推送：" + err.Error())
+			}
+			if n == 0 {
+				return nil, huma.Error400BadRequest("没有送出：这台设备的订阅可能已失效，请关闭后重新开启")
+			}
+			out := &struct {
+				Body struct {
+					Sent int `json:"sent"`
+				}
+			}{}
+			out.Body.Sent = n
+			return out, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "test-notify", Method: http.MethodPost, Path: "/api/notify/test", Tags: tag("projects"), Summary: "向指定渠道配置发送测试通知"},
 		func(ctx context.Context, in *struct {
@@ -910,7 +997,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			h.refreshDelivered(ctx, r)
 			h.broker.publish("requirements", "sessions", "plans")
 			if r.Status == store.ReqReview {
-				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements")
+				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
 			}
 			return &reqOut{Body: r}, nil
 		})
@@ -1004,7 +1091,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			h.broker.publish("decisions", "sessions", "requirements")
 			go h.aiOnDecision(d)
-			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, "/decisions")
+			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
 			return &decisionOut{Body: d}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-get-decision", Method: http.MethodGet, Path: "/api/agent/decisions/{ref}", Tags: tag},

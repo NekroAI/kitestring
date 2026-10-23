@@ -183,3 +183,15 @@ CREATE TABLE IF NOT EXISTS plan_stages (
 	summary_at TEXT NOT NULL DEFAULT '',
 	passed_at  TEXT NOT NULL DEFAULT ''
 );
+
+-- 浏览器系统推送订阅（R-49 Web Push）：一台设备上的一个浏览器 / 主屏 App 一条
+CREATE TABLE IF NOT EXISTS push_subs (
+	id         TEXT PRIMARY KEY,
+	endpoint   TEXT NOT NULL UNIQUE,
+	p256dh     TEXT NOT NULL,
+	auth       TEXT NOT NULL,
+	name       TEXT NOT NULL DEFAULT '', -- 设备说明，如“iPhone · 主屏 App”
+	origin     TEXT NOT NULL DEFAULT '', -- 订阅时的网页来源，作为 VAPID 联系方式
+	created_at TEXT NOT NULL,
+	last_ok_at TEXT NOT NULL DEFAULT ''
+);

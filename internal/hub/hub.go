@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -49,7 +50,7 @@ type Hub struct {
 	mu       sync.Mutex
 	conns    map[string]*deviceConn // deviceID → 连接
 	lostTmr  map[string]*time.Timer
-	notified map[string]time.Time // 通知去重键 → 上次发送时间
+	notified map[string]time.Time   // 通知去重键 → 上次发送时间
 	kicks    map[string]*time.Timer // 会话 → 待送达的整批需求（攒几秒再送，R-66）
 	dirty    map[string]bool        // 待推送最新数据的会话（R-56，300ms 内合并）
 	dirtyTmr *time.Timer
@@ -180,7 +181,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		return err
 	}
 	defer h.sessionChanged(key) // 存完工具版本、上下文占用等再推
-	if ev.Context > 0 { // 上下文占用（R-60）
+	if ev.Context > 0 {         // 上下文占用（R-60）
 		if err := h.store.SetContext(ctx, key, ev.Context, ev.ContextMax); err != nil {
 			return err
 		}
@@ -382,7 +383,7 @@ func (h *Hub) notifySession(x store.Session, event, title, body string) {
 		Title: fmt.Sprintf("%s · %s", title, name),
 		Body:  fmt.Sprintf("%s @ %s %s", x.Tool, x.DeviceName, body),
 		Group: "kitestring",
-	}, "/")
+	}, "/?s="+url.QueryEscape(x.Key))
 }
 
 // sendNotify 异步发送通知。projectID 为空或项目未归属工作空间时使用默认渠道。
@@ -398,6 +399,12 @@ func (h *Hub) sendNotify(projectID string, m notify.Message, path string) {
 		if projectID != "" {
 			if w, err := h.store.WorkspaceForProject(ctx, projectID); err == nil && notify.HasChannel(w.Notify) {
 				cfg = w.Notify
+			}
+		}
+		// 系统推送（R-49）不依赖 Bark / 企业微信渠道，事件规则相同
+		if pushWants(cfg, m.Event) {
+			if _, err := h.sendPush(ctx, m, path, ""); err != nil {
+				h.log.Warn("系统推送失败", "event", m.Event, "err", err)
 			}
 		}
 		if !notify.HasChannel(cfg) || !notify.Wants(cfg, m.Event) {

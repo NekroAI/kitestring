@@ -62,6 +62,11 @@ export function useSessions() {
   })
 }
 
+// 系统推送的公钥与已订阅的设备（R-49）
+export function usePush() {
+  return useQuery({ queryKey: ['settings', 'push'], queryFn: () => unwrap(api.GET('/api/push')), select: (d) => ({ publicKey: d.public_key, subs: d.subs ?? [] }) })
+}
+
 export function useSessionDetail(key: string | null) {
   return useQuery({
     queryKey: qk.session(key ?? ''),
@@ -138,6 +143,7 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   plans: [['plans']],
   devices: [['devices'], ['sessions']],
   projects: [['projects'], ['sessions'], ['requirements'], ['plans']],
+  settings: [['settings']],
 }
 
 function invalidateTopics(qc: QueryClient, topics: string[]) {
