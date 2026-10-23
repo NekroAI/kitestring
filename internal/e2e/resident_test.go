@@ -9,6 +9,7 @@ import (
 
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/daemon"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -79,5 +80,36 @@ func TestResidentStopGuard(t *testing.T) {
 	}
 	if st := e.session("claude:dev-1").State; st != store.StateRunning {
 		t.Fatalf("被拦下的结束不应上报，状态应仍为运行中，得到 %s", st)
+	}
+}
+
+// 顾问两种模式（R-123）：Adv 默认不常驻，没挂 ks wait 结束也不被 Stop hook 拦；
+// 常驻与否只由提示词约定，提示词写明两种模式与切换口令。
+func TestAdvisorNotResident(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	c := client.New(30 * time.Second)
+	ctx := context.Background()
+	hook(t, "claude", map[string]any{"session_id": "adv-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "聊聊", "prompt_id": "p0"})
+	e.waitFor("会话入库", func() bool { return e.session("claude:adv-1").Key != "" })
+	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:adv-1", "role": "advisor"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("身份生效", func() bool { return e.session("claude:adv-1").Role == "advisor" })
+	for i := 0; i < 3; i++ {
+		out := hook(t, "claude", map[string]any{"session_id": "adv-1", "cwd": cwd, "hook_event_name": "Stop"})
+		if strings.Contains(out, `"decision":"block"`) {
+			t.Fatalf("Adv 默认不常驻，不应被拦：%s", out)
+		}
+	}
+	e.waitFor("正常结束", func() bool { return e.session("claude:adv-1").State == store.StateWaitReply })
+	p := roles.Prompt(roles.Advisor)
+	for _, want := range []string{"默认", "常驻", "不用常驻"} {
+		if !strings.Contains(p, want) {
+			t.Fatalf("顾问提示词缺少 %q", want)
+		}
+	}
+	if roles.Resident(roles.Advisor) {
+		t.Fatal("Adv 不应是常驻身份")
 	}
 }
