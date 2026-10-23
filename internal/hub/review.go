@@ -102,9 +102,11 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 			if comment == "" && len(files) == 0 {
 				return nil, huma.Error400BadRequest(r.Code + "：请写下修改意见或附上图片")
 			}
+			before := r
 			if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
 				return nil, apiErr(err)
 			}
+			h.reopenStage(ctx, before, r.Status)
 			d, err := h.store.CreateDecision(ctx, store.Decision{
 				Kind: store.KindFeedback, SessionKey: h.feedbackTarget(ctx, r), ProjectID: r.ProjectID, RequirementID: r.ID,
 				Question: r.Title, Answer: comment, AnswerFiles: files,
@@ -124,7 +126,7 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 	for id := range devices {
 		h.pushDecisions(ctx, id)
 	}
-	h.broker.publish("requirements", "decisions", "sessions")
+	h.broker.publish("requirements", "decisions", "sessions", "plans")
 	return out, nil
 }
 
@@ -160,6 +162,20 @@ func (h *Hub) note(ctx context.Context, ref, comment string, fileIDs []string) (
 // 不直接改为进行中——Agent 真正开始做时调用 session_link_req，才进入进行中，看板反映的是实际进度。
 // 会话正在待命（ks wait）时会立刻被唤醒。
 func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (store.Decision, error) {
+	d, err := h.assignQuiet(ctx, ref, sessionKey, comment)
+	if err != nil {
+		return d, err
+	}
+	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
+		h.pushDecisions(ctx, x.DeviceID)
+	}
+	h.broker.publish("requirements", "decisions", "sessions")
+	return d, nil
+}
+
+// assignQuiet 做 assign 的全部记录但不下发：批量交出时（计划阶段解锁）最后统一下发一次，
+// 挂起等待的会话一次收到整批内容。
+func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment string) (store.Decision, error) {
 	r, err := h.store.GetRequirement(ctx, ref)
 	if err != nil {
 		return store.Decision{}, apiErr(err)
@@ -196,8 +212,6 @@ func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment string) (stor
 	if err != nil {
 		return store.Decision{}, apiErr(err)
 	}
-	h.pushDecisions(ctx, x.DeviceID)
-	h.broker.publish("requirements", "decisions", "sessions")
 	return d, nil
 }
 

@@ -220,6 +220,9 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 	for _, d := range list {
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: d.Answer, Delivered: d.Status == store.DecDelivered,
 			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle}
+		if d.Kind == store.KindPlan {
+			pd.ReqCode, pd.ReqTitle = d.PlanCode, d.Question // 计划进展：编号与标题是计划的
+		}
 		for _, f := range d.AnswerFiles {
 			pd.Files = append(pd.Files, protocol.File{ID: f.ID, Name: f.Name, Mime: f.Mime})
 		}

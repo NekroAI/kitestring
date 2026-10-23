@@ -28,6 +28,7 @@ const (
 	KindFeedback = "feedback"
 	KindNote     = "note"
 	KindAssign   = "assign" // 你把需求交给某个会话开工
+	KindPlan     = "plan"   // 计划进展（开工、阶段通过 / 退回、未获批准），送达计划的负责会话
 )
 
 // Decision 是一条待用户决策的问题。
@@ -42,6 +43,8 @@ type Decision struct {
 	ProjectName      string     `json:"project_name,omitempty"`
 	RequirementID    string     `json:"requirement_id,omitempty"`
 	RequirementCode  string     `json:"requirement_code,omitempty"`
+	PlanID           string     `json:"plan_id,omitempty"`
+	PlanCode         string     `json:"plan_code,omitempty"`
 	Question         string     `json:"question"`
 	Context          string     `json:"context"`
 	Options          []string   `json:"options"`
@@ -50,7 +53,7 @@ type Decision struct {
 	ContextFiles     []FileRef   `json:"context_files"` // 问题本身附带的图（例如待批准的方案图）
 	Recommendation   string     `json:"recommendation"`
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback,note,assign"`
+	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
@@ -65,21 +68,27 @@ func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
-	x.question, x.context, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn
+	x.question, x.context, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
+	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0)
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
 	LEFT JOIN projects p ON p.id = x.project_id
-	LEFT JOIN requirements r ON r.id = x.requirement_id`
+	LEFT JOIN requirements r ON r.id = x.requirement_id
+	LEFT JOIN plans pl ON pl.id = x.plan_id`
 
 func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var d Decision
-	var seq, rseq int
+	var seq, rseq, pseq int
 	var options, optFiles, ctxFiles, created, files string
 	var answered, delivered sql.NullString
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
-		&d.Question, &d.Context, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn)
+		&d.Question, &d.Context, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
+		&d.PlanID, &pseq)
 	d.Code = decCode(seq)
+	if pseq > 0 {
+		d.PlanCode = planCode(pseq)
+	}
 	d.AnswerFiles = parseFiles(files)
 	if rseq > 0 {
 		d.RequirementCode = reqCode(rseq)
@@ -108,10 +117,10 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			return err
 		}
 		n := now()
-		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign {
+		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
-			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?)`,
-				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)
+			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?)`,
+				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)
 			return err
 		}
 		optFiles := d.OptionFiles

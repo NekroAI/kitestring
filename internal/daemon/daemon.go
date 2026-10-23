@@ -522,7 +522,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback, notes, assigns []protocol.Decision
+	var answers, feedback, notes, assigns, plans []protocol.Decision
 	for _, dec := range fresh {
 		switch dec.Kind {
 		case "feedback":
@@ -531,6 +531,8 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			notes = append(notes, dec)
 		case "assign":
 			assigns = append(assigns, dec)
+		case "plan":
+			plans = append(plans, dec)
 		default:
 			answers = append(answers, dec)
 		}
@@ -544,6 +546,12 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	if len(feedback) > 0 {
 		b.WriteString("[Kitestring] 用户验收后退回了以下需求，请按修改意见继续处理，完成后重新提交验收：\n")
 		for _, dec := range feedback {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(plans) > 0 {
+		b.WriteString("[Kitestring] 计划进展：\n")
+		for _, dec := range plans {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -582,6 +590,8 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 		fmt.Fprintf(b, "- %s「%s」修改意见：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "note":
 		fmt.Fprintf(b, "- %s「%s」留言：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+	case "plan":
+		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "assign":
 		fmt.Fprintf(b, "- %s「%s」\n", dec.ReqCode, oneLine(dec.ReqTitle))
 		for _, line := range strings.Split(dec.Answer, "\n") {

@@ -55,6 +55,11 @@ type Requirement struct {
 	NextActor        string     `json:"next_actor"` // user | agent | none，推导得出
 	PendingDecisions int        `json:"pending_decisions"`
 	Sessions         []string   `json:"sessions"`
+	PlanID           string     `json:"plan_id,omitempty"`     // 所属计划（R-43），一条需求最多属于一个计划
+	PlanCode         string     `json:"plan_code,omitempty"`
+	StageSeq         int        `json:"stage_seq,omitempty"`   // 所在阶段（从 1 开始）
+	StageTitle       string     `json:"stage_title,omitempty"`
+	StageStatus      string     `json:"stage_status,omitempty"` // locked = 前一阶段还没通过
 	Evidence         []Evidence `json:"evidence,omitempty"`
 	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
 	CreatedAt        time.Time  `json:"created_at"`
@@ -90,8 +95,10 @@ func parseRef(ref, prefix string) (seq int, isSeq bool) {
 }
 
 const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.files, r.created_by, r.created_at, r.updated_at, r.kind,
-	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending')
-	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id`
+	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending'),
+	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, '')
+	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id
+	LEFT JOIN plan_stages ps ON ps.id = r.stage_id LEFT JOIN plans pl ON pl.id = ps.plan_id`
 
 // normKind：只认 design，其它（含 feature）都存为空，即普通需求。
 func normKind(k string) string {
@@ -103,11 +110,15 @@ func normKind(k string) string {
 
 func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var r Requirement
-	var seq int
+	var seq, planSeq int
 	var created, updated, files string
-	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions)
+	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions,
+		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus)
 	r.Files = parseFiles(files)
 	r.Code = reqCode(seq)
+	if planSeq > 0 {
+		r.PlanCode = planCode(planSeq)
+	}
 	r.CreatedAt = parseTS(created)
 	r.UpdatedAt = parseTS(updated)
 	r.Sessions = []string{}

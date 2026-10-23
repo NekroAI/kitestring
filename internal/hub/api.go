@@ -29,7 +29,9 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerPublic(publicAPI)
 	h.registerWeb(webAPI)
 	h.registerReview(webAPI)
+	h.registerPlans(webAPI)
 	h.registerAgent(agentAPI)
+	h.registerAgentPlans(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -65,7 +67,9 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerPublic(api)
 	h.registerWeb(api)
 	h.registerReview(api)
+	h.registerPlans(api)
 	h.registerAgent(api)
+	h.registerAgentPlans(api)
 	return api.OpenAPI()
 }
 
@@ -636,7 +640,8 @@ func (h *Hub) registerWeb(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			h.broker.publish("requirements", "sessions")
+			h.reopenStage(ctx, cur, r.Status)
+			h.broker.publish("requirements", "sessions", "plans")
 			return &reqOut{Body: r}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "delete-requirement", Method: http.MethodDelete, Path: "/api/requirements/{ref}", Tags: tag("requirements")},
@@ -844,14 +849,19 @@ func (h *Hub) registerAgent(api huma.API) {
 			if in.Body.Status == store.ReqDone {
 				return nil, huma.Error400BadRequest("“已完成”只能由用户在验收后设置；完成开发请设为 review（待验收）")
 			}
-			r, err := h.store.SetRequirementStatus(ctx, in.Ref, in.Body.Status)
+			before, err := h.store.GetRequirement(ctx, in.Ref)
 			if err != nil {
 				return nil, apiErr(err)
 			}
+			r, err := h.store.SetRequirementStatus(ctx, before.ID, in.Body.Status)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			h.reopenStage(ctx, before, r.Status)
 			if in.Body.SessionKey != "" {
 				_ = h.store.LinkSession(ctx, r.ID, in.Body.SessionKey)
 			}
-			h.broker.publish("requirements", "sessions")
+			h.broker.publish("requirements", "sessions", "plans")
 			if r.Status == store.ReqReview {
 				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements")
 			}

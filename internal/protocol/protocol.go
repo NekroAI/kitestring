@@ -74,8 +74,8 @@ type Decision struct {
 	Answer     string    `json:"answer"`
 	AnsweredAt time.Time `json:"answered_at"`
 	Delivered  bool      `json:"delivered,omitempty"` // 已接收，仅用于恢复 / 压缩时补注入
-	Kind       string    `json:"kind,omitempty"`      // decision | feedback（修改意见）
-	ReqCode    string    `json:"req_code,omitempty"`
+	Kind       string    `json:"kind,omitempty"`      // decision | feedback | note | assign | plan
+	ReqCode    string    `json:"req_code,omitempty"` // 关联需求编号；kind=plan 时是计划编号（P-n）
 	ReqTitle   string    `json:"req_title,omitempty"`
 	Files      []File    `json:"files,omitempty"` // 答复 / 意见附图
 }

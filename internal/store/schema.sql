@@ -158,3 +158,28 @@ CREATE TABLE IF NOT EXISTS evidence (
 	voided         INTEGER NOT NULL DEFAULT 0,
 	created_at     TEXT NOT NULL
 );
+
+-- 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
+CREATE TABLE IF NOT EXISTS plans (
+	id            TEXT PRIMARY KEY,
+	seq           INTEGER NOT NULL UNIQUE, -- P-<seq>
+	project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
+	title         TEXT NOT NULL,
+	goal          TEXT NOT NULL DEFAULT '',
+	owner_session TEXT NOT NULL DEFAULT '', -- 负责会话：阶段解锁后需求自动交给它
+	status        TEXT NOT NULL, -- draft | active | done | shelved
+	created_by    TEXT NOT NULL DEFAULT '',
+	created_at    TEXT NOT NULL,
+	updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS plan_stages (
+	id         TEXT PRIMARY KEY,
+	plan_id    TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+	seq        INTEGER NOT NULL, -- 阶段顺序，从 1 开始
+	title      TEXT NOT NULL,
+	status     TEXT NOT NULL, -- locked | active | review | passed
+	summary    TEXT NOT NULL DEFAULT '', -- Agent 交的阶段小结
+	summary_at TEXT NOT NULL DEFAULT '',
+	passed_at  TEXT NOT NULL DEFAULT ''
+);
