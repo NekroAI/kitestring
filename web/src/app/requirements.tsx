@@ -200,7 +200,9 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
   const [busy, wrap] = useBusy()
   // 项目默认用上次新建时选的（页面已按项目筛选时以筛选为准），连续新建不用每次切
   const lastProject = () => defaultProject || loadPref<string>('ks.newreq.project', '') || undefined
-  const blank = (): ReqFields => ({ title: '', status: 'ready', priority: 'P2', project_id: lastProject() })
+  // 默认草稿（R-19）：“仅新建”不会被自动排进会话的待办；“新建并交出”时会改为待开始
+  const blank = (): ReqFields => ({ title: '', status: 'draft', priority: 'P2', project_id: lastProject() })
+  const lastUsed = loadPref<string>('ks.newreq.project', '')
   const [f, setF] = useState<ReqFields>(blank)
   const [files, setFiles] = useState<FileRef[]>([])
   const [more, setMore] = usePref('ks.newreq.more', false) // 连续新建：建完清空表单，抽屉不关
@@ -300,7 +302,7 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
                   <ChevronDown className="size-3 opacity-60" />
                 </button>
               }
-              items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
+              items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...[...(projects.data?.projects ?? [])].sort((a, b) => Number(b.id === lastUsed) - Number(a.id === lastUsed)).map((p) => ({ label: p.name, hint: p.id === lastUsed ? [t.reqs.lastUsed, p.remote].filter(Boolean).join(t.common.sep) : p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
             />
             <Tip content={t.design.makeHint}>
               <button aria-pressed={f.kind === 'design'} onClick={() => setF({ ...f, kind: f.kind === 'design' ? 'feature' : 'design' })} className={cx(chip, f.kind === 'design' && 'border-accent/50 bg-accent-soft text-accent hover:text-accent')}>

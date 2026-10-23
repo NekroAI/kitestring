@@ -17,6 +17,8 @@ export const zh = {
     projects: '项目',
     requirements: '需求',
     settings: '设置',
+    collapse: '收起侧边栏',
+    expand: '展开侧边栏',
   },
   common: {
     save: '保存',
@@ -57,6 +59,7 @@ export const zh = {
   conn: {
     live: '实时同步',
     offline: '连接已断开，正在重连',
+    offlineShort: '已断开',
   },
   theme: {
     system: '跟随系统',
@@ -241,6 +244,7 @@ export const zh = {
     offline: '离线',
     never: '未连接',
     lastSeen: (when: string) => `${when}在线`,
+    sessions: (n: number) => `${n} 个会话`,
   },
 
   decision: {
@@ -304,6 +308,7 @@ export const zh = {
     createOnly: '仅新建',
     createHint: '⌘↵ 新建',
     createHintTo: '仅新建会关联这个会话，随时可以交给它开工 · ⌘↵ 新建并交出',
+    lastUsed: '上次使用',
     createdLinked: (code: string, who: string) => `${code} 已新建并关联「${who}」，随时可以交给它开工`,
     detail: '描述',
     detailPlaceholder: '添加描述',

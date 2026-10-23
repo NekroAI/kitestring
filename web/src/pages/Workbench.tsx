@@ -33,7 +33,7 @@ function SendAllBar() {
   return (
     <AnimatePresence>
       {ready.length >= 2 && (
-        <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }} transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }} className="fixed inset-x-0 bottom-20 z-20 flex justify-center px-4 lg:bottom-8 lg:pl-[232px]">
+        <motion.div initial={{ y: 80, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 80, opacity: 0 }} transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }} className="fixed inset-x-0 bottom-20 z-20 flex justify-center px-4 lg:bottom-8 lg:pl-[var(--sidebar-w,232px)]">
           <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface/95 py-2 pr-2 pl-4 shadow-pop backdrop-blur">
             <span className="text-sm text-fg-2">{t.decision.drafts(ready.length)}</span>
             <Button size="sm" variant="ghost" onClick={() => clearDrafts(ready.map((x) => x.code))}>
