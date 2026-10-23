@@ -22,7 +22,7 @@ import (
 
 const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
 - 会话身份：用户说“接管 PM / 做开发（Dev）/ 当顾问（Adv）/ 当审查员（Rev）”之类的话时，运行 shell 命令 ks role pm|dev|advisor|reviewer，按它输出的身份提示词工作。
-- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿要项目开了「允许 PM / Adv 放行草稿」才会记一次放行并变为进行中，没开时只关联、仍是草稿，要先请用户放行）。
+- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿只有 PM / Adv 关联、且项目开了「允许 PM / Adv 放行草稿」才会记一次放行并变为进行中；Dev 等其他身份或没开时只关联、仍是草稿，要请 PM 或用户放行）。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
@@ -428,7 +428,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.Code + " 已代用户答复并送给提问方；用户能在代答记录里看到，可能推翻"), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。草稿：项目开了「允许 PM / Adv 放行草稿」时记一次放行（理由「开始做 R-x」，用户可撤回）再变为进行中；没开时只关联、仍是草稿，返回里会提示先请用户放行。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。草稿：只有 PM / Adv 关联、且项目开了「允许 PM / Adv 放行草稿」时记一次放行（理由「开始做 R-x」，用户可撤回）再变为进行中；Dev 等其他身份关联草稿、或没开放行时只关联、仍是草稿，返回里会提示请 PM 或用户放行。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {

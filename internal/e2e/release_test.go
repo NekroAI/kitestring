@@ -242,13 +242,14 @@ func TestLinkDraftRelease(t *testing.T) {
 		store.Requirement
 		Notices []string `json:"notices"`
 	}
-	link := func(ref string) linked {
+	linkBy := func(key, ref string) linked {
 		var out linked
-		if err := c.Do(ctx, "POST", "/agent/sessions/claude:dev/link", map[string]any{"requirement": ref}, &out); err != nil {
+		if err := c.Do(ctx, "POST", "/agent/sessions/"+key+"/link", map[string]any{"requirement": ref}, &out); err != nil {
 			t.Fatal(err)
 		}
 		return out
 	}
+	link := func(ref string) linked { return linkBy("claude:pm", ref) }
 	count := func(r store.Requirement) (n int) {
 		for _, f := range r.Feedback {
 			if f.Kind == store.KindRelease {
@@ -267,11 +268,11 @@ func TestLinkDraftRelease(t *testing.T) {
 	if len(got.Notices) == 0 || !strings.Contains(got.Notices[0], "先请用户放行") {
 		t.Fatalf("应提示先请用户放行：%v", got.Notices)
 	}
-	linkedDev := false
+	linkedPM := false
 	for _, k := range got.Sessions {
-		linkedDev = linkedDev || k == "claude:dev"
+		linkedPM = linkedPM || k == "claude:pm"
 	}
-	if !linkedDev {
+	if !linkedPM {
 		t.Fatal("开关关着时仍应关联会话")
 	}
 
@@ -285,9 +286,18 @@ func TestLinkDraftRelease(t *testing.T) {
 		t.Fatalf("待开始的关联后应进入进行中且只有原来那条放行：%s %d %v", got.Status, count(got.Requirement), got.Notices)
 	}
 
-	// 开关开着：关联草稿记一次放行（理由「开始做 R-x」），进入进行中；可撤回
+	// 开关开着，Dev 关联草稿：只关联、不放行，状态不变
+	r4 := create("会员等级")
+	if got = linkBy("claude:dev", r4.Code); got.Status != store.ReqDraft || got.Release != nil || count(got.Requirement) != 0 {
+		t.Fatalf("Dev 关联草稿不应放行：%s %+v", got.Status, got.Release)
+	}
+	if len(got.Notices) == 0 || !strings.Contains(got.Notices[0], "这条还是草稿，请 PM 放行") {
+		t.Fatalf("Dev 关联草稿应提示请 PM 放行：%v", got.Notices)
+	}
+
+	// 开关开着，PM 关联草稿：记一次放行（理由「开始做 R-x」），进入进行中；可撤回
 	got = link(r3.Code)
-	if got.Status != store.ReqInProgress || got.Release == nil || got.Release.By != "claude:dev" || got.Release.Reason != "开始做 "+r3.Code {
+	if got.Status != store.ReqInProgress || got.Release == nil || got.Release.By != "claude:pm" || got.Release.Reason != "开始做 "+r3.Code {
 		t.Fatalf("开关开着时关联草稿应记放行并进入进行中：%s %+v", got.Status, got.Release)
 	}
 	var back store.Requirement

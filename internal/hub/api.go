@@ -15,6 +15,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 	"github.com/NekroAI/kitestring/internal/summary"
 	"github.com/NekroAI/kitestring/internal/version"
@@ -1367,6 +1368,10 @@ func (h *Hub) registerAgent(api huma.API) {
 					return nil, apiErr(err)
 				}
 			case store.ReqDraft:
+				if x.Role != roles.PM && x.Role != roles.Advisor {
+					out.Body.Notices = append(out.Body.Notices, "已关联，但这条还是草稿，请 PM 放行")
+					break
+				}
 				p, perr := h.store.GetProject(ctx, r.ProjectID)
 				if r.ProjectID == "" || perr != nil || !p.AgentRelease {
 					out.Body.Notices = append(out.Body.Notices, "已关联，但"+releaseOff+"；放行前它仍是草稿")
