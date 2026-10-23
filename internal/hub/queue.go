@@ -8,11 +8,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
 // 待开始的需求排进会话的待办（R-66）。
-// 一条待开始的需求，归它关联的会话里最近活跃、还没结束 / 没被你收起的那个；没有这样的会话就是“没人接手”，
+// 一条待开始的需求，归它关联的会话里最近活跃、还没结束 / 没被你收起的那个；没有这样的会话时归项目的 PM（R-85），
+// 连 PM 也没有就是“没人接手”，
 // 在网页上提示你交出，不自动派给别的会话。
 // 会话空闲（一轮结束或挂起等待）时，把排给它的需求整批送过去（最多 maxBatch 条），让它先通读、
 // 合并能一起做的、标出重复和依赖再动手；挂着 ks wait 的会话会被立刻唤醒，其它会话在你下次和它对话时收到。
@@ -34,7 +36,25 @@ func (h *Hub) queueOwner(ctx context.Context, r store.Requirement) string {
 			best = x
 		}
 	}
+	if best.Key == "" && r.ProjectID != "" {
+		// 没有关联会话的需求（例如你在网页上新建的）归项目的 PM，由它归类分派（R-85）
+		best.Key = h.projectPM(ctx, r.ProjectID)
+	}
 	return best.Key
+}
+
+// projectPM 返回项目里没结束的 PM 会话，没有时为空。
+func (h *Hub) projectPM(ctx context.Context, projectID string) string {
+	list, err := h.store.RoleSessions(ctx, projectID)
+	if err != nil {
+		return ""
+	}
+	for _, x := range list {
+		if x.Role == roles.PM && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil {
+			return x.Key
+		}
+	}
+	return ""
 }
 
 // queued 列出排给 sessionKey、还没送出的待开始需求，按优先级、编号排序。

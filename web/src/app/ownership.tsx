@@ -46,10 +46,11 @@ export function useOwnership() {
       if (s && !live(s)) return { tone: 'nobody', short: t.own.nobodyShort, text: t.own.offeredGone(name), canAssign: true }
       return { tone: 'queued', short: t.own.offeredShort, text: s && displayState(s) === 'parked' ? t.own.offeredNow(name) : t.own.offeredNext(name), session: s }
     }
-    const s = owner(r)
+    // 没有关联会话的需求归项目的 PM（R-85），和后端排队规则一致
+    const s = owner(r) ?? (sessions.data?.sessions ?? []).find((x) => x.role === 'pm' && x.project_id === r.project_id && live(x))
     if (!s) return { tone: 'nobody', short: t.own.nobodyShort, text: r.sessions.length ? t.own.nobodyGone : t.own.nobody, canAssign: true }
     if (autoOff(r.project_id)) return { tone: 'off', short: t.own.offShort, text: t.own.off(sessionTitle(s)), session: s, canAssign: true }
-    const n = (reqs.data ?? []).filter((x) => x.status === 'ready' && !x.offered_to && x.stage_status !== 'locked' && owner(x)?.key === s.key).length
+    const n = (reqs.data ?? []).filter((x) => x.status === 'ready' && !x.offered_to && x.stage_status !== 'locked' && (owner(x)?.key ?? (s.role === 'pm' && x.project_id === s.project_id ? s.key : '')) === s.key).length
     const running = s.state === 'running' || s.state === 'background'
     return { tone: 'queued', short: t.own.queuedShort, text: running ? t.own.queuedRunning(sessionTitle(s), n) : t.own.queuedSoon(sessionTitle(s), n), session: s }
   }

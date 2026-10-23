@@ -795,6 +795,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("requirements")
+			h.kick(ctx, r.ID) // 项目有 PM 时，新建的待开始需求排给它（R-85）
 			return &reqOut{Body: r}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "get-requirement", Method: http.MethodGet, Path: "/api/requirements/{ref}", Tags: tag("requirements")},

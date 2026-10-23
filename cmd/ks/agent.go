@@ -232,8 +232,9 @@ func runWait(args []string) error {
 		q.Set("timeout", timeout.String())
 	}
 	q.Set("ppid", strconv.Itoa(os.Getppid()))
-	if *session != "" {
-		q.Set("session_key", *session)
+	// 先认出会话键并一直带着：daemon 重启（例如升级）后不再认得父进程，重连时要靠会话键
+	if key := currentSession(*session); key != "" {
+		q.Set("session_key", key)
 	}
 	fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
 	// daemon 重启（例如升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒。
