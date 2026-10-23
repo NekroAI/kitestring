@@ -138,7 +138,7 @@ function Brief({ r }: { r: Requirement }) {
           }
           items={[
             { label: t.reqs.noProject, checked: !r.project_id, onSelect: () => save({ project_id: undefined }) },
-            ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === r.project_id, onSelect: () => save({ project_id: p.id }) })),
+            ...(projects.data?.projects ?? []).filter((p) => !p.hidden || p.id === r.project_id).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === r.project_id, onSelect: () => save({ project_id: p.id }) })),
           ]}
         />
         <button onClick={() => setOpen(!open)} className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] text-fg-3 transition hover:bg-hover hover:text-fg">

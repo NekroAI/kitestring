@@ -513,6 +513,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 把项目并入另一个项目 */
+        post: operations["merge-project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recap": {
         parameters: {
             query?: never;
@@ -839,6 +856,8 @@ export interface components {
         };
         CommentBody: {
             comment?: string;
+            /** @description 附言里的图片 ID（先上传到 /api/files） */
+            files?: string[] | null;
         };
         "Create-deviceRequest": {
             name: string;
@@ -1013,6 +1032,10 @@ export interface components {
         "Mark-session-doneRequest": {
             done: boolean;
         };
+        "Merge-projectRequest": {
+            /** @description 并入的目标项目 ID */
+            into: string;
+        };
         "Note-requirementRequest": {
             comment?: string;
             files?: string[] | null;
@@ -1096,6 +1119,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             doc_root: string;
+            hidden: boolean;
             id: string;
             name: string;
             remote: string;
@@ -1104,6 +1128,7 @@ export interface components {
         ProjectInBody: {
             auto_dispatch?: boolean;
             doc_root: string;
+            hidden?: boolean;
             name: string;
             workspace_id?: string;
         };
@@ -2516,6 +2541,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProjectInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "merge-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Merge-projectRequest"];
             };
         };
         responses: {

@@ -268,7 +268,7 @@ export default function RequirementsPage() {
               <ChevronDown className="size-3.5 opacity-60" />
             </Button>
           }
-          items={[{ label: t.reqs.allProjects, checked: !project, onSelect: () => setProject('') }, ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === project, onSelect: () => setProject(p.id) }))]}
+          items={[{ label: t.reqs.allProjects, checked: !project, onSelect: () => setProject('') }, ...(projects.data?.projects ?? []).filter((p) => !p.hidden || p.id === project).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === project, onSelect: () => setProject(p.id) }))]}
         />
         <div className="relative w-full sm:w-56">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />

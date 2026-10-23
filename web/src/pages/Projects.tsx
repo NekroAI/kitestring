@@ -1,12 +1,13 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, ChevronRight, FileCheck2, FolderGit2, HardDrive, Plus, Settings2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2 } from 'lucide-react'
+import { toast } from 'sonner'
 import type { Requirement, Session } from '../api/client'
 import { useDecisions, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
 import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input } from '../ui/base'
-import { Menu, Modal } from '../ui/overlay'
+import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { displayState } from '../ui/marks'
 import { Item, List } from '../ui/motion'
 import { useActions } from '../app/actions'
@@ -22,6 +23,7 @@ type Stat = {
   remote: string
   docRoot: string
   workspaceId?: string
+  hidden?: boolean
   sessions: Session[]
   live: Session[]
   reqs: Requirement[]
@@ -57,6 +59,7 @@ function useStats(): { list: Stat[]; loading: boolean } {
         remote: p.remote,
         docRoot: p.doc_root,
         workspaceId: p.workspace_id,
+        hidden: p.hidden,
         sessions: mine,
         live: mine.filter((s) => s.state !== 'ended' && s.state !== 'lost'),
         reqs: rq,
@@ -70,8 +73,12 @@ function useStats(): { list: Stat[]; loading: boolean } {
   }, [projects.data, sessions.data, reqs.data, projects.isPending, sessions.isPending, reqs.isPending])
 }
 
-function ProjectList({ list, current, now }: { list: Stat[]; current?: string; now: number }) {
+function ProjectList({ list: all, current, now }: { list: Stat[]; current?: string; now: number }) {
   const navigate = useNavigate()
+  const [showHidden, setShowHidden] = useState(false)
+  // 隐藏的项目（误识别的目录等）默认不列，底部可以展开（R-51）
+  const hidden = all.filter((p) => p.hidden)
+  const list = all.filter((p) => !p.hidden || p.id === current)
   const quiet = list.filter((p) => !p.sessions.length && !p.reqs.length)
   const busy = list.filter((p) => p.sessions.length || p.reqs.length)
   const row = (p: Stat) => {
@@ -102,6 +109,15 @@ function ProjectList({ list, current, now }: { list: Stat[]; current?: string; n
       {busy.map(row)}
       {quiet.length > 0 && <div className="px-3 pt-4 pb-1 text-xs text-fg-3">{t.projects.quiet}</div>}
       {quiet.map(row)}
+      {hidden.length > 0 && (
+        <>
+          <button onClick={() => setShowHidden(!showHidden)} className="flex items-center gap-1 px-3 pt-4 pb-1 text-xs text-fg-3 hover:text-fg-2">
+            <ChevronRight className={cx('size-3.5 transition-transform', showHidden && 'rotate-90')} />
+            {t.projects.hiddenCount(hidden.length)}
+          </button>
+          {showHidden && <div className="opacity-70">{hidden.filter((p) => p.id !== current).map(row)}</div>}
+        </>
+      )}
       <p className="px-3 pt-4 text-xs leading-relaxed text-fg-3">{t.projects.autoHint}</p>
     </div>
   )
@@ -306,6 +322,19 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const [ws, setWs] = useState(p.workspaceId ?? '')
   const workspaces = projects.data?.workspaces ?? []
   const [auto, setAuto] = useState(projects.data?.projects.find((x) => x.id === p.id)?.auto_dispatch ?? true)
+  const [hidden, setHidden] = useState(!!p.hidden)
+  const { mergeProject } = useActions()
+  const confirm = useConfirm()
+  const navigate = useNavigate()
+  const others = (projects.data?.projects ?? []).filter((x) => x.id !== p.id)
+  const merge = async (into: { id: string; name: string }) => {
+    if (!(await confirm({ title: t.projects.mergeConfirm(p.name, into.name), description: t.projects.mergeBody, confirmText: t.projects.merge, danger: true }))) return
+    if (await mergeProject(p.id, into.id)) {
+      toast.success(t.projects.merged(p.name, into.name))
+      onClose()
+      navigate(`/projects/${into.id}`)
+    }
+  }
   return (
     <Modal
       open={open}
@@ -314,7 +343,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -337,6 +366,24 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
         <Checkbox checked={auto} onChange={setAuto} hint={t.projects.autoDispatchHint}>
           {t.projects.autoDispatch}
         </Checkbox>
+        <Checkbox checked={hidden} onChange={setHidden} hint={t.projects.hideHint}>
+          {t.projects.hide}
+        </Checkbox>
+        {others.length > 0 && (
+          <Field label={t.projects.mergeLabel}>
+            <Menu
+              align="start"
+              width="min-w-[260px]"
+              trigger={
+                <Button className="w-full justify-start" icon={<Merge className="size-4" />}>
+                  {t.projects.mergePick}
+                </Button>
+              }
+              items={others.map((x) => ({ label: x.name, hint: x.remote, onSelect: () => void merge(x) }))}
+            />
+            <p className="mt-1.5 text-xs leading-relaxed text-fg-3">{t.projects.mergeHint}</p>
+          </Field>
+        )}
       </div>
     </Modal>
   )

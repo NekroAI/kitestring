@@ -66,8 +66,10 @@ export function useActions() {
     createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions']),
     revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions']),
 
-    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean }) =>
+    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean }) =>
       run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
+    mergeProject: (id: string, into: string) =>
+      run(() => unwrap(api.POST('/api/projects/{id}/merge', { params: { path: { id } }, body: { into } })), ['projects', 'sessions', 'requirements', 'decisions', 'plans']),
     createWorkspace: (name: string, notify: NotifyConfig) => run(() => unwrap(api.POST('/api/workspaces', { body: { name, notify } })), ['projects']),
     updateWorkspace: (id: string, name: string, notify: NotifyConfig) =>
       run(() => unwrap(api.PUT('/api/workspaces/{id}', { params: { path: { id } }, body: { name, notify } })), ['projects']),

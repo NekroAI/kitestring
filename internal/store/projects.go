@@ -47,8 +47,10 @@ type Project struct {
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	DocRoot     string `json:"doc_root"`
 	// AutoDispatch：会话空闲时，把排给它的待开始需求整批送过去（R-66），默认开启
-	AutoDispatch bool      `json:"auto_dispatch"`
-	CreatedAt    time.Time `json:"created_at"`
+	AutoDispatch bool `json:"auto_dispatch"`
+	// Hidden：误识别的目录等不想在项目列表里看到的项目（R-51），会话和需求照常显示
+	Hidden    bool      `json:"hidden"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // NormalizeRemote 把各种写法的 git remote 归一化为 host/owner/repo 小写形式。
@@ -158,7 +160,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 
 // ListProjects 列出全部项目。
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, created_at FROM projects ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +169,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		var created string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &created); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTS(created)
@@ -180,8 +182,8 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	var p Project
 	var created string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, created_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &created)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -191,7 +193,7 @@ func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 
 // UpdateProject 修改项目名称、所属工作空间与方案文档根路径。
 func (s *Store) UpdateProject(ctx context.Context, p Project) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ?, hidden = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.Hidden, p.ID)
 	if err != nil {
 		return err
 	}
@@ -199,6 +201,49 @@ func (s *Store) UpdateProject(ctx context.Context, p Project) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// MergeProject 把项目 src 并入 dst（R-51）：目录映射、会话、需求、决策、计划都改归 dst，然后删除 src。
+// dst 没有 remote 而 src 有时，接过 src 的 remote，之后同一仓库的新目录也归到 dst。
+func (s *Store) MergeProject(ctx context.Context, src, dst string) error {
+	if src == dst {
+		return errors.New("不能合并到自己")
+	}
+	return s.tx(ctx, func(t *sql.Tx) error {
+		var srcRemote, dstRemote string
+		if err := t.QueryRowContext(ctx, `SELECT remote FROM projects WHERE id = ?`, src).Scan(&srcRemote); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if err := t.QueryRowContext(ctx, `SELECT remote FROM projects WHERE id = ?`, dst).Scan(&dstRemote); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		for _, q := range []string{
+			`UPDATE OR IGNORE project_paths SET project_id = ? WHERE project_id = ?`,
+			`UPDATE sessions SET project_id = ? WHERE project_id = ?`,
+			`UPDATE requirements SET project_id = ? WHERE project_id = ?`,
+			`UPDATE decisions SET project_id = ? WHERE project_id = ?`,
+			`UPDATE plans SET project_id = ? WHERE project_id = ?`,
+		} {
+			if _, err := t.ExecContext(ctx, q, dst, src); err != nil {
+				return err
+			}
+		}
+		if _, err := t.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, src); err != nil {
+			return err
+		}
+		if dstRemote == "" && srcRemote != "" {
+			if _, err := t.ExecContext(ctx, `UPDATE projects SET remote = ? WHERE id = ?`, srcRemote, dst); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // ListWorkspaces 列出全部工作空间。

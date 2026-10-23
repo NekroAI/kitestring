@@ -367,6 +367,16 @@
         "properties": {
           "comment": {
             "type": "string"
+          },
+          "files": {
+            "description": "附言里的图片 ID（先上传到 /api/files）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -958,6 +968,20 @@
         ],
         "type": "object"
       },
+      "Merge-projectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "into": {
+            "description": "并入的目标项目 ID",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "into"
+        ],
+        "type": "object"
+      },
       "Note-requirementRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1270,6 +1294,9 @@
           "doc_root": {
             "type": "string"
           },
+          "hidden": {
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
           },
@@ -1289,6 +1316,7 @@
           "remote",
           "doc_root",
           "auto_dispatch",
+          "hidden",
           "created_at"
         ],
         "type": "object"
@@ -1301,6 +1329,9 @@
           },
           "doc_root": {
             "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
           },
           "name": {
             "minLength": 1,
@@ -3878,6 +3909,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{id}/merge": {
+      "post": {
+        "operationId": "merge-project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Merge-projectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "把项目并入另一个项目",
         "tags": [
           "projects"
         ]

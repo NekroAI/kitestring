@@ -256,6 +256,8 @@ type projectIn struct {
 		DocRoot     string `json:"doc_root"`
 		// AutoDispatch：会话空闲时自动送达排给它的待开始需求；不传表示不修改
 		AutoDispatch *bool `json:"auto_dispatch,omitempty"`
+		// Hidden：在项目列表里隐藏；不传表示不修改
+		Hidden *bool `json:"hidden,omitempty"`
 	}
 }
 
@@ -472,15 +474,34 @@ func (h *Hub) registerWeb(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			auto := cur.AutoDispatch
+			auto, hidden := cur.AutoDispatch, cur.Hidden
 			if in.Body.AutoDispatch != nil {
 				auto = *in.Body.AutoDispatch
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto})
+			if in.Body.Hidden != nil {
+				hidden = *in.Body.Hidden
+			}
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden})
 			if err != nil {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("projects", "sessions", "requirements")
+			return ok(), nil
+		})
+	huma.Register(api, huma.Operation{OperationID: "merge-project", Method: http.MethodPost, Path: "/api/projects/{id}/merge", Tags: tag("projects"), Summary: "把项目并入另一个项目"},
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body struct {
+				Into string `json:"into" minLength:"1" doc:"并入的目标项目 ID"`
+			}
+		}) (*okBody, error) {
+			if err := h.store.MergeProject(ctx, in.ID, in.Body.Into); err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					return nil, apiErr(err)
+				}
+				return nil, huma.Error400BadRequest(err.Error())
+			}
+			h.broker.publish("projects", "sessions", "requirements", "decisions", "plans")
 			return ok(), nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "create-workspace", Method: http.MethodPost, Path: "/api/workspaces", Tags: tag("projects")},

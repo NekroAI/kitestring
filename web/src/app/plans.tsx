@@ -673,7 +673,7 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
                   <ChevronDown className="size-3 opacity-60" />
                 </button>
               }
-              items={[{ label: t.reqs.noProject, checked: !project, onSelect: () => setProject(undefined) }, ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === project, onSelect: () => setProject(p.id) }))]}
+              items={[{ label: t.reqs.noProject, checked: !project, onSelect: () => setProject(undefined) }, ...(projects.data?.projects ?? []).filter((p) => !p.hidden || p.id === project).map((p) => ({ label: p.name, hint: p.remote, checked: p.id === project, onSelect: () => setProject(p.id) }))]}
             />
             <div className={cx(chip, 'gap-1 py-0.5 pr-1 pl-2.5')}>
               <span className="shrink-0 text-[13px] text-fg-3">{t.plan.owner}</span>

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router'
+import { Navigate, useNavigate, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Bell, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -9,7 +9,7 @@ import { t } from '../i18n'
 import { copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
 import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Tip } from '../ui/base'
-import { Menu, Modal, useConfirm } from '../ui/overlay'
+import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
 
 type Tab = 'devices' | 'notify' | 'projects' | 'ai' | 'appearance' | 'account'
@@ -404,92 +404,6 @@ function Notify() {
   )
 }
 
-// ---------- 项目 ----------
-
-function Projects() {
-  const q = useProjects()
-  const { updateProject } = useActions()
-  const [edit, setEdit] = useState<{ id: string; name: string; doc_root: string } | null>(null)
-  const workspaces = q.data?.workspaces ?? []
-  return (
-    <>
-      <Card className="divide-y divide-line overflow-hidden">
-        {q.isPending ? (
-          <Row>
-            <Skeleton className="h-10 w-full" />
-          </Row>
-        ) : !q.data?.projects.length ? (
-          <Empty icon={<FolderGit2 />} title={t.settings.projects.empty}>
-            {t.settings.projects.emptySub}
-          </Empty>
-        ) : (
-          q.data.projects.map((p) => {
-            const ws = workspaces.find((w) => w.id === p.workspace_id)
-            return (
-              <Row key={p.id} className="flex-wrap">
-                <FolderGit2 className="size-[18px] shrink-0 text-fg-3" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-fg">{p.name}</div>
-                  <div className="truncate font-mono text-xs text-fg-3">{p.remote || t.settings.projects.local}</div>
-                </div>
-                <Menu
-                  trigger={
-                    <Button size="sm">
-                      {ws?.name ?? t.settings.projects.noWorkspace}
-                      <ChevronDown className="size-3 opacity-60" />
-                    </Button>
-                  }
-                  items={[
-                    { type: 'label', label: t.settings.projects.workspace },
-                    { label: t.settings.projects.noWorkspace, checked: !p.workspace_id, onSelect: () => void updateProject(p.id, { name: p.name, doc_root: p.doc_root }) },
-                    ...workspaces.map((w) => ({ label: w.name, checked: w.id === p.workspace_id, onSelect: () => void updateProject(p.id, { name: p.name, doc_root: p.doc_root, workspace_id: w.id }) })),
-                  ]}
-                />
-                <Tip content={t.settings.projects.rename}>
-                  <Button size="icon-sm" variant="ghost" aria-label={t.settings.projects.rename} onClick={() => setEdit({ id: p.id, name: p.name, doc_root: p.doc_root })}>
-                    <Pencil className="size-3.5" />
-                  </Button>
-                </Tip>
-              </Row>
-            )
-          })
-        )}
-      </Card>
-      <Modal
-        open={!!edit}
-        onClose={() => setEdit(null)}
-        title={t.settings.projects.rename}
-        footer={
-          <>
-            <Button onClick={() => setEdit(null)}>{t.common.cancel}</Button>
-            <Button
-              variant="primary"
-              disabled={!edit?.name.trim()}
-              onClick={async () => {
-                const p = q.data?.projects.find((x) => x.id === edit!.id)
-                if (await updateProject(edit!.id, { name: edit!.name.trim(), doc_root: edit!.doc_root, workspace_id: p?.workspace_id || undefined })) setEdit(null)
-              }}
-            >
-              {t.common.save}
-            </Button>
-          </>
-        }
-      >
-        {edit && (
-          <div className="space-y-4">
-            <Field label={t.settings.projects.name}>
-              <Input autoFocus value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
-            </Field>
-            <Field label={t.settings.projects.docRoot}>
-              <Input value={edit.doc_root} placeholder={t.settings.projects.docRootPlaceholder} onChange={(e) => setEdit({ ...edit, doc_root: e.target.value })} className="font-mono" />
-            </Field>
-          </div>
-        )}
-      </Modal>
-    </>
-  )
-}
-
 // ---------- 智能 ----------
 
 type Feature = 'summary' | 'title' | 'digest' | 'decision_title' | 'recap'
@@ -701,16 +615,20 @@ function Account({ version }: { version: string }) {
 export default function SettingsPage({ version }: { version: string }) {
   const [params, setParams] = useSearchParams()
   const tab = (tabs.find((x) => x.id === params.get('tab'))?.id ?? 'devices') as Tab
+  const navigate = useNavigate()
+  // 项目设置只在项目页维护一份（R-51）：这里的“项目”页签直接跳过去
   const go = (id: Tab) =>
-    setParams((p) => {
-      const n = new URLSearchParams(p)
-      n.set('tab', id)
-      return n
-    })
+    id === 'projects'
+      ? navigate('/projects')
+      : setParams((p) => {
+          const n = new URLSearchParams(p)
+          n.set('tab', id)
+          return n
+        })
   const body: Record<Tab, ReactNode> = {
     devices: <Devices />,
     notify: <Notify />,
-    projects: <Projects />,
+    projects: <Navigate to="/projects" replace />,
     ai: <AI />,
     appearance: <Appearance />,
     account: <Account version={version} />,
