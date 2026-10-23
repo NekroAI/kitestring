@@ -205,7 +205,7 @@ function PlanReqRow({ r, locked, picked, onPick }: { r: PlanReq; locked: boolean
         <ChevronRight className={cx('size-3.5 shrink-0 text-fg-3 transition-transform', (inline || picked) && 'rotate-90', picked && 'text-accent')} />
         <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
-        {locked ? (
+        {locked && r.status !== 'done' ? (
           <span className="shrink-0 rounded-md bg-sunken px-1.5 py-0.5 text-xs text-fg-3">{t.plan.stageState.locked}</span>
         ) : (
           <span className={cx('inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium', statusCls[r.status]?.pill)}>

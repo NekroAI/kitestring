@@ -147,6 +147,8 @@ function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; child
   const list = group?.some((x) => x.id === f.id) ? group : [f]
   const i = Math.max(0, list.findIndex((x) => x.id === cur.id))
   const go = (d: number) => setCur(list[(i + d + list.length) % list.length])
+  // 触控板滑动的锁放在这里：切换时看图器会重建，锁要跨过这次重建，否则惯性滚动会连翻好几张
+  const wheel = useRef<WheelLock>({ swipe: 0, locked: false, idle: undefined })
   return (
     <Dialog.Root
       open={open}
@@ -166,7 +168,7 @@ function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; child
             </Dialog.Overlay>
             <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[70] outline-none">
               <Dialog.Title className="sr-only">{cur.name}</Dialog.Title>
-              <Viewer key={cur.id} f={cur} onClose={() => setOpen(false)} nav={list.length > 1 ? { i, n: list.length, go, next: list[(i + 1) % list.length], prev: list[(i - 1 + list.length) % list.length] } : undefined} />
+              <Viewer key={cur.id} f={cur} onClose={() => setOpen(false)} nav={list.length > 1 ? { i, n: list.length, go, next: list[(i + 1) % list.length], prev: list[(i - 1 + list.length) % list.length], wheel: wheel.current } : undefined} />
             </Dialog.Content>
           </Dialog.Portal>
         )}
@@ -180,7 +182,8 @@ type View = { s: number; x: number; y: number }
 
 // Viewer：看大图。触控板双指捏合缩放、双指移动平移；触屏双指缩放、单指拖动、下滑关闭；双击放大 / 复原。
 // nav：同组切换。左右箭头、键盘 ← →、触屏左右滑（未放大时）、触控板双指左右滑。
-type Nav = { i: number; n: number; go: (d: number) => void; next: FileRef; prev: FileRef }
+type WheelLock = { swipe: number; locked: boolean; idle: number | undefined }
+type Nav = { i: number; n: number; go: (d: number) => void; next: FileRef; prev: FileRef; wheel: WheelLock }
 
 function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Nav }) {
   const box = useRef<HTMLDivElement>(null)
@@ -236,21 +239,25 @@ function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Na
     const el = box.current
     if (!el || video) return
     // 触控板：捏合是带 ctrlKey 的滚轮事件，双指移动是普通滚轮事件；没放大时双指左右滑切换同组图片。
-    let swipe = 0
-    let swipeAt = 0
+    // 一次滑动只翻一张：翻过之后锁住，直到滚轮事件停下来（惯性滚动结束）约 200ms 才解锁（R-69）
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const p = rel(e.clientX, e.clientY)
       if (e.ctrlKey) setV(zoomAt(cur.current.s * Math.exp(-e.deltaY * 0.01), p.x, p.y))
       else if (cur.current.s > 1) setV({ ...cur.current, x: cur.current.x - e.deltaX, y: cur.current.y - e.deltaY })
       else if (navRef.current && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        const now = Date.now()
-        if (now - swipeAt < 450) return // 一次滑动的惯性余波不再触发
-        swipe += e.deltaX
-        if (Math.abs(swipe) > 60) {
-          navRef.current.go(swipe > 0 ? 1 : -1)
-          swipe = 0
-          swipeAt = now
+        const w = navRef.current.wheel
+        window.clearTimeout(w.idle)
+        w.idle = window.setTimeout(() => {
+          w.locked = false
+          w.swipe = 0
+        }, 200)
+        if (w.locked) return
+        w.swipe += e.deltaX
+        if (Math.abs(w.swipe) > 60) {
+          navRef.current.go(w.swipe > 0 ? 1 : -1)
+          w.swipe = 0
+          w.locked = true
         }
       }
     }
