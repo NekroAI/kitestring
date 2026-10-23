@@ -195,6 +195,7 @@ type sessionsOut struct {
 	Body struct {
 		Sessions []store.Session `json:"sessions"`
 		Devices  []store.Device  `json:"devices"`
+		Rev      int64           `json:"rev" doc:"查询开始时的推送序号：网页把序号更大的会话推送叠加到这份列表上（R-56）"`
 	}
 }
 
@@ -383,6 +384,7 @@ func (h *Hub) registerWeb(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "list-sessions", Method: http.MethodGet, Path: "/api/sessions", Tags: tag("sessions")},
 		func(ctx context.Context, _ *empty) (*sessionsOut, error) {
 			out := &sessionsOut{}
+			out.Body.Rev = h.broker.Rev()
 			var err error
 			if out.Body.Sessions, err = h.store.ListSessions(ctx, recentWindow); err != nil {
 				return nil, err

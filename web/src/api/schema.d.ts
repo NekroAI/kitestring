@@ -1292,6 +1292,11 @@ export interface components {
         };
         SessionsOutBody: {
             devices: components["schemas"]["Device"][] | null;
+            /**
+             * Format: int64
+             * @description 查询开始时的推送序号：网页把序号更大的会话推送叠加到这份列表上（R-56）
+             */
+            rev: number;
             sessions: components["schemas"]["Session"][] | null;
         };
         SettingsInBody: {

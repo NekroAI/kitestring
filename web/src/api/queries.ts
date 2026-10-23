@@ -27,10 +27,37 @@ export function useAuthStatus() {
   })
 }
 
+// 会话增量推送（R-56）：Hub 每推一个会话就带一个递增序号。列表接口返回查询开始时的序号；
+// 列表请求在途期间收到的、序号更大的推送，在列表回来后重新叠加上去，旧列表不会盖掉新推送。
+type RawSessions = Awaited<ReturnType<typeof fetchSessions>>
+type RawSession = RawSessions['sessions'] extends (infer T)[] | null | undefined ? T : never
+const fetchSessions = () => unwrap(api.GET('/api/sessions'))
+const patches = new Map<string, { rev: number; session: RawSession }>()
+function upsert(list: RawSession[], s: RawSession): RawSession[] {
+  const next = list.some((x) => x.key === s.key) ? list.map((x) => (x.key === s.key ? s : x)) : [s, ...list]
+  return next.sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))
+}
+async function loadSessions(): Promise<RawSessions> {
+  const d = await fetchSessions()
+  let list = d.sessions ?? []
+  for (const [k, p] of patches) {
+    if (p.rev <= d.rev) patches.delete(k)
+    else list = upsert(list, p.session)
+  }
+  return { ...d, sessions: list }
+}
+function applySessionPatch(qc: QueryClient, rev: number, s: RawSession) {
+  const cur = patches.get(s.key)
+  if (cur && cur.rev >= rev) return // 同一会话只认更新的推送
+  patches.set(s.key, { rev, session: s })
+  qc.setQueryData<RawSessions>(qk.sessions, (old) => (old ? { ...old, sessions: upsert(old.sessions ?? [], s) } : old))
+  void qc.invalidateQueries({ queryKey: qk.session(s.key), exact: true }) // 打开着的会话详情补拉时间线
+}
+
 export function useSessions() {
   return useQuery({
     queryKey: qk.sessions,
-    queryFn: () => unwrap(api.GET('/api/sessions')),
+    queryFn: loadSessions,
     select: (d) => ({ sessions: (d.sessions ?? []).map(normSession), devices: d.devices ?? [] }),
   })
 }
@@ -171,6 +198,15 @@ export function useLiveUpdates(enabled: boolean) {
         // 重连后补齐断线期间错过的变化。
         if (everConnected) void qc.invalidateQueries()
         everConnected = true
+      })
+      es.addEventListener('session', (ev) => {
+        seen()
+        try {
+          const p = JSON.parse((ev as MessageEvent<string>).data) as { rev: number; session: RawSession }
+          applySessionPatch(qc, p.rev, p.session)
+        } catch {
+          void qc.invalidateQueries({ queryKey: qk.sessions })
+        }
       })
       es.addEventListener('changed', (ev) => {
         seen()

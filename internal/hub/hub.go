@@ -51,6 +51,8 @@ type Hub struct {
 	lostTmr  map[string]*time.Timer
 	notified map[string]time.Time // 通知去重键 → 上次发送时间
 	kicks    map[string]*time.Timer // 会话 → 待送达的整批需求（攒几秒再送，R-66）
+	dirty    map[string]bool        // 待推送最新数据的会话（R-56，300ms 内合并）
+	dirtyTmr *time.Timer
 }
 
 // New 创建 Hub。
@@ -64,6 +66,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		lostTmr:  map[string]*time.Timer{},
 		notified: map[string]time.Time{},
 		kicks:    map[string]*time.Timer{},
+		dirty:    map[string]bool{},
 	}
 }
 
@@ -176,6 +179,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	if err := h.store.SaveSession(ctx, next); err != nil {
 		return err
 	}
+	defer h.sessionChanged(key) // 存完工具版本、上下文占用等再推
 	if ev.Context > 0 { // 上下文占用（R-60）
 		if err := h.store.SetContext(ctx, key, ev.Context, ev.ContextMax); err != nil {
 			return err
@@ -190,8 +194,6 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 			return err
 		}
 	}
-	h.broker.publish("sessions")
-
 	prevState := ""
 	if prev != nil {
 		prevState = prev.State
@@ -222,6 +224,36 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	}
 	return nil
 }
+
+// sessionChanged 把会话的最新数据推给网页（R-56）：Agent 事件很密，同一批 300ms 内的变化合并成一次，
+// 每个会话推一条完整数据，网页就地替换，不用整表重拉。
+func (h *Hub) sessionChanged(key string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.dirty[key] = true
+	if h.dirtyTmr != nil {
+		return
+	}
+	h.dirtyTmr = time.AfterFunc(sessionPushDelay, func() {
+		h.mu.Lock()
+		keys := h.dirty
+		h.dirty = map[string]bool{}
+		h.dirtyTmr = nil
+		h.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for k := range keys {
+			// 先读数据、后分配序号：列表若在两者之间查询，拿到的数据只会更新，下一次推送会再纠正
+			if x, err := h.store.GetSession(ctx, k); err == nil {
+				h.broker.publishSession(x)
+			} else {
+				h.broker.publish("sessions")
+			}
+		}
+	})
+}
+
+var sessionPushDelay = 300 * time.Millisecond
 
 // pushDecisions 把设备上待注入的决策全集下发给 daemon。
 func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
