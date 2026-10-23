@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -27,6 +28,9 @@ type Actor struct {
 	Role    string // 会话当时的身份；空时写入时按会话现在的身份补上
 	Via     string // web | agent | create | link | release | withdraw | revise | accept | assign | plan
 	Ref     string // 关联记录的编号（D-x 放行 / 修改意见，P-x 计划）
+	// 搁置原因（R-157）：Kind 是 duplicate / changed / dropped / other，Reason 是一句话；都可空（用户搁置时可选）
+	ReasonKind string
+	Reason     string
 }
 
 type actorKey struct{}
@@ -52,6 +56,12 @@ func WithActor(ctx context.Context, a Actor) context.Context {
 	if a.Ref != "" {
 		cur.Ref = a.Ref
 	}
+	if a.ReasonKind != "" {
+		cur.ReasonKind = a.ReasonKind
+	}
+	if a.Reason != "" {
+		cur.Reason = a.Reason
+	}
 	return context.WithValue(ctx, actorKey{}, cur)
 }
 
@@ -75,7 +85,29 @@ type StatusChange struct {
 	Role            string    `json:"role,omitempty" doc:"会话当时的身份：pm / dev / advisor / reviewer"`
 	Via             string    `json:"via" doc:"经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划"`
 	Ref             string    `json:"ref,omitempty" doc:"关联记录的编号：D-x 是这次放行、退回修改、撤回的那条放行；P-x 是计划"`
+	ReasonKind      string    `json:"reason_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他（R-157）；只有搁置的变化可能有，旧记录没有"`
+	Reason          string    `json:"reason,omitempty" doc:"搁置原因的一句话（R-157）"`
 	At              time.Time `json:"at"`
+}
+
+// ShelveKinds 是搁置原因的类别。
+var ShelveKinds = []string{"duplicate", "changed", "dropped", "other"}
+
+// NormShelveReason 整理搁置原因：类别不认识的归为 other，一句话去空白并截到 200 字。
+func NormShelveReason(kind, reason string) (string, string) {
+	kind, reason = strings.TrimSpace(kind), strings.Join(strings.Fields(reason), " ")
+	if r := []rune(reason); len(r) > 200 {
+		reason = string(r[:200])
+	}
+	if kind == "" && reason == "" {
+		return "", ""
+	}
+	for _, k := range ShelveKinds {
+		if k == kind {
+			return kind, reason
+		}
+	}
+	return "other", reason
 }
 
 // recordStatus 在事务里记一次状态变化。
@@ -97,8 +129,12 @@ func recordStatus(ctx context.Context, t *sql.Tx, reqID, from, to string) error 
 			a.Via = "system"
 		}
 	}
-	_, err := t.ExecContext(ctx, `INSERT INTO status_changes(id, requirement_id, from_status, to_status, actor, session_key, role, via, ref, at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		protocol.NewID(), reqID, from, to, a.Kind, a.Session, a.Role, a.Via, a.Ref, now())
+	rk, rs := "", ""
+	if to == ReqShelved { // 理由只跟搁置走（R-157）
+		rk, rs = NormShelveReason(a.ReasonKind, a.Reason)
+	}
+	_, err := t.ExecContext(ctx, `INSERT INTO status_changes(id, requirement_id, from_status, to_status, actor, session_key, role, via, ref, reason_kind, reason, at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		protocol.NewID(), reqID, from, to, a.Kind, a.Session, a.Role, a.Via, a.Ref, rk, rs, now())
 	return err
 }
 
@@ -118,7 +154,7 @@ type StatusQuery struct {
 
 // ListStatusChanges 按时间正序列出状态变化。
 func (s *Store) ListStatusChanges(ctx context.Context, q StatusQuery) ([]StatusChange, error) {
-	sqlq := `SELECT c.id, c.requirement_id, r.seq, c.from_status, c.to_status, c.actor, c.session_key, c.role, c.via, c.ref, c.at
+	sqlq := `SELECT c.id, c.requirement_id, r.seq, c.from_status, c.to_status, c.actor, c.session_key, c.role, c.via, c.ref, c.reason_kind, c.reason, c.at
 		FROM status_changes c JOIN requirements r ON r.id = c.requirement_id WHERE 1 = 1`
 	var args []any
 	if q.RequirementID != "" {
@@ -152,7 +188,7 @@ func (s *Store) ListStatusChanges(ctx context.Context, q StatusQuery) ([]StatusC
 		var c StatusChange
 		var seq int
 		var at string
-		if err := rows.Scan(&c.ID, &c.RequirementID, &seq, &c.From, &c.To, &c.Actor, &c.Session, &c.Role, &c.Via, &c.Ref, &at); err != nil {
+		if err := rows.Scan(&c.ID, &c.RequirementID, &seq, &c.From, &c.To, &c.Actor, &c.Session, &c.Role, &c.Via, &c.Ref, &c.ReasonKind, &c.Reason, &at); err != nil {
 			return nil, err
 		}
 		c.RequirementCode = reqCode(seq)

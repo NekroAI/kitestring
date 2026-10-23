@@ -37,6 +37,7 @@ type ChainDec struct {
 	Title     string `json:"title"`
 	Status    string `json:"status"`
 	Overturns bool   `json:"overturns,omitempty"`
+	Reason    string `json:"reason,omitempty" doc:"用户作答时附的一句话理由（R-157）；没写或旧决策为空"`
 }
 
 // DecisionChain 是一条决策的后果链。
@@ -54,7 +55,7 @@ func chainDec(d Decision) ChainDec {
 	if t == "" {
 		t = d.Question
 	}
-	return ChainDec{Code: d.Code, Title: t, Status: d.Status, Overturns: d.Overturns}
+	return ChainDec{Code: d.Code, Title: t, Status: d.Status, Overturns: d.Overturns, Reason: d.AnswerReason}
 }
 
 // NormDecCode 把「d-12」「D-12」「12」统一成 D-12；不像决策编号时返回空。

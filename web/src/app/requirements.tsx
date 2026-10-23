@@ -8,7 +8,7 @@ import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from 
 import { t } from '../i18n'
 import { cx, loadPref, savePref, useDesktop, usePref } from '../lib/util'
 import { Badge, Button, Card, Switch, Textarea, Tip } from '../ui/base'
-import { FullSheet, Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
+import { FullSheet, Menu, Panel, useAskReason, useConfirm, type MenuItem } from '../ui/overlay'
 import { displayState, PriorityDot, PriorityTag, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
@@ -47,13 +47,27 @@ export function toFields(r: Requirement, patch: Partial<ReqFields> = {}): ReqFie
 export function useSetStatus() {
   const { updateReq } = useActions()
   const confirm = useConfirm()
+  const ask = useAskReason()
   return async (r: Requirement, status: string) => {
     if (status === r.status) return
     if (r.status === 'review' && status !== 'done') {
       const ok = await confirm({ title: t.reqs.reject, description: t.reqs.rejectConfirm, confirmText: t.reqs.reject, danger: true })
       if (!ok) return
     }
-    const res = await updateReq(r.code, toFields(r, { status: status as ReqFields['status'] }))
+    // 搁置（R-157）：问一句原因，类别和一句话都可以不填；取消就不搁置
+    let why: Partial<ReqFields> = {}
+    if (status === 'shelved') {
+      const a = await ask({
+        title: t.reqs.shelve.title,
+        description: t.reqs.shelve.desc,
+        confirmText: t.reqs.shelve.confirm,
+        placeholder: t.reqs.shelve.placeholder,
+        kinds: Object.entries(t.reqs.shelve.kinds).map(([value, label]) => ({ value, label })),
+      })
+      if (!a) return
+      why = { shelve_kind: (a.kind || undefined) as ReqFields['shelve_kind'], shelve_reason: a.note || undefined }
+    }
+    const res = await updateReq(r.code, toFields(r, { status: status as ReqFields['status'], ...why }))
     if (res) {
       if (status === 'done' && r.status === 'review') toast.success(t.reqs.accepted(r.code))
       else if (r.status === 'review') toast(t.reqs.rejected(r.code))

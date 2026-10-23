@@ -345,6 +345,8 @@ export const zh = {
     other: '其他回答',
     otherPlaceholder: '写下你的答复',
     freePlaceholder: '写下你的答复',
+    reasonPlaceholder: '为什么没选推荐项？一句话，可不填',
+    reasonLabel: '你的理由',
     addNote: '补充',
     notePlaceholder: '补充说明',
     useRecommendation: '用这个',
@@ -381,6 +383,14 @@ export const zh = {
   },
 
   reqs: {
+    shelve: {
+      title: '搁置这条需求',
+      desc: '原因可不填；填了会记进时间线。',
+      confirm: '搁置',
+      placeholder: '一句话说明，可不填',
+      kinds: { duplicate: '重复', changed: '方向变了', dropped: '不做了', other: '其他' } as Record<string, string>,
+      why: (kind: string, text: string) => [kind, text].filter(Boolean).join('：'),
+    },
     title: '需求',
     summary: (open: number) => `${open} 条未完成`,
     new: '新建',
@@ -744,6 +754,7 @@ export const zh = {
     byUser: '你',
     bySystem: '纸鸢',
     changed: '把状态改为',
+    shelveWhy: '搁置原因',
     via: {
       link: '· 开始做',
       withdraw: '· 撤回放行',

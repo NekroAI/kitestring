@@ -124,7 +124,7 @@ func TestRelease(t *testing.T) {
 	if got, err = status(r2.Code, "claude:adv", "ready", "讨论过，范围清楚"); err != nil || got.Release == nil || got.Release.Role != "advisor" {
 		t.Fatalf("Adv 应能放行：%v %+v", err, got.Release)
 	}
-	if _, err = status(r3.Code, "claude:pm", "shelved", ""); err != nil {
+	if _, err = status(r3.Code, "claude:pm", "shelved", "不做了"); err != nil {
 		t.Fatal(err)
 	}
 	_, err = status(r3.Code, "claude:pm", "ready", "重新打开")

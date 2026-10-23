@@ -11,7 +11,7 @@ import { useActions } from './actions'
 import type { FileRef } from '../ui/attach'
 
 // picks：多点决策（R-112）逐点的选择，与 points 一一对应（-1 = 没选）
-export type Draft = { choice: number | 'other' | null; note: string; noteOpen?: boolean; files?: FileRef[]; picks?: number[] }
+export type Draft = { choice: number | 'other' | null; note: string; noteOpen?: boolean; files?: FileRef[]; picks?: number[]; reason?: string }
 export const emptyDraft: Draft = { choice: null, note: '' }
 const DRAFTS_KEY = 'ks.drafts.v2'
 export const UNDO_MS = 1800
@@ -29,7 +29,7 @@ export function composeAnswer(d: Draft | undefined, options: string[]): string {
 }
 
 // SendItem：一条答复。多点决策时 answer 是附言，choices 是逐点的选择，reject 表示整体拒绝。
-type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean }
+type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string }
 
 type Ctx = {
   drafts: Record<string, Draft>
@@ -46,7 +46,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
   const { answer } = useActions()
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => loadPref(DRAFTS_KEY, {}))
   const [queued, setQueued] = useState<Record<string, number>>({})
-  const pending = useRef(new Map<string, { answer: string; files?: string[]; choices?: number[]; reject?: boolean; timer: number }>())
+  const pending = useRef(new Map<string, { answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; timer: number }>())
 
   useEffect(() => savePref(DRAFTS_KEY, drafts), [drafts])
 
@@ -54,7 +54,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     setDrafts((cur) => {
       const d = { ...emptyDraft, ...cur[code], ...patch }
       const next = { ...cur }
-      if (d.choice == null && !d.note && !d.noteOpen && !d.files?.length && !d.picks) delete next[code]
+      if (d.choice == null && !d.note && !d.noteOpen && !d.files?.length && !d.picks && !d.reason) delete next[code]
       else next[code] = d
       return next
     })
@@ -75,7 +75,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     pending.current.clear()
     due.forEach(([, v]) => window.clearTimeout(v.timer))
     const codes = due.map(([c]) => c)
-    const res = await answer(due.map(([ref, v]) => ({ ref, answer: v.answer, files: v.files, choices: v.choices, reject: v.reject })))
+    const res = await answer(due.map(([ref, v]) => ({ ref, answer: v.answer, files: v.files, choices: v.choices, reject: v.reject, reason: v.reason })))
     setQueued((cur) => {
       const next = { ...cur }
       codes.forEach((c) => delete next[c])
@@ -94,7 +94,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
         const old = pending.current.get(it.code)
         if (old) window.clearTimeout(old.timer)
         // 所有排队项共用一个到期时间，到期时一起提交。
-        pending.current.set(it.code, { answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, timer: window.setTimeout(() => void flush(), UNDO_MS) })
+        pending.current.set(it.code, { answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason, timer: window.setTimeout(() => void flush(), UNDO_MS) })
       }
       setQueued((cur) => {
         const next = { ...cur }

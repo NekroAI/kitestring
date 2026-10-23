@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
+import { Badge, Button, Card, Input, Textarea, Tip } from '../ui/base'
 import { Menu, useConfirm } from '../ui/overlay'
 import { RoleTag, ToolMark } from '../ui/marks'
 import { ProxyNote } from './grant'
@@ -100,13 +100,18 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   const ri = useMemo(() => recIndex(options, rec), [options, rec])
   // 多点决策（R-112）：逐点选择，默认选推荐；附言和附图照旧
   const multi = !!d.points?.length
+  const approval = !!d.approval
   const picks = multi ? currentPicks(d, draft.picks) : []
   const picked = multi && picks.every((c) => c >= 0)
   const answer = multi ? (picked ? picksText(d, picks, draft.note) : '') : composeAnswer(draft, options)
+  // 没选推荐项时，给一个可选的一句话理由框（R-157）：不填照常发送，不增加必填步骤
+  const deviates = multi
+    ? picked && (d.points ?? []).some((p, i) => (p.items ?? []).some((o) => o.recommended) && !p.items?.[picks[i]]?.recommended)
+    : !!rec && !approval && ((typeof draft.choice === 'number' && ri >= 0 && draft.choice !== ri) || (draft.choice === 'other' && options.length > 0))
+  const reason = deviates ? (draft.reason ?? '').trim() : ''
   const [sendingText, setSendingText] = useState('')
   const sendingAt = queued[d.code]
   const noteRef = useRef<HTMLTextAreaElement>(null)
-  const approval = !!d.approval
   const free = !multi && (options.length === 0 || draft.choice === 'other')
   // 批准类：附言框常驻（批准和拒绝都可以附言）
   const note = !free && (approval || draft.noteOpen || !!draft.note)
@@ -127,8 +132,8 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
     if (uploadsBusy()) return void toast(t.attach.wait) // 附件没传完先不发
     if (!answer) return
     setSendingText(answer)
-    if (multi) send([{ code: d.code, answer: draft.note.trim(), files: draft.files?.map((f) => f.id), choices: picks }])
-    else send([{ code: d.code, answer, files: draft.files?.map((f) => f.id) }])
+    if (multi) send([{ code: d.code, answer: draft.note.trim(), files: draft.files?.map((f) => f.id), choices: picks, reason: reason || undefined }])
+    else send([{ code: d.code, answer, files: draft.files?.map((f) => f.id), reason: reason || undefined }])
   }
   const reject = () => {
     if (uploadsBusy()) return void toast(t.attach.wait)
@@ -325,15 +330,25 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           )}
         </AnimatePresence>
 
+        {deviates && (
+          <Input
+            value={draft.reason ?? ''}
+            maxLength={200}
+            placeholder={t.decision.reasonPlaceholder}
+            aria-label={t.decision.reasonPlaceholder}
+            onChange={(e) => setDraft(d.code, { reason: e.target.value })}
+          />
+        )}
+
         <div className="flex items-center gap-1.5">
           {!free && !note && (multi || typeof draft.choice === 'number') && (
             <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setDraft(d.code, { noteOpen: true })}>
               {t.decision.addNote}
             </Button>
           )}
-          {(draft.choice != null || draft.note || !!draft.files?.length || !!draft.picks) && (
+          {(draft.choice != null || draft.note || !!draft.files?.length || !!draft.picks || !!draft.reason) && (
             <Tip content={t.decision.clearDrafts}>
-              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [], picks: undefined })}>
+              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [], picks: undefined, reason: undefined })}>
                 <X className="size-3.5" />
               </Button>
             </Tip>
@@ -418,6 +433,12 @@ export function AnswerBlock({ d }: { d: Decision }) {
         <div className="text-xs font-medium text-fg-3">{d.kind === 'feedback' ? t.review.history : d.kind === 'note' ? t.timeline.note : d.kind === 'assign' ? t.assign.timeline : t.decision.answer}</div>
         <div className="mt-0.5 text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">{d.answer}</div>
       </div>
+      {d.answer_reason && (
+        <div>
+          <div className="text-xs font-medium text-fg-3">{t.decision.reasonLabel}</div>
+          <div className="mt-0.5 text-sm leading-relaxed break-words text-fg-2">{d.answer_reason}</div>
+        </div>
+      )}
       <Thumbs files={d.answer_files} size="sm" />
     </div>
   )

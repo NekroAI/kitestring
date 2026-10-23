@@ -1449,8 +1449,13 @@ export interface components {
             text: string;
         };
         "Agent-update-statusRequest": {
-            /** @description 放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166） */
+            /** @description 放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）；搁置（shelved）时必填的搁置原因（R-157） */
             reason?: string;
+            /**
+             * @description 搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；不填按其他算
+             * @enum {string}
+             */
+            reason_kind?: "duplicate" | "changed" | "dropped" | "other";
             session_key?: string;
             /** @enum {string} */
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
@@ -1517,6 +1522,13 @@ export interface components {
             priority?: "P0" | "P1" | "P2" | "P3";
             project_id?: string;
             session_key?: string;
+            /**
+             * @description 搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；只在状态改为 shelved 时记录，可不填
+             * @enum {string}
+             */
+            shelve_kind?: "duplicate" | "changed" | "dropped" | "other";
+            /** @description 搁置原因的一句话；只在状态改为 shelved 时记录，可不填 */
+            shelve_reason?: string;
             source?: string;
             /** @enum {string} */
             status?: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
@@ -1589,6 +1601,8 @@ export interface components {
         ChainDec: {
             code: string;
             overturns?: boolean;
+            /** @description 用户作答时附的一句话理由（R-157）；没写或旧决策为空 */
+            reason?: string;
             status: string;
             title: string;
         };
@@ -1633,6 +1647,8 @@ export interface components {
         Decision: {
             answer: string;
             answer_files: components["schemas"]["FileRef"][] | null;
+            /** @description 用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent */
+            answer_reason?: string;
             /** Format: date-time */
             answered_at?: string;
             approval: boolean;
@@ -1699,6 +1715,8 @@ export interface components {
         DecisionRaisedOutBody: {
             answer: string;
             answer_files: components["schemas"]["FileRef"][] | null;
+            /** @description 用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent */
+            answer_reason?: string;
             /** Format: date-time */
             answered_at?: string;
             approval: boolean;
@@ -2043,6 +2061,8 @@ export interface components {
             choices?: number[] | null;
             /** @description 附图 ID */
             files?: string[] | null;
+            /** @description 可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上 */
+            reason?: string;
             ref: string;
             /** @description 批准类的多点决策：拒绝（此时不要求逐点选择） */
             reject?: boolean;
@@ -2230,6 +2250,8 @@ export interface components {
             choices?: number[] | null;
             /** @description 附件 ID */
             files?: string[] | null;
+            /** @description 可选的一句话理由（R-157） */
+            reason?: string;
             reject?: boolean;
         };
         Passkey: {
@@ -2465,6 +2487,13 @@ export interface components {
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
             project_id?: string;
+            /**
+             * @description 搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；只在状态改为 shelved 时记录，可不填
+             * @enum {string}
+             */
+            shelve_kind?: "duplicate" | "changed" | "dropped" | "other";
+            /** @description 搁置原因的一句话；只在状态改为 shelved 时记录，可不填 */
+            shelve_reason?: string;
             source?: string;
             /** @enum {string} */
             status?: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
@@ -2711,6 +2740,13 @@ export interface components {
             /** @description 原状态；新建需求时为空 */
             from: string;
             id: string;
+            /** @description 搁置原因的一句话（R-157） */
+            reason?: string;
+            /**
+             * @description 搁置原因的类别：重复 / 方向变了 / 不做了 / 其他（R-157）；只有搁置的变化可能有，旧记录没有
+             * @enum {string}
+             */
+            reason_kind?: "duplicate" | "changed" | "dropped" | "other";
             /** @description 关联记录的编号：D-x 是这次放行、退回修改、撤回的那条放行；P-x 是计划 */
             ref?: string;
             requirement_code?: string;

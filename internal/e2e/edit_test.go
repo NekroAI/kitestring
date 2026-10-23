@@ -192,7 +192,7 @@ func TestEditRequirement(t *testing.T) {
 	e.call("PUT", "/api/requirements/"+r2.Code, map[string]any{"title": got.Title, "detail": got.Detail, "acceptance": got.Acceptance, "status": "done"}, nil)
 	_, err = edit(r2.Code, "claude:pm", map[string]any{"title": "完成后再改"})
 	mustFail(err, "已完成", "已完成的需求")
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+r1.Code+"/status", map[string]any{"status": "shelved", "session_key": "claude:dev"}, nil); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+r1.Code+"/status", map[string]any{"status": "shelved", "session_key": "claude:dev", "reason": "不做了"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, err = edit(r1.Code, "claude:dev", map[string]any{"title": "搁置后再改"})

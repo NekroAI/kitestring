@@ -42,10 +42,10 @@ func TestPlanAndReqDedupe(t *testing.T) {
 		t.Fatalf("同名未关闭需求应提示且仍新建：%+v", dup)
 	}
 	// 搁置后不再算同名
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+dup.Code+"/status", map[string]any{"status": "shelved", "session_key": key}, nil); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+dup.Code+"/status", map[string]any{"status": "shelved", "session_key": key, "reason": "重复"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Do(ctx, "POST", "/agent/requirements/"+first.Code+"/status", map[string]any{"status": "shelved", "session_key": key}, nil); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/requirements/"+first.Code+"/status", map[string]any{"status": "shelved", "session_key": key, "reason": "重复"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if again := mk("导出 CSV"); len(again.Notices) != 0 {

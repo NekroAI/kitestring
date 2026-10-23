@@ -72,6 +72,7 @@ type Decision struct {
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
 	Answer           string     `json:"answer"`
+	AnswerReason     string     `json:"answer_reason,omitempty" doc:"用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent"`
 	CreatedAt        time.Time  `json:"created_at"`
 	AnsweredAt       *time.Time `json:"answered_at,omitempty"`
 	DeliveredAt      *time.Time `json:"delivered_at,omitempty"`
@@ -99,7 +100,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
-	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns
+	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -116,7 +117,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
-		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns)
+		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason)
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
 	d.OverriddenAt = parseNullTS(sql.NullString{String: overAt, Valid: overAt != ""})
@@ -233,11 +234,12 @@ func (s *Store) queryDecs(ctx context.Context, q string, args ...any) ([]Decisio
 
 // AnswerDecision 记录用户答复，状态进入“已决策待接收”。已接收的决策允许改答，会重新进入待接收。
 func (s *Store) AnswerDecision(ctx context.Context, ref, answer string, files []FileRef) (Decision, error) {
-	return s.AnswerDecisionPoints(ctx, ref, answer, files, nil)
+	return s.AnswerDecisionPoints(ctx, ref, answer, files, nil, "")
 }
 
-// AnswerDecisionPoints 作答；choices 是逐点的选择（R-112），没有要拍板的点时为 nil。
-func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, files []FileRef, choices []int) (Decision, error) {
+// AnswerDecisionPoints 作答；choices 是逐点的选择（R-112），没有要拍板的点时为 nil；
+// reason 是可选的一句话理由（R-157），去空白、最多 200 字，改答时以最新一次为准。
+func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, files []FileRef, choices []int, reason string) (Decision, error) {
 	d, err := s.GetDecision(ctx, ref)
 	if err != nil {
 		return d, err
@@ -250,8 +252,9 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 	}
 	// 你给参谋代答过的决策重新作答 = 推翻代答（R-163）：记下推翻时间，代答原文留在 proxy_answer
 	n := now()
-	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '',
-		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, filesJSON(files), blocks.Encode(choices), n, n, d.ID)
+	_, reason = NormShelveReason("", reason)
+	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_reason = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '',
+		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, reason, filesJSON(files), blocks.Encode(choices), n, n, d.ID)
 	if err != nil {
 		return d, err
 	}

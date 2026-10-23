@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Check, X } from 'lucide-react'
 import { cx, useDesktop } from '../lib/util'
 import { t } from '../i18n'
-import { Button } from './base'
+import { Button, Input } from './base'
 
 // swipeToClose：触屏（如 iPad）在右侧面板上横向轻扫。onSwipe 返回 true 表示已处理（例如切换需求），否则向右扫关闭。
 function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => boolean) {
@@ -220,7 +220,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   }
   return (
     <ConfirmCtx.Provider value={confirm}>
-      {children}
+      <ReasonProvider>{children}</ReasonProvider>
       <Modal
         open={!!opts}
         onClose={() => done(false)}
@@ -240,6 +240,80 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 }
 
 export const useConfirm = () => useContext(ConfirmCtx)
+
+// ---------- 可选原因框（R-157，例如搁置需求）----------
+// 点选一个类别、写一句话，都可以不填；返回 null 表示取消，否则返回选的类别与文字（可能都是空）。
+
+export type ReasonOpts = { title: ReactNode; description?: ReactNode; confirmText: string; placeholder: string; kinds: { value: string; label: string }[] }
+export type ReasonResult = { kind: string; note: string }
+const ReasonCtx = createContext<(o: ReasonOpts) => Promise<ReasonResult | null>>(async () => null)
+export const useAskReason = () => useContext(ReasonCtx)
+
+function ReasonProvider({ children }: { children: ReactNode }) {
+  const [opts, setOpts] = useState<ReasonOpts | null>(null)
+  const [kind, setKind] = useState('')
+  const [note, setNote] = useState('')
+  const resolver = useRef<(v: ReasonResult | null) => void>(undefined)
+  const ask = useCallback((o: ReasonOpts) => {
+    setKind('')
+    setNote('')
+    setOpts(o)
+    return new Promise<ReasonResult | null>((res) => {
+      resolver.current = res
+    })
+  }, [])
+  const done = (v: ReasonResult | null) => {
+    resolver.current?.(v)
+    setOpts(null)
+  }
+  const submit = () => done({ kind, note: note.trim() })
+  return (
+    <ReasonCtx.Provider value={ask}>
+      {children}
+      <Modal
+        open={!!opts}
+        onClose={() => done(null)}
+        title={opts?.title}
+        description={opts?.description}
+        footer={
+          <>
+            <Button onClick={() => done(null)}>{t.common.cancel}</Button>
+            <Button variant="primary" onClick={submit}>
+              {opts?.confirmText}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 pb-1">
+          <div className="flex flex-wrap gap-1.5" role="radiogroup">
+            {opts?.kinds.map((k) => (
+              <button
+                key={k.value}
+                role="radio"
+                aria-checked={kind === k.value}
+                onClick={() => setKind(kind === k.value ? '' : k.value)}
+                className={cx(
+                  'rounded-full border px-3 py-1 text-sm transition-colors',
+                  kind === k.value ? 'border-accent bg-accent-soft text-fg' : 'border-line bg-surface text-fg-2 hover:border-line-strong hover:bg-hover',
+                )}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+          <Input
+            value={note}
+            maxLength={200}
+            placeholder={opts?.placeholder}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
+            autoFocus
+          />
+        </div>
+      </Modal>
+    </ReasonCtx.Provider>
+  )
+}
 
 // ---------- 下拉菜单 ----------
 

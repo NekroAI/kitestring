@@ -50,16 +50,17 @@ type reqView struct {
 		Voided     bool       `json:"voided"`
 	} `json:"reviews"`
 	Feedback []struct {
-		Code        string     `json:"code"`
-		Kind        string     `json:"kind"`
-		Question    string     `json:"question"`
-		Answer      string     `json:"answer"`
-		Status      string     `json:"status"`
-		AnsweredAt  *time.Time `json:"answered_at"`
-		AnswerFiles []fileView `json:"answer_files"`
-		AssignedBy  string     `json:"assigned_by"`
-		Context     string     `json:"context"`
-		CloseReason string     `json:"close_reason"`
+		Code         string     `json:"code"`
+		Kind         string     `json:"kind"`
+		Question     string     `json:"question"`
+		Answer       string     `json:"answer"`
+		AnswerReason string     `json:"answer_reason"`
+		Status       string     `json:"status"`
+		AnsweredAt   *time.Time `json:"answered_at"`
+		AnswerFiles  []fileView `json:"answer_files"`
+		AssignedBy   string     `json:"assigned_by"`
+		Context      string     `json:"context"`
+		CloseReason  string     `json:"close_reason"`
 	} `json:"feedback"`
 }
 
@@ -169,6 +170,9 @@ func (r reqView) String() string {
 			ans := "（待你答复）"
 			if f.Answer != "" {
 				ans = "答复：" + f.Answer
+				if f.AnswerReason != "" {
+					ans += "（用户的理由：" + f.AnswerReason + "）"
+				}
 			}
 			s = fmt.Sprintf("  - %s%s 决策：%s → %s", when, f.Code, oneLine(f.Question), ans)
 		case "assign", "queue", "plan", "review_task":

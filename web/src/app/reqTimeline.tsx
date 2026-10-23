@@ -456,6 +456,12 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
               </Quote>
             )
           )}
+          {d.answer_reason && !d.proxy_by && (
+            <p className="text-sm leading-relaxed break-words text-fg-2">
+              <span className="mr-1.5 text-fg-3">{t.decision.reasonLabel}</span>
+              <Linkify text={d.answer_reason} />
+            </p>
+          )}
           {!!d.answer_files?.length && <Thumbs files={d.answer_files} size="sm" />}
           {/* 后果链（R-154）：取代 / 推翻、产生的需求与提交；被取代也在这里显示 */}
           <DecisionChain code={d.code} skipReq={r.code} />
@@ -500,7 +506,14 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           }
           at={c.at}
           now={now}
-        />
+        >
+          {c.to === 'shelved' && (c.reason_kind || c.reason) && (
+            <p className="text-sm leading-relaxed break-words text-fg-2">
+              <span className="mr-1.5 text-fg-3">{t.timeline.shelveWhy}</span>
+              <Linkify text={t.reqs.shelve.why(t.reqs.shelve.kinds[c.reason_kind ?? ''] ?? '', c.reason ?? '')} />
+            </p>
+          )}
+        </Node>
       ),
     })
   }

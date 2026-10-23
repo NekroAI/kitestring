@@ -29,11 +29,12 @@ function Line({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function Dec({ d }: { d: { code: string; title: string; status: string } }) {
+function Dec({ d }: { d: { code: string; title: string; status: string; reason?: string } }) {
   return (
-    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5">
       <RefChip code={d.code} status={d.status} />
       <span className="min-w-0 truncate text-fg-2">{d.title}</span>
+      {d.reason && <span className="min-w-0 basis-full text-xs break-words text-fg-3">{t.decision.reasonLabel}：{d.reason}</span>}
     </span>
   )
 }

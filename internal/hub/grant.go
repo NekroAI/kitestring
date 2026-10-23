@@ -120,6 +120,9 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 
 // proxyText 是送给提问方的答复：参谋代答时注明是代答；你推翻后写明更正、以你的为准。
 func proxyText(d store.Decision) string {
+	if d.AnswerReason != "" && (d.ProxyBy == "" || d.OverriddenAt != nil) {
+		d.Answer += "\n用户的理由：" + d.AnswerReason // 用户亲手作答时附的一句话理由（R-157），随答复送给 Agent
+	}
 	if d.ProxyBy == "" {
 		return d.Answer
 	}
@@ -214,6 +217,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				Files   []string `json:"files,omitempty" doc:"附件 ID"`
 				Choices []int    `json:"choices,omitempty" doc:"要拍板的点：逐点选第几个（从 0 开始）"`
 				Reject  bool     `json:"reject,omitempty"`
+				Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）"`
 			}
 		}) (*decisionOut, error) {
 			d0, err := h.store.GetDecision(ctx, in.Ref)
@@ -237,7 +241,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				}
 				choices = in.Body.Choices
 			}
-			d, err := h.store.AnswerDecisionPoints(ctx, d0.ID, answer, files, choices)
+			d, err := h.store.AnswerDecisionPoints(ctx, d0.ID, answer, files, choices, in.Body.Reason)
 			if err != nil {
 				return nil, apiErr(err)
 			}

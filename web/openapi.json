@@ -446,7 +446,17 @@
         "additionalProperties": false,
         "properties": {
           "reason": {
-            "description": "放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）",
+            "description": "放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）；搁置（shelved）时必填的搁置原因（R-157）",
+            "type": "string"
+          },
+          "reason_kind": {
+            "description": "搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；不填按其他算",
+            "enum": [
+              "duplicate",
+              "changed",
+              "dropped",
+              "other"
+            ],
             "type": "string"
           },
           "session_key": {
@@ -663,6 +673,20 @@
             "type": "string"
           },
           "session_key": {
+            "type": "string"
+          },
+          "shelve_kind": {
+            "description": "搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；只在状态改为 shelved 时记录，可不填",
+            "enum": [
+              "duplicate",
+              "changed",
+              "dropped",
+              "other"
+            ],
+            "type": "string"
+          },
+          "shelve_reason": {
+            "description": "搁置原因的一句话；只在状态改为 shelved 时记录，可不填",
             "type": "string"
           },
           "source": {
@@ -944,6 +968,10 @@
           "overturns": {
             "type": "boolean"
           },
+          "reason": {
+            "description": "用户作答时附的一句话理由（R-157）；没写或旧决策为空",
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -1096,6 +1124,10 @@
               "array",
               "null"
             ]
+          },
+          "answer_reason": {
+            "description": "用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent",
+            "type": "string"
           },
           "answered_at": {
             "format": "date-time",
@@ -1384,6 +1416,10 @@
               "array",
               "null"
             ]
+          },
+          "answer_reason": {
+            "description": "用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent",
+            "type": "string"
           },
           "answered_at": {
             "format": "date-time",
@@ -2486,6 +2522,10 @@
               "null"
             ]
           },
+          "reason": {
+            "description": "可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上",
+            "type": "string"
+          },
           "ref": {
             "type": "string"
           },
@@ -3169,6 +3209,10 @@
               "array",
               "null"
             ]
+          },
+          "reason": {
+            "description": "可选的一句话理由（R-157）",
+            "type": "string"
           },
           "reject": {
             "type": "boolean"
@@ -4048,6 +4092,20 @@
             "type": "string"
           },
           "project_id": {
+            "type": "string"
+          },
+          "shelve_kind": {
+            "description": "搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；只在状态改为 shelved 时记录，可不填",
+            "enum": [
+              "duplicate",
+              "changed",
+              "dropped",
+              "other"
+            ],
+            "type": "string"
+          },
+          "shelve_reason": {
+            "description": "搁置原因的一句话；只在状态改为 shelved 时记录，可不填",
             "type": "string"
           },
           "source": {
@@ -4978,6 +5036,20 @@
             "type": "string"
           },
           "id": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "搁置原因的一句话（R-157）",
+            "type": "string"
+          },
+          "reason_kind": {
+            "description": "搁置原因的类别：重复 / 方向变了 / 不做了 / 其他（R-157）；只有搁置的变化可能有，旧记录没有",
+            "enum": [
+              "duplicate",
+              "changed",
+              "dropped",
+              "other"
+            ],
             "type": "string"
           },
           "ref": {

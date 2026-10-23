@@ -154,9 +154,9 @@ func ok() *okBody {
 
 type authStatus struct {
 	Body struct {
-		Initialized bool   `json:"initialized"`
-		LoggedIn    bool   `json:"logged_in"`
-		Version     string `json:"version"`
+		Initialized    bool     `json:"initialized"`
+		LoggedIn       bool     `json:"logged_in"`
+		Version        string   `json:"version"`
 		PasskeyOrigins []string `json:"passkey_origins" doc:"登记过 passkey 的网页来源，登录页据此显示 passkey 登录（R-7）"`
 	}
 }
@@ -343,6 +343,7 @@ type answersIn struct {
 			Files   []string `json:"files,omitempty" doc:"附图 ID"`
 			Choices []int    `json:"choices,omitempty" doc:"逐点的选择（R-112）：与决策的 points 一一对应，填选项序号"`
 			Reject  bool     `json:"reject,omitempty" doc:"批准类的多点决策：拒绝（此时不要求逐点选择）"`
+			Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上"`
 		} `json:"answers" minItems:"1"`
 	}
 }
@@ -393,6 +394,9 @@ type ReqFields struct {
 	Acceptance string `json:"acceptance,omitempty"`
 	DocLink    string `json:"doc_link,omitempty"`
 	Kind       string `json:"kind,omitempty" doc:"design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改"`
+	// 搁置原因（R-157）：把状态改成 shelved 时可选填；类别与一句话都可以不填
+	ShelveKind   string `json:"shelve_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；只在状态改为 shelved 时记录，可不填"`
+	ShelveReason string `json:"shelve_reason,omitempty" doc:"搁置原因的一句话；只在状态改为 shelved 时记录，可不填"`
 	// Files 是描述里的附图 ID；不传表示不修改，传空数组表示清空。
 	Files []string `json:"files,omitempty"`
 }
@@ -813,7 +817,7 @@ func (h *Hub) registerWeb(api huma.API) {
 						choices = a.Choices
 					}
 				}
-				d, err := h.store.AnswerDecisionPoints(ctx, a.Ref, answer, files, choices)
+				d, err := h.store.AnswerDecisionPoints(ctx, a.Ref, answer, files, choices, a.Reason)
 				if err != nil {
 					return nil, apiErr(err)
 				}
@@ -912,6 +916,9 @@ func (h *Hub) registerWeb(api huma.API) {
 			}
 			r.ID = cur.ID
 			uctx := ctx
+			if r.Status == store.ReqShelved {
+				uctx = store.WithActor(ctx, store.Actor{ReasonKind: in.Body.ShelveKind, Reason: in.Body.ShelveReason})
+			}
 			if r.Status == store.ReqDraft && cur.Status != store.ReqDraft && cur.Release != nil {
 				uctx = store.WithActor(ctx, store.Actor{Via: "withdraw", Ref: cur.Release.Code})
 			}
@@ -1160,17 +1167,24 @@ func (h *Hub) registerAgent(api huma.API) {
 			Body struct {
 				Status     string `json:"status" enum:"draft,ready,in_progress,blocked,review,done,shelved"`
 				SessionKey string `json:"session_key,omitempty"`
-				Reason     string `json:"reason,omitempty" doc:"放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）"`
+				Reason     string `json:"reason,omitempty" doc:"放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）；搁置（shelved）时必填的搁置原因（R-157）"`
+				ReasonKind string `json:"reason_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；不填按其他算"`
 			}
 		}) (*reqOut, error) {
 			if in.Body.Status == store.ReqDone {
 				return nil, huma.Error400BadRequest("“已完成”只能由用户在验收后设置；完成开发请设为 review（待验收）")
+			}
+			if in.Body.Status == store.ReqShelved && strings.TrimSpace(in.Body.Reason) == "" {
+				return nil, huma.Error400BadRequest("Agent 搁置需求必须写 reason：一句话说明为什么搁置（重复 / 方向变了 / 不做了 / 其他，可用 reason_kind 标类别）")
 			}
 			before, err := h.store.GetRequirement(ctx, in.Ref)
 			if err != nil {
 				return nil, apiErr(err)
 			}
 			ctx = store.WithActor(ctx, store.Actor{Session: in.Body.SessionKey})
+			if in.Body.Status == store.ReqShelved {
+				ctx = store.WithActor(ctx, store.Actor{ReasonKind: in.Body.ReasonKind, Reason: in.Body.Reason})
+			}
 			if in.Body.Status == store.ReqReady {
 				// 放行（R-166）：只有 PM / Adv、项目开关打开、从草稿、写了理由才行；不关联放行的会话，需求照常归原会话或 PM
 				x, err := h.releaseCheck(ctx, before, in.Body.SessionKey, in.Body.Reason)
