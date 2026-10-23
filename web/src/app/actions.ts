@@ -49,14 +49,14 @@ export function useActions() {
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
     openGrant: (body: { project_id: string; session_key: string; expires_at: string; max_risk: 'low' | 'medium' }) =>
       run(() => unwrap(api.POST('/api/grants', { body })), ['grants', 'decisions']),
-    revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions']),
+    revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions', 'morning']),
     overrideDecision: (ref: string, answer: string) =>
-      send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions']),
+      send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions', 'morning']),
     withdrawRelease: (ref: string, reason = '') =>
-      run(() => unwrap(api.POST('/api/requirements/{ref}/release/withdraw', { params: { path: { ref } }, body: { reason } })), ['requirements', 'sessions', 'decisions', 'plans']),
+      run(() => unwrap(api.POST('/api/requirements/{ref}/release/withdraw', { params: { path: { ref } }, body: { reason } })), ['requirements', 'sessions', 'decisions', 'plans', 'morning']),
     closeDecision: (ref: string, why: { reason?: string; replaced_by?: string } = {}) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: why })), ['decisions', 'sessions', 'requirements']),
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
-      send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions']),
+      send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions', 'morning']),
     note: (ref: string, comment: string, files: string[]) =>
       send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions']),
     assign: (ref: string, sessionKey: string, comment = '') =>

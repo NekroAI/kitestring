@@ -1008,6 +1008,30 @@ export const zh = {
     overrideDone: '已推翻，更正已送出',
     viewAll: '代答记录',
   },
+  // 参谋早报（R-165）
+  morning: {
+    title: '参谋早报',
+    since: (when: string) => `离开期间 · 自 ${when}`,
+    fold: '收起',
+    unfold: '展开',
+    noNote: '参谋还没写总述；下面是纸鸢从记录里汇总的。',
+    done: '完成了什么',
+    doneEmpty: '这段时间没有新交验收的需求',
+    doneShort: (n: number) => `完成 ${n} 条`,
+    tells: (n: number) => `团队消息 ${n} 条`,
+    decided: '替你定了什么',
+    decidedEmpty: '没有替你代答或放行',
+    decidedShort: (n: number) => `替你定了 ${n} 件`,
+    released: '放行为待开始',
+    withdrawn: '你已撤回',
+    withdraw: '撤回放行',
+    withdrawReason: '在参谋早报里撤回',
+    withdrawDone: (code: string) => `已撤回 ${code} 的放行，改回草稿`,
+    left: (pending: number, review: number) => `留给你 ${pending} 件 · 待验收 ${review} 条，见下方「要你处理」`,
+    blocked: '受阻',
+    verdict: { pass: '建议通过', return: '建议退回' } as Record<string, string>,
+    held: '没代答：',
+  },
 }
 
 export type Messages = typeof zh

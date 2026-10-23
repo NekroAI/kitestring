@@ -16,6 +16,7 @@ import { Ctx } from '../ui/contextMenu'
 import { Linkify, RefChip } from '../ui/refmark'
 import { EvidenceGist, hasPayload } from './evidence'
 import { PassingRow, schedulePass, usePassing } from './pass'
+import { AdviceNote } from './morning'
 
 // evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
 export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
@@ -88,6 +89,7 @@ function ReviewRow({ r, onDone, hideTitle, undoable }: { r: Requirement; onDone?
               <ChevronRight className="size-3.5 shrink-0 text-fg-3 transition-transform group-hover/review:translate-x-0.5 group-hover/review:text-accent" />
             </div>
           )}
+          {undoable && <AdviceNote code={r.code} />}
           {evidence.length ? (
             <ul className="mt-1.5 space-y-1.5">
               {evidence.slice(-3).map((e) => (

@@ -22,6 +22,77 @@
         },
         "type": "object"
       },
+      "Advice": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "description": "写建议的 Adv 会话",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_id": {
+            "type": "string"
+          },
+          "verdict": {
+            "description": "建议通过 / 建议退回",
+            "enum": [
+              "pass",
+              "return"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement_id",
+          "requirement_code",
+          "project_id",
+          "verdict",
+          "reason",
+          "by",
+          "at"
+        ],
+        "type": "object"
+      },
+      "AdviceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "理由（pass / return 必填）：对照验收标准，一两句",
+            "type": "string"
+          },
+          "requirement": {
+            "description": "待验收的需求编号（如 R-12）",
+            "minLength": 1,
+            "type": "string"
+          },
+          "verdict": {
+            "description": "pass = 建议通过；return = 建议退回；clear = 撤掉建议",
+            "enum": [
+              "pass",
+              "return",
+              "clear"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement",
+          "verdict"
+        ],
+        "type": "object"
+      },
       "Agent-answer-decisionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -239,6 +310,34 @@
         "required": [
           "session_key",
           "text"
+        ],
+        "type": "object"
+      },
+      "Agent-set-morningRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "advice": {
+            "description": "逐条验收建议，每条覆盖该需求上一份",
+            "items": {
+              "$ref": "#/components/schemas/AdviceIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "session_key": {
+            "description": "调用者（必须是本项目的 Adv）",
+            "minLength": 1,
+            "type": "string"
+          },
+          "text": {
+            "description": "总述：一段话，先结论；不传表示不改，空字符串表示清除",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
         ],
         "type": "object"
       },
@@ -2421,6 +2520,337 @@
         },
         "required": [
           "into"
+        ],
+        "type": "object"
+      },
+      "MorningDelivery": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "text": {
+            "description": "证据的结论（没有时取摘要开头）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "text"
+        ],
+        "type": "object"
+      },
+      "MorningDone": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "description": "最近一次交证据的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/MorningDelivery"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement_code",
+          "requirement_title",
+          "status",
+          "deliveries",
+          "at"
+        ],
+        "type": "object"
+      },
+      "MorningHold": {
+        "additionalProperties": false,
+        "properties": {
+          "decision_code": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "hard = 硬规则；scope = 超出授权的风险档；ended = 授权窗口已结束",
+            "enum": [
+              "hard",
+              "scope",
+              "ended"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_code",
+          "kind",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "MorningNote": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "description": "写总述的 Adv 会话",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "by",
+          "at"
+        ],
+        "type": "object"
+      },
+      "MorningOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "advice": {
+            "description": "待验收需求上的参谋建议",
+            "items": {
+              "$ref": "#/components/schemas/Advice"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "holds": {
+            "description": "参谋没代答的决策及原因",
+            "items": {
+              "$ref": "#/components/schemas/MorningHold"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reports": {
+            "items": {
+              "$ref": "#/components/schemas/MorningReport"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "reports",
+          "advice",
+          "holds"
+        ],
+        "type": "object"
+      },
+      "MorningRelease": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "code": {
+            "description": "放行记录编号（D-x）",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_title": {
+            "type": "string"
+          },
+          "role": {
+            "description": "放行时的身份：pm / advisor",
+            "type": "string"
+          },
+          "withdrawn": {
+            "description": "已被你撤回",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "requirement_code",
+          "requirement_title",
+          "by",
+          "role",
+          "reason",
+          "withdrawn",
+          "at"
+        ],
+        "type": "object"
+      },
+      "MorningReport": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "description": "③ 受阻的需求编号",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "done": {
+            "description": "① 完成了什么：期间交了证据、现在待验收 / 已完成的需求",
+            "items": {
+              "$ref": "#/components/schemas/MorningDone"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "grant": {
+            "$ref": "#/components/schemas/Grant",
+            "description": "据以算离开期间的授权窗口"
+          },
+          "note": {
+            "$ref": "#/components/schemas/MorningNote",
+            "description": "参谋的总述（写在离开期间之前的不算）"
+          },
+          "pending": {
+            "description": "③ 留给你的：还没答的决策条数（在「要你处理」里）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "proxied": {
+            "description": "② 参谋代答的决策（新的在前）",
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "releases": {
+            "description": "② PM / Adv 放行的草稿（新的在前）",
+            "items": {
+              "$ref": "#/components/schemas/MorningRelease"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "review": {
+            "description": "④ 待验收需求条数（在「要你处理」里）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "since": {
+            "description": "离开期间从何时算起",
+            "format": "date-time",
+            "type": "string"
+          },
+          "tell_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tells": {
+            "description": "期间的团队消息（新的在前，最多 8 条）",
+            "items": {
+              "$ref": "#/components/schemas/MorningTell"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "since",
+          "done",
+          "tells",
+          "tell_count",
+          "proxied",
+          "releases",
+          "pending",
+          "blocked",
+          "review"
+        ],
+        "type": "object"
+      },
+      "MorningSetOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "MorningTell": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "to": {
+            "description": "收消息的会话",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "to",
+          "text",
+          "at"
         ],
         "type": "object"
       },
@@ -4881,6 +5311,47 @@
         ]
       }
     },
+    "/api/agent/morning": {
+      "post": {
+        "operationId": "agent-set-morning",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-set-morningRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MorningSetOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Adv 写早报：总述与逐条验收建议（R-165）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/plans": {
       "post": {
         "operationId": "agent-create-plan",
@@ -6384,6 +6855,49 @@
         "summary": "撤销参谋授权窗口（R-163）",
         "tags": [
           "grants"
+        ]
+      }
+    },
+    "/api/morning": {
+      "get": {
+        "operationId": "get-morning",
+        "parameters": [
+          {
+            "description": "只看这个项目；不填为全部（隐藏的项目除外）",
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "description": "只看这个项目；不填为全部（隐藏的项目除外）",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MorningOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "参谋早报：离开期间参谋做了什么、替你定了什么（R-165）",
+        "tags": [
+          "morning"
         ]
       }
     },

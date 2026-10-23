@@ -17,6 +17,7 @@ import { PlanCard } from '../app/plans'
 import { asking, Briefs, PlanChips, PlansRail, RecentRail, TeamRail, useTodo } from '../app/desk'
 import { ProjGlyph } from '../ui/refmark'
 import { awaitingReply } from '../app/replyBox'
+import { MorningReports, useMorningProjects } from '../app/morning'
 
 // 工作台（R-147，D-151）：一个会话视图，按状态自动分三档——
 //   要你处理（大卡，就地作答）→ 在跑（中卡，实时动作）→ 待命 / 空闲 / 久未回复（一行）；已结束折叠在最底下。
@@ -214,6 +215,7 @@ export default function WorkbenchPage() {
   const recapOn = !!settings.data?.ai?.recap
   const tiers = useTiers(wb, k)
   const search = useRef<HTMLInputElement>(null)
+  const morningProjects = useMorningProjects()
 
   // 「/」聚焦搜索
   useEffect(() => {
@@ -354,7 +356,8 @@ export default function WorkbenchPage() {
           )
         }
       />
-      <Briefs sessions={wb.sessions} now={now} />
+      <MorningReports sessions={wb.sessions} now={now} />
+      <Briefs sessions={wb.sessions} now={now} skip={morningProjects} />
       <PlanChips className="xl:hidden" />
       <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-6">
         <div className="min-w-0">

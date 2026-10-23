@@ -92,6 +92,36 @@ func runBrief(args []string) error {
 	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " ")})
 }
 
+// runMorning：Adv 写参谋早报（R-165）。
+//
+//	ks morning <总述>                          写总述（传空字符串清除）
+//	ks morning advise <R-x> <pass|return|clear> <理由>   给待验收的需求写验收建议
+func runMorning(args []string) error {
+	fs := flag.NewFlagSet("morning", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	usage := fmt.Errorf("用法：ks morning <总述：一段话，先结论，提到需求写编号>（传空字符串清除）\n      ks morning advise <R-x> <pass|return|clear> <理由>")
+	if fs.NArg() < 1 {
+		return usage
+	}
+	key := currentSession(*session)
+	if key == "" {
+		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+	}
+	body := map[string]any{"session_key": key}
+	if a := fs.Args(); a[0] == "advise" {
+		if len(a) < 3 {
+			return usage
+		}
+		body["advice"] = []map[string]any{{"requirement": a[1], "verdict": a[2], "reason": strings.Join(a[3:], " ")}}
+	} else {
+		body["text"] = strings.Join(a, " ")
+	}
+	return agentCall("POST", "/agent/morning", body)
+}
+
 // runTeam：ks team——列出本项目的 PM 与开发会话（R-86）。
 func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)

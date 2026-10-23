@@ -96,6 +96,15 @@ export function useGrants(projectId?: string) {
   })
 }
 
+// 参谋早报（R-165）：各项目离开期间的汇总、待验收需求上的参谋建议、参谋没代答的原因。
+export function useMorning() {
+  return useQuery({
+    queryKey: ['morning'],
+    queryFn: () => unwrap(api.GET('/api/morning')),
+    select: (d) => ({ reports: d.reports ?? [], advice: d.advice ?? [], holds: d.holds ?? [] }),
+  })
+}
+
 export function useRequirements() {
   return useQuery({
     queryKey: qk.requirements,
@@ -147,12 +156,13 @@ export function useSettings() {
 // 主题 → 需要失效的查询前缀。
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],
-  decisions: [['decisions'], ['grants']],
-  grants: [['grants']],
-  requirements: [['requirements'], ['plans']],
+  decisions: [['decisions'], ['grants'], ['morning']],
+  grants: [['grants'], ['morning']],
+  morning: [['morning']],
+  requirements: [['requirements'], ['plans'], ['morning']],
   plans: [['plans']],
   devices: [['devices'], ['sessions']],
-  projects: [['projects'], ['sessions'], ['requirements'], ['plans']],
+  projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning']],
   settings: [['settings']],
 }
 

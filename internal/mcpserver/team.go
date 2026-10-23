@@ -66,6 +66,17 @@ type briefIn struct {
 	Text string `json:"text" jsonschema:"简报：一段话（建议 150 字以内），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
 }
 
+type morningAdviceIn struct {
+	Requirement string `json:"requirement" jsonschema:"待验收的需求编号（如 R-12）"`
+	Verdict     string `json:"verdict" jsonschema:"pass = 建议通过；return = 建议退回；clear = 撤掉建议"`
+	Reason      string `json:"reason,omitempty" jsonschema:"理由（pass / return 必填）：对照验收标准一两句，例如「3/3 达标，截图明暗两套都有」或「缺手机截图」"`
+}
+
+type morningIn struct {
+	Text   *string           `json:"text,omitempty" jsonschema:"总述：一段话（建议 150 字以内），先结论——用户离开期间整体推进到哪、你替用户定了几件、有什么要用户先看的；提到需求 / 决策写编号。不传表示不改，传空字符串清除"`
+	Advice []morningAdviceIn `json:"advice,omitempty" jsonschema:"逐条验收建议，每条覆盖该需求上一份；只能写给待验收的需求"`
+}
+
 type tellIn struct {
 	Text        string `json:"text" jsonschema:"要告诉 PM 的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13）"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
@@ -101,6 +112,27 @@ func (t *tools) registerTeam(s *mcp.Server) {
 				return text("已清除简报。"), nil, nil
 			}
 			return text("简报已更新，用户在工作台顶部能看到。"), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "morning_set", Description: "Adv 用：写参谋早报——用户回来时工作台顶部先看到它。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in morningIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			body := map[string]any{"session_key": key}
+			if in.Text != nil {
+				body["text"] = *in.Text
+			}
+			if len(in.Advice) > 0 {
+				body["advice"] = in.Advice
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/morning", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "need_devs", Description: "PM 用：需要 Dev 会话、但工人池里没有在线的 Dev 时，提醒用户开新的 Dev 会话。用户手机会收到推送，里面有原因和接入用的那句话；Dev 上线后提醒自动消失。req_assign 用 auto 找不到在线 Dev 时会自动提醒，不必重复调用。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in needIn) (*mcp.CallToolResult, any, error) {

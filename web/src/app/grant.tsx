@@ -138,9 +138,14 @@ function OpenForm({ projectId }: { projectId: string }) {
 }
 
 // OverrideBox：推翻参谋的代答，写下你的答复作为更正送回提问方。
-export function OverrideBox({ d }: { d: Decision }) {
+// startOpen / onClose：参谋早报里由行内按钮打开，取消或送出后收回（R-165）。
+export function OverrideBox({ d, startOpen = false, onClose }: { d: Decision; startOpen?: boolean; onClose?: () => void }) {
   const { overrideDecision } = useActions()
-  const [open, setOpen] = useState(false)
+  const [open, setOpenRaw] = useState(startOpen)
+  const setOpen = (v: boolean) => {
+    setOpenRaw(v)
+    if (!v) onClose?.()
+  }
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   if (!open)

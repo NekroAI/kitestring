@@ -9,6 +9,7 @@ import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu, useConfirm } from '../ui/overlay'
 import { RoleTag, ToolMark } from '../ui/marks'
 import { ProxyNote } from './grant'
+import { HoldNote } from './morning'
 import { AttachZone, fileUrl, Thumbs, uploadsBusy, useUploading, ZoomButton } from '../ui/attach'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
@@ -153,6 +154,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
     >
       <div className={cx('space-y-3', embedded ? 'p-3.5 sm:p-4' : 'p-4 sm:p-5')}>
         <Source d={d} now={now} embedded={embedded} />
+        <HoldNote code={d.code} />
         <div>
           <h3 className="font-display text-base leading-snug font-semibold text-fg sm:text-[17px]">{title}</h3>
           {d.short_title && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}

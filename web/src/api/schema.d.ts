@@ -104,6 +104,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/morning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adv 写早报：总述与逐条验收建议（R-165） */
+        post: operations["agent-set-morning"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/plans": {
         parameters: {
             query?: never;
@@ -594,6 +611,23 @@ export interface paths {
         put?: never;
         /** 撤销参谋授权窗口（R-163） */
         post: operations["revoke-grant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/morning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 参谋早报：离开期间参谋做了什么、替你定了什么（R-165） */
+        get: operations["get-morning"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1198,6 +1232,32 @@ export interface components {
             summary?: boolean;
             title?: boolean;
         };
+        Advice: {
+            /** Format: date-time */
+            at: string;
+            /** @description 写建议的 Adv 会话 */
+            by: string;
+            project_id: string;
+            reason: string;
+            requirement_code: string;
+            requirement_id: string;
+            /**
+             * @description 建议通过 / 建议退回
+             * @enum {string}
+             */
+            verdict: "pass" | "return";
+        };
+        AdviceIn: {
+            /** @description 理由（pass / return 必填）：对照验收标准，一两句 */
+            reason?: string;
+            /** @description 待验收的需求编号（如 R-12） */
+            requirement: string;
+            /**
+             * @description pass = 建议通过；return = 建议退回；clear = 撤掉建议
+             * @enum {string}
+             */
+            verdict: "pass" | "return" | "clear";
+        };
         "Agent-answer-decisionRequest": {
             /** @description 答复；有要拍板的点时是附言，可空 */
             answer?: string;
@@ -1264,6 +1324,14 @@ export interface components {
             session_key: string;
             /** @description 简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；空字符串表示清除 */
             text: string;
+        };
+        "Agent-set-morningRequest": {
+            /** @description 逐条验收建议，每条覆盖该需求上一份 */
+            advice?: components["schemas"]["AdviceIn"][] | null;
+            /** @description 调用者（必须是本项目的 Adv） */
+            session_key: string;
+            /** @description 总述：一段话，先结论；不传表示不改，空字符串表示清除 */
+            text?: string;
         };
         "Agent-set-roleRequest": {
             /**
@@ -1883,6 +1951,107 @@ export interface components {
         "Merge-projectRequest": {
             /** @description 并入的目标项目 ID */
             into: string;
+        };
+        MorningDelivery: {
+            kind: string;
+            link?: string;
+            /** @description 证据的结论（没有时取摘要开头） */
+            text: string;
+        };
+        MorningDone: {
+            /**
+             * Format: date-time
+             * @description 最近一次交证据的时间
+             */
+            at: string;
+            deliveries: components["schemas"]["MorningDelivery"][] | null;
+            requirement_code: string;
+            requirement_title: string;
+            status: string;
+        };
+        MorningHold: {
+            decision_code: string;
+            /**
+             * @description hard = 硬规则；scope = 超出授权的风险档；ended = 授权窗口已结束
+             * @enum {string}
+             */
+            kind: "hard" | "scope" | "ended";
+            reason: string;
+        };
+        MorningNote: {
+            /** Format: date-time */
+            at: string;
+            /** @description 写总述的 Adv 会话 */
+            by: string;
+            text: string;
+        };
+        MorningOutBody: {
+            /** @description 待验收需求上的参谋建议 */
+            advice: components["schemas"]["Advice"][] | null;
+            /** @description 参谋没代答的决策及原因 */
+            holds: components["schemas"]["MorningHold"][] | null;
+            reports: components["schemas"]["MorningReport"][] | null;
+        };
+        MorningRelease: {
+            /** Format: date-time */
+            at: string;
+            by: string;
+            /** @description 放行记录编号（D-x） */
+            code: string;
+            reason: string;
+            requirement_code: string;
+            requirement_title: string;
+            /** @description 放行时的身份：pm / advisor */
+            role: string;
+            /** @description 已被你撤回 */
+            withdrawn: boolean;
+        };
+        MorningReport: {
+            /** @description ③ 受阻的需求编号 */
+            blocked: string[] | null;
+            /** @description ① 完成了什么：期间交了证据、现在待验收 / 已完成的需求 */
+            done: components["schemas"]["MorningDone"][] | null;
+            /** @description 据以算离开期间的授权窗口 */
+            grant?: components["schemas"]["Grant"];
+            /** @description 参谋的总述（写在离开期间之前的不算） */
+            note?: components["schemas"]["MorningNote"];
+            /**
+             * Format: int64
+             * @description ③ 留给你的：还没答的决策条数（在「要你处理」里）
+             */
+            pending: number;
+            project_id: string;
+            project_name: string;
+            /** @description ② 参谋代答的决策（新的在前） */
+            proxied: components["schemas"]["Decision"][] | null;
+            /** @description ② PM / Adv 放行的草稿（新的在前） */
+            releases: components["schemas"]["MorningRelease"][] | null;
+            /**
+             * Format: int64
+             * @description ④ 待验收需求条数（在「要你处理」里）
+             */
+            review: number;
+            /**
+             * Format: date-time
+             * @description 离开期间从何时算起
+             */
+            since: string;
+            /** Format: int64 */
+            tell_count: number;
+            /** @description 期间的团队消息（新的在前，最多 8 条） */
+            tells: components["schemas"]["MorningTell"][] | null;
+        };
+        MorningSetOutBody: {
+            message: string;
+        };
+        MorningTell: {
+            /** Format: date-time */
+            at: string;
+            code: string;
+            requirement_code?: string;
+            text: string;
+            /** @description 收消息的会话 */
+            to: string;
         };
         "Note-requirementRequest": {
             comment?: string;
@@ -2663,6 +2832,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentGrantOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-set-morning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-set-morningRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MorningSetOutBody"];
                 };
             };
             /** @description Error */
@@ -3762,6 +3964,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Grant"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-morning": {
+        parameters: {
+            query?: {
+                /** @description 只看这个项目；不填为全部（隐藏的项目除外） */
+                project_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MorningOutBody"];
                 };
             };
             /** @description Error */
