@@ -10,7 +10,8 @@ import { OwnBadge, useOwnership } from '../app/ownership'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from '../app/menus'
 import { Collapse, Item, List as MotionList } from '../ui/motion'
-import { cx, relTime, useNow, usePref } from '../lib/util'
+import { cx, relTime, useMedia, useNow, usePref } from '../lib/util'
+import { useTouchDrag } from '../ui/touchDrag'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
 import { PriorityDot } from '../ui/marks'
 import { Menu } from '../ui/overlay'
@@ -42,12 +43,36 @@ function useDrop(status: string, onDrop: (code: string, status: string) => void)
 
 const dragProps = (r: Requirement) => ({ draggable: true, onDragStart: (e: React.DragEvent) => e.dataTransfer.setData('text/ks-req', r.code) })
 
+type TD = ReturnType<typeof useTouchDrag> | null
+
+// 触屏拖拽时跟着手指走的影子
+function Ghost({ r }: { r: Requirement }) {
+  return (
+    <div className="rounded-xl border border-accent/40 bg-surface p-3 text-sm">
+      <div className="font-mono text-[11px] font-semibold text-fg-3">{r.code}</div>
+      <div className="mt-0.5 line-clamp-2 font-medium text-fg">{r.title}</div>
+    </div>
+  )
+}
+
+// DragCard：桌面用原生拖放；触屏长按浮起后拖动（R-55）
+function DragCard({ r, td }: { r: Requirement; td: TD }) {
+  if (!td) return <ReqCard r={r} {...dragProps(r)} />
+  return (
+    <div {...td.source(r.code, <Ghost r={r} />)} className={cx('h-full transition-opacity', td.dragging === r.code && 'opacity-40')}>
+      <ReqCard r={r} />
+    </div>
+  )
+}
+
 // 看板列：宽度足够时使用。
-function Column({ status, items, onDrop }: { status: string; items: Requirement[]; onDrop: (code: string, status: string) => void }) {
-  const { over, props } = useDrop(status, onDrop)
+function Column({ status, items, onDrop, td }: { status: string; items: Requirement[]; onDrop: (code: string, status: string) => void; td: TD }) {
+  const { over: dragOver, props } = useDrop(status, onDrop)
+  const over = dragOver || td?.over === status
   return (
     <div
       {...props}
+      data-drop={status}
       className={cx('flex min-h-[240px] min-w-0 flex-1 flex-col rounded-2xl p-2 transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : 'bg-sunken/70')}
     >
       <div className="flex items-center gap-2 px-2 pt-1 pb-2.5">
@@ -58,7 +83,7 @@ function Column({ status, items, onDrop }: { status: string; items: Requirement[
       <MotionList className={cx('flex flex-col', items.length > 0 && 'flex-1')} space={8}>
         {items.map((r) => (
           <Item key={r.id} space={8} layout>
-            <ReqCard r={r} {...dragProps(r)} />
+            <DragCard r={r} td={td} />
           </Item>
         ))}
       </MotionList>
@@ -70,10 +95,11 @@ function Column({ status, items, onDrop }: { status: string; items: Requirement[
 }
 
 // 纵向分组：宽度放不下所有列时使用（竖屏、窄窗口），按状态分段，段内多列网格。
-function StatusSection({ status, items, onDrop }: { status: string; items: Requirement[]; onDrop: (code: string, status: string) => void }) {
-  const { over, props } = useDrop(status, onDrop)
+function StatusSection({ status, items, onDrop, td }: { status: string; items: Requirement[]; onDrop: (code: string, status: string) => void; td: TD }) {
+  const { over: dragOver, props } = useDrop(status, onDrop)
+  const over = dragOver || td?.over === status
   return (
-    <section {...props} className={cx('@container rounded-2xl p-2 transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : '')}>
+    <section {...props} data-drop={status} className={cx('@container rounded-2xl p-2 transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : '')}>
       <div className="flex items-center gap-2 px-1 pb-2.5">
         <span className={cx('size-2 rounded-full', statusCls[status].dot)} />
         <span className="text-[13px] font-semibold text-fg">{t.reqStatus[status]}</span>
@@ -83,7 +109,7 @@ function StatusSection({ status, items, onDrop }: { status: string; items: Requi
         <MotionList className="grid grid-cols-1 gap-x-2.5 @md:grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-4" space={10}>
           {items.map((r) => (
             <Item key={r.id} space={10} layout className="h-full">
-              <ReqCard r={r} {...dragProps(r)} />
+              <DragCard r={r} td={td} />
             </Item>
           ))}
         </MotionList>
@@ -215,8 +241,11 @@ export default function RequirementsPage() {
 
   const drop = (code: string, status: string) => {
     const r = all.find((x) => x.code === code)
-    if (r) void setStatus(r, status)
+    if (r && r.status !== status) void setStatus(r, status)
   }
+  const coarse = useMedia('(pointer: coarse)')
+  const touch = useTouchDrag(drop)
+  const td = coarse ? touch : null
 
   return (
     <div ref={measure}>
@@ -286,24 +315,24 @@ export default function RequirementsPage() {
       ) : width >= statuses.length * COL_MIN ? (
         <div className="flex gap-3 pb-4">
           {statuses.map((s) => (
-            <Column key={s} status={s} items={byStatus(s)} onDrop={drop} />
+            <Column key={s} status={s} items={byStatus(s)} onDrop={drop} td={td} />
           ))}
         </div>
       ) : width >= 600 ? (
         <div className="space-y-4">
           {statuses.map((s) => (
-            <StatusSection key={s} status={s} items={byStatus(s)} onDrop={drop} />
+            <StatusSection key={s} status={s} items={byStatus(s)} onDrop={drop} td={td} />
           ))}
         </div>
       ) : (
         <>
           <div className="-mx-4 mb-4 overflow-x-auto px-4">
-            <Segmented id="req-mobile" size="sm" value={mobileStatus} onChange={setMobileStatus} options={statuses.map((s) => ({ value: s, label: t.reqStatus[s], count: byStatus(s).length }))} />
+            <Segmented id="req-mobile" size="sm" value={mobileStatus} onChange={setMobileStatus} dropTargets={coarse} over={td?.over} options={statuses.map((s) => ({ value: s, label: t.reqStatus[s], count: byStatus(s).length }))} />
           </div>
           <MotionList space={10}>
             {byStatus(mobileStatus).map((r) => (
               <Item key={r.id} space={10}>
-                <ReqCard r={r} />
+                <DragCard r={r} td={td} />
               </Item>
             ))}
           </MotionList>
@@ -313,6 +342,7 @@ export default function RequirementsPage() {
         </>
       )}
 
+      {td?.layer}
       <NewReqModal open={creating} onClose={() => setCreating(false)} defaultProject={project || undefined} />
       <PlanEditor open={creatingPlan} onClose={() => setCreatingPlan(false)} defaultProject={project || undefined} />
     </div>

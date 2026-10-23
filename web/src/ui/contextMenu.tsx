@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { DRAG_START, dragState } from './touchDrag'
 import { Drawer } from 'vaul'
 import { ContextMenu } from 'radix-ui'
 import { Check, ChevronRight } from 'lucide-react'
@@ -164,7 +165,13 @@ function useLongPress(onLong: () => void) {
 export function Ctx({ items, children, className }: { items: CtxItem[]; children: ReactNode; className?: string }) {
   const coarse = useMedia('(pointer: coarse)')
   const [open, setOpen] = useState(false)
-  const press = useLongPress(() => setOpen(true))
+  const press = useLongPress(() => !dragState.active && setOpen(true))
+  // 触屏拖拽开始时收起长按菜单（R-55）
+  useEffect(() => {
+    const close = () => setOpen(false)
+    document.addEventListener(DRAG_START, close)
+    return () => document.removeEventListener(DRAG_START, close)
+  }, [])
   if (!items.length) return <>{children}</>
   const target = cx('ctx-target rounded-2xl transition-[transform,box-shadow] duration-200', className)
   if (coarse)

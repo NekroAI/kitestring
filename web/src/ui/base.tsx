@@ -240,12 +240,16 @@ export function Segmented<T extends string>({
   onChange,
   options,
   size = 'md',
+  dropTargets,
+  over,
 }: {
   value: T
   onChange: (v: T) => void
   options: { value: T; label: ReactNode; count?: number; tip?: string }[]
   id?: string
   size?: 'sm' | 'md'
+  dropTargets?: boolean // 每个选项都是触屏拖拽的放置区（data-drop），手机看板上把卡片拖到状态页签上
+  over?: string | null
 }) {
   return (
     <div className="no-scrollbar inline-flex max-w-full overflow-x-auto rounded-xl bg-sunken p-1">
@@ -257,10 +261,12 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             aria-pressed={active}
             aria-label={o.tip}
+            data-drop={dropTargets ? o.value : undefined}
             className={cx(
               'flex shrink-0 items-center gap-1.5 rounded-lg font-medium transition-[background,color,box-shadow] duration-150',
               size === 'sm' ? 'h-7 px-2.5 text-[13px]' : 'h-8 px-3 text-sm',
               active ? 'bg-surface text-fg shadow-xs' : 'text-fg-3 hover:text-fg-2',
+              over === o.value && 'bg-accent-soft text-accent ring-2 ring-accent/50',
             )}
           >
             {o.label}
