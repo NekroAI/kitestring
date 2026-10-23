@@ -61,7 +61,21 @@ type planCreateBody struct {
 }
 
 type commentBody struct {
-	Comment string `json:"comment,omitempty"`
+	Comment string   `json:"comment,omitempty"`
+	Files   []string `json:"files,omitempty" doc:"附言里的图片 ID（先上传到 /api/files）"`
+}
+
+// note 是附言：文字加图，随计划进展一起送达。
+type note struct {
+	text  string
+	files []store.FileRef
+}
+
+func (n note) empty() bool { return strings.TrimSpace(n.text) == "" && len(n.files) == 0 }
+
+func (h *Hub) noteOf(ctx context.Context, b commentBody) (note, error) {
+	files, err := h.store.ResolveFiles(ctx, b.Files)
+	return note{text: strings.TrimSpace(b.Comment), files: files}, err
 }
 
 // resolveStages 把输入的阶段转成存储层的格式；没有 ref 的需求就地新建（草稿）。
@@ -99,7 +113,7 @@ func (h *Hub) resolveStages(ctx context.Context, in []stageIn, projectID, create
 }
 
 // planMsg 记下一条给负责会话的计划进展（没有负责会话时不记）；由 planChanged 统一下发。
-func (h *Hub) planMsg(ctx context.Context, x store.Plan, text string) {
+func (h *Hub) planMsg(ctx context.Context, x store.Plan, text string, files ...store.FileRef) {
 	if x.OwnerSession == "" {
 		return
 	}
@@ -108,7 +122,7 @@ func (h *Hub) planMsg(ctx context.Context, x store.Plan, text string) {
 		return
 	}
 	if _, err := h.store.CreateDecision(ctx, store.Decision{
-		Kind: store.KindPlan, SessionKey: s.Key, ProjectID: x.ProjectID, PlanID: x.ID, Question: x.Title, Answer: text,
+		Kind: store.KindPlan, SessionKey: s.Key, ProjectID: x.ProjectID, PlanID: x.ID, Question: x.Title, Answer: text, AnswerFiles: files,
 	}); err != nil {
 		h.log.Warn("记录计划进展失败", "err", err)
 	}
@@ -150,9 +164,12 @@ func unfinished(st store.Stage) []string {
 	return out
 }
 
-func withComment(text, comment string) string {
-	if c := strings.TrimSpace(comment); c != "" {
-		return text + "附言：" + c
+func withComment(text string, n note) string {
+	switch {
+	case n.text != "":
+		return text + "附言：" + n.text
+	case len(n.files) > 0:
+		return text + "附言见附图。"
 	}
 	return text
 }
@@ -160,7 +177,7 @@ func withComment(text, comment string) string {
 const stageHowTo = "阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结；用户验收通过后，下一阶段会自动交给你。"
 
 // startPlan 开始（或批准）一个计划：第一个阶段解锁。
-func (h *Hub) startPlan(ctx context.Context, ref, comment string) (store.Plan, error) {
+func (h *Hub) startPlan(ctx context.Context, ref string, n note) (store.Plan, error) {
 	x, err := h.store.GetPlan(ctx, ref)
 	if err != nil {
 		return x, apiErr(err)
@@ -179,7 +196,7 @@ func (h *Hub) startPlan(ctx context.Context, ref, comment string) (store.Plan, e
 	if x.CreatedBy == "agent" {
 		verb = "已获用户批准，开始"
 	}
-	h.planMsg(ctx, x, withComment(fmt.Sprintf("计划%s：共 %d 个阶段，现在是%s，其中的需求已交给你。%s", verb, len(x.Stages), stageName(st), stageHowTo), comment))
+	h.planMsg(ctx, x, withComment(fmt.Sprintf("计划%s：共 %d 个阶段，现在是%s，其中的需求已交给你。%s", verb, len(x.Stages), stageName(st), stageHowTo), n), n.files...)
 	if err := h.unlockStage(ctx, x, st); err != nil {
 		return x, err
 	}
@@ -187,7 +204,7 @@ func (h *Hub) startPlan(ctx context.Context, ref, comment string) (store.Plan, e
 }
 
 // rejectPlan 不批准 Agent 拆出的计划：搁置，并把附言送给它。
-func (h *Hub) rejectPlan(ctx context.Context, ref, comment string) (store.Plan, error) {
+func (h *Hub) rejectPlan(ctx context.Context, ref string, n note) (store.Plan, error) {
 	x, err := h.store.GetPlan(ctx, ref)
 	if err != nil {
 		return x, apiErr(err)
@@ -198,7 +215,7 @@ func (h *Hub) rejectPlan(ctx context.Context, ref, comment string) (store.Plan, 
 	if err := h.store.SetPlanStatus(ctx, x.ID, store.PlanShelved); err != nil {
 		return x, err
 	}
-	h.planMsg(ctx, x, withComment("用户没有批准这个计划（已搁置）。如需调整，请按附言重新用 plan_create 提交。", comment))
+	h.planMsg(ctx, x, withComment("用户没有批准这个计划（已搁置）。如需调整，请按附言重新用 plan_create 提交。", n), n.files...)
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -241,7 +258,7 @@ func (h *Hub) submitStage(ctx context.Context, ref string, seq int, summary stri
 }
 
 // passStage：你验收通过整个阶段。还没单独验收的需求一并通过，下一阶段解锁；最后一个阶段通过则计划完成。
-func (h *Hub) passStage(ctx context.Context, ref string, seq int, comment string) (store.Plan, error) {
+func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store.Plan, error) {
 	x, err := h.store.GetPlan(ctx, ref)
 	if err != nil {
 		return x, apiErr(err)
@@ -271,10 +288,10 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, comment string
 		if err := h.store.SetPlanStatus(ctx, x.ID, store.PlanDone); err != nil {
 			return x, err
 		}
-		h.planMsg(ctx, x, withComment(stageName(st)+"已验收通过，计划全部完成。", comment))
+		h.planMsg(ctx, x, withComment(stageName(st)+"已验收通过，计划全部完成。", n), n.files...)
 		return h.planChanged(ctx, x.ID)
 	}
-	h.planMsg(ctx, x, withComment(fmt.Sprintf("%s已验收通过。现在进入%s，其中的需求已交给你。%s", stageName(st), stageName(next), stageHowTo), comment))
+	h.planMsg(ctx, x, withComment(fmt.Sprintf("%s已验收通过。现在进入%s，其中的需求已交给你。%s", stageName(st), stageName(next), stageHowTo), n), n.files...)
 	if err := h.unlockStage(ctx, x, next); err != nil {
 		return x, err
 	}
@@ -282,7 +299,7 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, comment string
 }
 
 // reviseStage：退回整个阶段，附意见；阶段回到进行中。
-func (h *Hub) reviseStage(ctx context.Context, ref string, seq int, comment string) (store.Plan, error) {
+func (h *Hub) reviseStage(ctx context.Context, ref string, seq int, n note) (store.Plan, error) {
 	x, err := h.store.GetPlan(ctx, ref)
 	if err != nil {
 		return x, apiErr(err)
@@ -291,13 +308,17 @@ func (h *Hub) reviseStage(ctx context.Context, ref string, seq int, comment stri
 	if err != nil {
 		return x, err
 	}
-	if strings.TrimSpace(comment) == "" {
-		return x, huma.Error400BadRequest("请写下退回的意见")
+	if n.empty() {
+		return x, huma.Error400BadRequest("请写下退回的意见或附上图片")
 	}
 	if err := h.store.SetStageStatus(ctx, st.ID, store.StageActive, ""); err != nil {
 		return x, err
 	}
-	h.planMsg(ctx, x, fmt.Sprintf("用户退回了%s：%s\n按意见修改后，重新用 stage_submit 交阶段小结。", stageName(st), strings.TrimSpace(comment)))
+	text := n.text
+	if text == "" {
+		text = "意见见附图"
+	}
+	h.planMsg(ctx, x, fmt.Sprintf("用户退回了%s：%s\n按意见修改后，重新用 stage_submit 交阶段小结。", stageName(st), text), n.files...)
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -379,7 +400,7 @@ func (h *Hub) registerPlans(api huma.API) {
 				return nil, apiErr(err)
 			}
 			if b.Start {
-				x, err = h.startPlan(ctx, x.ID, "")
+				x, err = h.startPlan(ctx, x.ID, note{})
 				if err != nil {
 					return nil, err
 				}
@@ -436,7 +457,11 @@ func (h *Hub) registerPlans(api huma.API) {
 			Ref string `path:"ref"`
 			Body commentBody
 		}) (*planOut, error) {
-			x, err := h.startPlan(ctx, in.Ref, in.Body.Comment)
+			n, err := h.noteOf(ctx, in.Body)
+			if err != nil {
+				return nil, err
+			}
+			x, err := h.startPlan(ctx, in.Ref, n)
 			return &planOut{Body: x}, err
 		})
 	huma.Register(api, huma.Operation{OperationID: "reject-plan", Method: http.MethodPost, Path: "/api/plans/{ref}/reject", Tags: tag, Summary: "不批准 Agent 拆出的计划（搁置，附言送达）"},
@@ -444,7 +469,11 @@ func (h *Hub) registerPlans(api huma.API) {
 			Ref string `path:"ref"`
 			Body commentBody
 		}) (*planOut, error) {
-			x, err := h.rejectPlan(ctx, in.Ref, in.Body.Comment)
+			n, err := h.noteOf(ctx, in.Body)
+			if err != nil {
+				return nil, err
+			}
+			x, err := h.rejectPlan(ctx, in.Ref, n)
 			return &planOut{Body: x}, err
 		})
 	huma.Register(api, huma.Operation{OperationID: "pass-stage", Method: http.MethodPost, Path: "/api/plans/{ref}/stages/{seq}/pass", Tags: tag, Summary: "验收通过整个阶段，下一阶段自动开始"},
@@ -453,7 +482,11 @@ func (h *Hub) registerPlans(api huma.API) {
 			Seq int    `path:"seq"`
 			Body commentBody
 		}) (*planOut, error) {
-			x, err := h.passStage(ctx, in.Ref, in.Seq, in.Body.Comment)
+			n, err := h.noteOf(ctx, in.Body)
+			if err != nil {
+				return nil, err
+			}
+			x, err := h.passStage(ctx, in.Ref, in.Seq, n)
 			return &planOut{Body: x}, err
 		})
 	huma.Register(api, huma.Operation{OperationID: "revise-stage", Method: http.MethodPost, Path: "/api/plans/{ref}/stages/{seq}/revise", Tags: tag, Summary: "退回整个阶段（附意见）"},
@@ -462,7 +495,11 @@ func (h *Hub) registerPlans(api huma.API) {
 			Seq int    `path:"seq"`
 			Body commentBody
 		}) (*planOut, error) {
-			x, err := h.reviseStage(ctx, in.Ref, in.Seq, in.Body.Comment)
+			n, err := h.noteOf(ctx, in.Body)
+			if err != nil {
+				return nil, err
+			}
+			x, err := h.reviseStage(ctx, in.Ref, in.Seq, n)
 			return &planOut{Body: x}, err
 		})
 }

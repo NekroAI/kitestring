@@ -4,7 +4,8 @@ import { toast } from 'sonner'
 import type { Plan, PlanReq, Requirement, Session, Stage } from '../api/client'
 import { usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { cx, loadPref, relTime, savePref, useNow } from '../lib/util'
+import { cx, loadPref, relTime, savePref, useMedia, useNow } from '../lib/util'
+import { AttachZone, type FileRef } from '../ui/attach'
 import { Button, Card, Empty, Textarea, Tip } from '../ui/base'
 import { Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
 import { Collapse, Item, List } from '../ui/motion'
@@ -194,12 +195,14 @@ export function PlanBadge({ r, className }: { r: Requirement; className?: string
 
 // ---------- 计划详情 ----------
 
-function PlanReqRow({ r, locked }: { r: PlanReq; locked: boolean }) {
+// PlanReqRow：阶段里的一条需求。宽屏时点开在左侧并排的抽屉里看（onPick），窄屏就地展开。
+function PlanReqRow({ r, locked, picked, onPick }: { r: PlanReq; locked: boolean; picked?: boolean; onPick?: () => void }) {
   const [open, setOpen] = useState(false)
+  const inline = open && !onPick
   return (
-    <div className={cx('rounded-xl border bg-surface transition-colors', open ? 'border-line-strong shadow-card' : 'border-line hover:border-line-strong')}>
-      <button onClick={() => setOpen(!open)} className="flex w-full items-center gap-2.5 px-3 py-2 text-left">
-        <ChevronRight className={cx('size-3.5 shrink-0 text-fg-3 transition-transform', open && 'rotate-90')} />
+    <div className={cx('rounded-xl border bg-surface transition-colors', picked ? 'border-accent/60 bg-accent-soft/50 ring-1 ring-accent/30' : inline ? 'border-line-strong shadow-card' : 'border-line hover:border-line-strong')}>
+      <button onClick={() => (onPick ? onPick() : setOpen(!open))} className="flex w-full items-center gap-2.5 px-3 py-2 text-left">
+        <ChevronRight className={cx('size-3.5 shrink-0 text-fg-3 transition-transform', (inline || picked) && 'rotate-90', picked && 'text-accent')} />
         <span className="w-10 shrink-0 font-mono text-[11px] font-semibold text-fg-3">{r.code}</span>
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
         {locked ? (
@@ -211,8 +214,8 @@ function PlanReqRow({ r, locked }: { r: PlanReq; locked: boolean }) {
           </span>
         )}
       </button>
-      <Collapse show={open}>
-        <div className="flex max-h-[min(560px,70dvh)] flex-col border-t border-line">{open && <ReqView refId={r.code} />}</div>
+      <Collapse show={inline}>
+        <div className="flex max-h-[min(560px,70dvh)] flex-col border-t border-line">{inline && <ReqView refId={r.code} />}</div>
       </Collapse>
     </div>
   )
@@ -223,23 +226,27 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
   const { passStage, reviseStage } = useActions()
   const [busy, wrap] = useBusy()
   const [comment, setComment] = useState('')
+  const [files, setFiles] = useState<FileRef[]>([])
+  const ids = () => files.map((f) => f.id)
   const next = x.stages.find((s) => s.seq === st.seq + 1)?.seq ?? null
   const together = st.requirements.filter((r) => r.status === 'review').map((r) => r.code)
   const ready = stageFinished(st)
   if (!ready && st.status !== 'review') return null
   const pass = () =>
     wrap(async () => {
-      if (await passStage(x.code, st.seq, comment.trim())) {
+      if (await passStage(x.code, st.seq, comment.trim(), ids())) {
         toast.success(t.plan.passed(x.code, st.seq))
         setComment('')
+        setFiles([])
       }
     })
   const revise = () =>
     wrap(async () => {
-      if (!comment.trim()) return void toast(t.plan.reviseNeedsComment)
-      if (await reviseStage(x.code, st.seq, comment.trim())) {
+      if (!comment.trim() && !files.length) return void toast(t.plan.reviseNeedsComment)
+      if (await reviseStage(x.code, st.seq, comment.trim(), ids())) {
         toast(t.plan.revised(x.code, st.seq))
         setComment('')
+        setFiles([])
       }
     })
   return (
@@ -252,7 +259,9 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
       ) : (
         <p className="text-[13px] text-fg-3">{t.plan.noSummary}</p>
       )}
-      <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.comment} className="mt-3 bg-surface" />
+      <AttachZone value={files} onChange={setFiles} className="mt-3">
+        <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.comment} className="bg-surface" />
+      </AttachZone>
       {x.paused && <p className="mt-2 text-xs text-danger">{t.plan.pausedHint}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button variant="primary" loading={busy} disabled={x.paused} onClick={() => void pass()} icon={<Check className="size-4" />}>
@@ -268,7 +277,7 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
   )
 }
 
-function StageBlock({ x, st, last }: { x: Plan; st: Stage; last: boolean }) {
+function StageBlock({ x, st, last, sel, onPick }: { x: Plan; st: Stage; last: boolean; sel?: string | null; onPick?: (code: string) => void }) {
   const now = useNow()
   const cur = x.status === 'active' && st.seq === x.current
   const locked = st.status === 'locked'
@@ -305,7 +314,7 @@ function StageBlock({ x, st, last }: { x: Plan; st: Stage; last: boolean }) {
         </div>
         <div className="mt-2 space-y-1.5">
           {st.requirements.map((r) => (
-            <PlanReqRow key={r.id} r={r} locked={locked && x.status === 'active'} />
+            <PlanReqRow key={r.id} r={r} locked={locked && x.status === 'active'} picked={sel === r.code} onPick={onPick && (() => onPick(r.code))} />
           ))}
           {!st.requirements.length && <p className="rounded-xl border border-dashed border-line-strong/70 px-3 py-2 text-xs text-fg-3">{t.plan.emptyStage}</p>}
         </div>
@@ -343,10 +352,18 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
   const [busy, wrap] = useBusy()
   const [editing, setEditing] = useState(false)
   const [comment, setComment] = useState('')
+  const [files, setFiles] = useState<FileRef[]>([])
+  const [sel, setSel] = useState<string | null>(null) // 宽屏：左侧并排打开的需求
+  const roomy = useMedia('(min-width: 1140px)')
   const x = (plans.data ?? []).find((p) => p.code === code)
   const all = sessions.data?.sessions ?? []
   const owner = all.find((s) => s.key === x?.owner_session)
-  useEffect(() => setComment(''), [code])
+  useEffect(() => {
+    setComment('')
+    setFiles([])
+    setSel(null)
+  }, [code])
+  const shown = roomy && sel && x?.stages.some((st) => st.requirements.some((r) => r.code === sel)) ? sel : null
 
   const menu: MenuItem[] = x
     ? [
@@ -367,12 +384,33 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
       ]
     : []
   const approval = x?.status === 'draft' && x.created_by === 'agent'
-  const start = () => wrap(async () => x && (await startPlan(x.code, comment.trim())) && (toast.success(t.plan.started(x.code)), setComment('')))
-  const reject = () => wrap(async () => x && (await rejectPlan(x.code, comment.trim())) && (toast(t.plan.rejected(x.code)), setComment('')))
+  const done = () => {
+    setComment('')
+    setFiles([])
+  }
+  const ids = files.map((f) => f.id)
+  const start = () => wrap(async () => x && (await startPlan(x.code, comment.trim(), ids)) && (toast.success(t.plan.started(x.code)), done()))
+  const reject = () => wrap(async () => x && (await rejectPlan(x.code, comment.trim(), ids)) && (toast(t.plan.rejected(x.code)), done()))
+  const aside = shown ? (
+    <ReqView
+      key={shown}
+      refId={shown}
+      top={
+        <div className="flex shrink-0 items-center gap-2 px-4 pt-3 sm:px-5">
+          <span className="font-mono text-[11px] font-semibold text-fg-3">{shown}</span>
+          <span className="text-xs text-fg-3">{t.plan.inPlan(x!.code)}</span>
+          <span className="flex-1" />
+          <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={() => setSel(null)}>
+            <X className="size-4" />
+          </Button>
+        </div>
+      }
+    />
+  ) : undefined
 
   return (
     <>
-      <Panel open={!!code && !editing} onClose={onClose} wide bare title={x?.title ?? t.plan.title}>
+      <Panel open={!!code && !editing} onClose={onClose} wide bare title={x?.title ?? t.plan.title} aside={aside}>
         {x ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
@@ -400,13 +438,17 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
               </div>
               <StageRail x={x} className="mt-4 mb-6" />
               {x.stages.map((st, i) => (
-                <StageBlock key={st.id} x={x} st={st} last={i === x.stages.length - 1} />
+                <StageBlock key={st.id} x={x} st={st} last={i === x.stages.length - 1} sel={shown} onPick={roomy ? (c) => setSel(sel === c ? null : c) : undefined} />
               ))}
             </div>
             {(x.status === 'draft' || x.status === 'shelved') && (
               <div className="shrink-0 space-y-2.5 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
                 <p className="text-xs text-fg-3">{approval ? t.plan.approveHint : t.plan.startHint}</p>
-                {approval && <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.approveNote} />}
+                {approval && (
+                  <AttachZone value={files} onChange={setFiles}>
+                    <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.approveNote} />
+                  </AttachZone>
+                )}
                 <div className="flex items-center justify-end gap-2">
                   {approval && (
                     <Button disabled={busy} onClick={() => void reject()}>

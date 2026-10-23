@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
 import { Dialog as RDialog, DropdownMenu } from 'radix-ui'
 import { Drawer } from 'vaul'
+import { AnimatePresence, motion } from 'motion/react'
 import { Check, X } from 'lucide-react'
 import { cx, useDesktop } from '../lib/util'
 import { t } from '../i18n'
@@ -31,7 +32,8 @@ function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => 
 
 // Panel：详情面板。桌面端从右侧滑出，移动端为可下拉关闭的底部抽屉。
 // bare：内容自己负责标题栏与滚动（例如需求抽屉：顶部固定、中间滚动、底部输入），title 只给读屏用。
-export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean }) {
+// aside：宽屏时在面板左侧并排再开一层（例如计划里选中的需求），和面板同属一个对话框，焦点与点外关闭都按一层算。
+export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode }) {
   const desktop = useDesktop()
   if (desktop) {
     return (
@@ -42,11 +44,23 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
             aria-describedby={undefined}
             onOpenAutoFocus={(e) => e.preventDefault()}
             {...swipeToClose(onClose, onSwipe)}
-            className={cx(
-              'panel-slide fixed top-2 right-2 bottom-2 z-50 flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none',
-              wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]',
-            )}
+            className="panel-slide fixed top-2 right-2 bottom-2 z-50 flex gap-2 outline-none"
           >
+            <AnimatePresence initial={false}>
+              {aside && (
+                <motion.div
+                  key="aside"
+                  initial={{ opacity: 0, x: 28 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 28 }}
+                  transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
+                  className="flex w-[min(600px,calc(100vw-660px))] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop"
+                >
+                  {aside}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className={cx('flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop', wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]')}>
             {bare ? (
               <>
                 <RDialog.Title className="sr-only">{title}</RDialog.Title>
@@ -69,6 +83,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
                 <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
               </>
             )}
+            </div>
           </RDialog.Content>
         </RDialog.Portal>
       </RDialog.Root>

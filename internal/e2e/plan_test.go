@@ -206,15 +206,16 @@ func TestAgentPlanNeedsApproval(t *testing.T) {
 		t.Fatalf("Agent 拆的计划应待批准：%+v", x)
 	}
 
-	// 不批准：搁置，附言送达
-	e.call("POST", "/api/plans/"+x.Code+"/reject", map[string]any{"comment": "先别动幂等"}, &x)
+	// 不批准：搁置，附言（带图）送达
+	img := e.upload(t, "mark.png", tinyPNG)
+	e.call("POST", "/api/plans/"+x.Code+"/reject", map[string]any{"comment": "先别动幂等", "files": []string{img.ID}}, &x)
 	if x.Status != store.PlanShelved {
 		t.Fatalf("不批准后应搁置：%s", x.Status)
 	}
 	var out string
 	e.waitFor("未批准附言送达", func() bool {
 		out = prompt("p1")
-		return strings.Contains(out, "用户没有批准这个计划") && strings.Contains(out, "附言：先别动幂等")
+		return strings.Contains(out, "用户没有批准这个计划") && strings.Contains(out, "附言：先别动幂等") && strings.Contains(out, "附图")
 	})
 
 	// 之后又批准：开始，阶段 1 交给它
