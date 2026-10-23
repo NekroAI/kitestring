@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router'
 import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Requirement, Session } from '../api/client'
-import { useDecisions, useProjects, useRequirements, useSessions } from '../api/queries'
+import { useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { copyText, cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
 import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input } from '../ui/base'
@@ -15,6 +15,7 @@ import { useOpenReq } from '../app/nav'
 import { NewReqModal, statusCls } from '../app/requirements'
 import { SessionRow } from '../app/thread'
 import { Linkify, ReqGlyph } from '../ui/refmark'
+import { useRecent } from '../app/recent'
 
 // 项目：左侧项目列表常驻，右侧回答“这个项目现在怎样”（D-20 选定 B 主从双栏；窄屏退化为列表 → 详情）。
 
@@ -206,7 +207,6 @@ function NeedDevs({ p, now }: { p: Stat; now: number }) {
 function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const openReq = useOpenReq()
   const navigate = useNavigate()
-  const decisions = useDecisions()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState(false)
   const counts = order.map((s) => [s, p.open.filter((r) => r.status === s).length] as const).filter(([, n]) => n)
@@ -214,23 +214,8 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const firstReview = p.open.filter((r) => r.status === 'review').sort((a, b) => a.updated_at.localeCompare(b.updated_at))[0]
   const live = [...p.live].sort((a, b) => Number(displayState(b) === 'parked') - Number(displayState(a) === 'parked') || b.last_active_at.localeCompare(a.last_active_at))
 
-  // 最近进展：跨会话汇总这个项目的提交验收、退回、留言、交出与决策答复。
-  const recent = useMemo(() => {
-    const out: { at: string; code: string; text: string; dot: string }[] = []
-    for (const r of p.reqs) {
-      for (const e of r.evidence ?? []) if (!e.voided) out.push({ at: e.created_at, code: r.code, text: t.projects.evEvidence(r.code, r.title), dot: 'bg-run' })
-      for (const f of r.feedback ?? []) {
-        const at = f.answered_at ?? f.created_at
-        if (f.kind === 'assign') out.push({ at, code: r.code, text: t.projects.evAssign(r.code, r.title), dot: 'bg-accent' })
-        else if (f.kind === 'note') out.push({ at, code: r.code, text: t.projects.evNote(r.code, f.answer ?? ''), dot: 'bg-accent' })
-        else out.push({ at, code: r.code, text: t.projects.evRevise(r.code, f.answer ?? ''), dot: 'bg-reply' })
-      }
-      if (r.status === 'done') out.push({ at: r.updated_at, code: r.code, text: t.projects.evDone(r.code, r.title), dot: 'bg-run' })
-    }
-    for (const d of decisions.data ?? [])
-      if (d.project_id === p.id && d.kind === 'decision' && d.answered_at) out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: t.projects.evAnswer(d.code, d.short_title || d.question), dot: 'bg-wait' })
-    return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8)
-  }, [p.reqs, p.id, decisions.data])
+  // 最近进展：跨会话汇总这个项目的提交验收、退回、留言、交出与决策答复（与工作台右栏共用）
+  const recent = useRecent(p.id, 8, p.reqs)
 
   // 本机路径：按设备汇总会话所在目录。
   const paths = useMemo(() => {

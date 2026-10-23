@@ -1,22 +1,25 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { AnimatePresence, motion } from 'motion/react'
-import { Archive, CheckCheck, ChevronRight, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
-import type { Session } from '../api/client'
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
+import { CheckCheck, ChevronRight, History, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import type { Plan, Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
 import { cx, useNow, usePref } from '../lib/util'
-import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented } from '../ui/base'
-import { StatusDot } from '../ui/marks'
-import { useWorkbench, type ProjectGroup } from '../app/inbox'
+import { Button, Card, CardSkeleton, Empty, ErrorState, Input, Kbd, PageHeader, Segmented, Tip } from '../ui/base'
+import { displayState } from '../ui/marks'
+import { useWorkbench, type ProjectGroup, type Thread } from '../app/inbox'
 import { composeAnswer, useOutbox } from '../app/outbox'
 import { RecapPanel } from '../app/Recap'
 import { SessionCard, sessionTitle } from '../app/SessionCard'
 import { SessionRow, ThreadCard } from '../app/thread'
-import { Collapse, Item, List } from '../ui/motion'
-import { Briefs, InProgress, TodoList, useTodo } from '../app/desk'
-import { Team } from './Projects'
+import { PlanCard } from '../app/plans'
+import { asking, Briefs, PlanChips, PlansRail, RecentRail, TeamRail, useTodo } from '../app/desk'
 import { ProjGlyph } from '../ui/refmark'
+
+// 工作台（R-147，D-151）：一个会话视图，按状态自动分三档——
+//   要你处理（大卡，就地作答）→ 在跑（中卡，实时动作）→ 待命 / 空闲 / 久未回复（一行）；已结束折叠在最底下。
+// 档内按项目分组；会话换档时用布局动画移过去，新进「要你处理」的卡片轻轻提示一次。宽屏右栏放进行中的计划、最近动态、队伍在线。
 
 type Filter = 'all' | 'todo'
 
@@ -51,129 +54,141 @@ function SendAllBar() {
   )
 }
 
-function GroupHeader({ icon, title, count, right, href }: { icon: React.ReactNode; title: React.ReactNode; count?: number; right?: React.ReactNode; href?: string }) {
+
+// ---------- 分档 ----------
+
+type Act = { key: string; pk: string; name: string; th?: Thread; plan?: Plan }
+type Row = { key: string; pk: string; name: string; s: Session }
+type Tiers = { act: Act[]; run: Row[]; rest: Row[]; ended: Row[] }
+
+const restRank: Record<string, number> = { parked: 0, waiting_reply: 1, idle: 2, lost: 3 }
+
+function useTiers(wb: ReturnType<typeof useWorkbench>, k: string): Tiers {
+  return useMemo(() => {
+    const out: Tiers = { act: [], run: [], rest: [], ended: [] }
+    const place = (s: Session, g: ProjectGroup) => {
+      if (!match(s, k)) return
+      const ds = displayState(s)
+      const row = { key: s.key, pk: g.key, name: g.name, s }
+      if (s.state === 'ended' || ds === 'done') out.ended.push(row)
+      else if (ds === 'running' || ds === 'background') out.run.push(row)
+      else out.rest.push(row)
+    }
+    for (const g of wb.projects) {
+      for (const th of g.threads) {
+        const s = th.s
+        const act = th.decisions.length > 0 || th.reviews.length > 0 || th.orphans.length > 0 || (!!s && asking(s))
+        if (act) {
+          if (match(s, k) || !s) out.act.push({ key: th.key, pk: g.key, name: g.name, th })
+        } else if (s) place(s, g)
+      }
+      for (const s of g.active) place(s, g)
+      for (const s of g.ended) place(s, g)
+    }
+    if (!k)
+      for (const x of wb.plans) out.act.push({ key: `plan:${x.code}`, pk: x.project_id || 'none', name: x.project_name || '', plan: x })
+    out.rest.sort((a, b) => (restRank[displayState(a.s)] ?? 9) - (restRank[displayState(b.s)] ?? 9) || b.s.last_active_at.localeCompare(a.s.last_active_at))
+    out.ended.sort((a, b) => b.s.last_active_at.localeCompare(a.s.last_active_at))
+    return out
+  }, [wb.projects, wb.plans, k])
+}
+
+// byProject：档内按项目分组（保持出现顺序）。
+function byProject<T extends { pk: string; name: string }>(items: T[]) {
+  const m = new Map<string, { pk: string; name: string; items: T[] }>()
+  for (const x of items) {
+    let g = m.get(x.pk)
+    if (!g) m.set(x.pk, (g = { pk: x.pk, name: x.name, items: [] }))
+    if (!g.name && x.name) g.name = x.name
+    g.items.push(x)
+  }
+  return [...m.values()]
+}
+
+// ---------- 版面 ----------
+
+function TierTitle({ title, count }: { title: string; count: number }) {
   return (
     <div className="mb-3 flex items-center gap-2.5">
-      <span className="flex size-7 items-center justify-center rounded-lg bg-surface text-fg-2 shadow-xs [&_svg]:size-4">{icon}</span>
-      <h2 className="truncate font-display text-[17px] font-semibold text-fg">{href ? <Link to={href} className="transition-colors hover:text-accent">{title}</Link> : title}</h2>
-      {count != null && <span className="text-xs text-fg-3 tabular">{count}</span>}
+      <h2 className="shrink-0 text-[13px] font-semibold text-fg-2">{title}</h2>
+      <span className="text-xs text-fg-3 tabular">{count}</span>
       <span aria-hidden className="h-0 min-w-6 flex-1 border-t border-dashed border-line-strong/80" />
-      {right}
     </div>
   )
 }
 
-// 已结束：所有项目的已结束会话统一放在最底下，不夹在项目之间。
-function Ended({ sessions, view, now }: { sessions: Session[]; view: 'threads' | 'cards'; now: number }) {
-  if (!sessions.length) return null
+function ProjectLabel({ pk, name }: { pk: string; name: string }) {
+  const href = projectHref(pk)
+  const label = (
+    <span className="inline-flex items-center gap-1.5">
+      <ProjGlyph />
+      {name || t.thread.noProject}
+    </span>
+  )
+  return <div className="mb-2 px-1 text-xs text-fg-3">{href ? <Link to={href} className="hover:text-accent">{label}</Link> : label}</div>
+}
+
+// Moving：会话卡片在三档之间移动时的布局动画；layoutId 跟着会话走。
+function Moving({ id, children, className, flash }: { id: string; children: React.ReactNode; className?: string; flash?: boolean }) {
   return (
-    <section>
-      <GroupHeader icon={<Archive />} title={t.thread.endedTitle} count={sessions.length} />
-      {view === 'cards' ? (
-        <div className="@container">
-          <List className="grid grid-cols-1 gap-x-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
-            {sessions.map((s) => (
-              <Item key={s.key} space={12} layout className="h-full">
-                <SessionCard s={s} now={now} />
-              </Item>
-            ))}
-          </List>
-        </div>
-      ) : (
-        <Card className="@container p-1.5">
-          <List>
-            {sessions.map((s) => (
-              <Item key={s.key}>
-                <SessionRow s={s} now={now} showProject />
-              </Item>
-            ))}
-          </List>
-        </Card>
-      )}
-    </section>
+    <motion.div layout="position" layoutId={id} transition={{ type: 'spring', bounce: 0.12, duration: 0.5 }} className={cx(flash && 'tier-flash', className)}>
+      {children}
+    </motion.div>
   )
 }
 
-// 实例视图：每个会话一张卡片（改版前的实例墙），按项目分组，需要你处理的在前。
-function ProjectCards({ g, filter, k, now }: { g: ProjectGroup; filter: Filter; k: string; now: number }) {
-  const attention = g.threads.map((th) => th.s).filter((s): s is Session => !!s && match(s, k))
-  const rest = filter === 'all' ? g.active.filter((s) => match(s, k)) : []
-  const list = [...attention, ...rest]
-  if (!list.length) return null
+// count：标题旁的数字；「要你处理」档按件数算（同一张大卡里可能有好几件），与页头、侧栏角标一致。
+function Section<T extends { pk: string; name: string; key: string }>({ title, items, multi, render, wrap, count }: { title: string; items: T[]; multi: boolean; render: (x: T) => React.ReactNode; wrap?: string; count?: number }) {
+  if (!items.length) return null
   return (
-    <section>
-      <GroupHeader icon={<ProjGlyph />} title={g.name || t.thread.noProject} count={list.length} href={projectHref(g.key)} />
-      <div className="@container">
-        <List className="grid grid-cols-1 gap-x-3 @2xl:grid-cols-2 @6xl:grid-cols-3">
-          {list.map((s) => (
-            <Item key={s.key} space={12} layout className="h-full">
-              <SessionCard s={s} now={now} />
-            </Item>
-          ))}
-        </List>
+    <section className="mb-8">
+      <TierTitle title={title} count={count ?? items.length} />
+      <div className="space-y-4">
+        {byProject(items).map((g) => (
+          <div key={g.pk}>
+            {multi && <ProjectLabel pk={g.pk} name={g.name} />}
+            <div className={wrap ?? 'space-y-3'}>{g.items.map(render)}</div>
+          </div>
+        ))}
       </div>
     </section>
   )
 }
 
-// 对话视图：先列需要你处理的对话（线程），再列其余会话（紧凑行）。
-function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Filter; k: string; now: number; sessions: Session[] }) {
-  const threads = g.threads.filter((th) => !k || match(th.s, k))
-  const active = filter === 'all' ? g.active.filter((s) => match(s, k)) : []
-  if (!threads.length && !active.length) return null
-  const counts = (['waiting_approval', 'waiting_reply', 'running', 'background'] as const).map((st) => [st, [...g.active, ...g.threads.map((x) => x.s).filter(Boolean)].filter((s) => s!.state === st).length] as const).filter(([, n]) => n)
+// ProjectDots：工具栏右侧，每个项目三档各有几个（红：要你处理，绿：在跑，蓝：待命）。
+function ProjectDots({ tiers }: { tiers: Tiers }) {
+  const rows = new Map<string, { name: string; act: number; run: number; park: number }>()
+  const add = (pk: string, name: string, key: 'act' | 'run' | 'park') => {
+    const r = rows.get(pk) ?? { name, act: 0, run: 0, park: 0 }
+    if (!r.name && name) r.name = name
+    r[key]++
+    rows.set(pk, r)
+  }
+  tiers.act.forEach((x) => add(x.pk, x.name, 'act'))
+  tiers.run.forEach((x) => add(x.pk, x.name, 'run'))
+  tiers.rest.filter((x) => displayState(x.s) === 'parked').forEach((x) => add(x.pk, x.name, 'park'))
+  if (!rows.size) return null
   return (
-    <section>
-      <GroupHeader
-        icon={<ProjGlyph />}
-        title={g.name || t.thread.noProject}
-        href={projectHref(g.key)}
-        right={
-          <span className="flex items-center gap-3 text-xs text-fg-3">
-            {counts.map(([st, n]) => (
-              <span key={st} className="flex items-center gap-1.5">
-                <StatusDot state={st} />
-                <span className="tabular">{n}</span>
-              </span>
-            ))}
-          </span>
-        }
-      />
-      <List space={12}>
-        {threads.map((th) => (
-          <Item key={th.key} space={12}>
-            <ThreadCard th={th} now={now} projectName={g.name} sessions={sessions} />
-          </Item>
-        ))}
-        {active.length > 0 && (
-          <Item key="active" space={12}>
-            <Card className="@container p-1.5">
-              <List>
-                {active.map((s) => (
-                  <Item key={s.key}>
-                    <SessionRow s={s} now={now} />
-                  </Item>
-                ))}
-              </List>
-            </Card>
-          </Item>
-        )}
-      </List>
-    </section>
-  )
-}
-
-// Footnote：各项目的 PM / 开发在线情况，一行。
-function Footnote({ groups }: { groups: ProjectGroup[] }) {
-  const rows = groups.filter((g) => [...g.active, ...g.threads.map((th) => th.s).filter((x): x is Session => !!x)].some((s) => s.role === 'pm' || s.role === 'dev'))
-  if (!rows.length) return null
-  return (
-    <div className="-mt-3 mb-7 flex flex-wrap items-center gap-x-5 gap-y-1.5 px-1">
-      {rows.map((g) => (
-        <span key={g.key} className="flex items-center gap-2 text-xs text-fg-3">
-          <ProjGlyph />
-          <span className="text-fg-2">{g.name}</span>
-          <Team sessions={[...g.active, ...g.threads.map((th) => th.s).filter((x): x is Session => !!x)]} />
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-3 max-sm:hidden">
+      {[...rows.values()].map((r) => (
+        <span key={r.name} className="inline-flex items-center gap-2">
+          <span className="text-fg-2">{r.name || t.thread.noProject}</span>
+          {(
+            [
+              ['act', 'bg-reply'],
+              ['run', 'bg-run'],
+              ['park', 'bg-accent'],
+            ] as const
+          ).map(([k, c]) =>
+            r[k] ? (
+              <Tip key={k} content={t.desk.dotTip[k]}>
+                <span className="inline-flex items-center gap-1 tabular">
+                  <span className={cx('size-1.5 rounded-full', c)} />
+                  {r[k]}
+                </span>
+              </Tip>
+            ) : null,
+          )}
         </span>
       ))}
     </div>
@@ -186,23 +201,44 @@ export default function WorkbenchPage() {
   const settings = useSettings()
   const todo = useTodo(wb)
   const [filter, setFilter] = usePref<Filter>('ks.home.filter', 'all')
-  const [view, setView] = usePref<'threads' | 'cards'>('ks.home.view', 'threads')
-  // 会话视图折叠在三层下面（D-142）；展开后记住，常在会话视图里工作的人不用每次都点开
-  const [showSessions, setShowSessions] = usePref('ks.home.sessions', false)
+  const [showEnded, setShowEnded] = usePref('ks.home.ended', false)
   const [q, setQ] = useState('')
   const [recap, setRecap] = useState(false)
   const k = q.trim().toLowerCase()
   const recapOn = !!settings.data?.ai?.recap
-  const visible = useMemo(() => wb.projects.filter((g) => g.threads.length || (filter === 'all' && g.active.length)), [wb.projects, filter])
-  const ended = useMemo(
-    () => (filter === 'all' ? wb.projects.flatMap((g) => g.ended).filter((s) => match(s, k)).sort((a, b) => b.last_active_at.localeCompare(a.last_active_at)) : []),
-    [wb.projects, filter, k],
-  )
-  const live = wb.sessions.filter((s) => s.state !== 'ended').length
+  const tiers = useTiers(wb, k)
+  const search = useRef<HTMLInputElement>(null)
+
+  // 「/」聚焦搜索
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || el.closest('input, textarea, [contenteditable="true"]')) return
+      e.preventDefault()
+      search.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // 新进「要你处理」的卡片轻轻提示一次
+  const seen = useRef<Set<string> | null>(null)
+  const actKeys = tiers.act.map((x) => x.key)
+  const fresh = new Set(seen.current ? actKeys.filter((x) => !seen.current!.has(x)) : [])
+  useEffect(() => {
+    if (!wb.loading) seen.current = new Set(actKeys)
+  })
 
   if (wb.error) return <ErrorState error={wb.error} onRetry={wb.refetch} />
 
-  const sessionsBody = wb.loading ? (
+  const parked = tiers.rest.filter((x) => displayState(x.s) === 'parked').length
+  const replies = tiers.rest.filter((x) => displayState(x.s) === 'waiting_reply').length
+  const projectsSeen = new Set([...tiers.act, ...tiers.run, ...tiers.rest].map((x) => x.pk))
+  const multi = projectsSeen.size > 1
+  const todoOnly = filter === 'todo'
+  const nothing = !tiers.act.length && (todoOnly || (!tiers.run.length && !tiers.rest.length))
+
+  const main = wb.loading ? (
     <CardSkeleton rows={3} />
   ) : !wb.devices.length ? (
     <Card>
@@ -218,43 +254,83 @@ export default function WorkbenchPage() {
         {t.home.noDevicesSub}
       </Empty>
     </Card>
-  ) : !wb.sessions.length && !wb.threads.length ? (
-    <Card>
-      <Empty icon={<MonitorSmartphone />} title={t.home.empty}>
-        {t.home.emptySub}
-      </Empty>
-    </Card>
-  ) : filter === 'todo' && !wb.threads.length ? (
-    <Card>
-      <Empty icon={<CheckCheck />} title={t.home.allClear}>
-        {t.home.allClearSub(wb.running.length)}
-      </Empty>
-    </Card>
   ) : (
-    <div>
-      <List space={36}>
-        {visible.map((g) => (
-          <Item key={g.key} space={36}>
-            {view === 'cards' ? <ProjectCards g={g} filter={filter} k={k} now={now} /> : <Project g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />}
-          </Item>
-        ))}
-      </List>
-      <div className="mt-9">
-        <Ended sessions={ended} view={view} now={now} />
-      </div>
-      {k && !visible.some((g) => g.threads.some((th) => match(th.s, k)) || g.active.some((s) => match(s, k)) || g.ended.some((s) => match(s, k))) && (
+    <LayoutGroup>
+      <Section
+        title={t.desk.tier.act}
+        count={todo.length}
+        items={tiers.act}
+        multi={multi}
+        render={(x) => (
+          <Moving key={x.key} id={x.th?.s?.key ?? x.key} flash={fresh.has(x.key)}>
+            {x.plan ? <PlanCard x={x.plan} /> : <ThreadCard th={x.th!} now={now} projectName={x.name} sessions={wb.sessions} />}
+          </Moving>
+        )}
+      />
+      {!todoOnly && (
+        <>
+          <Section
+            title={t.desk.tier.run}
+            items={tiers.run}
+            multi={multi}
+            wrap="grid grid-cols-1 gap-3 lg:grid-cols-2 min-[1700px]:grid-cols-3"
+            render={(x) => (
+              <Moving key={x.key} id={x.key} className="h-full">
+                <SessionCard s={x.s} now={now} />
+              </Moving>
+            )}
+          />
+          <Section
+            title={t.desk.tier.rest}
+            items={tiers.rest}
+            multi={multi}
+            wrap="@container rounded-xl border border-line bg-surface p-1.5 shadow-xs"
+            render={(x) => (
+              <Moving key={x.key} id={x.key}>
+                <SessionRow s={x.s} now={now} />
+              </Moving>
+            )}
+          />
+        </>
+      )}
+      {nothing && (
         <Card>
-          <Empty icon={<SearchX />} title={t.home.noMatch} />
+          {k ? (
+            <Empty icon={<SearchX />} title={t.home.noMatch} />
+          ) : !wb.sessions.length ? (
+            <Empty icon={<MonitorSmartphone />} title={t.home.empty}>
+              {t.home.emptySub}
+            </Empty>
+          ) : (
+            <Empty icon={<CheckCheck />} title={t.home.allClear}>{t.home.allClearSub(tiers.run.length)}</Empty>
+          )}
         </Card>
       )}
-    </div>
+      {!todoOnly && tiers.ended.length > 0 && (
+        <section>
+          <button onClick={() => setShowEnded(!showEnded)} aria-expanded={showEnded} className="mb-2 flex items-center gap-1.5 rounded-md px-1 text-[13px] text-fg-3 hover:text-fg-2">
+            <ChevronRight className={cx('size-3.5 transition-transform', showEnded && 'rotate-90')} />
+            {t.desk.ended(tiers.ended.length)}
+          </button>
+          {showEnded && (
+            <div className="@container rounded-xl border border-line bg-surface p-1.5 shadow-xs">
+              {tiers.ended.map((x) => (
+                <Moving key={x.key} id={x.key}>
+                  <SessionRow s={x.s} now={now} showProject />
+                </Moving>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </LayoutGroup>
   )
 
   return (
     <>
       <PageHeader
         title={t.home.title}
-        subtitle={wb.loading ? ' ' : t.home.summary(todo.length, wb.running.length)}
+        subtitle={wb.loading ? ' ' : t.desk.counts(todo.length, tiers.run.length, parked, replies)}
         actions={
           recapOn && (
             <Button icon={<History className="size-4" />} onClick={() => setRecap(true)}>
@@ -263,53 +339,37 @@ export default function WorkbenchPage() {
           )
         }
       />
-      {!wb.loading && (
-        <>
-          <Briefs sessions={wb.sessions} now={now} />
-          <TodoList items={todo} sessions={wb.sessions} now={now} />
-          <InProgress />
-          <Footnote groups={wb.projects} />
-        </>
-      )}
-
-      <section>
-        <button
-          onClick={() => setShowSessions(!showSessions)}
-          aria-expanded={showSessions}
-          className="mb-3 flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface px-4 py-3 text-left shadow-xs transition hover:bg-hover/60"
-        >
-          <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', showSessions && 'rotate-90')} />
-          <span className="font-display text-[17px] font-semibold text-fg">{t.desk.sessions}</span>
-          <span className="truncate text-xs text-fg-3">{t.desk.sessionsSub(live, wb.projects.reduce((n, g) => n + g.ended.length, 0))}</span>
-        </button>
-        <Collapse show={showSessions}>
-          <div className="pt-2">
-            <div className="mb-6 flex flex-wrap items-center gap-2">
-              <Segmented
-                value={filter}
-                onChange={setFilter}
-                options={[
-                  { value: 'all', label: t.home.filter.all },
-                  { value: 'todo', label: t.home.filter.todo, count: wb.threads.length },
-                ]}
-              />
-              <Segmented
-                value={view}
-                onChange={setView}
-                options={[
-                  { value: 'threads', label: <MessagesSquare className="size-4" />, tip: t.home.viewThreads },
-                  { value: 'cards', label: <LayoutGrid className="size-4" />, tip: t.home.viewCards },
-                ]}
-              />
-              <div className="relative ml-auto w-full sm:w-64">
-                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.home.search} className="pl-9" />
-              </div>
+      <Briefs sessions={wb.sessions} now={now} />
+      <PlanChips className="xl:hidden" />
+      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-6">
+        <div className="min-w-0">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <div className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
+              <Input ref={search} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && (setQ(''), e.currentTarget.blur())} placeholder={t.home.search} className="pr-9 pl-9" />
+              <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 max-sm:hidden">
+                <Kbd>/</Kbd>
+              </span>
             </div>
-            {sessionsBody}
+            <Segmented
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'all', label: t.home.filter.all },
+                { value: 'todo', label: t.desk.tier.act, count: todo.length },
+              ]}
+            />
+            <span className="ml-auto" />
+            <ProjectDots tiers={tiers} />
           </div>
-        </Collapse>
-      </section>
+          {main}
+        </div>
+        <aside className="hidden space-y-4 xl:sticky xl:top-6 xl:block">
+          <PlansRail />
+          <RecentRail now={now} />
+          <TeamRail groups={wb.projects} />
+        </aside>
+      </div>
       <SendAllBar />
       {recapOn && <RecapPanel open={recap} onClose={() => setRecap(false)} />}
     </>

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { NavLink, Outlet } from 'react-router'
+import { NavLink, Outlet, useLocation } from 'react-router'
 import { RefIndexProvider } from '../ui/refmark'
 import { FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Settings2, WifiOff } from 'lucide-react'
 import { useLiveUpdates } from '../api/queries'
@@ -157,6 +157,7 @@ function MobileHeader({ connected }: { connected: boolean }) {
 }
 
 export function Shell() {
+  const { pathname } = useLocation()
   const connected = useLiveUpdates(true)
   const wb = useWorkbench()
   const todo = useTodo(wb).length // 与工作台「待你处理」同一口径
@@ -185,7 +186,8 @@ export function Shell() {
       <Sidebar todo={todo} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
       <main className={cx('pb-24 transition-[padding] duration-200 ease-out lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
-        <div className="mx-auto max-w-[1360px] px-4 pt-5 sm:px-6 lg:px-10 lg:pt-9">
+        {/* 工作台用满宽屏（主栏 + 右栏，D-171），其余页面保持 1360px 的阅读宽度 */}
+        <div className={cx('mx-auto px-4 pt-5 sm:px-6 lg:px-10 lg:pt-9', pathname === '/' ? 'max-w-[1880px]' : 'max-w-[1360px]')}>
           <Outlet />
         </div>
       </main>

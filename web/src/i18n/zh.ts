@@ -127,6 +127,14 @@ export const zh = {
     P3: '低',
   } as Record<string, string>,
   desk: {
+    counts: (act: number, run: number, parked: number, reply: number) =>
+      [act ? `${act} 件要你处理` : '没有要你处理的事', run && `${run} 个在跑`, parked && `${parked} 个待命`, reply && `${reply} 个久未回复`].filter(Boolean).join(' · '),
+    tier: { act: '要你处理', run: '在跑', rest: '待命 / 空闲 / 久未回复' },
+    ended: (n: number) => `已结束 ${n}`,
+    dotTip: { act: '要你处理', run: '在跑', park: '待命' } as Record<string, string>,
+    plansTitle: '进行中的计划',
+    recentTitle: '最近动态',
+    teamTitle: '队伍在线',
     briefBy: (project: string, when: string) => ['简报', project, when].filter(Boolean).join(' · '),
     todo: (n: number) => `待你处理 · ${n}`,
     clear: '没有要你处理的事。',

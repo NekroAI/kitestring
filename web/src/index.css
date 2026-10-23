@@ -579,3 +579,11 @@ nav.fixed {
 
 /* 印记（R-96）：悬停或聚焦任一编号，同页所有同一对象一起亮起来。 */
 .ref-chip.lit { background: var(--lit); border-color: var(--accent); }
+
+/* 工作台（R-147）：新进「要你处理」的卡片轻轻提示一次：一圈朱砂描边淡出，不加别的装饰动画。 */
+@keyframes ks-tier-flash {
+  0% { box-shadow: 0 0 0 3px var(--reply); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+.tier-flash { border-radius: 0.75rem; animation: ks-tier-flash 1.6s ease-out 1; }
+@media (prefers-reduced-motion: reduce) { .tier-flash { animation: none; } }

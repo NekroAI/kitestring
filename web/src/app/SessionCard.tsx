@@ -4,21 +4,17 @@ import {
   CheckCircle2,
   ChevronDown,
   Hourglass,
-  Eye,
   FileCode2,
   FileText,
   GitBranch,
   Globe,
   HelpCircle,
-  Layers,
   ListChecks,
   MessageSquare,
   Monitor,
-  RefreshCw,
   Plug,
   Search,
   ShieldAlert,
-  ShieldOff,
   Terminal,
   Wrench,
   type LucideIcon,
@@ -26,19 +22,19 @@ import {
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
 import { Item, List } from '../ui/motion'
-import { cx, duration, relTime, shortPath, useNow } from '../lib/util'
+import { cx, duration, relTime, shortPath, useMedia, useNow } from '../lib/util'
 
 const shortClock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
 import { Card, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
-import { CtxMark } from './assign'
+import { ctxLoad, ctxTip } from './assign'
 import { displayState, RoleBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer } from './DecisionCard'
 import { LiveFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { useOpenReq, useOpenSession } from './nav'
-import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
+import { Linkify, RefChip, ReqGlyph } from '../ui/refmark'
 
 // 工具名 → 图标。
 export function toolIcon(label: string): LucideIcon {
@@ -59,6 +55,23 @@ export function toolIcon(label: string): LucideIcon {
 export function splitTool(label: string): [string, string] {
   const [name, ...rest] = label.split(' · ')
   return [name.replace(/^mcp__/, ''), rest.join(' · ')]
+}
+
+// sessionExtras：不常看的会话细节（轮数、工具、子任务、权限、worktree、上下文、工具过时），放在设备的悬停里（R-147）。
+export function sessionExtras(s: Session): string {
+  const ctx = s.state !== 'ended' ? ctxLoad(s) : null
+  return [
+    t.session.device + '：' + s.device_name,
+    s.turns > 0 && t.session.turns(s.turns),
+    s.turn_tools > 0 && s.state !== 'ended' && t.session.toolsTip(s.turn_tools),
+    s.subagents > 0 && t.session.subagentsTip(s.subagents),
+    t.permMode[s.permission_mode],
+    s.worktree && t.session.worktree,
+    ctx && ctxTip(ctx),
+    s.tools_stale && s.state !== 'ended' && t.session.toolsStaleTip(s.tools_stale),
+  ]
+    .filter(Boolean)
+    .join(t.common.sep)
 }
 
 export function sessionTitle(s: Session): string {
@@ -159,13 +172,14 @@ export function Callout({ s }: { s: Session }) {
 }
 
 function ActionLine({ s, now }: { s: Session; now: number }) {
+  const phone = useMedia('(max-width: 767px)') // 手机上实时动作只留最新一条（R-147）
   if (!s.last_tool || s.state === 'ended') return null
   // 运行中：最近几次动作滚动展示
   if (displayState(s) === 'running')
     return (
       <Tip content={t.session.action}>
         <div className="rounded-lg bg-surface-2 px-2.5 py-1.5">
-          <LiveFeed s={s} now={now} />
+          <LiveFeed s={s} now={now} lines={phone ? 1 : 3} />
         </div>
       </Tip>
     )
@@ -193,7 +207,6 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
   const ds = displayState(s)
   const st = stateStyle[ds] ?? stateStyle.idle
   const ended = s.state === 'ended'
-  const perm = t.permMode[s.permission_mode]
   const reqs = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
   // 有回复要点时，要点本身就是进展，标题下只放你最后说的话，避免重复。
   const hasDigest = ds === 'waiting_reply' && !!(s.digest_done || s.digest_ask)
@@ -215,20 +228,9 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
             </span>
           </div>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-fg-3">
-            {s.title && s.project_name && (
-              <Meta icon={ProjGlyph} tip={s.cwd}>
-                {s.project_name}
-              </Meta>
-            )}
-            <Meta icon={Monitor} tip={t.session.device}>
+            <Meta icon={Monitor} tip={sessionExtras(s)}>
               {s.device_name}
             </Meta>
-            <CtxMark s={s} />
-            {s.tools_stale && s.state !== 'ended' && (
-              <Meta icon={RefreshCw} tip={t.session.toolsStaleTip(s.tools_stale)} className="text-wait">
-                {t.session.toolsStale}
-              </Meta>
-            )}
             {s.branch && (
               <Meta icon={GitBranch} tip={s.dirty ? t.session.dirtyTip(s.dirty) : t.session.branch} className="font-mono">
                 {s.branch}
@@ -267,35 +269,8 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
       {/* 底部指标 */}
       <div className="mt-auto flex items-center gap-3 border-t border-line pt-2.5 text-xs text-fg-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
-          {s.turns > 0 && (
-            <Tip content={t.session.turnsTip}>
-              <span className="tabular">{t.session.turns(s.turns)}</span>
-            </Tip>
-          )}
-          {s.turn_tools > 0 && !ended && (
-            <Meta icon={Wrench} tip={t.session.toolsTip(s.turn_tools)} className="tabular">
-              {s.turn_tools}
-            </Meta>
-          )}
-          {s.subagents > 0 && (
-            <Meta icon={Layers} tip={t.session.subagentsTip(s.subagents)} className="text-accent tabular">
-              {s.subagents}
-            </Meta>
-          )}
-          {perm && (
-            <Tip content={perm}>
-              <span className="inline-flex" aria-label={perm}>
-                {s.permission_mode === 'plan' ? <Eye className="size-3.5" /> : <ShieldOff className="size-3.5" />}
-              </span>
-            </Tip>
-          )}
-          {s.worktree && (
-            <Tip content={t.session.worktree}>
-              <span className="rounded border border-line px-1 font-mono text-[10px]">wt</span>
-            </Tip>
-          )}
           <ReqCount s={s} />
-          {!s.turns && !reqs.length && <span>{relTime(s.last_active_at, now)}</span>}
+          {!reqs.length && <span>{relTime(s.last_active_at, now)}</span>}
         </div>
         <Sparkline data={s.activity} state={ds} />
       </div>

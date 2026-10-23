@@ -42,7 +42,7 @@ export function CtxRing({ c, className }: { c: CtxLoad; className?: string }) {
 }
 
 const ctxColor = (c: CtxLoad) => (c.level === 'high' ? 'text-danger' : c.level === 'mid' ? 'text-wait' : 'text-fg-3')
-const ctxTip = (c: CtxLoad) => (c.level === 'high' ? t.session.ctxHeavyTip(c.label) : c.level === 'mid' ? t.session.ctxTip(c.label) : t.session.ctxOkTip(c.label))
+export const ctxTip = (c: CtxLoad) => (c.level === 'high' ? t.session.ctxHeavyTip(c.label) : c.level === 'mid' ? t.session.ctxTip(c.label) : t.session.ctxOkTip(c.label))
 
 // CtxMark：会话卡 / 列表里的上下文占用——圆环加简短数字，悬停看详情。
 export function CtxMark({ s }: { s: Session }) {

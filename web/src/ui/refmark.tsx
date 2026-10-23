@@ -245,11 +245,19 @@ type ChipProps = {
   link?: boolean // false：只展示，不可点
   onOpen?: (code: string) => void
   className?: string
+  label?: 'code' | 'title' // title：图标 + 短标题（简报等正文里，R-147 / D-171），编号放进悬停
 }
 
 // RefChip：一个对象，三种尺寸，同一套零件。
 // inline：印记 + 编号，放在句子、会话卡、通知里；row：再加标题、状态词、朱印；card：一张小卡。
-export function RefChip({ code, size = 'inline', status, title, suffix, hint, turn, showStatus, link = true, onOpen, className }: ChipProps) {
+// shortTitle：引用里用的短标题：有「：」时取前半句，否则截到 12 个字。
+export function shortTitle(title: string) {
+  const head = title.split(/[：:]/)[0].trim()
+  const s = head.length >= 2 && head.length <= 14 ? head : title
+  return s.length > 12 ? s.slice(0, 12) + '…' : s
+}
+
+export function RefChip({ code, size = 'inline', status, title, suffix, hint, turn, showStatus, link = true, onOpen, className, label = 'code' }: ChipProps) {
   const info = useRefInfo(code)
   const open = useOpenRef()
   const on = useLit(code)
@@ -262,7 +270,8 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
     e.preventDefault()
     ;(onOpen ?? open)(code)
   }
-  const tip = [name, hint, count > 1 ? t.ref.onPage(count) : ''].filter(Boolean).join(t.common.sep)
+  const byTitle = label === 'title' && !!name
+  const tip = [byTitle ? `${code} ${name}` : name, hint, count > 1 ? t.ref.onPage(count) : ''].filter(Boolean).join(t.common.sep)
   const chip = (
     <span
       data-ref={code}
@@ -289,7 +298,7 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
       )}
     >
       <RefGlyph code={code} status={st} />
-      {code}
+      {byTitle ? <span className="truncate font-sans font-medium text-fg">{shortTitle(name)}</span> : code}
       {suffix && <span className="inline-flex items-center gap-0.5 font-sans font-medium text-fg-3">{suffix}</span>}
     </span>
   )
@@ -335,15 +344,15 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
 export const refPattern = /(?<![A-Za-z0-9_-])([RPD]-\d+)(?![A-Za-z0-9_-])/g
 
 // RefText：文本里认出的一个编号。索引里有这个对象才画成印记，否则原样输出（不误伤）。
-export function RefText({ code }: { code: string }) {
+export function RefText({ code, label }: { code: string; label?: 'code' | 'title' }) {
   const info = useRefInfo(code)
-  return info ? <RefChip code={code} className="mx-0.5" /> : <>{code}</>
+  return info ? <RefChip code={code} className="mx-0.5" label={label} /> : <>{code}</>
 }
 
 // Linkify：把一段纯文本里的 R-/P-/D- 编号换成印记。
-export function Linkify({ text }: { text: string }) {
+export function Linkify({ text, label }: { text: string; label?: 'code' | 'title' }) {
   if (!text) return null
   const parts = text.split(refPattern)
   if (parts.length === 1) return <>{text}</>
-  return <>{parts.map((p, i) => (i % 2 ? <RefText key={i} code={p} /> : p))}</>
+  return <>{parts.map((p, i) => (i % 2 ? <RefText key={i} code={p} label={label} /> : p))}</>
 }

@@ -15,12 +15,14 @@ import { useReqMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { Linkify, RefChip } from '../ui/refmark'
 import { EvidenceGist, hasPayload } from './evidence'
+import { PassingRow, schedulePass, usePassing } from './pass'
 
 // evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
 export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
 
 // ReviewRow：一条待验收需求——看证据，然后通过或提修改意见（可贴图）。
-function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => void; hideTitle?: boolean }) {
+// undoable：工作台上就地通过时先进入 5 秒撤销期（R-114）；需求详情里照旧立即通过。
+function ReviewRow({ r, onDone, hideTitle, undoable }: { r: Requirement; onDone?: () => void; hideTitle?: boolean; undoable?: boolean }) {
   const now = useNow()
   const detail = useRequirement(r.code)
   const { review } = useActions()
@@ -33,13 +35,14 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
   const [incoming, setIncoming] = useState<File[]>([])
   const evidence = (detail.data?.evidence ?? []).filter((e) => !e.voided)
 
-  const pass = () =>
-    wrap(async () => {
-      if (await review([{ ref: r.code, verdict: 'accept' }])) {
-        toast.success(t.review.passed(r.code))
-        onDone?.()
-      }
-    })
+  const passingNow = usePassing().get(r.code)
+  const commit = async () => {
+    if (await review([{ ref: r.code, verdict: 'accept' }])) {
+      toast.success(t.review.passed(r.code))
+      onDone?.()
+    }
+  }
+  const pass = () => (undoable ? schedulePass(r.code, commit) : wrap(commit))
   const revise = () =>
     wrap(async () => {
       if (await review([{ ref: r.code, verdict: 'revise', comment, files: files.map((f) => f.id) }])) {
@@ -52,6 +55,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
   const clickable = !hideTitle
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
   const menu = useReqMenu()
+  if (passingNow) return <PassingRow code={r.code} until={passingNow.until} />
   return (
     <AnnotateTarget.Provider
       value={(f) => {
@@ -70,8 +74,8 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
         clickable && 'cursor-pointer hover:border-line-strong hover:bg-hover/50 hover:shadow-xs active:scale-[0.995]',
       )}
     >
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-reply-soft text-reply">
+      <div className="flex items-start gap-3 max-sm:flex-wrap">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center max-sm:hidden justify-center rounded-lg bg-reply-soft text-reply">
           <FileCheck2 className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -104,7 +108,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
           )}
         </div>
         {!editing && (
-          <div className="flex shrink-0 gap-1.5" onClick={stop} onKeyDown={stop}>
+          <div className="flex shrink-0 gap-1.5 max-sm:w-full max-sm:justify-end" onClick={stop} onKeyDown={stop}>
             <Button size="sm" variant="ghost" icon={<PenLine className="size-3.5" />} disabled={busy} onClick={() => setEditing(true)}>
               <span className="max-sm:hidden">{t.review.revise}</span>
             </Button>
@@ -155,7 +159,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
 }
 
 // ReviewList：一组待验收需求；两条以上时可以全部通过。
-export function ReviewList({ items, className, scroll }: { items: Requirement[]; className?: string; scroll?: boolean }) {
+export function ReviewList({ items, className, scroll, undoable }: { items: Requirement[]; className?: string; scroll?: boolean; undoable?: boolean }) {
   const { review } = useActions()
   const [busy, wrap] = useBusy()
   if (!items.length) return null
@@ -165,7 +169,7 @@ export function ReviewList({ items, className, scroll }: { items: Requirement[];
         <List space={8}>
           {items.map((r) => (
             <Item key={r.id} space={8}>
-              <ReviewRow r={r} />
+              <ReviewRow r={r} undoable={undoable} />
             </Item>
           ))}
         </List>
