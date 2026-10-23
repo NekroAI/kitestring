@@ -1076,7 +1076,8 @@
               "role",
               "review_task",
               "tell",
-              "release"
+              "release",
+              "edit"
             ],
             "type": "string"
           },
@@ -1315,7 +1316,8 @@
               "role",
               "review_task",
               "tell",
-              "release"
+              "release",
+              "edit"
             ],
             "type": "string"
           },
@@ -1561,6 +1563,57 @@
         },
         "required": [
           "devices"
+        ],
+        "type": "object"
+      },
+      "EditInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "description": "新验收标准；进行中之后改要带 approval；不传表示不改",
+            "type": "string"
+          },
+          "approval": {
+            "description": "进行中 / 阻塞 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x）",
+            "type": "string"
+          },
+          "detail": {
+            "description": "新描述；不传表示不改",
+            "type": "string"
+          },
+          "kind": {
+            "description": "新类型：design = 设计类，feature = 普通；不传表示不改",
+            "enum": [
+              "feature",
+              "design"
+            ],
+            "type": "string"
+          },
+          "priority": {
+            "description": "新优先级；不传表示不改",
+            "enum": [
+              "P0",
+              "P1",
+              "P2",
+              "P3"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "为什么改（建议写，会显示在时间线上）",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "改需求的会话",
+            "type": "string"
+          },
+          "title": {
+            "description": "新标题；开头的编号前缀会被去掉（R-129）；不传表示不改",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
         ],
         "type": "object"
       },
@@ -5681,6 +5734,57 @@
           }
         },
         "summary": "PM 把需求交给开发（R-86）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/requirements/{ref}/edit": {
+      "post": {
+        "operationId": "agent-edit-requirement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Requirement"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Agent 改需求的标题 / 描述 / 验收标准 / 优先级 / 类型，时间线留下改前改后（R-134）",
         "tags": [
           "agent"
         ]

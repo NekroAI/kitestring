@@ -163,24 +163,44 @@ func attachFiles(body map[string]any, paths []string) error {
 	return nil
 }
 
+// editBody 拼 ks req edit 的请求：只带命令行上给出的字段（给了空串表示清空），没给的不改（R-134）。
+func editBody(fs *flag.FlagSet, key, reason, approval string) map[string]any {
+	body := map[string]any{"session_key": key}
+	names := map[string]string{"title": "title", "detail": "detail", "acceptance": "acceptance", "priority": "priority", "type": "kind"}
+	fs.Visit(func(f *flag.Flag) {
+		if name, ok := names[f.Name]; ok {
+			body[name] = f.Value.String()
+		}
+	})
+	if reason != "" {
+		body["reason"] = reason
+	}
+	if approval != "" {
+		body["approval"] = approval
+	}
+	return body
+}
+
 func runReq(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("用法：ks req list|get|create|status|evidence|assign|review ...")
+		return fmt.Errorf("用法：ks req list|get|create|edit|status|evidence|assign|review ...")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("req "+sub, flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	all := fs.Bool("all", false, "list：列出所有项目")
-	title := fs.String("title", "", "create：标题")
-	detail := fs.String("detail", "", "create：细节")
-	acceptance := fs.String("acceptance", "", "create：验收标准")
+	title := fs.String("title", "", "create / edit：标题")
+	detail := fs.String("detail", "", "create / edit：细节")
+	acceptance := fs.String("acceptance", "", "create / edit：验收标准")
 	status := fs.String("status", "", "create：初始状态")
-	priority := fs.String("priority", "", "create：优先级 P0-P3")
+	priority := fs.String("priority", "", "create / edit：优先级 P0-P3")
+	fs.String("type", "", "edit：需求类型 design（设计类）/ feature（普通）")
+	approval := fs.String("approval", "", "edit：进行中之后改验收标准时，用户已批准的批准类决策编号（D-x）")
 	kind := fs.String("kind", "manual", "evidence：证据类型")
 	link := fs.String("link", "", "evidence：链接")
 	to := fs.String("to", "", "assign：交给哪个 Dev 会话（tool:session_id），auto 由 hub 挑")
 	comment := fs.String("comment", "", "assign：交代给开发的话")
-	reason := fs.String("reason", "", "status ready / assign 草稿：放行理由（只有 PM / Adv 能放行）；status draft：撤回原因")
+	reason := fs.String("reason", "", "status ready / assign 草稿：放行理由（只有 PM / Adv 能放行）；status draft：撤回原因；edit：为什么改")
 	verdict := fs.String("verdict", "", "evidence：一句结论（40 字以内）")
 	details := fs.String("details", "", "evidence：实现细节（默认折叠）")
 	blocksArg := fs.String("blocks", "", "evidence：表达块，JSON 数组或 JSON 文件路径")
@@ -218,6 +238,13 @@ func runReq(args []string) error {
 			return err
 		}
 		return agentCall("POST", "/agent/requirements", compact(body))
+	case "edit":
+		// 改需求内容（R-134）：只发给出的字段，没给的不改
+		if fs.NArg() < 1 {
+			return fmt.Errorf("用法：ks req edit <R-编号> [--title ...] [--detail ...] [--acceptance ...] [--priority P0-P3] [--type design|feature] [--reason 为什么改] [--approval D-x（进行中之后改验收标准必填）]")
+		}
+		body := editBody(fs, key, *reason, *approval)
+		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/edit", body)
 	case "status":
 		if fs.NArg() < 2 {
 			return fmt.Errorf("用法：ks req status <R-编号> <状态> [--reason 理由]（PM / Adv 放行草稿：ks req status R-x ready --reason ...）")

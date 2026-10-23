@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { CheckCheck, FileCheck2, HelpCircle, LockOpen, MessageSquareText, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
+import { CheckCheck, FileCheck2, HelpCircle, LockOpen, MessageSquareText, PencilLine, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Requirement } from '../api/client'
 import { t } from '../i18n'
@@ -79,6 +79,46 @@ function ReviewBody({ text }: { text: string }) {
 
 function Quote({ children, cls }: { children: ReactNode; cls: string }) {
   return <p className={cx('rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-fg', cls)}>{children}</p>
+}
+
+// EditDiff：修改记录（R-134）的改前改后。标题、优先级、类型这类短字段一行「改前 → 改后」；
+// 描述、验收标准默认收起，点开上下对照。行是 [字段, 中文名, 改前, 改后]。
+function EditDiff({ rows }: { rows: (string[] | null)[] }) {
+  return (
+    <div className="space-y-1.5 text-sm">
+      {rows.map((row) => {
+        const [field, label, before, after] = row ?? []
+        if (field === 'detail' || field === 'acceptance') {
+          return (
+            <details key={field} className="rounded-xl bg-sunken/60 px-3 py-2">
+              <summary className="cursor-pointer text-fg-2 select-none marker:text-fg-3">
+                <span className="font-medium">{label}</span>
+                <span className="ml-1.5 text-xs text-fg-3">{t.timeline.editExpand}</span>
+              </summary>
+              <div className="mt-2 space-y-2">
+                <div>
+                  <p className="mb-0.5 text-xs text-fg-3">{t.timeline.editBefore}</p>
+                  <p className="rounded-lg bg-danger-soft/50 px-2.5 py-1.5 leading-relaxed whitespace-pre-wrap break-words text-fg-2">{before || t.timeline.editEmpty}</p>
+                </div>
+                <div>
+                  <p className="mb-0.5 text-xs text-fg-3">{t.timeline.editAfter}</p>
+                  <p className="rounded-lg bg-run-soft/50 px-2.5 py-1.5 leading-relaxed whitespace-pre-wrap break-words text-fg">{after || t.timeline.editEmpty}</p>
+                </div>
+              </div>
+            </details>
+          )
+        }
+        return (
+          <p key={field} className="flex flex-wrap items-baseline gap-x-1.5 rounded-xl bg-sunken/60 px-3 py-2 leading-relaxed break-words">
+            <span className="font-medium text-fg-2">{label}</span>
+            <span className="text-fg-3 line-through">{before || t.timeline.editEmpty}</span>
+            <span className="text-fg-3">→</span>
+            <span className="text-fg">{after || t.timeline.editEmpty}</span>
+          </p>
+        )
+      })}
+    </div>
+  )
 }
 
 export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decision[] }) {
@@ -183,6 +223,38 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             at={at}
             now={now}
           />
+        ),
+      })
+      continue
+    }
+    // 修改记录（R-134）：Agent 改了标题 / 描述 / 验收标准 / 优先级 / 类型，记下是谁、什么身份、改前改后
+    if (f.kind === 'edit') {
+      const role = t.role[f.context ?? ''] || f.context || 'Agent'
+      const rows = f.blocks?.find((b) => b.type === 'table')?.rows ?? []
+      entries.push({
+        at,
+        key: f.id,
+        round: roundOf(at),
+        node: (
+          <Node
+            icon={<PencilLine />}
+            tone={tone.create}
+            title={
+              <>
+                {t.timeline.edit(role)}
+                <span className="truncate font-normal text-fg-3">{who(f.assigned_by)}</span>
+              </>
+            }
+            at={at}
+            now={now}
+          >
+            {!!f.answer && (
+              <p className="text-sm text-fg-2">
+                <Linkify text={f.answer} />
+              </p>
+            )}
+            <EditDiff rows={rows} />
+          </Node>
         ),
       })
       continue

@@ -173,6 +173,8 @@ func (r reqView) String() string {
 			s = fmt.Sprintf("  - %s%s 决策：%s → %s", when, f.Code, oneLine(f.Question), ans)
 		case "assign", "queue", "plan", "review_task":
 			continue // 流转记录，状态已在上面
+		case "edit":
+			s = fmt.Sprintf("  - %s%s 修改：%s（%s）%s", when, f.Code, roleZh(f.Context), f.AssignedBy, f.Answer)
 		case "release":
 			s = fmt.Sprintf("  - %s%s 放行：由 %s（%s）放行：%s", when, f.Code, roleZh(f.Context), f.AssignedBy, f.Answer)
 			if f.CloseReason != "" {

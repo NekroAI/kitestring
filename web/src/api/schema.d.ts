@@ -220,6 +220,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/requirements/{ref}/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent 改需求的标题 / 描述 / 验收标准 / 优先级 / 类型，时间线留下改前改后（R-134） */
+        post: operations["agent-edit-requirement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/requirements/{ref}/evidence": {
         parameters: {
             query?: never;
@@ -1537,7 +1554,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1591,7 +1608,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1647,6 +1664,30 @@ export interface components {
         };
         DevicesOutBody: {
             devices: components["schemas"]["Device"][] | null;
+        };
+        EditInBody: {
+            /** @description 新验收标准；进行中之后改要带 approval；不传表示不改 */
+            acceptance?: string;
+            /** @description 进行中 / 阻塞 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x） */
+            approval?: string;
+            /** @description 新描述；不传表示不改 */
+            detail?: string;
+            /**
+             * @description 新类型：design = 设计类，feature = 普通；不传表示不改
+             * @enum {string}
+             */
+            kind?: "feature" | "design";
+            /**
+             * @description 新优先级；不传表示不改
+             * @enum {string}
+             */
+            priority?: "P0" | "P1" | "P2" | "P3";
+            /** @description 为什么改（建议写，会显示在时间线上） */
+            reason?: string;
+            /** @description 改需求的会话 */
+            session_key: string;
+            /** @description 新标题；开头的编号前缀会被去掉（R-129）；不传表示不改 */
+            title?: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -3098,6 +3139,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-edit-requirement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
                 };
             };
             /** @description Error */

@@ -125,6 +125,17 @@ type reqStatusIn struct {
 	Reason string `json:"reason,omitempty" jsonschema:"设为 ready（放行草稿）时必填：一句理由，说明为什么做法明确、可以直接排期；改回草稿（撤回放行）时可写原因"`
 }
 
+type reqEditIn struct {
+	Ref        string  `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	Title      *string `json:"title,omitempty" jsonschema:"新标题；不要把编号写进标题，开头的编号前缀会被去掉；不传表示不改"`
+	Detail     *string `json:"detail,omitempty" jsonschema:"新描述（整段替换）；不传表示不改"`
+	Acceptance *string `json:"acceptance,omitempty" jsonschema:"新验收标准（整段替换）；需求进行中 / 阻塞 / 待验收时要同时给 approval；不传表示不改"`
+	Priority   *string `json:"priority,omitempty" jsonschema:"新优先级 P0 到 P3；不传表示不改"`
+	Kind       *string `json:"kind,omitempty" jsonschema:"新类型：design = 设计类，feature = 普通；不传表示不改"`
+	Reason     string  `json:"reason,omitempty" jsonschema:"为什么改，一句话，会显示在时间线上"`
+	Approval   string  `json:"approval,omitempty" jsonschema:"进行中之后改验收标准时必填：这条需求上用户已批准的批准类决策编号（D-x，用 decision_raise approval = true 发起）"`
+}
+
 type evidenceIn struct {
 	Ref     string           `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
 	Kind    string           `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
@@ -301,6 +312,28 @@ func (t *tools) register(s *mcp.Server) {
 			msg := fmt.Sprintf("%s「%s」→ %s", out.Code, out.Title, zh(out.Status))
 			if out.Status == "review" {
 				msg += fmt.Sprintf("（证据 %d 条）", out.evidenceCount())
+			}
+			return text(msg), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目 PM / Adv；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 阻塞 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in reqEditIn) (*mcp.CallToolResult, any, error) {
+			body := map[string]any{"session_key": t.sessionKey(ctx, req), "reason": in.Reason, "approval": in.Approval}
+			dropEmpty(body)
+			for k, v := range map[string]*string{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "priority": in.Priority, "kind": in.Kind} {
+				if v != nil {
+					body[k] = *v
+				}
+			}
+			var out reqView
+			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/edit", body, &out); err != nil {
+				return nil, nil, err
+			}
+			msg := "已修改 " + out.line()
+			for _, f := range out.Feedback {
+				if f.Kind == "edit" {
+					msg += "；" + f.Answer + "（" + f.Code + "，已记在时间线）"
+					break
+				}
 			}
 			return text(msg), nil, nil
 		})
