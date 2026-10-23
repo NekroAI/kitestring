@@ -33,24 +33,48 @@
 - **Answer from anywhere.** When an agent needs a decision, you get a push notification. Pick an option on your phone, and the answer lands in that agent's next turn.
 - **Keep the work in one place.** Agents record requirements as they go; you confirm them, hand them to a session, and accept the results with screenshots attached.
 
+## Made for your phone and iPad
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/showcase-dark.png">
+  <img src="docs/assets/showcase-light.png" alt="Kitestring on an iPad, showing two design proposals to choose from, and on an iPhone, showing sessions waiting for a reply and for a permission.">
+</picture>
+
+Step away from the desk and keep things moving from the couch, the train or bed.
+
+- **Installs like an app.** Add it to your home screen and it runs full screen. Sign in with a passkey (Face ID / Touch ID).
+- **Tells you when it's your turn.** Push notifications on iPhone, iPad and desktop browsers (also Bark and WeCom); tap one to land on that exact session or requirement.
+- **Built for touch.** Long-press a card and drag it to another column, swipe through screenshots, swipe between requirements while reviewing — and nothing zooms or bounces when it shouldn't.
+
+### Mark it up with Apple Pencil
+
+<p align="center"><img src="docs/assets/annotate.gif" width="760" alt="Circling a quantity input on a screenshot with a pen, drawing an arrow and writing a note."></p>
+
+Circle, box, point and write right on the agent's screenshots. The pen follows pressure, your palm is ignored once you've used a pencil, and the marked-up image goes back to the agent with your feedback. Works with a finger, mouse or trackpad too.
+
+### Review on the go
+
 <table>
   <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-decision-dark.png">
-        <img src="docs/assets/screenshot-decision-light.png" alt="A decision raised by an agent, with options and its recommendation.">
-      </picture>
-      <p align="center"><sub>Decisions come with options and the agent's recommendation</sub></p>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-board-dark.png">
-        <img src="docs/assets/screenshot-board-light.png" alt="The requirement board with draft, to-do, in-progress, review and done columns.">
-      </picture>
-      <p align="center"><sub>Requirements move from draft to done, with evidence to review</sub></p>
+    <td width="300"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-review-dark.png"><img src="docs/assets/phone-review-light.png" width="300" alt="Reviewing a requirement on a phone: the timeline with test results and screenshots, and buttons to accept or send back."></picture></td>
+    <td>
+      <ul>
+        <li><b>Evidence, not claims.</b> Agents attach test results, screenshots and screen recordings — a screenshot claim without the image is rejected.</li>
+        <li><b>Accept or send back in one tap.</b> Write a note or paste a picture to send it back; accept and the next requirement slides in.</li>
+        <li><b>Pick a design by looking at it.</b> Agents propose 2–3 options with mockups; you tap the one you want.</li>
+        <li><b>Approve plans with a note.</b> Yes or no, both can carry a comment and images.</li>
+      </ul>
     </td>
   </tr>
 </table>
+
+## More highlights
+
+- **Hand off the next task.** Give a requirement to a session; to-dos queue up and arrive together when it goes idle. A session waiting in `ks wait` picks it up within seconds.
+- **Plans with gates.** Split a big goal into stages; each stage unlocks only after you accept the previous one.
+- **A live view of every session.** Recent tool calls stream in, a ring shows how full the context is, and — if you connect your own model — a one-line summary says what it's doing.
+- **One project across machines.** Sessions are grouped by git remote, so the same repo on your laptop and your Mac mini is one project.
+- **Never in the way.** Hooks time out in 1.5 s and fail open; offline machines buffer events and catch up later.
 
 ## How it works
 

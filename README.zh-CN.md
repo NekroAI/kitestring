@@ -33,24 +33,48 @@
 - **在哪都能答复**：agent 需要你拍板时，手机收到推送；点一个选项，答复就进入那个 agent 的下一轮。
 - **事情都记在一处**：agent 边做边记下需求；你确认、交给会话、对着截图验收。
 
+## 为手机和 iPad 而做
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/showcase-dark.png">
+  <img src="docs/assets/showcase-light.png" alt="iPad 上是两套待选的设计方案，iPhone 上是等你回复、等你授权的会话。">
+</picture>
+
+离开工位也不断线：沙发上、地铁上、躺在床上，照样推进进度。
+
+- **像 App 一样用**：添加到主屏幕后全屏运行，可用 passkey（面容 / 触控 ID）登录。
+- **轮到你时会提醒**：iPhone、iPad 和桌面浏览器都能收到系统推送（也支持 Bark、企业微信），点通知直达对应的会话或需求。
+- **为触屏打磨**：长按卡片拖到别的列改状态、左右滑看截图、验收时滑动切换需求；该稳的地方不会乱缩放、乱回弹。
+
+### 用 Apple Pencil 直接批注
+
+<p align="center"><img src="docs/assets/annotate.gif" width="760" alt="用笔在截图上圈出数量输入框、画箭头、写批注。"></p>
+
+在 agent 交来的截图上圈、框、画箭头、写字。笔画粗细跟随笔压，用过手写笔后自动忽略手掌；标注好的图会和你的意见一起送回 agent。手指、鼠标、触控板也都能用。
+
+### 随手验收
+
 <table>
   <tr>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-decision-dark.png">
-        <img src="docs/assets/screenshot-decision-light.png" alt="agent 提出的决策，带选项和它的推荐。">
-      </picture>
-      <p align="center"><sub>决策带选项和 agent 的推荐</sub></p>
-    </td>
-    <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-board-dark.png">
-        <img src="docs/assets/screenshot-board-light.png" alt="需求看板：草稿、待开始、进行中、待验收、已完成。">
-      </picture>
-      <p align="center"><sub>需求从草稿走到完成，附证据供验收</sub></p>
+    <td width="300"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/phone-review-dark.png"><img src="docs/assets/phone-review-light.png" width="300" alt="手机上的验收界面：带测试结果和截图的时间线，底部是通过 / 退回修改。"></picture></td>
+    <td>
+      <ul>
+        <li><b>拿证据说话</b>：agent 交测试结果、截图、录屏；声称有截图却没附图的证据会被拒收。</li>
+        <li><b>一下通过或退回</b>：写几句或贴张图就能退回；通过后自动滑到下一条。</li>
+        <li><b>看图选方案</b>：agent 交两三套带效果图的方案，点一下选定。</li>
+        <li><b>批准方案可附言</b>：批准或拒绝都能附上说明和图片。</li>
+      </ul>
     </td>
   </tr>
 </table>
+
+## 更多亮点
+
+- **交出下一件事**：把需求交给会话；待办会在它空闲时整批送达，挂着 `ks wait` 的会话几秒内就开工。
+- **分阶段的计划**：大目标拆成阶段，上一阶段你验收通过后，下一阶段才解锁。
+- **每个会话实时可见**：最近的工具调用实时滚动，小圆环显示上下文占用；接入你自己的模型后，还有一句话进展摘要。
+- **跨设备归成一个项目**：按 git remote 归并，笔记本和 Mac mini 上的同一个仓库就是同一个项目。
+- **永不挡路**：hook 1.5 秒超时、出错放行；断网的设备先缓存事件，恢复后补传。
 
 ## 工作原理
 
