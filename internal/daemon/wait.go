@@ -42,13 +42,19 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	w.Header().Set("Content-Type", "application/json")
 	key := q.Get("session_key")
+	inst := ""
 	if key == "" {
 		ppid, _ := strconv.Atoi(q.Get("ppid"))
-		if inst := d.agentInstance(ppid); inst != "" {
+		if inst = d.agentInstance(ppid); inst != "" {
 			d.mu.Lock()
 			key = d.instances[inst]
 			d.mu.Unlock()
 		}
+	}
+	if key != "" && inst != "" && d.isStale(key, inst) {
+		// 同一对话在更新的终端里继续了：这个较早终端不再领活（R-70）
+		_ = json.NewEncoder(w).Encode(WaitResult{Reason: "stale", Session: key, Text: staleText})
+		return
 	}
 	tool, sid, ok := strings.Cut(key, ":")
 	if !ok || sid == "" {
@@ -169,6 +175,10 @@ func (d *Daemon) watchInstances(ctx context.Context) {
 			}
 			d.mu.Lock()
 			delete(d.instances, inst)
+			if d.latest[key] == inst {
+				delete(d.latest, key) // 最新终端没了，较早的那个重新领活
+			}
+			delete(d.staleWarn, inst)
 			d.mu.Unlock()
 			tool, sid, ok := strings.Cut(key, ":")
 			if !ok {

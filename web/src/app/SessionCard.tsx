@@ -12,6 +12,7 @@ import {
   ListChecks,
   MessageSquare,
   Monitor,
+  MonitorDot,
   Plug,
   Search,
   ShieldAlert,
@@ -265,6 +266,12 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
       )}
 
       <Callout s={s} />
+      {s.other_terminal && s.state !== 'ended' && (
+        <div className="flex min-w-0 items-start gap-1.5 text-xs leading-relaxed text-accent">
+          <MonitorDot className="mt-0.5 size-3.5 shrink-0" />
+          <span className="min-w-0">{t.session.otherTerminalShort}</span>
+        </div>
+      )}
       {!(ds === 'waiting_approval' || ds === 'waiting_answer' || ds === 'background' || ds === 'parked') && <ActionLine s={s} now={now} />}
 
       {/* 底部指标 */}

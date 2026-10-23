@@ -538,6 +538,8 @@ func runWait(args []string) error {
 		} else {
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。可以结束本轮；用户回来后会在对话里继续。\n", waited)
 		}
+	case "stale":
+		fmt.Println(res.Text)
 	case "replaced":
 		fmt.Println("[Kitestring] 同一对话有新的 ks wait 接替等待，本次结束。")
 	case "canceled":

@@ -106,3 +106,43 @@ func (d *Daemon) resident(key string) bool {
 	defer d.mu.Unlock()
 	return roles.Resident(d.roles[key])
 }
+
+// 同一对话在多个终端同时运行（R-70）：以你最近发消息（或最近启动 / 恢复）的终端为准，
+// 只有它领活（需求、答复、留言的送达，ks wait）；较早的终端被提醒一次，之后不再收到送达。
+
+const staleText = "[Kitestring] 这个对话已经在另一个终端里继续了，本终端不再接收需求、答复和留言。请不要在这里继续改代码或提交，告诉用户关掉本终端，或在这里重新发一条消息把对话接回来。"
+
+// noteInstance 登记事件所属终端，返回它是否是较早的终端（不领活）。
+func (d *Daemon) noteInstance(key string, ev protocol.Event) bool {
+	if ev.Instance == "" {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	cur := d.latest[key]
+	if cur == "" || cur == ev.Instance || ev.Name == "SessionStart" || (ev.Name == "UserPromptSubmit" && ev.Source != protocol.SourceAuto) {
+		d.latest[key] = ev.Instance
+		delete(d.staleWarn, ev.Instance)
+		return false
+	}
+	return true
+}
+
+// isStale：该终端是否已被同一对话的更新终端取代。
+func (d *Daemon) isStale(key, inst string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	cur := d.latest[key]
+	return cur != "" && cur != inst
+}
+
+// staleNote：较早终端第一次触发 hook 时的提醒；之后返回空串。
+func (d *Daemon) staleNote(inst string) string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.staleWarn[inst] {
+		return ""
+	}
+	d.staleWarn[inst] = true
+	return staleText + "\n"
+}
