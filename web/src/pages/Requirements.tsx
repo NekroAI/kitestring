@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Columns3, List, ListPlus, MessageCircleQuestion, Milestone, Plus, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, Columns3, List, ListPlus, MessageCircleQuestion, Plus, Search } from 'lucide-react'
 import type { Requirement } from '../api/client'
-import { useProjects, useRequirements } from '../api/queries'
+import { usePlans, useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
 import { ReqView } from '../app/reqDrawer'
 import { DesignBadge } from '../app/design'
@@ -16,7 +16,16 @@ import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segme
 import { PriorityTag } from '../ui/marks'
 import { Menu } from '../ui/overlay'
 import { boardStatuses, closedStatuses, NewReqModal, ReqCard, StatusMenu, useSetStatus } from '../app/requirements'
-import { ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
+import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
+
+function ViewLabel({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {icon}
+      <span className="text-[13px]">{text}</span>
+    </span>
+  )
+}
 
 const prio: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
 const sortReqs = (a: Requirement, b: Requirement) => (prio[a.priority] ?? 9) - (prio[b.priority] ?? 9) || b.updated_at.localeCompare(a.updated_at)
@@ -238,6 +247,7 @@ export default function RequirementsPage() {
   const byStatus = (s: string) => filtered.filter((r) => r.status === s).sort(sortReqs)
   const open = all.filter((r) => r.status !== 'done' && r.status !== 'shelved').length
   const projName = projects.data?.projects.find((p) => p.id === project)?.name
+  const plans = usePlans()
 
   const drop = (code: string, status: string) => {
     const r = all.find((x) => x.code === code)
@@ -247,11 +257,17 @@ export default function RequirementsPage() {
   const touch = useTouchDrag(drop)
   const td = coarse ? touch : null
 
+  // 计划视图的副标题说计划（R-131）：几个在推进、几个等你批准
+  const planSummary = useMemo(() => {
+    const list = (plans.data ?? []).filter((x) => !project || x.project_id === project)
+    return t.plan.countLine(list.filter((x) => x.status === 'active').length, list.filter((x) => x.status === 'draft' && x.created_by === 'agent').length)
+  }, [plans.data, project])
+
   return (
     <div ref={measure}>
       <PageHeader
         title={t.reqs.title}
-        subtitle={q.isPending ? ' ' : t.reqs.summary(open)}
+        subtitle={q.isPending ? ' ' : view === 'plans' ? planSummary : t.reqs.summary(open)}
         actions={
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={newItem}>
             {view === 'plans' ? t.plan.new : t.reqs.new}
@@ -279,9 +295,10 @@ export default function RequirementsPage() {
           value={view}
           onChange={setView}
           options={[
-            { value: 'list', label: <List className="size-4" />, tip: t.reqs.viewList },
-            { value: 'board', label: <Columns3 className="size-4" />, tip: t.reqs.viewBoard },
-            { value: 'plans', label: <Milestone className="size-4" />, tip: t.plan.view },
+            // 图标旁直接写字（R-131）：只有图标时“计划”像个「中」字，触屏上也没有悬停提示
+            { value: 'list', label: <ViewLabel icon={<List className="size-4" />} text={t.reqs.viewList} /> },
+            { value: 'board', label: <ViewLabel icon={<Columns3 className="size-4" />} text={t.reqs.viewBoard} /> },
+            { value: 'plans', label: <ViewLabel icon={<PlanGlyph className="size-4 text-current" />} text={t.plan.view} /> },
           ]}
         />
         <label className="ml-auto flex items-center gap-2 text-sm text-fg-2">

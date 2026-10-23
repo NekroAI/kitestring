@@ -595,6 +595,7 @@ export const zh = {
     scores: '各需求达标情况',
     noChecklist: '没有清单',
     view: '计划',
+    countLine: (active: number, approve: number) => [active ? `${active} 个计划在推进` : '没有在推进的计划', approve && `${approve} 个等你批准`].filter(Boolean).join(' · '),
     new: '新建计划',
     edit: '编辑计划',
     title: '计划',

@@ -12,6 +12,7 @@ import { Collapse, Item, List } from '../ui/motion'
 import { displayState, StatusDot } from '../ui/marks'
 import { useActions, useBusy, type PlanBody } from './actions'
 import { targetGroup, targetItems, targetLabel } from './assign'
+import { sessionTitle } from './SessionCard'
 import { useOpenPlan, useOpenReq } from './nav'
 import { ReqView } from './reqDrawer'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
@@ -92,6 +93,9 @@ function progressText(x: Plan) {
 }
 
 // PlanCard：计划视图里的一张卡片。
+// ownerLabel：计划负责会话的称呼——有身份写身份（PM / Dev），没有身份才用会话标题；后面跟设备。
+const ownerLabel = (s: Session) => [s.role && t.role[s.role] ? t.role[s.role] : sessionTitle(s), s.device_name].filter(Boolean).join(t.common.sep)
+
 export function PlanCard({ x }: { x: Plan }) {
   const open = useOpenPlan()
   const sessionOf = useSessionOf()
@@ -119,7 +123,12 @@ export function PlanCard({ x }: { x: Plan }) {
             {x.project_name}
           </span>
         )}
-        {owner && <span className="truncate">{t.plan.by(targetLabel(owner))}</span>}
+        {owner && (
+          // 「交给」写身份 + 设备，会话的 AI 标题会变、读不通，放到悬停里（R-131）
+          <Tip content={sessionTitle(owner)}>
+            <span className="truncate">{t.plan.by(ownerLabel(owner))}</span>
+          </Tip>
+        )}
       </div>
     </Card>
   )
