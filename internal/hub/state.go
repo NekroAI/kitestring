@@ -124,13 +124,17 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.State, x.StateDetail = store.StateWaitReply, ""
 		}
 	case protocol.EventWait:
-		// Agent 用 ks wait 挂在后台：待命，你在 Kitestring 上一回应它就继续。
+		// Agent 用 ks wait 挂起：待命，你在 Kitestring 上一回应它就继续。
+		// Claude Code 在后台运行 ks wait，这一轮结束（Stop）才算待命；
+		// Codex 在前台运行，这一轮一直“在跑命令”，等待开始就是待命（R-74）。
 		x.Parked = true
-		if x.State != store.StateEnded && x.State != store.StateRunning {
+		x.ParkedUntil = ev.Until
+		if x.State != store.StateEnded && (x.State != store.StateRunning || x.Tool == protocol.ToolCodex) {
 			x.State, x.StateDetail = store.StateParked, ""
 		}
 	case protocol.EventWaitEnd:
 		x.Parked = false
+		x.ParkedUntil = nil
 		if x.State == store.StateParked {
 			if ev.Reason == "delivered" {
 				x.State = store.StateRunning // 收到你的答复，马上继续

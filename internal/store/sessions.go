@@ -63,6 +63,7 @@ type Session struct {
 	OtherTerminal    bool             `json:"other_terminal"`    // 另有一个较早的终端也开着这个对话
 	DoneAt           *time.Time       `json:"done_at,omitempty"` // 你手动标为已完成；你再给它发消息时自动清除
 	Parked           bool             `json:"parked"`            // Agent 用 ks wait 挂起等你的答复 / 验收 / 留言
+	ParkedUntil      *time.Time       `json:"parked_until,omitempty"` // 挂起最长等到什么时候（R-74）
 	ToolsStale       string           `json:"tools_stale"`       // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
 	ContextTokens    int              `json:"context_tokens"`    // 最近一轮结束时的上下文 token 数（R-60）
 	ContextMax       int              `json:"context_max"`       // 上下文窗口；不知道时为 0
@@ -88,18 +89,18 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.tools_stale, s.context_tokens, s.context_max,
+	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt, doneAt string
+	var started, active, since, toolAt, doneAt, parkedUntil string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &x.ToolsStale, &x.ContextTokens, &x.ContextMax,
+		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
@@ -113,6 +114,10 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	if doneAt != "" {
 		t := parseTS(doneAt)
 		x.DoneAt = &t
+	}
+	if parkedUntil != "" && x.Parked {
+		t := parseTS(parkedUntil)
+		x.ParkedUntil = &t
 	}
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
@@ -239,19 +244,23 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 	if x.DoneAt != nil {
 		doneAt = ts(*x.DoneAt)
 	}
+	parkedUntil := ""
+	if x.ParkedUntil != nil && x.Parked {
+		parkedUntil = ts(*x.ParkedUntil)
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, last_prompt, summary,
-			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, started_at, last_active_at, ended_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, parked_until, started_at, last_active_at, ended_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, model = excluded.model,
 			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail,
 			last_prompt = excluded.last_prompt, summary = excluded.summary, state_since = excluded.state_since, turns = excluded.turns,
 			turn_tools = excluded.turn_tools, last_tool = excluded.last_tool, last_tool_at = excluded.last_tool_at, subagents = excluded.subagents,
 			perm_mode = excluded.perm_mode, compactions = excluded.compactions, worktree = excluded.worktree,
-			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked,
+			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked, parked_until = excluded.parked_until,
 			last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
 		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail,
 		x.LastPrompt, x.Summary, since, x.Turns, x.TurnTools, x.LastTool, toolAt, x.Subagents, x.PermMode, x.Compactions, x.Worktree,
-		x.Instance, x.PrevInstance, doneAt, x.Parked, ts(x.StartedAt), ts(x.LastActiveAt), ended)
+		x.Instance, x.PrevInstance, doneAt, x.Parked, parkedUntil, ts(x.StartedAt), ts(x.LastActiveAt), ended)
 	return err
 }
 

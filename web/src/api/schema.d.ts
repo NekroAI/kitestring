@@ -923,7 +923,7 @@ export interface components {
             detail?: string;
             doc_link?: string;
             files?: string[] | null;
-            /** @description design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改 */
+            /** @description design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改 */
             kind?: string;
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
@@ -1100,6 +1100,8 @@ export interface components {
             tool_use_id?: string;
             tools?: string;
             turn_id?: string;
+            /** Format: date-time */
+            until?: string;
         };
         Evidence: {
             /** Format: date-time */
@@ -1292,7 +1294,7 @@ export interface components {
             detail?: string;
             doc_link?: string;
             files?: string[] | null;
-            /** @description design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改 */
+            /** @description design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改 */
             kind?: string;
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
@@ -1392,6 +1394,8 @@ export interface components {
             model: string;
             other_terminal: boolean;
             parked: boolean;
+            /** Format: date-time */
+            parked_until?: string;
             /** Format: int64 */
             pending_decisions: number;
             permission_mode: string;

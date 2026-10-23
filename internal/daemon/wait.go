@@ -20,6 +20,9 @@ import (
 const (
 	DefaultWait = time.Hour
 	MaxWait     = 12 * time.Hour
+	// CodexWait：Codex 在前台运行 ks wait（它没有后台任务），整段等待都占着这一轮；
+	// 默认、也最多等 30 分钟，超时后收尾结束本轮（R-74）。
+	CodexWait = 30 * time.Minute
 )
 
 // WaitResult 是 /wait 的返回：reason 为 delivered、timeout、replaced、canceled。
@@ -27,6 +30,7 @@ type WaitResult struct {
 	Reason  string `json:"reason"`
 	Text    string `json:"text,omitempty"`
 	Session string `json:"session_key,omitempty"`
+	Timeout string `json:"timeout,omitempty"` // 实际用的最长等待时间
 	Error   string `json:"error,omitempty"`
 }
 
@@ -47,10 +51,14 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(WaitResult{Error: "认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定"})
 		return
 	}
-	timeout := DefaultWait
-	if v, err := time.ParseDuration(q.Get("timeout")); err == nil && v > 0 {
-		timeout = min(v, MaxWait)
+	timeout, limit := DefaultWait, MaxWait
+	if tool == protocol.ToolCodex {
+		timeout, limit = CodexWait, CodexWait
 	}
+	if v, err := time.ParseDuration(q.Get("timeout")); err == nil && v > 0 {
+		timeout = min(v, limit)
+	}
+	until := time.Now().Add(timeout).UTC()
 
 	d.mu.Lock()
 	d.waitSeq++
@@ -58,7 +66,7 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	d.waiting[key] = my
 	d.toolCond.Broadcast() // 让同一会话较早的等待退出
 	d.mu.Unlock()
-	d.reportWait(tool, sid, protocol.EventWait, "")
+	d.reportWait(tool, sid, protocol.EventWait, "", &until)
 
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
@@ -90,12 +98,12 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	}
 	d.mu.Unlock()
 
-	res := WaitResult{Reason: reason, Session: key}
+	res := WaitResult{Reason: reason, Session: key, Timeout: timeout.String()}
 	if reason == "delivered" {
 		res.Text = d.injection(protocol.Event{Name: "UserPromptSubmit", Tool: tool, SessionID: sid, TurnID: "ks-wait"})
 	}
 	if reason != "replaced" {
-		d.reportWait(tool, sid, protocol.EventWaitEnd, reason)
+		d.reportWait(tool, sid, protocol.EventWaitEnd, reason, nil)
 	}
 	_ = json.NewEncoder(w).Encode(res)
 }
@@ -111,8 +119,8 @@ func (d *Daemon) hasFreshLocked(key string) bool {
 }
 
 // reportWait 把等待开始 / 结束作为合成事件上报，Hub 据此显示“挂起等你”。
-func (d *Daemon) reportWait(tool, sid, name, reason string) {
-	ev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: tool, Name: name, SessionID: sid, Reason: reason}
+func (d *Daemon) reportWait(tool, sid, name, reason string, until *time.Time) {
+	ev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: tool, Name: name, SessionID: sid, Reason: reason, Until: until}
 	if err := d.q.pushEvent(ev); err != nil {
 		d.log.Warn("上报挂起等待失败", "err", err)
 	}

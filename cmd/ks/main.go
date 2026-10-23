@@ -46,7 +46,7 @@ agent 调用：
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结
   decision raise ...     提出决策
-  wait [--timeout 1h]    挂起等待用户在 Kitestring 上的答复 / 验收 / 留言（后台运行，收到后输出并退出）
+  wait [--timeout 1h]    挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）
 
   version                打印版本
 所有本机数据位于 ~/.kitestring（可用 KS_HOME 覆盖）。`

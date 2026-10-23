@@ -209,24 +209,32 @@ func compact(m map[string]any) map[string]any {
 	return m
 }
 
-// runWait：ks wait——挂在后台等用户在 Kitestring 上的答复、修改意见或留言，收到后打印出来并退出。
-// 用法（Claude Code）：用后台方式运行，并把工具超时设得比 --timeout 略长。
+// runWait：ks wait——等用户在 Kitestring 上的答复、修改意见或留言，收到后打印出来并退出。
+// Claude Code：后台运行，默认最长 1 小时（--timeout 可调，最长 12h），工具超时设得比它长。
+// Codex：前台运行（它没有后台任务），默认、也最多等 30 分钟，超时后收尾结束本轮（R-74）。
 func runWait(args []string) error {
 	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
-	timeout := fs.Duration("timeout", daemon.DefaultWait, "最长等待时间，如 30m、2h（最长 12h）")
+	timeout := fs.Duration("timeout", 0, "最长等待时间，如 30m、2h。不填：Claude Code 1 小时（最长 12h），Codex 30 分钟（也是上限）")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	q := url.Values{}
-	q.Set("timeout", timeout.String())
+	if *timeout > 0 {
+		q.Set("timeout", timeout.String())
+	}
 	q.Set("ppid", strconv.Itoa(os.Getppid()))
 	if *session != "" {
 		q.Set("session_key", *session)
 	}
+	fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
 	// daemon 重启（例如升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒。
 	ctx := signalContext()
-	deadline := time.Now().Add(min(*timeout, daemon.MaxWait))
+	limit := daemon.MaxWait
+	if *timeout > 0 {
+		limit = min(*timeout, daemon.MaxWait)
+	}
+	deadline := time.Now().Add(limit)
 	var res daemon.WaitResult
 	for {
 		left := time.Until(deadline)
@@ -234,7 +242,9 @@ func runWait(args []string) error {
 			res.Reason = "timeout"
 			break
 		}
-		q.Set("timeout", left.Round(time.Second).String())
+		if *timeout > 0 {
+			q.Set("timeout", left.Round(time.Second).String())
+		}
 		err := client.New(left+time.Minute).Do(ctx, "GET", "/wait?"+q.Encode(), nil, &res)
 		if err == nil {
 			break
@@ -245,11 +255,22 @@ func runWait(args []string) error {
 		}
 		time.Sleep(3 * time.Second)
 	}
+	waited := res.Timeout
+	if d, err := time.ParseDuration(waited); err == nil {
+		waited = humanDuration(d)
+	} else if *timeout > 0 {
+		waited = humanDuration(*timeout)
+	}
+	codex := strings.HasPrefix(res.Session, protocol.ToolCodex+":")
 	switch res.Reason {
 	case "delivered":
 		fmt.Print(res.Text)
 	case "timeout":
-		fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。可以结束本轮；用户回来后会在对话里继续。\n", *timeout)
+		if codex {
+			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。请结束本轮：用一两句话说明做到哪、在等用户什么；不要再运行 ks wait 续等。用户在 Kitestring 上答复后，会在下次对话时送达给你。\n", waited)
+		} else {
+			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。可以结束本轮；用户回来后会在对话里继续。\n", waited)
+		}
 	case "replaced":
 		fmt.Println("[Kitestring] 同一对话有新的 ks wait 接替等待，本次结束。")
 	case "canceled":
@@ -260,6 +281,20 @@ func runWait(args []string) error {
 		}
 	}
 	return nil
+}
+
+// humanDuration：30m0s → 30 分钟，1h30m0s → 1 小时 30 分钟。
+func humanDuration(d time.Duration) string {
+	d = d.Round(time.Minute)
+	h, m := int(d.Hours()), int(d.Minutes())%60
+	switch {
+	case h > 0 && m > 0:
+		return fmt.Sprintf("%d 小时 %d 分钟", h, m)
+	case h > 0:
+		return fmt.Sprintf("%d 小时", h)
+	default:
+		return fmt.Sprintf("%d 分钟", max(m, 1))
+	}
 }
 
 // runPlan：计划操作。create 从 JSON 文件读计划结构（与 MCP plan_create 相同：title、goal、stages[{title, requirements[{ref | title, detail, acceptance, priority, kind}]}]）。

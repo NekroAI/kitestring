@@ -28,7 +28,9 @@ import {
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
 import { Item, List } from '../ui/motion'
-import { cx, relTime, shortPath } from '../lib/util'
+import { cx, duration, relTime, shortPath, useNow } from '../lib/util'
+
+const shortClock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
 import { Card, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { CtxMark } from './assign'
@@ -78,6 +80,7 @@ function Meta({ icon: Icon, tip, children, className }: { icon: LucideIcon; tip:
 // 等你处理时的提示块：在问你 / 请你确认计划 / 请求执行 / 回复要点。
 export function Callout({ s }: { s: Session }) {
   const ds = displayState(s)
+  const now = useNow()
   if (ds === 'waiting_approval') {
     return (
       <div className="flex items-start gap-2.5 rounded-xl bg-wait-soft px-3 py-2.5">
@@ -94,8 +97,14 @@ export function Callout({ s }: { s: Session }) {
       <div className="flex items-start gap-2.5 rounded-xl bg-accent-soft px-3 py-2.5">
         <Hourglass className="mt-0.5 size-4 shrink-0 animate-pulse text-accent" />
         <div className="min-w-0 flex-1 text-sm">
-          <div className="text-xs font-medium text-accent">{t.session.parked}</div>
-          <div className="mt-0.5 leading-relaxed text-fg">{t.session.parkedHint}</div>
+          <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
+            <span className="font-medium text-accent">{t.session.parked}</span>
+            {/* 已等多久、最长等到何时（R-74）：Codex 在前台等，最多 30 分钟 */}
+            <span className="text-fg-3 tabular">
+              {[t.session.parkedFor(duration(s.state_since, now)), s.parked_until && t.session.parkedUntil(shortClock(s.parked_until), duration(new Date(now).toISOString(), Date.parse(s.parked_until)))].filter(Boolean).join(t.common.sep)}
+            </span>
+          </div>
+          <div className="mt-0.5 leading-relaxed text-fg">{s.tool === 'codex' ? t.session.parkedHintCodex : t.session.parkedHint}</div>
         </div>
       </div>
     )

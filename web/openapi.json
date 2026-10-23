@@ -219,7 +219,7 @@
             ]
           },
           "kind": {
-            "description": "design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改",
+            "description": "design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改",
             "type": "string"
           },
           "priority": {
@@ -822,6 +822,10 @@
             "type": "string"
           },
           "turn_id": {
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -1570,7 +1574,7 @@
             ]
           },
           "kind": {
-            "description": "design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改",
+            "description": "design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改",
             "type": "string"
           },
           "priority": {
@@ -1962,6 +1966,10 @@
           },
           "parked": {
             "type": "boolean"
+          },
+          "parked_until": {
+            "format": "date-time",
+            "type": "string"
           },
           "pending_decisions": {
             "format": "int64",

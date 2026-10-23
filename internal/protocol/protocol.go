@@ -63,6 +63,8 @@ type Event struct {
 	// Context / ContextMax：一轮结束时会话的上下文 token 数与上下文窗口（不知道时为 0），来自会话记录里的用量字段（R-60）
 	Context    int `json:"context,omitempty"`
 	ContextMax int `json:"context_max,omitempty"`
+	// Until：ks wait 开始时（KsWait）最长等到什么时候（R-74）
+	Until *time.Time `json:"until,omitempty"`
 }
 
 // ks wait 挂起等待：daemon 在等待开始 / 结束时上报的合成事件。
