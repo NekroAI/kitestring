@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Dialog as RDialog, DropdownMenu } from 'radix-ui'
 import { Drawer } from 'vaul'
 import { AnimatePresence, motion } from 'motion/react'
@@ -33,8 +33,32 @@ function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => 
 // Panel：详情面板。桌面端从右侧滑出，移动端为可下拉关闭的底部抽屉。
 // bare：内容自己负责标题栏与滚动（例如需求抽屉：顶部固定、中间滚动、底部输入），title 只给读屏用。
 // aside：宽屏时在面板左侧并排再开一层（例如计划里选中的需求），和面板同属一个对话框，焦点与点外关闭都按一层算。
+// useKeyboardBox：手机键盘弹出时可见区域的高度与键盘高度（R-72）。
+// vaul 自带的 repositionInputs 会在 iOS 上改抽屉高度、键盘收起后不一定恢复，导致抽屉被压成一条或下半截透明；
+// 这里关掉它，自己按 visualViewport 算：抽屉底边贴住键盘上沿，高度不超过可见区域。
+function useKeyboardBox(active: boolean) {
+  const [box, setBox] = useState<{ kb: number; vh: number } | null>(null)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!active || !vv) return
+    const update = () => {
+      const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+      setBox(kb > 60 ? { kb, vh: Math.round(vv.height) } : null) // 小于 60px 的差值是地址栏伸缩，不算键盘
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [active])
+  return box
+}
+
 export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode }) {
   const desktop = useDesktop()
+  const kb = useKeyboardBox(open && !desktop)
   if (desktop) {
     return (
       <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -90,10 +114,14 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
     )
   }
   return (
-    <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()}>
+    <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()} repositionInputs={false}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/30 dark:bg-black/50" />
-        <Drawer.Content aria-describedby={undefined} className={cx('fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-line bg-surface outline-none', bare ? 'h-[92dvh]' : 'max-h-[92dvh]')}>
+        <Drawer.Content
+          aria-describedby={undefined}
+          style={kb ? { bottom: kb.kb, [bare ? 'height' : 'maxHeight']: kb.vh - 8 } : undefined}
+          className={cx('fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-line bg-surface outline-none', bare ? 'h-[92dvh]' : 'max-h-[92dvh]', kb && 'rounded-b-none')}
+        >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-line-strong" />
           {bare ? (
             <>

@@ -67,8 +67,14 @@ export function targetItems(sessions: Session[], projectId: string | null | unde
     out.push({ type: 'label', label: t.assign.group[g] })
     for (const s of part)
       out.push({
-        label: sessionTitle(s),
-        hint: [s.project_name, s.device_name, t.state[displayState(s)], ctxLoad(s) && (ctxLoad(s)!.level === 'high' ? t.session.ctxHeavyHint(ctxLoad(s)!.label) : t.session.ctx(ctxLoad(s)!.label))].filter(Boolean).join(t.common.sep),
+        // 状态跟在标题后面，第二行放项目 · 设备 · 上下文，窄菜单里也不会被截掉（R-60）
+        label: (
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="truncate">{sessionTitle(s)}</span>
+            <span className="shrink-0 text-xs text-fg-3">{t.state[displayState(s)]}</span>
+          </span>
+        ),
+        hint: [s.project_name, s.device_name, ctxLoad(s) && (ctxLoad(s)!.level === 'high' ? t.session.ctxHeavyHint(ctxLoad(s)!.label) : t.session.ctx(ctxLoad(s)!.label))].filter(Boolean).join(t.common.sep),
         icon: g === 'now' ? <Zap className="text-accent" /> : <StatusDot state={displayState(s)} />,
         checked: opts.checked === s.key,
         onSelect: () => onPick(s),

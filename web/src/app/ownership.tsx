@@ -87,7 +87,8 @@ export function OwnLine({ r }: { r: Requirement }) {
   return (
     <div className={cx('mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg px-2.5 py-1.5 text-[13px]', toneCls[own.tone])}>
       <Icon className="size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1">{own.text}</span>
+      {/* 基准宽度：窄屏放不下时会话按钮换到下一行，而不是把说明挤成一列（R-72） */}
+      <span className="min-w-0 flex-1 basis-[13rem]">{own.text}</span>
       {s && (
         <button
           onClick={() => openSession(s.key)}

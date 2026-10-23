@@ -289,6 +289,12 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
             onChange={(e) => setF({ ...f, title: e.target.value })}
             className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3"
           />
+          <section>
+            <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
+            <AttachZone value={files} onChange={setFiles} compact>
+              <Textarea minRows={7} value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholderLong} onChange={(e) => setF({ ...f, detail: e.target.value })} className="pr-10" />
+            </AttachZone>
+          </section>
           <div className="flex flex-wrap items-center gap-2">
             <Menu
               align="start"
@@ -330,12 +336,7 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
               </button>
             </Tip>
           </div>
-          <section>
-            <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
-            <AttachZone value={files} onChange={setFiles} compact>
-              <Textarea minRows={7} value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholderLong} onChange={(e) => setF({ ...f, detail: e.target.value })} className="pr-10" />
-            </AttachZone>
-          </section>
+
           <section>
             <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.acceptance}</h3>
             <Textarea minRows={3} value={f.acceptance ?? ''} placeholder={t.reqs.acceptancePlaceholder} onChange={(e) => setF({ ...f, acceptance: e.target.value })} />
