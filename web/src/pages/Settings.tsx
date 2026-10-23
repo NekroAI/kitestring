@@ -3,12 +3,12 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, errMsg, unwrap, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
+import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
 import { qk, useDevices, useProjects, usePush, useSettings } from '../api/queries'
 import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
 import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
-import { copyText, cx, relTime, useNow } from '../lib/util'
+import { absTime, copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
 import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Tip } from '../ui/base'
 import { Modal, useConfirm } from '../ui/overlay'
@@ -492,6 +492,76 @@ function Notify() {
 
 // ---------- 智能 ----------
 
+// token 数紧凑显示：1234 → 1.2k，1234567 → 1.2M
+const fmtTok = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+
+type AIUsage = Schemas['AIUsage']
+
+function UsageCell({ u }: { u: AIUsage }) {
+  const u2 = t.settings.ai.usage
+  if (!u.calls) return <div className="text-fg-3 tabular">—</div>
+  const noTok = u.calls - u.failed === u.no_usage // 成功的调用都没返回 usage：token 没有数，不是 0
+  return (
+    <div className="space-y-0.5 text-xs text-fg-3 tabular">
+      <div className="text-sm font-medium text-fg">{u2.calls(u.calls)}</div>
+      <div className={cx(u.failed > 0 && 'text-danger')}>{u2.failed(u.failed)}</div>
+      {noTok ? (
+        <Tip content={u2.noUsageTip}>
+          <div className="w-fit text-wait">{u2.allNoUsage}</div>
+        </Tip>
+      ) : (
+        <>
+          <div>
+            {u2.input} {fmtTok(u.prompt_tokens)}
+          </div>
+          <div>
+            {u2.output} {fmtTok(u.completion_tokens)}
+          </div>
+        </>
+      )}
+      {!noTok && u.no_usage > 0 && (
+        <Tip content={u2.noUsageTip}>
+          <div className="w-fit text-wait">{u2.noUsage(u.no_usage)}</div>
+        </Tip>
+      )}
+    </div>
+  )
+}
+
+function AIUsagePanel() {
+  const u2 = t.settings.ai.usage
+  const q = useQuery({ queryKey: ['settings', 'ai-usage'], queryFn: () => unwrap(api.GET('/api/ai/usage')), refetchInterval: 30_000 })
+  if (!q.data) return <Skeleton className="h-48" />
+  const d = q.data
+  const total = (d.features ?? []).reduce((n, f) => n + f.week.calls, 0)
+  return (
+    <Group title={u2.title} hint={u2.hint}>
+      <Card className="overflow-hidden">
+        <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 border-b border-line bg-sunken/50 px-4 py-2 text-xs font-medium text-fg-3">
+          <span>{u2.feature}</span>
+          <span>{u2.today}</span>
+          <span>{u2.week}</span>
+        </div>
+        <div className="divide-y divide-line">
+          {(d.features ?? []).map((f) => (
+            <div key={f.id} className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-x-3 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-fg">{u2.names[f.id]?.name ?? f.id}</div>
+                <div className="mt-0.5 text-xs text-fg-3">{u2.names[f.id]?.desc}</div>
+              </div>
+              <UsageCell u={f.today} />
+              <UsageCell u={f.week} />
+            </div>
+          ))}
+        </div>
+      </Card>
+      <p className="mt-2.5 text-xs text-fg-3">
+        {total === 0 || !d.since ? u2.none : u2.since(absTime(d.since))} {u2.weekNote}
+      </p>
+    </Group>
+  )
+}
+
 type Feature = 'summary' | 'title' | 'digest' | 'decision_title' | 'recap'
 const features: { id: Feature; icon: LucideIcon }[] = [
   { id: 'summary', icon: FileText },
@@ -612,6 +682,8 @@ function AI() {
         </Card>
         {(ai.summary || ai.title || ai.digest) && <p className="mt-2.5 text-xs text-fg-3">{t.settings.ai.privacy}</p>}
       </Group>
+
+      <AIUsagePanel />
     </>
   )
 }

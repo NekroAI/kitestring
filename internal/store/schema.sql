@@ -252,3 +252,18 @@ CREATE TABLE IF NOT EXISTS status_changes (
 );
 CREATE INDEX IF NOT EXISTS status_changes_req ON status_changes(requirement_id, at);
 CREATE INDEX IF NOT EXISTS status_changes_at ON status_changes(at);
+
+-- Hub 自己的模型调用计量（R-120）：每次接口调用一行——功能、模型、成败、接口返回的 token 用量（has_usage = 0 表示接口没返回）、耗时。
+-- 只记计量，不存提示词或输出，也不读用户对话内容。只从上线起记录，保留 35 天。
+CREATE TABLE IF NOT EXISTS ai_calls (
+	id          TEXT PRIMARY KEY,
+	feature     TEXT NOT NULL,
+	model       TEXT NOT NULL DEFAULT '',
+	ok          INTEGER NOT NULL,
+	prompt_tok  INTEGER NOT NULL DEFAULT 0,
+	compl_tok   INTEGER NOT NULL DEFAULT 0,
+	has_usage   INTEGER NOT NULL DEFAULT 0,
+	duration_ms INTEGER NOT NULL DEFAULT 0,
+	at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ai_calls_at ON ai_calls(at);

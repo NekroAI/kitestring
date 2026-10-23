@@ -53,6 +53,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentWaitCheck(agentAPI)
 	h.registerSessionReply(webAPI)
 	h.registerStatusWeb(webAPI)
+	h.registerAIUsageWeb(webAPI)
 	h.registerStatusAgent(agentAPI)
 	h.registerChainWeb(webAPI)
 	h.registerChainAgent(agentAPI)
@@ -116,6 +117,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentWaitCheck(api)
 	h.registerSessionReply(api)
 	h.registerStatusWeb(api)
+	h.registerAIUsageWeb(api)
 	h.registerStatusAgent(api)
 	h.registerChainWeb(api)
 	h.registerChainAgent(api)
@@ -1025,7 +1027,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			out.Body.SamplePrompt = summarySamplePrompt
 			out.Body.SampleReply = summarySampleReply
 			start := time.Now()
-			text, err := summary.Generate(ctx, s.Summary, summarySamplePrompt, summarySampleReply)
+			text, err := summary.Generate(h.aiCtx(ctx, aiTest), s.Summary, summarySamplePrompt, summarySampleReply)
 			out.Body.LatencyMS = time.Since(start).Milliseconds()
 			if err != nil {
 				return nil, huma.Error502BadGateway(err.Error())

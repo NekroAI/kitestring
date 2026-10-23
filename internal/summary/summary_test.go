@@ -64,3 +64,40 @@ func TestChatJSONErrorCarriesRawOutput(t *testing.T) {
 		t.Fatalf("err=%v n=%d", err, *n)
 	}
 }
+
+// 计量（R-120）：每次接口调用各记一条（ChatJSON 的重试和 response_format 回退各算一次）；
+// token 只取接口返回的 usage，没返回就标明没有，不记成 0；没挂计量时不受影响。
+func TestRecorderCountsEveryCall(t *testing.T) {
+	cfg, _ := fake(t, func(n int, body string) (int, string) {
+		switch n {
+		case 1:
+			return 400, `{"error":"unsupported response_format"}`
+		case 2:
+			return 200, `{"choices":[{"message":{"content":""},"finish_reason":"length"}],"usage":{"prompt_tokens":50,"completion_tokens":600}}`
+		}
+		return 200, reply(`{"summary":"ok"}`, "stop") // 没有 usage
+	})
+	var calls []Call
+	ctx := WithRecorder(context.Background(), "turn", func(c Call) { calls = append(calls, c) })
+	var v struct{ Summary string }
+	if err := ChatJSON(ctx, cfg, "s", "u", 600, &v); err != nil || v.Summary != "ok" {
+		t.Fatalf("err=%v v=%+v", err, v)
+	}
+	if len(calls) != 3 {
+		t.Fatalf("应记 3 次调用（回退 400、空输出、成功）：%+v", calls)
+	}
+	if c := calls[0]; c.OK || c.HasUsage || c.Feature != "turn" || c.Model != "m" {
+		t.Fatalf("400 应记为失败、无 usage：%+v", c)
+	}
+	if c := calls[1]; !c.OK || !c.HasUsage || c.PromptTokens != 50 || c.CompletionTokens != 600 {
+		t.Fatalf("应取接口返回的 usage：%+v", c)
+	}
+	if c := calls[2]; !c.OK || c.HasUsage || c.PromptTokens != 0 {
+		t.Fatalf("没返回 usage 要标明没有：%+v", c)
+	}
+	// 模型未配置时没有发出请求，不计量
+	calls = nil
+	if _, err := Chat(ctx, Config{}, "s", "u", 10); err == nil || len(calls) != 0 {
+		t.Fatalf("未配置不应计量：%v %d", err, len(calls))
+	}
+}

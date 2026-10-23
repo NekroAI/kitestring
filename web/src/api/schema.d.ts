@@ -420,6 +420,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hub 自己的模型调用用量：按功能统计本日 / 本周的次数、失败与 token（R-120） */
+        get: operations["get-ai-usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -1310,12 +1327,63 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AIFeatureUsage: {
+            /**
+             * @description 用途：turn 每轮小结 / title 会话标题 / decision_title 决策短标题 / recap 时段回顾 / test 设置页测试
+             * @enum {string}
+             */
+            id: "turn" | "title" | "decision_title" | "recap" | "test";
+            /** @description 本日：从今天 0 点（Hub 所在时区）起 */
+            today: components["schemas"]["AIUsage"];
+            /** @description 本周：从本周一 0 点起 */
+            week: components["schemas"]["AIUsage"];
+        };
         AIFeatures: {
             decision_title?: boolean;
             digest?: boolean;
             recap?: boolean;
             summary?: boolean;
             title?: boolean;
+        };
+        AIUsage: {
+            /**
+             * Format: int64
+             * @description 调用次数（含失败）
+             */
+            calls: number;
+            /**
+             * Format: int64
+             * @description 输出 token，同上
+             */
+            completion_tokens: number;
+            /**
+             * Format: int64
+             * @description 失败次数：网络错误、接口非 2xx、响应解析失败
+             */
+            failed: number;
+            /**
+             * Format: int64
+             * @description 调用成功但接口没返回 usage 的次数；这些调用的 token 没有计入，不是 0
+             */
+            no_usage: number;
+            /**
+             * Format: int64
+             * @description 输入 token，取自接口返回的 usage，只累计返回了 usage 的调用
+             */
+            prompt_tokens: number;
+        };
+        AIUsageReport: {
+            /** Format: date-time */
+            day_start: string;
+            /** @description 五个用途各一行，没调用过的为 0 */
+            features: components["schemas"]["AIFeatureUsage"][] | null;
+            /**
+             * Format: date-time
+             * @description 最早一条记录的时间；用量只从上线起统计，没有记录时为空
+             */
+            since?: string;
+            /** Format: date-time */
+            week_start: string;
         };
         Advice: {
             /** Format: date-time */
@@ -3732,6 +3800,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TellOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-ai-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIUsageReport"];
                 };
             };
             /** @description Error */

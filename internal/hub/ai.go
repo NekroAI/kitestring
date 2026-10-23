@@ -79,7 +79,7 @@ func (h *Hub) aiOnPrompt(key, prompt string) {
 	if x, err := h.store.GetSession(ctx, key); err != nil || x.Title != "" {
 		return
 	}
-	text, err := summary.Chat(ctx, s.Summary, titlePrompt, prompt, 40)
+	text, err := summary.Chat(h.aiCtx(ctx, aiTitle), s.Summary, titlePrompt, prompt, 40)
 	if err != nil {
 		h.log.Warn("生成会话标题失败", "session", key, "err", err)
 		return
@@ -123,7 +123,7 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 	system := "你是开发进度速记员。根据用户给 AI 编程助手的最后一条指令和助手这一轮的最后回复，输出一个 JSON 对象，只包含以下字段：\n" + strings.Join(fields, "\n") + "\n用中文，简洁具体，不要客套。只输出 JSON。"
 	user := fmt.Sprintf("最后一条指令：\n%s\n\n助手最后回复：\n%s", prompt, reply)
 	var out struct{ Summary, Title, Done, Ask string }
-	if err := summary.ChatJSON(ctx, s.Summary, system, user, 600, &out); err != nil {
+	if err := summary.ChatJSON(h.aiCtx(ctx, aiTurn), s.Summary, system, user, 600, &out); err != nil {
 		h.log.Warn("生成会话摘要失败", "session", key, "err", err)
 		return
 	}
@@ -150,7 +150,7 @@ func (h *Hub) aiOnDecision(d store.Decision) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	text, err := summary.Chat(ctx, s.Summary, decisionTitlePrompt, d.Question+"\n"+summary.Truncate(d.Context, 400), 40)
+	text, err := summary.Chat(h.aiCtx(ctx, aiDecisionTitle), s.Summary, decisionTitlePrompt, d.Question+"\n"+summary.Truncate(d.Context, 400), 40)
 	if err != nil {
 		h.log.Warn("生成决策短标题失败", "decision", d.Code, "err", err)
 		return
@@ -227,5 +227,5 @@ func (h *Hub) Recap(ctx context.Context, from, to time.Time) (string, error) {
 	if len(sessions) == 0 && len(decs) == 0 && len(reqs) == 0 {
 		return "", fmt.Errorf("这段时间没有活动记录")
 	}
-	return summary.Chat(ctx, s.Summary, recapPrompt, summary.Truncate(b.String(), 16000), 1500)
+	return summary.Chat(h.aiCtx(ctx, aiRecap), s.Summary, recapPrompt, summary.Truncate(b.String(), 16000), 1500)
 }

@@ -36,6 +36,28 @@ func Generate(ctx context.Context, cfg Config, prompt, reply string) (string, er
 	return Clean(text, 80), nil
 }
 
+// Call 是一次模型接口调用的计量记录（R-120）：只有功能、模型、成败、接口返回的 token 用量和耗时，不含任何提示词或输出内容。
+type Call struct {
+	Feature          string
+	Model            string
+	OK               bool // 接口返回了 2xx 且响应能解析；网络错误、非 2xx、响应解析失败算失败
+	PromptTokens     int
+	CompletionTokens int
+	HasUsage         bool // 接口响应里带了 usage；没带时两个 token 数为 0，不能当作「用了 0 个」
+	Duration         time.Duration
+}
+
+type recorderKey struct{}
+type recorder struct {
+	feature string
+	fn      func(Call)
+}
+
+// WithRecorder 让 ctx 下的每次接口调用（ChatJSON 的重试也各算一次）都向 fn 报一条计量记录，feature 标明用途。
+func WithRecorder(ctx context.Context, feature string, fn func(Call)) context.Context {
+	return context.WithValue(ctx, recorderKey{}, recorder{feature, fn})
+}
+
 // Chat 调用 OpenAI 兼容的 Chat Completions 接口，返回模型输出文本。
 func Chat(ctx context.Context, cfg Config, system, user string, maxTokens int) (string, error) {
 	text, _, err := chat(ctx, cfg, system, user, maxTokens, false)
@@ -70,10 +92,24 @@ func ChatJSON(ctx context.Context, cfg Config, system, user string, maxTokens in
 	return lastErr
 }
 
-func chat(ctx context.Context, cfg Config, system, user string, maxTokens int, jsonMode bool) (string, string, error) {
+func chat(ctx context.Context, cfg Config, system, user string, maxTokens int, jsonMode bool) (text, finish string, err error) {
 	if !cfg.Enabled() {
 		return "", "", errors.New("模型未配置")
 	}
+	if rec, ok := ctx.Value(recorderKey{}).(recorder); ok && rec.fn != nil {
+		start := time.Now()
+		call := Call{Feature: rec.feature, Model: cfg.Model}
+		defer func() {
+			call.OK = err == nil
+			call.Duration = time.Since(start)
+			rec.fn(call)
+		}()
+		return chatCall(ctx, cfg, system, user, maxTokens, jsonMode, &call)
+	}
+	return chatCall(ctx, cfg, system, user, maxTokens, jsonMode, &Call{})
+}
+
+func chatCall(ctx context.Context, cfg Config, system, user string, maxTokens int, jsonMode bool, call *Call) (string, string, error) {
 	payload := map[string]any{
 		"model": cfg.Model,
 		"messages": []map[string]string{
@@ -117,9 +153,16 @@ func chat(ctx context.Context, cfg Config, system, user string, maxTokens int, j
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Usage *struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return "", "", fmt.Errorf("解析模型响应失败：%w", err)
+	}
+	if out.Usage != nil { // token 数只取接口返回的 usage，没有就标明没有，不估算
+		call.HasUsage, call.PromptTokens, call.CompletionTokens = true, out.Usage.PromptTokens, out.Usage.CompletionTokens
 	}
 	if len(out.Choices) == 0 {
 		return "", "", errors.New("模型未返回内容")
