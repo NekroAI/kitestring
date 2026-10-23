@@ -8,6 +8,7 @@
     "gen:api": "openapi-typescript openapi.json -o src/api/schema.d.ts",
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build && touch dist/.keep",
+    "test": "node --test src/lib/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

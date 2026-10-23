@@ -293,6 +293,30 @@
 [data-state='closed'].panel-slide {
   animation: ks-slide-out 0.18s ease-in forwards;
 }
+/* 命令面板（R-127）：从上方轻轻落下 */
+@keyframes ks-cmd-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.98);
+  }
+}
+@keyframes ks-cmd-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.98);
+  }
+}
+[data-state='open'].cmd-pop {
+  animation: ks-cmd-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-state='closed'].cmd-pop {
+  animation: ks-cmd-out 0.12s ease-in forwards;
+}
+/* J / K 移到的卡片、行：键盘焦点描一圈靛蓝 */
+[data-nav-item]:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent);
+  outline-offset: 2px;
+}
 [data-state='open'].modal-pop {
   animation: ks-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }

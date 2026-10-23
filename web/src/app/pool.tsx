@@ -330,6 +330,7 @@ export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
     <div
       role="button"
       tabIndex={0}
+      data-nav-item=""
       onClick={() => open(r.code)}
       onKeyDown={(e) => e.key === 'Enter' && open(r.code)}
       draggable={!coarse}

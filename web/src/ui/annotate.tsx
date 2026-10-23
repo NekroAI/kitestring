@@ -109,7 +109,7 @@ export function Annotator({ src, name, open, onClose, onDone }: { src: string; n
             <Dialog.Overlay asChild forceMount>
               <motion.div className="fixed inset-0 z-[80] bg-black/90" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
             </Dialog.Overlay>
-            <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[80] outline-none">
+            <Dialog.Content forceMount aria-describedby={undefined} data-ks-modal="" {...shield} className="fixed inset-0 z-[80] outline-none">
               <Dialog.Title className="sr-only">{t.annotate.title}</Dialog.Title>
               <Editor src={src} name={name} onClose={onClose} onDone={onDone} />
             </Dialog.Content>

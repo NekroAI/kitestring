@@ -18,6 +18,7 @@ import { PriorityTag } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { allStatuses, NewReqModal, ReleaseBadge, StatusMenu, useSetStatus } from '../app/requirements'
 import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
+import { nextView, useKsEvent, withKey } from '../app/command'
 import {
   catColor,
   DistBar,
@@ -67,7 +68,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
   return (
     <div className={cx('rounded-xl transition-colors', expanded ? 'bg-surface shadow-card ring-1 ring-line' : 'hover:bg-hover/60')}>
       <Ctx items={menu(r)} className="rounded-xl">
-        <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+        <div role="button" tabIndex={0} data-nav-item="" onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
           <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', expanded && 'rotate-90')} />
           <span onClick={(e) => e.stopPropagation()}>
             <StatusMenu r={r} />
@@ -290,6 +291,9 @@ export default function RequirementsPage() {
   const phone = width > 0 && width < PHONE
   const newItem = () => (view === 'plans' ? setCreatingPlan(true) : setCreating(true))
 
+  // V / 命令面板切换视图（R-127）
+  useKsEvent('ks:reqs-view', (v) => setView((v === 'next' ? nextView(view) : v) as View))
+
   // / 聚焦搜索
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -456,9 +460,11 @@ export default function RequirementsPage() {
             title={view === 'plans' ? t.plan.view : t.pool.title}
             subtitle={subtitle}
             actions={
-              <Button variant="primary" icon={<Plus className="size-4" />} onClick={newItem}>
-                {view === 'plans' ? t.plan.new : t.reqs.new}
-              </Button>
+              <Tip content={view === 'plans' ? null : withKey(t.cmd.newReq, 'N')}>
+                <Button variant="primary" icon={<Plus className="size-4" />} onClick={newItem}>
+                  {view === 'plans' ? t.plan.new : t.reqs.new}
+                </Button>
+              </Tip>
             }
           />
           <div className="mb-4 flex flex-wrap items-center gap-2">

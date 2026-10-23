@@ -289,6 +289,7 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
   const clickable = {
     role: 'button' as const,
     tabIndex: 0,
+    'data-nav-item': '',
     onClick: () => open(s.key),
     onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key),
   }

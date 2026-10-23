@@ -132,6 +132,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
     <Card
       role="button"
       tabIndex={0}
+      data-nav-item=""
       draggable={draggable}
       onDragStart={onDragStart}
       onClick={() => open(r.code)}

@@ -106,6 +106,7 @@ export function PlanCard({ x }: { x: Plan }) {
     <Card
       role="button"
       tabIndex={0}
+      data-nav-item=""
       onClick={() => open(x.code)}
       onKeyDown={(e) => e.key === 'Enter' && open(x.code)}
       className={cx('cursor-pointer p-4 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', state.needsYou && 'border-reply/35 ring-1 ring-reply/25', x.status === 'draft' && x.created_by === 'agent' && 'border-dashed')}

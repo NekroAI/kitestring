@@ -48,7 +48,7 @@ export function FullSheet({ open, onClose, title, header, children }: { open: bo
       <AnimatePresence>
         {open && (
           <RDialog.Portal forceMount>
-            <RDialog.Content forceMount asChild aria-describedby={undefined} onOpenAutoFocus={(e) => e.preventDefault()}>
+            <RDialog.Content forceMount asChild aria-describedby={undefined} data-ks-modal="" onOpenAutoFocus={(e) => e.preventDefault()}>
               <motion.div
                 initial={{ y: '100%' }}
                 animate={{ y: 0 }}
@@ -186,6 +186,7 @@ export function Modal({ open, onClose, title, description, children, footer }: {
         <RDialog.Overlay className="modal-fade fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" />
         <RDialog.Content
           aria-describedby={undefined}
+          data-ks-modal=""
           className="modal-pop fixed top-1/2 left-1/2 z-50 flex max-h-[88dvh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none"
         >
           <div className="px-5 pt-5">

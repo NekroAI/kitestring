@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { RefIndexProvider } from '../ui/refmark'
-import { FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Settings2, WifiOff } from 'lucide-react'
+import { FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, WifiOff } from 'lucide-react'
 import { useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow, usePref } from '../lib/util'
@@ -13,14 +13,15 @@ import { GrantBanner } from './grant'
 import { PlanPanel } from './plans'
 import { ReqPanel } from './reqDrawer'
 import { SessionPanel } from './SessionPanel'
+import { CommandProvider, KeyCaps, modKey, useCommand, withKey } from './command'
 
 // 页面切换不做进出场动画：路由直接切换，避免闪烁与白屏。
 
 const nav = [
-  { to: '/', label: t.nav.home, icon: LayoutDashboard, end: true },
-  { to: '/projects', label: t.nav.projects, icon: FolderKanban },
-  { to: '/requirements', label: t.nav.requirements, icon: ListTodo },
-  { to: '/settings', label: t.nav.settings, icon: Settings2 },
+  { to: '/', label: t.nav.home, icon: LayoutDashboard, end: true, keys: 'G H' },
+  { to: '/projects', label: t.nav.projects, icon: FolderKanban, keys: 'G P' },
+  { to: '/requirements', label: t.nav.requirements, icon: ListTodo, keys: 'G R' },
+  { to: '/settings', label: t.nav.settings, icon: Settings2, keys: 'G S' },
 ]
 
 // Logo：折纸菱形鸢，四个折面靠明暗分出折痕。
@@ -46,6 +47,7 @@ function Count({ n }: { n: number }) {
 function Sidebar({ todo, connected, collapsed, onToggle }: { todo: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
   const wb = useWorkbench()
   const now = useNow()
+  const { openPalette } = useCommand()
   const c = collapsed
   return (
     <aside className={cx('fixed inset-y-0 left-0 z-30 hidden flex-col overflow-hidden border-r border-line bg-sunken/60 py-4 transition-[width] duration-200 ease-out lg:flex', c ? 'w-16 px-2.5' : 'w-[232px] px-3')}>
@@ -58,9 +60,25 @@ function Sidebar({ todo, connected, collapsed, onToggle }: { todo: number; conne
           </div>
         )}
       </div>
+      {/* 搜索与命令（R-127）：⌘K 也能打开 */}
+      <Tip side="right" content={c ? withKey(t.cmd.open, 'mod K') : null}>
+        <button
+          onClick={openPalette}
+          aria-label={t.cmd.open}
+          className={cx('mb-3 flex h-9 w-full items-center gap-2.5 rounded-lg border border-line bg-surface/70 text-sm whitespace-nowrap text-fg-3 transition-colors hover:border-line-strong hover:text-fg-2', c ? 'justify-center' : 'px-2.5')}
+        >
+          <Search className="size-4 shrink-0" />
+          {!c && (
+            <>
+              <span className="flex-1 text-left">{t.cmd.open}</span>
+              <KeyCaps keys={[modKey, 'K']} />
+            </>
+          )}
+        </button>
+      </Tip>
       <nav className="space-y-0.5">
         {nav.map((n) => (
-          <Tip key={n.to} side="right" content={c ? n.label : null}>
+          <Tip key={n.to} side="right" content={withKey(c ? n.label : t.cmd.goto(n.label), n.keys)}>
             {/* 外面包一层：Tip 的 asChild 会把 NavLink 的函数 className 拼成字符串 */}
             <div>
               <NavLink
@@ -141,6 +159,7 @@ function TabBar({ todo }: { todo: number }) {
 }
 
 function MobileHeader({ connected }: { connected: boolean }) {
+  const { openPalette } = useCommand()
   return (
     <header className="pt-safe sticky top-0 z-20 border-b border-line/70 bg-bg/85 backdrop-blur-xl lg:hidden">
       <div className="flex h-12 items-center gap-2 px-4">
@@ -152,6 +171,9 @@ function MobileHeader({ connected }: { connected: boolean }) {
             {t.conn.offline}
           </span>
         )}
+        <button onClick={openPalette} aria-label={t.cmd.open} className={cx('-mr-2 flex size-10 items-center justify-center rounded-lg text-fg-2 transition active:scale-95 active:bg-hover', connected && 'ml-auto')}>
+          <Search className="size-5" />
+        </button>
       </div>
     </header>
   )
@@ -183,6 +205,7 @@ export function Shell() {
 
   return (
     <RefIndexProvider>
+    <CommandProvider>
     <div className="min-h-dvh">
       <Sidebar todo={todo} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
@@ -198,6 +221,7 @@ export function Shell() {
       <ReqPanel refId={req} onClose={close} />
       <PlanPanel code={plan} onClose={close} />
     </div>
+    </CommandProvider>
     </RefIndexProvider>
   )
 }

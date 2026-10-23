@@ -381,7 +381,7 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
             <Dialog.Overlay asChild forceMount>
               <motion.div className="fixed inset-0 z-[70] bg-black/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
             </Dialog.Overlay>
-            <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[70] overflow-hidden outline-none">
+            <Dialog.Content forceMount aria-describedby={undefined} data-ks-modal="" {...shield} className="fixed inset-0 z-[70] overflow-hidden outline-none">
               <Dialog.Title className="sr-only">{cur.name}</Dialog.Title>
               <motion.div className="absolute inset-0" style={{ x: trackX }}>
                 {pages.map((j) => (

@@ -24,6 +24,8 @@ import { ReviewerButton } from './reviewer'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
 import { OwnLine, useOwnership } from './ownership'
+import { useKsEvent, withKey } from './command'
+import { PassingRow, schedulePass, usePassing } from './pass'
 import { plainText } from '../ui/markdown'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 
@@ -250,6 +252,8 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
   const [files, setFiles] = useState<FileRef[]>([])
   const reviewing = r.status === 'review'
   const dirty = !!text.trim() || files.length > 0
+  const box = useRef<HTMLTextAreaElement>(null)
+  const passingNow = usePassing().get(r.code)
   const clear = () => {
     setText('')
     setFiles([])
@@ -278,6 +282,21 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
         else toast.success(t.review.passed(r.code))
       }
     })
+  // 快捷键 A / 面板里的「通过」（R-127）：不立即生效，先进 5 秒撤销期（与工作台就地通过同一套）；
+  // 到时还停在这条需求上才接着走连续验收（盖章、滑到下一条），抽屉已关就只通过。
+  useKsEvent('ks:pass', (code) => {
+    if (code !== r.code || !reviewing) return
+    if (dirty) return toast(t.review.passBlocked)
+    schedulePass(r.code, async () => {
+      if (!(await review([{ ref: r.code, verdict: 'accept' }]))) return
+      if (onPassed && new URLSearchParams(window.location.search).get('r') === r.code) onPassed(r.code)
+      else toast.success(t.review.passed(r.code))
+    })
+  })
+  // 快捷键 R：只聚焦退回意见框，不直接退回
+  useKsEvent('ks:revise', (code) => {
+    if (code === r.code && reviewing) box.current?.focus()
+  })
   const hint = pending ? (
     <button onClick={onJump} className="flex min-w-0 items-center gap-2 text-xs font-medium text-reply transition hover:opacity-80">
       <span className="kite-tug size-2 shrink-0 rotate-45 rounded-[1.5px] bg-reply" />
@@ -299,20 +318,25 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
         }
       }}
     >
+      {passingNow && <PassingRow code={r.code} until={passingNow.until} className="mb-2.5 flex items-center gap-3 rounded-xl bg-run-soft/60 px-3 py-2" />}
       <AttachZone value={files} onChange={setFiles} compact incoming={incoming} onIncoming={onIncoming}>
-        <Textarea minRows={1} value={text} placeholder={reviewing ? t.review.composer : t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
+        <Textarea ref={box} minRows={1} value={text} placeholder={reviewing ? t.review.composer : t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
       </AttachZone>
       <div className="mt-2.5 flex items-center gap-2">
         <div className="min-w-0 flex-1">{hint}</div>
         {r.status !== 'shelved' && <ReviewerButton code={r.code} projectId={r.project_id} projectName={r.project_name} />}
         {reviewing ? (
           <>
-            <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy || uploading} icon={<Undo2 className="size-4" />} onClick={revise}>
-              {t.review.sendRevise}
-            </Button>
-            <Tip content={dirty ? t.review.passWithHint : undefined}>
+            <Tip content={dirty ? undefined : withKey(t.review.revise, 'R')}>
               <span>
-                <Button variant={dirty ? 'secondary' : 'primary'} disabled={busy} loading={busy && !dirty} icon={<Check className="size-4" />} onClick={pass} className="min-w-24">
+                <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy || uploading} icon={<Undo2 className="size-4" />} onClick={revise}>
+                  {t.review.sendRevise}
+                </Button>
+              </span>
+            </Tip>
+            <Tip content={dirty ? t.review.passWithHint : withKey(t.review.pass, 'A')}>
+              <span>
+                <Button variant={dirty ? 'secondary' : 'primary'} disabled={busy || !!passingNow} loading={busy && !dirty} icon={<Check className="size-4" />} onClick={pass} className="min-w-24">
                   {dirty ? t.review.passWith : t.review.pass}
                 </Button>
               </span>
@@ -435,6 +459,11 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   })
+  // J / K（R-127）：与 ← → 同样切换上下一条
+  useKsEvent('ks:req-step', (d) => {
+    if (d === 1 && next) go(next.code, 'next')
+    if (d === -1 && prev) go(prev.code, 'prev')
+  }, !!refId)
 
   const navBtn = 'flex size-8 items-center justify-center rounded-lg text-fg-2 transition hover:bg-hover hover:text-fg active:scale-95 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10'
   const top = (
