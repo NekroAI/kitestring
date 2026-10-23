@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { ApiError, type ReqFields, type Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { noKbd, cx, relTime, useNow, usePref } from '../lib/util'
+import { noKbd, cx, relTime, useNow } from '../lib/util'
 import { Button, ErrorState, Skeleton, Textarea, Tip } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
@@ -104,7 +104,9 @@ function Brief({ r }: { r: Requirement }) {
   const sessions = useSessions()
   const { updateReq, linkReq } = useActions()
   const openSession = useOpenSession()
-  const [open, setOpen] = usePref('ks.req.brief', false)
+  // 每次打开需求都先收起说明，只显示两行摘要（R-76）；不再记住上次展开过
+  const [open, setOpen] = useState(false)
+  useEffect(() => setOpen(false), [r.id])
   const save = (patch: Partial<ReqFields>) => void updateReq(r.code, toFields(r, patch))
   const sessByKey = new Map((sessions.data?.sessions ?? []).map((s) => [s.key, s]))
   const linkable = (sessions.data?.sessions ?? []).filter((s) => !r.sessions.includes(s.key) && s.state !== 'ended')

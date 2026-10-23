@@ -46,7 +46,7 @@ type Requirement struct {
 	Detail           string     `json:"detail"`
 	Status           string     `json:"status"`
 	Priority         string     `json:"priority"`
-	Kind             string     `json:"kind"` // design = 设计类需求（先交方案、你选定后再实现）；空 = 普通
+	Kind             string     `json:"kind"` // design = 设计类需求（标注，Agent 按需要交方案图让你选）；空 = 普通
 	Source           string     `json:"source"`
 	Acceptance       string     `json:"acceptance"`
 	DocLink          string     `json:"doc_link"`

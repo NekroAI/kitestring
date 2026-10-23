@@ -319,7 +319,7 @@ type ReqFields struct {
 	Source     string `json:"source,omitempty"`
 	Acceptance string `json:"acceptance,omitempty"`
 	DocLink    string `json:"doc_link,omitempty"`
-	Kind       string `json:"kind,omitempty" doc:"design = 设计类需求（先交方案、选定后再实现）；feature = 普通；不传表示不修改"`
+	Kind       string `json:"kind,omitempty" doc:"design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改"`
 	// Files 是描述里的附图 ID；不传表示不修改，传空数组表示清空。
 	Files []string `json:"files,omitempty"`
 }

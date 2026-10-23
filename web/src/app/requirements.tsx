@@ -121,7 +121,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
       onDragStart={onDragStart}
       onClick={() => open(r.code)}
       onKeyDown={(e) => e.key === 'Enter' && open(r.code)}
-      className={cx('group cursor-pointer p-3.5 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', r.status === 'review' && 'border-reply/40 ring-1 ring-reply/30', draggable && 'active:cursor-grabbing')}
+      className={cx('group flex h-full cursor-pointer flex-col p-3.5 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', r.status === 'review' && 'border-reply/40 ring-1 ring-reply/30', draggable && 'active:cursor-grabbing')}
     >
       <div className="flex items-center gap-2 text-xs text-fg-3">
         <PriorityDot p={r.priority} />
@@ -139,7 +139,8 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
         </span>
       </div>
       <div className="mt-1.5 line-clamp-3 text-sm leading-snug font-medium text-fg">{r.title}</div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+      {/* 徽章贴着卡片底边：同一排卡片高度一致、徽章对齐（R-77） */}
+      <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-2.5">
         <PlanBadge r={r} />
         <DesignBadge r={r} />
         {r.pending_decisions > 0 && (
@@ -152,17 +153,18 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
           </Tip>
         )}
         {own ? (
-          own.tone !== 'locked' && <OwnBadge own={own} />
+          // 谁在做、到哪一步合成一个徽章，会话名跟在后面，放不下就截断（R-77）
+          own.tone !== 'locked' && <OwnBadge own={own} who={own.session ? sessionTitle(own.session) : undefined} className="max-w-full min-w-0" />
         ) : actor && r.status !== 'done' && r.status !== 'shelved' && (
           <Badge tone={r.next_actor === 'user' ? 'reply' : 'outline'} icon={r.next_actor === 'user' ? <User className="size-3" /> : <Bot className="size-3" />}>
             {actor}
           </Badge>
         )}
-        {r.sessions.length > 0 && (
-          <Tip content={own?.session ? own.text : t.reqs.sessionsTip(r.sessions.length)}>
+        {r.sessions.length > 0 && !own?.session && (
+          <Tip content={t.reqs.sessionsTip(r.sessions.length)}>
             <span className="inline-flex min-w-0 items-center gap-1 text-xs text-fg-3 tabular">
               <Monitor className="size-3.5 shrink-0" />
-              {own?.session ? <span className="max-w-[12em] truncate">{sessionTitle(own.session)}</span> : r.sessions.length}
+              {r.sessions.length}
             </span>
           </Tip>
         )}

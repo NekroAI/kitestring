@@ -30,13 +30,15 @@ export const useUploading = () =>
     () => uploading > 0,
   )
 
-// 卡住多久算失败：上传途中这么久没有进度，或传完后这么久等不到 Hub 回应
-const STALL_MS = 45_000
+// 卡住多久算失败：上传途中这么久没有进度，或传完后这么久等不到 Hub 回应。
+// iPhone 上选完大视频后，浏览器可能要先准备一阵才开始报进度，给足时间；真卡住了也可以手动取消。
+const STALL_MS = 120_000
 
 // uploadOne 上传一个文件，onProgress 报告 0～1 的进度。
 // 用 XHR 而不是 fetch：要上传进度；连接被反向代理掐断（例如超过它的大小上限）时也能及时报错，不会一直转圈。
-function uploadOne(file: File, onProgress: (p: number) => void): Promise<FileRef> {
+function uploadOne(file: File, onProgress: (p: number) => void, onXhr: (x: XMLHttpRequest) => void): Promise<FileRef> {
   return new Promise((resolve, reject) => {
+    let sent = 0
     const fd = new FormData()
     fd.append('file', file, file.name || 'image.png')
     const xhr = new XMLHttpRequest()
@@ -50,7 +52,10 @@ function uploadOne(file: File, onProgress: (p: number) => void): Promise<FileRef
       reject(new Error(msg))
     }
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded / e.total)
+      if (e.lengthComputable) {
+        sent = e.loaded / e.total
+        onProgress(sent)
+      }
       arm()
     }
     xhr.upload.onload = arm
@@ -68,9 +73,10 @@ function uploadOne(file: File, onProgress: (p: number) => void): Promise<FileRef
       resolve(body as FileRef)
     }
     xhr.onerror = () => fail(t.attach.broken)
-    xhr.onabort = () => fail(t.attach.stalled)
+    xhr.onabort = () => fail((xhr as XMLHttpRequest & { cancelled?: boolean }).cancelled ? '' : t.attach.stalled(Math.round(sent * 100)))
     xhr.open('POST', '/api/files')
     xhr.withCredentials = true
+    onXhr(xhr)
     xhr.send(fd)
     arm()
   })
@@ -85,6 +91,7 @@ const accepted = (f: File) => f.type.startsWith('image/') || f.type === 'video/m
 export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
   const limits = useSettings().data // 上限在设置里调（R-72）；没拿到时交给 Hub 检查
   const [pending, setPending] = useState<{ key: string; url: string; video: boolean; progress: number }[]>([])
+  const xhrs = useRef(new Map<string, XMLHttpRequest>())
   const latest = useRef(value)
   latest.current = value
 
@@ -106,14 +113,21 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
         setPending((p) => [...p, { key, url, video: isVideo(f.type), progress: 0 }])
         setUploading(1)
         try {
-          added.push(await uploadOne(f, (progress) => setPending((p) => p.map((x) => (x.key === key ? { ...x, progress } : x)))))
+          added.push(
+            await uploadOne(
+              f,
+              (progress) => setPending((p) => p.map((x) => (x.key === key ? { ...x, progress } : x))),
+              (x) => xhrs.current.set(key, x),
+            ),
+          )
           const cur = latest.current
           const next = [...cur, ...added.filter((a) => !cur.some((c) => c.id === a.id))]
           latest.current = next
           onChange(next)
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : t.attach.failed)
+          if (!(e instanceof Error && !e.message)) toast.error(e instanceof Error ? e.message : t.attach.failed) // 手动取消不报错
         } finally {
+          xhrs.current.delete(key)
           setUploading(-1)
           setPending((p) => p.filter((x) => x.key !== key))
           URL.revokeObjectURL(url)
@@ -134,7 +148,14 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
     [add],
   )
 
-  return { pending, add, onPaste, remove: (id: string) => onChange(latest.current.filter((f) => f.id !== id)) }
+  // 取消一个正在上传的附件
+  const cancel = (key: string) => {
+    const x = xhrs.current.get(key) as (XMLHttpRequest & { cancelled?: boolean }) | undefined
+    if (!x) return
+    x.cancelled = true
+    x.abort()
+  }
+  return { pending, add, onPaste, cancel, remove: (id: string) => onChange(latest.current.filter((f) => f.id !== id)) }
 }
 
 // Still：GIF 在列表里只显示第一帧，放大后才播放。
@@ -584,7 +605,7 @@ export function ZoomButton({ f, className, group }: { f: FileRef; className?: st
 
 // AttachZone：包住输入框，支持粘贴与拖拽；下方显示附图与“添加图片”按钮。
 export function AttachZone({ value, onChange, children, className, compact, incoming, onIncoming }: { value: FileRef[]; onChange: (v: FileRef[]) => void; children: ReactNode; className?: string; compact?: boolean; incoming?: File[]; onIncoming?: () => void }) {
-  const { pending, add, onPaste, remove } = useAttach(value, onChange)
+  const { pending, add, onPaste, cancel, remove } = useAttach(value, onChange)
   const [annotating, setAnnotating] = useState<FileRef | null>(null)
   // 从看图处“标注并附上”送来的图片：上传后加进来
   useEffect(() => {
@@ -620,7 +641,8 @@ export function AttachZone({ value, onChange, children, className, compact, inco
           <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} onAnnotate={() => setAnnotating(f)} group={value} />
         ))}
         {pending.map((p) => (
-          <span key={p.key} className="relative size-12 overflow-hidden rounded-lg border border-line">
+          <span key={p.key} className="relative size-12 shrink-0">
+            <span className="absolute inset-0 overflow-hidden rounded-lg border border-line">
             {p.video ? <video src={p.url} muted className="size-full object-cover opacity-50" /> : <img src={p.url} alt="" className="size-full object-cover opacity-50" />}
             {p.progress > 0 && p.progress < 1 ? (
               <span className="absolute inset-0 m-auto flex items-center justify-center text-[11px] font-semibold text-fg tabular">{Math.round(p.progress * 100)}%</span>
@@ -628,6 +650,10 @@ export function AttachZone({ value, onChange, children, className, compact, inco
               <Loader2 className="absolute inset-0 m-auto size-4 animate-spin text-fg" />
             )}
             <span className="absolute inset-x-0 bottom-0 h-1 bg-accent transition-[width]" style={{ width: `${p.progress * 100}%` }} />
+            </span>
+            <button type="button" onClick={() => cancel(p.key)} aria-label={t.attach.cancel} className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-xs pointer-coarse:size-7 hover:text-danger">
+              <X className="size-3" />
+            </button>
           </span>
         ))}
         {!compact && <AddImageButton onPick={() => input.current?.click()} />}

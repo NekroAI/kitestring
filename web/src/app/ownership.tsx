@@ -66,12 +66,13 @@ const toneCls: Record<OwnTone, string> = {
 const toneIcon: Record<OwnTone, typeof Clock3> = { draft: CircleDashed, locked: Lock, queued: Clock3, sent: Inbox, working: Loader, nobody: UserX, off: PauseCircle }
 
 // OwnBadge：看板卡片上的短标签，替代原来笼统的“轮到 Agent”。
-export function OwnBadge({ own, className }: { own: Own; className?: string }) {
+export function OwnBadge({ own, who, className }: { own: Own; who?: string; className?: string }) {
   const Icon = toneIcon[own.tone]
   return (
     <span title={own.text} className={cx('inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium', toneCls[own.tone], className)}>
-      <Icon className="size-3" />
-      {own.short}
+      <Icon className="size-3 shrink-0" />
+      <span className="shrink-0">{own.short}</span>
+      {who && <span className="min-w-0 truncate font-normal opacity-80">· {who}</span>}
     </span>
   )
 }

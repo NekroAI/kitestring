@@ -202,7 +202,7 @@ func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment string) 
 	}
 	var body []string
 	if r.Kind == "design" {
-		body = append(body, "这是设计需求：先用 decision_raise 交 2～3 套方案并在 option_images 附上效果图，等用户选定后再实现。")
+		body = append(body, "这是设计类需求（标注）：界面 / 交互有几种做法、需要用户拍板时，用 decision_raise 交 2～3 套方案并在 option_images 附效果图；做法明确时可以直接做。")
 	}
 	if c := strings.TrimSpace(comment); c != "" {
 		body = append(body, c)

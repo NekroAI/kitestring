@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
 import { Dialog as RDialog, DropdownMenu } from 'radix-ui'
 import { Drawer } from 'vaul'
 import { AnimatePresence, motion } from 'motion/react'
@@ -33,43 +33,16 @@ function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => 
 // Panel：详情面板。桌面端从右侧滑出，移动端为可下拉关闭的底部抽屉。
 // bare：内容自己负责标题栏与滚动（例如需求抽屉：顶部固定、中间滚动、底部输入），title 只给读屏用。
 // aside：宽屏时在面板左侧并排再开一层（例如计划里选中的需求），和面板同属一个对话框，焦点与点外关闭都按一层算。
-// useKeyboardBox：手机键盘弹出时可见区域的高度与键盘高度（R-72）。
-// vaul 自带的 repositionInputs 会在 iOS 上改抽屉高度、键盘收起后不一定恢复，导致抽屉被压成一条或下半截透明；
-// 这里关掉它，自己按 visualViewport 算：抽屉底边贴住键盘上沿，高度不超过可见区域。
-// iOS 聚焦输入框时还会把整页往上平移（visualViewport.offsetTop > 0），和我们重新排版叠在一起就是“连跳”；
-// 弹出层是固定定位、本来就能看到输入框，所以把这次平移撤回去。
-function useKeyboardBox(active: boolean) {
-  const [box, setBox] = useState<{ kb: number; vh: number } | null>(null)
-  useEffect(() => {
-    const vv = window.visualViewport
-    if (!active || !vv) return
-    const update = () => {
-      if (vv.offsetTop > 0 || window.scrollY > 0) window.scrollTo(0, 0)
-      const kb = Math.max(0, Math.round(window.innerHeight - vv.height))
-      setBox(kb > 60 ? { kb, vh: Math.round(vv.height) } : null) // 小于 60px 的差值是地址栏伸缩，不算键盘
-    }
-    update()
-    vv.addEventListener('resize', update)
-    vv.addEventListener('scroll', update)
-    return () => {
-      vv.removeEventListener('resize', update)
-      vv.removeEventListener('scroll', update)
-    }
-  }, [active])
-  return box
-}
+// 手机键盘（R-72）：不再跟着键盘重新排版。
+// 之前按 visualViewport 改抽屉位置 / 高度、再撤回 iOS 的整页平移，和 iOS 自己随键盘推页面的动画撞在一起，
+// 就是录屏里的“连跳 / 闪一下”。现在：底部抽屉交给 iOS 原生处理（随键盘一次平滑上移、收起时回落）；
+// 全屏编辑页高度固定，聚焦时在内容底部垫一段空白，让 iOS 在页内滚动露出输入框而不是平移整页。
 
-// FullSheet：手机上的全屏编辑页（R-72）。顶部固定、只改高度：键盘升起时只是从下面“截短”，
-// 标题栏和正在写的内容都不动，不会像底部抽屉那样跟着键盘上下跳。header 里放取消 / 提交，键盘挡不住。
+// FullSheet：手机上的全屏编辑页（R-72）。header 里放取消 / 提交，键盘挡不住。
 export function FullSheet({ open, onClose, title, header, children }: { open: boolean; onClose: () => void; title: string; header: ReactNode; children: ReactNode }) {
-  const kb = useKeyboardBox(open)
-  const body = useRef<HTMLDivElement>(null)
-  // 键盘升起后，把正在输入的框滚到可见区域（在页内滚，不让系统平移整页）
-  useEffect(() => {
-    if (!kb) return
-    const el = document.activeElement as HTMLElement | null
-    if (el && body.current?.contains(el)) el.scrollIntoView({ block: 'nearest' })
-  }, [kb])
+  const [typing, setTyping] = useState(false)
+  const off = useRef(0)
+  const isField = (el: EventTarget | null) => el instanceof HTMLElement && el.matches('input, textarea, [contenteditable="true"]')
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <AnimatePresence>
@@ -81,13 +54,25 @@ export function FullSheet({ open, onClose, title, header, children }: { open: bo
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'spring', stiffness: 420, damping: 42 }}
-                style={{ height: kb ? kb.vh : '100dvh' }}
-                className="fixed inset-x-0 top-0 z-50 flex flex-col bg-surface outline-none"
+                className="fixed inset-x-0 top-0 z-50 flex h-[100dvh] flex-col bg-surface outline-none"
               >
                 <RDialog.Title className="sr-only">{title}</RDialog.Title>
                 <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">{header}</div>
-                <div ref={body} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                  onFocus={(e) => {
+                    if (!isField(e.target)) return
+                    window.clearTimeout(off.current)
+                    setTyping(true)
+                  }}
+                  onBlur={(e) => {
+                    // 等键盘收起后再撤掉垫高，和键盘回落是同一个动作
+                    if (isField(e.target) && !isField(e.relatedTarget)) off.current = window.setTimeout(() => setTyping(false), 350)
+                  }}
+                >
                   {children}
+                  {/* 键盘的位置：聚焦时先垫出来，iOS 就能在页内把输入框滚到键盘上方 */}
+                  {typing && <div aria-hidden className="h-[50dvh]" />}
                 </div>
               </motion.div>
             </RDialog.Content>
@@ -100,7 +85,6 @@ export function FullSheet({ open, onClose, title, header, children }: { open: bo
 
 export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode }) {
   const desktop = useDesktop()
-  const kb = useKeyboardBox(open && !desktop)
   if (desktop) {
     return (
       <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -162,8 +146,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/30 dark:bg-black/50" />
         <Drawer.Content
           aria-describedby={undefined}
-          style={kb ? { bottom: kb.kb, [bare ? 'height' : 'maxHeight']: kb.vh - 8 } : undefined}
-          className={cx('fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-line bg-surface outline-none', bare ? 'h-[92dvh]' : 'max-h-[92dvh]', kb && 'rounded-b-none')}
+          className={cx('fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-line bg-surface outline-none', bare ? 'h-[92dvh]' : 'max-h-[92dvh]')}
         >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-line-strong" />
           {bare ? (

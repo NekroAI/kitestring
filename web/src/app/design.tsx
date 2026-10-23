@@ -4,7 +4,7 @@ import { useDecisions } from '../api/queries'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 
-// 设计类需求流程（D-21 ③）：方案中 → 待你选方案 → 实现中 → 待验收 → 已完成。
+// 设计类需求（D-21 ③）：只是标注，Agent 按需要交方案图（R-75）。徽章：设计 → 待你选方案 → 实现中。
 // 阶段由已有数据推出：有没有带效果图的决策、它答了没有，不另设状态。
 
 export type DesignPhase = 'propose' | 'choose' | 'build'

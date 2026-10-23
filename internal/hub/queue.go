@@ -107,7 +107,7 @@ func (h *Hub) dispatch(ctx context.Context, sessionKey string) {
 	for _, r := range list {
 		parts := []string{r.Priority}
 		if r.Kind == "design" {
-			parts = append(parts, "设计需求：先交方案再实现")
+			parts = append(parts, "设计类（需要时交方案图让用户选）")
 		}
 		if d := brief(r.Detail, 60); d != "" {
 			parts = append(parts, d)
