@@ -355,7 +355,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ID: protocol.NewID(), Time: time.Now().UTC(), Tool: req.Tool, Name: name, SessionID: sid,
 		Cwd: str(p, "cwd"), Model: str(p, "model"), Source: str(p, "source"), Reason: str(p, "reason"),
 		ToolName: str(p, "tool_name"), ToolUseID: str(p, "tool_use_id"), NotifType: str(p, "notification_type"),
-		PermMode: str(p, "permission_mode"), AgentType: str(p, "agent_type"),
+		PermMode: str(p, "permission_mode"), AgentType: str(p, "agent_type"), AgentID: str(p, "agent_id"),
 	}
 	ev.TurnID = str(p, "turn_id")
 	if ev.TurnID == "" {

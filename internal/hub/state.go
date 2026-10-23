@@ -80,6 +80,19 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.LastPrompt = ev.Prompt
 		}
 	case "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact":
+		if ev.AgentID != "" && (ev.Name == "PreToolUse" || ev.Name == "PostToolUse") {
+			// 子 Agent 的工具调用：hook 带的是主会话的 session_id，但干活的是后台任务（计入 Subagents），
+			// 主会话可能早已结束这一轮、挂着 ks wait 待命，不能被改回运行中（R-115）。
+			// 只有子 Agent 请求的授权被你处理后（同一工具的 PostToolUse）才解除“等你授权”。
+			if ev.Name == "PostToolUse" && x.State == store.StateWaitApproval {
+				if x.Parked {
+					x.State, x.StateDetail = store.StateParked, ""
+				} else {
+					x.State, x.StateDetail = store.StateRunning, ""
+				}
+			}
+			break
+		}
 		if ev.Name == "PreToolUse" && asksUser(ev.ToolName) {
 			x.TurnTools++
 			x.State, x.StateDetail = store.StateWaitReply, toolLabel(ev.ToolName, ev.ToolBrief)

@@ -1374,6 +1374,7 @@ export interface components {
             type: string;
         };
         Event: {
+            agent_id?: string;
             agent_type?: string;
             bg_brief?: string;
             /** Format: int64 */

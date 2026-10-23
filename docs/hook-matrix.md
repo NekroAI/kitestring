@@ -54,6 +54,7 @@
 | `SessionStart` | 空闲 |
 | `UserPromptSubmit` | 运行中 |
 | `PreToolUse` / `PostToolUse` | 运行中（刷新活跃时间） |
+| 子 Agent 的 `PreToolUse` / `PostToolUse`（Claude Code 输入带 `agent_id`，`session_id` 仍是主会话的） | 不改主会话状态，只刷新活跃时间；子 Agent 数由 `SubagentStart` / `SubagentStop` 计数，待命时显示「待命 · 后台 n 个任务」（R-115，2.1.285 实测输入 schema：`agent_id` 只在子 Agent 内触发时出现） |
 | `PermissionRequest` | 等待授权（直到同一工具的 `PostToolUse`、`Stop` 或 `Interrupt`） |
 | `Stop` | 等待回复 |
 | `Interrupt`（Codex） | 等待回复 |

@@ -224,7 +224,7 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
             <span className="truncate text-[15px] font-semibold text-fg">{sessionTitle(s)}</span>
             <RoleBadge s={s} />
             <span className="ml-auto shrink-0 pl-1">
-              <StatusPill state={ds} since={s.state_since} now={now} />
+              <StatusPill state={ds} since={s.state_since} now={now} bg={s.subagents} />
             </span>
           </div>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-fg-3">

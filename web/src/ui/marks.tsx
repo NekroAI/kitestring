@@ -36,18 +36,19 @@ export function StatusDot({ state, className }: { state: string; className?: str
   )
 }
 
-// StatusPill：“运行中 12 分钟”。
-export function StatusPill({ state, since, now, compact }: { state: string; since?: string; now: number; compact?: boolean }) {
+// StatusPill：“运行中 12 分钟”。待命时还有子 Agent 在后台跑，写成“待命 · 后台 1 个任务”（R-115）。
+export function StatusPill({ state, since, now, compact, bg }: { state: string; since?: string; now: number; compact?: boolean; bg?: number }) {
   const s = stateStyle[state] ?? stateStyle.idle
   const show = !compact && !!since && state !== 'ended'
+  const label = state === 'parked' && bg ? `${t.state[state]}${t.common.sep}${t.session.bgTasks(bg)}` : (t.state[state] ?? state)
   const pill = (
     <span className={cx('inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-500', s.pill)}>
       <StatusDot state={state} />
-      {t.state[state] ?? state}
+      {label}
       {show && <span className="font-normal opacity-70 tabular">{shortDuration(since, now)}</span>}
     </span>
   )
-  return show ? <Tip content={t.stateSince(t.state[state] ?? state, duration(since, now), absTime(since))}>{pill}</Tip> : pill
+  return show ? <Tip content={t.stateSince(label, duration(since, now), absTime(since))}>{pill}</Tip> : pill
 }
 
 // presence：常驻身份（PM / 开发）的在线状态（R-84）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；

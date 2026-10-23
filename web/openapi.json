@@ -1335,6 +1335,9 @@
       "Event": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "type": "string"
+          },
           "agent_type": {
             "type": "string"
           },

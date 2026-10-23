@@ -233,6 +233,7 @@ export const zh = {
     turnsTip: '你发出的消息轮数',
     toolsTip: (x: number) => `本轮调用了 ${x} 次工具`,
     subagentsTip: (x: number) => `${x} 个子 Agent 在运行`,
+    bgTasks: (x: number) => `后台 ${x} 个任务`,
     dirtyTip: (x: number) => `${x} 个文件有未提交的改动`,
     worktree: '在 worktree 中',
     compactions: (x: number) => `上下文压缩过 ${x} 次`,

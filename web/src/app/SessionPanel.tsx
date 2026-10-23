@@ -247,7 +247,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
       subtitle={
         s && (
           <span className="flex flex-wrap items-center gap-2">
-            <StatusPill state={displayState(s)} since={s.state_since} now={now} />
+            <StatusPill state={displayState(s)} since={s.state_since} now={now} bg={s.subagents} />
             {s.title && s.project_name && <span>{s.project_name}</span>}
           </span>
         )

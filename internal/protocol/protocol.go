@@ -52,9 +52,12 @@ type Event struct {
 	NotifType string    `json:"notification_type,omitempty"`
 	PermMode  string    `json:"permission_mode,omitempty"`
 	AgentType string    `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
-	BgTasks   int       `json:"bg_tasks,omitempty"`   // Stop 时仍在运行的后台任务数（后台 shell / 子 Agent）
-	BgBrief   string    `json:"bg_brief,omitempty"`   // 后台任务简述，截断
-	LastReply string    `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
+	// AgentID：子 Agent 的标识。Claude Code 在子 Agent 里触发的 hook 带 agent_id（session_id 仍是主会话的），
+	// 主线程没有；SubagentStart / SubagentStop 也带。Hub 据此把子 Agent 的工具事件只算作后台任务，不改主会话状态（R-115）
+	AgentID   string `json:"agent_id,omitempty"`
+	BgTasks   int    `json:"bg_tasks,omitempty"`   // Stop 时仍在运行的后台任务数（后台 shell / 子 Agent）
+	BgBrief   string `json:"bg_brief,omitempty"`   // 后台任务简述，截断
+	LastReply string `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
 	// Reply：Stop 时这一轮的最后一条回复（截到 ReplyMax 字），Hub 存为会话的“最后回复”，不写进事件记录（R-109）
 	Reply    string `json:"reply,omitempty"`
 	Git      *Git   `json:"git,omitempty"`
