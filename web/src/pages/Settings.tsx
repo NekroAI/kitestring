@@ -77,6 +77,8 @@ function useSaveSettings() {
             summary_model: patch.summary_model ?? s.summary_model,
             summary_api_key: patch.summary_api_key || undefined,
             notify_default: patch.notify_default ?? s.notify_default,
+            upload_image_mb: patch.upload_image_mb ?? s.upload_image_mb,
+            upload_video_mb: patch.upload_video_mb ?? s.upload_video_mb,
           },
         }),
       )
@@ -689,6 +691,41 @@ function Passkeys() {
   )
 }
 
+// 附件大小上限（R-72）：图片、录屏分开设，网页和 Agent 上传都按这里的值检查。
+function UploadLimits() {
+  const q = useSettings()
+  const save = useSaveSettings()
+  const [busy, wrap] = useBusy()
+  const [v, setV] = useState({ image: '', video: '' })
+  useEffect(() => {
+    if (q.data) setV({ image: String(q.data.upload_image_mb), video: String(q.data.upload_video_mb) })
+  }, [q.data])
+  const num = (x: string) => Math.min(4096, Math.max(1, Math.round(Number(x)) || 1))
+  const dirty = q.data && (num(v.image) !== q.data.upload_image_mb || num(v.video) !== q.data.upload_video_mb)
+  const L = t.settings.account.upload
+  return (
+    <Card className="space-y-4 p-4 sm:p-5">
+      <div>
+        <div className="text-sm font-semibold text-fg">{L.title}</div>
+        <p className="mt-1 text-xs text-fg-3">{L.hint}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={L.image}>
+          <Input type="number" inputMode="numeric" min={1} max={4096} value={v.image} onChange={(e) => setV({ ...v, image: e.target.value })} />
+        </Field>
+        <Field label={L.video}>
+          <Input type="number" inputMode="numeric" min={1} max={4096} value={v.video} onChange={(e) => setV({ ...v, video: e.target.value })} />
+        </Field>
+      </div>
+      <div className="flex justify-end">
+        <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => wrap(() => save({ upload_image_mb: num(v.image), upload_video_mb: num(v.video) }))}>
+          {t.common.save}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 function Account({ version }: { version: string }) {
   const q = useSettings()
   const save = useSaveSettings()
@@ -722,6 +759,7 @@ function Account({ version }: { version: string }) {
           </div>
         </Field>
       </Card>
+      <UploadLimits />
       <Passkeys />
       <Card className="space-y-4 p-4 sm:p-5">
         <div className="text-sm font-semibold text-fg">{t.settings.account.password}</div>

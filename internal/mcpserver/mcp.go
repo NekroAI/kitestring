@@ -108,7 +108,7 @@ type reqCreateIn struct {
 	Source     string   `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
 	DocLink    string   `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
 	Kind       string   `json:"kind,omitempty" jsonschema:"需求类型：design = 设计类（先交方案、用户选定后再实现），不填为普通需求"`
-	Images     []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，单张不超过 10 MB），如截图"`
+	Images     []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），如截图"`
 }
 
 type reqStatusIn struct {
@@ -121,8 +121,8 @@ type evidenceIn struct {
 	Kind    string   `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
 	Summary string   `json:"summary" jsonschema:"证据摘要，例如：单元测试 42 个全部通过"`
 	Link    string   `json:"link,omitempty" jsonschema:"链接或文件路径"`
-	Images  []string `json:"images,omitempty" jsonschema:"本机截图等图片文件路径（PNG/JPEG/GIF/WebP，单张不超过 10 MB），用户验收时会直接看到"`
-	Videos  []string `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM，单个不超过 50 MB）。只在用户明确要求录屏或视频时才附加，平时用截图"`
+	Images  []string `json:"images,omitempty" jsonschema:"本机截图等图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时会直接看到"`
+	Videos  []string `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
 }
 
 type decisionIn struct {

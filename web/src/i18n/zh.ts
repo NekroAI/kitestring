@@ -204,12 +204,11 @@ export const zh = {
     parkedHint: '在这里答复、验收或留言，它会立刻接着干，不用回到终端',
     otherTerminal: '这个对话也在另一个终端打开过。状态与送达以你最近发消息的终端为准。',
     toolsStale: '工具待更新',
-    ctx: (v: string) => `上下文 ${v}`,
     ctxLabel: '上下文',
     ctxHeavyShort: '很重，建议开新会话接手',
+    ctxOkTip: (v: string) => `上下文已用 ${v}，还很宽裕`,
     ctxTip: (v: string) => `上下文已用 ${v}，偏重：再接大活容易触发压缩、丢细节`,
     ctxHeavyTip: (v: string) => `上下文已用 ${v}，很重：新的需求建议交给新会话，交出时也会排在后面`,
-    ctxHeavyHint: (v: string) => `上下文 ${v}，很重`,
     toolsStaleTip: (v: string) => `这个会话的 Kitestring 工具还是升级前的版本（${v}），看不到新功能。重启会话，或在终端里输入 /mcp 重连 kitestring 后生效；Agent 也已被提醒改用 ks 命令行`,
     sessionId: '会话 ID',
     startedAt: '开始',
@@ -386,8 +385,9 @@ export const zh = {
     originalFile: '查看原文件',
     zoomReset: (pct: number) => `${pct}% · 复原`,
     failed: '上传失败',
-    tooLarge: '图片不能超过 10 MB',
-    videoTooLarge: '录屏不能超过 50 MB',
+    tooLarge: (mb: number) => `图片不能超过 ${mb} MB（可在设置 → 账户里调整）`,
+    videoTooLarge: (mb: number) => `录屏不能超过 ${mb} MB（可在设置 → 账户里调整）`,
+    proxyTooLarge: '文件超过了服务器前面反向代理允许的大小，需要调大代理的上传上限（如 client_max_body_size）',
   },
 
   evidenceKind: {
@@ -789,6 +789,12 @@ export const zh = {
     account: {
       publicUrl: '公网地址',
       publicUrlTip: '通知中的链接会指向这个地址',
+      upload: {
+        title: '附件大小上限',
+        hint: '单个文件的上限，网页和 Agent 上传都按这里检查。调到 50 MB 以上时，Hub 前面的反向代理也要放得下（如 nginx / openresty 的 client_max_body_size）。',
+        image: '图片（MB）',
+        video: '录屏（MB）',
+      },
       password: '修改密码',
       oldPassword: '当前密码',
       newPassword: '新密码',

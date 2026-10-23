@@ -5,7 +5,8 @@ import { useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { StatusDot, displayState } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
-import { Button } from '../ui/base'
+import { Button, Tip } from '../ui/base'
+import { cx } from '../lib/util'
 import type { CtxItem } from '../ui/contextMenu'
 import { useActions } from './actions'
 import { sessionTitle } from './SessionCard'
@@ -16,15 +17,47 @@ import { sessionTitle } from './SessionCard'
 export type TargetGroup = 'now' | 'later' | 'stale'
 
 // 上下文占用（R-60）：知道窗口时按比例，不知道（Claude）时按绝对值——15 万起偏重，60 万起很重，建议开新会话接手。
-export type CtxLoad = { used: number; max: number; level: 'ok' | 'mid' | 'high'; label: string }
+// 圆环的填充比例：不知道窗口时按 100 万算（Claude Code 的长上下文模型）。
+export type CtxLoad = { used: number; max: number; ratio: number; level: 'ok' | 'mid' | 'high'; label: string; short: string }
 const fmtK = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
 export function ctxLoad(s: Session): CtxLoad | null {
   const used = s.context_tokens ?? 0
   const max = s.context_max ?? 0
   if (!used) return null
   const level = max ? (used / max >= 0.8 ? 'high' : used / max >= 0.5 ? 'mid' : 'ok') : used >= 600_000 ? 'high' : used >= 150_000 ? 'mid' : 'ok'
-  return { used, max, level, label: max ? `${fmtK(used)} / ${fmtK(max)}` : fmtK(used) }
+  const ratio = Math.min(1, used / (max || 1_000_000))
+  return { used, max, ratio, level, label: max ? `${fmtK(used)} / ${fmtK(max)}` : fmtK(used), short: max ? `${Math.round((used / max) * 100)}%` : fmtK(used) }
 }
+
+// CtxRing：小圆环，填充比例 = 当前对话占上下文窗口的比例；偏重变黄、很重变红。
+export function CtxRing({ c, className }: { c: CtxLoad; className?: string }) {
+  const r = 5.5
+  const len = 2 * Math.PI * r
+  return (
+    <svg viewBox="0 0 14 14" className={cx('size-3.5 shrink-0 -rotate-90', className)} aria-hidden>
+      <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeOpacity={0.25} strokeWidth="2" />
+      <circle cx="7" cy="7" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray={`${Math.max(0.5, c.ratio * len)} ${len}`} />
+    </svg>
+  )
+}
+
+const ctxColor = (c: CtxLoad) => (c.level === 'high' ? 'text-danger' : c.level === 'mid' ? 'text-wait' : 'text-fg-3')
+const ctxTip = (c: CtxLoad) => (c.level === 'high' ? t.session.ctxHeavyTip(c.label) : c.level === 'mid' ? t.session.ctxTip(c.label) : t.session.ctxOkTip(c.label))
+
+// CtxMark：会话卡 / 列表里的上下文占用——圆环加简短数字，悬停看详情。
+export function CtxMark({ s }: { s: Session }) {
+  const c = s.state !== 'ended' && ctxLoad(s)
+  if (!c) return null
+  return (
+    <Tip content={ctxTip(c)}>
+      <span className={cx('inline-flex shrink-0 items-center gap-1 tabular', ctxColor(c))}>
+        <CtxRing c={c} />
+        {c.short}
+      </span>
+    </Tip>
+  )
+}
+
 const heavy = (s: Session) => (ctxLoad(s)?.level === 'high' ? 2 : ctxLoad(s)?.level === 'mid' ? 1 : 0)
 
 export function targetGroup(s: Session): TargetGroup {
@@ -74,7 +107,12 @@ export function targetItems(sessions: Session[], projectId: string | null | unde
             <span className="shrink-0 text-xs text-fg-3">{t.state[displayState(s)]}</span>
           </span>
         ),
-        hint: [s.project_name, s.device_name, ctxLoad(s) && (ctxLoad(s)!.level === 'high' ? t.session.ctxHeavyHint(ctxLoad(s)!.label) : t.session.ctx(ctxLoad(s)!.label))].filter(Boolean).join(t.common.sep),
+        hint: (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{[s.project_name, s.device_name].filter(Boolean).join(t.common.sep)}</span>
+            <CtxMark s={s} />
+          </span>
+        ),
         icon: g === 'now' ? <Zap className="text-accent" /> : <StatusDot state={displayState(s)} />,
         checked: opts.checked === s.key,
         onSelect: () => onPick(s),

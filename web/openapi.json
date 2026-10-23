@@ -2160,6 +2160,20 @@
           },
           "summary_model": {
             "type": "string"
+          },
+          "upload_image_mb": {
+            "description": "图片大小上限（MB），0 或留空用默认 10",
+            "format": "int64",
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "upload_video_mb": {
+            "description": "录屏大小上限（MB），0 或留空用默认 50",
+            "format": "int64",
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -2200,6 +2214,16 @@
           },
           "summary_model": {
             "type": "string"
+          },
+          "upload_image_mb": {
+            "description": "图片大小上限（MB）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "upload_video_mb": {
+            "description": "录屏大小上限（MB）",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -2209,7 +2233,9 @@
           "summary_model",
           "summary_api_key_set",
           "notify_default",
-          "notify_events"
+          "notify_events",
+          "upload_image_mb",
+          "upload_video_mb"
         ],
         "type": "object"
       },

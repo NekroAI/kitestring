@@ -34,6 +34,30 @@ type Settings struct {
 	Summary       summary.Config     `json:"summary"`                // Hub 侧模型（OpenAI 兼容接口）
 	AI            AIFeatures         `json:"ai"`
 	NotifyDefault store.NotifyConfig `json:"notify_default"`
+	Upload        UploadLimits       `json:"upload"`
+}
+
+// UploadLimits 附件大小上限（MB），0 表示用默认值（R-72）。
+type UploadLimits struct {
+	ImageMB int `json:"image_mb,omitempty"`
+	VideoMB int `json:"video_mb,omitempty"`
+}
+
+const (
+	defaultImageMB = 10
+	defaultVideoMB = 50
+	maxUploadMB    = 4096
+)
+
+// bytes 返回生效的上限（字节）。
+func (u UploadLimits) bytes() (image, video int64) {
+	pick := func(v, def int) int64 {
+		if v <= 0 {
+			v = def
+		}
+		return int64(min(v, maxUploadMB)) << 20
+	}
+	return pick(u.ImageMB, defaultImageMB), pick(u.VideoMB, defaultVideoMB)
 }
 
 const settingsKey = "hub_settings"

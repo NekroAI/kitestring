@@ -345,6 +345,8 @@ type SettingsView struct {
 	SummaryKeySet bool               `json:"summary_api_key_set"`
 	NotifyDefault store.NotifyConfig `json:"notify_default"`
 	NotifyEvents  []string           `json:"notify_events"`
+	ImageMB       int                `json:"upload_image_mb" doc:"图片大小上限（MB）"`
+	VideoMB       int                `json:"upload_video_mb" doc:"录屏大小上限（MB）"`
 }
 
 type settingsIn struct {
@@ -355,6 +357,8 @@ type settingsIn struct {
 		SummaryModel  string             `json:"summary_model"`
 		SummaryKey    string             `json:"summary_api_key,omitempty" doc:"留空表示不修改"`
 		NotifyDefault store.NotifyConfig `json:"notify_default"`
+		ImageMB       int                `json:"upload_image_mb,omitempty" minimum:"0" maximum:"4096" doc:"图片大小上限（MB），0 或留空用默认 10"`
+		VideoMB       int                `json:"upload_video_mb,omitempty" minimum:"0" maximum:"4096" doc:"录屏大小上限（MB），0 或留空用默认 50"`
 	}
 }
 
@@ -367,9 +371,11 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 	if err != nil {
 		return nil, err
 	}
+	img, vid := s.Upload.bytes()
 	return &settingsOut{Body: SettingsView{
 		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
+		ImageMB: int(img >> 20), VideoMB: int(vid >> 20),
 	}}, nil
 }
 
@@ -872,6 +878,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				cur.Summary.APIKey = b.SummaryKey
 			}
 			cur.NotifyDefault = b.NotifyDefault
+			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB}
 			if err := h.SaveSettings(ctx, cur); err != nil {
 				return nil, err
 			}

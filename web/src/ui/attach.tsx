@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Button, Tip } from './base'
+import { useSettings } from '../api/queries'
 
 // 附件：任何可以写字的地方都可以贴图（粘贴、拖拽、选择文件），也可以附 MP4 / WebM 录屏。
 
@@ -19,19 +20,21 @@ async function uploadOne(file: File): Promise<FileRef> {
   const fd = new FormData()
   fd.append('file', file, file.name || 'image.png')
   const res = await fetch('/api/files', { method: 'POST', body: fd, credentials: 'same-origin' })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((body as { detail?: string }).detail || t.attach.failed)
+  const body = await res.json().catch(() => null)
+  // 413 且不是 Hub 的 JSON：被 Hub 前面的反向代理拦下了
+  if (res.status === 413 && !body) throw new Error(t.attach.proxyTooLarge)
+  if (!res.ok) throw new Error((body as { detail?: string } | null)?.detail || t.attach.failed)
   return body as FileRef
 }
 
-const MAX_IMAGE = 10 << 20
-const MAX_VIDEO = 50 << 20
-const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm'
+const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime'
 const isVideo = (mime: string) => mime.startsWith('video/')
-const accepted = (f: File) => f.type.startsWith('image/') || f.type === 'video/mp4' || f.type === 'video/webm'
+// iPhone 录屏是 .mov（video/quicktime）
+const accepted = (f: File) => f.type.startsWith('image/') || f.type === 'video/mp4' || f.type === 'video/webm' || f.type === 'video/quicktime'
 
 // useAttach：管理一组附图的上传状态。
 export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
+  const limits = useSettings().data // 上限在设置里调（R-72）；没拿到时交给 Hub 检查
   const [pending, setPending] = useState<{ key: string; url: string; video: boolean }[]>([])
   const latest = useRef(value)
   latest.current = value
@@ -44,8 +47,9 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
       // 只用 latest 会让后一张把前一张盖掉——一次选多张只剩一张（R-24）
       const added: FileRef[] = []
       for (const f of list) {
-        if (f.size > (isVideo(f.type) ? MAX_VIDEO : MAX_IMAGE)) {
-          toast.error(isVideo(f.type) ? t.attach.videoTooLarge : t.attach.tooLarge)
+        const mb = limits && (isVideo(f.type) ? limits.upload_video_mb : limits.upload_image_mb)
+        if (mb && f.size > mb * 1024 * 1024) {
+          toast.error(isVideo(f.type) ? t.attach.videoTooLarge(mb) : t.attach.tooLarge(mb))
           continue
         }
         const key = `${f.name}-${f.size}-${Math.random()}`
@@ -65,7 +69,7 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
         }
       }
     },
-    [onChange],
+    [onChange, limits],
   )
 
   const onPaste = useCallback(

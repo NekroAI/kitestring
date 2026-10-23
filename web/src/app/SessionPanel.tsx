@@ -12,7 +12,7 @@ import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark } from '../ui
 import { useActions } from './actions'
 import { DecisionComposer, DecisionRow } from './DecisionCard'
 import { useOpenReq } from './nav'
-import { ctxLoad, useAssign } from './assign'
+import { CtxRing, ctxLoad, useAssign } from './assign'
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
@@ -270,7 +270,15 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
               <Info label={t.session.model} mono>
                 {s.model}
               </Info>
-              <Info label={t.session.ctxLabel}>{ctxLoad(s) ? `${ctxLoad(s)!.label}${ctxLoad(s)!.level === 'high' ? ` · ${t.session.ctxHeavyShort}` : ''}` : ''}</Info>
+              <Info label={t.session.ctxLabel}>
+                {ctxLoad(s) && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <CtxRing c={ctxLoad(s)!} />
+                    {ctxLoad(s)!.label}
+                    {ctxLoad(s)!.level === 'high' && ` · ${t.session.ctxHeavyShort}`}
+                  </span>
+                )}
+              </Info>
               <Info label={t.session.permMode}>{t.permMode[s.permission_mode] || s.permission_mode}</Info>
               <Info label={t.session.branch} mono>
                 {s.branch && `${s.branch}${s.dirty ? ` ±${s.dirty}` : ''}`}

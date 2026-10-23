@@ -1440,6 +1440,16 @@ export interface components {
             summary_api_key?: string;
             summary_base_url: string;
             summary_model: string;
+            /**
+             * Format: int64
+             * @description 图片大小上限（MB），0 或留空用默认 10
+             */
+            upload_image_mb?: number;
+            /**
+             * Format: int64
+             * @description 录屏大小上限（MB），0 或留空用默认 50
+             */
+            upload_video_mb?: number;
         };
         SettingsView: {
             ai: components["schemas"]["AIFeatures"];
@@ -1449,6 +1459,16 @@ export interface components {
             summary_api_key_set: boolean;
             summary_base_url: string;
             summary_model: string;
+            /**
+             * Format: int64
+             * @description 图片大小上限（MB）
+             */
+            upload_image_mb: number;
+            /**
+             * Format: int64
+             * @description 录屏大小上限（MB）
+             */
+            upload_video_mb: number;
         };
         Stage: {
             id: string;

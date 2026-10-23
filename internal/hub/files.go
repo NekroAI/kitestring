@@ -1,10 +1,12 @@
 package hub
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -16,21 +18,22 @@ import (
 
 // 附件（图片与录屏）：上传后存放在 Hub 数据目录下，按 ID 读取；网页端用登录会话、设备端用设备令牌访问。
 
-const (
-	maxImageSize = 10 << 20
-	maxVideoSize = 50 << 20
-)
+// 大小上限在设置里调（R-72），默认图片 10 MB、录屏 50 MB。
 
 var allowedMime = map[string]string{
 	"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
-	"video/mp4": ".mp4", "video/webm": ".webm",
+	"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
 }
 
-func maxSize(mime string) int64 {
-	if strings.HasPrefix(mime, "video/") {
-		return maxVideoSize
+// sniff 判断文件类型。iPhone 录屏是 .mov（QuickTime），标准库认不出，按 ftyp 头里的 qt 品牌补上。
+func sniff(head []byte) string {
+	if m := http.DetectContentType(head); m != "application/octet-stream" {
+		return m
 	}
-	return maxImageSize
+	if len(head) >= 12 && bytes.Equal(head[4:8], []byte("ftyp")) && bytes.Equal(head[8:12], []byte("qt  ")) {
+		return "video/quicktime"
+	}
+	return "application/octet-stream"
 }
 
 // SetFilesDir 设置附件存放目录。
@@ -45,7 +48,13 @@ func (h *Hub) handleUpload(uploader func(*http.Request) string) http.HandlerFunc
 			writeErr(w, http.StatusServiceUnavailable, "未配置附件目录")
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxVideoSize+1<<20)
+		set, err := h.Settings(r.Context())
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		maxImage, maxVideo := set.Upload.bytes()
+		r.Body = http.MaxBytesReader(w, r.Body, max(maxImage, maxVideo)+1<<20)
 		f, hdr, err := r.FormFile("file")
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, "没有收到文件，或文件过大")
@@ -66,10 +75,10 @@ func (h *Hub) handleUpload(uploader func(*http.Request) string) http.HandlerFunc
 		head := make([]byte, 512)
 		n, _ := io.ReadFull(f, head)
 		head = head[:n]
-		mime := http.DetectContentType(head)
+		mime := sniff(head)
 		if _, ok := allowedMime[mime]; !ok {
 			tmp.Close()
-			writeErr(w, http.StatusUnsupportedMediaType, "只支持 PNG、JPEG、GIF、WebP 图片或 MP4、WebM 视频")
+			writeErr(w, http.StatusUnsupportedMediaType, "只支持 PNG、JPEG、GIF、WebP 图片或 MP4、WebM、MOV 视频")
 			return
 		}
 		size, err := io.Copy(io.MultiWriter(tmp, sum), io.MultiReader(strings.NewReader(string(head)), f))
@@ -78,11 +87,12 @@ func (h *Hub) handleUpload(uploader func(*http.Request) string) http.HandlerFunc
 			writeErr(w, http.StatusBadRequest, "读取文件失败")
 			return
 		}
-		if size > maxSize(mime) {
-			msg := "图片不能超过 10 MB"
-			if strings.HasPrefix(mime, "video/") {
-				msg = "视频不能超过 50 MB"
-			}
+		limit, what := maxImage, "图片"
+		if strings.HasPrefix(mime, "video/") {
+			limit, what = maxVideo, "录屏"
+		}
+		if size > limit {
+			msg := fmt.Sprintf("%s不能超过 %d MB（可在设置里调整）", what, limit>>20)
 			writeErr(w, http.StatusRequestEntityTooLarge, msg)
 			return
 		}
