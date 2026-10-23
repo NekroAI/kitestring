@@ -85,7 +85,7 @@ export function useWorkbench() {
       th.urgency = Math.min(th.urgency, 3)
     }
     // 待转交：已答复但目标会话已结束
-    for (const d of ds.filter((x) => x.status === 'answered' && x.kind !== 'role')) {
+    for (const d of ds.filter((x) => x.status === 'answered' && x.kind !== 'role' && x.kind !== 'tell')) {
       const s = d.session_key ? byKey.get(d.session_key) : undefined
       if (s && s.state !== 'ended' && s.state !== 'lost') continue
       const th = s ? thread(s.key, projectOf(s), s) : projectThread(d.project_id ?? '', d.project_name ?? '')

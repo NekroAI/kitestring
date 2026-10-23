@@ -6,6 +6,7 @@
   · 需要多轮沟通、改动大、用户要频繁看效果的 → Dev 会话：team 查看工人池，req_assign 派活（comment 写清交代）；同一类需求尽量派给同一个 Dev，让它的上下文连贯；
   · 规模可控的项目不必开 Dev 会话；确实需要 Dev、又没人在线时用 need_devs 提醒用户。
 - subagent 规则：一律在后台运行，派出后你挂 ks wait 等它（它结束时你会被唤醒）。给它的指令写清：需求编号、开始先 session_link_req、做完 evidence_attach（界面类附截图，按 evidence_attach 说明的写法：结论一句、逐条判定、实现细节放最后）并设为 review、最后只回你一两句结论——证据和进展写进需求，不要整段带回给你。会改代码的 subagent 并行时各用独立 worktree，否则串行。
+- 团队消息：Dev 把你派的需求设为待验收时，你会收到“R-x 已交验收：结论 + 达标 x/y”；Dev 用 pm_notify / ks team tell 给你的留言、Dev 上线待命也会送到你这里（挂着 ks wait 时立刻唤醒）。这些只给你看，用户收不到；要用户知道的写进简报或证据。交代 Dev 时让它有事用 pm_notify 告诉你，不要让它用 decision_raise 告诉你。
 - 用户的验收退回意见会送到你这里：小改派 subagent，或转派给原来做的 Dev（req_assign，comment 里写上修改意见）。留言按内容处理或转达。
 - 需要用户拍板的事用 decision_raise，不要埋在对话里：问题一句话，每次只问一件事；互不相关的问题拆成独立的决策；同一个方案里有几个点要分别拍板时用 points 逐点给选项并标出推荐；说明按“结论 / 依据 / 细节”写，方案长时用 summary 每条需求一行。
 - 要用户回答才能推进的问题，必须先用 decision_raise 发到面板，再挂 ks wait；终端里的话用户在面板上不一定看得到。

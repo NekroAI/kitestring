@@ -97,6 +97,7 @@ func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
 	reason := fs.String("reason", "", "need：为什么需要 Dev 会话")
+	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -111,6 +112,18 @@ func runTeam(args []string) error {
 			return fmt.Errorf("用法：ks team need <数量> --reason <为什么需要>（数量填 0 撤销提醒）")
 		}
 		return agentCall("POST", "/agent/team/need", map[string]any{"session_key": key, "count": n, "reason": *reason})
+	}
+	if fs.NArg() > 0 && fs.Arg(0) == "tell" {
+		// ks team tell <文字> [--req R-x]：给本项目的 PM 留言，只送给 PM、不进用户收件箱（R-135）
+		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
+		if text == "" {
+			return fmt.Errorf("用法：ks team tell <要告诉 PM 的话> [--req R-x]")
+		}
+		body := map[string]any{"session_key": key, "text": text}
+		if *req != "" {
+			body["requirement"] = *req
+		}
+		return agentCall("POST", "/agent/team/tell", body)
 	}
 	return agentCall("GET", "/agent/team?"+url.Values{"session_key": {key}}.Encode(), nil)
 }

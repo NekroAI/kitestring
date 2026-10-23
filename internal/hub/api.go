@@ -41,6 +41,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerReviewerAgent(agentAPI)
 	h.registerAgentNeed(agentAPI)
 	h.registerAgentBrief(agentAPI)
+	h.registerAgentTell(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -91,6 +92,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerReviewerAgent(api)
 	h.registerAgentNeed(api)
 	h.registerAgentBrief(api)
+	h.registerAgentTell(api)
 	return api.OpenAPI()
 }
 
@@ -1105,6 +1107,9 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			h.refreshDelivered(ctx, r)
 			h.broker.publish("requirements", "sessions", "plans")
+			if r.Status == store.ReqReview && before.Status != store.ReqReview {
+				h.onReview(ctx, r.ID, in.Body.SessionKey) // 告诉派活的 PM（R-135）
+			}
 			if r.Status == store.ReqReview {
 				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
 			}

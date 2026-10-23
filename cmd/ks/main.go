@@ -48,6 +48,7 @@ agent 调用：
   req review <R-x> <意见> [--image]   Rev 交审查意见（不改需求状态）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team need <数量> --reason ...   PM 提醒用户开 Dev 会话
+  team tell <文字> [--req R-x]   给本项目的 PM 留言（只送给 PM，不进用户收件箱；交验收时 PM 会自动收到通知）
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结（只写跨需求的效果和遗留问题）
   decision raise ...     提出决策（一次只问一件事）

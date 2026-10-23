@@ -33,6 +33,7 @@ const (
 	KindQueue      = "queue"       // 会话空闲时整批送达的待开始需求（R-66）
 	KindRole       = "role"        // 会话身份变更通知，例如 PM 被新会话接管（R-82）
 	KindReviewTask = "review_task" // 你把需求交给审查员审查（R-88）：只送达，不改需求状态
+	KindTell       = "tell"        // 会话之间的团队消息（R-135 / R-116）：开发交验收、给 PM 留言、开发上线；只送给 Agent，不进你的收件箱
 )
 
 // Decision 是一条待用户决策的问题。
@@ -64,7 +65,7 @@ type Decision struct {
 	Summary          []string   `json:"summary,omitempty"`
 	Recommendation   string     `json:"recommendation"`
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task"`
+	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
@@ -140,7 +141,7 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			return err
 		}
 		n := now()
-		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole || d.Kind == KindReviewTask {
+		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole || d.Kind == KindReviewTask || d.Kind == KindTell {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
 			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?, ?)`,
 				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy)

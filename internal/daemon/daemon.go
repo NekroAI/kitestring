@@ -557,7 +557,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback, notes, assigns, plans, queue, roleNotes, reviewTasks []protocol.Decision
+	var answers, feedback, notes, assigns, plans, queue, roleNotes, reviewTasks, tells []protocol.Decision
 	for _, dec := range fresh {
 		switch dec.Kind {
 		case "feedback":
@@ -574,6 +574,8 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			roleNotes = append(roleNotes, dec)
 		case "review_task":
 			reviewTasks = append(reviewTasks, dec)
+		case "tell":
+			tells = append(tells, dec)
 		default:
 			answers = append(answers, dec)
 		}
@@ -614,6 +616,12 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	if len(queue) > 0 {
 		fmt.Fprintf(&b, "[Kitestring] 你空闲了，以下是排给你的待开始需求（%d 条，按优先级；细节用 req_get 查看）。先通读再安排：能一起做的合并做；重复的设为 shelved 并用 evidence_attach 写明与哪条重复；有先后依赖的用 plan_create 排成阶段交用户批准。开始做哪条就先 session_link_req 哪条（会变为进行中），完成后附证据设为待验收：\n", len(queue))
 		for _, dec := range queue {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(tells) > 0 {
+		b.WriteString("[Kitestring] 团队消息（来自本项目的其他会话，不是用户发的；按内容跟进，不必回复用户）：\n")
+		for _, dec := range tells {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -663,6 +671,14 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "queue":
 		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+	case "tell":
+		lines := strings.Split(strings.TrimSpace(dec.Answer), "\n")
+		fmt.Fprintf(b, "- %s\n", lines[0])
+		for _, line := range lines[1:] {
+			if line = strings.TrimSpace(line); line != "" {
+				fmt.Fprintf(b, "  %s\n", line)
+			}
+		}
 	case "assign", "review_task":
 		fmt.Fprintf(b, "- %s「%s」\n", dec.ReqCode, oneLine(dec.ReqTitle))
 		for _, line := range strings.Split(dec.Answer, "\n") {

@@ -177,7 +177,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 审查员交审查意见（R-88）：不改需求状态，不拦截验收 */
+        /** Rev 交审查意见（R-88）：不改需求状态，不拦截验收 */
         post: operations["agent-submit-review"];
         delete?: never;
         options?: never;
@@ -240,7 +240,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 工人池：本项目的 PM 与开发会话（R-86） */
+        /** 工人池：本项目的 PM 与 Dev 会话（R-86） */
         get: operations["agent-team"];
         put?: never;
         post?: never;
@@ -259,8 +259,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** PM 请用户开开发会话（R-87） */
+        /** PM 请用户开 Dev 会话（R-87） */
         post: operations["agent-need-devs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/team/tell": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 给本项目的 PM 留言（只送给 PM，不进用户收件箱，R-135） */
+        post: operations["agent-tell-pm"];
         delete?: never;
         options?: never;
         head?: never;
@@ -676,7 +693,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 撤销“需要开发会话”的提醒（R-87） */
+        /** 撤销“需要 Dev 会话”的提醒（R-87） */
         delete: operations["dismiss-need-devs"];
         options?: never;
         head?: never;
@@ -860,7 +877,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 把需求交给审查员审查（R-88）：只送达审查任务，不改状态、不关联会话 */
+        /** 把需求交给 Rev 审查（R-88）：只送达审查任务，不改状态、不关联会话 */
         post: operations["ask-review"];
         delete?: never;
         options?: never;
@@ -1015,7 +1032,7 @@ export interface components {
             comment?: string;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
-            /** @description 开发会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻 */
+            /** @description Dev 会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻 */
             to: string;
         };
         "Agent-attach-evidenceRequest": {
@@ -1050,7 +1067,7 @@ export interface components {
         "Agent-need-devsRequest": {
             /**
              * Format: int64
-             * @description 还需要几个开发会话；0 表示撤销提醒
+             * @description 还需要几个 Dev 会话；0 表示撤销提醒
              */
             count: number;
             /** @description 为什么需要：哪些需求在等、为什么不适合 subagent */
@@ -1085,6 +1102,14 @@ export interface components {
             blocks?: unknown[] | null;
             session_key?: string;
             summary: string;
+        };
+        "Agent-tell-pmRequest": {
+            /** @description 相关需求编号（如 R-12），可省略 */
+            requirement?: string;
+            /** @description 调用者 */
+            session_key: string;
+            /** @description 要告诉 PM 的话 */
+            text: string;
         };
         "Agent-update-statusRequest": {
             session_key?: string;
@@ -1133,9 +1158,9 @@ export interface components {
             answers: components["schemas"]["Item1"][] | null;
         };
         "Ask-reviewRequest": {
-            /** @description 交代给审查员的话，例如重点看哪里 */
+            /** @description 交代给 Rev 的话，例如重点看哪里 */
             comment?: string;
-            /** @description 审查员会话键（身份必须是 reviewer） */
+            /** @description Rev 会话键（身份必须是 reviewer） */
             session_key: string;
         };
         "Assign-requirementRequest": {
@@ -1146,9 +1171,9 @@ export interface components {
             assigned: boolean;
             message: string;
             presence?: string;
-            /** @description 接手的开发会话标题 */
+            /** @description 接手的 Dev 会话标题 */
             title?: string;
-            /** @description 接手的开发会话键 */
+            /** @description 接手的 Dev 会话键 */
             to?: string;
         };
         "Auth-loginRequest": {
@@ -1219,7 +1244,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1261,7 +1286,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1946,11 +1971,17 @@ export interface components {
             summary: string;
         };
         TeamOutBody: {
-            /** @description 本项目的开发会话，在线的在前；已结束的不列 */
+            /** @description 本项目的 Dev 会话，在线的在前；已结束的不列 */
             devs: components["schemas"]["Worker"][] | null;
             pm: components["schemas"]["Worker"];
             project_id: string;
             project_name: string;
+        };
+        TellOutBody: {
+            delivered: boolean;
+            message: string;
+            /** @description 收到的 PM 会话键 */
+            to?: string;
         };
         "Test-pushRequest": {
             ref: string;
@@ -2567,6 +2598,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-tell-pm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-tell-pmRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TellOutBody"];
                 };
             };
             /** @description Error */

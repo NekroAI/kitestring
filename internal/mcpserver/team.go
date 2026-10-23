@@ -65,7 +65,28 @@ type briefIn struct {
 	Text string `json:"text" jsonschema:"简报：一段话（建议 150 字以内），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
 }
 
+type tellIn struct {
+	Text        string `json:"text" jsonschema:"要告诉 PM 的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13）"`
+	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
+}
+
 func (t *tools) registerTeam(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的 PM 留言：进展、受阻、发现的问题、做完一批等要让 PM 知道的事。只送给 PM（它挂着 ks wait 时立刻收到），不进用户的收件箱；要用户拍板的事仍用 decision_raise。需求设为待验收时 PM 会自动收到通知，不必再发。项目没有 PM 时不会送出，也不报错。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement}
+			dropEmpty(body)
+			if err := t.c.Do(ctx, "POST", "/agent/team/tell", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
 	mcp.AddTool(s, &mcp.Tool{Name: "brief_set", Description: "PM 用：写一段给用户看的简报，显示在纸鸢工作台顶部（署名 PM 和时间）。每次覆盖上一份；阶段交付、派完一批活、有事等用户处理时更新。超过 12 小时没更新的简报网页不再显示。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in briefIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
