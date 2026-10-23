@@ -51,6 +51,7 @@ type Daemon struct {
 	instances map[string]string // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
 	waiting   map[string]int64  // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
 	waitSeq   int64
+	tools     toolsState // 各会话的 Kitestring 工具版本（R-59）
 }
 
 type toolUse struct {
@@ -77,7 +78,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, waiting: map[string]int64{}, tools: newToolsState()}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -111,7 +112,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /status", d.handleStatus)
 	mux.HandleFunc("GET /session", d.handleSessionLookup)
 	mux.HandleFunc("GET /wait", d.handleWait)
-	mux.Handle("/agent/", d.proxy)
+	mux.Handle("/agent/", d.watchTools(d.proxy))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
@@ -291,10 +292,16 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	ev.Tools = d.toolsForEvent(protocol.SessionKey(ev.Tool, ev.SessionID))
 	if err := d.q.pushEvent(ev); err != nil {
 		d.log.Warn("事件入队失败", "err", err)
 	}
 	resp := protocol.HookResponse{Context: d.injection(ev)}
+	if ev.Name == "UserPromptSubmit" {
+		if note := d.toolsNote(protocol.SessionKey(ev.Tool, ev.SessionID)); note != "" {
+			resp.Context = note + resp.Context
+		}
+	}
 	d.wake()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -736,6 +743,7 @@ func (d *Daemon) lookupToolUse(id string, wait time.Duration) string {
 // handleSessionLookup：ks mcp 用本次调用的 tool_use_id 查询会话（Claude Code 恢复会话后，MCP 进程环境里的会话 ID 会过期）。
 func (d *Daemon) handleSessionLookup(w http.ResponseWriter, r *http.Request) {
 	key := d.lookupToolUse(r.URL.Query().Get("tool_use_id"), time.Second)
+	d.noteTools(key, r.Header.Get(versionHeader)) // Claude 的 MCP 每次调用都先来这里查会话
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"session_key": key})
 }

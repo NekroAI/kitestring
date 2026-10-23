@@ -57,6 +57,9 @@ type Event struct {
 	LastReply string    `json:"last_reply,omitempty"` // 仅在 Hub 侧生成摘要时上送，截断
 	Git       *Git      `json:"git,omitempty"`
 	Instance  string    `json:"instance,omitempty"` // 所属终端（agent 进程号 + 启动时间），区分同一对话在多个终端打开
+	// Tools：这个会话的 Kitestring 工具（MCP 进程）版本状态，daemon 发现变化时随下一条事件捎上（R-59）。
+	// "ok" 表示已是最新；其它非空值是过期工具的版本（"旧版" 表示太旧、没有上报版本）；空表示没有变化。
+	Tools string `json:"tools,omitempty"`
 }
 
 // ks wait 挂起等待：daemon 在等待开始 / 结束时上报的合成事件。

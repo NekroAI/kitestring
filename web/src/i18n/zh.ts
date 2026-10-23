@@ -202,6 +202,8 @@ export const zh = {
     parked: '待命中',
     parkedHint: '在这里答复、验收或留言，它会立刻接着干，不用回到终端',
     otherTerminal: '这个对话也在另一个终端打开过。状态与送达以你最近发消息的终端为准。',
+    toolsStale: '工具待更新',
+    toolsStaleTip: (v: string) => `这个会话的 Kitestring 工具还是升级前的版本（${v}），看不到新功能。重启会话，或在终端里输入 /mcp 重连 kitestring 后生效；Agent 也已被提醒改用 ks 命令行`,
     sessionId: '会话 ID',
     startedAt: '开始',
     permMode: '权限',

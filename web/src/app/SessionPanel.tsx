@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Copy, MonitorDot, Plus, Send, Unlink } from 'lucide-react'
+import { Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
@@ -252,6 +252,12 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           </Section>
 
           <Section title={t.session.info}>
+            {s.tools_stale && (
+              <div className="mb-3 flex items-start gap-2 rounded-xl bg-wait-soft/70 px-3 py-2.5 text-[13px] leading-relaxed text-fg-2">
+                <RefreshCw className="mt-0.5 size-4 shrink-0 text-wait" />
+                {t.session.toolsStaleTip(s.tools_stale)}
+              </div>
+            )}
             {s.other_terminal && (
               <div className="mb-3 flex items-start gap-2 rounded-xl bg-accent-soft/70 px-3 py-2.5 text-[13px] leading-relaxed text-fg-2">
                 <MonitorDot className="mt-0.5 size-4 shrink-0 text-accent" />

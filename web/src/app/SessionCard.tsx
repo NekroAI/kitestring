@@ -16,6 +16,7 @@ import {
   ListChecks,
   MessageSquare,
   Monitor,
+  RefreshCw,
   Plug,
   Search,
   ShieldAlert,
@@ -209,6 +210,11 @@ export const SessionCard = memo(function SessionCard({ s, now, decisions = [], w
             <Meta icon={Monitor} tip={t.session.device}>
               {s.device_name}
             </Meta>
+            {s.tools_stale && s.state !== 'ended' && (
+              <Meta icon={RefreshCw} tip={t.session.toolsStaleTip(s.tools_stale)} className="text-wait">
+                {t.session.toolsStale}
+              </Meta>
+            )}
             {s.branch && (
               <Meta icon={GitBranch} tip={s.dirty ? t.session.dirtyTip(s.dirty) : t.session.branch} className="font-mono">
                 {s.branch}

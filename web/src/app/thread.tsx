@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import { ChevronRight, FileCheck2, GitBranch, MessageSquare, Monitor } from 'lucide-react'
+import { ChevronRight, FileCheck2, GitBranch, MessageSquare, Monitor, RefreshCw } from 'lucide-react'
 import type { Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, usePref } from '../lib/util'
-import { Card } from '../ui/base'
+import { Card, Tip } from '../ui/base'
 import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import type { Thread } from './inbox'
@@ -119,6 +119,14 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
                   <Monitor className="size-3.5" />
                   {s.device_name}
                 </span>
+                {s.tools_stale && s.state !== 'ended' && (
+                  <Tip content={t.session.toolsStaleTip(s.tools_stale)}>
+                    <span className="inline-flex items-center gap-1 text-wait">
+                      <RefreshCw className="size-3.5" />
+                      {t.session.toolsStale}
+                    </span>
+                  </Tip>
+                )}
                 {s.branch && (
                   <span className="inline-flex min-w-0 items-center gap-1 font-mono">
                     <GitBranch className="size-3.5 shrink-0" />

@@ -986,6 +986,7 @@ export interface components {
             tool_brief?: string;
             tool_name?: string;
             tool_use_id?: string;
+            tools?: string;
             turn_id?: string;
         };
         Evidence: {
@@ -1270,6 +1271,7 @@ export interface components {
             summary: string;
             title: string;
             tool: string;
+            tools_stale: string;
             /** Format: int64 */
             turn_tools: number;
             /** Format: int64 */

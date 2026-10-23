@@ -16,7 +16,11 @@ import (
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/daemon"
+	"github.com/NekroAI/kitestring/internal/version"
 )
+
+// VersionHeader 带上调用方（ks mcp / CLI）的版本，daemon 据此认出还在跑旧版 MCP 的会话（R-59）。
+const VersionHeader = "X-KS-Version"
 
 // Client 访问本机 daemon。
 type Client struct {
@@ -53,6 +57,7 @@ func (c *Client) Do(ctx context.Context, method, path string, in, out any) error
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	req.Header.Set(VersionHeader, version.Version)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("无法连接本机 Kitestring daemon（%s）：%w", daemon.SocketPath(), err)
@@ -111,6 +116,7 @@ func (c *Client) Upload(ctx context.Context, path, file string, out any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set(VersionHeader, version.Version)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("无法连接本机 Kitestring daemon：%w", err)
@@ -129,6 +135,7 @@ func (c *Client) Fetch(ctx context.Context, path string, limit int64) ([]byte, s
 	if err != nil {
 		return nil, "", err
 	}
+	req.Header.Set(VersionHeader, version.Version)
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, "", err

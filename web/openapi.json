@@ -786,6 +786,9 @@
           "tool_use_id": {
             "type": "string"
           },
+          "tools": {
+            "type": "string"
+          },
           "turn_id": {
             "type": "string"
           }
@@ -1886,6 +1889,9 @@
           "tool": {
             "type": "string"
           },
+          "tools_stale": {
+            "type": "string"
+          },
           "turn_tools": {
             "format": "int64",
             "type": "integer"
@@ -1930,6 +1936,7 @@
           "last_active_at",
           "other_terminal",
           "parked",
+          "tools_stale",
           "recent_tools",
           "requirements",
           "pending_decisions"

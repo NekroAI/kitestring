@@ -63,6 +63,7 @@ type Session struct {
 	OtherTerminal    bool             `json:"other_terminal"`    // 另有一个较早的终端也开着这个对话
 	DoneAt           *time.Time       `json:"done_at,omitempty"` // 你手动标为已完成；你再给它发消息时自动清除
 	Parked           bool             `json:"parked"`            // Agent 用 ks wait 挂起等你的答复 / 验收 / 留言
+	ToolsStale       string           `json:"tools_stale"`       // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
 	RecentTools      []ToolAct        `json:"recent_tools"`      // 最近几次工具调用，旧 → 新（工作台滚动展示）
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
@@ -85,7 +86,7 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked,
+	s.title, s.phase, s.digest_done, s.digest_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.tools_stale,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
@@ -96,7 +97,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked,
+		&x.Title, &x.Phase, &x.DigestDone, &x.DigestAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &x.ToolsStale,
 		&started, &active, &ended)
 	x.StartedAt = parseTS(started)
 	x.StateSince = parseTS(since)
@@ -283,6 +284,12 @@ func (s *Store) SetSessionAI(ctx context.Context, key string, a SessionAI) error
 		digest_ask = CASE WHEN ? <> '' THEN ? ELSE digest_ask END
 		WHERE key = ?`,
 		a.Summary, a.Summary, a.Title, a.Title, a.Phase, a.Phase, a.DigestDone, a.DigestDone, a.DigestAsk, a.DigestAsk, key)
+	return err
+}
+
+// SetToolsStale 记下会话的 Kitestring 工具是否过期（v 为过期工具的版本，空表示已是最新）。
+func (s *Store) SetToolsStale(ctx context.Context, key, v string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET tools_stale = ? WHERE key = ?`, v, key)
 	return err
 }
 
