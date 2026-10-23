@@ -75,6 +75,23 @@ func currentSession(flagVal string) string {
 	return cliSession("")
 }
 
+// runBrief：ks brief <简报>——PM 写给用户的简报，显示在工作台顶部（R-113）；ks brief "" 清除。
+func runBrief(args []string) error {
+	fs := flag.NewFlagSet("brief", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() < 1 {
+		return fmt.Errorf("用法：ks brief <简报：一段话，先结论，提到需求写编号>（传空字符串清除）")
+	}
+	key := currentSession(*session)
+	if key == "" {
+		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+	}
+	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " ")})
+}
+
 // runTeam：ks team——列出本项目的 PM 与开发会话（R-86）。
 func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)

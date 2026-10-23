@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/agent/brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PM 写给用户的简报（R-113） */
+        post: operations["agent-set-brief"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/decisions": {
         parameters: {
             query?: never;
@@ -1041,6 +1058,12 @@ export interface components {
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
         };
+        "Agent-set-briefRequest": {
+            /** @description 调用者（必须是本项目的 PM） */
+            session_key: string;
+            /** @description 简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；空字符串表示清除 */
+            text: string;
+        };
         "Agent-set-roleRequest": {
             /**
              * @description pm / dev / advisor / reviewer；空为清除身份
@@ -1614,6 +1637,10 @@ export interface components {
         };
         Project: {
             auto_dispatch: boolean;
+            brief: string;
+            /** Format: date-time */
+            brief_at?: string;
+            brief_by: string;
             /** Format: date-time */
             created_at: string;
             doc_root: string;
@@ -1987,6 +2014,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "agent-set-brief": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-set-briefRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-raise-decision": {
         parameters: {
             query?: never;

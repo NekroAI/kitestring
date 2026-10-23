@@ -7,6 +7,7 @@ import { t } from '../i18n'
 import { cx, relTime, useNow, usePref } from '../lib/util'
 import { Tip } from '../ui/base'
 import { useWorkbench } from './inbox'
+import { useTodo } from './desk'
 import { usePanelParams } from './nav'
 import { PlanPanel } from './plans'
 import { ReqPanel } from './reqDrawer'
@@ -158,6 +159,7 @@ function MobileHeader({ connected }: { connected: boolean }) {
 export function Shell() {
   const connected = useLiveUpdates(true)
   const wb = useWorkbench()
+  const todo = useTodo(wb).length // 与工作台「待你处理」同一口径
   const { session, req, plan, close } = usePanelParams()
   const [collapsed, setCollapsed] = usePref('ks.sidebar.collapsed', false)
   // 侧边栏宽度给其它固定定位的元素用（如工作台底部的批量操作条）
@@ -174,20 +176,20 @@ export function Shell() {
   }, [collapsed, setCollapsed])
 
   useEffect(() => {
-    document.title = wb.todo ? `(${wb.todo}) ${t.app.fullName}` : t.app.fullName
-  }, [wb.todo])
+    document.title = todo ? `(${todo}) ${t.app.fullName}` : t.app.fullName
+  }, [todo])
 
   return (
     <RefIndexProvider>
     <div className="min-h-dvh">
-      <Sidebar todo={wb.todo} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      <Sidebar todo={todo} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
       <main className={cx('pb-24 transition-[padding] duration-200 ease-out lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
         <div className="mx-auto max-w-[1360px] px-4 pt-5 sm:px-6 lg:px-10 lg:pt-9">
           <Outlet />
         </div>
       </main>
-      <TabBar todo={wb.todo} />
+      <TabBar todo={todo} />
       <SessionPanel sessionKey={session} onClose={close} />
       <ReqPanel refId={req} onClose={close} />
       <PlanPanel code={plan} onClose={close} />

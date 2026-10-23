@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { Archive, CheckCheck, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import { Archive, CheckCheck, ChevronRight, History, LayoutGrid, MessagesSquare, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
 import type { Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
-import { useNow, usePref } from '../lib/util'
+import { cx, useNow, usePref } from '../lib/util'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented } from '../ui/base'
 import { StatusDot } from '../ui/marks'
 import { useWorkbench, type ProjectGroup } from '../app/inbox'
@@ -13,8 +13,9 @@ import { composeAnswer, useOutbox } from '../app/outbox'
 import { RecapPanel } from '../app/Recap'
 import { SessionCard, sessionTitle } from '../app/SessionCard'
 import { SessionRow, ThreadCard } from '../app/thread'
-import { Item, List } from '../ui/motion'
-import { PlanAttention } from '../app/plans'
+import { Collapse, Item, List } from '../ui/motion'
+import { Briefs, InProgress, TodoList, useTodo } from '../app/desk'
+import { Team } from './Projects'
 import { ProjGlyph } from '../ui/refmark'
 
 type Filter = 'all' | 'todo'
@@ -162,12 +163,32 @@ function Project({ g, filter, k, now, sessions }: { g: ProjectGroup; filter: Fil
   )
 }
 
+// Footnote：各项目的 PM / 开发在线情况，一行。
+function Footnote({ groups }: { groups: ProjectGroup[] }) {
+  const rows = groups.filter((g) => [...g.active, ...g.threads.map((th) => th.s).filter((x): x is Session => !!x)].some((s) => s.role === 'pm' || s.role === 'dev'))
+  if (!rows.length) return null
+  return (
+    <div className="-mt-3 mb-7 flex flex-wrap items-center gap-x-5 gap-y-1.5 px-1">
+      {rows.map((g) => (
+        <span key={g.key} className="flex items-center gap-2 text-xs text-fg-3">
+          <ProjGlyph />
+          <span className="text-fg-2">{g.name}</span>
+          <Team sessions={[...g.active, ...g.threads.map((th) => th.s).filter((x): x is Session => !!x)]} />
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function WorkbenchPage() {
   const now = useNow()
   const wb = useWorkbench()
   const settings = useSettings()
+  const todo = useTodo(wb)
   const [filter, setFilter] = usePref<Filter>('ks.home.filter', 'all')
   const [view, setView] = usePref<'threads' | 'cards'>('ks.home.view', 'threads')
+  // 会话视图折叠在三层下面（D-142）；展开后记住，常在会话视图里工作的人不用每次都点开
+  const [showSessions, setShowSessions] = usePref('ks.home.sessions', false)
   const [q, setQ] = useState('')
   const [recap, setRecap] = useState(false)
   const k = q.trim().toLowerCase()
@@ -177,14 +198,63 @@ export default function WorkbenchPage() {
     () => (filter === 'all' ? wb.projects.flatMap((g) => g.ended).filter((s) => match(s, k)).sort((a, b) => b.last_active_at.localeCompare(a.last_active_at)) : []),
     [wb.projects, filter, k],
   )
+  const live = wb.sessions.filter((s) => s.state !== 'ended').length
 
   if (wb.error) return <ErrorState error={wb.error} onRetry={wb.refetch} />
+
+  const sessionsBody = wb.loading ? (
+    <CardSkeleton rows={3} />
+  ) : !wb.devices.length ? (
+    <Card>
+      <Empty
+        icon={<MonitorSmartphone />}
+        title={t.home.noDevices}
+        action={
+          <Link to="/settings?tab=devices">
+            <Button variant="primary">{t.home.addDevice}</Button>
+          </Link>
+        }
+      >
+        {t.home.noDevicesSub}
+      </Empty>
+    </Card>
+  ) : !wb.sessions.length && !wb.threads.length ? (
+    <Card>
+      <Empty icon={<MonitorSmartphone />} title={t.home.empty}>
+        {t.home.emptySub}
+      </Empty>
+    </Card>
+  ) : filter === 'todo' && !wb.threads.length ? (
+    <Card>
+      <Empty icon={<CheckCheck />} title={t.home.allClear}>
+        {t.home.allClearSub(wb.running.length)}
+      </Empty>
+    </Card>
+  ) : (
+    <div>
+      <List space={36}>
+        {visible.map((g) => (
+          <Item key={g.key} space={36}>
+            {view === 'cards' ? <ProjectCards g={g} filter={filter} k={k} now={now} /> : <Project g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />}
+          </Item>
+        ))}
+      </List>
+      <div className="mt-9">
+        <Ended sessions={ended} view={view} now={now} />
+      </div>
+      {k && !visible.some((g) => g.threads.some((th) => match(th.s, k)) || g.active.some((s) => match(s, k)) || g.ended.some((s) => match(s, k))) && (
+        <Card>
+          <Empty icon={<SearchX />} title={t.home.noMatch} />
+        </Card>
+      )}
+    </div>
+  )
 
   return (
     <>
       <PageHeader
         title={t.home.title}
-        subtitle={wb.loading ? ' ' : t.home.summary(wb.todo, wb.running.length)}
+        subtitle={wb.loading ? ' ' : t.home.summary(todo.length, wb.running.length)}
         actions={
           recapOn && (
             <Button icon={<History className="size-4" />} onClick={() => setRecap(true)}>
@@ -193,77 +263,53 @@ export default function WorkbenchPage() {
           )
         }
       />
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <Segmented
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: 'all', label: t.home.filter.all },
-            { value: 'todo', label: t.home.filter.todo, count: wb.todo },
-          ]}
-        />
-        <Segmented
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'threads', label: <MessagesSquare className="size-4" />, tip: t.home.viewThreads },
-            { value: 'cards', label: <LayoutGrid className="size-4" />, tip: t.home.viewCards },
-          ]}
-        />
-        <div className="relative ml-auto w-full sm:w-64">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.home.search} className="pl-9" />
-        </div>
-      </div>
-
-      {wb.loading ? (
-        <CardSkeleton rows={3} />
-      ) : !wb.devices.length ? (
-        <Card>
-          <Empty
-            icon={<MonitorSmartphone />}
-            title={t.home.noDevices}
-            action={
-              <Link to="/settings?tab=devices">
-                <Button variant="primary">{t.home.addDevice}</Button>
-              </Link>
-            }
-          >
-            {t.home.noDevicesSub}
-          </Empty>
-        </Card>
-      ) : !wb.sessions.length && !wb.threads.length ? (
-        <Card>
-          <Empty icon={<MonitorSmartphone />} title={t.home.empty}>
-            {t.home.emptySub}
-          </Empty>
-        </Card>
-      ) : filter === 'todo' && !wb.threads.length && !wb.plans.length ? (
-        <Card>
-          <Empty icon={<CheckCheck />} title={t.home.allClear}>
-            {t.home.allClearSub(wb.running.length)}
-          </Empty>
-        </Card>
-      ) : (
-        <div>
-          <PlanAttention plans={k ? [] : wb.plans} />
-          <List space={36}>
-            {visible.map((g) => (
-              <Item key={g.key} space={36}>
-                {view === 'cards' ? <ProjectCards g={g} filter={filter} k={k} now={now} /> : <Project g={g} filter={filter} k={k} now={now} sessions={wb.sessions} />}
-              </Item>
-            ))}
-          </List>
-          <div className="mt-9">
-            <Ended sessions={ended} view={view} now={now} />
-          </div>
-          {k && !visible.some((g) => g.threads.some((th) => match(th.s, k)) || g.active.some((s) => match(s, k)) || g.ended.some((s) => match(s, k))) && (
-            <Card>
-              <Empty icon={<SearchX />} title={t.home.noMatch} />
-            </Card>
-          )}
-        </div>
+      {!wb.loading && (
+        <>
+          <Briefs sessions={wb.sessions} now={now} />
+          <TodoList items={todo} sessions={wb.sessions} now={now} />
+          <InProgress />
+          <Footnote groups={wb.projects} />
+        </>
       )}
+
+      <section>
+        <button
+          onClick={() => setShowSessions(!showSessions)}
+          aria-expanded={showSessions}
+          className="mb-3 flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface px-4 py-3 text-left shadow-xs transition hover:bg-hover/60"
+        >
+          <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', showSessions && 'rotate-90')} />
+          <span className="font-display text-[17px] font-semibold text-fg">{t.desk.sessions}</span>
+          <span className="truncate text-xs text-fg-3">{t.desk.sessionsSub(live, wb.projects.reduce((n, g) => n + g.ended.length, 0))}</span>
+        </button>
+        <Collapse show={showSessions}>
+          <div className="pt-2">
+            <div className="mb-6 flex flex-wrap items-center gap-2">
+              <Segmented
+                value={filter}
+                onChange={setFilter}
+                options={[
+                  { value: 'all', label: t.home.filter.all },
+                  { value: 'todo', label: t.home.filter.todo, count: wb.threads.length },
+                ]}
+              />
+              <Segmented
+                value={view}
+                onChange={setView}
+                options={[
+                  { value: 'threads', label: <MessagesSquare className="size-4" />, tip: t.home.viewThreads },
+                  { value: 'cards', label: <LayoutGrid className="size-4" />, tip: t.home.viewCards },
+                ]}
+              />
+              <div className="relative ml-auto w-full sm:w-64">
+                <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.home.search} className="pl-9" />
+              </div>
+            </div>
+            {sessionsBody}
+          </div>
+        </Collapse>
+      </section>
       <SendAllBar />
       {recapOn && <RecapPanel open={recap} onClose={() => setRecap(false)} />}
     </>

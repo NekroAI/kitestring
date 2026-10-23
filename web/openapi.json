@@ -183,6 +183,25 @@
         ],
         "type": "object"
       },
+      "Agent-set-briefRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "description": "调用者（必须是本项目的 PM）",
+            "minLength": 1,
+            "type": "string"
+          },
+          "text": {
+            "description": "简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；空字符串表示清除",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "text"
+        ],
+        "type": "object"
+      },
       "Agent-set-roleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2293,6 +2312,16 @@
           "auto_dispatch": {
             "type": "boolean"
           },
+          "brief": {
+            "type": "string"
+          },
+          "brief_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brief_by": {
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -2336,7 +2365,9 @@
           "hidden",
           "created_at",
           "need_devs",
-          "need_reason"
+          "need_reason",
+          "brief",
+          "brief_by"
         ],
         "type": "object"
       },
@@ -3676,6 +3707,47 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/brief": {
+      "post": {
+        "operationId": "agent-set-brief",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-set-briefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PM 写给用户的简报（R-113）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/decisions": {
       "post": {
         "operationId": "agent-raise-decision",

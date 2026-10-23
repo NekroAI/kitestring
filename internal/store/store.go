@@ -93,6 +93,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"plan_stages", "summary_blocks", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "points", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "summary", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "brief", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "brief_by", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "brief_at", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "choices", "TEXT NOT NULL DEFAULT ''"},
 }
 

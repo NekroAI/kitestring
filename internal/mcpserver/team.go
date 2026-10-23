@@ -61,7 +61,25 @@ type needIn struct {
 	Reason string `json:"reason,omitempty" jsonschema:"为什么需要：哪些需求在等、为什么不适合用 subagent 做；用户会在推送里看到"`
 }
 
+type briefIn struct {
+	Text string `json:"text" jsonschema:"简报：一段话（建议 150 字以内），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
+}
+
 func (t *tools) registerTeam(s *mcp.Server) {
+	mcp.AddTool(s, &mcp.Tool{Name: "brief_set", Description: "PM 用：写一段给用户看的简报，显示在纸鸢工作台顶部（署名 PM 和时间）。每次覆盖上一份；阶段交付、派完一批活、有事等用户处理时更新。超过 12 小时没更新的简报网页不再显示。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in briefIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/brief", map[string]any{"session_key": key, "text": in.Text}, nil); err != nil {
+				return nil, nil, err
+			}
+			if in.Text == "" {
+				return text("已清除简报。"), nil, nil
+			}
+			return text("简报已更新，用户在工作台顶部能看到。"), nil, nil
+		})
 	mcp.AddTool(s, &mcp.Tool{Name: "need_devs", Description: "PM 用：需要开发会话、但工人池里没有在线的开发时，提醒用户开新的开发会话。用户手机会收到推送，里面有原因和接入用的那句话；开发上线后提醒自动消失。req_assign 用 auto 找不到在线开发时会自动提醒，不必重复调用。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in needIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)

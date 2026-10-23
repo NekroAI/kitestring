@@ -40,6 +40,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentTeam(agentAPI)
 	h.registerReviewerAgent(agentAPI)
 	h.registerAgentNeed(agentAPI)
+	h.registerAgentBrief(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -89,6 +90,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentTeam(api)
 	h.registerReviewerAgent(api)
 	h.registerAgentNeed(api)
+	h.registerAgentBrief(api)
 	return api.OpenAPI()
 }
 

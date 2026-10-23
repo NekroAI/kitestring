@@ -154,7 +154,7 @@ function Section({ title, right, children }: { title: string; right?: ReactNode;
 }
 
 // Team：这个项目有没有 PM、几个开发在线（R-84）。没有任何身份会话时不显示。
-function Team({ sessions }: { sessions: Session[] }) {
+export function Team({ sessions }: { sessions: Session[] }) {
   const pm = sessions.filter((s) => s.role === 'pm').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
   const devs = sessions.filter((s) => s.role === 'dev' && s.state !== 'ended')
   const online = devs.filter((s) => presence(s) !== 'offline').length

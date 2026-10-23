@@ -55,6 +55,10 @@ type Project struct {
 	NeedDevs   int        `json:"need_devs"`
 	NeedReason string     `json:"need_reason"`
 	NeedAt     *time.Time `json:"need_at,omitempty"`
+	// Brief / BriefBy / BriefAt：PM 写给你的简报（R-113），工作台顶部显示；PM 用工具覆盖写入
+	Brief   string     `json:"brief"`
+	BriefBy string     `json:"brief_by"`
+	BriefAt *time.Time `json:"brief_at,omitempty"`
 }
 
 // NormalizeRemote 把各种写法的 git remote 归一化为 host/owner/repo 小写形式。
@@ -164,7 +168,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 
 // ListProjects 列出全部项目。
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at FROM projects ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -172,12 +176,13 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	out := []Project{}
 	for rows.Next() {
 		var p Project
-		var created, needAt string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt); err != nil {
+		var created, needAt, briefAt string
+		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTS(created)
 		p.NeedAt = optTS(needAt)
+		p.BriefAt = optTS(briefAt)
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -186,14 +191,15 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 // GetProject 按 ID 读取项目。
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	var p Project
-	var created, needAt string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt)
+	var created, needAt, briefAt string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
 	p.CreatedAt = parseTS(created)
 	p.NeedAt = optTS(needAt)
+	p.BriefAt = optTS(briefAt)
 	return p, err
 }
 
@@ -321,6 +327,18 @@ func (s *Store) SetNeedDevs(ctx context.Context, projectID string, n int, reason
 		reason = ""
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE projects SET need_devs = ?, need_reason = ?, need_at = ? WHERE id = ?`, n, reason, at, projectID)
+	return err
+}
+
+// SetBrief 写入 / 清除（text 为空）PM 给你的简报（R-113）。
+func (s *Store) SetBrief(ctx context.Context, projectID, text, by string) error {
+	at := ""
+	if text != "" {
+		at = now()
+	} else {
+		by = ""
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE projects SET brief = ?, brief_by = ?, brief_at = ? WHERE id = ?`, text, by, at, projectID)
 	return err
 }
 

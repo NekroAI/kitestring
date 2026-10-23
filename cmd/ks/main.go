@@ -48,6 +48,7 @@ agent 调用：
   req review <R-x> <意见> [--image]   审查员交审查意见（不改需求状态）
   team                   工人池：本项目的 PM 与开发会话（在线状态、上下文、手上的需求）
   team need <数量> --reason ...   PM 提醒用户开开发会话
+  brief <简报>           PM 写给用户的简报，显示在工作台顶部
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结（只写跨需求的效果和遗留问题）
   decision raise ...     提出决策（一次只问一件事）
   写作规范：证据第一句是结论（40 字以内），再逐条写验收判定；证据超 600 字、决策说明超 400 字时照常保存并提示压缩
@@ -96,6 +97,8 @@ func main() {
 		err = runWait(args)
 	case "role":
 		err = runRole(args)
+	case "brief":
+		err = runBrief(args)
 	case "team":
 		err = runTeam(args)
 	case "help", "--help", "-h":
