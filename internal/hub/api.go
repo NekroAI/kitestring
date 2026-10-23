@@ -653,6 +653,9 @@ func (h *Hub) registerWeb(api huma.API) {
 			h.reopenStage(ctx, cur, r.Status)
 			h.broker.publish("requirements", "sessions", "plans")
 			h.kick(ctx, r.ID)
+			if r.Status != cur.Status {
+				h.refreshDelivered(ctx, r)
+			}
 			return &reqOut{Body: r}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "delete-requirement", Method: http.MethodDelete, Path: "/api/requirements/{ref}", Tags: tag("requirements")},
@@ -881,6 +884,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			if in.Body.SessionKey != "" {
 				_ = h.store.LinkSession(ctx, r.ID, in.Body.SessionKey)
 			}
+			h.refreshDelivered(ctx, r)
 			h.broker.publish("requirements", "sessions", "plans")
 			if r.Status == store.ReqReview {
 				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements")

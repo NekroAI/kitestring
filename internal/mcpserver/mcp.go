@@ -92,6 +92,11 @@ type refIn struct {
 	Ref string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
 }
 
+type reqGetIn struct {
+	Ref  string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	Full bool   `json:"full,omitempty" jsonschema:"为 true 时返回完整 JSON（含全部历史与元数据），并附上证据截图；默认只给要点"`
+}
+
 type reqCreateIn struct {
 	Title      string   `json:"title" jsonschema:"需求标题，一句话"`
 	Detail     string   `json:"detail,omitempty" jsonschema:"背景与细节"`
@@ -176,19 +181,33 @@ func (t *tools) register(s *mcp.Server) {
 			for _, st := range in.Status {
 				q.Add("status", st)
 			}
-			var out map[string]any
-			err := t.c.Do(ctx, "GET", "/agent/requirements?"+q.Encode(), nil, &out)
-			return nil, out, err
-		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_get", Description: "读取一条需求的完整信息，含验收标准、关联会话、证据，以及用户的修改意见（附图会以图片形式返回）。"},
-		func(ctx context.Context, req *mcp.CallToolRequest, in refIn) (*mcp.CallToolResult, any, error) {
-			var out map[string]any
-			if err := t.c.Do(ctx, "GET", "/agent/requirements/"+url.PathEscape(in.Ref), nil, &out); err != nil {
+			var out reqListView
+			if err := t.c.Do(ctx, "GET", "/agent/requirements?"+q.Encode(), nil, &out); err != nil {
 				return nil, nil, err
 			}
-			text, _ := json.MarshalIndent(out, "", "  ")
-			res := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}
-			for _, id := range imageIDs(out) {
+			return text(out.String()), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "req_get", Description: "读取一条需求：说明、验收标准、关联会话、证据要点，以及用户的修改意见与决策（描述和意见里的附图以图片形式返回）。需要完整历史与元数据时传 full = true。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in reqGetIn) (*mcp.CallToolResult, any, error) {
+			var raw json.RawMessage
+			if err := t.c.Do(ctx, "GET", "/agent/requirements/"+url.PathEscape(in.Ref), nil, &raw); err != nil {
+				return nil, nil, err
+			}
+			var res *mcp.CallToolResult
+			var ids []string
+			if in.Full {
+				var out map[string]any
+				_ = json.Unmarshal(raw, &out)
+				body, _ := json.MarshalIndent(out, "", "  ")
+				res, ids = text(string(body)), imageIDs(out)
+			} else {
+				var v reqView
+				if err := json.Unmarshal(raw, &v); err != nil {
+					return nil, nil, err
+				}
+				res, ids = text(v.String()), v.images()
+			}
+			for _, id := range ids {
 				if data, mime, err := t.c.Fetch(ctx, "/agent/files/"+url.PathEscape(id), 10<<20); err == nil {
 					res.Content = append(res.Content, &mcp.ImageContent{Data: data, MIMEType: mime})
 				}
@@ -206,17 +225,29 @@ func (t *tools) register(s *mcp.Server) {
 			if len(ids) > 0 {
 				body["files"] = ids
 			}
-			var out map[string]any
-			err = t.c.Do(ctx, "POST", "/agent/requirements", body, &out)
-			return nil, out, err
+			var out reqView
+			if err := t.c.Do(ctx, "POST", "/agent/requirements", body, &out); err != nil {
+				return nil, nil, err
+			}
+			msg := "已记下 " + out.line()
+			if out.Status == "draft" {
+				msg += "（用户确认后才排进待办）"
+			}
+			return text(msg), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqStatusIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"status": in.Status, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
-			var out map[string]any
-			err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/status", body, &out)
-			return nil, out, err
+			var out reqView
+			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/status", body, &out); err != nil {
+				return nil, nil, err
+			}
+			msg := fmt.Sprintf("%s「%s」→ %s", out.Code, out.Title, zh(out.Status))
+			if out.Status == "review" {
+				msg += fmt.Sprintf("（证据 %d 条）", out.evidenceCount())
+			}
+			return text(msg), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据（测试结果、提交、截图路径等）。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
@@ -229,9 +260,15 @@ func (t *tools) register(s *mcp.Server) {
 			if len(ids) > 0 {
 				body["files"] = ids
 			}
-			var out map[string]any
-			err = t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/evidence", body, &out)
-			return nil, out, err
+			var out reqView
+			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/evidence", body, &out); err != nil {
+				return nil, nil, err
+			}
+			msg := fmt.Sprintf("%s 已附证据（共 %d 条）", out.Code, out.evidenceCount())
+			if len(ids) > 0 {
+				msg += fmt.Sprintf("，本次附件 %d 个", len(ids))
+			}
+			return text(msg + "；状态：" + zh(out.Status)), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
@@ -265,7 +302,7 @@ func (t *tools) register(s *mcp.Server) {
 			if err := t.c.Do(ctx, "POST", "/agent/decisions", body, &out); err != nil {
 				return nil, nil, err
 			}
-			return nil, map[string]any{"decision": out["code"], "status": "已进入用户的决策收件箱，作答后会自动注入本会话"}, nil
+			return text(fmt.Sprintf("%v 已进入用户的决策收件箱，作答后会自动注入本会话", out["code"])), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，草稿 / 待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {
@@ -273,9 +310,11 @@ func (t *tools) register(s *mcp.Server) {
 			if key == "" {
 				return nil, nil, fmt.Errorf("无法识别当前会话")
 			}
-			var out map[string]any
-			err := t.c.Do(ctx, "POST", "/agent/sessions/"+url.PathEscape(key)+"/link", map[string]any{"requirement": in.Requirement}, &out)
-			return nil, out, err
+			var out reqView
+			if err := t.c.Do(ctx, "POST", "/agent/sessions/"+url.PathEscape(key)+"/link", map[string]any{"requirement": in.Requirement}, &out); err != nil {
+				return nil, nil, err
+			}
+			return text("已关联 " + out.line()), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "plan_create", Description: "把较大的目标拆成计划：按顺序的阶段，阶段内可放多条需求（已有或新建）。提交后进入用户的“待批准”，批准后第一阶段的需求会交给本会话。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in planCreateIn) (*mcp.CallToolResult, any, error) {

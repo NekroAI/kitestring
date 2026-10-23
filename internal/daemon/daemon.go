@@ -576,8 +576,10 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		}
 	}
 	if len(again) > 0 {
-		b.WriteString("[Kitestring] 提醒：以下是此前已收到的用户答复与修改意见（会话恢复或上下文压缩后补充），继续遵循：\n")
+		b.WriteString("[Kitestring] 提醒：以下是此前已收到、仍然有效的用户答复与意见（会话恢复或上下文压缩后补充；每条只列要点，完整内容用 req_get 查看），继续遵循：\n")
 		for _, dec := range again {
+			dec.Answer = summary.Truncate(strings.Join(strings.Fields(dec.Answer), " "), 120)
+			dec.Question = summary.Truncate(dec.Question, 80)
 			d.writeItem(&b, dec)
 		}
 	}

@@ -275,9 +275,11 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store
 	}
 	for _, r := range st.Requirements {
 		if r.Status == store.ReqReview {
-			if _, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqDone); err != nil {
+			done, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqDone)
+			if err != nil {
 				return x, err
 			}
+			h.refreshDelivered(ctx, done)
 		}
 	}
 	if err := h.store.SetStageStatus(ctx, st.ID, store.StagePassed, ""); err != nil {

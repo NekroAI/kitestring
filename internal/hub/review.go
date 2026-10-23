@@ -70,6 +70,11 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 			if r, err = h.store.SetRequirementStatus(ctx, r.ID, store.ReqDone); err != nil {
 				return nil, apiErr(err)
 			}
+			for _, k := range r.Sessions {
+				if x, err := h.store.GetSession(ctx, k); err == nil {
+					devices[x.DeviceID] = true
+				}
+			}
 			// 带意见通过：意见作为留言送达 Agent（需求仍是已完成）
 			comment := strings.TrimSpace(it.Comment)
 			if comment != "" || len(it.Files) > 0 {

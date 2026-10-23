@@ -234,6 +234,14 @@ func TestDecisionLoop(t *testing.T) {
 		t.Fatalf("退回后证据应作废：%+v", r.Evidence)
 	}
 
+	// 6.1 需求验收完成后，压缩时不再补发它上面的旧答复（R-58）
+	e.call("PUT", "/api/requirements/"+req.Code, map[string]any{"title": "登录页", "status": "done"}, nil)
+	e.waitFor("已完成需求上的答复不再补发", func() bool {
+		cmp := base("SessionStart")
+		cmp["source"] = "compact"
+		return !strings.Contains(hook(t, "codex", cmp), "D-1")
+	})
+
 	// 7. 会话结束
 	hook(t, "codex", base("SessionEnd"))
 	e.waitFor("会话结束", func() bool { return e.session("codex:s-1").State == store.StateEnded })

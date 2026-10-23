@@ -222,8 +222,12 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 		h.log.Warn("查询待注入决策失败", "err", err)
 		return
 	}
+	stale := h.staleDelivered(ctx, list)
 	out := make([]protocol.Decision, 0, len(list))
 	for _, d := range list {
+		if stale[d.ID] {
+			continue
+		}
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: d.Answer, Delivered: d.Status == store.DecDelivered,
 			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle}
 		if d.Kind == store.KindPlan {
@@ -238,6 +242,68 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 		out = append(out, pd)
 	}
 	c.send(protocol.Envelope{Type: protocol.MsgDecisions, Decisions: out})
+}
+
+// refreshDelivered 在需求状态变化后刷新关联会话所在设备的下行决策：已完成 / 重新交验收后，
+// 恢复 / 压缩时就不再补发它上面的旧意见（R-58）。
+func (h *Hub) refreshDelivered(ctx context.Context, r store.Requirement) {
+	seen := map[string]bool{}
+	for _, k := range r.Sessions {
+		if x, err := h.store.GetSession(ctx, k); err == nil && !seen[x.DeviceID] {
+			seen[x.DeviceID] = true
+			h.pushDecisions(ctx, x.DeviceID)
+		}
+	}
+}
+
+// staleDelivered 挑出已送达、但会话恢复 / 压缩时不必再补发的决策（R-58）：
+// 需求已完成或搁置；修改意见对应的需求已重新交验收；交出 / 排队的需求已不在待开始或进行中；
+// 同一计划只留最新一条进展，计划不在进行中时一条都不留。
+func (h *Hub) staleDelivered(ctx context.Context, list []store.Decision) map[string]bool {
+	stale := map[string]bool{}
+	reqs := map[string]string{}
+	status := func(id string) string {
+		st, ok := reqs[id]
+		if !ok {
+			if r, err := h.store.GetRequirement(ctx, id); err == nil {
+				st = r.Status
+			}
+			reqs[id] = st
+		}
+		return st
+	}
+	plans := map[string]bool{}
+	latest := map[string]string{} // 计划 → 最新一条进展
+	for _, d := range list {
+		if d.Kind == store.KindPlan && d.PlanID != "" {
+			latest[d.PlanID] = d.ID // list 按编号升序，后来的覆盖前面的
+			if _, ok := plans[d.PlanID]; !ok {
+				p, err := h.store.GetPlan(ctx, d.PlanID)
+				plans[d.PlanID] = err == nil && p.Status == store.PlanActive
+			}
+		}
+	}
+	for _, d := range list {
+		if d.Status != store.DecDelivered {
+			continue
+		}
+		if d.Kind == store.KindPlan {
+			stale[d.ID] = d.PlanID != "" && (latest[d.PlanID] != d.ID || !plans[d.PlanID])
+			continue
+		}
+		if d.RequirementID == "" {
+			continue
+		}
+		switch st := status(d.RequirementID); {
+		case st == "" || st == store.ReqDone || st == store.ReqShelved:
+			stale[d.ID] = true
+		case d.Kind == store.KindFeedback && st == store.ReqReview:
+			stale[d.ID] = true
+		case (d.Kind == store.KindAssign || d.Kind == store.KindQueue) && st != store.ReqReady && st != store.ReqInProgress && st != store.ReqBlocked:
+			stale[d.ID] = true
+		}
+	}
+	return stale
 }
 
 // decisionsChanged 在决策变化后刷新相关设备的下行缓存并通知 Web。
