@@ -15,7 +15,7 @@ import { Menu, Panel, useConfirm } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { useOpenSession } from './nav'
-import { EditableText, priorities, ReleaseBadge, StatusMenu, toFields } from './requirements'
+import { EditableMd, EditableText, priorities, ReleaseBadge, StatusMenu, toFields } from './requirements'
 import { ReqTimeline } from './reqTimeline'
 import { AcceptView } from './accept'
 import { AssignButton } from './assign'
@@ -23,6 +23,7 @@ import { ReviewerButton } from './reviewer'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
 import { OwnLine, useOwnership } from './ownership'
+import { plainText } from '../ui/markdown'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 
 // 需求抽屉：从上到下是“需求是什么”（固定）→ 来回的记录（滚动，最新在下）→ 轮到你做的事（固定在底部）。
@@ -160,7 +161,7 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
       <OwnLine r={r} />
       {!open && (
         <button onClick={() => setOpen(true)} className={cx('mt-2 line-clamp-2 w-full text-left text-[13px] leading-relaxed text-fg-3 transition hover:text-fg-2', compact && 'max-sm:hidden')}>
-          <Linkify text={r.detail || r.acceptance || t.reqs.briefEmpty} />
+          <Linkify text={plainText(r.detail || r.acceptance) || t.reqs.briefEmpty} />
         </button>
       )}
       <Collapse show={open}>
@@ -168,12 +169,12 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
           <section>
             <h3 className="mb-0.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
             <AttachZone value={r.files ?? []} onChange={(files) => save({ files: files.map((f) => f.id) })} compact>
-              <EditableText multiline value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3 pr-10" />
+              <EditableMd value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3 pr-10" />
             </AttachZone>
           </section>
           <section>
             <h3 className="mb-0.5 text-xs font-medium text-fg-3">{t.reqs.acceptance}</h3>
-            <EditableText multiline value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
+            <EditableMd value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
           </section>
           <section>
             <div className="mb-1 flex items-center justify-between">

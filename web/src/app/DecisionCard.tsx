@@ -18,6 +18,7 @@ import { composeAnswer, emptyDraft, useOutbox } from './outbox'
 import { currentPicks, picksText, PlanSummary, Points } from './points'
 import { useOpenReq, useOpenSession } from './nav'
 import { targetItems } from './assign'
+import { Md, plainText } from '../ui/markdown'
 import { Linkify, RefChip } from '../ui/refmark'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
@@ -59,9 +60,13 @@ function Context({ text, expanded }: { text: string; expanded?: boolean }) {
   const long = !expanded && (text.length > 140 || text.split('\n').length > 3)
   return (
     <div className="text-sm leading-relaxed text-fg-2">
-      <div className={cx('break-words whitespace-pre-wrap', !open && long && 'line-clamp-3')}>
-        <Linkify text={text} />
-      </div>
+      {open || !long ? (
+        <Md text={text} className="break-words" />
+      ) : (
+        <div className="line-clamp-3 break-words whitespace-pre-wrap">
+          <Linkify text={plainText(text)} />
+        </div>
+      )}
       {long && (
         <button onClick={() => setOpen(!open)} className="mt-0.5 text-[13px] font-medium text-accent hover:underline">
           {open ? t.common.collapse : t.common.showAll}

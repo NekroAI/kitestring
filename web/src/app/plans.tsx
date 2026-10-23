@@ -15,6 +15,7 @@ import { targetGroup, targetItems, targetLabel } from './assign'
 import { sessionTitle } from './SessionCard'
 import { useOpenPlan, useOpenReq } from './nav'
 import { ReqView } from './reqDrawer'
+import { Md } from '../ui/markdown'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 import { BlockList, ScoreCount } from '../ui/blocks'
 
@@ -265,7 +266,7 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
       {st.summary ? (
         <>
           <div className="text-xs font-semibold text-reply">{t.plan.summary}</div>
-          <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap text-fg-2"><Linkify text={st.summary} /></p>
+          <Md text={st.summary} className="mt-1 text-[13px] leading-relaxed text-fg-2" />
           <BlockList blocks={st.summary_blocks} className="mt-3" />
         </>
       ) : (
@@ -470,7 +471,7 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-6">
               <h2 className="font-display text-[22px] leading-snug text-fg">{x.title}</h2>
-              {x.goal && <p className="mt-1.5 text-sm leading-relaxed text-fg-3"><Linkify text={x.goal} /></p>}
+              {x.goal && <Md text={x.goal} className="mt-1.5 text-sm leading-relaxed text-fg-3" />}
               <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <OwnerMenu owner={owner} projectId={x.project_id} sessions={all} onPick={(key) => void updatePlan(x.code, bodyOf(x, { owner_session: key }))} className="-ml-2 max-w-[320px] bg-accent-soft/70 text-accent hover:bg-accent-soft" />
                 <span className="text-xs text-fg-3">{owner ? t.plan.autoNext : t.plan.ownerHint}</span>

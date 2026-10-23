@@ -57,3 +57,19 @@ export function Md({ text, className }: { text: string; className?: string }) {
     </div>
   )
 }
+
+// plainText：把 Markdown 去掉语法符号，给折叠预览 / 卡片摘要用（标题、列表、粗体、链接、代码围栏都不留符号）。
+export function plainText(md: string): string {
+  return md
+    .replace(/```[^\n]*\n?/g, '')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, '')
+    .replace(/^\s*([-*_]\s*){3,}$/gm, '')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__|~~)(.+?)\1/g, '$2')
+    .replace(/(?<![\w*])[*_]([^*_\n]+)[*_](?![\w*])/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}

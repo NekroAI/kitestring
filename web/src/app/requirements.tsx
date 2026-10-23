@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bot, ChevronDown, LockOpen, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
+import { Md } from '../ui/markdown'
 import { useProjects, useSessions } from '../api/queries'
 import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from './assign'
 import { t } from '../i18n'
@@ -206,6 +207,56 @@ export function EditableText({ value, onSave, placeholder, multiline, wrap, clas
   )
 }
 
+
+// EditableMd：展示态按 Markdown 渲染（R-149），点击进入编辑变成原文输入框，失焦保存后回到渲染态。
+// 点链接、编号印记不进入编辑。
+export function EditableMd({ value, onSave, placeholder, className }: { value: string; onSave: (v: string) => void; placeholder: string; className?: string }) {
+  const [editing, setEditing] = useState(false)
+  if (editing)
+    return (
+      <EditableMdInput
+        value={value}
+        placeholder={placeholder}
+        className={className}
+        onDone={(v) => {
+          setEditing(false)
+          if (v !== null) onSave(v)
+        }}
+      />
+    )
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('a,button')) return
+        if (window.getSelection()?.toString()) return
+        setEditing(true)
+      }}
+      onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && setEditing(true)}
+      className={cx('block w-full min-w-0 cursor-text rounded-lg border border-transparent px-3 py-2 text-[15px] text-fg transition-[border] hover:border-line sm:text-sm', className)}
+    >
+      {value.trim() ? <Md text={value} /> : <span className="text-fg-3">{placeholder}</span>}
+    </div>
+  )
+}
+
+function EditableMdInput({ value, onDone, placeholder, className }: { value: string; onDone: (v: string | null) => void; placeholder: string; className?: string }) {
+  const [v, setV] = useState(value)
+  return (
+    <Textarea
+      autoFocus
+      value={v}
+      minRows={3}
+      placeholder={placeholder}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => onDone(v.trim() !== value.trim() ? v.trim() : null)}
+      onKeyDown={(e) => e.key === 'Escape' && (setV(value), onDone(null))}
+      unstyled
+      className={cx('block w-full min-w-0 resize-none rounded-lg border border-accent bg-surface px-3 py-2 text-[15px] leading-relaxed text-fg ring-3 ring-[var(--ring)] outline-none placeholder:text-fg-3 sm:text-sm', className)}
+    />
+  )
+}
 
 // NewReqModal：新建需求抽屉（桌面右侧、手机底部）。上面写清楚要做什么，下面决定交给谁：
 // “仅新建”只建需求并关联选中的会话（随时可以开工）；“新建并交出”立刻把它交给会话开工。
