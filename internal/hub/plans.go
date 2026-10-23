@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
@@ -20,6 +21,14 @@ import (
 
 type planOut struct {
 	Body store.Plan
+}
+
+// stageSubmittedOut：交小结后的计划，外加表达块的解析提示（R-97）。
+type stageSubmittedOut struct {
+	Body struct {
+		store.Plan
+		BlockWarnings []string `json:"block_warnings,omitempty" doc:"没有保存的块及原因；小结本身已交"`
+	}
 }
 
 type plansOut struct {
@@ -271,7 +280,7 @@ func stageFor(x store.Plan, seq int) (store.Stage, error) {
 }
 
 // submitStage：Agent 交阶段小结，阶段进入待阶段验收。
-func (h *Hub) submitStage(ctx context.Context, ref string, seq int, summary string) (store.Plan, error) {
+func (h *Hub) submitStage(ctx context.Context, ref string, seq int, summary string, bs []blocks.Block) (store.Plan, error) {
 	x, err := h.store.GetPlan(ctx, ref)
 	if err != nil {
 		return x, apiErr(err)
@@ -287,6 +296,9 @@ func (h *Hub) submitStage(ctx context.Context, ref string, seq int, summary stri
 		return x, huma.Error400BadRequest("请写阶段小结：这一阶段做了什么、怎么验证的")
 	}
 	if err := h.store.SetStageStatus(ctx, st.ID, store.StageReview, strings.TrimSpace(summary)); err != nil {
+		return x, err
+	}
+	if err := h.store.SetStageBlocks(ctx, st.ID, bs); err != nil {
 		return x, err
 	}
 	h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: fmt.Sprintf("待阶段验收 · %s 阶段 %d", x.Code, st.Seq), Body: x.Title + " · " + st.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
@@ -627,9 +639,14 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			Body struct {
 				Summary    string `json:"summary"`
 				SessionKey string `json:"session_key,omitempty"`
+				Blocks     []any  `json:"blocks,omitempty" doc:"表达块（R-97），同证据；不合法的块丢掉并在 block_warnings 里说明"`
 			}
-		}) (*planOut, error) {
-			x, err := h.submitStage(ctx, in.Ref, in.Seq, in.Body.Summary)
-			return &planOut{Body: x}, err
+		}) (*stageSubmittedOut, error) {
+			bs, warns := blocks.Parse(in.Body.Blocks, h.blockFile(ctx))
+			x, err := h.submitStage(ctx, in.Ref, in.Seq, in.Body.Summary, bs)
+			out := &stageSubmittedOut{}
+			out.Body.Plan = x
+			out.Body.BlockWarnings = warns
+			return out, err
 		})
 }

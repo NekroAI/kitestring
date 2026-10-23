@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
@@ -48,14 +49,16 @@ type Plan struct {
 
 // Stage 是计划里的一个阶段。
 type Stage struct {
-	ID           string     `json:"id"`
-	Seq          int        `json:"seq"`
-	Title        string     `json:"title"`
-	Status       string     `json:"status" enum:"locked,active,review,passed"`
-	Summary      string     `json:"summary"`
-	SummaryAt    *time.Time `json:"summary_at,omitempty"`
-	PassedAt     *time.Time `json:"passed_at,omitempty"`
-	Requirements []PlanReq  `json:"requirements"`
+	ID        string     `json:"id"`
+	Seq       int        `json:"seq"`
+	Title     string     `json:"title"`
+	Status    string     `json:"status" enum:"locked,active,review,passed"`
+	Summary   string     `json:"summary"`
+	SummaryAt *time.Time `json:"summary_at,omitempty"`
+	// SummaryBlocks 是阶段小结附的表达块（R-97）。
+	SummaryBlocks []blocks.Block `json:"summary_blocks,omitempty"`
+	PassedAt      *time.Time     `json:"passed_at,omitempty"`
+	Requirements  []PlanReq      `json:"requirements"`
 }
 
 // PlanReq 是阶段里一条需求的摘要。
@@ -253,18 +256,21 @@ func (s *Store) GetPlan(ctx context.Context, ref string) (Plan, error) {
 }
 
 func (s *Store) fillStages(ctx context.Context, x *Plan) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, seq, title, status, summary, summary_at, passed_at FROM plan_stages WHERE plan_id = ? ORDER BY seq`, x.ID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, seq, title, status, summary, summary_blocks, summary_at, passed_at FROM plan_stages WHERE plan_id = ? ORDER BY seq`, x.ID)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var st Stage
-		var sumAt, passAt string
-		if err := rows.Scan(&st.ID, &st.Seq, &st.Title, &st.Status, &st.Summary, &sumAt, &passAt); err != nil {
+		var sumAt, passAt, sumBlocks string
+		if err := rows.Scan(&st.ID, &st.Seq, &st.Title, &st.Status, &st.Summary, &sumBlocks, &sumAt, &passAt); err != nil {
 			rows.Close()
 			return err
 		}
 		st.SummaryAt = parseNullTS(sql.NullString{String: sumAt, Valid: sumAt != ""})
+		if bs := blocks.Decode[[]blocks.Block](sumBlocks); bs != nil {
+			st.SummaryBlocks = *bs
+		}
 		st.PassedAt = parseNullTS(sql.NullString{String: passAt, Valid: passAt != ""})
 		st.Requirements = []PlanReq{}
 		x.Stages = append(x.Stages, st)
@@ -371,6 +377,12 @@ func (s *Store) UpdatePlan(ctx context.Context, x Plan, stages []StageInput) (Pl
 // SetPlanStatus 修改计划状态。
 func (s *Store) SetPlanStatus(ctx context.Context, id, status string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE plans SET status = ?, updated_at = ? WHERE id = ?`, status, now(), id)
+	return err
+}
+
+// SetStageBlocks 写入阶段小结附的表达块（R-97），每次交小结都覆盖。
+func (s *Store) SetStageBlocks(ctx context.Context, stageID string, bs []blocks.Block) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE plan_stages SET summary_blocks = ? WHERE id = ?`, blocks.Encode(bs), stageID)
 	return err
 }
 

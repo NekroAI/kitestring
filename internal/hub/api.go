@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/store"
@@ -321,6 +322,22 @@ type reqsOut struct {
 
 type reqOut struct {
 	Body store.Requirement
+}
+
+// evidenceOut：附证据后的需求，外加表达块的解析提示（R-97）。
+type evidenceOut struct {
+	Body struct {
+		store.Requirement
+		BlockWarnings []string `json:"block_warnings,omitempty" doc:"没有保存的块及原因；证据本身已保存"`
+	}
+}
+
+// decisionRaisedOut：新决策，外加表达块的解析提示（R-97）。
+type decisionRaisedOut struct {
+	Body struct {
+		store.Decision
+		BlockWarnings []string `json:"block_warnings,omitempty" doc:"没有保存的块及原因；决策本身已提出"`
+	}
 }
 
 // ReqFields 是 Web 与 agent 共用的需求可写字段（导出以便 Huma 展开嵌入字段）。
@@ -976,6 +993,7 @@ type agentDecisionIn struct {
 		OptionImages   []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
 		Approval       bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
 		Images         []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
+		Blocks         []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
 		Recommendation string   `json:"recommendation,omitempty"`
 		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
 	}
@@ -1077,41 +1095,63 @@ func (h *Hub) registerAgent(api huma.API) {
 			Ref  string `path:"ref"`
 			Body struct {
 				Kind       string   `json:"kind" doc:"例：test、screenshot、commit、doc、manual"`
-				Summary    string   `json:"summary" minLength:"1"`
+				Summary    string   `json:"summary,omitempty" doc:"证据正文；给了 verdict / blocks 时可省略，由 hub 拼出纯文本"`
 				Link       string   `json:"link,omitempty"`
 				Files      []string `json:"files,omitempty" doc:"截图等附图 ID（先上传到 /api/agent/files）"`
 				SessionKey string   `json:"session_key,omitempty"`
+				Verdict    string   `json:"verdict,omitempty" doc:"一句结论（40 字以内）"`
+				Todo       []string `json:"todo,omitempty" doc:"要你做的：只写机器验证不了的事"`
+				Details    string   `json:"details,omitempty" doc:"实现细节（默认折叠）"`
+				Aside      []string `json:"aside,omitempty" doc:"顺带改动（默认折叠）"`
+				Blocks     []any    `json:"blocks,omitempty" doc:"表达块（R-97）：checklist / compare / figure / flow / metrics / scope / options / table；图片字段填附件 ID。不合法的块丢掉并在 block_warnings 里说明，证据照常保存"`
 			}
-		}) (*reqOut, error) {
+		}) (*evidenceOut, error) {
 			r, err := h.store.GetRequirement(ctx, in.Ref)
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			files, err := h.store.ResolveFiles(ctx, in.Body.Files)
+			b := in.Body
+			files, err := h.store.ResolveFiles(ctx, b.Files)
 			if err != nil {
 				return nil, err
 			}
+			payload, warns := blocks.ParsePayload(b.Verdict, b.Todo, b.Details, b.Aside, b.Blocks, h.blockFile(ctx))
+			if payload != nil {
+				files = mergeFiles(files, blocks.Files(payload.Blocks))
+			}
+			summary := strings.TrimSpace(b.Summary)
+			if summary == "" {
+				summary = payload.Text()
+			}
+			if summary == "" {
+				return nil, huma.Error400BadRequest("证据需要正文：summary，或 verdict（一句结论）加 blocks")
+			}
 			// 标成截图 / 录屏却没附文件，用户验收时会看不到任何东西：直接拒绝，让 agent 补上附件。
-			switch strings.ToLower(in.Body.Kind) {
+			switch strings.ToLower(b.Kind) {
 			case store.EvidenceReview:
 				// 审查意见走 review_submit（R-88）：只有审查员能交，且不算验收证据
 				return nil, huma.Error400BadRequest("审查意见请用 review_submit（命令行 ks req review）提交，只有审查员会话能交；验收证据换一个 kind，例如 test、manual")
 			case "screenshot", "video", "recording":
 				if len(files) == 0 {
-					return nil, huma.Error400BadRequest("证据类型为 " + in.Body.Kind + " 时必须附上图片或录屏（MCP 用 images / videos，命令行用 --image / --video）")
+					return nil, huma.Error400BadRequest("证据类型为 " + b.Kind + " 时必须附上图片或录屏（MCP 用 images / videos，命令行用 --image / --video）")
 				}
 			}
-			if _, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: in.Body.SessionKey, Kind: in.Body.Kind, Summary: in.Body.Summary, Link: in.Body.Link, Files: files}); err != nil {
+			if _, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: b.SessionKey, Kind: b.Kind, Summary: summary, Link: b.Link, Files: files, Payload: payload}); err != nil {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("requirements")
 			r, err = h.store.GetRequirement(ctx, r.ID)
-			return &reqOut{Body: r}, apiErr(err)
+			out := &evidenceOut{}
+			out.Body.Requirement = r
+			out.Body.BlockWarnings = warns
+			return out, apiErr(err)
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-raise-decision", Method: http.MethodPost, Path: "/api/agent/decisions", Tags: tag},
-		func(ctx context.Context, in *agentDecisionIn) (*decisionOut, error) {
+		func(ctx context.Context, in *agentDecisionIn) (*decisionRaisedOut, error) {
 			b := in.Body
 			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation}
+			var warns []string
+			d.Blocks, warns = blocks.Parse(b.Blocks, h.blockFile(ctx))
 			if d.Options == nil {
 				d.Options = []string{}
 			}
@@ -1166,7 +1206,10 @@ func (h *Hub) registerAgent(api huma.API) {
 			h.broker.publish("decisions", "sessions", "requirements")
 			go h.aiOnDecision(d)
 			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
-			return &decisionOut{Body: d}, nil
+			out := &decisionRaisedOut{}
+			out.Body.Decision = d
+			out.Body.BlockWarnings = warns
+			return out, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-get-decision", Method: http.MethodGet, Path: "/api/agent/decisions/{ref}", Tags: tag},
 		func(ctx context.Context, in *refPath) (*decisionOut, error) {

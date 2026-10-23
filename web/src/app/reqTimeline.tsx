@@ -9,6 +9,7 @@ import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
 import { DecisionComposer } from './DecisionCard'
 import { evidenceKind } from './review'
+import { EvidenceView, hasPayload } from './evidence'
 import { useSessions } from '../api/queries'
 import { sessionTitle } from './SessionCard'
 import { Linkify, RefChip } from '../ui/refmark'
@@ -117,11 +118,15 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           now={now}
           muted={e.voided}
         >
-          <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">
-            <Linkify text={e.summary} />
-          </p>
+          {hasPayload(e) ? (
+            <EvidenceView e={e} acceptance={r.acceptance} />
+          ) : (
+            <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">
+              <Linkify text={e.summary} />
+            </p>
+          )}
           {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
-          {!!e.files?.length && <Thumbs files={e.files} />}
+          {!hasPayload(e) && !!e.files?.length && <Thumbs files={e.files} />}
         </Node>
       ),
     })

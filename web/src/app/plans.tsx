@@ -15,6 +15,7 @@ import { targetGroup, targetItems, targetLabel } from './assign'
 import { useOpenPlan } from './nav'
 import { ReqView } from './reqDrawer'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
+import { BlockList } from '../ui/blocks'
 
 // 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
 // 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（通过 / 退回）和编辑。
@@ -255,6 +256,7 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
         <>
           <div className="text-xs font-semibold text-reply">{t.plan.summary}</div>
           <p className="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap text-fg-2"><Linkify text={st.summary} /></p>
+          <BlockList blocks={st.summary_blocks} className="mt-3" />
         </>
       ) : (
         <p className="text-[13px] text-fg-3">{t.plan.noSummary}</p>

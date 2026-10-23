@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
@@ -78,8 +79,10 @@ type Evidence struct {
 	Summary       string    `json:"summary"`
 	Link          string    `json:"link"`
 	Files         []FileRef `json:"files"`
-	Voided        bool      `json:"voided"`
-	CreatedAt     time.Time `json:"created_at"`
+	// Payload 是结构化证据（R-97）：一句结论、清单与表达块、要你做的、折叠的细节。旧证据没有，只按 summary 显示。
+	Payload   *blocks.Payload `json:"payload,omitempty"`
+	Voided    bool            `json:"voided"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 func reqCode(seq int) string { return "R-" + strconv.Itoa(seq) }
@@ -354,8 +357,8 @@ func (s *Store) UnlinkSession(ctx context.Context, reqID, sessionKey string) err
 func (s *Store) AddEvidence(ctx context.Context, e Evidence) (Evidence, error) {
 	e.ID = protocol.NewID()
 	e.CreatedAt = time.Now()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, files, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, filesJSON(e.Files), ts(e.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, files, payload, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, filesJSON(e.Files), blocks.Encode(e.Payload), ts(e.CreatedAt))
 	return e, err
 }
 
@@ -374,7 +377,7 @@ func (s *Store) ListReviews(ctx context.Context, reqID string) ([]Evidence, erro
 }
 
 func (s *Store) listEvidence(ctx context.Context, reqID, cond string) ([]Evidence, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, voided, created_at FROM evidence WHERE requirement_id = ? AND `+cond+` ORDER BY created_at`, reqID, EvidenceReview)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, payload, voided, created_at FROM evidence WHERE requirement_id = ? AND `+cond+` ORDER BY created_at`, reqID, EvidenceReview)
 	if err != nil {
 		return nil, err
 	}
@@ -382,10 +385,11 @@ func (s *Store) listEvidence(ctx context.Context, reqID, cond string) ([]Evidenc
 	out := []Evidence{}
 	for rows.Next() {
 		var e Evidence
-		var created, files string
-		if err := rows.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &e.Voided, &created); err != nil {
+		var created, files, payload string
+		if err := rows.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &payload, &e.Voided, &created); err != nil {
 			return nil, err
 		}
+		e.Payload = blocks.Decode[blocks.Payload](payload)
 		e.Files = parseFiles(files)
 		e.CreatedAt = parseTS(created)
 		out = append(out, e)

@@ -9,6 +9,7 @@ import { Badge, Button, Card, Textarea, Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
 import { AttachZone, fileUrl, Thumbs, uploadsBusy, useUploading, ZoomButton } from '../ui/attach'
+import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, emptyDraft, useOutbox } from './outbox'
@@ -135,6 +136,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           {d.short_title && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}
         </div>
         {d.context && <Context text={d.context} />}
+        <BlockList blocks={d.blocks} />
 
         {!!d.context_files?.length && (
           <div className={cx('grid gap-2.5', d.context_files.length > 1 && 'grid-cols-2')}>
@@ -398,6 +400,7 @@ export function DecisionRow({ d }: { d: Decision }) {
         <div className="rise space-y-3 px-3.5 pb-3.5 sm:pl-[60px]">
           {d.short_title && <p className="text-sm text-fg-2">{d.question}</p>}
           {d.context && <Context text={d.context} />}
+          <BlockList blocks={d.blocks} />
           {d.answer && <AnswerBlock d={d} />}
           <div className="flex items-center justify-between text-xs text-fg-3">
             <span>{when}</span>

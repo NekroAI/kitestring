@@ -58,17 +58,17 @@ type Session struct {
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
 	EndedAt          *time.Time       `json:"ended_at,omitempty"`
-	Instance         string           `json:"-"`                 // 最新的终端（agent 进程）；同一对话可能在多个终端同时打开
-	PrevInstance     string           `json:"-"`                 // 被取代、可能仍开着的较早终端
-	OtherTerminal    bool             `json:"other_terminal"`    // 另有一个较早的终端也开着这个对话
-	DoneAt           *time.Time       `json:"done_at,omitempty"` // 你手动标为已完成；你再给它发消息时自动清除
-	Parked           bool             `json:"parked"`            // Agent 用 ks wait 挂起等你的答复 / 验收 / 留言
-	ParkedUntil      *time.Time       `json:"parked_until,omitempty"` // 挂起最长等到什么时候（R-74）
-	ToolsStale       string           `json:"tools_stale"`       // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
-	ContextTokens    int              `json:"context_tokens"`    // 最近一轮结束时的上下文 token 数（R-60）
-	ContextMax       int              `json:"context_max"`       // 上下文窗口；不知道时为 0
+	Instance         string           `json:"-"`                                    // 最新的终端（agent 进程）；同一对话可能在多个终端同时打开
+	PrevInstance     string           `json:"-"`                                    // 被取代、可能仍开着的较早终端
+	OtherTerminal    bool             `json:"other_terminal"`                       // 另有一个较早的终端也开着这个对话
+	DoneAt           *time.Time       `json:"done_at,omitempty"`                    // 你手动标为已完成；你再给它发消息时自动清除
+	Parked           bool             `json:"parked"`                               // Agent 用 ks wait 挂起等你的答复 / 验收 / 留言
+	ParkedUntil      *time.Time       `json:"parked_until,omitempty"`               // 挂起最长等到什么时候（R-74）
+	ToolsStale       string           `json:"tools_stale"`                          // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
+	ContextTokens    int              `json:"context_tokens"`                       // 最近一轮结束时的上下文 token 数（R-60）
+	ContextMax       int              `json:"context_max"`                          // 上下文窗口；不知道时为 0
 	Role             string           `json:"role" enum:",pm,dev,advisor,reviewer"` // 会话身份（R-82）：pm 开发 dev 顾问 advisor 审查员 reviewer，空为无身份
-	RecentTools      []ToolAct        `json:"recent_tools"`      // 最近几次工具调用，旧 → 新（工作台滚动展示）
+	RecentTools      []ToolAct        `json:"recent_tools"`                         // 最近几次工具调用，旧 → 新（工作台滚动展示）
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
 }

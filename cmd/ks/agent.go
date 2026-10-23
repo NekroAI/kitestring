@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/daemon"
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -52,15 +53,79 @@ func cliSession(flagVal string) string {
 }
 
 func agentCall(method, path string, body any) error {
+	_, err := agentCallOut(method, path, body)
+	return err
+}
+
+// agentCallOut 同 agentCall，并把返回的 JSON 交给调用方（读 block_warnings 等）。
+func agentCallOut(method, path string, body any) (any, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	var out any
 	if err := client.New(20*time.Second).Do(ctx, method, path, body, &out); err != nil {
-		return err
+		return nil, err
 	}
 	b, _ := json.MarshalIndent(out, "", "  ")
 	fmt.Println(string(b))
-	return nil
+	return out, nil
+}
+
+// attachBlocks 读 --blocks（JSON 数组，或指向 JSON 文件的路径），上传其中的本机图片，写入 body["blocks"]（R-97）。
+func attachBlocks(body map[string]any, arg string) ([]any, error) {
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return nil, nil
+	}
+	data := []byte(arg)
+	if !strings.HasPrefix(arg, "[") && !strings.HasPrefix(arg, "{") {
+		b, err := os.ReadFile(arg)
+		if err != nil {
+			return nil, fmt.Errorf("--blocks 既不是 JSON 也读不到文件：%w", err)
+		}
+		data = b
+	}
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil, fmt.Errorf("--blocks 的 JSON 格式不对：%w", err)
+	}
+	raw, ok := v.([]any)
+	if !ok {
+		raw = []any{v} // 只给了一个块
+	}
+	err := blocks.Localize(raw, map[string]string{}, func(p string) (string, error) {
+		tmp := map[string]any{}
+		if err := attachFiles(tmp, []string{p}); err != nil {
+			return "", err
+		}
+		return tmp["files"].([]string)[0], nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	body["blocks"] = raw
+	return raw, nil
+}
+
+// printBlockWarnings 输出没有保存的块及原因（其余内容已保存）。
+func printBlockWarnings(out any) {
+	m, _ := out.(map[string]any)
+	ws, _ := m["block_warnings"].([]any)
+	if len(ws) == 0 {
+		return
+	}
+	fmt.Println("有块没有保存（其余内容已保存）：")
+	for _, w := range ws {
+		fmt.Println("- " + fmt.Sprint(w))
+	}
+}
+
+func rawHasChecklist(raw []any) bool {
+	for _, b := range raw {
+		if m, ok := b.(map[string]any); ok && strings.EqualFold(fmt.Sprint(m["type"]), blocks.Checklist) {
+			return true
+		}
+	}
+	return false
 }
 
 // attachFiles 经本机 daemon 上传文件，把附件 ID 写入 body["files"]。
@@ -102,6 +167,12 @@ func runReq(args []string) error {
 	link := fs.String("link", "", "evidence：链接")
 	to := fs.String("to", "", "assign：交给哪个开发会话（tool:session_id），auto 由 hub 挑")
 	comment := fs.String("comment", "", "assign：交代给开发的话")
+	verdict := fs.String("verdict", "", "evidence：一句结论（40 字以内）")
+	details := fs.String("details", "", "evidence：实现细节（默认折叠）")
+	blocksArg := fs.String("blocks", "", "evidence：表达块，JSON 数组或 JSON 文件路径")
+	var todo, aside stringList
+	fs.Var(&todo, "todo", "evidence：要你做的（机器验证不了的事），可重复")
+	fs.Var(&aside, "aside", "evidence：顺带改动，可重复")
 	var images, videos stringList
 	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
@@ -139,17 +210,32 @@ func runReq(args []string) error {
 		}
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key}))
 	case "evidence":
-		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req evidence <R-编号> <证据正文> [--kind test] [--link ...] [--image 截图.png] [--video 录屏.webm]\n%s", evidenceGuide)
+		if fs.NArg() < 1 || fs.NArg() < 2 && *verdict == "" {
+			return fmt.Errorf("用法：ks req evidence <R-编号> [证据正文] [--verdict 一句结论] [--blocks 块.json] [--todo ...] [--details ...] [--aside ...] [--kind test] [--link ...] [--image 截图.png] [--video 录屏.webm]\n%s\n表达块：%s", evidenceGuide, writing.BlocksGuide)
 		}
-		body := map[string]any{"kind": *kind, "summary": fs.Arg(1), "link": *link, "session_key": key}
+		body := map[string]any{"kind": *kind, "summary": fs.Arg(1), "link": *link, "session_key": key, "verdict": *verdict, "details": *details}
+		if len(todo) > 0 {
+			body["todo"] = []string(todo)
+		}
+		if len(aside) > 0 {
+			body["aside"] = []string(aside)
+		}
 		if err := attachFiles(body, append(images, videos...)); err != nil {
 			return err
 		}
-		if err := agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(body)); err != nil {
+		raw, err := attachBlocks(body, *blocksArg)
+		if err != nil {
 			return err
 		}
-		printHint(writing.EvidenceHint(fs.Arg(1)))
+		out, err := agentCallOut("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(body))
+		if err != nil {
+			return err
+		}
+		printBlockWarnings(out)
+		if fs.Arg(1) != "" {
+			printHint(writing.EvidenceHint(fs.Arg(1)))
+		}
+		printHint(writing.PayloadHint(*verdict, rawHasChecklist(raw)))
 		return nil
 	case "assign":
 		// PM 派活（R-86）：ks req assign R-12 --to <开发会话键|auto> [--comment ...]
@@ -179,7 +265,7 @@ func runReq(args []string) error {
 
 func runDecision(args []string) error {
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--blocks 块.json]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
@@ -193,6 +279,7 @@ func runDecision(args []string) error {
 	approval := fs.Bool("approval", false, "请用户批准（选项固定为批准 / 拒绝，两种都可以附言）")
 	var imgs stringList
 	fs.Var(&imgs, "image", "问题附带的图片路径（例如待批准的方案图），可重复")
+	blocksArg := fs.String("blocks", "", "表达块，JSON 数组或 JSON 文件路径")
 	if err := parseAnywhere(fs, args[1:]); err != nil {
 		return err
 	}
@@ -220,9 +307,14 @@ func runDecision(args []string) error {
 		}
 		body["option_images"] = tmp["files"]
 	}
-	if err := agentCall("POST", "/agent/decisions", compact(body)); err != nil {
+	if _, err := attachBlocks(body, *blocksArg); err != nil {
 		return err
 	}
+	out, err := agentCallOut("POST", "/agent/decisions", compact(body))
+	if err != nil {
+		return err
+	}
+	printBlockWarnings(out)
 	printHint(writing.DecisionHint(*question, *ctxText))
 	return nil
 }
@@ -350,6 +442,7 @@ func runPlan(args []string) error {
 	fs := flag.NewFlagSet("plan "+sub, flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	file := fs.String("file", "", "create：计划结构 JSON 文件，- 表示从标准输入读")
+	blocksArg := fs.String("blocks", "", "submit：表达块，JSON 数组或 JSON 文件路径")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -384,13 +477,22 @@ func runPlan(args []string) error {
 		return agentCall("GET", "/agent/plans/"+url.PathEscape(fs.Arg(0)), nil)
 	case "submit":
 		if fs.NArg() < 3 {
-			return fmt.Errorf("用法：ks plan submit <P-编号> <阶段序号> <阶段小结>\n%s", stageGuide)
+			return fmt.Errorf("用法：ks plan submit <P-编号> <阶段序号> <阶段小结> [--blocks 块.json]\n%s", stageGuide)
 		}
 		seq, err := strconv.Atoi(fs.Arg(1))
 		if err != nil {
 			return fmt.Errorf("阶段序号应为数字：%s", fs.Arg(1))
 		}
-		return agentCall("POST", fmt.Sprintf("/agent/plans/%s/stages/%d/submit", url.PathEscape(fs.Arg(0)), seq), compact(map[string]any{"summary": fs.Arg(2), "session_key": key}))
+		body := map[string]any{"summary": fs.Arg(2), "session_key": key}
+		if _, err := attachBlocks(body, *blocksArg); err != nil {
+			return err
+		}
+		out, err := agentCallOut("POST", fmt.Sprintf("/agent/plans/%s/stages/%d/submit", url.PathEscape(fs.Arg(0)), seq), compact(body))
+		if err != nil {
+			return err
+		}
+		printBlockWarnings(out)
+		return nil
 	default:
 		return fmt.Errorf("未知的 plan 子命令：%s", sub)
 	}

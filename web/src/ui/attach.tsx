@@ -83,7 +83,7 @@ function uploadOne(file: File, onProgress: (p: number) => void, onXhr: (x: XMLHt
 }
 
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime'
-const isVideo = (mime: string) => mime.startsWith('video/')
+export const isVideo = (mime: string) => mime.startsWith('video/')
 // iPhone 录屏是 .mov（video/quicktime）
 const accepted = (f: File) => f.type.startsWith('image/') || f.type === 'video/mp4' || f.type === 'video/webm' || f.type === 'video/quicktime'
 
@@ -225,7 +225,7 @@ export function Thumbs({ files, size }: { files?: FileRef[] | null; size?: 'sm' 
 // Lightbox：看大图。同组图片排成一条胶片带（R-69）：手指 / 触控板拖多少，带子就跟着走多少；
 // 松手按位移与速度决定翻页还是弹回，弹簧动画随时可被新的手势打断、从当前位置接着拖（像 macOS 的可中断动画）。
 // 一次手势最多走一页：触控板的惯性滚动到了一页的边界就直接落定，不会连翻。
-function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; children: ReactNode }) {
+export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const stop = (e: SyntheticEvent) => e.stopPropagation()
   // 同组里能看的（图片、录屏）；不在组里就只看这一张

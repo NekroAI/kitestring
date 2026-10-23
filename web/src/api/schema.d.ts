@@ -1002,13 +1002,24 @@ export interface components {
             to: string;
         };
         "Agent-attach-evidenceRequest": {
+            /** @description 顺带改动（默认折叠） */
+            aside?: string[] | null;
+            /** @description 表达块（R-97）：checklist / compare / figure / flow / metrics / scope / options / table；图片字段填附件 ID。不合法的块丢掉并在 block_warnings 里说明，证据照常保存 */
+            blocks?: unknown[] | null;
+            /** @description 实现细节（默认折叠） */
+            details?: string;
             /** @description 截图等附图 ID（先上传到 /api/agent/files） */
             files?: string[] | null;
             /** @description 例：test、screenshot、commit、doc、manual */
             kind: string;
             link?: string;
             session_key?: string;
-            summary: string;
+            /** @description 证据正文；给了 verdict / blocks 时可省略，由 hub 拼出纯文本 */
+            summary?: string;
+            /** @description 要你做的：只写机器验证不了的事 */
+            todo?: string[] | null;
+            /** @description 一句结论（40 字以内） */
+            verdict?: string;
         };
         "Agent-create-planRequest": {
             goal?: string;
@@ -1047,6 +1058,8 @@ export interface components {
             summary: string;
         };
         "Agent-submit-stageRequest": {
+            /** @description 表达块（R-97），同证据；不合法的块丢掉并在 block_warnings 里说明 */
+            blocks?: unknown[] | null;
             session_key?: string;
             summary: string;
         };
@@ -1058,6 +1071,8 @@ export interface components {
         AgentDecisionInBody: {
             /** @description 请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言 */
             approval?: boolean;
+            /** @description 表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明 */
+            blocks?: unknown[] | null;
             context?: string;
             /** @description 问题附带的图（例如待批准的方案图）的附件 ID */
             images?: string[] | null;
@@ -1088,7 +1103,7 @@ export interface components {
             title: string;
         };
         AnswersInBody: {
-            answers: components["schemas"]["Item"][] | null;
+            answers: components["schemas"]["Item1"][] | null;
         };
         "Ask-reviewRequest": {
             /** @description 交代给审查员的话，例如重点看哪里 */
@@ -1123,6 +1138,28 @@ export interface components {
             key: string;
             server: string;
         };
+        Block: {
+            /** @description compare：改之后 */
+            after?: components["schemas"]["File"];
+            /** @description compare：改之前 */
+            before?: components["schemas"]["File"];
+            /** @description 图注 / 说明 */
+            caption?: string;
+            /** @description table：表头（最多 6 列） */
+            columns?: string[] | null;
+            id: string;
+            /** @description figure：截图或录屏 */
+            image?: components["schemas"]["File"];
+            items?: components["schemas"]["Item"][] | null;
+            /** @description flow：mermaid 源码 */
+            mermaid?: string;
+            /** @description table：行 */
+            rows?: (string[] | null)[] | null;
+            /** @description 块的小标题 */
+            title?: string;
+            /** @enum {string} */
+            type: "checklist" | "compare" | "figure" | "flow" | "metrics" | "scope" | "options" | "table";
+        };
         "Change-passwordRequest": {
             new: string;
             old: string;
@@ -1142,6 +1179,46 @@ export interface components {
             answered_at?: string;
             approval: boolean;
             assigned_by?: string;
+            blocks?: components["schemas"]["Block"][] | null;
+            code: string;
+            context: string;
+            context_files: components["schemas"]["FileRef"][] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            delivered_at?: string;
+            delivered_turn?: string;
+            device_name?: string;
+            id: string;
+            /** @enum {string} */
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task";
+            option_files: (components["schemas"]["FileRef"][] | null)[] | null;
+            options: string[] | null;
+            origin_session?: string;
+            plan_code?: string;
+            plan_id?: string;
+            project_id?: string;
+            project_name?: string;
+            question: string;
+            recommendation: string;
+            requirement_code?: string;
+            requirement_id?: string;
+            requirement_title?: string;
+            session_key?: string;
+            session_state?: string;
+            short_title: string;
+            status: string;
+        };
+        DecisionRaisedOutBody: {
+            answer: string;
+            answer_files: components["schemas"]["FileRef"][] | null;
+            /** Format: date-time */
+            answered_at?: string;
+            approval: boolean;
+            assigned_by?: string;
+            /** @description 没有保存的块及原因；决策本身已提出 */
+            block_warnings?: string[] | null;
+            blocks?: components["schemas"]["Block"][] | null;
             code: string;
             context: string;
             context_files: components["schemas"]["FileRef"][] | null;
@@ -1280,10 +1357,56 @@ export interface components {
             id: string;
             kind: string;
             link: string;
+            payload?: components["schemas"]["Payload"];
             requirement_id: string;
             session_key?: string;
             summary: string;
             voided: boolean;
+        };
+        EvidenceOutBody: {
+            acceptance: string;
+            /** @description 没有保存的块及原因；证据本身已保存 */
+            block_warnings?: string[] | null;
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            detail: string;
+            doc_link: string;
+            evidence?: components["schemas"]["Evidence"][] | null;
+            feedback?: components["schemas"]["Decision"][] | null;
+            files: components["schemas"]["FileRef"][] | null;
+            id: string;
+            kind: string;
+            next_actor: string;
+            /** Format: date-time */
+            offered_at?: string;
+            offered_to?: string;
+            /** Format: int64 */
+            pending_decisions: number;
+            plan_code?: string;
+            plan_id?: string;
+            priority: string;
+            project_id?: string;
+            project_name?: string;
+            reviews?: components["schemas"]["Evidence"][] | null;
+            sessions: string[] | null;
+            source: string;
+            /** Format: int64 */
+            stage_seq?: number;
+            stage_status?: string;
+            stage_title?: string;
+            status: string;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        File: {
+            id: string;
+            mime: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
         };
         FileRef: {
             id: string;
@@ -1306,6 +1429,45 @@ export interface components {
             worktree?: boolean;
         };
         Item: {
+            /**
+             * Format: int64
+             * @description scope：改动数
+             */
+            count?: number;
+            /**
+             * Format: int64
+             * @description checklist：对应第几条验收标准（从 1 开始）
+             */
+            criterion?: number;
+            /** @description options：一句说明 */
+            desc?: string;
+            /** @description options：效果图 */
+            image?: components["schemas"]["File"];
+            /** @description metrics：指标名；scope：模块名；options：选项名 */
+            label?: string;
+            /** @description metrics / scope：一句补充 */
+            note?: string;
+            /** @description options：是否推荐 */
+            recommended?: boolean;
+            /**
+             * @description checklist：pass 达标 / fail 未达标 / ask 要你看
+             * @enum {string}
+             */
+            result?: "pass" | "fail" | "ask";
+            /** @description checklist：关联的块 id，点这一项会跳到那个块 */
+            see?: string;
+            /** @description checklist：这一项验收标准 */
+            text?: string;
+            /** @description metrics：小趋势线的数据点 */
+            trend?: number[] | null;
+            /** @description metrics：单位 */
+            unit?: string;
+            /** @description metrics：数值 */
+            value?: string;
+            /** @description checklist：一句依据 */
+            why?: string;
+        };
+        Item1: {
             answer: string;
             /** @description 附图 ID */
             files?: string[] | null;
@@ -1356,6 +1518,17 @@ export interface components {
         };
         PasswordInBody: {
             password: string;
+        };
+        Payload: {
+            /** @description 顺带改动（默认折叠） */
+            aside?: string[] | null;
+            blocks?: components["schemas"]["Block"][] | null;
+            /** @description 实现细节（给工程师，默认折叠） */
+            details?: string;
+            /** @description 要你做的：只写机器验证不了的事 */
+            todo?: string[] | null;
+            /** @description 一句结论（40 字以内） */
+            verdict?: string;
         };
         Plan: {
             code: string;
@@ -1680,6 +1853,7 @@ export interface components {
             summary: string;
             /** Format: date-time */
             summary_at?: string;
+            summary_blocks?: components["schemas"]["Block"][] | null;
             title: string;
         };
         StageIn: {
@@ -1687,6 +1861,28 @@ export interface components {
             id?: string;
             requirements: components["schemas"]["PlanReqIn"][] | null;
             title: string;
+        };
+        StageSubmittedOutBody: {
+            /** @description 没有保存的块及原因；小结本身已交 */
+            block_warnings?: string[] | null;
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            /** Format: int64 */
+            current: number;
+            goal: string;
+            id: string;
+            owner_session: string;
+            paused: boolean;
+            project_id?: string;
+            project_name?: string;
+            stages: components["schemas"]["Stage"][] | null;
+            /** @enum {string} */
+            status: "draft" | "active" | "done" | "shelved";
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         "Subscribe-pushRequest": {
             auth: string;
@@ -1791,7 +1987,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Decision"];
+                    "application/json": components["schemas"]["DecisionRaisedOutBody"];
                 };
             };
             /** @description Error */
@@ -1922,7 +2118,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Plan"];
+                    "application/json": components["schemas"]["StageSubmittedOutBody"];
                 };
             };
             /** @description Error */
@@ -2090,7 +2286,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Requirement"];
+                    "application/json": components["schemas"]["EvidenceOutBody"];
                 };
             };
             /** @description Error */

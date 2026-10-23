@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
@@ -36,43 +37,44 @@ const (
 
 // Decision 是一条待用户决策的问题。
 type Decision struct {
-	ID               string      `json:"id"`
-	Code             string      `json:"code"`
-	SessionKey       string      `json:"session_key,omitempty"`
-	OriginSession    string      `json:"origin_session,omitempty"`
-	AssignedBy       string      `json:"assigned_by,omitempty"`   // 交出需求的会话（PM 派活时为 PM，R-86）；你在网页上交出时为空
-	SessionState     string      `json:"session_state,omitempty"` // 目标会话当前状态
-	DeviceName       string      `json:"device_name,omitempty"`
-	ProjectID        string      `json:"project_id,omitempty"`
-	ProjectName      string      `json:"project_name,omitempty"`
-	RequirementID    string      `json:"requirement_id,omitempty"`
-	RequirementCode  string      `json:"requirement_code,omitempty"`
-	PlanID           string      `json:"plan_id,omitempty"`
-	PlanCode         string      `json:"plan_code,omitempty"`
-	Question         string      `json:"question"`
-	Context          string      `json:"context"`
-	Options          []string    `json:"options"`
-	OptionFiles      [][]FileRef `json:"option_files"`  // 每个选项的效果图（与 options 一一对应），用于方案对比
-	Approval         bool        `json:"approval"`      // 请你批准（选项固定为“批准 / 拒绝”，两种都可以附言）
-	ContextFiles     []FileRef   `json:"context_files"` // 问题本身附带的图（例如待批准的方案图）
-	Recommendation   string      `json:"recommendation"`
-	ShortTitle       string      `json:"short_title"` // 模型生成的短标题
-	Kind             string      `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task"`
-	AnswerFiles      []FileRef   `json:"answer_files"`
-	RequirementTitle string      `json:"requirement_title,omitempty"`
-	Status           string      `json:"status"`
-	Answer           string      `json:"answer"`
-	CreatedAt        time.Time   `json:"created_at"`
-	AnsweredAt       *time.Time  `json:"answered_at,omitempty"`
-	DeliveredAt      *time.Time  `json:"delivered_at,omitempty"`
-	DeliveredTurn    string      `json:"delivered_turn,omitempty"`
+	ID               string         `json:"id"`
+	Code             string         `json:"code"`
+	SessionKey       string         `json:"session_key,omitempty"`
+	OriginSession    string         `json:"origin_session,omitempty"`
+	AssignedBy       string         `json:"assigned_by,omitempty"`   // 交出需求的会话（PM 派活时为 PM，R-86）；你在网页上交出时为空
+	SessionState     string         `json:"session_state,omitempty"` // 目标会话当前状态
+	DeviceName       string         `json:"device_name,omitempty"`
+	ProjectID        string         `json:"project_id,omitempty"`
+	ProjectName      string         `json:"project_name,omitempty"`
+	RequirementID    string         `json:"requirement_id,omitempty"`
+	RequirementCode  string         `json:"requirement_code,omitempty"`
+	PlanID           string         `json:"plan_id,omitempty"`
+	PlanCode         string         `json:"plan_code,omitempty"`
+	Question         string         `json:"question"`
+	Context          string         `json:"context"`
+	Options          []string       `json:"options"`
+	OptionFiles      [][]FileRef    `json:"option_files"`     // 每个选项的效果图（与 options 一一对应），用于方案对比
+	Approval         bool           `json:"approval"`         // 请你批准（选项固定为“批准 / 拒绝”，两种都可以附言）
+	ContextFiles     []FileRef      `json:"context_files"`    // 问题本身附带的图（例如待批准的方案图）
+	Blocks           []blocks.Block `json:"blocks,omitempty"` // 说明里附的表达块（R-97）
+	Recommendation   string         `json:"recommendation"`
+	ShortTitle       string         `json:"short_title"` // 模型生成的短标题
+	Kind             string         `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task"`
+	AnswerFiles      []FileRef      `json:"answer_files"`
+	RequirementTitle string         `json:"requirement_title,omitempty"`
+	Status           string         `json:"status"`
+	Answer           string         `json:"answer"`
+	CreatedAt        time.Time      `json:"created_at"`
+	AnsweredAt       *time.Time     `json:"answered_at,omitempty"`
+	DeliveredAt      *time.Time     `json:"delivered_at,omitempty"`
+	DeliveredTurn    string         `json:"delivered_turn,omitempty"`
 }
 
 func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 
 const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.origin_session, ''), COALESCE(s.state, ''), COALESCE(dv.name, ''),
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
-	x.question, x.context, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
+	x.question, x.context, x.blocks, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
@@ -84,10 +86,10 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var d Decision
 	var seq, rseq, pseq int
-	var options, optFiles, ctxFiles, created, files string
+	var options, optFiles, ctxFiles, created, files, bs string
 	var answered, delivered sql.NullString
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
-		&d.Question, &d.Context, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
+		&d.Question, &d.Context, &bs, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy)
 	d.Code = decCode(seq)
 	if pseq > 0 {
@@ -102,6 +104,9 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	d.OptionFiles = [][]FileRef{}
 	_ = json.Unmarshal([]byte(optFiles), &d.OptionFiles)
 	d.ContextFiles = parseFiles(ctxFiles)
+	if b := blocks.Decode[[]blocks.Block](bs); b != nil {
+		d.Blocks = *b
+	}
 	d.CreatedAt = parseTS(created)
 	d.AnsweredAt = parseNullTS(answered)
 	d.DeliveredAt = parseNullTS(delivered)
@@ -132,8 +137,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			optFiles = [][]FileRef{}
 		}
 		of, _ := json.Marshal(optFiles)
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, option_files, approval, context_files, recommendation, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n)
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, options, option_files, approval, context_files, recommendation, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n)
 		return err
 	})
 	if err != nil {

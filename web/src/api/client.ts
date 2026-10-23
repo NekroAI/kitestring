@@ -18,6 +18,11 @@ export type HubEvent = Schemas['Event']
 export type PlanReq = Schemas['PlanReq']
 export type Stage = NN<Schemas['Stage'], 'requirements'>
 export type Plan = Omit<Schemas['Plan'], 'stages'> & { stages: Stage[] }
+// 表达块（R-97）
+export type Block = Schemas['Block']
+export type BlockItem = Schemas['Item']
+export type Payload = Schemas['Payload']
+export type Evidence = Schemas['Evidence']
 
 // 未登录回调：任何接口返回 401 时触发，由 App 跳回登录页。
 let onUnauthorized: () => void = () => {}

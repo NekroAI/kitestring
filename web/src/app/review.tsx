@@ -14,6 +14,7 @@ import { useOpenReq } from './nav'
 import { useReqMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { Linkify, RefChip } from '../ui/refmark'
+import { EvidenceGist, hasPayload } from './evidence'
 
 // evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
 export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
@@ -88,7 +89,7 @@ function ReviewRow({ r, onDone, hideTitle }: { r: Requirement; onDone?: () => vo
               {evidence.slice(-3).map((e) => (
                 <li key={e.id} className="text-[13px] text-fg-2">
                   <span className="mr-1.5 rounded bg-run-soft px-1 text-[11px] font-medium text-run">{evidenceKind(e.kind)}</span>
-                  <Linkify text={e.summary} />
+                  {hasPayload(e) ? <EvidenceGist e={e} /> : <Linkify text={e.summary} />}
                   <span className="ml-1.5 text-xs text-fg-3">{relTime(e.created_at, now)}</span>
                   {!!e.files?.length && (
                     <div className="mt-1.5 w-fit" onClick={stop} onKeyDown={stop}>
