@@ -15,6 +15,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/daemon"
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/writing"
 )
 
 // stringList 是可重复的字符串参数。
@@ -139,13 +140,17 @@ func runReq(args []string) error {
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key}))
 	case "evidence":
 		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req evidence <R-编号> <摘要> [--kind test] [--link ...] [--image 截图.png] [--video 录屏.webm]")
+			return fmt.Errorf("用法：ks req evidence <R-编号> <证据正文> [--kind test] [--link ...] [--image 截图.png] [--video 录屏.webm]\n%s", evidenceGuide)
 		}
 		body := map[string]any{"kind": *kind, "summary": fs.Arg(1), "link": *link, "session_key": key}
 		if err := attachFiles(body, append(images, videos...)); err != nil {
 			return err
 		}
-		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(body))
+		if err := agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(body)); err != nil {
+			return err
+		}
+		printHint(writing.EvidenceHint(fs.Arg(1)))
+		return nil
 	case "assign":
 		// PM 派活（R-86）：ks req assign R-12 --to <开发会话键|auto> [--comment ...]
 		if fs.NArg() < 1 || *to == "" {
@@ -174,12 +179,12 @@ func runReq(args []string) error {
 
 func runDecision(args []string) error {
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision raise --question <问题> [--option A --option B] [--recommend ...] [--req R-1]")
+		return fmt.Errorf("用法：ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
-	question := fs.String("question", "", "问题")
-	ctxText := fs.String("context", "", "背景")
+	question := fs.String("question", "", "问题：一句话，只问一件事（建议 60 字以内）")
+	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的待拍板的点另开决策（建议 400 字以内）")
 	rec := fs.String("recommend", "", "推荐")
 	req := fs.String("req", "", "关联需求")
 	var opts, optImgs stringList
@@ -215,7 +220,25 @@ func runDecision(args []string) error {
 		}
 		body["option_images"] = tmp["files"]
 	}
-	return agentCall("POST", "/agent/decisions", compact(body))
+	if err := agentCall("POST", "/agent/decisions", compact(body)); err != nil {
+		return err
+	}
+	printHint(writing.DecisionHint(*question, *ctxText))
+	return nil
+}
+
+// 写作规范（R-110），与 MCP 工具说明一致。
+const (
+	evidenceGuide = "证据写法：第一句是结论（40 字以内，写用户能看到的变化）；逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；无关的顺带改动单列或另记需求。交之前先自查截图里的文字有没有被截断、溢出或重叠。"
+	decisionGuide = "决策写法：问题一句话，每次只问一件事；要拍板的点拆成独立的决策，不埋在说明里；说明按“结论 / 依据 / 细节”写。"
+	stageGuide    = "小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据。"
+)
+
+// printHint 输出字数提示（内容已保存，只提醒下次压缩）。
+func printHint(h string) {
+	if h != "" {
+		fmt.Println(h)
+	}
 }
 
 func compact(m map[string]any) map[string]any {
@@ -361,7 +384,7 @@ func runPlan(args []string) error {
 		return agentCall("GET", "/agent/plans/"+url.PathEscape(fs.Arg(0)), nil)
 	case "submit":
 		if fs.NArg() < 3 {
-			return fmt.Errorf("用法：ks plan submit <P-编号> <阶段序号> <阶段小结>")
+			return fmt.Errorf("用法：ks plan submit <P-编号> <阶段序号> <阶段小结>\n%s", stageGuide)
 		}
 		seq, err := strconv.Atoi(fs.Arg(1))
 		if err != nil {

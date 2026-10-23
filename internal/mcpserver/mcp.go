@@ -16,6 +16,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/version"
+	"github.com/NekroAI/kitestring/internal/writing"
 )
 
 const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
@@ -24,6 +25,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
+- 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户拍板时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图，用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
 - 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开工。计划开始或阶段解锁时，该阶段的需求会交给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动交给你。plan_get 查看计划进度。
@@ -122,15 +124,15 @@ type reqStatusIn struct {
 type evidenceIn struct {
 	Ref     string   `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
 	Kind    string   `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
-	Summary string   `json:"summary" jsonschema:"证据摘要，例如：单元测试 42 个全部通过"`
+	Summary string   `json:"summary" jsonschema:"证据正文（可用 Markdown），按顺序写：1. 第一句是结论，40 字以内，写用户能看到的变化（例如：登录页支持“记住我”，重开浏览器不用再登录）；2. 逐条对照验收标准，每条写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图（如：图 1）；3. 你需要做的：只写机器验证不了、要用户动手或拍板的事，没有就不写；4. 风险或副作用（可选）；5. 实现细节放最后（改了哪些文件、测试命令）；和本需求无关的顺带改动单列，或另记需求。全文建议 600 字以内"`
 	Link    string   `json:"link,omitempty" jsonschema:"链接或文件路径"`
 	Images  []string `json:"images,omitempty" jsonschema:"本机截图等图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时会直接看到"`
 	Videos  []string `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
 }
 
 type decisionIn struct {
-	Question       string   `json:"question" jsonschema:"需要用户决策的问题，单独成立、无需上下文也能看懂"`
-	Context        string   `json:"context,omitempty" jsonschema:"背景：为什么需要决策、各选项的取舍"`
+	Question       string   `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，单独成立、无需上下文也能看懂（建议 60 字以内）"`
+	Context        string   `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的待拍板的点，那些另开决策。建议 400 字以内"`
 	Options        []string `json:"options,omitempty" jsonschema:"候选选项"`
 	OptionImages   []string `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
 	Approval       bool     `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
@@ -166,7 +168,7 @@ type planRefIn struct {
 type stageSubmitIn struct {
 	Plan    string `json:"plan" jsonschema:"计划编号（如 P-1）或 ID"`
 	Stage   int    `json:"stage" jsonschema:"阶段序号（从 1 开始），只能是计划的当前阶段"`
-	Summary string `json:"summary" jsonschema:"阶段小结：这一阶段做了什么、怎么验证的，用户验收时会看到"`
+	Summary string `json:"summary" jsonschema:"阶段小结，用户阶段验收时看：只写跨需求的整体效果、遗留问题和你需要做的（机器验证不了、要用户动手或拍板的事）。不要重复各条需求的证据，那些用户在需求里看"`
 }
 
 type linkIn struct {
@@ -254,7 +256,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据（测试结果、提交、截图路径等）。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据，用户验收时读它。写法：第一句是结论（40 字以内，写用户能看到的变化）；然后逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；和本需求无关的顺带改动单列或另记需求。界面类附截图（images）；交之前先自查截图里的文字有没有被截断、溢出或重叠。超过字数阈值照常保存，返回里会提示压缩。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
@@ -273,9 +275,13 @@ func (t *tools) register(s *mcp.Server) {
 			if len(ids) > 0 {
 				msg += fmt.Sprintf("，本次附件 %d 个", len(ids))
 			}
-			return text(msg + "；状态：" + zh(out.Status)), nil, nil
+			msg += "；状态：" + zh(out.Status)
+			if h := writing.EvidenceHint(in.Summary); h != "" {
+				msg += "\n" + h
+			}
+			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。写法：问题一句话，每次只问一件事；有几个要拍板的点就拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写。要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
@@ -307,7 +313,11 @@ func (t *tools) register(s *mcp.Server) {
 			if err := t.c.Do(ctx, "POST", "/agent/decisions", body, &out); err != nil {
 				return nil, nil, err
 			}
-			return text(fmt.Sprintf("%v 已进入用户的决策收件箱，作答后会自动注入本会话", out["code"])), nil, nil
+			msg := fmt.Sprintf("%v 已进入用户的决策收件箱，作答后会自动注入本会话", out["code"])
+			if h := writing.DecisionHint(in.Question, in.Context); h != "" {
+				msg += "\n" + h
+			}
+			return text(msg), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，草稿 / 待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {
@@ -339,7 +349,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "stage_submit", Description: "计划当前阶段的需求都做完（待验收）后调用：交阶段小结，阶段进入“待阶段验收”。用户通过后下一阶段会自动交给你；退回会附意见送达。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "stage_submit", Description: "计划当前阶段的需求都做完（待验收）后调用：交阶段小结，阶段进入“待阶段验收”。小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据。用户通过后下一阶段会自动交给你；退回会附意见送达。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in stageSubmitIn) (*mcp.CallToolResult, any, error) {
 			var out planView
 			path := fmt.Sprintf("/agent/plans/%s/stages/%d/submit", url.PathEscape(in.Plan), in.Stage)
