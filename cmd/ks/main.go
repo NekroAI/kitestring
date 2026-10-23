@@ -32,6 +32,8 @@ const usage = `纸鸢 Kitestring —— 多设备、多 agent 的个人驾驶舱
   hub [serve]            启动 Hub（--addr 监听地址，默认 0.0.0.0:7310）
   hub passwd             设置 Web 登录密码
   hub device-add <名称>  新增设备并打印设备 token
+  hub device-revoke <名称>  吊销设备（token 立即失效）
+  hub device-rm <名称>   删除已吊销的设备（保留历史，名称可重新使用）
   hub openapi            输出 OpenAPI 文档（前端生成类型用）
 
 设备端：
@@ -190,6 +192,32 @@ func runHub(args []string) error {
 		}
 		fmt.Printf("已新增设备 %s\n设备 token（只显示一次）：%s\n在该设备上执行：ks login --hub <Hub 地址> --token %s\n", d.Name, tok, tok)
 		return nil
+	case "device-revoke", "device-rm":
+		if fs.NArg() < 1 {
+			return fmt.Errorf("用法：ks hub %s <名称>", sub)
+		}
+		devs, err := st.ListDevices(ctx)
+		if err != nil {
+			return err
+		}
+		for _, d := range devs {
+			if d.Name != fs.Arg(0) {
+				continue
+			}
+			if sub == "device-revoke" {
+				if err := st.RevokeDevice(ctx, d.ID); err != nil {
+					return err
+				}
+				fmt.Printf("已吊销设备 %s（正在运行的 Hub 需重启或在网页上吊销后才断开其连接）\n", d.Name)
+				return nil
+			}
+			if err := st.DeleteDevice(ctx, d.ID); err != nil {
+				return err
+			}
+			fmt.Printf("已删除设备 %s，名称可重新使用（历史会话保留）\n", d.Name)
+			return nil
+		}
+		return fmt.Errorf("没有名为 %q 的设备", fs.Arg(0))
 	default:
 		return fmt.Errorf("未知的 hub 子命令：%s", sub)
 	}

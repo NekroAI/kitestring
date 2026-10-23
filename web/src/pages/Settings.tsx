@@ -139,7 +139,7 @@ function DeviceTokenModal({ token, name, onClose }: { token: string; name: strin
 function Devices() {
   const now = useNow()
   const q = useDevices()
-  const { createDevice, revokeDevice } = useActions()
+  const { createDevice, revokeDevice, deleteDevice } = useActions()
   const confirm = useConfirm()
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
@@ -158,6 +158,12 @@ function Devices() {
   const revoke = async (d: Device) => {
     if (await confirm({ title: `${t.settings.devices.revoke}「${d.name}」`, description: t.settings.devices.revokeConfirm(d.name), confirmText: t.settings.devices.revoke, danger: true })) {
       if (await revokeDevice(d.id)) toast(t.settings.devices.revoked)
+    }
+  }
+
+  const remove = async (d: Device) => {
+    if (await confirm({ title: `${t.settings.devices.delete}「${d.name}」`, description: t.settings.devices.deleteConfirm(d.name), confirmText: t.settings.devices.delete, danger: true })) {
+      if (await deleteDevice(d.id)) toast(t.settings.devices.deleted)
     }
   }
 
@@ -194,6 +200,11 @@ function Devices() {
                     <Trash2 className="size-4" />
                   </Button>
                 </Tip>
+              )}
+              {d.revoked && (
+                <Button size="sm" variant="ghost" className="text-fg-2 hover:text-danger" onClick={() => remove(d)}>
+                  {t.settings.devices.delete}
+                </Button>
               )}
             </Row>
           ))

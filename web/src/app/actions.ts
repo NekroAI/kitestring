@@ -85,6 +85,8 @@ export function useActions() {
     createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions']),
     revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions']),
 
+    deleteDevice: (id: string) => run(() => unwrap(api.DELETE('/api/devices/{id}', { params: { path: { id } } })), ['devices', 'sessions']),
+
     updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean }) =>
       run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
     mergeProject: (id: string, into: string) =>

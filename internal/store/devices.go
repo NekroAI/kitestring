@@ -64,7 +64,7 @@ func (s *Store) DeviceByToken(ctx context.Context, tokenHash string) (Device, er
 
 // ListDevices 列出全部设备。
 func (s *Store) ListDevices(ctx context.Context) ([]Device, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+deviceCols+` FROM devices ORDER BY created_at`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+deviceCols+` FROM devices WHERE deleted = 0 ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +90,28 @@ func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ErrDeviceActive 表示设备还没吊销，不能删除。
+var ErrDeviceActive = errors.New("设备尚未吊销，先吊销再删除")
+
+// DeleteDevice 删除已吊销的设备：从列表中隐藏并释放名称，历史会话、事件、需求关联全部保留。
+// 不用物理删除：sessions.device_id 外键是 ON DELETE CASCADE，会连带删掉会话与需求关联。
+// 旧行改名为「原名（已删除 xxxx）」，会话卡片上仍显示得出来源设备。
+func (s *Store) DeleteDevice(ctx context.Context, id string) error {
+	d, err := s.GetDevice(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !d.Revoked {
+		return ErrDeviceActive
+	}
+	short := id
+	if len(short) > 6 {
+		short = short[len(short)-6:]
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE devices SET deleted = 1, name = ? WHERE id = ? AND deleted = 0`, d.Name+"（已删除 "+short+"）", id)
+	return err
 }
 
 // SetDeviceOnline 更新设备在线状态；hello 非空时同时更新设备信息。

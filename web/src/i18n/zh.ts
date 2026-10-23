@@ -811,6 +811,9 @@ export const zh = {
       revokeConfirm: (name: string) => `移除「${name}」后，它将无法再连接，需要重新接入。`,
       revoked: '已移除',
       revokedTag: '已移除',
+      delete: '删除',
+      deleteConfirm: (name: string) => `删除「${name}」后，名称可以重新使用；它的历史会话仍然保留。`,
+      deleted: '已删除',
       empty: '还没有设备',
     },
 

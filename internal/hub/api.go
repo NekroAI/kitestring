@@ -521,6 +521,15 @@ func (h *Hub) registerWeb(api huma.API) {
 			return ok(), nil
 		})
 
+	huma.Register(api, huma.Operation{OperationID: "delete-device", Method: http.MethodDelete, Path: "/api/devices/{id}", Tags: tag("devices"), Summary: "删除已吊销的设备（保留历史会话），名称可重新使用"},
+		func(ctx context.Context, in *idPath) (*okBody, error) {
+			if err := h.store.DeleteDevice(ctx, in.ID); err != nil {
+				return nil, apiErr(err)
+			}
+			h.broker.publish("devices", "sessions")
+			return ok(), nil
+		})
+
 	// 项目与工作空间
 	huma.Register(api, huma.Operation{OperationID: "list-projects", Method: http.MethodGet, Path: "/api/projects", Tags: tag("projects")},
 		func(ctx context.Context, _ *empty) (*projectsOut, error) {
