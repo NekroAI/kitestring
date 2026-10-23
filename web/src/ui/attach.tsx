@@ -39,6 +39,9 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
     async (files: File[]) => {
       const list = files.filter(accepted)
       if (!list.length) return
+      // 本次已传完的图：每传完一张都和最新的列表合并。父组件可能还没刷新（例如需求描述要等保存回来），
+      // 只用 latest 会让后一张把前一张盖掉——一次选多张只剩一张（R-24）
+      const added: FileRef[] = []
       for (const f of list) {
         if (f.size > (isVideo(f.type) ? MAX_VIDEO : MAX_IMAGE)) {
           toast.error(isVideo(f.type) ? t.attach.videoTooLarge : t.attach.tooLarge)
@@ -48,8 +51,11 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
         const url = URL.createObjectURL(f)
         setPending((p) => [...p, { key, url, video: isVideo(f.type) }])
         try {
-          const ref = await uploadOne(f)
-          onChange([...latest.current, ref])
+          added.push(await uploadOne(f))
+          const cur = latest.current
+          const next = [...cur, ...added.filter((a) => !cur.some((c) => c.id === a.id))]
+          latest.current = next
+          onChange(next)
         } catch (e) {
           toast.error(e instanceof Error ? e.message : t.attach.failed)
         } finally {

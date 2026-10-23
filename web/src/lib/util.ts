@@ -104,6 +104,10 @@ export function useMedia(query: string): boolean {
 
 export const useDesktop = () => useMedia('(min-width: 1024px)')
 
+// noKbd：触屏设备上去掉提示文字里的键盘快捷键（“ · ⌘↵ …”）。
+const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches
+export const noKbd = (s: string) => (coarse ? s.replace(/\s*·?\s*⌘↵.*$/, '') : s)
+
 // ---------- 本机偏好（失败时静默） ----------
 
 export function loadPref<T>(key: string, fallback: T): T {

@@ -172,7 +172,8 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
 }
 
 // EditableText：点击即编辑，失焦保存。
-export function EditableText({ value, onSave, placeholder, multiline, className }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; className?: string }) {
+// wrap：单行内容但允许折行显示（如标题），回车保存而不是换行。
+export function EditableText({ value, onSave, placeholder, multiline, wrap, className }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; wrap?: boolean; className?: string }) {
   const [v, setV] = useState(value)
   useEffect(() => setV(value), [value])
   const commit = () => v.trim() !== value.trim() && onSave(v.trim())
@@ -181,6 +182,24 @@ export function EditableText({ value, onSave, placeholder, multiline, className 
     'block w-full min-w-0 rounded-lg border border-transparent bg-transparent px-3 text-[15px] text-fg transition-[border,background,box-shadow] placeholder:text-fg-3 hover:border-line focus:border-accent focus:bg-surface focus:ring-3 focus:ring-[var(--ring)] focus:outline-none sm:text-sm',
     className,
   )
+  if (wrap)
+    return (
+      <Textarea
+        value={v}
+        minRows={1}
+        placeholder={placeholder}
+        onChange={(e) => setV(e.target.value.replace(/\n/g, ' '))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            ;(e.target as HTMLTextAreaElement).blur()
+          }
+        }}
+        unstyled
+        className={cx(cls, 'resize-none')}
+      />
+    )
   return multiline ? (
     <Textarea value={v} minRows={2} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} unstyled className={cx(cls, 'resize-none py-2 leading-relaxed')} />
   ) : (

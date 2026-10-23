@@ -152,10 +152,13 @@
     /* 应用式界面：页面不随手势缩放（看图器自己处理捏合） */
     touch-action: pan-x pan-y;
     font-feature-settings: 'cv11', 'ss01';
+    /* 页面整体不回弹：iOS 上回弹会把底部切换栏一起拖走（R-24）；内部滚动区各自 overscroll-contain */
+    overscroll-behavior: none;
   }
   body {
     @apply bg-bg text-fg antialiased;
     text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
   }
   /* 文楷只有常规字重：标题不做假粗体，靠字号和字形本身区分层级 */
   .font-display {

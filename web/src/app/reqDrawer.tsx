@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { cx, relTime, useNow, usePref } from '../lib/util'
+import { noKbd, cx, relTime, useNow, usePref } from '../lib/util'
 import { Button, ErrorState, Skeleton, Textarea, Tip } from '../ui/base'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
@@ -112,7 +112,7 @@ function Brief({ r }: { r: Requirement }) {
 
   return (
     <header className="shrink-0 border-b border-line px-4 pt-1 pb-3 sm:px-5">
-      <EditableText value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} className="-mx-3 h-auto py-1 font-display text-lg leading-snug" />
+      <EditableText wrap value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} className="-mx-3 h-auto py-1 font-display text-lg leading-snug" />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusMenu r={r} size="md" />
         <PlanBadge r={r} className="px-2.5 py-1 text-sm" />
@@ -272,7 +272,7 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
   ) : (
     <span className="flex min-w-0 items-center gap-2 text-xs text-fg-3">
       <span className={cx('size-2 shrink-0 rotate-45 rounded-[1.5px]', statusCls[r.status]?.dot)} />
-      <span className="truncate">{reviewing ? (dirty ? t.review.hintRevise : t.review.hintPass) : (own?.short ?? t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
+      <span className="truncate">{reviewing ? noKbd(dirty ? t.review.hintRevise : t.review.hintPass) : (own?.short ?? t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
     </span>
   )
   return (
