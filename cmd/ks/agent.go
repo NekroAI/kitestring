@@ -193,6 +193,7 @@ func runReq(args []string) error {
 	detail := fs.String("detail", "", "create / edit：细节")
 	acceptance := fs.String("acceptance", "", "create / edit：验收标准")
 	status := fs.String("status", "", "create：初始状态")
+	fromDec := fs.String("from-decision", "", "create：产生这条需求的决策编号（D-x）")
 	priority := fs.String("priority", "", "create / edit：优先级 P0-P3")
 	fs.String("type", "", "edit：需求类型 design（设计类）/ feature（普通）")
 	approval := fs.String("approval", "", "edit：进行中之后改验收标准时，用户已批准的批准类决策编号（D-x）")
@@ -233,7 +234,7 @@ func runReq(args []string) error {
 		if *title == "" {
 			return fmt.Errorf("用法：ks req create --title <标题> [--detail ...] [--acceptance ...]")
 		}
-		body := map[string]any{"title": *title, "detail": *detail, "acceptance": *acceptance, "status": *status, "priority": *priority, "session_key": key}
+		body := map[string]any{"title": *title, "detail": *detail, "acceptance": *acceptance, "status": *status, "priority": *priority, "from_decision": *fromDec, "session_key": key}
 		if err := attachFiles(body, images); err != nil {
 			return err
 		}
@@ -355,7 +356,7 @@ func runDecision(args []string) error {
 		return runAnswer(args[1:])
 	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--from D-x [--overturns]] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
@@ -364,6 +365,8 @@ func runDecision(args []string) error {
 	rec := fs.String("recommend", "", "推荐")
 	req := fs.String("req", "", "关联需求")
 	risk := fs.String("risk", "", "风险档 low / medium / high，不填按 high；产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high")
+	fromDec := fs.String("from", "", "来源决策（D-x）：接着哪条决策往下问，或要推翻哪条")
+	overturns := fs.Bool("overturns", false, "这条要推翻 --from 那条决策的结论")
 	var opts, optImgs stringList
 	fs.Var(&opts, "option", "选项，可重复")
 	fs.Var(&optImgs, "option-image", "选项的效果图路径，按 --option 的顺序一一对应，可重复")
@@ -380,7 +383,10 @@ func runDecision(args []string) error {
 	if *question == "" {
 		return fmt.Errorf("--question 不能为空")
 	}
-	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "risk": *risk, "session_key": cliSession(*session)}
+	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "risk": *risk, "from_decision": *fromDec, "session_key": cliSession(*session)}
+	if *overturns {
+		body["overturns"] = true
+	}
 	if len(opts) > 0 {
 		body["options"] = []string(opts)
 	}

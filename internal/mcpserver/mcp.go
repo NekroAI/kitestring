@@ -25,6 +25,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿只有 PM / Adv 关联、且项目开了「允许 PM / Adv 放行草稿」才会记一次放行并变为进行中；Dev 等其他身份或没开时只关联、仍是草稿，要请 PM 或用户放行）。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
+- 决策后果链：按用户在某条决策里的答复新建需求时，req_create 带 from_decision（D-x）；接着某条决策往下问、或要推翻它的结论时，decision_raise 带 from_decision（推翻时再加 overturns = true）。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
 - 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
@@ -108,15 +109,16 @@ type reqGetIn struct {
 }
 
 type reqCreateIn struct {
-	Title      string   `json:"title" jsonschema:"需求标题，一句话；不要把编号（R-12、R-95-D 之类）写进标题，纸鸢会自己显示编号，开头的编号前缀会被去掉"`
-	Detail     string   `json:"detail,omitempty" jsonschema:"背景与细节"`
-	Acceptance string   `json:"acceptance,omitempty" jsonschema:"验收标准"`
-	Status     string   `json:"status,omitempty" jsonschema:"初始状态，默认 draft（草稿，用户确认后才会排进会话的待办）；你当场就在做的用 in_progress"`
-	Priority   string   `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`
-	Source     string   `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
-	DocLink    string   `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
-	Kind       string   `json:"kind,omitempty" jsonschema:"需求类型：design = 设计类（先交方案、用户选定后再实现），不填为普通需求"`
-	Images     []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），如截图"`
+	Title        string   `json:"title" jsonschema:"需求标题，一句话；不要把编号（R-12、R-95-D 之类）写进标题，纸鸢会自己显示编号，开头的编号前缀会被去掉"`
+	Detail       string   `json:"detail,omitempty" jsonschema:"背景与细节"`
+	Acceptance   string   `json:"acceptance,omitempty" jsonschema:"验收标准"`
+	Status       string   `json:"status,omitempty" jsonschema:"初始状态，默认 draft（草稿，用户确认后才会排进会话的待办）；你当场就在做的用 in_progress"`
+	Priority     string   `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`
+	Source       string   `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
+	DocLink      string   `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
+	Kind         string   `json:"kind,omitempty" jsonschema:"需求类型：design = 设计类（先交方案、用户选定后再实现），不填为普通需求"`
+	FromDecision string   `json:"from_decision,omitempty" jsonschema:"产生这条需求的决策编号（如 D-142）：用户在某条决策里拍板后由此新建的需求要填，决策详情里会显示它产生了这条需求"`
+	Images       []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），如截图"`
 }
 
 type reqStatusIn struct {
@@ -168,6 +170,8 @@ type decisionIn struct {
 	Blocks         []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
 	Points         []map[string]any `json:"points,omitempty" jsonschema:"要拍板的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
 	Summary        []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
+	FromDecision   string           `json:"from_decision,omitempty" jsonschema:"来源决策（如 D-142）：这条是接着哪条决策往下问的，或要推翻哪条决策的结论；决策详情里会连成后果链"`
+	Overturns      bool             `json:"overturns,omitempty" jsonschema:"为 true 表示这条要推翻 from_decision 那条的结论（例如用户之前选了 B，现在要改回 A）；接着往下问时不填"`
 	Risk           string           `json:"risk,omitempty" jsonschema:"风险档：low / medium / high，不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high。用户开了参谋授权窗口时，low / medium 的决策可能由 Adv 代答（用户可推翻，推翻时会送来更正）"`
 }
 
@@ -262,7 +266,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。同项目已有同名未关闭需求时照常新建，但返回里会提示，重复的请搁置。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqCreateIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "kind": in.Kind, "session_key": t.sessionKey(ctx, req)}
+			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "kind": in.Kind, "from_decision": in.FromDecision, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			ids, err := t.upload(ctx, in.Images)
 			if err != nil {
@@ -383,8 +387,11 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别拍板时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "risk": in.Risk, "session_key": t.sessionKey(ctx, req)}
+			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "risk": in.Risk, "from_decision": in.FromDecision, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
+			if in.Overturns {
+				body["overturns"] = true
+			}
 			if in.Approval {
 				body["approval"] = true
 			}
@@ -524,12 +531,12 @@ func text(s string) *mcp.CallToolResult {
 // planView 是计划的精简视图：按行输出，省上下文。
 type planView struct {
 	Notices []string `json:"notices"`
-	Code   string `json:"code"`
-	Title  string `json:"title"`
-	Goal   string `json:"goal"`
-	Status string `json:"status"`
-	Paused bool   `json:"paused"`
-	Stages []struct {
+	Code    string   `json:"code"`
+	Title   string   `json:"title"`
+	Goal    string   `json:"goal"`
+	Status  string   `json:"status"`
+	Paused  bool     `json:"paused"`
+	Stages  []struct {
 		Seq          int    `json:"seq"`
 		Title        string `json:"title"`
 		Status       string `json:"status"`

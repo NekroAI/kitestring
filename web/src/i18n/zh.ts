@@ -753,6 +753,16 @@ export const zh = {
     round: (n: number) => `第 ${n} 轮`,
     current: '当前',
   },
+  chain: {
+    title: '后果链',
+    follows: '接着',
+    overturnsFrom: '推翻了',
+    replacedBy: '被取代',
+    replaces: '取代了',
+    overturnedBy: '被推翻',
+    followedBy: '后续',
+    relation: { from: '产生了', source: '产生了', about: '针对' } as Record<string, string>,
+  },
   thread: {
     reqs: (x: number) => `${x} 个需求`,
     reviews: '待验收',

@@ -54,6 +54,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerSessionReply(webAPI)
 	h.registerStatusWeb(webAPI)
 	h.registerStatusAgent(agentAPI)
+	h.registerChainWeb(webAPI)
+	h.registerChainAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -115,6 +117,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerSessionReply(api)
 	h.registerStatusWeb(api)
 	h.registerStatusAgent(api)
+	h.registerChainWeb(api)
+	h.registerChainAgent(api)
 	return api.OpenAPI()
 }
 
@@ -1069,6 +1073,8 @@ type agentDecisionIn struct {
 		Summary        []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
 		Recommendation string   `json:"recommendation,omitempty"`
 		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
+		FromDecision   string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
+		Overturns      bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
 		Risk           string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
 	}
 }
@@ -1083,7 +1089,8 @@ type linkOut struct {
 type agentReqIn struct {
 	Body struct {
 		ReqFields
-		SessionKey string `json:"session_key,omitempty"`
+		SessionKey   string `json:"session_key,omitempty"`
+		FromDecision string `json:"from_decision,omitempty" doc:"产生这条需求的决策（R-154），如 D-142；用户在某条决策里拍板后由此新建的需求要填"`
 	}
 }
 
@@ -1119,6 +1126,9 @@ func (h *Hub) registerAgent(api huma.API) {
 				return nil, err
 			}
 			r.CreatedBy = "agent"
+			if r.FromDecision, err = h.fromDecision(ctx, in.Body.FromDecision); err != nil {
+				return nil, err
+			}
 			if r.Status == store.ReqReady {
 				r.Status = store.ReqDraft // Agent 记下的需求先停在草稿，你确认后才排进会话的待办（R-66）
 			}
@@ -1266,7 +1276,15 @@ func (h *Hub) registerAgent(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-raise-decision", Method: http.MethodPost, Path: "/api/agent/decisions", Tags: tag},
 		func(ctx context.Context, in *agentDecisionIn) (*decisionRaisedOut, error) {
 			b := in.Body
-			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation, Risk: b.Risk}
+			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation, Risk: b.Risk, Overturns: b.Overturns}
+			from, err := h.fromDecision(ctx, b.FromDecision)
+			if err != nil {
+				return nil, err
+			}
+			if b.Overturns && from == "" {
+				return nil, huma.Error400BadRequest("overturns = true 时要用 from_decision 写明推翻的是哪条决策（D-x）")
+			}
+			d.FromDecision = from
 			var warns, pw []string
 			d.Blocks, warns = blocks.Parse(b.Blocks, h.blockFile(ctx))
 			d.Points, pw = blocks.ParsePoints(b.Points, h.blockFile(ctx))
@@ -1323,7 +1341,7 @@ func (h *Hub) registerAgent(api huma.API) {
 					_ = h.store.LinkSession(ctx, r.ID, b.SessionKey)
 				}
 			}
-			d, err := h.store.CreateDecision(ctx, d)
+			d, err = h.store.CreateDecision(ctx, d)
 			if err != nil {
 				return nil, apiErr(err)
 			}

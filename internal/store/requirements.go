@@ -69,6 +69,8 @@ type Requirement struct {
 	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
 	// Release：最近一次没撤回的放行（R-166）——PM / Adv 把草稿改为待开始时留下的记录：谁、什么身份、为什么
 	Release *Release `json:"release,omitempty"`
+	// FromDecision：产生这条需求的决策（D-x，R-154），Agent 新建时声明
+	FromDecision string `json:"from_decision,omitempty"`
 	// StatusChanges：状态变更历史（R-153），时间正序；上线前的旧需求没有
 	StatusChanges []StatusChange `json:"status_changes,omitempty"`
 	CreatedAt     time.Time      `json:"created_at"`
@@ -109,7 +111,7 @@ const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.na
 	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending'),
 	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, ''), r.offered_to, r.offered_at,
 	COALESCE((SELECT x.seq || char(31) || x.assigned_by || char(31) || x.context || char(31) || x.answer || char(31) || x.created_at FROM decisions x
-		WHERE x.requirement_id = r.id AND x.kind = 'release' AND x.close_reason = '' ORDER BY x.seq DESC LIMIT 1), '')
+		WHERE x.requirement_id = r.id AND x.kind = 'release' AND x.close_reason = '' ORDER BY x.seq DESC LIMIT 1), ''), r.from_decision
 	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id
 	LEFT JOIN plan_stages ps ON ps.id = r.stage_id LEFT JOIN plans pl ON pl.id = ps.plan_id`
 
@@ -126,7 +128,7 @@ func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var seq, planSeq int
 	var created, updated, files, offeredAt, release string
 	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions,
-		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt, &release)
+		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt, &release, &r.FromDecision)
 	r.Release = parseRelease(release)
 	r.OfferedAt = parseNullTS(sql.NullString{String: offeredAt, Valid: offeredAt != ""})
 	r.Files = parseFiles(files)
@@ -208,8 +210,8 @@ func (s *Store) CreateRequirement(ctx context.Context, r Requirement) (Requireme
 			return err
 		}
 		n := now()
-		_, err := t.ExecContext(ctx, `INSERT INTO requirements(id, seq, project_id, title, detail, status, priority, source, acceptance, doc_link, files, created_by, kind, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(r.ProjectID), r.Title, r.Detail, r.Status, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), r.CreatedBy, normKind(r.Kind), n, n)
+		_, err := t.ExecContext(ctx, `INSERT INTO requirements(id, seq, project_id, title, detail, status, priority, source, acceptance, doc_link, files, created_by, kind, created_at, updated_at, from_decision) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(r.ProjectID), r.Title, r.Detail, r.Status, r.Priority, r.Source, r.Acceptance, r.DocLink, filesJSON(r.Files), r.CreatedBy, normKind(r.Kind), n, n, r.FromDecision)
 		if err != nil {
 			return err
 		}

@@ -70,6 +70,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/decisions/{ref}/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 决策后果链：产生的需求与提交、取代 / 推翻关系（R-154） */
+        get: operations["agent-get-decision-chain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/decisions/{ref}/withdraw": {
         parameters: {
             query?: never;
@@ -495,6 +512,23 @@ export interface paths {
         put?: never;
         /** 批量作答 */
         post: operations["answer-decisions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/decisions/{ref}/chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 决策后果链：产生的需求与提交、取代 / 推翻关系（R-154） */
+        get: operations["get-decision-chain"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1438,11 +1472,15 @@ export interface components {
             /** @description 表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明 */
             blocks?: unknown[] | null;
             context?: string;
+            /** @description 来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x） */
+            from_decision?: string;
             /** @description 问题附带的图（例如待批准的方案图）的附件 ID */
             images?: string[] | null;
             /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
             option_images?: string[] | null;
             options?: string[] | null;
+            /** @description 为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision） */
+            overturns?: boolean;
             /** @description 要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明 */
             points?: unknown[] | null;
             question: string;
@@ -1471,6 +1509,8 @@ export interface components {
             detail?: string;
             doc_link?: string;
             files?: string[] | null;
+            /** @description 产生这条需求的决策（R-154），如 D-142；用户在某条决策里拍板后由此新建的需求要填 */
+            from_decision?: string;
             /** @description design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改 */
             kind?: string;
             /** @enum {string} */
@@ -1540,6 +1580,29 @@ export interface components {
             /** @enum {string} */
             type: "checklist" | "compare" | "figure" | "flow" | "metrics" | "scope" | "options" | "table";
         };
+        ChainCommit: {
+            /** Format: date-time */
+            at: string;
+            link: string;
+            summary: string;
+        };
+        ChainDec: {
+            code: string;
+            overturns?: boolean;
+            status: string;
+            title: string;
+        };
+        ChainReq: {
+            code: string;
+            commits: components["schemas"]["ChainCommit"][] | null;
+            /**
+             * @description from = 新建时声明由这条决策产生；source = 来源里写了这个编号；about = 决策本身关联的需求
+             * @enum {string}
+             */
+            relation: "from" | "source" | "about";
+            status: string;
+            title: string;
+        };
         "Change-passwordRequest": {
             new: string;
             old: string;
@@ -1586,6 +1649,7 @@ export interface components {
             delivered_at?: string;
             delivered_turn?: string;
             device_name?: string;
+            from_decision?: string;
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -1594,6 +1658,7 @@ export interface components {
             origin_session?: string;
             /** Format: date-time */
             overridden_at?: string;
+            overturns?: boolean;
             plan_code?: string;
             plan_id?: string;
             points?: components["schemas"]["Block"][] | null;
@@ -1619,6 +1684,18 @@ export interface components {
             status: string;
             summary?: string[] | null;
         };
+        DecisionChain: {
+            code: string;
+            /** @description 之后声明来自它的决策；overturns = 推翻了它 */
+            followups: components["schemas"]["ChainDec"][] | null;
+            /** @description 它接着 / 推翻的那条决策（overturns = 推翻） */
+            from?: components["schemas"]["ChainDec"];
+            /** @description 撤回时指向的新决策 */
+            replaced_by?: components["schemas"]["ChainDec"];
+            /** @description 撤回时指向它的旧决策 */
+            replaces: components["schemas"]["ChainDec"][] | null;
+            requirements: components["schemas"]["ChainReq"][] | null;
+        };
         DecisionRaisedOutBody: {
             answer: string;
             answer_files: components["schemas"]["FileRef"][] | null;
@@ -1640,6 +1717,7 @@ export interface components {
             delivered_at?: string;
             delivered_turn?: string;
             device_name?: string;
+            from_decision?: string;
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -1648,6 +1726,7 @@ export interface components {
             origin_session?: string;
             /** Format: date-time */
             overridden_at?: string;
+            overturns?: boolean;
             plan_code?: string;
             plan_id?: string;
             points?: components["schemas"]["Block"][] | null;
@@ -1827,6 +1906,7 @@ export interface components {
             evidence?: components["schemas"]["Evidence"][] | null;
             feedback?: components["schemas"]["Decision"][] | null;
             files: components["schemas"]["FileRef"][] | null;
+            from_decision?: string;
             id: string;
             kind: string;
             next_actor: string;
@@ -1987,6 +2067,7 @@ export interface components {
             evidence?: components["schemas"]["Evidence"][] | null;
             feedback?: components["schemas"]["Decision"][] | null;
             files: components["schemas"]["FileRef"][] | null;
+            from_decision?: string;
             id: string;
             kind: string;
             next_actor: string;
@@ -2344,6 +2425,7 @@ export interface components {
             evidence?: components["schemas"]["Evidence"][] | null;
             feedback?: components["schemas"]["Decision"][] | null;
             files: components["schemas"]["FileRef"][] | null;
+            from_decision?: string;
             id: string;
             kind: string;
             next_actor: string;
@@ -2403,6 +2485,7 @@ export interface components {
             evidence?: components["schemas"]["Evidence"][] | null;
             feedback?: components["schemas"]["Decision"][] | null;
             files: components["schemas"]["FileRef"][] | null;
+            from_decision?: string;
             id: string;
             kind: string;
             next_actor: string;
@@ -2871,6 +2954,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-get-decision-chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionChain"];
                 };
             };
             /** @description Error */
@@ -3777,6 +3891,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DecisionsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-decision-chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionChain"];
                 };
             };
             /** @description Error */

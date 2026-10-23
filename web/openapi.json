@@ -515,6 +515,10 @@
           "context": {
             "type": "string"
           },
+          "from_decision": {
+            "description": "来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）",
+            "type": "string"
+          },
           "images": {
             "description": "问题附带的图（例如待批准的方案图）的附件 ID",
             "items": {
@@ -543,6 +547,10 @@
               "array",
               "null"
             ]
+          },
+          "overturns": {
+            "description": "为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）",
+            "type": "boolean"
           },
           "points": {
             "description": "要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明",
@@ -633,6 +641,10 @@
               "array",
               "null"
             ]
+          },
+          "from_decision": {
+            "description": "产生这条需求的决策（R-154），如 D-142；用户在某条决策里拍板后由此新建的需求要填",
+            "type": "string"
           },
           "kind": {
             "description": "design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改",
@@ -902,6 +914,90 @@
         ],
         "type": "object"
       },
+      "ChainCommit": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "link",
+          "summary",
+          "at"
+        ],
+        "type": "object"
+      },
+      "ChainDec": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "overturns": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "title",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ChainReq": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "commits": {
+            "items": {
+              "$ref": "#/components/schemas/ChainCommit"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "relation": {
+            "description": "from = 新建时声明由这条决策产生；source = 来源里写了这个编号；about = 决策本身关联的需求",
+            "enum": [
+              "from",
+              "source",
+              "about"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "title",
+          "status",
+          "relation",
+          "commits"
+        ],
+        "type": "object"
+      },
       "Change-passwordRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1062,6 +1158,9 @@
           "device_name": {
             "type": "string"
           },
+          "from_decision": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -1111,6 +1210,9 @@
           "overridden_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "overturns": {
+            "type": "boolean"
           },
           "plan_code": {
             "type": "string"
@@ -1216,6 +1318,58 @@
         ],
         "type": "object"
       },
+      "DecisionChain": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "followups": {
+            "description": "之后声明来自它的决策；overturns = 推翻了它",
+            "items": {
+              "$ref": "#/components/schemas/ChainDec"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "from": {
+            "$ref": "#/components/schemas/ChainDec",
+            "description": "它接着 / 推翻的那条决策（overturns = 推翻）"
+          },
+          "replaced_by": {
+            "$ref": "#/components/schemas/ChainDec",
+            "description": "撤回时指向的新决策"
+          },
+          "replaces": {
+            "description": "撤回时指向它的旧决策",
+            "items": {
+              "$ref": "#/components/schemas/ChainDec"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/ChainReq"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "followups",
+          "replaces",
+          "requirements"
+        ],
+        "type": "object"
+      },
       "DecisionRaisedOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -1302,6 +1456,9 @@
           "device_name": {
             "type": "string"
           },
+          "from_decision": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -1351,6 +1508,9 @@
           "overridden_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "overturns": {
+            "type": "boolean"
           },
           "plan_code": {
             "type": "string"
@@ -1909,6 +2069,9 @@
               "null"
             ]
           },
+          "from_decision": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -2417,6 +2580,9 @@
               "array",
               "null"
             ]
+          },
+          "from_decision": {
+            "type": "string"
           },
           "id": {
             "type": "string"
@@ -3724,6 +3890,9 @@
               "null"
             ]
           },
+          "from_decision": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -3982,6 +4151,9 @@
               "array",
               "null"
             ]
+          },
+          "from_decision": {
+            "type": "string"
           },
           "id": {
             "type": "string"
@@ -5386,6 +5558,47 @@
         ]
       }
     },
+    "/api/agent/decisions/{ref}/chain": {
+      "get": {
+        "operationId": "agent-get-decision-chain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionChain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "决策后果链：产生的需求与提交、取代 / 推翻关系（R-154）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/decisions/{ref}/withdraw": {
       "post": {
         "operationId": "agent-withdraw-decision",
@@ -6670,6 +6883,47 @@
           }
         },
         "summary": "批量作答",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/api/decisions/{ref}/chain": {
+      "get": {
+        "operationId": "get-decision-chain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionChain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "决策后果链：产生的需求与提交、取代 / 推翻关系（R-154）",
         "tags": [
           "decisions"
         ]

@@ -20,6 +20,7 @@ import { useOpenReq, useOpenSession } from './nav'
 import { targetItems } from './assign'
 import { Md, plainText } from '../ui/markdown'
 import { Linkify, RefChip } from '../ui/refmark'
+import { DecisionChain } from './chain'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
 function recIndex(options: string[], rec: string): number {
@@ -49,6 +50,12 @@ function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boo
       )}
       {d.requirement_code && (
         <RefChip code={d.requirement_code} onOpen={openReq} />
+      )}
+      {d.from_decision && (
+        <span className="inline-flex items-center gap-1">
+          <span className={d.overturns ? 'text-danger' : ''}>{d.overturns ? t.chain.overturnsFrom : t.chain.follows}</span>
+          <RefChip code={d.from_decision} />
+        </span>
       )}
       <span className="ml-auto tabular">{relTime(d.created_at, now)}</span>
     </div>
@@ -446,6 +453,7 @@ export function DecisionRow({ d }: { d: Decision }) {
           {d.context && <Context text={d.context} />}
           <BlockList blocks={d.blocks} />
           {d.proxy_by ? <ProxyNote d={d} /> : d.answer && <AnswerBlock d={d} />}
+          {d.kind === 'decision' && <DecisionChain code={d.code} />}
           <div className="flex items-center justify-between text-xs text-fg-3">
             <span>{when}</span>
             {d.status === 'delivered' && (

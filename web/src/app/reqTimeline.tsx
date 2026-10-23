@@ -16,6 +16,7 @@ import { EvidenceView, hasPayload } from './evidence'
 import { useSessions } from '../api/queries'
 import { sessionTitle } from './SessionCard'
 import { Linkify, RefChip } from '../ui/refmark'
+import { DecisionChain } from './chain'
 
 // 需求进展：一条竖向时间线，从上往下按时间排，最新在最下面（紧挨底部的输入区）。
 // 每次退回修改开启新的一轮，复杂需求反复几轮也能看清来龙去脉；留言不开新一轮。
@@ -440,19 +441,9 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           <p className="text-sm text-fg">
             <Linkify text={d.short_title || d.question} />
           </p>
-          {d.status === 'closed' && (d.close_reason || d.replaced_by) && (
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-2">
-              {d.close_reason && (
-                <span>
-                  {t.timeline.withdrawnReason}：<Linkify text={d.close_reason} />
-                </span>
-              )}
-              {d.replaced_by && (
-                <span className="inline-flex items-center gap-1">
-                  {t.timeline.replacedBy}
-                  <RefChip code={d.replaced_by} />
-                </span>
-              )}
+          {d.status === 'closed' && d.close_reason && (
+            <p className="text-sm text-fg-2">
+              {t.timeline.withdrawnReason}：<Linkify text={d.close_reason} />
             </p>
           )}
           {d.proxy_by ? (
@@ -466,6 +457,8 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             )
           )}
           {!!d.answer_files?.length && <Thumbs files={d.answer_files} size="sm" />}
+          {/* 后果链（R-154）：取代 / 推翻、产生的需求与提交；被取代也在这里显示 */}
+          <DecisionChain code={d.code} skipReq={r.code} />
         </Node>
       ),
     })
