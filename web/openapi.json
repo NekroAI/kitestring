@@ -3801,6 +3801,134 @@
         ],
         "type": "object"
       },
+      "Pool": {
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "各状态的条数（全部七种状态都有键）",
+            "type": "object"
+          },
+          "done_daily": {
+            "description": "近 7 天（含今天）每日完成数，日期正序",
+            "items": {
+              "$ref": "#/components/schemas/PoolDay"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "done_yesterday": {
+            "description": "昨天进入已完成、现在仍是已完成的条数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "draft_oldest_days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "drafts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "flowing": {
+            "description": "待开始 + 进行中 + 阻塞 + 待验收",
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PoolItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "new_yesterday": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "open_by_agent": {
+            "description": "未关闭需求里由 Agent 记下的条数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "open_by_user": {
+            "description": "未关闭需求里由你提出的条数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "counts",
+          "new_yesterday",
+          "done_yesterday",
+          "drafts",
+          "draft_oldest_days",
+          "flowing",
+          "open_by_user",
+          "open_by_agent",
+          "done_daily",
+          "items"
+        ],
+        "type": "object"
+      },
+      "PoolDay": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "date": {
+            "description": "本地日期 YYYY-MM-DD",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "count"
+        ],
+        "type": "object"
+      },
+      "PoolItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "days": {
+            "description": "在当前状态已放的整天数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "since": {
+            "description": "进入当前状态的时间；没有状态变更记录的旧需求，草稿取创建时间、其余取最后更新时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "status",
+          "since",
+          "days"
+        ],
+        "type": "object"
+      },
       "Project": {
         "additionalProperties": false,
         "properties": {
@@ -8761,6 +8889,59 @@
         "summary": "生成一段时间内的进展回顾",
         "tags": [
           "ai"
+        ]
+      }
+    },
+    "/api/requirement-pool": {
+      "get": {
+        "operationId": "requirement-pool",
+        "parameters": [
+          {
+            "description": "只看某个项目；空 = 全部项目",
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "description": "只看某个项目；空 = 全部项目",
+              "type": "string"
+            }
+          },
+          {
+            "description": "浏览器时区相对 UTC 的分钟数（东八区 = 480），决定「昨天」「近 7 天」按哪天算；不填按 Hub 所在时区",
+            "explode": false,
+            "in": "query",
+            "name": "tz_offset",
+            "schema": {
+              "description": "浏览器时区相对 UTC 的分钟数（东八区 = 480），决定「昨天」「近 7 天」按哪天算；不填按 Hub 所在时区",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "需求池盘面指标：各状态条数、昨天新增 / 完成、草稿积压、在流转、你提出 / Agent 记下、近 7 天每日完成（R-133）",
+        "tags": [
+          "requirements"
         ]
       }
     },

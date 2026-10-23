@@ -48,11 +48,12 @@ export function useSetStatus() {
   const { updateReq } = useActions()
   const confirm = useConfirm()
   const ask = useAskReason()
-  return async (r: Requirement, status: string) => {
-    if (status === r.status) return
+  // 返回是否真的改了（取消确认、取消搁置、请求失败都是 false），逐条确认草稿时据此决定要不要前进（R-133）
+  return async (r: Requirement, status: string): Promise<boolean> => {
+    if (status === r.status) return false
     if (r.status === 'review' && status !== 'done') {
       const ok = await confirm({ title: t.reqs.reject, description: t.reqs.rejectConfirm, confirmText: t.reqs.reject, danger: true })
-      if (!ok) return
+      if (!ok) return false
     }
     // 搁置（R-157）：问一句原因，类别和一句话都可以不填；取消就不搁置
     let why: Partial<ReqFields> = {}
@@ -64,7 +65,7 @@ export function useSetStatus() {
         placeholder: t.reqs.shelve.placeholder,
         kinds: Object.entries(t.reqs.shelve.kinds).map(([value, label]) => ({ value, label })),
       })
-      if (!a) return
+      if (!a) return false
       why = { shelve_kind: (a.kind || undefined) as ReqFields['shelve_kind'], shelve_reason: a.note || undefined }
     }
     const res = await updateReq(r.code, toFields(r, { status: status as ReqFields['status'], ...why }))
@@ -73,6 +74,7 @@ export function useSetStatus() {
       else if (r.status === 'review') toast(t.reqs.rejected(r.code))
       else toast(t.reqs.moved(r.code, t.reqStatus[status]))
     }
+    return !!res
   }
 }
 

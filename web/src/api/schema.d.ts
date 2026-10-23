@@ -1041,6 +1041,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/requirement-pool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 需求池盘面指标：各状态条数、昨天新增 / 完成、草稿积压、在流转、你提出 / Agent 记下、近 7 天每日完成（R-133） */
+        get: operations["requirement-pool"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/requirements": {
         parameters: {
             query?: never;
@@ -2447,6 +2464,63 @@ export interface components {
         };
         PlansOutBody: {
             plans: components["schemas"]["Plan"][] | null;
+        };
+        Pool: {
+            /** @description 各状态的条数（全部七种状态都有键） */
+            counts: {
+                [key: string]: number;
+            };
+            /** @description 近 7 天（含今天）每日完成数，日期正序 */
+            done_daily: components["schemas"]["PoolDay"][] | null;
+            /**
+             * Format: int64
+             * @description 昨天进入已完成、现在仍是已完成的条数
+             */
+            done_yesterday: number;
+            /** Format: int64 */
+            draft_oldest_days: number;
+            /** Format: int64 */
+            drafts: number;
+            /**
+             * Format: int64
+             * @description 待开始 + 进行中 + 阻塞 + 待验收
+             */
+            flowing: number;
+            items: components["schemas"]["PoolItem"][] | null;
+            /** Format: int64 */
+            new_yesterday: number;
+            /**
+             * Format: int64
+             * @description 未关闭需求里由 Agent 记下的条数
+             */
+            open_by_agent: number;
+            /**
+             * Format: int64
+             * @description 未关闭需求里由你提出的条数
+             */
+            open_by_user: number;
+            /** Format: int64 */
+            total: number;
+        };
+        PoolDay: {
+            /** Format: int64 */
+            count: number;
+            /** @description 本地日期 YYYY-MM-DD */
+            date: string;
+        };
+        PoolItem: {
+            code: string;
+            /**
+             * Format: int64
+             * @description 在当前状态已放的整天数
+             */
+            days: number;
+            /**
+             * Format: date-time
+             * @description 进入当前状态的时间；没有状态变更记录的旧需求，草稿取创建时间、其余取最后更新时间
+             */
+            since: string;
+            status: string;
         };
         Project: {
             agent_release: boolean;
@@ -5232,6 +5306,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecapOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "requirement-pool": {
+        parameters: {
+            query?: {
+                /** @description 只看某个项目；空 = 全部项目 */
+                project_id?: string;
+                /** @description 浏览器时区相对 UTC 的分钟数（东八区 = 480），决定「昨天」「近 7 天」按哪天算；不填按 Hub 所在时区 */
+                tz_offset?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pool"];
                 };
             };
             /** @description Error */

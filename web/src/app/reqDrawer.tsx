@@ -15,7 +15,8 @@ import { Menu, Panel, useConfirm } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { useOpenSession } from './nav'
-import { EditableMd, EditableText, priorities, ReleaseBadge, StatusMenu, toFields } from './requirements'
+import { EditableMd, EditableText, priorities, ReleaseBadge, StatusMenu, toFields, useSetStatus } from './requirements'
+import { sortDrafts } from './pool'
 import { ReqTimeline } from './reqTimeline'
 import { AcceptView } from './accept'
 import { AssignButton } from './assign'
@@ -341,14 +342,18 @@ const slide = {
 export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: () => void }) {
   const now = useNow()
   const all = useRequirements().data ?? []
-  const [, setParams] = useSearchParams()
+  const [params, setParams] = useSearchParams()
+  const draftMode = params.get('q') === 'drafts' // 逐条确认草稿（R-133）
+  const draftProject = params.get('qp') ?? ''
+  const setStatus = useSetStatus()
+  const [acting, setActing] = useState(false)
   const { deleteReq } = useActions()
   const confirm = useConfirm()
   const [dir, setDir] = useState<Dir>('next')
   const [stamp, setStamp] = useState(false)
-  const [finished, setFinished] = useState<string | null>(null) // 连续验收完时显示的项目名
+  const [finished, setFinished] = useState<string | null>(null) // 连续处理完时显示的一句话（某项目的待验收 / 草稿都处理完了）
   const internal = useRef(false)
-  const [anchor, setAnchor] = useState<{ project: string; review: boolean } | null>(null)
+  const [anchor, setAnchor] = useState<{ project: string; review: boolean; drafts?: boolean } | null>(null)
   const cur = all.find((x) => x.code === refId)
 
   // 从外部打开（不是抽屉内切换）时，确定这次要连续处理的范围：同一项目的待验收，或同一项目未关闭的需求。
@@ -362,11 +367,13 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       internal.current = false
       return
     }
-    if (cur) setAnchor({ project: cur.project_id || '', review: cur.status === 'review' })
-  }, [refId, cur?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (cur) setAnchor(draftMode ? { project: draftProject, review: false, drafts: true } : { project: cur.project_id || '', review: cur.status === 'review' })
+  }, [refId, cur?.id, draftMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const queue = useMemo(() => {
     if (!anchor) return cur ? [cur] : []
+    // 草稿队列：范围内全部草稿（可跨项目），处理过的那条留在原位，前后顺序不乱
+    if (anchor.drafts) return all.filter((x) => (!anchor.project || x.project_id === anchor.project) && (x.code === refId || x.status === 'draft')).sort(sortDrafts)
     return all.filter((x) => (x.project_id || '') === anchor.project && (x.code === refId || (anchor.review ? x.status === 'review' : !closed(x)))).sort(sortReqs)
   }, [all, anchor, refId, cur])
   const idx = queue.findIndex((x) => x.code === refId)
@@ -396,9 +403,24 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       if (after) go(after.code, 'pass')
       else {
         setDir('pass')
-        setFinished(cur?.project_name || t.reqs.noProject)
+        setFinished(t.reqs.allReviewed(cur?.project_name || t.reqs.noProject))
       }
     }, 520)
+  }
+
+  // 逐条确认：确认（改为待开始）或搁置后滑到下一条草稿；没有了就显示「草稿都处理完了」
+  const draftAct = async (status: 'ready' | 'shelved') => {
+    if (!cur || acting) return
+    setActing(true)
+    const ok = await setStatus(cur, status).finally(() => setActing(false))
+    if (!ok) return
+    const rest = queue.filter((x) => x.code !== cur.code && x.status === 'draft')
+    const after = rest.find((x) => queue.indexOf(x) > idx) ?? rest[0]
+    if (after) go(after.code, 'pass')
+    else {
+      setDir('pass')
+      setFinished(t.pool.queue.allDone)
+    }
   }
 
   // ← → 切换（输入时不拦截）
@@ -429,7 +451,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
               <ChevronRight className="size-[18px]" />
             </button>
           </Tip>
-          <span className="ml-1 text-xs text-fg-3 tabular">{t.reqs.position(idx + 1, queue.length, !!anchor?.review)}</span>
+          <span className="ml-1 text-xs text-fg-3 tabular">{anchor?.drafts ? t.pool.queue.position(idx + 1, queue.length) : t.reqs.position(idx + 1, queue.length, !!anchor?.review)}</span>
         </>
       )}
       <span className="ml-auto flex min-w-0 items-center gap-1 truncate px-1 text-xs text-fg-3">
@@ -469,6 +491,34 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       </button>
     </div>
   )
+  const draftBar = anchor?.drafts && cur && !finished && (
+    <div className="mx-3 mt-1 mb-1 flex shrink-0 flex-wrap items-center gap-2 rounded-xl bg-sunken/80 px-3 py-2 sm:mx-4">
+      <span className="text-xs text-fg-3">{t.pool.draftHintShort}</span>
+      <div className="ml-auto flex items-center gap-1.5">
+        <Button size="sm" variant="ghost" disabled={!next || acting} onClick={() => next && go(next.code, 'next')}>
+          {t.pool.queue.skip}
+        </Button>
+        <Button size="sm" disabled={cur.status !== 'draft' || acting} onClick={() => void draftAct('shelved')}>
+          {t.pool.queue.shelve}
+        </Button>
+        <Tip content={t.pool.queue.confirmTip}>
+          <span>
+            <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} disabled={cur.status !== 'draft'} loading={acting} onClick={() => void draftAct('ready')}>
+              {t.pool.queue.confirm}
+            </Button>
+          </span>
+        </Tip>
+      </div>
+    </div>
+  )
+  const head = draftBar ? (
+    <>
+      {top}
+      {draftBar}
+    </>
+  ) : (
+    top
+  )
 
   return (
     <Panel
@@ -496,7 +546,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
             transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
             className="flex min-h-0 flex-1 flex-col bg-surface"
           >
-            {finished ? <AllDone project={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={top} onPassed={anchor?.review ? onPassed : undefined} />}
+            {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} onPassed={anchor?.review ? onPassed : undefined} />}
           </motion.div>
         </AnimatePresence>
         <AnimatePresence>
@@ -517,7 +567,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   )
 }
 
-function AllDone({ project, onClose, top }: { project: string; onClose: () => void; top: ReactNode }) {
+function AllDone({ message, onClose, top }: { message: string; onClose: () => void; top: ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {top}
@@ -525,7 +575,7 @@ function AllDone({ project, onClose, top }: { project: string; onClose: () => vo
         <span className="flex size-14 items-center justify-center rounded-2xl bg-run-soft text-run">
           <CheckCheck className="size-7" />
         </span>
-        <div className="font-display text-lg text-fg">{t.reqs.allReviewed(project)}</div>
+        <div className="font-display text-lg text-fg">{message}</div>
         <Button className="mt-2" onClick={onClose}>
           {t.common.close}
         </Button>

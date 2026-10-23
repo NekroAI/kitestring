@@ -282,7 +282,9 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
         right={
           <button
             onClick={() => {
+              // 跳到需求池盘面并带上项目筛选（R-133）
               savePref('ks.reqs.project', p.id)
+              savePref('ks.reqs.view2', 'pool')
               navigate('/requirements')
             }}
             className="text-xs text-fg-3 hover:text-accent"

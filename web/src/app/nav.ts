@@ -28,12 +28,32 @@ export function useOpenReq() {
       setParams((p) => {
         const n = new URLSearchParams(p)
         n.delete('s')
+        n.delete('q')
+        n.delete('qp')
         n.set('r', ref)
         return n
       }),
     [setParams],
   )
   return side ?? open
+}
+
+// 逐条确认草稿（R-133）：打开需求抽屉并按草稿队列连续处理（确认 / 搁置 / 下一条）；project 为空 = 全部项目。
+export function useOpenDraftQueue() {
+  const [, setParams] = useSearchParams()
+  return useCallback(
+    (ref: string, project: string) =>
+      setParams((p) => {
+        const n = new URLSearchParams(p)
+        n.delete('s')
+        n.set('r', ref)
+        n.set('q', 'drafts')
+        if (project) n.set('qp', project)
+        else n.delete('qp')
+        return n
+      }),
+    [setParams],
+  )
 }
 
 export function useOpenPlan() {
@@ -60,6 +80,8 @@ export function usePanelParams() {
         n.delete('s')
         n.delete('r')
         n.delete('plan')
+        n.delete('q')
+        n.delete('qp')
         return n
       }),
     [setParams],

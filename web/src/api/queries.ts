@@ -113,6 +113,16 @@ export function useRequirements() {
   })
 }
 
+// 需求池盘面指标（R-133）：各状态条数、昨天新增 / 完成、草稿积压、近 7 天每日完成、每条进入当前状态的时间。
+// 挂在 requirements 主题下，需求一变就跟着刷新；按浏览器时区算「昨天」。
+export function usePool(projectId?: string) {
+  return useQuery({
+    queryKey: ['requirements', 'pool', projectId ?? ''],
+    queryFn: () => unwrap(api.GET('/api/requirement-pool', { params: { query: { project_id: projectId || undefined, tz_offset: String(-new Date().getTimezoneOffset()) } } })),
+    select: (d) => ({ ...d, items: d.items ?? [], done_daily: d.done_daily ?? [] }),
+  })
+}
+
 export function useRequirement(ref: string | null) {
   return useQuery({
     queryKey: qk.requirement(ref ?? ''),
