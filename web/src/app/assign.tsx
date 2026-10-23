@@ -67,7 +67,7 @@ export const targetLabel = (s: Session) => [sessionTitle(s), s.device_name].filt
 export function useAssign() {
   const { assign } = useActions()
   return async (code: string, s: Session) => {
-    if (await assign(code, s.key)) toast.success(t.assign.done(code, sessionTitle(s)))
+    if (await assign(code, s.key)) toast.success(t.assign.done(code, sessionTitle(s), targetGroup(s)))
   }
 }
 

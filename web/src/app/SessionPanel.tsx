@@ -1,5 +1,5 @@
-import { useMemo, type ReactNode } from 'react'
-import { Copy, Link2, MonitorDot, Plus, Unlink } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { Copy, MonitorDot, Plus, Send, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
@@ -12,6 +12,9 @@ import { displayState, PhaseBadge, Sparkline, StatusPill, ToolMark } from '../ui
 import { useActions } from './actions'
 import { DecisionComposer, DecisionRow } from './DecisionCard'
 import { useOpenReq } from './nav'
+import { useAssign } from './assign'
+import { NewReqModal } from './requirements'
+import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
 
 function Section({ title, children, right }: { title: ReactNode; children: ReactNode; right?: ReactNode }) {
@@ -102,11 +105,19 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const decisions = useDecisions()
   const reqs = useRequirements()
   const { linkReq } = useActions()
+  const assign = useAssign()
+  const ownership = useOwnership()
+  const [creating, setCreating] = useState(false)
   const openReq = useOpenReq()
   const s: Session | undefined = q.data?.session
   const mine = (decisions.data ?? []).filter((d) => d.session_key === sessionKey)
   const pending = mine.filter((d) => d.status === 'pending')
-  const linkable = (reqs.data ?? []).filter((r) => !s?.requirements.some((x) => x.id === r.id) && r.status !== 'done' && r.status !== 'shelved')
+  // 能交给它开工的需求：没做完、没锁在计划后面阶段、不是它已经在做的；同项目、高优先级排前面
+  const rank: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
+  const givable = (reqs.data ?? [])
+    .filter((r) => ['draft', 'ready', 'in_progress', 'blocked'].includes(r.status) && r.stage_status !== 'locked' && !(r.status === 'in_progress' && r.sessions.includes(sessionKey ?? '')) && r.offered_to !== sessionKey)
+    .sort((a, b) => Number(b.project_id === s?.project_id) - Number(a.project_id === s?.project_id) || (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9) || a.code.localeCompare(b.code, undefined, { numeric: true }))
+  const full = new Map((reqs.data ?? []).map((r) => [r.id, r]))
 
   return (
     <Panel
@@ -194,23 +205,27 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           <Section
             title={t.session.requirements}
             right={
-              <Menu
-                width="min-w-[280px]"
-                trigger={
-                  <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} disabled={!linkable.length}>
-                    {t.session.link}
-                  </Button>
-                }
-                items={[
-                  { type: 'label', label: t.session.linkPick },
-                  ...linkable.slice(0, 30).map((r) => ({
-                    label: `${r.code} ${r.title}`,
-                    hint: [t.reqStatus[r.status], r.project_name].filter(Boolean).join(t.common.sep),
-                    icon: <Link2 />,
-                    onSelect: () => void linkReq(r.code, s.key),
-                  })),
-                ]}
-              />
+              <span className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setCreating(true)}>
+                  {t.session.giveNew}
+                </Button>
+                <Menu
+                  width="min-w-[300px]"
+                  trigger={
+                    <Button size="sm" variant="ghost" icon={<Send className="size-3.5" />} disabled={!givable.length}>
+                      {t.session.give}
+                    </Button>
+                  }
+                  items={[
+                    { type: 'label', label: t.session.givePick },
+                    ...givable.slice(0, 30).map((r) => ({
+                      label: `${r.code} ${r.title}`,
+                      hint: [t.reqStatus[r.status], r.priority, r.project_id !== s.project_id && r.project_name].filter(Boolean).join(t.common.sep),
+                      onSelect: () => void assign(r.code, s),
+                    })),
+                  ]}
+                />
+              </span>
             }
           >
             {s.requirements.length ? (
@@ -221,7 +236,10 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                       <span className="font-mono text-[11px] font-semibold text-accent">{r.code}</span>
                       <span className="truncate text-sm text-fg">{r.title}</span>
                     </button>
-                    <Badge>{t.reqStatus[r.status]}</Badge>
+                    {(() => {
+                      const own = full.get(r.id) && ownership(full.get(r.id)!)
+                      return own && own.session?.key === s.key && own.tone !== 'working' ? <OwnBadge own={own} /> : <Badge>{t.reqStatus[r.status]}</Badge>
+                    })()}
                     <Button size="icon-sm" variant="ghost" aria-label={t.session.unlink} title={t.session.unlink} onClick={() => void linkReq(r.code, s.key, true)}>
                       <Unlink className="size-3.5" />
                     </Button>
@@ -282,6 +300,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           <Section title={t.session.timeline}>
             <Timeline events={q.data?.events ?? []} />
           </Section>
+          <NewReqModal open={creating} onClose={() => setCreating(false)} defaultSession={s.key} />
         </>
       )}
     </Panel>

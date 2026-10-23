@@ -191,7 +191,7 @@ export function EditableText({ value, onSave, placeholder, multiline, className 
 
 // NewReqModal：新建需求抽屉（桌面右侧、手机底部）。上面写清楚要做什么，下面决定交给谁：
 // “仅新建”只建需求并关联选中的会话（随时可以开工）；“新建并交出”立刻把它交给会话开工。
-export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; onClose: () => void; defaultProject?: string }) {
+export function NewReqModal({ open, onClose, defaultProject, defaultSession }: { open: boolean; onClose: () => void; defaultProject?: string; defaultSession?: string }) {
   const projects = useProjects()
   const sessions = useSessions()
   const { createReq, linkReq } = useActions()
@@ -210,11 +210,14 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
   const to = target === undefined ? defaultTarget(all, f.project_id) : all.find((s) => s.key === target)
   useEffect(() => {
     if (open) {
-      setF(blank())
+      // 从会话详情里新建：默认交给这个会话、用它所在的项目（R-50）
+      const s = defaultSession ? all.find((x) => x.key === defaultSession) : undefined
+      setF(s?.project_id ? { ...blank(), project_id: s.project_id } : blank())
+      setTarget(defaultSession)
       setFiles([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, defaultProject])
+  }, [open, defaultProject, defaultSession])
   const submit = (send: boolean) =>
     wrap(async () => {
       if (!f.title.trim()) return
@@ -231,7 +234,7 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
         setFiles([])
       } else {
         onClose()
-        openReq(r.code)
+        if (!defaultSession) openReq(r.code) // 从会话详情新建时留在会话详情，新需求出现在它的需求里
       }
     })
   const proj = projects.data?.projects.find((p) => p.id === f.project_id)
@@ -308,8 +311,8 @@ export function NewReqModal({ open, onClose, defaultProject }: { open: boolean; 
           </div>
           <section>
             <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
-            <AttachZone value={files} onChange={setFiles}>
-              <Textarea minRows={7} value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholderLong} onChange={(e) => setF({ ...f, detail: e.target.value })} />
+            <AttachZone value={files} onChange={setFiles} compact>
+              <Textarea minRows={7} value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholderLong} onChange={(e) => setF({ ...f, detail: e.target.value })} className="pr-10" />
             </AttachZone>
           </section>
           <section>
