@@ -23,6 +23,14 @@ type planOut struct {
 	Body store.Plan
 }
 
+// planCreatedOut：Agent 建计划后的计划，外加同名需求已关联的说明（R-128）。
+type planCreatedOut struct {
+	Body struct {
+		store.Plan
+		Notices []string `json:"notices,omitempty" doc:"需要知道的处理：与已有需求同名的新需求直接关联了已有需求，没有新建副本"`
+	}
+}
+
 // stageSubmittedOut：交小结后的计划，外加表达块的解析提示（R-97）。
 type stageSubmittedOut struct {
 	Body struct {
@@ -89,7 +97,11 @@ func (h *Hub) noteOf(ctx context.Context, b commentBody) (note, error) {
 }
 
 // resolveStages 把输入的阶段转成存储层的格式；没有 ref 的需求就地新建（草稿）。
-func (h *Hub) resolveStages(ctx context.Context, in []stageIn, projectID, createdBy, sessionKey string) ([]store.StageInput, error) {
+//
+// dedupe 为真（Agent 建计划）时：新需求与同项目里未关闭的需求同名，就直接关联已有需求、不新建副本，
+// 并在 notices 里说明（R-128）；已经属于别的计划的同名需求不动，仍新建并提示。
+func (h *Hub) resolveStages(ctx context.Context, in []stageIn, projectID, createdBy, sessionKey string, dedupe bool) ([]store.StageInput, []string, error) {
+	var notices []string
 	out := make([]store.StageInput, 0, len(in))
 	for _, st := range in {
 		si := store.StageInput{ID: st.ID, Title: st.Title, Requirements: []string{}}
@@ -97,20 +109,30 @@ func (h *Hub) resolveStages(ctx context.Context, in []stageIn, projectID, create
 			if ri.Ref != "" {
 				r, err := h.store.GetRequirement(ctx, ri.Ref)
 				if err != nil {
-					return nil, huma.Error400BadRequest("需求不存在：" + ri.Ref)
+					return nil, nil, huma.Error400BadRequest("需求不存在：" + ri.Ref)
 				}
 				si.Requirements = append(si.Requirements, r.ID)
 				continue
 			}
 			if strings.TrimSpace(ri.Title) == "" {
-				return nil, huma.Error400BadRequest("阶段里的新需求需要标题")
+				return nil, nil, huma.Error400BadRequest("阶段里的新需求需要标题")
+			}
+			if dedupe {
+				if ex, err := h.store.OpenRequirementByTitle(ctx, projectID, ri.Title); err == nil {
+					if ex.PlanCode == "" {
+						si.Requirements = append(si.Requirements, ex.ID)
+						notices = append(notices, fmt.Sprintf("「%s」与已有需求 %s 同名，已直接关联 %s，没有新建副本", strings.TrimSpace(ri.Title), ex.Code, ex.Code))
+						continue
+					}
+					notices = append(notices, fmt.Sprintf("「%s」与已有需求 %s 同名，但 %s 已在计划 %s 里，仍新建了一条；如果是重复，请改用 ref 引用或搁置多余的", strings.TrimSpace(ri.Title), ex.Code, ex.Code, ex.PlanCode))
+				}
 			}
 			r, err := h.store.CreateRequirement(ctx, store.Requirement{
 				ProjectID: projectID, Title: strings.TrimSpace(ri.Title), Detail: ri.Detail, Acceptance: ri.Acceptance,
 				Priority: ri.Priority, Kind: ri.Kind, CreatedBy: createdBy,
 			})
 			if err != nil {
-				return nil, apiErr(err)
+				return nil, nil, apiErr(err)
 			}
 			if sessionKey != "" {
 				_ = h.store.LinkSession(ctx, r.ID, sessionKey)
@@ -119,7 +141,7 @@ func (h *Hub) resolveStages(ctx context.Context, in []stageIn, projectID, create
 		}
 		out = append(out, si)
 	}
-	return out, nil
+	return out, notices, nil
 }
 
 // planMsg 记下一条给负责会话的计划进展（没有负责会话时不记）；由 planChanged 统一下发。
@@ -464,7 +486,7 @@ func (h *Hub) registerPlans(api huma.API) {
 			if len(b.Stages) == 0 {
 				return nil, huma.Error400BadRequest("计划至少要有一个阶段")
 			}
-			stages, err := h.resolveStages(ctx, b.Stages, b.ProjectID, "user", "")
+			stages, _, err := h.resolveStages(ctx, b.Stages, b.ProjectID, "user", "", false)
 			if err != nil {
 				return nil, err
 			}
@@ -502,7 +524,7 @@ func (h *Hub) registerPlans(api huma.API) {
 			b := in.Body
 			var stages []store.StageInput
 			if b.Stages != nil {
-				if stages, err = h.resolveStages(ctx, b.Stages, b.ProjectID, "user", ""); err != nil {
+				if stages, _, err = h.resolveStages(ctx, b.Stages, b.ProjectID, "user", "", false); err != nil {
 					return nil, err
 				}
 			}
@@ -593,7 +615,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 				Stages     []stageIn `json:"stages" minItems:"1"`
 				SessionKey string    `json:"session_key,omitempty"`
 			}
-		}) (*planOut, error) {
+		}) (*planCreatedOut, error) {
 			b := in.Body
 			project, owner := "", b.SessionKey
 			if b.SessionKey != "" {
@@ -615,7 +637,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 					}
 				}
 			}
-			stages, err := h.resolveStages(ctx, b.Stages, project, "agent", b.SessionKey)
+			stages, notices, err := h.resolveStages(ctx, b.Stages, project, "agent", b.SessionKey, true)
 			if err != nil {
 				return nil, err
 			}
@@ -625,7 +647,9 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			}
 			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划 · " + x.Code, Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
 			x, err = h.planChanged(ctx, x.ID)
-			return &planOut{Body: x}, err
+			out := &planCreatedOut{}
+			out.Body.Plan, out.Body.Notices = x, notices
+			return out, err
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-get-plan", Method: http.MethodGet, Path: "/api/agent/plans/{ref}", Tags: tag},
 		func(ctx context.Context, in *refPath) (*planOut, error) {

@@ -17,6 +17,7 @@ type fileView struct {
 }
 
 type reqView struct {
+	Notices          []string   `json:"notices"`
 	Code             string     `json:"code"`
 	Title            string     `json:"title"`
 	Detail           string     `json:"detail"`

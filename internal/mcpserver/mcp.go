@@ -232,7 +232,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return res, nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。同项目已有同名未关闭需求时照常新建，但返回里会提示，重复的请搁置。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqCreateIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "kind": in.Kind, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
@@ -250,6 +250,9 @@ func (t *tools) register(s *mcp.Server) {
 			msg := "已记下 " + out.line()
 			if out.Status == "draft" {
 				msg += "（用户确认后才排进待办）"
+			}
+			for _, n := range out.Notices {
+				msg += "\n注意：" + n
 			}
 			return text(msg), nil, nil
 		})
@@ -385,7 +388,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text("已关联 " + out.line()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "plan_create", Description: "把较大的目标拆成计划：按顺序的阶段，阶段内可放多条需求（已有或新建）。提交后进入用户的“待批准”，批准后第一阶段的需求会交给本会话。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "plan_create", Description: "把较大的目标拆成计划：按顺序的阶段，阶段内可放多条需求（已有或新建；新建的与同项目未关闭需求同名时，直接关联已有需求并在返回里说明，已有的请用 ref 引用）。提交后进入用户的“待批准”，批准后第一阶段的需求会交给本会话。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in planCreateIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"title": in.Title, "goal": in.Goal, "stages": in.Stages, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
@@ -393,7 +396,11 @@ func (t *tools) register(s *mcp.Server) {
 			if err := t.c.Do(ctx, "POST", "/agent/plans", body, &out); err != nil {
 				return nil, nil, err
 			}
-			return text(out.Code + " 已提交，等待用户批准；批准后第一阶段的需求会交给你。\n" + out.String()), nil, nil
+			msg := out.Code + " 已提交，等待用户批准；批准后第一阶段的需求会交给你。\n" + out.String()
+			for _, n := range out.Notices {
+				msg += "\n注意：" + n
+			}
+			return text(msg), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "plan_get", Description: "查看计划进度：各阶段状态、阶段内需求及其状态、阶段小结。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in planRefIn) (*mcp.CallToolResult, any, error) {
@@ -427,6 +434,7 @@ func text(s string) *mcp.CallToolResult {
 
 // planView 是计划的精简视图：按行输出，省上下文。
 type planView struct {
+	Notices []string `json:"notices"`
 	Code   string `json:"code"`
 	Title  string `json:"title"`
 	Goal   string `json:"goal"`

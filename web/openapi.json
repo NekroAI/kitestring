@@ -2206,6 +2206,93 @@
         ],
         "type": "object"
       },
+      "PlanCreatedOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "current": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "goal": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "notices": {
+            "description": "需要知道的处理：与已有需求同名的新需求直接关联了已有需求，没有新建副本",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "owner_session": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/Stage"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "active",
+              "done",
+              "shelved"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "title",
+          "goal",
+          "owner_session",
+          "status",
+          "created_by",
+          "paused",
+          "current",
+          "stages",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "PlanFields": {
         "additionalProperties": false,
         "properties": {
@@ -2520,6 +2607,163 @@
           "markdown",
           "from",
           "to"
+        ],
+        "type": "object"
+      },
+      "ReqCreatedOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "doc_link": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "feedback": {
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "next_actor": {
+            "type": "string"
+          },
+          "notices": {
+            "description": "同项目已有同名未关闭需求时的提示；仍照常新建",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "offered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "offered_to": {
+            "type": "string"
+          },
+          "pending_decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "stage_seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage_status": {
+            "type": "string"
+          },
+          "stage_title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "title",
+          "detail",
+          "status",
+          "priority",
+          "kind",
+          "source",
+          "acceptance",
+          "doc_link",
+          "files",
+          "created_by",
+          "next_actor",
+          "pending_decisions",
+          "sessions",
+          "created_at",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -3891,7 +4135,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Plan"
+                  "$ref": "#/components/schemas/PlanCreatedOutBody"
                 }
               }
             },
@@ -4094,7 +4338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Requirement"
+                  "$ref": "#/components/schemas/ReqCreatedOutBody"
                 }
               }
             },

@@ -149,6 +149,27 @@ func nextActor(status string, pending int) string {
 	}
 }
 
+// NormTitle 把标题归一化后比较是否同名：去首尾与多余空白，忽略大小写。
+func NormTitle(t string) string { return strings.ToLower(strings.Join(strings.Fields(t), " ")) }
+
+// OpenRequirementByTitle 在项目里找同名且未关闭（不是已完成 / 已搁置）的需求，没有则返回 ErrNotFound。
+func (s *Store) OpenRequirementByTitle(ctx context.Context, projectID, title string) (Requirement, error) {
+	if projectID == "" || NormTitle(title) == "" {
+		return Requirement{}, ErrNotFound
+	}
+	list, err := s.ListRequirements(ctx, projectID, []string{ReqDraft, ReqReady, ReqInProgress, ReqBlocked, ReqReview})
+	if err != nil {
+		return Requirement{}, err
+	}
+	want := NormTitle(title)
+	for _, r := range list {
+		if NormTitle(r.Title) == want {
+			return r, nil
+		}
+	}
+	return Requirement{}, ErrNotFound
+}
+
 // CreateRequirement 新建需求。
 // codePrefix 是标题开头的编号前缀，如「R-95-D 」「P-3：」。编号由纸鸢自己画在标题旁边，写进标题会叠在一起（R-129）。
 var codePrefix = regexp.MustCompile(`^(?:[RPD]-\d+(?:-[A-Za-z0-9]+)?[\s:：、.．\-—]*)+`)

@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -328,6 +329,14 @@ type reqsOut struct {
 
 type reqOut struct {
 	Body store.Requirement
+}
+
+// reqCreatedOut：Agent 新建需求后的需求，外加同名提示（R-128）。
+type reqCreatedOut struct {
+	Body struct {
+		store.Requirement
+		Notices []string `json:"notices,omitempty" doc:"同项目已有同名未关闭需求时的提示；仍照常新建"`
+	}
 }
 
 // evidenceOut：附证据后的需求，外加表达块的解析提示（R-97）。
@@ -1063,7 +1072,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			return &reqOut{Body: r}, apiErr(err)
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-create-requirement", Method: http.MethodPost, Path: "/api/agent/requirements", Tags: tag},
-		func(ctx context.Context, in *agentReqIn) (*reqOut, error) {
+		func(ctx context.Context, in *agentReqIn) (*reqCreatedOut, error) {
 			r, err := h.toReq(ctx, in.Body.ReqFields)
 			if err != nil {
 				return nil, err
@@ -1077,6 +1086,10 @@ func (h *Hub) registerAgent(api huma.API) {
 					r.ProjectID = x.ProjectID
 				}
 			}
+			var notices []string
+			if ex, err := h.store.OpenRequirementByTitle(ctx, r.ProjectID, r.Title); err == nil {
+				notices = append(notices, fmt.Sprintf("同项目已有同名未关闭需求 %s，这次仍新建了；如果是重复，请搁置新建的这条，改在 %s 上继续", ex.Code, ex.Code))
+			}
 			r, err = h.store.CreateRequirement(ctx, r)
 			if err != nil {
 				return nil, apiErr(err)
@@ -1086,7 +1099,9 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			h.broker.publish("requirements", "sessions")
 			r, err = h.store.GetRequirement(ctx, r.ID)
-			return &reqOut{Body: r}, apiErr(err)
+			out := &reqCreatedOut{}
+			out.Body.Requirement, out.Body.Notices = r, notices
+			return out, apiErr(err)
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-update-status", Method: http.MethodPost, Path: "/api/agent/requirements/{ref}/status", Tags: tag},
 		func(ctx context.Context, in *struct {

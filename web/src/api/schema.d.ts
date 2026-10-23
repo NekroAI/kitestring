@@ -1642,6 +1642,28 @@ export interface components {
             start?: boolean;
             title: string;
         };
+        PlanCreatedOutBody: {
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            /** Format: int64 */
+            current: number;
+            goal: string;
+            id: string;
+            /** @description 需要知道的处理：与已有需求同名的新需求直接关联了已有需求，没有新建副本 */
+            notices?: string[] | null;
+            owner_session: string;
+            paused: boolean;
+            project_id?: string;
+            project_name?: string;
+            stages: components["schemas"]["Stage"][] | null;
+            /** @enum {string} */
+            status: "draft" | "active" | "done" | "shelved";
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         PlanFields: {
             goal?: string;
             /** @description 负责会话：阶段解锁后需求自动交给它 */
@@ -1730,6 +1752,44 @@ export interface components {
             markdown: string;
             /** Format: date-time */
             to: string;
+        };
+        ReqCreatedOutBody: {
+            acceptance: string;
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            detail: string;
+            doc_link: string;
+            evidence?: components["schemas"]["Evidence"][] | null;
+            feedback?: components["schemas"]["Decision"][] | null;
+            files: components["schemas"]["FileRef"][] | null;
+            id: string;
+            kind: string;
+            next_actor: string;
+            /** @description 同项目已有同名未关闭需求时的提示；仍照常新建 */
+            notices?: string[] | null;
+            /** Format: date-time */
+            offered_at?: string;
+            offered_to?: string;
+            /** Format: int64 */
+            pending_decisions: number;
+            plan_code?: string;
+            plan_id?: string;
+            priority: string;
+            project_id?: string;
+            project_name?: string;
+            reviews?: components["schemas"]["Evidence"][] | null;
+            sessions: string[] | null;
+            source: string;
+            /** Format: int64 */
+            stage_seq?: number;
+            stage_status?: string;
+            stage_title?: string;
+            status: string;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         ReqFields: {
             acceptance?: string;
@@ -2178,7 +2238,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Plan"];
+                    "application/json": components["schemas"]["PlanCreatedOutBody"];
                 };
             };
             /** @description Error */
@@ -2312,7 +2372,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Requirement"];
+                    "application/json": components["schemas"]["ReqCreatedOutBody"];
                 };
             };
             /** @description Error */
