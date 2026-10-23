@@ -88,6 +88,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   const title = d.short_title || d.question
   // 方案对比：任一选项带效果图时，选项改为看图点选的卡片
   const visual = (d.option_files ?? []).some((f) => f?.length)
+  const optImgs = (d.option_files ?? []).flatMap((fs) => fs?.slice(0, 1) ?? [])
   // 在选项效果图上“标注并附上”：打开补充说明并把标注图附进答复
   const [incoming, setIncoming] = useState<File[]>([])
 
@@ -140,7 +141,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
               <div key={f.id} className="group/ctx relative overflow-hidden rounded-xl border border-line bg-sunken">
                 <img src={fileUrl(f.id)} alt={f.name} loading="lazy" className="max-h-[360px] w-full object-cover object-top" />
                 <span className="absolute top-2 right-2 opacity-0 transition group-hover/ctx:opacity-100 pointer-coarse:opacity-100">
-                  <ZoomButton f={f} />
+                  <ZoomButton f={f} group={d.context_files ?? undefined} />
                 </span>
               </div>
             ))}
@@ -192,7 +193,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
                   <div className="relative aspect-[16/10] overflow-hidden border-b border-line bg-sunken">
                     <img src={fileUrl(img.id)} alt={o} loading="lazy" className="size-full object-cover object-top transition-transform duration-300 group-hover/opt:scale-[1.02]" />
                     <span className="absolute top-2 right-2 opacity-0 transition group-hover/opt:opacity-100 pointer-coarse:opacity-100" onClick={(e) => e.stopPropagation()}>
-                      <ZoomButton f={img} />
+                      <ZoomButton f={img} group={optImgs} />
                     </span>
                   </div>
                   <div className="flex items-start gap-2.5 px-3 py-2.5 text-sm">

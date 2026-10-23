@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Dialog } from 'radix-ui'
-import { ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
 import { Annotator, shield, useAnnotateTarget } from './annotate'
 import { toast } from 'sonner'
 import { t } from '../i18n'
@@ -99,11 +99,12 @@ function Preview({ f }: { f: FileRef }) {
 }
 
 // Thumb：附件缩略图，点击放大；录屏与动图带播放标记。
-export function Thumb({ f, onRemove, onAnnotate, size = 'md' }: { f: FileRef; onRemove?: () => void; onAnnotate?: () => void; size?: 'sm' | 'md' }) {
+// group：同组的其它附件，放大后可以左右切换（R-69）。
+export function Thumb({ f, onRemove, onAnnotate, size = 'md', group }: { f: FileRef; onRemove?: () => void; onAnnotate?: () => void; size?: 'sm' | 'md'; group?: FileRef[] }) {
   const box = size === 'sm' ? 'size-12' : 'size-16'
   return (
     <span className={cx('group relative inline-block shrink-0', box)}>
-      <Lightbox f={f}>
+      <Lightbox f={f} group={group}>
         <button className={cx('relative block overflow-hidden rounded-lg border border-line bg-sunken transition hover:border-line-strong', box)} aria-label={f.name}>
           <Preview f={f} />
           {(isVideo(f.mime) || f.mime === 'image/gif') && (
@@ -132,17 +133,28 @@ export function Thumbs({ files, size }: { files?: FileRef[] | null; size?: 'sm' 
   return (
     <div className="flex flex-wrap gap-2">
       {files.map((f) => (
-        <Thumb key={f.id} f={f} size={size} />
+        <Thumb key={f.id} f={f} size={size} group={files} />
       ))}
     </div>
   )
 }
 
-function Lightbox({ f, children }: { f: FileRef; children: ReactNode }) {
+function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; children: ReactNode }) {
   const [open, setOpen] = useState(false)
+  const [cur, setCur] = useState(f)
   const stop = (e: SyntheticEvent) => e.stopPropagation()
+  // 同组里能看的（图片、录屏）；不在组里就只看这一张
+  const list = group?.some((x) => x.id === f.id) ? group : [f]
+  const i = Math.max(0, list.findIndex((x) => x.id === cur.id))
+  const go = (d: number) => setCur(list[(i + d + list.length) % list.length])
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (o) setCur(f)
+        setOpen(o)
+      }}
+    >
       <Dialog.Trigger asChild onClick={stop}>
         {children}
       </Dialog.Trigger>
@@ -153,8 +165,8 @@ function Lightbox({ f, children }: { f: FileRef; children: ReactNode }) {
               <motion.div className="fixed inset-0 z-[70] bg-black/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
             </Dialog.Overlay>
             <Dialog.Content forceMount aria-describedby={undefined} {...shield} className="fixed inset-0 z-[70] outline-none">
-              <Dialog.Title className="sr-only">{f.name}</Dialog.Title>
-              <Viewer f={f} onClose={() => setOpen(false)} />
+              <Dialog.Title className="sr-only">{cur.name}</Dialog.Title>
+              <Viewer key={cur.id} f={cur} onClose={() => setOpen(false)} nav={list.length > 1 ? { i, n: list.length, go, next: list[(i + 1) % list.length], prev: list[(i - 1 + list.length) % list.length] } : undefined} />
             </Dialog.Content>
           </Dialog.Portal>
         )}
@@ -167,7 +179,10 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 type View = { s: number; x: number; y: number }
 
 // Viewer：看大图。触控板双指捏合缩放、双指移动平移；触屏双指缩放、单指拖动、下滑关闭；双击放大 / 复原。
-function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
+// nav：同组切换。左右箭头、键盘 ← →、触屏左右滑（未放大时）、触控板双指左右滑。
+type Nav = { i: number; n: number; go: (d: number) => void; next: FileRef; prev: FileRef }
+
+function Viewer({ f, onClose, nav }: { f: FileRef; onClose: () => void; nav?: Nav }) {
   const box = useRef<HTMLDivElement>(null)
   const [v, setV] = useState<View>({ s: 1, x: 0, y: 0 })
   const [smooth, setSmooth] = useState(false)
@@ -199,15 +214,45 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
     window.setTimeout(() => setSmooth(false), 280)
   }
 
+  const navRef = useRef(nav)
+  navRef.current = nav
+  useEffect(() => {
+    // 看图时左右键归看图器：先于后面的需求抽屉（它也用左右键切换需求）拿到并拦下
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      e.stopImmediatePropagation()
+      if (!navRef.current || cur.current.s > 1) return
+      navRef.current.go(e.key === 'ArrowRight' ? 1 : -1)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+  // 预取相邻两张，切换时不闪白
+  useEffect(() => {
+    for (const x of [nav?.next, nav?.prev]) if (x && !isVideo(x.mime)) new Image().src = fileUrl(x.id)
+  }, [nav?.next, nav?.prev])
+
   useEffect(() => {
     const el = box.current
     if (!el || video) return
-    // 触控板：捏合是带 ctrlKey 的滚轮事件，双指移动是普通滚轮事件。
+    // 触控板：捏合是带 ctrlKey 的滚轮事件，双指移动是普通滚轮事件；没放大时双指左右滑切换同组图片。
+    let swipe = 0
+    let swipeAt = 0
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const p = rel(e.clientX, e.clientY)
       if (e.ctrlKey) setV(zoomAt(cur.current.s * Math.exp(-e.deltaY * 0.01), p.x, p.y))
       else if (cur.current.s > 1) setV({ ...cur.current, x: cur.current.x - e.deltaX, y: cur.current.y - e.deltaY })
+      else if (navRef.current && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const now = Date.now()
+        if (now - swipeAt < 450) return // 一次滑动的惯性余波不再触发
+        swipe += e.deltaX
+        if (Math.abs(swipe) > 60) {
+          navRef.current.go(swipe > 0 ? 1 : -1)
+          swipe = 0
+          swipeAt = now
+        }
+      }
     }
     // Safari 的触控板捏合走手势事件。
     let gBase = cur.current
@@ -264,6 +309,7 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
     const dy = e.clientY - g.y
     if (Math.abs(dx) + Math.abs(dy) > 4) moved.current = true
     if (g.base.s > 1) setV({ ...g.base, x: g.base.x + dx, y: g.base.y + dy })
+    else if (g.touch && nav && Math.abs(dx) > Math.abs(dy)) setV({ s: 1, x: dx, y: 0 }) // 触屏左右滑切换
     else if (g.touch) setV({ s: 1, x: 0, y: Math.max(0, dy) }) // 触屏下滑关闭
   }
   const onUp = (e: ReactPointerEvent) => {
@@ -276,6 +322,11 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
     }
     const g = drag.current
     drag.current = null
+    if (g && g.base.s === 1 && cur.current.x !== 0) {
+      if (nav && Math.abs(cur.current.x) > 70) nav.go(cur.current.x < 0 ? 1 : -1)
+      else animate({ s: 1, x: 0, y: 0 })
+      return
+    }
     if (g && g.base.s === 1 && cur.current.y > 0) {
       if (cur.current.y > 120) onClose()
       else animate({ s: 1, x: 0, y: 0 })
@@ -315,7 +366,20 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
           )}
         </motion.div>
       </div>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 top-0 flex justify-end p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      {nav && (
+        <>
+          <button aria-label={t.attach.prev} onClick={() => nav.go(-1)} className="absolute top-1/2 left-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
+            <ChevronLeft className="size-6" />
+          </button>
+          <button aria-label={t.attach.next} onClick={() => nav.go(1)} className="absolute top-1/2 right-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
+            <ChevronRight className="size-6" />
+          </button>
+        </>
+      )}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <span className="rounded-full bg-black/50 px-3 py-1 text-xs text-white tabular backdrop-blur" style={{ visibility: nav ? 'visible' : 'hidden' }}>
+          {nav ? t.attach.position(nav.i + 1, nav.n) : ''}
+        </span>
         <Dialog.Close asChild>
           <button aria-label={t.common.close} className="pointer-events-auto flex size-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 active:scale-95">
             <X className="size-5" />
@@ -357,9 +421,9 @@ function Viewer({ f, onClose }: { f: FileRef; onClose: () => void }) {
 }
 
 // ZoomButton：放大查看某张图（用于方案对比卡等不想显示缩略图的地方）。
-export function ZoomButton({ f, className }: { f: FileRef; className?: string }) {
+export function ZoomButton({ f, className, group }: { f: FileRef; className?: string; group?: FileRef[] }) {
   return (
-    <Lightbox f={f}>
+    <Lightbox f={f} group={group}>
       <button aria-label={t.attach.zoom} className={cx('flex size-8 items-center justify-center rounded-lg bg-black/45 text-white backdrop-blur transition hover:bg-black/65 active:scale-95 pointer-coarse:size-10', className)}>
         <Maximize2 className="size-4" />
       </button>
@@ -402,7 +466,7 @@ export function AttachZone({ value, onChange, children, className, compact, inco
       {children}
       <div className={cx('flex flex-wrap items-center gap-2', (value.length || pending.length || !compact) && 'mt-2')}>
         {value.map((f) => (
-          <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} onAnnotate={() => setAnnotating(f)} />
+          <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} onAnnotate={() => setAnnotating(f)} group={value} />
         ))}
         {pending.map((p) => (
           <span key={p.key} className="relative size-12 overflow-hidden rounded-lg border border-line">
