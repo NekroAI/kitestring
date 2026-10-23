@@ -39,8 +39,8 @@ type Plan struct {
 	OwnerSession string    `json:"owner_session"`
 	Status       string    `json:"status" enum:"draft,active,done,shelved"`
 	CreatedBy    string    `json:"created_by"`
-	Paused       bool      `json:"paused"`        // 已通过阶段里有需求被重开，修好前不能继续往下
-	Current      int       `json:"current"`       // 当前阶段序号（第一个未通过的阶段）；全部通过为 0
+	Paused       bool      `json:"paused"`  // 已通过阶段里有需求被重开，修好前不能继续往下
+	Current      int       `json:"current"` // 当前阶段序号（第一个未通过的阶段）；全部通过为 0
 	Stages       []Stage   `json:"stages"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

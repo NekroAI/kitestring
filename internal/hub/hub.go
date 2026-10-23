@@ -50,6 +50,7 @@ type Hub struct {
 	conns    map[string]*deviceConn // deviceID → 连接
 	lostTmr  map[string]*time.Timer
 	notified map[string]time.Time // 通知去重键 → 上次发送时间
+	kicks    map[string]*time.Timer // 会话 → 待送达的整批需求（攒几秒再送，R-66）
 }
 
 // New 创建 Hub。
@@ -62,6 +63,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		conns:    map[string]*deviceConn{},
 		lostTmr:  map[string]*time.Timer{},
 		notified: map[string]time.Time{},
+		kicks:    map[string]*time.Timer{},
 	}
 }
 
@@ -199,6 +201,10 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		go h.aiOnPrompt(key, ev.Prompt)
 	case ev.Name == "Stop" && ev.LastReply != "":
 		go h.aiOnStop(key, next.LastPrompt, ev.LastReply)
+	}
+	// 一轮做完或挂起待命：把排给它的待开始需求整批送过去（R-66）
+	if (ev.Name == "Stop" || ev.Name == protocol.EventWait) && next.State != store.StateEnded {
+		h.dispatch(ctx, key)
 	}
 	return nil
 }

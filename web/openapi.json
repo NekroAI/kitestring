@@ -445,7 +445,8 @@
               "feedback",
               "note",
               "assign",
-              "plan"
+              "plan",
+              "queue"
             ],
             "type": "string"
           },
@@ -1259,6 +1260,9 @@
       "Project": {
         "additionalProperties": false,
         "properties": {
+          "auto_dispatch": {
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -1284,6 +1288,7 @@
           "name",
           "remote",
           "doc_root",
+          "auto_dispatch",
           "created_at"
         ],
         "type": "object"
@@ -1291,6 +1296,9 @@
       "ProjectInBody": {
         "additionalProperties": false,
         "properties": {
+          "auto_dispatch": {
+            "type": "boolean"
+          },
           "doc_root": {
             "type": "string"
           },
@@ -1522,6 +1530,13 @@
             "type": "string"
           },
           "next_actor": {
+            "type": "string"
+          },
+          "offered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "offered_to": {
             "type": "string"
           },
           "pending_decisions": {
@@ -2213,7 +2228,7 @@
   },
   "info": {
     "title": "Kitestring Hub API",
-    "version": "e08e7f1-dirty"
+    "version": "dev"
   },
   "openapi": "3.1.0",
   "paths": {

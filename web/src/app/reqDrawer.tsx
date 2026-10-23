@@ -20,6 +20,7 @@ import { ReqTimeline } from './reqTimeline'
 import { AssignButton } from './assign'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
+import { OwnLine } from './ownership'
 
 // 需求抽屉：从上到下是“需求是什么”（固定）→ 来回的记录（滚动，最新在下）→ 轮到你做的事（固定在底部）。
 // 验收时可以在同一个抽屉里连续处理同一项目的待验收：通过后自动滑到下一条，顶部左右按钮切换。
@@ -145,6 +146,7 @@ function Brief({ r }: { r: Requirement }) {
           <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} />
         </button>
       </div>
+      <OwnLine r={r} />
       {!open && (
         <button onClick={() => setOpen(true)} className="mt-2 line-clamp-2 w-full text-left text-[13px] leading-relaxed text-fg-3 transition hover:text-fg-2">
           {r.detail || r.acceptance || t.reqs.briefEmpty}

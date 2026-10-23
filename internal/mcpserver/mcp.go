@@ -20,7 +20,7 @@ import (
 
 const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
 - 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（草稿 / 待开始的需求会自动变为进行中）。
-- 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。
+- 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。
 - 设计类需求（kind = design，或用户说“出方案 / 设计”）：先用 decision_raise 交 2～3 套方案，并在 option_images 附上每套的效果图，用户看图选定后再实现。
@@ -96,7 +96,7 @@ type reqCreateIn struct {
 	Title      string   `json:"title" jsonschema:"需求标题，一句话"`
 	Detail     string   `json:"detail,omitempty" jsonschema:"背景与细节"`
 	Acceptance string   `json:"acceptance,omitempty" jsonschema:"验收标准"`
-	Status     string   `json:"status,omitempty" jsonschema:"初始状态，默认 draft；已明确可做的用 ready，正在做的用 in_progress"`
+	Status     string   `json:"status,omitempty" jsonschema:"初始状态，默认 draft（草稿，用户确认后才会排进会话的待办）；你当场就在做的用 in_progress"`
 	Priority   string   `json:"priority,omitempty" jsonschema:"P0 到 P3，默认 P2"`
 	Source     string   `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
 	DocLink    string   `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
@@ -106,7 +106,7 @@ type reqCreateIn struct {
 
 type reqStatusIn struct {
 	Ref    string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
-	Status string `json:"status" jsonschema:"新状态：draft ready in_progress blocked review shelved（done 只能由用户设置）"`
+	Status string `json:"status" jsonschema:"新状态：draft in_progress blocked review shelved（ready 待开始与 done 已完成只能由用户设置）"`
 }
 
 type evidenceIn struct {

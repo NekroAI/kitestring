@@ -522,7 +522,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback, notes, assigns, plans []protocol.Decision
+	var answers, feedback, notes, assigns, plans, queue []protocol.Decision
 	for _, dec := range fresh {
 		switch dec.Kind {
 		case "feedback":
@@ -533,6 +533,8 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			assigns = append(assigns, dec)
 		case "plan":
 			plans = append(plans, dec)
+		case "queue":
+			queue = append(queue, dec)
 		default:
 			answers = append(answers, dec)
 		}
@@ -558,6 +560,12 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	if len(assigns) > 0 {
 		b.WriteString("[Kitestring] 用户把以下需求交给你（已关联本会话，状态为待开始）。开始做时先调用 session_link_req，需求会变为进行中；完成后附上证据并设为待验收：\n")
 		for _, dec := range assigns {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(queue) > 0 {
+		fmt.Fprintf(&b, "[Kitestring] 你空闲了，以下是排给你的待开始需求（%d 条，按优先级；细节用 req_get 查看）。先通读再安排：能一起做的合并做；重复的设为 shelved 并用 evidence_attach 写明与哪条重复；有先后依赖的用 plan_create 排成阶段交用户批准。开始做哪条就先 session_link_req 哪条（会变为进行中），完成后附证据设为待验收：\n", len(queue))
+		for _, dec := range queue {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -591,6 +599,8 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 	case "note":
 		fmt.Fprintf(b, "- %s「%s」留言：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "plan":
+		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+	case "queue":
 		fmt.Fprintf(b, "- %s「%s」%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
 	case "assign":
 		fmt.Fprintf(b, "- %s「%s」\n", dec.ReqCode, oneLine(dec.ReqTitle))

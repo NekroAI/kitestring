@@ -14,6 +14,7 @@ import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
+import { OwnBadge, useOwnership } from './ownership'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from './menus'
 
@@ -108,6 +109,7 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
   const open = useOpenReq()
   const setStatus = useSetStatus()
   const menu = useReqMenu()
+  const own = useOwnership()(r)
   const actor = t.nextActor[r.next_actor]
   return (
     <Ctx items={menu(r)} className="h-full rounded-xl">
@@ -148,7 +150,9 @@ export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggab
             </span>
           </Tip>
         )}
-        {actor && r.status !== 'done' && r.status !== 'shelved' && (
+        {own ? (
+          <OwnBadge own={own} />
+        ) : actor && r.status !== 'done' && r.status !== 'shelved' && (
           <Badge tone={r.next_actor === 'user' ? 'reply' : 'outline'} icon={r.next_actor === 'user' ? <User className="size-3" /> : <Bot className="size-3" />}>
             {actor}
           </Badge>

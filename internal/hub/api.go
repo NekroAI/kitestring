@@ -254,6 +254,8 @@ type projectIn struct {
 		Name        string `json:"name" minLength:"1"`
 		WorkspaceID string `json:"workspace_id,omitempty"`
 		DocRoot     string `json:"doc_root"`
+		// AutoDispatch：会话空闲时自动送达排给它的待开始需求；不传表示不修改
+		AutoDispatch *bool `json:"auto_dispatch,omitempty"`
 	}
 }
 
@@ -466,7 +468,15 @@ func (h *Hub) registerWeb(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "update-project", Method: http.MethodPut, Path: "/api/projects/{id}", Tags: tag("projects")},
 		func(ctx context.Context, in *projectIn) (*okBody, error) {
-			err := h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot})
+			cur, err := h.store.GetProject(ctx, in.ID)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			auto := cur.AutoDispatch
+			if in.Body.AutoDispatch != nil {
+				auto = *in.Body.AutoDispatch
+			}
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto})
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -642,6 +652,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			}
 			h.reopenStage(ctx, cur, r.Status)
 			h.broker.publish("requirements", "sessions", "plans")
+			h.kick(ctx, r.ID)
 			return &reqOut{Body: r}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "delete-requirement", Method: http.MethodDelete, Path: "/api/requirements/{ref}", Tags: tag("requirements")},
@@ -677,6 +688,9 @@ func (h *Hub) registerWeb(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("requirements", "sessions")
+			if !in.Body.Unlink {
+				h.kick(ctx, r.ID) // 待开始的需求关联到空闲会话：马上送过去
+			}
 			r, err = h.store.GetRequirement(ctx, r.ID)
 			return &reqOut{Body: r}, apiErr(err)
 		})
@@ -822,6 +836,9 @@ func (h *Hub) registerAgent(api huma.API) {
 				return nil, err
 			}
 			r.CreatedBy = "agent"
+			if r.Status == store.ReqReady {
+				r.Status = store.ReqDraft // Agent 记下的需求先停在草稿，你确认后才排进会话的待办（R-66）
+			}
 			if r.ProjectID == "" && in.Body.SessionKey != "" {
 				if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil {
 					r.ProjectID = x.ProjectID
@@ -848,6 +865,9 @@ func (h *Hub) registerAgent(api huma.API) {
 		}) (*reqOut, error) {
 			if in.Body.Status == store.ReqDone {
 				return nil, huma.Error400BadRequest("“已完成”只能由用户在验收后设置；完成开发请设为 review（待验收）")
+			}
+			if in.Body.Status == store.ReqReady {
+				return nil, huma.Error400BadRequest("“待开始”要由用户确认；你开始做某条需求时用 session_link_req，它会变为进行中")
 			}
 			before, err := h.store.GetRequirement(ctx, in.Ref)
 			if err != nil {

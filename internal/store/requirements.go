@@ -55,11 +55,13 @@ type Requirement struct {
 	NextActor        string     `json:"next_actor"` // user | agent | none，推导得出
 	PendingDecisions int        `json:"pending_decisions"`
 	Sessions         []string   `json:"sessions"`
-	PlanID           string     `json:"plan_id,omitempty"`     // 所属计划（R-43），一条需求最多属于一个计划
+	PlanID           string     `json:"plan_id,omitempty"` // 所属计划（R-43），一条需求最多属于一个计划
 	PlanCode         string     `json:"plan_code,omitempty"`
-	StageSeq         int        `json:"stage_seq,omitempty"`   // 所在阶段（从 1 开始）
+	StageSeq         int        `json:"stage_seq,omitempty"` // 所在阶段（从 1 开始）
 	StageTitle       string     `json:"stage_title,omitempty"`
 	StageStatus      string     `json:"stage_status,omitempty"` // locked = 前一阶段还没通过
+	OfferedTo        string     `json:"offered_to,omitempty"`   // 待开始时已交给哪个会话（交出或排队送达）；状态一变就清空
+	OfferedAt        *time.Time `json:"offered_at,omitempty"`
 	Evidence         []Evidence `json:"evidence,omitempty"`
 	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
 	CreatedAt        time.Time  `json:"created_at"`
@@ -96,7 +98,7 @@ func parseRef(ref, prefix string) (seq int, isSeq bool) {
 
 const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.files, r.created_by, r.created_at, r.updated_at, r.kind,
 	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending'),
-	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, '')
+	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, ''), r.offered_to, r.offered_at
 	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id
 	LEFT JOIN plan_stages ps ON ps.id = r.stage_id LEFT JOIN plans pl ON pl.id = ps.plan_id`
 
@@ -111,9 +113,10 @@ func normKind(k string) string {
 func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var r Requirement
 	var seq, planSeq int
-	var created, updated, files string
+	var created, updated, files, offeredAt string
 	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions,
-		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus)
+		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt)
+	r.OfferedAt = parseNullTS(sql.NullString{String: offeredAt, Valid: offeredAt != ""})
 	r.Files = parseFiles(files)
 	r.Code = reqCode(seq)
 	r.NextActor = nextActor(r.Status, r.PendingDecisions)
@@ -285,7 +288,8 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 		return cur, err
 	}
 	err = s.tx(ctx, func(t *sql.Tx) error {
-		if _, err := t.ExecContext(ctx, `UPDATE requirements SET status = ?, updated_at = ? WHERE id = ?`, status, now(), cur.ID); err != nil {
+		// 状态一变，“已交给某会话”的记录就作废：再回到待开始时重新排队
+		if _, err := t.ExecContext(ctx, `UPDATE requirements SET status = ?, offered_to = CASE WHEN status = ? THEN offered_to ELSE '' END, offered_at = CASE WHEN status = ? THEN offered_at ELSE '' END, updated_at = ? WHERE id = ?`, status, status, status, now(), cur.ID); err != nil {
 			return err
 		}
 		if cur.Status == ReqReview && status != ReqDone && status != ReqReview {
@@ -298,6 +302,12 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 		return cur, err
 	}
 	return s.GetRequirement(ctx, cur.ID)
+}
+
+// SetOffered 记下待开始的需求已交给哪个会话（交出或排队送达）。
+func (s *Store) SetOffered(ctx context.Context, id, sessionKey string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE requirements SET offered_to = ?, offered_at = ? WHERE id = ?`, sessionKey, now(), id)
+	return err
 }
 
 // RequirementsUpdatedBetween 返回时间窗内有变化的需求。

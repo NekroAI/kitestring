@@ -41,12 +41,14 @@ type WeComConfig struct {
 
 // Project 是按 git remote 归并的项目（D16）。
 type Project struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Remote      string    `json:"remote"`
-	WorkspaceID string    `json:"workspace_id,omitempty"`
-	DocRoot     string    `json:"doc_root"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Remote      string `json:"remote"`
+	WorkspaceID string `json:"workspace_id,omitempty"`
+	DocRoot     string `json:"doc_root"`
+	// AutoDispatch：会话空闲时，把排给它的待开始需求整批送过去（R-66），默认开启
+	AutoDispatch bool      `json:"auto_dispatch"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // NormalizeRemote 把各种写法的 git remote 归一化为 host/owner/repo 小写形式。
@@ -156,7 +158,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 
 // ListProjects 列出全部项目。
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, created_at FROM projects ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, created_at FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +167,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		var created string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &created); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &created); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTS(created)
@@ -178,8 +180,8 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	var p Project
 	var created string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, created_at FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &created)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, created_at FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -189,7 +191,7 @@ func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 
 // UpdateProject 修改项目名称、所属工作空间与方案文档根路径。
 func (s *Store) UpdateProject(ctx context.Context, p Project) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.ID)
 	if err != nil {
 		return err
 	}

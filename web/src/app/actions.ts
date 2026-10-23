@@ -56,17 +56,17 @@ export function useActions() {
     createPlan: (body: PlanBody & { start?: boolean }) => run(() => unwrap(api.POST('/api/plans', { body: { ...body, stages: body.stages ?? [] } })), planKeys),
     updatePlan: (ref: string, body: PlanBody) => run(() => unwrap(api.PUT('/api/plans/{ref}', { params: { path: { ref } }, body })), planKeys),
     deletePlan: (ref: string) => run(() => unwrap(api.DELETE('/api/plans/{ref}', { params: { path: { ref } } })), planKeys),
-    startPlan: (ref: string, comment = '') => run(() => unwrap(api.POST('/api/plans/{ref}/start', { params: { path: { ref } }, body: { comment } })), planKeys),
-    rejectPlan: (ref: string, comment = '') => run(() => unwrap(api.POST('/api/plans/{ref}/reject', { params: { path: { ref } }, body: { comment } })), planKeys),
-    passStage: (ref: string, seq: number, comment = '') =>
-      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/pass', { params: { path: { ref, seq } }, body: { comment } })), planKeys),
-    reviseStage: (ref: string, seq: number, comment: string) =>
-      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/revise', { params: { path: { ref, seq } }, body: { comment } })), planKeys),
+    startPlan: (ref: string, comment = '', files: string[] = []) => run(() => unwrap(api.POST('/api/plans/{ref}/start', { params: { path: { ref } }, body: { comment, files } })), planKeys),
+    rejectPlan: (ref: string, comment = '', files: string[] = []) => run(() => unwrap(api.POST('/api/plans/{ref}/reject', { params: { path: { ref } }, body: { comment, files } })), planKeys),
+    passStage: (ref: string, seq: number, comment = '', files: string[] = []) =>
+      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/pass', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
+    reviseStage: (ref: string, seq: number, comment: string, files: string[] = []) =>
+      run(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/revise', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
 
     createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions']),
     revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions']),
 
-    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string }) =>
+    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean }) =>
       run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
     createWorkspace: (name: string, notify: NotifyConfig) => run(() => unwrap(api.POST('/api/workspaces', { body: { name, notify } })), ['projects']),
     updateWorkspace: (id: string, name: string, notify: NotifyConfig) =>

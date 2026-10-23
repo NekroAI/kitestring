@@ -29,39 +29,40 @@ const (
 	KindNote     = "note"
 	KindAssign   = "assign" // 你把需求交给某个会话开工
 	KindPlan     = "plan"   // 计划进展（开工、阶段通过 / 退回、未获批准），送达计划的负责会话
+	KindQueue    = "queue"  // 会话空闲时整批送达的待开始需求（R-66）
 )
 
 // Decision 是一条待用户决策的问题。
 type Decision struct {
-	ID               string     `json:"id"`
-	Code             string     `json:"code"`
-	SessionKey       string     `json:"session_key,omitempty"`
-	OriginSession    string     `json:"origin_session,omitempty"`
-	SessionState     string     `json:"session_state,omitempty"` // 目标会话当前状态
-	DeviceName       string     `json:"device_name,omitempty"`
-	ProjectID        string     `json:"project_id,omitempty"`
-	ProjectName      string     `json:"project_name,omitempty"`
-	RequirementID    string     `json:"requirement_id,omitempty"`
-	RequirementCode  string     `json:"requirement_code,omitempty"`
-	PlanID           string     `json:"plan_id,omitempty"`
-	PlanCode         string     `json:"plan_code,omitempty"`
-	Question         string     `json:"question"`
-	Context          string     `json:"context"`
-	Options          []string   `json:"options"`
-	OptionFiles      [][]FileRef `json:"option_files"` // 每个选项的效果图（与 options 一一对应），用于方案对比
+	ID               string      `json:"id"`
+	Code             string      `json:"code"`
+	SessionKey       string      `json:"session_key,omitempty"`
+	OriginSession    string      `json:"origin_session,omitempty"`
+	SessionState     string      `json:"session_state,omitempty"` // 目标会话当前状态
+	DeviceName       string      `json:"device_name,omitempty"`
+	ProjectID        string      `json:"project_id,omitempty"`
+	ProjectName      string      `json:"project_name,omitempty"`
+	RequirementID    string      `json:"requirement_id,omitempty"`
+	RequirementCode  string      `json:"requirement_code,omitempty"`
+	PlanID           string      `json:"plan_id,omitempty"`
+	PlanCode         string      `json:"plan_code,omitempty"`
+	Question         string      `json:"question"`
+	Context          string      `json:"context"`
+	Options          []string    `json:"options"`
+	OptionFiles      [][]FileRef `json:"option_files"`  // 每个选项的效果图（与 options 一一对应），用于方案对比
 	Approval         bool        `json:"approval"`      // 请你批准（选项固定为“批准 / 拒绝”，两种都可以附言）
 	ContextFiles     []FileRef   `json:"context_files"` // 问题本身附带的图（例如待批准的方案图）
-	Recommendation   string     `json:"recommendation"`
-	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan"`
-	AnswerFiles      []FileRef  `json:"answer_files"`
-	RequirementTitle string     `json:"requirement_title,omitempty"`
-	Status           string     `json:"status"`
-	Answer           string     `json:"answer"`
-	CreatedAt        time.Time  `json:"created_at"`
-	AnsweredAt       *time.Time `json:"answered_at,omitempty"`
-	DeliveredAt      *time.Time `json:"delivered_at,omitempty"`
-	DeliveredTurn    string     `json:"delivered_turn,omitempty"`
+	Recommendation   string      `json:"recommendation"`
+	ShortTitle       string      `json:"short_title"` // 模型生成的短标题
+	Kind             string      `json:"kind" enum:"decision,feedback,note,assign,plan,queue"`
+	AnswerFiles      []FileRef   `json:"answer_files"`
+	RequirementTitle string      `json:"requirement_title,omitempty"`
+	Status           string      `json:"status"`
+	Answer           string      `json:"answer"`
+	CreatedAt        time.Time   `json:"created_at"`
+	AnsweredAt       *time.Time  `json:"answered_at,omitempty"`
+	DeliveredAt      *time.Time  `json:"delivered_at,omitempty"`
+	DeliveredTurn    string      `json:"delivered_turn,omitempty"`
 }
 
 func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
@@ -117,7 +118,7 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			return err
 		}
 		n := now()
-		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan {
+		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
 			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?)`,
 				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n)

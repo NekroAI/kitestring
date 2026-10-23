@@ -73,6 +73,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"evidence", "files", "TEXT NOT NULL DEFAULT '[]'"},
 	{"requirements", "stage_id", "TEXT REFERENCES plan_stages(id) ON DELETE SET NULL"},
 	{"decisions", "plan_id", "TEXT REFERENCES plans(id) ON DELETE SET NULL"},
+	{"requirements", "offered_to", "TEXT NOT NULL DEFAULT ''"},
+	{"requirements", "offered_at", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "auto_dispatch", "INTEGER NOT NULL DEFAULT 1"},
 }
 
 func migrate(db *sql.DB) error {

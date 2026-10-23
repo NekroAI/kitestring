@@ -6,6 +6,7 @@ import { t } from '../i18n'
 import { ReqView } from '../app/reqDrawer'
 import { DesignBadge } from '../app/design'
 import { PlanBadge, PlanEditor, PlansView } from '../app/plans'
+import { OwnBadge, useOwnership } from '../app/ownership'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from '../app/menus'
 import { Collapse, Item, List as MotionList } from '../ui/motion'
@@ -97,6 +98,7 @@ function StatusSection({ status, items, onDrop }: { status: string; items: Requi
 function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boolean; onToggle: () => void }) {
   const now = useNow()
   const menu = useReqMenu()
+  const own = useOwnership()(r)
   return (
     <div className={cx('rounded-xl transition-colors', expanded ? 'bg-surface shadow-card ring-1 ring-line' : 'hover:bg-hover/60')}>
       <Ctx items={menu(r)} className="rounded-xl">
@@ -118,7 +120,8 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
             </span>
           </Tip>
         )}
-        {r.next_actor === 'user' && r.status !== 'done' && (
+        {own && <OwnBadge own={own} className="max-sm:hidden" />}
+        {!own && r.next_actor === 'user' && r.status !== 'done' && (
           <Tip content={t.nextActor.user}>
             <span className="inline-flex text-reply">
               <User className="size-3.5" />

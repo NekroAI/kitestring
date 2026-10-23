@@ -5,7 +5,7 @@ import type { Requirement, Session } from '../api/client'
 import { useDecisions, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
-import { Button, Card, CardSkeleton, Empty, Field, Input } from '../ui/base'
+import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input } from '../ui/base'
 import { Menu, Modal } from '../ui/overlay'
 import { displayState } from '../ui/marks'
 import { Item, List } from '../ui/motion'
@@ -305,6 +305,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const [doc, setDoc] = useState(p.docRoot)
   const [ws, setWs] = useState(p.workspaceId ?? '')
   const workspaces = projects.data?.workspaces ?? []
+  const [auto, setAuto] = useState(projects.data?.projects.find((x) => x.id === p.id)?.auto_dispatch ?? true)
   return (
     <Modal
       open={open}
@@ -313,7 +314,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -333,6 +334,9 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
             items={[{ label: t.settings.projects.noWorkspace, checked: !ws, onSelect: () => setWs('') }, ...workspaces.map((w) => ({ label: w.name, checked: w.id === ws, onSelect: () => setWs(w.id) }))]}
           />
         </Field>
+        <Checkbox checked={auto} onChange={setAuto} hint={t.projects.autoDispatchHint}>
+          {t.projects.autoDispatch}
+        </Checkbox>
       </div>
     </Modal>
   )

@@ -860,7 +860,7 @@ export interface components {
             device_name?: string;
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -1092,6 +1092,7 @@ export interface components {
             plans: components["schemas"]["Plan"][] | null;
         };
         Project: {
+            auto_dispatch: boolean;
             /** Format: date-time */
             created_at: string;
             doc_root: string;
@@ -1101,6 +1102,7 @@ export interface components {
             workspace_id?: string;
         };
         ProjectInBody: {
+            auto_dispatch?: boolean;
             doc_root: string;
             name: string;
             workspace_id?: string;
@@ -1155,6 +1157,9 @@ export interface components {
             id: string;
             kind: string;
             next_actor: string;
+            /** Format: date-time */
+            offered_at?: string;
+            offered_to?: string;
             /** Format: int64 */
             pending_decisions: number;
             plan_code?: string;

@@ -192,6 +192,9 @@ func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment string) 
 			return store.Decision{}, apiErr(err)
 		}
 	}
+	if r.Status == store.ReqReady {
+		_ = h.store.SetOffered(ctx, r.ID, x.Key) // 已交给它，不再重复排队送达
+	}
 	var body []string
 	if r.Kind == "design" {
 		body = append(body, "这是设计需求：先用 decision_raise 交 2～3 套方案并在 option_images 附上效果图，等用户选定后再实现。")
