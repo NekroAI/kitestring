@@ -630,3 +630,33 @@ func runPlan(args []string) error {
 		return fmt.Errorf("未知的 plan 子命令：%s", sub)
 	}
 }
+
+// runCommit：需求关联的提交、回滚与 CI（R-156）。纸鸢只记录与展示，不改仓库、不触发 CI。
+//
+//	ks commit list <R-x>
+//	ks commit link <R-x> <哈希> [--subject 标题]
+//	ks commit ci <哈希> <pending|success|failure> [--url 链接]
+func runCommit(args []string) error {
+	const use = "用法：ks commit list <R-x> | link <R-x> <哈希> [--subject 标题] | ci <哈希> <pending|success|failure> [--url 链接]（标题末尾写了（R-x）的提交会自动关联，不用手动 link）"
+	if len(args) < 1 {
+		return fmt.Errorf(use)
+	}
+	sub, args := args[0], args[1:]
+	fs := flag.NewFlagSet("commit "+sub, flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
+	subject := fs.String("subject", "", "link：提交标题")
+	link := fs.String("url", "", "ci：CI 结果链接")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	key := cliSession(*session)
+	switch {
+	case sub == "list" && fs.NArg() == 1:
+		return agentCall("GET", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/commits", nil)
+	case sub == "link" && fs.NArg() == 2:
+		return agentCall("POST", "/agent/commits", compact(map[string]any{"requirement": fs.Arg(0), "sha": fs.Arg(1), "subject": *subject, "session_key": key}))
+	case sub == "ci" && fs.NArg() == 2:
+		return agentCall("POST", "/agent/commits", compact(map[string]any{"sha": fs.Arg(0), "ci": fs.Arg(1), "ci_url": *link, "session_key": key}))
+	}
+	return fmt.Errorf(use)
+}

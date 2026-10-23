@@ -267,3 +267,23 @@ CREATE TABLE IF NOT EXISTS ai_calls (
 	at          TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ai_calls_at ON ai_calls(at);
+
+-- 提交（R-156）：daemon 读本地 git log 上报的、标题写了需求编号或是 revert 的提交，以及 Agent 手动关联 / 上报 CI 的提交。
+-- 纸鸢只记录与展示，不改仓库、不触发 CI。reqs 是关联的需求编号，写成 ",R-12,R-13,"；reverts 是它回滚的提交哈希；
+-- source：git 本地采集 / agent 手动。ci_*：CI 结果（只读，来自 Agent 上报或 GitHub 只读接口），ci_at 是最后一次查询或上报的时间
+CREATE TABLE IF NOT EXISTS commits (
+	project_id   TEXT NOT NULL,
+	sha          TEXT NOT NULL,
+	subject      TEXT NOT NULL DEFAULT '',
+	committed_at TEXT NOT NULL DEFAULT '',
+	reverts      TEXT NOT NULL DEFAULT '',
+	reqs         TEXT NOT NULL DEFAULT '',
+	source       TEXT NOT NULL DEFAULT 'git',
+	session_key  TEXT NOT NULL DEFAULT '',
+	ci_state     TEXT NOT NULL DEFAULT '',
+	ci_url       TEXT NOT NULL DEFAULT '',
+	ci_source    TEXT NOT NULL DEFAULT '',
+	ci_at        TEXT NOT NULL DEFAULT '',
+	created_at   TEXT NOT NULL,
+	PRIMARY KEY (project_id, sha)
+);

@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 手动把提交关联到需求，或上报提交的 CI 结果（只记录，不改仓库、不触发 CI，R-156） */
+        post: operations["agent-link-commit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/decisions": {
         parameters: {
             query?: never;
@@ -231,6 +248,23 @@ export interface paths {
         put?: never;
         /** PM 把需求交给开发（R-86） */
         post: operations["agent-assign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/requirements/{ref}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 需求关联的提交、回滚与 CI 结果（R-156） */
+        get: operations["agent-get-requirement-commits"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1107,6 +1141,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/requirements/{ref}/commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 需求关联的提交、回滚与 CI 结果（R-156） */
+        get: operations["get-requirement-commits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/requirements/{ref}/links": {
         parameters: {
             query?: never;
@@ -1690,10 +1741,35 @@ export interface components {
             /** @enum {string} */
             type: "checklist" | "compare" | "figure" | "flow" | "metrics" | "scope" | "options" | "table";
         };
+        CIState: {
+            /** Format: date-time */
+            at: string;
+            /**
+             * @description agent = Agent 上报；github = GitHub 只读接口
+             * @enum {string}
+             */
+            source: "agent" | "github";
+            /**
+             * @description pending 进行中 / success 通过 / failure 未通过
+             * @enum {string}
+             */
+            state: "pending" | "success" | "failure";
+            url?: string;
+        };
         ChainCommit: {
             /** Format: date-time */
             at: string;
+            /** @description CI 结果（只读）；没有上报、也没配 GitHub token 时不给 */
+            ci?: components["schemas"]["CIState"];
+            /** @description 提交哈希（证据里写的链接原样保留） */
             link: string;
+            reverted_by?: string;
+            reverts?: string;
+            /**
+             * @description git = 标题写了需求编号、本地采集；agent = Agent 手动关联；evidence = 交证据时附的提交
+             * @enum {string}
+             */
+            source?: "git" | "agent" | "evidence";
             summary: string;
         };
         ChainDec: {
@@ -1723,6 +1799,29 @@ export interface components {
             comment?: string;
             /** @description 附言里的图片 ID（先上传到 /api/files） */
             files?: string[] | null;
+        };
+        Commit: {
+            /** Format: date-time */
+            at: string;
+            reverts?: string;
+            sha: string;
+            subject: string;
+        };
+        CommitLinkInBody: {
+            /**
+             * @description 上报 CI 结果（只读记录，纸鸢不会触发 CI）
+             * @enum {string}
+             */
+            ci?: "pending" | "success" | "failure";
+            /** @description CI 结果链接 */
+            ci_url?: string;
+            /** @description 关联到哪条需求（R-x）；只上报 CI 时可不填 */
+            requirement?: string;
+            session_key?: string;
+            /** @description 提交哈希（7～40 位） */
+            sha: string;
+            /** @description 提交标题（本地还没采集到这个提交时显示用） */
+            subject?: string;
         };
         "Create-deviceRequest": {
             name: string;
@@ -1966,6 +2065,7 @@ export interface components {
             /** Format: int64 */
             bg_tasks?: number;
             client?: string;
+            commits?: components["schemas"]["Commit"][] | null;
             /** Format: int64 */
             context?: number;
             /** Format: int64 */
@@ -2592,6 +2692,12 @@ export interface components {
             comment?: string;
             files?: string[] | null;
         };
+        ReqCommits: {
+            code: string;
+            commits: components["schemas"]["ChainCommit"][] | null;
+            /** @description 一句话提示：提交被回滚、CI 未通过时告诉你该怎么做（纸鸢不会替你改仓库） */
+            hints: string[] | null;
+        };
         ReqCreatedOutBody: {
             acceptance: string;
             code: string;
@@ -3067,6 +3173,39 @@ export interface operations {
             };
         };
     };
+    "agent-link-commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitLinkInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReqCommits"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-raise-decision": {
         parameters: {
             query?: never;
@@ -3516,6 +3655,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-get-requirement-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReqCommits"];
                 };
             };
             /** @description Error */
@@ -5537,6 +5707,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-requirement-commits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReqCommits"];
                 };
             };
             /** @description Error */

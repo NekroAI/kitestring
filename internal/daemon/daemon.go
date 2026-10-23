@@ -35,30 +35,31 @@ const maxInjectChars = 4000
 
 // Daemon 是设备常驻进程。
 type Daemon struct {
-	cfg   Config
-	log   *slog.Logger
-	q     *queue
-	git   *gitCache
-	kick  chan struct{}
-	proxy *httputil.ReverseProxy
+	cfg     Config
+	log     *slog.Logger
+	q       *queue
+	git     *gitCache
+	commits *commitScan // 新提交采集（R-156）
+	kick    chan struct{}
+	proxy   *httputil.ReverseProxy
 
-	mu        sync.Mutex
-	connected bool
-	devCfg    protocol.DeviceConfig
-	decisions []protocol.Decision
-	sessions  map[string]*sessionInfo
-	toolUses  map[string]toolUse // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
-	toolCond  *sync.Cond // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
-	instances map[string]string // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
-	latest    map[string]string // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
-	staleWarn map[string]bool   // 较早终端 → 是否已提醒过
-	waiting   map[string]int64  // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
-	roles     map[string]string // 会话键 → 身份（Hub 下发，R-82）
-	stopBlocks map[string]int   // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
-	heldReply  map[string]string // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
-	waitSeq   int64
-	tools     toolsState // 各会话的 Kitestring 工具版本（R-59）
-	tasks     taskState  // 后台 shell 与子代理线索（R-162）
+	mu         sync.Mutex
+	connected  bool
+	devCfg     protocol.DeviceConfig
+	decisions  []protocol.Decision
+	sessions   map[string]*sessionInfo
+	toolUses   map[string]toolUse // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
+	toolCond   *sync.Cond         // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
+	instances  map[string]string  // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
+	latest     map[string]string  // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
+	staleWarn  map[string]bool    // 较早终端 → 是否已提醒过
+	waiting    map[string]int64   // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
+	roles      map[string]string  // 会话键 → 身份（Hub 下发，R-82）
+	stopBlocks map[string]int     // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
+	heldReply  map[string]string  // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
+	waitSeq    int64
+	tools      toolsState // 各会话的 Kitestring 工具版本（R-59）
+	tasks      taskState  // 后台 shell 与子代理线索（R-162）
 }
 
 type toolUse struct {
@@ -86,7 +87,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState()}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState()}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -400,6 +401,10 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		}
 	}
 	ev.Git = d.git.get(ev.Cwd)
+	// 新提交（R-156）：一轮结束、跑完命令、会话开始时看一眼 HEAD 有没有变
+	if ev.Git != nil && ev.Git.Available && (name == "Stop" || name == "SessionStart" || name == "PostToolUse" && isShellTool(ev.ToolName)) {
+		ev.Commits = d.commits.scan(ev.Git.Root)
+	}
 
 	d.mu.Lock()
 	info := d.sessions[key]

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowRightLeft, CheckCheck, FileCheck2, HelpCircle, LockOpen, MessageSquareText, PencilLine, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
+import { ArrowRightLeft, CheckCheck, FileCheck2, GitCommitHorizontal, HelpCircle, LockOpen, MessageSquareText, PencilLine, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Requirement, StatusChange } from '../api/client'
 import { t } from '../i18n'
@@ -17,6 +17,7 @@ import { useSessions } from '../api/queries'
 import { sessionTitle } from './SessionCard'
 import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionChain } from './chain'
+import { CommitTags, shortSha, useReqCommits } from './commits'
 
 // 需求进展：一条竖向时间线，从上往下按时间排，最新在最下面（紧挨底部的输入区）。
 // 每次退回修改开启新的一轮，复杂需求反复几轮也能看清来龙去脉；留言不开新一轮。
@@ -146,6 +147,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   const now = useNow()
   const sessions = useSessions()
   const { withdrawRelease } = useActions()
+  const commitsQ = useReqCommits(r.code)
   const [withdrawing, setWithdrawing] = useState(false)
   const canWithdraw = !!r.release && (r.status === 'ready' || r.status === 'in_progress' || r.status === 'blocked')
   const who = (key?: string | null) => {
@@ -217,6 +219,43 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           )}
           {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
           {!hasPayload(e) && !!e.files?.length && <Thumbs files={e.files} />}
+        </Node>
+      ),
+    })
+  }
+  // 提交与回滚（R-156）：标题写了编号、Agent 手动关联的提交按提交时间排进时间线；交证据时附的提交已在证据里，不重复。
+  // 纸鸢不改仓库：被回滚时只提示该怎么做
+  const commits = commitsQ.data?.commits ?? []
+  for (const c of commits) {
+    if (c.source === 'evidence') continue
+    const target = c.reverts ? commits.find((x) => x.reverted_by === c.link) : undefined
+    const active = !!target && !c.reverted_by
+    entries.push({
+      at: c.at,
+      key: 'commit-' + c.link,
+      round: roundOf(c.at),
+      node: (
+        <Node
+          icon={c.reverts ? <Undo2 /> : <GitCommitHorizontal />}
+          tone={c.reverts ? tone.revise : tone.create}
+          title={
+            <>
+              {c.reverts ? t.commits.revert : t.commits.commit}
+              <Badge mono>{shortSha(c.link)}</Badge>
+              {c.source && t.commits.source[c.source] && <span className="font-normal text-fg-3">{t.commits.source[c.source]}</span>}
+            </>
+          }
+          at={c.at}
+          now={now}
+        >
+          <p className={cx('text-sm break-words text-fg', c.reverted_by && 'text-fg-2 line-through decoration-fg-3/60')}>{c.summary}</p>
+          {(c.reverts || c.reverted_by || c.ci) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <CommitTags c={c} all={commits} />
+            </div>
+          )}
+          {active && <p className="rounded-lg bg-reply-soft px-2.5 py-1.5 text-xs leading-relaxed break-words text-reply">{t.commits.revertHint(shortSha(c.link), r.code)}</p>}
+          {c.ci?.state === 'failure' && <p className="rounded-lg bg-danger-soft px-2.5 py-1.5 text-xs leading-relaxed break-words text-danger">{t.commits.ciHint}</p>}
         </Node>
       ),
     })

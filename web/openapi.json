@@ -1090,6 +1090,41 @@
         ],
         "type": "object"
       },
+      "CIState": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "source": {
+            "description": "agent = Agent 上报；github = GitHub 只读接口",
+            "enum": [
+              "agent",
+              "github"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "description": "pending 进行中 / success 通过 / failure 未通过",
+            "enum": [
+              "pending",
+              "success",
+              "failure"
+            ],
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "source",
+          "at"
+        ],
+        "type": "object"
+      },
       "ChainCommit": {
         "additionalProperties": false,
         "properties": {
@@ -1097,7 +1132,27 @@
             "format": "date-time",
             "type": "string"
           },
+          "ci": {
+            "$ref": "#/components/schemas/CIState",
+            "description": "CI 结果（只读）；没有上报、也没配 GitHub token 时不给"
+          },
           "link": {
+            "description": "提交哈希（证据里写的链接原样保留）",
+            "type": "string"
+          },
+          "reverted_by": {
+            "type": "string"
+          },
+          "reverts": {
+            "type": "string"
+          },
+          "source": {
+            "description": "git = 标题写了需求编号、本地采集；agent = Agent 手动关联；evidence = 交证据时附的提交",
+            "enum": [
+              "git",
+              "agent",
+              "evidence"
+            ],
             "type": "string"
           },
           "summary": {
@@ -1212,6 +1267,67 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "Commit": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reverts": {
+            "type": "string"
+          },
+          "sha": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha",
+          "subject",
+          "at"
+        ],
+        "type": "object"
+      },
+      "CommitLinkInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "ci": {
+            "description": "上报 CI 结果（只读记录，纸鸢不会触发 CI）",
+            "enum": [
+              "pending",
+              "success",
+              "failure"
+            ],
+            "type": "string"
+          },
+          "ci_url": {
+            "description": "CI 结果链接",
+            "type": "string"
+          },
+          "requirement": {
+            "description": "关联到哪条需求（R-x）；只上报 CI 时可不填",
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "sha": {
+            "description": "提交哈希（7～40 位）",
+            "type": "string"
+          },
+          "subject": {
+            "description": "提交标题（本地还没采集到这个提交时显示用）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha"
+        ],
         "type": "object"
       },
       "Create-deviceRequest": {
@@ -2055,6 +2171,15 @@
           },
           "client": {
             "type": "string"
+          },
+          "commits": {
+            "items": {
+              "$ref": "#/components/schemas/Commit"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "context": {
             "format": "int64",
@@ -4174,6 +4299,39 @@
         },
         "type": "object"
       },
+      "ReqCommits": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "commits": {
+            "items": {
+              "$ref": "#/components/schemas/ChainCommit"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hints": {
+            "description": "一句话提示：提交被回滚、CI 未通过时告诉你该怎么做（纸鸢不会替你改仓库）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "commits",
+          "hints"
+        ],
+        "type": "object"
+      },
       "ReqCreatedOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -5819,6 +5977,47 @@
         ]
       }
     },
+    "/api/agent/commits": {
+      "post": {
+        "operationId": "agent-link-commit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitLinkInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReqCommits"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "手动把提交关联到需求，或上报提交的 CI 结果（只记录，不改仓库、不触发 CI，R-156）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/decisions": {
       "post": {
         "operationId": "agent-raise-decision",
@@ -6453,6 +6652,47 @@
           }
         },
         "summary": "PM 把需求交给开发（R-86）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/requirements/{ref}/commits": {
+      "get": {
+        "operationId": "agent-get-requirement-commits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReqCommits"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "需求关联的提交、回滚与 CI 结果（R-156）",
         "tags": [
           "agent"
         ]
@@ -9209,6 +9449,47 @@
           }
         },
         "summary": "把需求交给某个会话（关联、放到待开始并送达；Agent 开始做时才进入进行中）",
+        "tags": [
+          "requirements"
+        ]
+      }
+    },
+    "/api/requirements/{ref}/commits": {
+      "get": {
+        "operationId": "get-requirement-commits",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReqCommits"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "需求关联的提交、回滚与 CI 结果（R-156）",
         "tags": [
           "requirements"
         ]

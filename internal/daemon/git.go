@@ -4,6 +4,8 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -120,4 +122,88 @@ func countDirty(cwd string) int {
 		return 0
 	}
 	return strings.Count(out, "\n") + 1
+}
+
+// 提交采集（R-156）：daemon 记住每个仓库上次看到的 HEAD，变了就读这段 git log，
+// 挑出标题写了需求编号（R-x）或是 revert 的提交随事件上报，Hub 关联到需求。只读，不改仓库。
+// daemon 刚启动、第一次见到某个仓库时回看最近 commitBackfill 条（Hub 按哈希去重）。
+const (
+	commitBackfill = 50
+	commitMax      = 200
+)
+
+type commitScan struct {
+	mu    sync.Mutex
+	heads map[string]string // 仓库根目录 → 上次看到的 HEAD
+}
+
+func newCommitScan() *commitScan { return &commitScan{heads: map[string]string{}} }
+
+var (
+	reqRefRe  = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9-])R-[0-9]+($|[^0-9A-Za-z])`)
+	revertsRe = regexp.MustCompile(`(?i)This reverts commit ([0-9a-f]{7,40})`)
+)
+
+// scan 返回仓库 root 自上次以来的新提交（只含相关的）；HEAD 没变或读不到时返回 nil。
+func (c *commitScan) scan(root string) []protocol.Commit {
+	if root == "" {
+		return nil
+	}
+	head, err := gitCmd(root, 2*time.Second, "rev-parse", "--verify", "-q", "HEAD")
+	if err != nil || head == "" {
+		return nil
+	}
+	c.mu.Lock()
+	prev := c.heads[root]
+	c.heads[root] = head
+	c.mu.Unlock()
+	if prev == head {
+		return nil
+	}
+	return readCommits(root, prev, head)
+}
+
+func readCommits(root, prev, head string) []protocol.Commit {
+	const format = "--format=%H%x1f%cI%x1f%s%x1f%b%x1e"
+	var out string
+	var err error
+	if prev != "" {
+		out, err = gitCmd(root, 3*time.Second, "log", "-n", strconv.Itoa(commitMax), format, prev+".."+head)
+	}
+	if prev == "" || err != nil { // 第一次见到，或旧 HEAD 已不存在（reset / gc 之后）
+		out, err = gitCmd(root, 3*time.Second, "log", "-n", strconv.Itoa(commitBackfill), format, head)
+		if err != nil {
+			return nil
+		}
+	}
+	return parseCommits(out)
+}
+
+// parseCommits 解析 git log 输出（字段以 0x1f 分隔、记录以 0x1e 分隔），按时间从旧到新返回相关提交。
+func parseCommits(out string) []protocol.Commit {
+	var cs []protocol.Commit
+	for _, rec := range strings.Split(out, "\x1e") {
+		f := strings.SplitN(strings.TrimLeft(rec, "\n"), "\x1f", 4)
+		if len(f) < 3 || f[0] == "" {
+			continue
+		}
+		c := protocol.Commit{SHA: f[0], Subject: strings.TrimSpace(f[2])}
+		c.At, _ = time.Parse(time.RFC3339, f[1])
+		if len(f) == 4 {
+			if m := revertsRe.FindStringSubmatch(f[3]); m != nil {
+				c.Reverts = strings.ToLower(m[1])
+			}
+		}
+		if c.Reverts == "" && !reqRefRe.MatchString(c.Subject) {
+			continue
+		}
+		if r := []rune(c.Subject); len(r) > 300 {
+			c.Subject = string(r[:300]) + "…"
+		}
+		cs = append(cs, c)
+	}
+	for i, j := 0, len(cs)-1; i < j; i, j = i+1, j-1 {
+		cs[i], cs[j] = cs[j], cs[i]
+	}
+	return cs
 }

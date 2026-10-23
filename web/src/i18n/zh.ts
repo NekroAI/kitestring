@@ -855,6 +855,19 @@ export const zh = {
     followedBy: '后续',
     relation: { from: '产生了', source: '产生了', about: '针对' } as Record<string, string>,
   },
+  // 提交、回滚与 CI（R-156）：纸鸢只记录与展示，不改仓库、不触发 CI
+  commits: {
+    commit: '提交',
+    revert: '回滚了提交',
+    source: { git: '标题带编号', agent: 'Agent 关联', evidence: '证据' } as Record<string, string>,
+    reverts: (sha: string) => `回滚了 ${sha}`,
+    revertedBy: (sha: string) => `已被 ${sha} 回滚`,
+    restored: '回滚已撤销',
+    ci: { pending: 'CI 进行中', success: 'CI 通过', failure: 'CI 未通过' } as Record<string, string>,
+    ciLink: '查看 CI',
+    revertHint: (sha: string, code: string) => `这项改动已被回滚。纸鸢不会改仓库：要恢复，请在仓库里执行 git revert ${sha}（或重新提交），标题末尾写（${code}）会自动关联。`,
+    ciHint: '纸鸢只读 CI 结果、不会重跑：修复后重新提交即可。',
+  },
   thread: {
     reqs: (x: number) => `${x} 个需求`,
     reviews: '待验收',

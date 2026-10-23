@@ -189,6 +189,9 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	if r := []rune(reply); len(r) > protocol.ReplyMax+1 { // 兼容不截断的设备
 		reply = string(r[:protocol.ReplyMax]) + "…"
 	}
+	// 新提交（R-156）单独存进提交表，不写进事件记录
+	commits := ev.Commits
+	ev.Commits = nil
 	inserted, err := h.store.InsertEvent(ctx, dev.ID, ev)
 	if err != nil || !inserted {
 		return err
@@ -205,6 +208,13 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		// 每次都解析：路径映射有缓存，开销小；remote 后补时可按 D16 重新归并。
 		if projectID, err = h.store.ResolveProject(ctx, dev.ID, ev.Cwd, ev.Git); err != nil {
 			return err
+		}
+	}
+	if len(commits) > 0 && projectID != "" {
+		if n, err := h.store.RecordCommits(ctx, projectID, key, commits); err != nil {
+			h.log.Warn("记录提交失败", "err", err)
+		} else if n > 0 {
+			h.broker.publish("requirements")
 		}
 	}
 	next := applyEvent(prev, dev.ID, projectID, ev)

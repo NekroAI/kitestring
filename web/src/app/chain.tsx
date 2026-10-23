@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { GitCommitHorizontal, GitFork } from 'lucide-react'
+import { GitFork } from 'lucide-react'
 import { api, unwrap, type Schemas } from '../api/client'
 import { t } from '../i18n'
-import { Badge } from '../ui/base'
 import { RefChip } from '../ui/refmark'
+import { CommitLine } from './commits'
 
 // 决策后果链（R-154）：这条决策接着 / 推翻了谁、被谁取代 / 推翻、产生了哪些需求与提交。
 // 全部从已有记录读出；什么都没有（例如旧决策）时不占位。
@@ -90,11 +90,7 @@ export function DecisionChain({ code, skipReq }: { code: string; skipReq?: strin
             <span className="min-w-0 truncate text-fg-2">{r.title}</span>
           </Line>
           {(r.commits ?? []).map((m, i) => (
-            <div key={i} className="flex min-w-0 items-center gap-1.5 pl-3 text-xs text-fg-3">
-              <GitCommitHorizontal className="size-3.5 shrink-0" />
-              {m.link && <Badge mono>{m.link.length > 12 && /^[0-9a-f]+$/i.test(m.link) ? m.link.slice(0, 7) : m.link}</Badge>}
-              <span className="min-w-0 truncate">{m.summary}</span>
-            </div>
+            <CommitLine key={i} c={m} all={r.commits ?? []} className="pl-3" />
           ))}
         </div>
       ))}

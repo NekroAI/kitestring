@@ -48,6 +48,7 @@ agent 调用：
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
   req assign <R-x> --to <会话|auto>   PM 把需求交给开发
   req review <R-x> <意见> [--image]   Rev 交审查意见（不改需求状态）
+  commit list|link|ci ...   需求关联的提交与 CI（R-156）：标题末尾写（R-x）的提交自动关联；link 手动关联，ci 上报 CI 结果（只记录，不改仓库）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team need <数量> --reason ...   PM 提醒用户开 Dev 会话
   team tell <文字> [--req R-x]   给本项目的 PM 留言（只送给 PM，不进用户收件箱；交验收时 PM 会自动收到通知）
@@ -112,6 +113,8 @@ func main() {
 		err = runMorning(args)
 	case "team":
 		err = runTeam(args)
+	case "commit":
+		err = runCommit(args)
 	case "help", "--help", "-h":
 		fmt.Println(usage)
 	default:

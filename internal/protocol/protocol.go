@@ -74,6 +74,18 @@ type Event struct {
 	WaitOn string `json:"wait_on,omitempty"`
 	// Tasks：KsTasks 事件带的这个会话当前在跑的后台 shell 全集（覆盖式，R-162）；只有标签与开始时间，不含命令输出
 	Tasks []Task `json:"tasks,omitempty"`
+	// Commits：daemon 读本地 git log 发现的新提交（R-156），只含标题写了需求编号（R-x）或是 revert 的提交；
+	// Hub 按项目 + 哈希去重存下，关联到需求，不写进事件记录。纸鸢只读 git，不改仓库
+	Commits []Commit `json:"commits,omitempty"`
+}
+
+// Commit 是 daemon 从本地 git log 读到的一条提交（R-156）：哈希、标题、提交时间；
+// Reverts 是它回滚的提交（提交说明里 "This reverts commit <哈希>"），不是 revert 时为空。
+type Commit struct {
+	SHA     string    `json:"sha"`
+	Subject string    `json:"subject"`
+	At      time.Time `json:"at"`
+	Reverts string    `json:"reverts,omitempty"`
 }
 
 // Task 是 daemon 从进程表认出的一个后台 shell（R-162）。

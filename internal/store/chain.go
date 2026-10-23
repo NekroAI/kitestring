@@ -24,11 +24,16 @@ type ChainReq struct {
 	Commits  []ChainCommit `json:"commits"`
 }
 
-// ChainCommit 是需求上的一条提交证据。
+// ChainCommit 是需求上的一条提交：commit 类证据，或本地 git log 采集 / Agent 手动关联的提交（R-156）。
 type ChainCommit struct {
-	Link    string    `json:"link"`
+	Link    string    `json:"link" doc:"提交哈希（证据里写的链接原样保留）"`
 	Summary string    `json:"summary"`
 	At      time.Time `json:"at"`
+	Source  string    `json:"source,omitempty" enum:"git,agent,evidence" doc:"git = 标题写了需求编号、本地采集；agent = Agent 手动关联；evidence = 交证据时附的提交"`
+	// Reverts：这是一个 revert，回滚了哪个提交；RevertedBy：这个提交被哪个提交回滚了（R-156）
+	Reverts    string   `json:"reverts,omitempty"`
+	RevertedBy string   `json:"reverted_by,omitempty"`
+	CI         *CIState `json:"ci,omitempty" doc:"CI 结果（只读）；没有上报、也没配 GitHub token 时不给"`
 }
 
 // ChainDec 是后果链里相关的一条决策。
@@ -136,11 +141,9 @@ func (s *Store) GetDecisionChain(ctx context.Context, ref string) (DecisionChain
 		if err != nil {
 			continue
 		}
-		cr := ChainReq{Code: r.Code, Title: r.Title, Status: r.Status, Relation: h.rel, Commits: []ChainCommit{}}
-		for _, e := range r.Evidence {
-			if e.Kind == "commit" && !e.Voided {
-				cr.Commits = append(cr.Commits, ChainCommit{Link: e.Link, Summary: firstLine(e.Summary), At: e.CreatedAt})
-			}
+		cr := ChainReq{Code: r.Code, Title: r.Title, Status: r.Status, Relation: h.rel}
+		if cr.Commits, err = s.reqCommits(ctx, r); err != nil {
+			return c, err
 		}
 		c.Requirements = append(c.Requirements, cr)
 	}

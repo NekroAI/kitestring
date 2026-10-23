@@ -44,6 +44,7 @@ func Run(ctx context.Context) error {
 	t.register(s)
 	t.registerTeam(s)
 	t.registerReview(s)
+	t.registerCommits(s)
 	return s.Run(ctx, &mcp.StdioTransport{})
 }
 
@@ -258,6 +259,10 @@ func (t *tools) register(s *mcp.Server) {
 					return nil, nil, err
 				}
 				res, ids = text(v.String()), v.images()
+			}
+			// 关联的提交、回滚与 CI（R-156），以及被回滚时该怎么做的提示
+			if c := t.reqCommitsText(ctx, in.Ref); c != "" {
+				res.Content = append(res.Content, &mcp.TextContent{Text: c})
 			}
 			for _, id := range ids {
 				if data, mime, err := t.c.Fetch(ctx, "/agent/files/"+url.PathEscape(id), 10<<20); err == nil {
