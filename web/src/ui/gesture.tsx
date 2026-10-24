@@ -179,7 +179,7 @@ export type Strip = {
   begin: () => void
   move: (dx: number) => void
   end: (velocity?: number) => void
-  wheel: (dx: number, dy: number) => boolean
+  wheel: (dx: number, dy: number, t?: number) => boolean
   shift: (dx: number, settleTo?: number) => void
   dragging: () => boolean
   stop: () => void
@@ -199,6 +199,7 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
   const aim = useRef<number | null>(null) // 正在弹向的那一页：动画中途再翻页时从它往后数
   const gesture = useRef<Gesture | null>(null)
   const seg = useRef(new WheelSegment())
+  const pending = useRef<(() => void) | null>(null)
   const idle = useRef(0)
   const ref = useRef<Strip>(null!)
   if (!ref.current) {
@@ -206,15 +207,27 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
       anim.current?.stop()
       anim.current = null
     }
+    // then：走到之后要做的事（抽屉切换）。差不多到了（1.5px 内）、动画走完、或者中途被新的手势按住，都立刻做——
+    // 不能因为被打断就不做：真机上用户常在上一次还没完全停稳时就开始下一次滑动（R-73 真机日志）
+    const flush = () => {
+      const f = pending.current
+      pending.current = null
+      f?.()
+    }
     const snapTo = (page: number, velocity = 0, then?: () => void) => {
       stop()
+      // 朝目标走的速度太大会冲过头再弹回来（妙控板一下 100 多 px 的尖峰很常见）：限制到这种弹簧刚好不过冲的速度，
+      // 往回甩（离开目标）的速度照常带上
+      const dist = page * w.current - pos.get()
+      if (Math.abs(dist) < 1 || Math.sign(velocity) === Math.sign(dist)) velocity = Math.sign(velocity) * Math.min(Math.abs(velocity), Math.sqrt(G.stiffness) * Math.abs(dist))
       aim.current = page
+      pending.current = then ?? null
       glog({ k: 'snap', src: opts.current.name, page, v: Math.round(velocity), from: Math.round(pos.get()) })
       const a = springTo(pos, page * w.current, velocity, () => {
         if (anim.current !== a) return
         aim.current = null
         anim.current = null
-        then?.()
+        flush()
         opts.current.onRest?.()
       })
       anim.current = a
@@ -224,6 +237,7 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
     // 拖动开始：打断正在进行的动画，从当前位置接着走；以动画正要去的那一页为基准（连续翻页不丢页）
     const begin = () => {
       stop()
+      flush()
       const from = pos.get()
       const page = aim.current ?? Math.round(from / w.current)
       aim.current = null
@@ -238,8 +252,9 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
       const lim = opts.current.limit?.()
       if (lim) {
         const [lo, hi] = [Math.min(lim[0], g.from), Math.max(lim[1], g.from)]
-        if (v < lo) v = lo - rub(lo - v, W)
-        else if (v > hi) v = hi + rub(v - hi, W)
+        // 两端没有邻件：越拖越沉，最多露出 200px 左右（妙控板一次滑动常常推一千多 px）
+        if (v < lo) v = lo - rub(lo - v, 200)
+        else if (v > hi) v = hi + rub(v - hi, 200)
       }
       pos.set(v)
       g.samples.push({ t: performance.now(), v })
@@ -262,9 +277,11 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
       land(page, vel)
     }
     // 返回 true 表示这次滚轮归翻页（竖向为主、又不在一段横滑里的不归）
-    const wheel = (dx: number, dy: number): boolean => {
+    // t：事件自己的时间戳（event.timeStamp）。主线程忙（例如刚切换、新页面在渲染）时事件会攒一会儿再一起派发，
+    // 用处理时刻判断停顿会把惯性尾巴误认成新的一次滑动（R-73 真机日志回放发现）
+    const wheel = (dx: number, dy: number, t?: number): boolean => {
       if (gesture.current && !gesture.current.wheel) return true // 触屏正在拖
-      const now = performance.now()
+      const now = t ?? performance.now()
       const act = seg.current.feed(dx, dy, now, w.current)
       if (act.t === 'pass') return false
       window.clearTimeout(idle.current)
@@ -303,7 +320,10 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
         if (running || Math.abs(pos.get() - settleTo * W) > 0.5) snapTo(settleTo, v)
       } else if (running && target !== null) snapTo(target + dx / W, v)
     }
-    pos.on('change', (v) => logOn && glog({ k: 'pos', src: opts.current.name, v: Math.round(v * 10) / 10 }))
+    pos.on('change', (v) => {
+      if (logOn) glog({ k: 'pos', src: opts.current.name, v: Math.round(v * 10) / 10 })
+      if (pending.current && aim.current !== null && Math.abs(v - aim.current * w.current) < 1.5) flush()
+    })
     ref.current = { pos, snapTo, go, begin, move, end, wheel, shift, dragging: () => !!gesture.current, stop }
   }
   return ref.current
@@ -476,7 +496,7 @@ export function Pager({ k, dir, prev, next, onNav, render }: { k: string; dir: n
       // 先走到邻件，走完才切换：切换前后屏幕上不动
       strip.snapTo(page, v, () => {
         glog({ k: 'nav', d })
-        if (navRef.current(d) === false) strip.snapTo(0)
+        if (navRef.current(d) === false && !strip.dragging()) strip.snapTo(0)
       })
     },
     onRest: () => setSt((s) => (s.leave && Math.abs(strip.pos.get()) < 1 ? { ...s, leave: null } : s)),
@@ -528,7 +548,7 @@ export function Pager({ k, dir, prev, next, onNav, render }: { k: string; dir: n
       if (now - last > G.wheelIdle && !strip.dragging()) owner = Math.abs(dx) > Math.abs(dy) && scrollsX(e.target, dx, root) ? 'scroll' : 'strip'
       last = now
       if (owner === 'scroll') return
-      if (strip.wheel(dx, dy)) e.preventDefault()
+      if (strip.wheel(dx, dy, e.timeStamp)) e.preventDefault()
     }
     root.addEventListener('wheel', onWheel, { passive: false })
     return () => root.removeEventListener('wheel', onWheel)

@@ -62,30 +62,31 @@ test('停顿超过 wheelIdle 后是新的一段；idle 判定还没判定的那�
   assert.equal(seg.feed(10, 0, 400, W).t, 'begin')
 })
 
-test('惯性还没停时，锁定期内的新力度不另起一段；锁定到期后的明显新力度才是新手势', () => {
+test('判定之后惯性一直不断：锁定到期后来的明显新力度是新的一次滑动', () => {
   const { seg, acts, end } = run(swipe())
   const doneAt = acts.findIndex((a) => a.t === 'release') * 16
-  // 尾巴一直不断（每 16ms 一个小值），锁定期内来一个大的也吞掉
   let t = end
-  while (t < doneAt + G.wheelLock - 20) {
-    assert.equal(seg.feed(1, 0, t, W).t, 'swallow')
-    t += 16
-  }
-  assert.equal(seg.feed(40, 0, t, W).t, 'swallow')
-  t += 16
   while (t < doneAt + G.wheelLock + 40) {
-    seg.feed(1, 0, t, W)
+    assert.equal(seg.feed(1, 0, t, W).t, 'swallow')
     t += 16
   }
   assert.equal(seg.feed(40, 0, t, W).t, 'begin')
 })
 
-test('手指阶段往回拖：跟着往回走，不算新手势', () => {
+test('手指阶段往回拖（先慢下来再反向）：跟着往回走，不算新手势', () => {
   const seg = new WheelSegment()
-  const seq = [10, 20, 30, 30, -20, -30, -30]
+  const seq = [10, 20, 30, 30, 26, 20, 14, 9, 5, 2, -1, -3, -6, -12, -20]
   const acts = seq.map((dx, i) => seg.feed(dx, 0, i * 16, W))
-  assert.deepEqual(acts.map((a) => a.t), ['begin', 'move', 'move', 'move', 'move', 'move', 'move'])
-  assert.equal((acts[6] as { offset: number }).offset, -10)
+  assert.deepEqual(acts.map((a) => a.t), ['begin', ...seq.slice(1).map(() => 'move')])
+  assert.equal((acts[acts.length - 1] as { offset: number }).offset, -seq.reduce((x, y) => x + y, 0))
+})
+
+test('惯性还在快速推进时突然反向：这一段就此判定，后面是新的一段', () => {
+  const seg = new WheelSegment()
+  const seq = [10, 20, 30, 30, 26, 22, -4, -6, -9]
+  const acts = seq.map((dx, i) => seg.feed(dx, 0, i * 8, W))
+  assert.equal(acts[6].t, 'release')
+  assert.equal(acts[7].t, 'begin')
 })
 
 test('走满一页立即判定', () => {

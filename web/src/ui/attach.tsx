@@ -486,7 +486,7 @@ type View = { s: number; x: number; y: number }
 // padRight / padBottom：右栏（手机上是底部列表）占掉的宽 / 高，图在剩下的地方居中。
 // 清晰度：静止时图片不挂 transform；放大停下后直接按放大后的宽高排版，让浏览器按原图高质量重采样，
 // 只有手势和动画进行中才用 transform 跟手（R-121）。
-type Nav = { i: number; n: number; go: (d: number) => void; begin: () => void; move: (dx: number) => void; end: () => void; wheel: (dx: number, dy: number) => boolean }
+type Nav = { i: number; n: number; go: (d: number) => void; begin: () => void; move: (dx: number) => void; end: () => void; wheel: (dx: number, dy: number, t?: number) => boolean }
 
 function Viewer({
   f,
@@ -608,7 +608,7 @@ function Viewer({
       const dx = e.deltaX * unit
       const dy = e.deltaY * unit
       if (e.ctrlKey) return track(zoomAt(cur.current.s * Math.exp(-dy * 0.01), p.x, p.y))
-      if (navRef.current?.wheel(dx, dy)) return
+      if (navRef.current?.wheel(dx, dy, e.timeStamp)) return
       if (Math.abs(dy) >= Math.abs(dx)) track(zoomAt(cur.current.s * Math.exp(-dy * 0.0025), p.x, p.y))
       else if (cur.current.s > 1) track({ ...cur.current, x: cur.current.x - dx }) // 单张图没法翻页：放大后左右滑平移
     }

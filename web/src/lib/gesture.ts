@@ -16,6 +16,7 @@ export const G = {
   wheelIdle: 140, // ms：妙控板事件停这么久 = 这一段手势结束
   wheelLock: 1200, // ms：一段手势判定之后，惯性尾巴最长按这么久吞掉
   wheelFresh: 24, // px：锁定到期后，力度到这么大才算新的一次滑动
+  wheelGap: 40, // ms：判定之后（惯性阶段）事件停顿这么久，下一下就是新的一次滑动（惯性事件是连续的，约 7～8ms 一个）
 } as const
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -45,9 +46,10 @@ export type WheelAct =
 // 只能从力度走势推断：
 // - 一段的开始：没有正在进行的一段（或上一段停了 G.wheelIdle 以上）时，横向为主的事件开一段；竖向为主的不接管。
 // - 手指阶段：每个事件的 deltaX 累加成位移，带子 1:1 跟着走（方向反过来就往回走，不算新手势）。
-// - 判定：力度连续回落、明显低于峰值（手指离开、进入惯性），或走满一页，就判定一次（release），之后这一段剩下的
-//   惯性事件全部吞掉——不再驱动位移，反向的小值也不会把带子拉回去，一段手势最多切换一次。
-// - 结束：事件停 G.wheelIdle（idle()），或判定后过了 G.wheelLock 又来了明显的新力度，才开新的一段。
+// - 判定：走满一页，或者惯性基本停了（力度连续降到峰值一成以下），或者事件停了 G.wheelIdle，就判定一次（release），
+//   之后这一段剩下的惯性事件全部吞掉——不再驱动位移，反向的小值也不会把带子拉回去，一段手势最多切换一次。
+// - 结束：事件停 G.wheelIdle（idle()）；判定之后，停顿 G.wheelGap、方向反过来、或衰减中又连续起势（用户在惯性没停时开始了
+//   下一次滑动），都算新的一段；兜底：判定后过了 G.wheelLock 又来了明显的新力度。
 export class WheelSegment {
   private active = false
   private done = false
@@ -56,23 +58,56 @@ export class WheelSegment {
   private acc = 0
   private peak = 0
   private prev = 0
+  private prev2 = 0
   private drops = 0
   private samples: { t: number; v: number }[] = []
+  private dir = 0 // 这一段现在的方向（deltaX 的符号）
+  private tailMin = 0 // 判定之后惯性尾巴里最小的力度
+  private tailPrev = 0
+  private rises = 0
+
+  // fresh：判定之后（惯性阶段）来的这一下是不是用户新的一次滑动。真机上用户常常在上一次惯性还没停时就开始下一次，
+  // 事件流中间没有停顿（R-73 真机日志）：手指一按上，惯性立刻停，力度骤降到 1～3 再重新起势；或者方向直接反过来。
+  private fresh(dx: number, t: number) {
+    const a = Math.abs(dx)
+    if (t - this.lastT > G.wheelGap) return true // 停了一下
+    if (a >= 3 && Math.sign(dx) === -this.dir) return true // 方向反过来（真机的惯性不会反向；1～2 的反向小抖动不算）
+    this.rises = a > this.tailPrev ? this.rises + 1 : a === this.tailPrev ? this.rises : 0 // 持平不算起势也不清零
+    this.tailPrev = a
+    if (a < this.tailMin) this.tailMin = a
+    return this.rises >= 3 && a >= this.tailMin + 3 // 衰减中又连续起势
+  }
 
   feed(dx: number, dy: number, t: number, W: number): WheelAct {
     const a = Math.abs(dx)
     if (this.active && t - this.lastT > G.wheelIdle) this.active = false // 停过了：上一段已经结束
     if (this.active && this.done && t - this.doneT > G.wheelLock && a >= G.wheelFresh) this.active = false // 锁定到期又起新力度
+    if (this.active && this.done && a > 0 && this.fresh(dx, t)) this.active = false
     if (this.active) {
       this.lastT = t
       if (this.done) return { t: 'swallow' }
+      // 还在快速滑动（惯性中）时方向突然反过来：是用户新的一次反向滑动，这一段就此判定，下一下开始新的一段。
+      // 手指自己往回拖（想取消）时会先慢下来再反向，不走这里，照常跟着往回走。
+      if (a >= 3 && Math.sign(dx) === -this.dir && this.prev >= 8) {
+        this.prev = 0
+        return this.release(t)
+      }
+      // 惯性被手指按停：力度在两下之内从 10 以上骤降到三成以下（惯性本身是平滑衰减的）——用户开始了下一次滑动，这一段就此判定
+      if (this.prev2 >= 10 && a <= this.prev2 * 0.3 && a <= this.prev * 0.6) {
+        this.prev2 = this.prev = a
+        return this.release(t)
+      }
       this.acc -= dx
       this.push(t)
-      if (a < this.prev) this.drops++
-      else if (a > this.prev * 1.05 + 0.5) this.drops = 0
+      // 判定时刻：走满一页；或者惯性基本停了（力度连续几下降到峰值的一成以下）。手指阶段的减速、离手前的回落都不判定——
+      // 真机上 Chrome 在离手后先有一段惯性起势（力度回升甚至一个尖峰）再衰减，在回落处判定会把起势误认成新的一次滑动，
+      // 一次滑动切两件（R-73 真机日志）。惯性推动带子是跟手的一部分（方向不变，不会往回拉）。
       if (a > this.peak) this.peak = a
+      this.drops = this.peak >= 6 && a <= Math.max(2, this.peak * 0.1) && Math.sign(dx) !== -this.dir ? this.drops + 1 : 0
+      this.prev2 = this.prev
       this.prev = a
-      if (Math.abs(this.acc) >= W - 1 || (this.drops >= 4 && a < this.peak * 0.6)) return this.release(t)
+      if (dx) this.dir = Math.sign(dx) // 现在往哪边走（手指慢慢往回拖时跟着变）
+      if (Math.abs(this.acc) >= W - 1 || this.drops >= 3) return this.release(t)
       return { t: 'move', offset: this.acc }
     }
     if (a <= Math.abs(dy) || a === 0) return { t: 'pass' }
@@ -81,17 +116,18 @@ export class WheelSegment {
     this.lastT = t
     this.acc = -dx
     this.peak = this.prev = a
+    this.prev2 = 0
     this.drops = 0
+    this.dir = Math.sign(dx)
     this.samples = []
     this.push(t)
     return { t: 'begin', offset: this.acc }
   }
 
   // idle：事件停了 G.wheelIdle（由调用方的计时器调用）。还没判定的这一段在这里判定。
+  // 只判定、不结束这一段：主线程忙时计时器可能比攒着的事件先到，这一段算不算结束只看事件自己的时间戳（feed 里）。
   idle(t: number): WheelAct | null {
-    if (!this.active) return null
-    this.active = false
-    if (this.done) return null
+    if (!this.active || this.done) return null
     return this.release(t)
   }
 
@@ -112,6 +148,8 @@ export class WheelSegment {
   private release(t: number): WheelAct {
     this.done = true
     this.doneT = t
+    this.tailMin = this.tailPrev = this.prev
+    this.rises = 0
     const [a, b] = [this.samples[0], this.samples[this.samples.length - 1]]
     const velocity = b && a && b.t > a.t ? ((b.v - a.v) / (b.t - a.t)) * 1000 : 0
     return { t: 'release', offset: this.acc, velocity }
