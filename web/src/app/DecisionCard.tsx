@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ArrowRightLeft, Keyboard, PenLine, RotateCcw, Sparkles, Timer, X } from 'lucide-react'
+import { ArrowRightLeft, Keyboard, PenLine, RotateCcw, Sparkles, Timer } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
@@ -13,7 +13,8 @@ import { fileUrl, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
-import { composeAnswer, decKey, emptyDraft, useOutbox } from './outbox'
+import { composeAnswer, decDraftKey, decKey, emptyDraft, useOutbox, type Draft } from './outbox'
+import { DraftLine, useDraft } from './draft'
 import { currentPicks, picksText, PlanSummary, Points } from './points'
 import { useOpenReq, useOpenSession } from './nav'
 import { targetItems } from './assign'
@@ -108,7 +109,9 @@ function RequestNote({ d, now }: { d: Decision; now: number }) {
 
 export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedded?: boolean; drawer?: boolean }) {
   const now = useNow()
-  const { drafts, setDraft, send } = useOutbox()
+  const { send } = useOutbox()
+  const dr = useDraft<Draft>(decDraftKey(d.code), emptyDraft)
+  const setDraft = (_: string, patch: Partial<Draft>) => dr.set(patch)
   const { closeDecision } = useActions()
   const confirm = useConfirm()
   const closeIt = async () => {
@@ -116,7 +119,7 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
       if (await closeDecision(d.code)) toast(t.decision.closed)
     }
   }
-  const draft = drafts[d.code] ?? emptyDraft
+  const draft = dr.value
   const options = useMemo(() => d.options ?? [], [d.options])
   const rec = d.recommendation?.trim() ?? ''
   const ri = useMemo(() => recIndex(options, rec), [options, rec])
@@ -338,6 +341,7 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
             onFiles={(f) => setDraft(d.code, { files: f })}
             incoming={incoming}
             onIncoming={() => setIncoming([])}
+            draft={<DraftLine h={dr} />}
             placeholder={free ? t.decision.freePlaceholder : undefined}
             minRows={free ? 3 : 1}
             canPass={approval && !multi ? true : !!answer}
@@ -345,13 +349,6 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
             onBack={approval ? back : undefined}
             extra={
               <div className={cx('flex items-center gap-1', !free && 'w-full sm:w-auto')}>
-                {(draft.choice != null || draft.note || !!draft.files?.length || !!draft.picks || !!draft.reason) && (
-                  <Tip content={t.decision.clearDrafts}>
-                    <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [], picks: undefined, reason: undefined })}>
-                      <X className="size-3.5" />
-                    </Button>
-                  </Tip>
-                )}
                 <Button size="sm" variant="ghost" className="text-fg-3 hover:text-danger" onClick={closeIt}>
                   {t.decision.closeIt}
                 </Button>

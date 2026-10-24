@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { CornerDownLeft, MessageCircleQuestionMark } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Session } from '../api/client'
@@ -9,6 +8,7 @@ import { Md } from '../ui/markdown'
 import { displayState } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { useOpenSession } from './nav'
+import { DraftLine, useDraft } from './draft'
 
 // 「在等你回复」（R-117）：会话最后的回复在问你，却没有提正式决策。Hub 判断后把最后一段存为 reply_ask；
 // 只在它停下来等你（一轮结束 / 挂着 ks wait）时算数，你回复或在终端里发了消息后清空。
@@ -24,16 +24,18 @@ export function ReplyBox({ s }: { s: Session }) {
   const open = useOpenSession()
   const [busy, wrap] = useBusy()
   const uploading = useUploading()
-  const [text, setText] = useState('')
-  const [files, setFiles] = useState<FileRef[]>([])
-  const dirty = !!text.trim() || files.length > 0
+  // 草稿（R-202）：reply:会话键
+  const dr = useDraft<{ text: string; files: FileRef[] }>(`reply:${s.key}`, { text: '', files: [] })
+  const { text, files } = dr.value
+  const setText = (v: string) => dr.set({ text: v })
+  const setFiles = (v: FileRef[]) => dr.set({ files: v })
+  const dirty = dr.dirty
   const parked = displayState(s) === 'parked'
   const send = () =>
     wrap(async () => {
       if (await replySession(s.key, text, files.map((f) => f.id))) {
         toast.success(t.desk.replySent(parked))
-        setText('')
-        setFiles([])
+        dr.drop()
       }
     })
   return (
@@ -60,6 +62,7 @@ export function ReplyBox({ s }: { s: Session }) {
         <AttachZone value={files} onChange={setFiles} compact>
           <Textarea minRows={1} value={text} placeholder={t.desk.replyPlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
         </AttachZone>
+        <DraftLine h={dr} />
         <div className="mt-2 flex items-center gap-2">
           <span className="min-w-0 flex-1 text-xs text-fg-3">{parked ? t.desk.replyParked : t.desk.replyIdle}</span>
           <Button variant="primary" disabled={!dirty || uploading} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>

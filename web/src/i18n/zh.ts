@@ -29,6 +29,14 @@ const VERB: Record<Scene, { pass: string; back: string }> = {
 const ACC = VERB.accept
 
 export const zh = {
+  // 输入草稿（R-202）：回来时直接恢复，旁边一行小字；有草稿的条目标「草稿」
+  draft: {
+    restored: '已恢复上次没写完的内容',
+    clear: '清空',
+    revert: '恢复原文',
+    mark: '草稿',
+    subject: '草稿',
+  },
   // 判断动作（R-161 / R-176）：Verdict 组件、撤销条、退回 / 拒绝意见框都只从这里取词，按场景（Scene）取
   verdict: {
     pass: (s: Scene) => VERB[s].pass,

@@ -518,6 +518,7 @@ export type VerdictProps = {
   stack?: boolean
   extra?: ReactNode // stack 时按钮行左侧的内容（提示、交给审查员等）
   hideNote?: boolean // 不要附言框（例如自由回答的决策，答复框在上面）
+  draft?: ReactNode // 附言框下面那行草稿小字（「已恢复上次没写完的内容 · 清空」，R-202）
   noteRef?: RefObject<HTMLTextAreaElement | null>
   pendingKey?: string // 这件事在撤销期时，整行换成撤销条
   className?: string
@@ -592,7 +593,10 @@ export function Verdict(p: VerdictProps) {
   if (p.stack)
     return (
       <div className={cx('space-y-2.5', p.className)}>
-        {box}
+        <div>
+          {box}
+          {p.draft}
+        </div>
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">{p.extra}</div>
           {buttons}
@@ -604,6 +608,7 @@ export function Verdict(p: VerdictProps) {
       {p.extra}
       {box}
       {buttons}
+      {p.draft && <div className="-mt-1.5 basis-full empty:hidden">{p.draft}</div>}
     </div>
   )
 }

@@ -21,6 +21,7 @@ import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark
 import { nextView, useKsEvent } from '../app/command'
 import { Flights } from '../app/flight'
 import { PendingCover, usePendingMap } from '../app/verdict'
+import { DraftMark } from '../app/draft'
 import { shownStatus } from '../lib/pending'
 import {
   catColor,
@@ -84,6 +85,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
             <RefChip code={r.code} status={r.status} link={false} />
           </span>
           <span className="min-w-0 flex-1 truncate text-sm text-fg">{r.title}</span>
+          <DraftMark owners={[r.code]} />
           <PlanBadge r={r} className="max-sm:hidden" />
           <DesignBadge r={r} className="max-sm:hidden" />
           <ReleaseBadge r={r} className="max-sm:hidden" />

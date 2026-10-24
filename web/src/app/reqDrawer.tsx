@@ -28,6 +28,7 @@ import { OwnLine, useOwnership } from './ownership'
 import { useKsEvent } from './command'
 import { PendingBar, Seal, useAdvance, usePending, usePendingMap, useReqVerdict, Verdict } from './verdict'
 import { plainText } from '../ui/markdown'
+import { DraftLine, draftExists, useDraft } from './draft'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 
 // 需求抽屉：从上到下是“需求是什么”（固定）→ 来回的记录（滚动，最新在下）→ 轮到你做的事（固定在底部）。
@@ -142,9 +143,10 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
   const sessions = useSessions()
   const { updateReq, linkReq } = useActions()
   const openSession = useOpenSession()
-  // 每次打开需求都先收起说明，只显示两行摘要（R-76）；不再记住上次展开过
-  const [open, setOpen] = useState(false)
-  useEffect(() => setOpen(false), [r.id])
+  // 每次打开需求都先收起说明，只显示两行摘要（R-76）；不再记住上次展开过。描述 / 验收标准有没保存的草稿时展开（R-202）
+  const editing = () => draftExists(`edit:${r.code}:detail`) || draftExists(`edit:${r.code}:acceptance`)
+  const [open, setOpen] = useState(editing)
+  useEffect(() => setOpen(editing()), [r.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const save = (patch: Partial<ReqFields>) => void updateReq(r.code, toFields(r, patch))
   const sessByKey = new Map((sessions.data?.sessions ?? []).map((s) => [s.key, s]))
   const linkable = (sessions.data?.sessions ?? []).filter((s) => !r.sessions.includes(s.key) && s.state !== 'ended')
@@ -153,7 +155,7 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
 
   return (
     <header className="shrink-0 border-b border-line px-4 pt-1 pb-3 sm:px-5">
-      <EditableText wrap value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} className="-mx-3 h-auto py-1 font-display text-lg leading-snug" />
+      <EditableText wrap draftKey={`edit:${r.code}:title`} value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} className="-mx-3 h-auto py-1 font-display text-lg leading-snug" />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusMenu r={r} size="md" />
         <PlanBadge r={r} className="px-2.5 py-1 text-sm" />
@@ -205,12 +207,12 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
           <section>
             <h3 className="mb-0.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
             <AttachZone value={r.files ?? []} onChange={(files) => save({ files: files.map((f) => f.id) })} compact>
-              <EditableMd value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3 pr-10" />
+              <EditableMd draftKey={`edit:${r.code}:detail`} value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3 pr-10" />
             </AttachZone>
           </section>
           <section>
             <h3 className="mb-0.5 text-xs font-medium text-fg-3">{t.reqs.acceptance}</h3>
-            <EditableMd value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
+            <EditableMd draftKey={`edit:${r.code}:acceptance`} value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
           </section>
           <section>
             <div className="mb-1 flex items-center justify-between">
@@ -284,16 +286,16 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
   const own = useOwnership()(r)
   const [busy, wrap] = useBusy()
   const uploading = useUploading()
-  const [text, setText] = useState('')
-  const [files, setFiles] = useState<FileRef[]>([])
+  // 草稿（R-202）：验收附言 / 退回意见 / 留言都存在 req:R-12，翻到下一件、关抽屉、刷新后回来还在；提交成功才清
+  const dr = useDraft<{ text: string; files: FileRef[] }>(`req:${r.code}`, { text: '', files: [] })
+  const { text, files } = dr.value
+  const setText = (v: string) => dr.set({ text: v })
+  const setFiles = (v: FileRef[]) => dr.set({ files: v })
   const reviewing = r.status === 'review'
-  const dirty = !!text.trim() || files.length > 0
+  const dirty = dr.dirty
   const box = useRef<HTMLTextAreaElement>(null)
   const pend = usePending(r.code)
-  const clear = () => {
-    setText('')
-    setFiles([])
-  }
+  const clear = dr.drop
   const send = () =>
     wrap(async () => {
       if (await note(r.code, text, files.map((f) => f.id))) {
@@ -345,6 +347,7 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
         onFiles={setFiles}
         incoming={incoming}
         onIncoming={onIncoming}
+        draft={<DraftLine h={dr} />}
         onPass={pass}
         onBack={back}
         size="md"
@@ -368,6 +371,7 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
       <AttachZone value={files} onChange={setFiles} compact incoming={incoming} onIncoming={onIncoming}>
         <Textarea ref={box} minRows={1} value={text} placeholder={t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
       </AttachZone>
+      <DraftLine h={dr} />
       <div className="mt-2.5 flex items-center gap-2">
         <div className="min-w-0 flex-1">{hint}</div>
         {reviewer}
