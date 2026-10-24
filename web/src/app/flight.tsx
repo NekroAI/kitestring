@@ -1,6 +1,6 @@
 import { Component, type ReactNode } from 'react'
 import { moves } from '../lib/pending'
-import { reducedMotion } from './verdict'
+import { hydrateUndo, reducedMotion } from './verdict'
 
 // 需求池换列动画（R-200）：需求从原列滑到新列，看得出从哪到哪。
 // 同一套动画用在三处（R-201 / D-422）：用户拖拽 / 改状态后立刻进新列、撤回或提交失败时回到原列、Agent 改状态后页面实时刷新。
@@ -66,6 +66,14 @@ function fly(code: string, from: { rect: DOMRect; clone: HTMLElement } | undefin
   })
   clone.removeAttribute('data-tile')
   clone.setAttribute('aria-hidden', 'true')
+  // 落地卡上已经盖着撤销遮罩（R-218）：飞行块也带上同一层，圆环从同一个起点接着走，落地时不跳
+  const cover = el.querySelector<HTMLElement>('[data-cover]')
+  if (cover) {
+    const c = cover.cloneNode(true) as HTMLElement
+    c.style.opacity = '1'
+    clone.appendChild(c)
+    hydrateUndo(c)
+  }
   document.body.appendChild(clone)
   el.style.visibility = 'hidden'
   const a = clone.animate(
@@ -97,7 +105,7 @@ export class Flights extends Component<Props> {
       const rect = el.getBoundingClientRect()
       if (!onScreen(el, rect)) continue
       const clone = el.cloneNode(true) as HTMLElement
-      clone.querySelectorAll('[data-cover]').forEach((x) => x.remove()) // 撤销条遮罩不跟着飞
+      clone.querySelectorAll('[data-cover]').forEach((x) => x.remove()) // 旧位置的遮罩不要（飞行时换成落地卡上的那一层）
       snap.set(m.code, { rect, clone })
     }
     return snap

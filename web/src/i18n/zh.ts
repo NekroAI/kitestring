@@ -46,7 +46,7 @@ export const zh = {
     noteOptional: '附言（可选，可贴图）',
     needNote: (s: Scene) => (s === 'accept' || s === 'plan' ? `${VERB[s].back}要写下意见：哪里要改` : `${VERB[s].back}要写下理由`),
     // 撤销条：「3 秒后通过」「R-12 · 3 秒后退回」「D-8 · 3 秒后拒绝」「R-12 · 3 秒后改为进行中」
-    pending: (act: string, s: number) => `${s} 秒后${act}`,
+    pending: (act: string, s: number | string) => `${s} 秒后${act}`,
     move: (status: string) => `改为${status}`,
     many: (n: number) => `${n} 项`,
     // 顶部浮动条（R-201）：批量只出一条「n 项 · 3 秒后通过 · 全部撤回」；连续审批只显示最近一件，旁边「还有 n 件在等生效」

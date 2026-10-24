@@ -393,10 +393,12 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
   )
   const reviewer = r.status !== 'shelved' && <ReviewerButton code={r.code} projectId={r.project_id} projectName={r.project_name} />
   if (reviewing)
-    return pend ? (
+    // 撤销期里判断栏照原样留着，上面盖遮罩（R-218）；盖印后换成「已通过」
+    return pend && pend.phase !== 'wait' ? (
       <PendingBar k={r.code} />
     ) : (
       <Verdict
+        pendingKey={r.code}
         scene="accept"
         stack
         noteRef={box}

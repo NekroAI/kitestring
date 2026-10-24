@@ -76,8 +76,8 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
     <div className={cx('rounded-xl transition-colors', expanded ? 'bg-surface shadow-card ring-1 ring-line' : 'hover:bg-hover/60')}>
       <Ctx items={menu(r)} className="rounded-xl">
         <div role="button" tabIndex={0} data-nav-item="" onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5">
-          {/* 撤销期（R-201）：这一行已显示新状态，右半边盖同一个撤销条 */}
-          <PendingCover k={r.code} className="left-auto w-[min(320px,60%)] bg-transparent" />
+          {/* 撤销期（R-201 / R-218）：这一行已显示新状态，整行盖同一层撤销遮罩 */}
+          <PendingCover k={r.code} />
           <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', expanded && 'rotate-90')} />
           <span onClick={(e) => e.stopPropagation()}>
             <StatusMenu r={r} />

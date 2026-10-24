@@ -137,7 +137,8 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
     : !!rec && !approval && ((typeof draft.choice === 'number' && ri >= 0 && draft.choice !== ri) || (draft.choice === 'other' && options.length > 0))
   const reason = deviates ? (draft.reason ?? '').trim() : ''
   // 撤销期 / 盖印中（R-201：和需求验收同一个调度器，键是 dec:D-8）
-  const sendingAt = !!usePending(decKey(d.code))
+  const pendE = usePending(decKey(d.code))
+  const sendingAt = !!pendE
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const free = !multi && (options.length === 0 || draft.choice === 'other')
   const title = d.short_title || d.question
@@ -326,10 +327,11 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
           />
         )}
 
-        {sendingAt ? (
+        {pendE && pendE.phase !== 'wait' ? (
           <PendingBar k={decKey(d.code)} />
         ) : (
           <Verdict
+            pendingKey={decKey(d.code)}
             mode={approval ? 'verdict' : 'answer'}
             scene={scene}
             stack={free || drawer}
