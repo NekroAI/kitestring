@@ -193,9 +193,9 @@ function Board({ width, pool, items, shelved, active, onAll, onConfirmEach }: Bo
           <span className="text-[13px] font-semibold text-fg">{t.pool.flowing}</span>
           <span className="text-xs text-fg-3 tabular">{flowing}</span>
         </div>
-        <div className="grid min-h-0 grid-cols-4 grid-rows-[minmax(0,1fr)] items-start gap-3">
+        <div className="grid min-h-0 grid-cols-4 grid-rows-[minmax(0,1fr)] gap-3">
           {flowStatuses.map((s) => (
-            <NarrowCol key={s} status={s} items={by(s)} />
+            <NarrowCol key={s} status={s} items={by(s)} fill />
           ))}
         </div>
       </section>

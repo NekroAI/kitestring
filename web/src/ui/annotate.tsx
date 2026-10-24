@@ -10,6 +10,10 @@ import { Button, Tip } from './base'
 // 手写笔：按压力度决定笔画粗细；一旦用过笔，手指触摸不再落笔（防手掌误触）。鼠标、触控板、手指同样可用。
 // 手指不画（防误触，R-174）：开着时手指触摸一律不落笔（也不放文字框），只有手写笔和鼠标能画。
 // 工具栏开关与设置页「圈画标注 · 手指不画」是同一个本机偏好（按设备记住）。
+// 手写笔连续书写（R-180）：WebKit 只看 touch 事件决定要不要做系统手势——React 的 touchstart / touchmove 是 passive 监听，
+// 指针事件上 preventDefault 也拦不住，于是笔快速连点被当成双击（选中、放大），笔迹还会被随手写（Scribble）拿去识别成文字、弹出建议。
+// 所以画布区域用原生非 passive 的 touchstart / touchmove 一律 preventDefault（文字框除外），并整块 touch-action: none；
+// 笔放下的文字框不自动聚焦（不弹键盘、不进随手写），再点一下文字框才输入。
 // 所有坐标按图片宽高归一化保存，导出时按原图分辨率重绘，放大后线条依然清楚。
 
 type Pt = { x: number; y: number; p: number }
@@ -138,7 +142,7 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
   const [redo, setRedo] = useState<Shape[]>([])
   const [tool, setTool] = useState<Tool>('pen')
   const [color, setColor] = useState(COLORS[0])
-  const [typing, setTyping] = useState<{ at: Pt; text: string } | null>(null)
+  const [typing, setTyping] = useState<{ at: Pt; text: string; pen?: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const live = useRef<Shape | null>(null)
   const penSeen = useRef(false)
@@ -155,6 +159,25 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
     im.src = src
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src])
+
+  // 画布区域吃掉 touch 的默认行为（双击选中 / 放大、随手写、长按放大镜），指针事件照常派发
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const block = (e: TouchEvent) => {
+      if ((e.target as HTMLElement).closest?.('textarea')) return
+      if (e.cancelable) e.preventDefault()
+    }
+    const opts = { passive: false } as const
+    el.addEventListener('touchstart', block, opts)
+    el.addEventListener('touchmove', block, opts)
+    el.addEventListener('touchend', block, opts)
+    return () => {
+      el.removeEventListener('touchstart', block)
+      el.removeEventListener('touchmove', block)
+      el.removeEventListener('touchend', block)
+    }
+  }, [])
 
   const fit = useCallback(() => {
     const im = img.current
@@ -224,14 +247,23 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
       trackDown(e)
       if (fingers.current.size > 1) return // 多指不落笔
     }
-    if (e.pointerType === 'pen') penSeen.current = true
+    if (e.pointerType === 'pen') {
+      penSeen.current = true
+      e.preventDefault() // 不派生 mouse 兼容事件，不挪焦点
+    }
     if ((penOnly || penSeen.current) && e.pointerType === 'touch') return // 只认手写笔 / 用过笔后：忽略手掌 / 手指
-    if (active.current !== null || typing) return
+    if (typing) {
+      // 文字框外落笔 = 写完这段文字（笔不挪焦点，不会触发文字框失焦）
+      if (document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur()
+      else commitText()
+      return
+    }
+    if (active.current !== null) return
     e.currentTarget.setPointerCapture(e.pointerId)
     active.current = e.pointerId
     const p = pos(e)
     if (tool === 'text') {
-      setTyping({ at: p, text: '' })
+      setTyping({ at: p, text: '', pen: e.pointerType === 'pen' })
       active.current = null
       return
     }
@@ -359,7 +391,7 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
           {t.annotate.done}
         </Button>
       </div>
-      <div ref={wrap} className="relative flex min-h-0 flex-1 items-center justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div ref={wrap} className="relative flex min-h-0 flex-1 touch-none items-center justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {size && (
           <div className="relative overflow-hidden rounded-lg shadow-pop" style={{ width: size.w, height: size.h }}>
             <img src={src} alt={name} draggable={false} className="pointer-events-none absolute inset-0 size-full select-none" />
@@ -369,13 +401,14 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
               onPointerMove={move}
               onPointerUp={up}
               onPointerCancel={up}
+              onDoubleClick={(e) => e.preventDefault()}
               className={cx('absolute inset-0 size-full touch-none', tool === 'text' ? 'cursor-text' : 'cursor-crosshair')}
             />
             {typing && (
               <textarea
-                autoFocus
+                autoFocus={!typing.pen}
                 value={typing.text}
-                placeholder={t.annotate.textPlaceholder}
+                placeholder={typing.pen ? t.annotate.textTapToType : t.annotate.textPlaceholder}
                 onChange={(e) => setTyping({ ...typing, text: e.target.value })}
                 onBlur={commitText}
                 onKeyDown={(e) => {

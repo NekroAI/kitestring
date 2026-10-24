@@ -449,16 +449,17 @@ function ColHead({ status, n, extra, right }: { status: string; n: number; extra
   )
 }
 
-function EmptyHint({ status, over }: { status: string; over: boolean }) {
-  return <div className="rounded-xl border border-dashed border-line-strong/70 px-2 py-4 text-center text-xs text-fg-3">{over ? t.reqs.dropHere : t.pool.emptyCol(t.reqStatus[status])}</div>
+function EmptyHint({ status, over, fill }: { status: string; over: boolean; fill?: boolean }) {
+  return <div className={cx('rounded-xl border border-dashed border-line-strong/70 px-2 py-4 text-center text-xs text-fg-3', fill && 'flex flex-1 items-center justify-center')}>{over ? t.reqs.dropHere : t.pool.emptyCol(t.reqStatus[status])}</div>
 }
 
 // NarrowCol：待开始 / 进行中 / 阻塞 / 待验收这样的窄列；空列只占一个提示块高度。
 // 内容多时列头（标题和计数）固定在顶部，列内滚动，全部显示、不再截断。
-export function NarrowCol({ status, items, className, width }: { status: string; items: Requirement[]; className?: string; width?: number }) {
+// fill：在「在流转」一行里与同行最高的列等高（R-180），空列的提示框铺满列高。
+export function NarrowCol({ status, items, className, width, fill }: { status: string; items: Requirement[]; className?: string; width?: number; fill?: boolean }) {
   const { over, props } = useDrop(status)
   return (
-    <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col self-start p-2', width && 'shrink-0', zone(over), className)}>
+    <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col p-2', fill ? 'self-stretch' : 'self-start', width && 'shrink-0', zone(over), className)}>
       <ColHead status={status} n={items.length} />
       {items.length ? (
         <div className={cx('flex min-h-0 flex-col gap-2', scrollBody)}>
@@ -467,7 +468,7 @@ export function NarrowCol({ status, items, className, width }: { status: string;
           ))}
         </div>
       ) : (
-        <EmptyHint status={status} over={over} />
+        <EmptyHint status={status} over={over} fill={fill} />
       )}
     </section>
   )
