@@ -226,12 +226,11 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
     </div>
   )
 
-  const wide = cur?.kind === 'review' && !finished ? 'xl' : true
   return (
     <Panel
       open={!!askKey}
       onClose={onClose}
-      wide={wide}
+      wide="approval"
       bare
       title={cur ? `${t.ask.kind[cur.kind]} ${cur.title}` : t.ask.queue}
       onSwipe={(d) => {

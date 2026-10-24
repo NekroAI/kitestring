@@ -545,7 +545,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
     <Panel
       open={!!refId}
       onClose={onClose}
-      wide={cur?.status === 'review' ? 'xl' : true}
+      wide="approval"
       bare
       title={cur ? `${cur.code} ${cur.title}` : t.reqs.title}
       onSwipe={(d) => {
