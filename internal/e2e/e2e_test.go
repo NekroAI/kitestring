@@ -441,18 +441,6 @@ func TestAttachmentsAndReviewFeedback(t *testing.T) {
 	prompt("p0")
 	c := client.New(5 * time.Second)
 
-	// 非图片被拒绝
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	part, _ := mw.CreateFormFile("file", "a.txt")
-	part.Write([]byte("hello"))
-	mw.Close()
-	req, _ := http.NewRequest("POST", e.srv.URL+"/api/files", &buf)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	if resp, _ := e.web.Do(req); resp.StatusCode != http.StatusUnsupportedMediaType {
-		t.Fatalf("非图片应被拒绝，得到 %d", resp.StatusCode)
-	}
-
 	// 决策答复附图 → 注入里给出已下载的本地路径
 	img := e.upload(t, "设计稿.png", tinyPNG)
 	if err := c.Do(context.Background(), "POST", "/agent/decisions", map[string]any{"question": "按钮用哪个样式？", "session_key": "claude:f-1"}, nil); err != nil {

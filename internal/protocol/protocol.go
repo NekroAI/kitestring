@@ -119,7 +119,7 @@ type Decision struct {
 	Kind       string    `json:"kind,omitempty"`      // decision | feedback | note | assign | plan
 	ReqCode    string    `json:"req_code,omitempty"`  // 关联需求编号；kind=plan 时是计划编号（P-n）
 	ReqTitle   string    `json:"req_title,omitempty"`
-	Files      []File    `json:"files,omitempty"`     // 答复 / 意见附图
+	Files      []File    `json:"files,omitempty"`     // 答复 / 意见的附件（图片、录屏或任意文件）
 	Quiet      bool      `json:"quiet,omitempty"`     // 不唤醒 ks wait（R-198）：照旧注入，下一轮开始或因别的消息唤醒时一并带上
 	Replyable  bool      `json:"replyable,omitempty"` // 会话发来的团队消息（R-191）：送达时写上怎么回复，回复自动送回发消息的一方
 }
@@ -259,3 +259,21 @@ type HookResponse struct {
 	// Block 非空时 hook 拦下这次结束（Stop），并把它作为理由交给 Agent 继续处理（R-83）
 	Block string `json:"block,omitempty"`
 }
+
+// 附件类型（R-221）：只有这几种图片、录屏在页面里直接显示；其它文件（包括 SVG、HTML）一律按下载返回，不在页面里打开。
+var inlineMime = map[string]string{
+	"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+	"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+}
+
+// InlineMime：可以在页面里直接显示的图片或录屏。
+func InlineMime(mime string) bool { _, ok := inlineMime[mime]; return ok }
+
+// IsImage：能直接显示的图片（不含 SVG）。
+func IsImage(mime string) bool { return InlineMime(mime) && len(mime) > 6 && mime[:6] == "image/" }
+
+// IsVideo：能直接播放的录屏。
+func IsVideo(mime string) bool { return InlineMime(mime) && len(mime) > 6 && mime[:6] == "video/" }
+
+// MediaExt 是图片 / 录屏的扩展名；其它类型返回空。
+func MediaExt(mime string) string { return inlineMime[mime] }

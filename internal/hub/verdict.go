@@ -27,7 +27,7 @@ func returnedText(what, note string) string {
 	if note = strings.TrimSpace(note); note != "" {
 		return "用户退回了" + what + "，要求修改：" + note
 	}
-	return "用户退回了" + what + "，要求修改（意见见附图）"
+	return "用户退回了" + what + "，要求修改（意见见附件）"
 }
 
 // timeoutRejectText：限时审批到点没人作答，按规则视为拒绝（R-169 的限时审批用它）。

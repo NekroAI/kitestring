@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { AnimatePresence, motion, useMotionValueEvent, useTransform } from 'motion/react'
 import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
-import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, File as FileIcon, FileArchive, FileAudio, FileCode, FileImage, FileJson, FileSpreadsheet, FileText, FileVideo, Loader2, Maximize2, Paperclip, PenLine, Play, X, type LucideIcon } from 'lucide-react'
 import { Annotator, shield, useAnnotateTarget } from './annotate'
 import { BoxLayer, shotTitle, type Box } from './shots'
 import { boxLabel, focusView, type Cite } from '../lib/proofs'
@@ -12,13 +12,17 @@ import { cx } from '../lib/util'
 import { Button, Tip } from './base'
 import { G, tracker, useStrip } from './gesture'
 import { useSettings } from '../api/queries'
+import { fmtSize, isImage, isMedia, isText, isVideo, kindOf, limitFor, previewText, PREVIEW_BYTES, typeLabel, viewable, type FileKind } from '../lib/files'
 
-// 附件：任何可以写字的地方都可以贴图（粘贴、拖拽、选择文件），也可以附 MP4 / WebM 录屏。
+// 附件：任何可以写字的地方都可以附任意文件（粘贴、拖拽、选择文件，R-221）。
+// 图片、录屏显示缩略图并进统一看图；其它文件显示为文件块（图标、文件名、大小），文本类在看图里直接看内容，其余点了下载。
 
 // title / boxes：证据截图的一句话标题与改动框（R-183），只有证据的附图有
 export type FileRef = { id: string; name: string; mime: string; size: number; title?: string | null; boxes?: Box[] | null }
 
 export const fileUrl = (id: string) => `/api/files/${encodeURIComponent(id)}`
+export const downloadUrl = (id: string) => `${fileUrl(id)}?download=1`
+export { isVideo }
 
 // 正在上传的附件数：没传完时不让发送（否则发出去的留言里没有这个附件）。
 let uploading = 0
@@ -44,7 +48,7 @@ function uploadOne(file: File, onProgress: (p: number) => void, onXhr: (x: XMLHt
   return new Promise((resolve, reject) => {
     let sent = 0
     const fd = new FormData()
-    fd.append('file', file, file.name || 'image.png')
+    fd.append('file', file, file.name || (isMedia(file.type) ? 'image.png' : 'file'))
     const xhr = new XMLHttpRequest()
     let timer = 0
     const arm = () => {
@@ -86,35 +90,31 @@ function uploadOne(file: File, onProgress: (p: number) => void, onXhr: (x: XMLHt
   })
 }
 
-const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime'
-export const isVideo = (mime: string) => mime.startsWith('video/')
-// iPhone 录屏是 .mov（video/quicktime）
-const accepted = (f: File) => f.type.startsWith('image/') || f.type === 'video/mp4' || f.type === 'video/webm' || f.type === 'video/quicktime'
 
 // useAttach：管理一组附图的上传状态。
 export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
   const limits = useSettings().data // 上限在设置里调（R-72）；没拿到时交给 Hub 检查
-  const [pending, setPending] = useState<{ key: string; url: string; video: boolean; progress: number }[]>([])
+  const [pending, setPending] = useState<{ key: string; url: string; kind: 'image' | 'video' | 'file'; name: string; progress: number }[]>([])
   const xhrs = useRef(new Map<string, XMLHttpRequest>())
   const latest = useRef(value)
   latest.current = value
 
   const add = useCallback(
     async (files: File[]) => {
-      const list = files.filter(accepted)
+      const list = files
       if (!list.length) return
       // 本次已传完的图：每传完一张都和最新的列表合并。父组件可能还没刷新（例如需求描述要等保存回来），
       // 只用 latest 会让后一张把前一张盖掉——一次选多张只剩一张（R-24）
       const added: FileRef[] = []
       for (const f of list) {
-        const mb = limits && (isVideo(f.type) ? limits.upload_video_mb : limits.upload_image_mb)
+        const { kind, mb } = limitFor(f.type, limits)
         if (mb && f.size > mb * 1024 * 1024) {
-          toast.error(isVideo(f.type) ? t.attach.videoTooLarge(mb) : t.attach.tooLarge(mb))
+          toast.error(kind === 'video' ? t.attach.videoTooLarge(mb) : kind === 'image' ? t.attach.tooLarge(mb) : t.attach.fileTooLarge(f.name, mb))
           continue
         }
         const key = `${f.name}-${f.size}-${Math.random()}`
-        const url = URL.createObjectURL(f)
-        setPending((p) => [...p, { key, url, video: isVideo(f.type), progress: 0 }])
+        const url = kind === 'file' ? '' : URL.createObjectURL(f)
+        setPending((p) => [...p, { key, url, kind: kind as 'image' | 'video' | 'file', name: f.name || t.attach.file, progress: 0 }])
         setUploading(1)
         try {
           added.push(
@@ -134,7 +134,7 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
           xhrs.current.delete(key)
           setUploading(-1)
           setPending((p) => p.filter((x) => x.key !== key))
-          URL.revokeObjectURL(url)
+          if (url) URL.revokeObjectURL(url)
         }
       }
     },
@@ -144,7 +144,7 @@ export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
   const onPaste = useCallback(
     (e: ClipboardEvent) => {
       const files = [...e.clipboardData.files]
-      if (files.some(accepted)) {
+      if (files.length) {
         e.preventDefault()
         void add(files)
       }
@@ -188,6 +188,7 @@ function Preview({ f }: { f: FileRef }) {
 // Thumb：附件缩略图，点击放大；录屏与动图带播放标记。
 // group：同组的其它附件，放大后可以左右切换（R-69）。
 export function Thumb({ f, onRemove, onAnnotate, size = 'md', group }: { f: FileRef; onRemove?: () => void; onAnnotate?: () => void; size?: 'sm' | 'md'; group?: FileRef[] }) {
+  if (!isMedia(f.mime)) return <FileChip f={f} onRemove={onRemove} size={size} group={group} />
   const box = size === 'sm' ? 'size-12' : 'size-16'
   return (
     <span className={cx('group relative inline-block shrink-0', box)}>
@@ -201,7 +202,7 @@ export function Thumb({ f, onRemove, onAnnotate, size = 'md', group }: { f: File
           )}
         </button>
       </Lightbox>
-      {onAnnotate && f.mime.startsWith('image/') && (
+      {onAnnotate && isImage(f.mime) && (
         <button onClick={onAnnotate} aria-label={t.annotate.title} className="absolute -bottom-1.5 -left-1.5 flex size-5 pointer-coarse:size-7 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-xs opacity-0 transition group-hover:opacity-100 hover:text-accent focus:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100">
           <PenLine className="size-3" />
         </button>
@@ -217,11 +218,130 @@ export function Thumb({ f, onRemove, onAnnotate, size = 'md', group }: { f: File
 
 export function Thumbs({ files, size }: { files?: FileRef[] | null; size?: 'sm' | 'md' }) {
   if (!files?.length) return null
+  const group = files.filter(viewable)
   return (
     <div className="flex flex-wrap gap-2">
       {files.map((f) => (
-        <Thumb key={f.id} f={f} size={size} group={files} />
+        <Thumb key={f.id} f={f} size={size} group={group} />
       ))}
+    </div>
+  )
+}
+
+const KIND_ICON: Record<FileKind, LucideIcon> = { json: FileJson, table: FileSpreadsheet, code: FileCode, text: FileText, archive: FileArchive, pdf: FileText, image: FileImage, audio: FileAudio, video: FileVideo, file: FileIcon }
+
+// FileIconBox：文件块左边的类型图标
+function FileIconBox({ f, className }: { f: { name: string; mime: string }; className?: string }) {
+  const Icon = KIND_ICON[kindOf(f)]
+  return (
+    <span className={cx('flex shrink-0 items-center justify-center rounded-md bg-sunken text-fg-2', className)}>
+      <Icon className="size-[18px]" strokeWidth={1.75} />
+    </span>
+  )
+}
+
+// FileChip：非图片附件的文件块——图标、文件名、类型与大小；文本类点了在看图里看内容，其它点了下载。
+// 高度与缩略图一致（sm 48px / md 64px），一行里和图片排在一起不跳。
+export function FileChip({ f, onRemove, size = 'md', group }: { f: FileRef; onRemove?: () => void; size?: 'sm' | 'md'; group?: FileRef[] }) {
+  const meta = [typeLabel(f), fmtSize(f.size)].filter(Boolean).join(' · ')
+  const body = (
+    <>
+      <FileIconBox f={f} className={size === 'sm' ? 'size-8' : 'size-10'} />
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-[13px] leading-snug text-fg">{f.name}</span>
+        <span className="block truncate text-[11.5px] leading-snug text-fg-3 tabular">{meta}</span>
+      </span>
+    </>
+  )
+  const cls = cx('flex w-[13.5rem] max-w-full items-center gap-2 rounded-lg border border-line bg-surface px-2 transition hover:border-line-strong hover:bg-sunken/60', size === 'sm' ? 'h-12' : 'h-16')
+  return (
+    <span className="group relative inline-flex max-w-full shrink-0">
+      {isText(f) ? (
+        <Lightbox f={f} group={group}>
+          <button type="button" className={cls} title={f.name} aria-label={t.attach.previewOf(f.name)}>
+            {body}
+          </button>
+        </Lightbox>
+      ) : (
+        <a href={downloadUrl(f.id)} download={f.name} className={cls} title={t.attach.downloadOf(f.name)} onClick={(e) => e.stopPropagation()}>
+          {body}
+        </a>
+      )}
+      {onRemove && (
+        <button onClick={onRemove} aria-label={t.attach.remove} className="absolute -top-1.5 -right-1.5 flex size-5 pointer-coarse:size-7 items-center justify-center rounded-full border border-line bg-surface text-fg-2 shadow-xs opacity-0 transition group-hover:opacity-100 hover:text-danger focus:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100">
+          <X className="size-3" />
+        </button>
+      )}
+    </span>
+  )
+}
+
+// TextPane：看图里预览文本文件的前若干行（只当纯文字显示，不执行任何内容）。
+function TextPane({ f, room }: { f: FileRef; room: { w: number; h: number } }) {
+  const [state, setState] = useState<{ text: string; lines: number; more: boolean } | 'loading' | 'error'>('loading')
+  useEffect(() => {
+    let off = false
+    const ctl = new AbortController()
+    ;(async () => {
+      try {
+        const res = await fetch(fileUrl(f.id), { credentials: 'same-origin', signal: ctl.signal })
+        if (!res.ok || !res.body) throw new Error(String(res.status))
+        // 只读前一段：大日志不整个下载
+        const reader = res.body.getReader()
+        const chunks: Uint8Array[] = []
+        let n = 0
+        let cut = false
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          n += value.length
+          if (n >= PREVIEW_BYTES) {
+            cut = true
+            void reader.cancel()
+            break
+          }
+        }
+        const buf = new Uint8Array(Math.min(n, PREVIEW_BYTES))
+        let o = 0
+        for (const c of chunks) {
+          const take = Math.min(c.length, buf.length - o)
+          buf.set(c.subarray(0, take), o)
+          o += take
+          if (o >= buf.length) break
+        }
+        const raw = new TextDecoder('utf-8', { fatal: false }).decode(buf)
+        if (!off) setState(previewText(cut ? raw.replace(/[^\n]*$/, '') : raw, f, cut))
+      } catch (e) {
+        if (!off && !(e instanceof DOMException && e.name === 'AbortError')) setState('error')
+      }
+    })()
+    return () => {
+      off = true
+      ctl.abort()
+    }
+  }, [f])
+  return (
+    <div className="pointer-events-auto flex flex-col overflow-hidden rounded-lg border border-white/12 bg-[#1b1916] shadow-pop" style={{ width: Math.min(room.w || 960, 960), height: room.h || undefined }}>
+      {state === 'loading' ? (
+        <div className="flex flex-1 items-center justify-center text-white/60">
+          <Loader2 className="size-5 animate-spin" />
+        </div>
+      ) : state === 'error' ? (
+        <div className="flex flex-1 items-center justify-center px-6 text-center text-[13px] text-white/70">{t.attach.previewFailed}</div>
+      ) : (
+        <>
+          <pre className="min-h-0 flex-1 touch-pan-y overflow-auto overscroll-contain px-4 py-3 font-mono text-[12.5px] leading-[1.6] whitespace-pre-wrap break-words text-white/90 select-text [scrollbar-width:thin]">{state.text || t.attach.empty}</pre>
+          {state.more && (
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-white/12 px-4 py-2 text-[12px] text-white/60">
+              <span>{t.attach.previewMore(state.lines)}</span>
+              <a href={downloadUrl(f.id)} download={f.name} className="shrink-0 text-white/85 underline-offset-2 hover:text-white hover:underline">
+                {t.attach.downloadFull}
+              </a>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -305,7 +425,7 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
   // 预取前后两张，切换时不闪白
   useEffect(() => {
     if (!open || n < 2) return
-    for (const x of [at(k + 1), at(k - 1), at(k + 2), at(k - 2)]) if (!isVideo(x.mime)) new Image().src = fileUrl(x.id)
+    for (const x of [at(k + 1), at(k - 1), at(k + 2), at(k - 2)]) if (isImage(x.mime)) new Image().src = fileUrl(x.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, k])
 
@@ -314,7 +434,7 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
   const boxes = cur.boxes ?? []
   const cites = cur.cites
   // 右栏：这张图有标注、或对应了验收点时才有；手机上变成底部列表
-  const side = !isVideo(cur.mime) && (boxes.length > 0 || !!cites?.length)
+  const side = isImage(cur.mime) && (boxes.length > 0 || !!cites?.length)
   const sideW = side && !phone ? 300 : 0
   const sideH = side && phone ? Math.round(Math.min(260, (typeof window === 'undefined' ? 800 : window.innerHeight) * 0.34)) : 0
   const pickBox = (bi: number | null, ck: number | null = null) => {
@@ -376,6 +496,9 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
                       <span className={cx(seg, 'block', !hideBoxes ? 'bg-white text-black' : 'text-white/80 hover:text-white')}>{t.viewer.boxes}</span>
                     </button>
                   )}
+                  <a href={downloadUrl(cur.id)} download={cur.name} aria-label={t.attach.download} title={t.attach.download} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/12 text-white transition hover:bg-white/25 active:scale-95">
+                    <Download className="size-[17px]" />
+                  </a>
                   <Dialog.Close asChild>
                     <button aria-label={t.common.close} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/12 text-white transition hover:bg-white/25 active:scale-95">
                       <X className="size-[18px]" />
@@ -462,7 +585,16 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
                       onClick={() => i !== nav.i && go(i - nav.i)}
                       className={cx('relative h-[58px] w-[92px] shrink-0 overflow-hidden rounded-[7px] border-2 bg-white/5 transition', i === nav.i ? 'border-white' : 'border-transparent opacity-70 hover:opacity-100')}
                     >
-                      {isVideo(x.mime) ? <video src={`${fileUrl(x.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover object-left-top" /> : <img src={fileUrl(x.id)} alt="" loading="lazy" className="size-full object-cover object-left-top" />}
+                      {isVideo(x.mime) ? (
+                        <video src={`${fileUrl(x.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover object-left-top" />
+                      ) : isImage(x.mime) ? (
+                        <img src={fileUrl(x.id)} alt="" loading="lazy" className="size-full object-cover object-left-top" />
+                      ) : (
+                        <span className="flex size-full flex-col items-center gap-1 px-1.5 pt-2 text-white/75">
+                          <FileText className="size-4 shrink-0" />
+                          <span className="block w-full truncate text-center text-[10.5px]">{x.name}</span>
+                        </span>
+                      )}
                       <span className="absolute bottom-[3px] left-[3px] rounded-[4px] bg-black/60 px-1 text-[10.5px] leading-[15px] tabular">{t.proof.figure(i + 1)}</span>
                     </button>
                   ))}
@@ -533,6 +665,8 @@ function Viewer({
   const [annotating, setAnnotating] = useState(false)
   const onBackdrop = useRef(false) // 按下时是否在图片外（指针捕获后 click 的 target 不可靠）
   const video = isVideo(f.mime)
+  const text = !video && !isImage(f.mime) // 文本文件：只预览内容，不缩放、不标注
+  const still = video || text // 不接管缩放、平移
   const src = before && f.before ? f.before : f
 
   useLayoutEffect(() => {
@@ -583,7 +717,7 @@ function Viewer({
   // 放大到框：框占放图区域六成左右；取消时复原
   const focused = useRef(false)
   useEffect(() => {
-    if (!active || video) return
+    if (!active || still) return
     const b = focus != null && !before ? f.boxes?.[focus] : null
     if (b && nat && fit) {
       focused.current = true
@@ -599,7 +733,7 @@ function Viewer({
   navRef.current = nav
   useEffect(() => {
     const el = box.current
-    if (!el || video) return
+    if (!el || still) return
     // 触控板：捏合是带 ctrlKey 的滚轮事件；普通滚轮（鼠标滚轮、触控板双指）上下是缩放，左右交给胶片带跟手翻页（R-69、R-121）。
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
@@ -633,11 +767,11 @@ function Viewer({
       el.removeEventListener('gesturechange', onGChange)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [video])
+  }, [still])
 
   const onDown = (e: ReactPointerEvent) => {
     onBackdrop.current = e.target === e.currentTarget
-    if (video) return
+    if (video || (text && e.pointerType !== 'touch')) return // 鼠标在文本上是选文字
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     moved.current = false
@@ -675,7 +809,7 @@ function Viewer({
       if (g.axis === 'x') nav!.begin()
     }
     if (g.axis === 'x') nav!.move(dx)
-    else if (g.axis === 'y') track({ s: 1, x: 0, y: Math.max(0, dy) })
+    else if (g.axis === 'y' && !text) track({ s: 1, x: 0, y: Math.max(0, dy) }) // 文本上下是滚动，不是下滑关闭
   }
   const onUp = (e: ReactPointerEvent) => {
     pts.current.delete(e.pointerId)
@@ -716,16 +850,18 @@ function Viewer({
         onPointerUp={onUp}
         onPointerCancel={onUp}
         onClick={() => {
-          if (!(onBackdrop.current || !video) || moved.current) return // 录屏只在画面外单击才关，免得点控件时关掉
+          if (!(onBackdrop.current || !still) || moved.current) return // 录屏、文本只在画面外单击才关，免得点控件、选文字时关掉
           if (focus != null && onUnfocus) return onUnfocus() // 放大到某个框时：单击复原
           onClose()
         }}
-        className={cx('absolute inset-0 overflow-hidden select-none', !video && 'touch-none', v.s > 1 && 'cursor-grab active:cursor-grabbing')}
+        className={cx('absolute inset-0 overflow-hidden', !text && 'select-none', !still ? 'touch-none' : text && 'touch-pan-y', v.s > 1 && 'cursor-grab active:cursor-grabbing')}
         style={{ opacity: fade }}
       >
         <div ref={area} className="pointer-events-none absolute flex items-center justify-center" style={{ left: 16, top: 8, right: 16 + padRight, bottom: 16 + padBottom }}>
           <motion.div initial={intro ? { opacity: 0, scale: 0.94 } : false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }} className="pointer-events-none flex items-center justify-center">
-            {video ? (
+            {text ? (
+              <TextPane f={f} room={room} />
+            ) : video ? (
               <video src={fileUrl(f.id)} controls autoPlay playsInline className="pointer-events-auto rounded-lg bg-black shadow-pop" style={{ maxWidth: room.w || undefined, maxHeight: room.h || undefined }} />
             ) : (
               // 图和改动框包在同一个容器里一起缩放、平移（R-183）
@@ -761,7 +897,7 @@ function Viewer({
               </>
             )}
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-center gap-2 p-3">
-              {target && !video && (
+              {target && !still && (
                 <button onClick={() => setAnnotating(true)} className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-medium text-black backdrop-blur hover:bg-white">
                   <PenLine className="size-3.5" />
                   {t.annotate.attach}
@@ -809,7 +945,7 @@ export function ZoomButton({ f, className, group }: { f: ViewShot; className?: s
   )
 }
 
-// AttachZone：包住输入框，支持粘贴与拖拽；下方显示附图与“添加图片”按钮。
+// AttachZone：包住输入框，支持粘贴与拖拽任意文件；下方显示附件（图片缩略图、文件块）与“添加附件”按钮。
 export function AttachZone({ value, onChange, children, className, compact, incoming, onIncoming }: { value: FileRef[]; onChange: (v: FileRef[]) => void; children: ReactNode; className?: string; compact?: boolean; incoming?: File[]; onIncoming?: () => void }) {
   const { pending, add, onPaste, cancel, remove } = useAttach(value, onChange)
   const [annotating, setAnnotating] = useState<FileRef | null>(null)
@@ -844,12 +980,21 @@ export function AttachZone({ value, onChange, children, className, compact, inco
       {children}
       <div className={cx('flex flex-wrap items-center gap-2', (value.length || pending.length || !compact) && 'mt-2')}>
         {value.map((f) => (
-          <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} onAnnotate={() => setAnnotating(f)} group={value} />
+          <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} onAnnotate={() => setAnnotating(f)} group={value.filter(viewable)} />
         ))}
         {pending.map((p) => (
-          <span key={p.key} className="relative size-12 shrink-0">
+          <span key={p.key} className={cx('relative h-12 shrink-0', p.kind === 'file' ? 'w-[13.5rem] max-w-full' : 'w-12')}>
             <span className="absolute inset-0 overflow-hidden rounded-lg border border-line">
-            {p.video ? <video src={p.url} muted className="size-full object-cover opacity-50" /> : <img src={p.url} alt="" className="size-full object-cover opacity-50" />}
+            {p.kind === 'video' ? (
+              <video src={p.url} muted className="size-full object-cover opacity-50" />
+            ) : p.kind === 'image' ? (
+              <img src={p.url} alt="" className="size-full object-cover opacity-50" />
+            ) : (
+              <span className="flex size-full items-center gap-2 px-2 opacity-60">
+                <FileIconBox f={{ name: p.name, mime: '' }} className="size-8" />
+                <span className="min-w-0 flex-1 truncate text-[13px] text-fg">{p.name}</span>
+              </span>
+            )}
             {p.progress > 0 && p.progress < 1 ? (
               <span className="absolute inset-0 m-auto flex items-center justify-center text-[11px] font-semibold text-fg tabular">{Math.round(p.progress * 100)}%</span>
             ) : (
@@ -864,7 +1009,7 @@ export function AttachZone({ value, onChange, children, className, compact, inco
         ))}
         {!compact && <AddImageButton onPick={() => input.current?.click()} />}
       </div>
-      <input ref={input} type="file" accept={ACCEPT} multiple hidden onChange={(e) => void add([...(e.target.files ?? [])]).then(() => (e.target.value = ''))} />
+      <input ref={input} type="file" multiple hidden onChange={(e) => void add([...(e.target.files ?? [])]).then(() => (e.target.value = ''))} />
       {compact && <AttachTrigger onPick={() => input.current?.click()} />}
       {over && <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-accent-soft/80 text-sm font-medium text-accent">{t.attach.drop}</div>}
       {annotating && (
@@ -886,7 +1031,7 @@ export function AttachZone({ value, onChange, children, className, compact, inco
 function AddImageButton({ onPick }: { onPick: () => void }) {
   return (
     <button type="button" onClick={onPick} className="flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-line-strong px-2.5 text-xs text-fg-3 transition hover:border-accent hover:text-accent">
-      <ImagePlus className="size-3.5" />
+      <Paperclip className="size-3.5" />
       {t.attach.add}
     </button>
   )
@@ -898,7 +1043,7 @@ function AttachTrigger({ onPick }: { onPick: () => void }) {
     <span className="absolute top-1.5 right-1.5">
       <Tip content={t.attach.hint}>
         <Button type="button" size="icon-sm" variant="ghost" aria-label={t.attach.add} onClick={onPick}>
-          <ImagePlus className="size-4" />
+          <Paperclip className="size-4" />
         </Button>
       </Tip>
     </span>

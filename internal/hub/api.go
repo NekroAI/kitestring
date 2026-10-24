@@ -359,7 +359,7 @@ type answersIn struct {
 		Answers []struct {
 			Ref     string   `json:"ref"`
 			Answer  string   `json:"answer" doc:"答复；有要拍板的点（points）时是附言，可空"`
-			Files   []string `json:"files,omitempty" doc:"附图 ID"`
+			Files   []string `json:"files,omitempty" doc:"附件 ID（图片、录屏或任意文件）"`
 			Choices []int    `json:"choices,omitempty" doc:"逐点的选择（R-112）：与决策的 points 一一对应，填选项序号"`
 			Reject  bool     `json:"reject,omitempty" doc:"批准类的多点决策：拒绝（此时不要求逐点选择）"`
 			Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上"`
@@ -445,6 +445,7 @@ type SettingsView struct {
 	NotifyEvents  []string           `json:"notify_events"`
 	ImageMB       int                `json:"upload_image_mb" doc:"图片大小上限（MB）"`
 	VideoMB       int                `json:"upload_video_mb" doc:"录屏大小上限（MB）"`
+	FileMB        int                `json:"upload_file_mb" doc:"其它文件（图片、录屏以外）大小上限（MB）"`
 	DevRequestMin int                `json:"dev_request_minutes" doc:"PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝"`
 }
 
@@ -458,6 +459,7 @@ type settingsIn struct {
 		NotifyDefault store.NotifyConfig `json:"notify_default"`
 		ImageMB       int                `json:"upload_image_mb,omitempty" minimum:"0" maximum:"4096" doc:"图片大小上限（MB），0 或留空用默认 10"`
 		VideoMB       int                `json:"upload_video_mb,omitempty" minimum:"0" maximum:"4096" doc:"录屏大小上限（MB），0 或留空用默认 50"`
+		FileMB        int                `json:"upload_file_mb,omitempty" minimum:"0" maximum:"4096" doc:"其它文件大小上限（MB），0 或留空用默认 20"`
 		DevRequestMin int                `json:"dev_request_minutes,omitempty" minimum:"0" maximum:"1440" doc:"PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30"`
 	}
 }
@@ -471,11 +473,11 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	img, vid := s.Upload.bytes()
+	img, vid, file := s.Upload.bytes()
 	return &settingsOut{Body: SettingsView{
 		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
-		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0),
+		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0),
 	}}, nil
 }
 
@@ -1042,7 +1044,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				cur.Summary.APIKey = b.SummaryKey
 			}
 			cur.NotifyDefault = b.NotifyDefault
-			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB}
+			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB, FileMB: b.FileMB}
 			cur.DevRequestMinutes = b.DevRequestMin
 			if err := h.SaveSettings(ctx, cur); err != nil {
 				return nil, err

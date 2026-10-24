@@ -500,7 +500,7 @@ export interface paths {
         put?: never;
         /**
          * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
-         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。
          */
         post: operations["agent-tell-pm"];
         delete?: never;
@@ -2570,7 +2570,7 @@ export interface components {
             answer: string;
             /** @description 逐点的选择（R-112）：与决策的 points 一一对应，填选项序号 */
             choices?: number[] | null;
-            /** @description 附图 ID */
+            /** @description 附件 ID（图片、录屏或任意文件） */
             files?: string[] | null;
             /** @description 可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上 */
             reason?: string;
@@ -3449,6 +3449,11 @@ export interface components {
             summary_model: string;
             /**
              * Format: int64
+             * @description 其它文件大小上限（MB），0 或留空用默认 20
+             */
+            upload_file_mb?: number;
+            /**
+             * Format: int64
              * @description 图片大小上限（MB），0 或留空用默认 10
              */
             upload_image_mb?: number;
@@ -3471,6 +3476,11 @@ export interface components {
             summary_api_key_set: boolean;
             summary_base_url: string;
             summary_model: string;
+            /**
+             * Format: int64
+             * @description 其它文件（图片、录屏以外）大小上限（MB）
+             */
+            upload_file_mb: number;
             /**
              * Format: int64
              * @description 图片大小上限（MB）

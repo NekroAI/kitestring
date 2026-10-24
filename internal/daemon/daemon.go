@@ -773,30 +773,45 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 	}
 	for _, f := range dec.Files {
 		label := "附图"
-		if strings.HasPrefix(f.Mime, "video/") {
+		switch {
+		case protocol.IsVideo(f.Mime):
 			label = "录屏"
+		case !protocol.IsImage(f.Mime):
+			label = "文件"
 		}
-		p := d.attachmentPath(f)
-		if _, err := os.Stat(p); err != nil && label == "附图" {
+		p := AttachmentPath(f)
+		if _, err := os.Stat(p); err != nil && label != "录屏" {
 			d.fetchAttachment(f) // 送达前仍未下载完成：同步再试一次（录屏太大，不在 hook 里等）
 		}
 		if _, err := os.Stat(p); err == nil {
-			fmt.Fprintf(b, "  %s：%s\n", label, p)
+			if label == "文件" {
+				fmt.Fprintf(b, "  %s「%s」：%s\n", label, f.Name, p)
+			} else {
+				fmt.Fprintf(b, "  %s：%s\n", label, p)
+			}
 		} else {
 			fmt.Fprintf(b, "  %s（未能下载，可在 Kitestring 网页查看）：%s\n", label, f.Name)
 		}
 	}
 }
 
-var mimeExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm"}
-
-func (d *Daemon) attachmentPath(f protocol.File) string {
-	return filepath.Join(Home(), "attachments", f.ID+mimeExt[f.Mime])
+// AttachmentPath 是附件下载到本机后的路径：图片、录屏是 attachments/<ID>.<扩展名>（老路径不变）；
+// 其它文件保留原文件名，放在 attachments/<ID>/<文件名>（R-221）。
+func AttachmentPath(f protocol.File) string {
+	dir := filepath.Join(Home(), "attachments")
+	if ext := protocol.MediaExt(f.Mime); ext != "" || f.Name == "" {
+		return filepath.Join(dir, f.ID+ext)
+	}
+	name := strings.NewReplacer("/", "_", "\\", "_", "\x00", "_").Replace(filepath.Base(f.Name))
+	if name == "." || name == ".." || name == "" {
+		name = "file"
+	}
+	return filepath.Join(dir, f.ID, name)
 }
 
 // fetchAttachment 把附件（图片或录屏）下载到本机（已存在则跳过）。
 func (d *Daemon) fetchAttachment(f protocol.File) {
-	p := d.attachmentPath(f)
+	p := AttachmentPath(f)
 	if _, err := os.Stat(p); err == nil {
 		return
 	}
@@ -824,7 +839,7 @@ func (d *Daemon) fetchAttachment(f protocol.File) {
 	if err != nil {
 		return
 	}
-	_, err = io.Copy(tmp, io.LimitReader(resp.Body, 52<<20))
+	_, err = io.Copy(tmp, io.LimitReader(resp.Body, 4<<30)) // 大小由 Hub 的上传上限管
 	tmp.Close()
 	if err != nil {
 		os.Remove(tmp.Name())

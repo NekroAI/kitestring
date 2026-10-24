@@ -1,4 +1,5 @@
 import type { Block, BlockItem, Evidence, Requirement } from '../api/client'
+import { isImage } from './files.ts'
 
 // 证据整理（R-195）：把一份证据里的截图、改动框和验收清单对上号——
 // 抽屉里验收点旁边的「证据小图」、点开后的大切片、看图右栏的「这张图证明了哪几条验收点」都从这里取。
@@ -75,7 +76,7 @@ export function shotsOf(e: Pick<Evidence, 'payload' | 'files'>): Shot[] {
     }
   }
   for (const f of e.files ?? []) {
-    if (used.has(f.id) || !f.mime.startsWith('image/')) continue
+    if (used.has(f.id) || !isImage(f.mime)) continue
     const title = f.title?.trim() || ''
     out.push({
       id: 'file-' + f.id,
@@ -90,7 +91,7 @@ export function shotsOf(e: Pick<Evidence, 'payload' | 'files'>): Shot[] {
 // otherFiles：没进截图的附件（录屏附件、文档等），照常列在图库后面。
 export function otherFiles(e: Pick<Evidence, 'payload' | 'files'>, shots: Shot[]) {
   const used = new Set(shots.flatMap((s) => [s.file.id, s.before?.id]))
-  return (e.files ?? []).filter((f) => !used.has(f.id) && !f.mime.startsWith('image/'))
+  return (e.files ?? []).filter((f) => !used.has(f.id) && !isImage(f.mime))
 }
 
 export function checklistOf(e: Pick<Evidence, 'payload'>): BlockItem[] {

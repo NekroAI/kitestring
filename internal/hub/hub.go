@@ -40,27 +40,29 @@ type Settings struct {
 	DevRequestMinutes int `json:"dev_request_minutes,omitempty"`
 }
 
-// UploadLimits 附件大小上限（MB），0 表示用默认值（R-72）。
+// UploadLimits 附件大小上限（MB），0 表示用默认值（R-72）；FileMB 是图片、录屏以外的文件（R-221）。
 type UploadLimits struct {
 	ImageMB int `json:"image_mb,omitempty"`
 	VideoMB int `json:"video_mb,omitempty"`
+	FileMB  int `json:"file_mb,omitempty"`
 }
 
 const (
 	defaultImageMB = 10
 	defaultVideoMB = 50
+	defaultFileMB  = 20
 	maxUploadMB    = 4096
 )
 
 // bytes 返回生效的上限（字节）。
-func (u UploadLimits) bytes() (image, video int64) {
+func (u UploadLimits) bytes() (image, video, file int64) {
 	pick := func(v, def int) int64 {
 		if v <= 0 {
 			v = def
 		}
 		return int64(min(v, maxUploadMB)) << 20
 	}
-	return pick(u.ImageMB, defaultImageMB), pick(u.VideoMB, defaultVideoMB)
+	return pick(u.ImageMB, defaultImageMB), pick(u.VideoMB, defaultVideoMB), pick(u.FileMB, defaultFileMB)
 }
 
 const settingsKey = "hub_settings"

@@ -10,6 +10,7 @@ import { RoleTag, ToolMark } from '../ui/marks'
 import { ProxyNote } from './grant'
 import { HoldNote } from './morning'
 import { fileUrl, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
+import { isImage } from '../lib/files'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
@@ -125,6 +126,9 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
   const ri = useMemo(() => recIndex(options, rec), [options, rec])
   // 多点决策（R-112）：逐点选择，默认选推荐；附言和附图照旧
   const multi = !!d.points?.length
+  // 背景附件：图片大图显示，其它文件（R-221）显示为文件块
+  const ctxImgs = (d.context_files ?? []).filter((f) => isImage(f.mime))
+  const ctxOther = (d.context_files ?? []).filter((f) => !isImage(f.mime))
   const approval = !!d.approval
   // 用词场景（R-176）：批准类决策「批准 / 拒绝」，选项类「回答」
   const scene = d.request_kind ? 'request' : approval ? 'approval' : 'answer' // Agent 的限时请求（R-169）同样是「批准 / 拒绝」
@@ -199,18 +203,19 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
         )}
         <BlockList blocks={d.blocks} />
 
-        {!!d.context_files?.length && (
-          <div className={cx('grid gap-2.5', d.context_files.length > 1 && 'grid-cols-2')}>
-            {d.context_files.map((f) => (
+        {!!ctxImgs.length && (
+          <div className={cx('grid gap-2.5', ctxImgs.length > 1 && 'grid-cols-2')}>
+            {ctxImgs.map((f) => (
               <div key={f.id} className="group/ctx relative overflow-hidden rounded-xl border border-line bg-sunken">
                 <img src={fileUrl(f.id)} alt={f.name} loading="lazy" className="max-h-[360px] w-full object-cover object-top" />
                 <span className="absolute top-2 right-2 opacity-0 transition group-hover/ctx:opacity-100 pointer-coarse:opacity-100">
-                  <ZoomButton f={f} group={d.context_files ?? undefined} />
+                  <ZoomButton f={f} group={ctxImgs} />
                 </span>
               </div>
             ))}
           </div>
         )}
+        {ctxOther.length > 0 && <Thumbs files={ctxOther} />}
 
         {multi && <Points d={d} picks={picks} onPick={(i, k) => setDraft(d.code, { picks: picks.map((c, j) => (j === i ? k : c)) })} />}
 

@@ -237,7 +237,7 @@ func withComment(text string, n note) string {
 	case n.text != "":
 		return text + "附言：" + n.text
 	case len(n.files) > 0:
-		return text + "附言见附图。"
+		return text + "附言见附件。"
 	}
 	return text
 }

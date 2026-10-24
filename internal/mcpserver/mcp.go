@@ -279,11 +279,19 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_get", Description: "读取一条需求：说明、验收标准、关联会话、证据要点，以及用户的修改意见与决策（描述和意见里的附图以图片形式返回）。需要完整历史与元数据时传 full = true。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_get", Description: "读取一条需求：说明、验收标准、关联会话、证据要点，以及用户的修改意见与决策（描述和意见里的附图以图片形式返回；用户附的文件会下载到本机，列出本机路径，直接读即可）。需要完整历史与元数据时传 full = true。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqGetIn) (*mcp.CallToolResult, any, error) {
 			var raw json.RawMessage
 			if err := t.c.Do(ctx, "GET", "/agent/requirements/"+url.PathEscape(in.Ref), nil, &raw); err != nil {
 				return nil, nil, err
+			}
+			// 用户附的文件下载到本机，每个附件带上 path（R-221）
+			var doc any
+			if json.Unmarshal(raw, &doc) == nil {
+				t.c.LocalizeFiles(ctx, doc)
+				if b, err := json.Marshal(doc); err == nil {
+					raw = b
+				}
 			}
 			var res *mcp.CallToolResult
 			var ids []string
@@ -759,7 +767,7 @@ func imageIDs(r map[string]any) []string {
 		list, _ := v.([]any)
 		for _, it := range list {
 			if m, ok := it.(map[string]any); ok {
-				if mime, _ := m["mime"].(string); mime != "" && !strings.HasPrefix(mime, "image/") {
+				if mime, _ := m["mime"].(string); mime != "" && !protocol.IsImage(mime) {
 					continue
 				}
 				if id, ok := m["id"].(string); ok && len(ids) < 8 {

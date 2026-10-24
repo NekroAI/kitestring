@@ -42,8 +42,8 @@ export const zh = {
     pass: (s: Scene) => VERB[s].pass,
     back: (s: Scene) => VERB[s].back,
     undo: '撤销',
-    note: (s: Scene) => `附言（${VERB[s].back}时必填，可贴图）`,
-    noteOptional: '附言（可选，可贴图）',
+    note: (s: Scene) => `附言（${VERB[s].back}时必填，可附图片或文件）`,
+    noteOptional: '附言（可选，可附图片或文件）',
     needNote: (s: Scene) => (s === 'accept' || s === 'plan' ? `${VERB[s].back}要写下意见：哪里要改` : `${VERB[s].back}要写下理由`),
     // 撤销条：「3 秒后通过」「R-12 · 3 秒后退回」「D-8 · 3 秒后拒绝」「R-12 · 3 秒后改为进行中」
     pending: (act: string, s: number | string) => `${s} 秒后${act}`,
@@ -587,7 +587,7 @@ export const zh = {
     drafts: (x: number) => `${x} 条答复待发送`,
     keyTip: '数字键选择 · ⌘↵ 发送',
     joinAnswer: (choice: string, note: string) => `${choice}；${note}`,
-    seeImages: '见附图',
+    seeImages: '见附件',
     status: {
       pending: '待决策',
       answered: '待送达',
@@ -661,7 +661,7 @@ export const zh = {
     position: (i: number, n: number, review: boolean) => `${i} / ${n}${review ? ' 待验收' : ''}`,
     allReviewed: (project: string) => `${project} 的待验收都处理完了`,
     lineAsk: (n: number) => `有 ${n} 个问题等你回答`,
-    notePlaceholder: '给 Agent 留言：补充要求、提醒或贴图，你下次给它发消息时送达',
+    notePlaceholder: '给 Agent 留言：补充要求、提醒，可附图片或文件，你下次给它发消息时送达',
     noteSend: '留言',
     noteSent: '已留言，会在你下次给它发消息时送达',
     line: {
@@ -762,8 +762,9 @@ export const zh = {
   },
 
   attach: {
-    add: '图片',
-    hint: '也可以直接粘贴或拖入图片、录屏',
+    add: '附件',
+    hint: '添加附件：图片、录屏或任意文件，也可以直接粘贴、拖入',
+    file: '文件',
     drop: '松开以添加',
     remove: '移除',
     zoom: '放大看',
@@ -778,6 +779,14 @@ export const zh = {
     wait: '附件还在上传，传完再发送',
     tooLarge: (mb: number) => `图片不能超过 ${mb} MB（可在设置 → 账户里调整）`,
     videoTooLarge: (mb: number) => `录屏不能超过 ${mb} MB（可在设置 → 账户里调整）`,
+    fileTooLarge: (name: string, mb: number) => `「${name}」超过了 ${mb} MB 的文件上限（可在设置 → 账户里调整）`,
+    previewOf: (name: string) => `查看 ${name}`,
+    downloadOf: (name: string) => `下载 ${name}`,
+    download: '下载',
+    downloadFull: '下载完整文件',
+    previewMore: (n: number) => `只显示前 ${n} 行`,
+    previewFailed: '读不到这个文件的内容，可以下载后查看',
+    empty: '（空文件）',
     proxyTooLarge: '文件超过了服务器前面反向代理允许的大小，需要调大代理的上传上限（如 client_max_body_size）',
   },
 
@@ -1494,6 +1503,7 @@ export const zh = {
         hint: '单个文件的上限，网页和 Agent 上传都按这里检查。调到 50 MB 以上时，Hub 前面的反向代理也要放得下（如 nginx / openresty 的 client_max_body_size）。',
         image: '图片（MB）',
         video: '录屏（MB）',
+        file: '其它文件（MB）',
       },
       devRequest: {
         get title() {

@@ -294,7 +294,18 @@ func runReq(args []string) error {
 		if fs.NArg() < 1 {
 			return fmt.Errorf("用法：ks req get <R-编号>")
 		}
-		return agentCall("GET", "/agent/requirements/"+url.PathEscape(fs.Arg(0)), nil)
+		// 用户附的文件下载到本机，每个附件带上 path（R-221）
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		c := client.New(2 * time.Minute)
+		var out any
+		if err := c.Do(ctx, "GET", "/agent/requirements/"+url.PathEscape(fs.Arg(0)), nil, &out); err != nil {
+			return err
+		}
+		c.LocalizeFiles(ctx, out)
+		b, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Println(string(b))
+		return nil
 	case "create":
 		if *title == "" {
 			return fmt.Errorf("用法：ks req create --title <标题> [--detail ...] [--acceptance ...]")

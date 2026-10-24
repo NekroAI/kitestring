@@ -10,12 +10,14 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/daemon"
+	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/version"
 )
 
@@ -146,4 +148,85 @@ func (c *Client) Fetch(ctx context.Context, path string, limit int64) ([]byte, s
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, limit))
 	return b, resp.Header.Get("Content-Type"), err
+}
+
+// SaveAttachment 把附件下载到本机（经 daemon 转发），返回本机路径；已下载过的直接返回（R-221）。
+// 路径与 daemon 送达决策时下载的一致（daemon.AttachmentPath）。
+func (c *Client) SaveAttachment(ctx context.Context, f protocol.File) (string, error) {
+	p := daemon.AttachmentPath(f)
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://daemon/agent/files/"+url.PathEscape(f.ID), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set(VersionHeader, version.Version)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(p), "dl-*")
+	if err != nil {
+		return "", err
+	}
+	_, err = io.Copy(tmp, resp.Body)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp.Name())
+		return "", err
+	}
+	return p, os.Rename(tmp.Name(), p)
+}
+
+// userFileKeys 是需求详情里用户附的文件所在的字段：描述附件、意见 / 答复 / 留言的附件、决策的背景图与选项图。
+// 证据、审查意见里的附件是 Agent 自己交的，不下载。
+var userFileKeys = map[string]bool{"files": true, "answer_files": true, "context_files": true, "option_files": true}
+
+// LocalizeFiles 把需求详情（解出来的 JSON）里用户附的文件下载到本机，并在每个附件上写上 path（本机路径）；
+// 下载失败的写 path_error。供 req_get、ks req get 使用，Agent 据此直接读用户附的文件（R-221）。
+func (c *Client) LocalizeFiles(ctx context.Context, v any) {
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, val := range x {
+				if k == "evidence" || k == "reviews" {
+					continue
+				}
+				if list, ok := val.([]any); ok && userFileKeys[k] {
+					for _, it := range list {
+						m, _ := it.(map[string]any)
+						id, _ := m["id"].(string)
+						if id == "" {
+							continue
+						}
+						name, _ := m["name"].(string)
+						mime, _ := m["mime"].(string)
+						if p, err := c.SaveAttachment(ctx, protocol.File{ID: id, Name: name, Mime: mime}); err == nil {
+							m["path"] = p
+						} else {
+							m["path_error"] = err.Error()
+						}
+					}
+					continue
+				}
+				walk(val)
+			}
+		case []any:
+			for _, it := range x {
+				walk(it)
+			}
+		}
+	}
+	walk(v)
 }

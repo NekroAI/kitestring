@@ -34,7 +34,7 @@ func TestVerdictTextsDistinct(t *testing.T) {
 	if got := rejectedText("这个请求", " "); got != "拒绝（用户明确拒绝了这个请求，没有附言）" {
 		t.Fatalf("没有附言的拒绝：%s", got)
 	}
-	if got := returnedText("阶段 1", ""); got != "用户退回了阶段 1，要求修改（意见见附图）" {
+	if got := returnedText("阶段 1", ""); got != "用户退回了阶段 1，要求修改（意见见附件）" {
 		t.Fatalf("只有附图的退回：%s", got)
 	}
 }
