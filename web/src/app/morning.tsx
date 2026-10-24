@@ -6,7 +6,7 @@ import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Badge, Button } from '../ui/base'
 import { RoleTag } from '../ui/marks'
-import { Linkify, RefChip } from '../ui/refmark'
+import { Linkify, RefChip, useOpenRef } from '../ui/refmark'
 import { useOpenAsk } from './nav'
 import { releaseKey, useWithdrawRelease } from './requirements'
 import { PendingBar } from './verdict'
@@ -19,9 +19,22 @@ const rowCls = 'flex min-h-8 min-w-0 items-center gap-2 rounded-lg px-2 text-[13
 // ProxyLine：一条代答，一行——问题、主助理答了什么；「推翻」打开审批抽屉写你的答复（R-177：不就地作答）。
 export function ProxyLine({ d, onOpen }: { d: Decision; onOpen?: () => void }) {
   const openAsk = useOpenAsk()
+  const openRef = useOpenRef()
   const done = !!d.overridden_at
+  const rc = d.requirement_code
   return (
-    <div className={rowCls} title={d.proxy_reason ?? ''}>
+    <div
+      className={cx(rowCls, rc && 'cursor-pointer hover:bg-hover/60')}
+      title={d.proxy_reason ?? ''}
+      onClick={
+        rc
+          ? () => {
+              onOpen?.()
+              openRef(rc)
+            }
+          : undefined
+      }
+    >
       <RefChip code={d.code} status={d.status} link={false} />
       <span className="min-w-0 flex-1 truncate">
         <span className="text-fg">{d.short_title || d.question}</span>
@@ -37,7 +50,8 @@ export function ProxyLine({ d, onOpen }: { d: Decision; onOpen?: () => void }) {
             size="sm"
             variant="ghost"
             className="-my-1 shrink-0"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation()
               onOpen?.()
               openAsk(`x:${d.code}`)
             }}
@@ -52,10 +66,18 @@ export function ProxyLine({ d, onOpen }: { d: Decision; onOpen?: () => void }) {
 }
 
 // ReleaseLine：一条放行，一行——需求、谁放行的、理由（悬停看全）；可撤回。
-export function ReleaseLine({ x }: { x: NonNullable<MorningReport['releases']>[number] }) {
+export function ReleaseLine({ x, onOpen }: { x: NonNullable<MorningReport['releases']>[number]; onOpen?: () => void }) {
   const wr = useWithdrawRelease()
+  const openRef = useOpenRef()
   return (
-    <div className={rowCls} title={x.reason}>
+    <div
+      className={cx(rowCls, 'cursor-pointer hover:bg-hover/60')}
+      title={x.reason}
+      onClick={() => {
+        onOpen?.()
+        openRef(x.requirement_code)
+      }}
+    >
       <RefChip code={x.requirement_code} />
       <span className="min-w-0 flex-1 truncate">
         <span className="text-fg">{x.requirement_title}</span>
@@ -67,7 +89,15 @@ export function ReleaseLine({ x }: { x: NonNullable<MorningReport['releases']>[n
       ) : wr.pending(x.requirement_code) ? (
         <PendingBar k={releaseKey(x.requirement_code)} className="-my-1 shrink-0" />
       ) : (
-        <Button size="sm" variant="ghost" className="-my-1 shrink-0" onClick={() => wr.withdraw(x.requirement_code, t.morning.withdrawReason, () => toast(t.morning.withdrawDone(x.requirement_code)))}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="-my-1 shrink-0"
+          onClick={(e) => {
+            e.stopPropagation()
+            wr.withdraw(x.requirement_code, t.morning.withdrawReason, () => toast(t.morning.withdrawDone(x.requirement_code)))
+          }}
+        >
           <Undo2 className="size-3.5" />
           {t.morning.withdraw}
         </Button>
