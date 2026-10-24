@@ -285,26 +285,72 @@ export function Segmented<T extends string>({
   )
 }
 
-// Tip：悬浮提示。触屏设备上不显示，所以被提示的元素本身要有可读的含义或 aria-label。
-// Tip：悬停提示。触屏没有悬停，轻点时显示一会儿（不影响元素本身的点击动作）。
-export function Tip({ content, children, side = 'top' }: { content: ReactNode; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
+// Tip：悬停提示（R-186 收敛）。只给三类元素用：只有图标的按钮、被截断的文字（truncated，真截断时才弹全文）、
+// 确实需要解释的标记（状态点、身份标、徽标）；有文字的按钮、展开侧栏的一级入口不挂。
+// 触屏：轻点只做元素本身的动作，不弹；长按约 500ms 才弹，弹出后松手吞掉这次点击，1.5 秒后收起。
+// 在带长按菜单（Ctx，R-27）的卡片里长按优先给菜单，这里不弹。
+const TIP_LONG_PRESS = 500
+function clipped(el: Element | null) {
+  if (!el) return false
+  if (el.scrollWidth > el.clientWidth + 1) return true
+  for (const x of el.querySelectorAll('.truncate, [class*="line-clamp"]')) if (x.scrollWidth > x.clientWidth + 1 || x.scrollHeight > x.clientHeight + 1) return true
+  return false
+}
+export function Tip({ content, children, side = 'top', truncated }: { content: ReactNode; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right'; truncated?: boolean }) {
   const [open, setOpen] = useState(false)
-  const touch = useRef(false)
+  const ref = useRef<HTMLButtonElement>(null)
+  const press = useRef<{ x: number; y: number } | null>(null)
+  const fired = useRef(false)
   const timer = useRef(0)
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  const hide = useRef(0)
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current)
+      window.clearTimeout(hide.current)
+    },
+    [],
+  )
   if (!content) return <>{children}</>
+  const cancel = () => {
+    window.clearTimeout(timer.current)
+    press.current = null
+  }
   return (
-    <Tooltip.Root open={open} onOpenChange={setOpen}>
+    <Tooltip.Root open={open} onOpenChange={(o) => setOpen(o && (!truncated || clipped(ref.current)))}>
       <Tooltip.Trigger
         asChild
-        onPointerDown={(e) => (touch.current = e.pointerType === 'touch')}
-        onClick={() => {
-          if (!touch.current) return
+        ref={ref}
+        data-tip={truncated ? 'truncated' : ''}
+        onPointerDown={(e) => {
+          fired.current = false
+          window.clearTimeout(hide.current)
+          if (e.pointerType !== 'touch' || e.currentTarget.closest('.ctx-target')) return
+          press.current = { x: e.clientX, y: e.clientY }
           window.clearTimeout(timer.current)
           timer.current = window.setTimeout(() => {
+            press.current = null
+            if (truncated && !clipped(ref.current)) return
+            fired.current = true
             setOpen(true)
-            timer.current = window.setTimeout(() => setOpen(false), 1800)
-          }, 0)
+          }, TIP_LONG_PRESS)
+        }}
+        onPointerMove={(e) => {
+          if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) cancel()
+        }}
+        onPointerUp={() => {
+          cancel()
+          if (fired.current) hide.current = window.setTimeout(() => setOpen(false), 1500)
+        }}
+        onPointerCancel={cancel}
+        onClickCapture={(e) => {
+          // 长按弹出提示后松手的那次点击不算点按钮
+          if (!fired.current) return
+          e.preventDefault()
+          e.stopPropagation()
+          fired.current = false
+        }}
+        onContextMenu={(e) => {
+          if (press.current || fired.current) e.preventDefault()
         }}
       >
         {children}

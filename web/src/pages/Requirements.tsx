@@ -18,7 +18,7 @@ import { PriorityTag } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { allStatuses, NewReqModal, ReleaseBadge, StatusMenu, useSetStatus } from '../app/requirements'
 import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
-import { nextView, useKsEvent, withKey } from '../app/command'
+import { nextView, useKsEvent } from '../app/command'
 import {
   catColor,
   DistBar,
@@ -395,9 +395,7 @@ export default function RequirementsPage() {
       <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-fg-3" />
       <Input ref={searchRef} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t.reqs.search} aria-label={t.reqs.search} className="pr-8 pl-9" onKeyDown={(e) => e.key === 'Escape' && (e.target as HTMLInputElement).blur()} />
       {!search && !coarse && (
-        <Tip content={t.pool.searchKey}>
-          <kbd className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded border border-line px-1.5 font-mono text-[11px] text-fg-3">/</kbd>
-        </Tip>
+        <kbd className="absolute top-1/2 right-2.5 -translate-y-1/2 rounded border border-line px-1.5 font-mono text-[11px] text-fg-3">/</kbd>
       )}
       {search && (
         <button aria-label={t.common.close} onClick={() => setSearch('')} className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-fg-3 hover:text-fg">
@@ -471,11 +469,9 @@ export default function RequirementsPage() {
             title={view === 'plans' ? t.plan.view : t.pool.title}
             subtitle={subtitle}
             actions={
-              <Tip content={view === 'plans' ? null : withKey(t.cmd.newReq, 'N')}>
-                <Button variant="primary" icon={<Plus className="size-4" />} onClick={newItem}>
-                  {view === 'plans' ? t.plan.new : t.reqs.new}
-                </Button>
-              </Tip>
+              <Button variant="primary" icon={<Plus className="size-4" />} onClick={newItem}>
+                {view === 'plans' ? t.plan.new : t.reqs.new}
+              </Button>
             }
           />
           <div className="mb-4 flex flex-wrap items-center gap-2">

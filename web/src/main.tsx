@@ -57,7 +57,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <TipProvider delayDuration={350} skipDelayDuration={200}>
+        <TipProvider delayDuration={700} skipDelayDuration={300}>
           <ConfirmProvider>
             <OutboxProvider>
               <App />

@@ -347,6 +347,14 @@
 .tip-pop[data-state='instant-open'] {
   animation: ks-tip-in 0.12s ease-out;
 }
+/* 触屏长按看提示（R-186）：不弹系统的长按菜单 / 选字 */
+@media (pointer: coarse) {
+  [data-tip] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
 /* 列表项首次出现时的轻微淡入（不做离场动画，避免切换时闪烁） */
 @keyframes ks-rise {
   from {

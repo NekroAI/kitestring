@@ -85,7 +85,10 @@ export function RoleBadge({ s }: { s: RoleSession }) {
   const p = presence(s)
   return (
     <Tip content={p ? `${t.roleTip[role]}${t.common.sep}${t.presence[p]}` : t.roleTip[role]}>
-      <RoleTag role={role} presence={p || undefined} />
+      {/* RoleTag 不透传属性，外面包一层才能接住悬停事件 */}
+      <span className="inline-flex shrink-0">
+        <RoleTag role={role} presence={p || undefined} />
+      </span>
     </Tip>
   )
 }

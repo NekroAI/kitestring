@@ -80,7 +80,7 @@ function Sidebar({ todo, connected, collapsed, onToggle }: { todo: number; conne
       </Tip>
       <nav className="space-y-0.5">
         {nav.map((n) => (
-          <Tip key={n.to} side="right" content={withKey(c ? n.label : t.cmd.goto(n.label), n.keys)}>
+          <Tip key={n.to} side="right" content={c ? withKey(n.label, n.keys) : null}>
             {/* 外面包一层：Tip 的 asChild 会把 NavLink 的函数 className 拼成字符串 */}
             <div>
               <NavLink

@@ -747,12 +747,10 @@ export function AttachZone({ value, onChange, children, className, compact, inco
 
 function AddImageButton({ onPick }: { onPick: () => void }) {
   return (
-    <Tip content={t.attach.hint}>
-      <button type="button" onClick={onPick} className="flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-line-strong px-2.5 text-xs text-fg-3 transition hover:border-accent hover:text-accent">
-        <ImagePlus className="size-3.5" />
-        {t.attach.add}
-      </button>
-    </Tip>
+    <button type="button" onClick={onPick} className="flex h-8 items-center gap-1.5 rounded-lg border border-dashed border-line-strong px-2.5 text-xs text-fg-3 transition hover:border-accent hover:text-accent">
+      <ImagePlus className="size-3.5" />
+      {t.attach.add}
+    </button>
   )
 }
 

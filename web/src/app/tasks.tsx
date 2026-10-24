@@ -40,7 +40,6 @@ function Ticks({ task, now }: { task: BgTask; now: number }) {
 function Lane({ task, now, last, full }: { task: BgTask; now: number; last: boolean; full?: boolean }) {
   const label = task.label || task.agent_type || t.session.taskKind[task.kind]
   const [tool, brief] = task.last_action ? splitTool(task.last_action) : ['', '']
-  const tip = [t.session.taskKind[task.kind] + '：' + label, task.agent_type && task.label && task.agent_type, t.session.taskRunning(shortDuration(task.started_at, now))].filter(Boolean).join(t.common.sep)
   return (
     <div className="flex min-w-0 items-center gap-2 py-[3px] text-[12px] leading-5">
       {/* 树状连线：竖线接上一行，横线指向这一行；最后一行竖线只到中间 */}
@@ -49,7 +48,7 @@ function Lane({ task, now, last, full }: { task: BgTask; now: number; last: bool
         <span className="absolute top-1/2 left-0 w-full border-t border-line" />
       </span>
       <span className="w-9 shrink-0 text-[11px] text-fg-3">{t.session.taskKind[task.kind]}</span>
-      <Tip content={tip}>
+      <Tip truncated content={[label, task.kind === 'agent' && task.agent_type && task.label && task.agent_type].filter(Boolean).join(t.common.sep)}>
         <span className={cx('min-w-0 truncate text-fg-2', full ? 'flex-1' : 'flex-1 @lg:max-w-[38%] @lg:flex-none')}>
           {label}
           {task.kind === 'agent' && task.agent_type && task.label && <span className="ml-1.5 text-[11px] text-fg-3">{task.agent_type}</span>}

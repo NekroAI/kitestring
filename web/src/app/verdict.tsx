@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { t } from '../i18n'
 import type { Scene } from '../i18n/zh'
 import { cx } from '../lib/util'
-import { Button, Textarea, Tip } from '../ui/base'
+import { Button, Textarea } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { useActions } from './actions'
 
@@ -347,29 +347,21 @@ export function Verdict(p: VerdictProps) {
   const buttons = (
     <div className="flex shrink-0 items-center gap-2">
       {mode === 'verdict' && p.onBack && (
-        <Tip content={t.verdict.keyBack(scene)}>
-          <span>
-            <Button size={size} className={btnCls} disabled={off} icon={<Undo2 className="size-4" />} onClick={back}>
-              {t.verdict.back(scene)}
-            </Button>
-          </span>
-        </Tip>
+        <Button size={size} className={btnCls} disabled={off} icon={<Undo2 className="size-4" />} onClick={back}>
+          {t.verdict.back(scene)}
+        </Button>
       )}
-      <Tip content={t.verdict.keyPass(scene)}>
-        <span>
-          <Button
-            size={size}
-            variant="primary"
-            className={cx(btnCls, 'min-w-20')}
-            disabled={off || p.canPass === false}
-            loading={p.busy}
-            icon={mode === 'answer' ? <CornerDownLeft className="size-4" /> : <Check className="size-4" />}
-            onClick={pass}
-          >
-            {t.verdict.pass(scene)}
-          </Button>
-        </span>
-      </Tip>
+      <Button
+        size={size}
+        variant="primary"
+        className={cx(btnCls, 'min-w-20')}
+        disabled={off || p.canPass === false}
+        loading={p.busy}
+        icon={mode === 'answer' ? <CornerDownLeft className="size-4" /> : <Check className="size-4" />}
+        onClick={pass}
+      >
+        {t.verdict.pass(scene)}
+      </Button>
     </div>
   )
   if (p.stack)
