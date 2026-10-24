@@ -129,11 +129,16 @@ export function useFillHeight(el: HTMLElement | null, on: boolean) {
 
 // ---------- 分布条 ----------
 
-// 按数量占宽，每段至少 min 宽保证可点；段内放「名称 数量」，放不下只放数量。
+// 按数量占宽；每段至少放得下「名称 数量」（R-199：不能只有数字看不出是哪类），整条放不下时退成「状态图标 数量」；
+// 窄屏 / 手机的细条下面另列一行「色点 名称 数量」。
 export function DistBar({ counts, statuses, active, onPick, thin }: { counts: Record<string, number>; statuses: readonly string[]; active: string | null; onPick: (s: string | null) => void; thin?: boolean }) {
   const [ref, w] = useWidth()
   const gap = thin ? 2 : 3
-  const min = thin ? 10 : 34
+  const text = (s: string) => t.reqStatus[s].length * 13 + String(counts[s] ?? 0).length * 8 + 22 // 「名称 数量」所需宽度
+  const icon = (s: string) => String(counts[s] ?? 0).length * 8 + 14 + 18 // 「图标 数量」所需宽度
+  const avail0 = Math.max(0, w - gap * (statuses.length - 1))
+  const fullFits = statuses.reduce((n, s) => n + text(s), 0) <= avail0
+  const need = (s: string) => (thin ? 10 : fullFits ? text(s) : icon(s))
   const sum = statuses.reduce((n, s) => n + (counts[s] ?? 0), 0)
   const widths = useMemo(() => {
     const avail = Math.max(0, w - gap * (statuses.length - 1))
@@ -141,26 +146,27 @@ export function DistBar({ counts, statuses, active, onPick, thin }: { counts: Re
     // 先按比例分；不到最小宽的固定为最小宽，剩下的再按比例分给其余段
     let fixed = new Set<string>()
     for (let pass = 0; pass < 3; pass++) {
-      const rest = avail - fixed.size * min
+      const rest = avail - [...fixed].reduce((n, s) => n + need(s), 0)
       const restSum = statuses.filter((s) => !fixed.has(s)).reduce((n, s) => n + (counts[s] ?? 0), 0)
       const next = new Set(fixed)
-      for (const s of statuses) if (!fixed.has(s) && (!restSum || ((counts[s] ?? 0) / restSum) * rest < min)) next.add(s)
+      for (const s of statuses) if (!fixed.has(s) && (!restSum || ((counts[s] ?? 0) / restSum) * rest < need(s))) next.add(s)
       if (next.size === fixed.size) break
       fixed = next
     }
-    const rest = avail - fixed.size * min
+    const rest = avail - [...fixed].reduce((n, s) => n + need(s), 0)
     const restSum = statuses.filter((s) => !fixed.has(s)).reduce((n, s) => n + (counts[s] ?? 0), 0)
-    return Object.fromEntries(statuses.map((s) => [s, fixed.has(s) || !restSum ? min : ((counts[s] ?? 0) / restSum) * rest]))
-  }, [w, statuses, counts, gap, min])
+    return Object.fromEntries(statuses.map((s) => [s, fixed.has(s) || !restSum ? need(s) : ((counts[s] ?? 0) / restSum) * rest]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [w, statuses, counts, gap, thin, fullFits])
   return (
+    <div>
     <div ref={ref} className={cx('flex w-full', thin ? 'h-2 gap-0.5' : 'h-8 gap-[3px]')} role="group" aria-label={t.pool.title}>
       {statuses.map((s, i) => {
         const n = counts[s] ?? 0
         const name = t.reqStatus[s]
         const width = widths?.[s]
         // 估算文字宽度：中文约 13px / 字，数字约 8px
-        const full = width != null && width >= name.length * 13 + String(n).length * 8 + 22
-        const num = width != null && width >= String(n).length * 8 + 14
+        const full = width != null && width >= text(s)
         const on = active === s
         return (
           <Tip key={s} content={t.pool.segTip(name, n, on)}>
@@ -170,7 +176,7 @@ export function DistBar({ counts, statuses, active, onPick, thin }: { counts: Re
               aria-label={`${name} ${n}`}
               style={width != null ? { width, flex: 'none' } : { flex: `${Math.max(n, sum / 30)} 1 0` }}
               className={cx(
-                'flex min-w-0 items-center overflow-hidden whitespace-nowrap transition-[opacity,box-shadow] duration-150',
+                'flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap transition-[opacity,box-shadow] duration-150',
                 thin ? 'rounded-full' : 'rounded-md px-2 text-[13px] font-semibold',
                 i === 0 && !thin && 'rounded-l-lg',
                 i === statuses.length - 1 && !thin && 'rounded-r-lg',
@@ -180,11 +186,28 @@ export function DistBar({ counts, statuses, active, onPick, thin }: { counts: Re
                 on && 'ring-2 ring-accent ring-offset-1 ring-offset-bg',
               )}
             >
-              {!thin && (full ? `${name} ${n}` : num ? n : '')}
+              {!thin && (full ? `${name} ${n}` : (
+                <>
+                  <ReqGlyph status={s} />
+                  {n}
+                </>
+              ))}
             </button>
           </Tip>
         )
       })}
+    </div>
+    {(thin || !fullFits) && w > 0 && (
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-2">
+        {statuses.map((s) => (
+          <button key={s} onClick={() => onPick(active === s ? null : s)} className="inline-flex items-center gap-1 whitespace-nowrap">
+            <span className={cx('size-2 rounded-full', statusCls[s]?.dot, (s === 'draft' || s === 'shelved') && 'bg-fg-3/35')} />
+            {t.reqStatus[s]}
+            <span className="tabular text-fg-3">{counts[s] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+    )}
     </div>
   )
 }
