@@ -16,6 +16,7 @@ import { usePlans } from '../api/queries'
 import { ReqPanel } from './reqDrawer'
 import { SessionPanel } from './SessionPanel'
 import { useDraftSweep } from './draft'
+import { useCompactSync } from './assign'
 import { CommandProvider, KeyCaps, modKey, useCommand, withKey } from './command'
 
 // 页面切换不做进出场动画：路由直接切换，避免闪烁与白屏。
@@ -186,6 +187,7 @@ export function Shell() {
   const { pathname } = useLocation()
   const connected = useLiveUpdates(true)
   useDraftSweep() // 对象关闭后自动清掉它的输入草稿（R-202）
+  useCompactSync() // 上下文圆环 / 建议压缩用设置里的阈值（R-224、R-225）
   const wb = useWorkbench()
   const todo = useTodo(wb).length // 与工作台「待你处理」同一口径
   const { session, req, plan, ask, close } = usePanelParams()

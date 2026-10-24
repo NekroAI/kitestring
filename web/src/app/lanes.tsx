@@ -5,7 +5,7 @@ import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
 import { addCell, agentEnd, axisX, barHeight, cellX, coarse, emptyCell, gridTicks, hitRate, hitTone, inWindow, LONG_TOOL, laneAxis, makeAxis, shellEnd, shellLive, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type Cold, type SessionMeta, type Shell, type TokCell, type Zoom } from '../lib/lanedata'
-import { cx, duration, shortDuration } from '../lib/util'
+import { cx, duration, shortDuration, wan } from '../lib/util'
 import { Tip } from '../ui/base'
 import { spring } from '../ui/gesture'
 import { Ctx } from '../ui/contextMenu'
@@ -17,6 +17,7 @@ import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
 import { sessionTitle, splitTool } from './SessionCard'
 import { liveTasks, taskName, type BgTask } from './tasks'
+import { CtxBadge } from './compact'
 import { reducedMotion } from './verdict'
 
 // 工作台的会话泳道（R-170，D-228 原型）：每个会话一条——左边工具图标（Claude / Codex，R-187）、标题、身份（D-177 描边胶囊 + 在线点）、
@@ -444,12 +445,7 @@ function FailDot({ k, zoom, now }: { k: string; zoom: Zoom; now: number }) {
   )
 }
 
-// wan：token 数的写法（不到 1 万写原数，之后按「万」）
-export function wan(n: number) {
-  if (n < 1e4) return String(Math.round(n))
-  const w = n / 1e4
-  return `${w < 100 ? w.toFixed(1).replace(/\.0$/, '') : Math.round(w)} 万`
-}
+export { wan }
 
 // pct：命中率的写法（99% 以上留一位小数，免得都写成 100%）
 export function pct(h: number | null) {
@@ -763,7 +759,7 @@ function ActLine({ s }: { s: Session }) {
 function LastAct({ s, className }: { s: Session; className?: string }) {
   const [name] = s.last_tool ? splitTool(s.last_tool) : ['']
   if (!name) return null
-  return <div className={cx('truncate text-[11.5px] text-fg-3', className)}>{t.desk.lane.lastAct(name)}</div>
+  return <div className={cx('truncate text-[11.5px] leading-4 text-fg-3', className)}>{t.desk.lane.lastAct(name)}</div>
 }
 
 // ---------- 泳道 ----------
@@ -999,12 +995,13 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
 
   // 左：标题 + 身份；状态标 + 手上的需求；窄处再加一行（当前动作 / 在问什么 / 最后一句话）
   const id = (
-    <div className={cx('flex min-w-0 flex-col justify-center gap-1 px-3.5', quiet ? 'py-2' : 'py-2.5')}>
+    <div className={cx('@container flex min-w-0 flex-col justify-center gap-1 px-3.5', quiet ? 'py-2' : 'py-2.5')}>
       <div className="flex min-w-0 items-center gap-2">
         <ToolMark tool={s.tool} size="sm" />
         <span className={cx('truncate font-semibold', quiet ? 'text-[14px] text-fg-2' : 'text-[15px] text-fg')}>{sessionTitle(s)}</span>
         <FailDot k={s.key} zoom={zoom} now={now} />
         <RoleBadge s={s} />
+        <CtxBadge s={s} />
       </div>
       <div className="flex min-w-0 items-center gap-2">
         <StateTag s={s} tone={tone} now={now} />
@@ -1022,8 +1019,8 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
         </Tip>
       </div>
       {live && mode !== 'full' && <ActLine s={s} />}
-      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply"><Linkify text={youLine(s)} /></div>}
-      {quiet && (mode === 'mid' || mode === 'narrow') && words && <div className="truncate text-[12px] leading-4 text-fg-3"><Linkify text={words} /></div>}
+      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply"><Linkify text={youLine(s)} flow /></div>}
+      {quiet && (mode === 'mid' || mode === 'narrow') && words && <div className="truncate text-[12px] leading-4 text-fg-3"><Linkify text={words} flow /></div>}
       {(mode === 'mid' || mode === 'narrow') && <TokLabel k={s.key} zoom={zoom} now={now} />}
     </div>
   )
@@ -1037,11 +1034,12 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
       </div>
     ) : (
       <div className="flex min-w-0 flex-col justify-center gap-1 border-l border-line px-4 py-2">
-        <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? <Linkify text={youLine(s)} /> : words ? <Linkify text={words} /> : t.desk.lane.noWords}</p>
+        <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? <Linkify text={youLine(s)} flow /> : words ? <Linkify text={words} flow /> : t.desk.lane.noWords}</p>
+        {/* 底行按优先级取舍（R-225）：用量在右、先放；上次动作放得下才出现，放不下整项换到看不见的第二行，不截成一个字 */}
         {(quiet || tokLabel) && (
-          <div className="flex min-w-0 items-center gap-3">
-            {quiet && <LastAct s={s} className="min-w-0 shrink" />}
-            <TokLabel k={s.key} zoom={zoom} now={now} className="ml-auto shrink-0" />
+          <div className="flex h-4 min-w-0 flex-row-reverse flex-wrap items-center gap-x-3 overflow-hidden">
+            <TokLabel k={s.key} zoom={zoom} now={now} className="min-w-0 shrink" />
+            {quiet && <LastAct s={s} className="shrink-0 overflow-visible" />}
           </div>
         )}
       </div>
@@ -1078,8 +1076,8 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
               )
             )}
             {right}
-            {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply"><Linkify text={youLine(s)} /></div>}
-            {phone && quiet && words && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-fg-3"><Linkify text={words} /></div>}
+            {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply"><Linkify text={youLine(s)} flow /></div>}
+            {phone && quiet && words && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-fg-3"><Linkify text={words} flow /></div>}
           </div>
           <div className={cx('relative', tasks.length > 0 && 'pb-1.5')}>
             <AnimatePresence initial={false} mode="popLayout">

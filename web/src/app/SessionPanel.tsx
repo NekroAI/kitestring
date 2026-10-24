@@ -16,6 +16,7 @@ import { useOpenAsk } from './nav'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { AskItem, decisionAsk } from './asks'
 import { CtxRing, ctxLoad, useAssign } from './assign'
+import { canHandoff, CompactRow, HandoffCard, HandoffIcon, useRequestHandoff, type Handoff } from './compact'
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
@@ -190,6 +191,18 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const doneReqs = (s?.requirements ?? []).filter((r) => closed(r.status))
   const answered = mine.filter((d) => d.status !== 'pending')
   const events = q.data?.events ?? []
+  const handoffs = (q.data?.handoffs ?? []) as Handoff[]
+  // 交接也记进时间线（R-224）：写了交接 / 接任读了交接
+  const timeline = useMemo(() => {
+    const extra = handoffs.flatMap((h) => {
+      const rows: HubEvent[] = []
+      if (h.written_at && h.from_session === sessionKey) rows.push({ id: `hw-${h.id}`, name: 'KsHandoffWritten', time: h.written_at } as HubEvent)
+      if (h.taken_at && h.taken_by === sessionKey) rows.push({ id: `ht-${h.id}`, name: 'KsHandoffTaken', time: h.taken_at } as HubEvent)
+      return rows
+    })
+    return extra.length ? [...events, ...extra].sort((a, b) => (b.time ?? '').localeCompare(a.time ?? '')) : events
+  }, [events, handoffs, sessionKey])
+  const requestHandoff = useRequestHandoff()
   const lastAt = events.reduce((m, e) => (e.time && e.time > m ? e.time : m), '')
   const reqRow = (r: Session['requirements'][number]) => (
     <div key={r.id} className="flex items-center gap-2 px-3 py-2">
@@ -217,6 +230,16 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
       onAsideClose={peek.close}
       onClose={onClose}
       wide
+      actions={
+        s &&
+        canHandoff(s) && (
+          <Tip content={t.menu.handoffHint}>
+            <Button size="sm" variant="ghost" icon={<HandoffIcon className="size-3.5" />} onClick={() => void requestHandoff(s)}>
+              {t.handoff.action}
+            </Button>
+          </Tip>
+        )
+      }
       title={
         s ? (
           <span className="flex items-center gap-2.5">
@@ -249,6 +272,18 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           <div className="mb-5 empty:hidden">
             <Callout s={s} />
           </div>
+          <div className="mb-5 empty:hidden">
+            <CompactRow s={s} />
+          </div>
+          {handoffs.length > 0 && (
+            <Section title={t.handoff.title}>
+              <div className="space-y-2">
+                {handoffs.slice(0, 2).map((h) => (
+                  <HandoffCard key={h.id} h={h} me={s.key} />
+                ))}
+              </div>
+            </Section>
+          )}
 
           <Collapse show={pending.length > 0}>
             <Section title={t.decision.status.pending}>
@@ -377,7 +412,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
               )}
               <Fold label={t.session.timeline} hint={events.length ? t.session.lastActivity(relTime(lastAt, now)) : undefined}>
                 <div className="p-3">
-                  <Timeline events={events} />
+                  <Timeline events={timeline} />
                 </div>
               </Fold>
               <Fold label={t.session.sessionInfo} hint={t.session.infoHint}>
@@ -393,7 +428,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                   <span className="inline-flex items-center gap-1.5">
                     <CtxRing c={ctxLoad(s)!} />
                     {ctxLoad(s)!.label}
-                    {ctxLoad(s)!.level === 'high' && ` · ${t.session.ctxHeavyShort}`}
+                    {ctxLoad(s)!.level === 'high' && ` · ${t.session.compact}`}
                   </span>
                 )}
               </Info>

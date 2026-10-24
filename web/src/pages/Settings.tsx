@@ -84,6 +84,7 @@ function useSaveSettings() {
             upload_video_mb: patch.upload_video_mb ?? s.upload_video_mb,
             upload_file_mb: patch.upload_file_mb ?? s.upload_file_mb,
             dev_request_minutes: patch.dev_request_minutes ?? s.dev_request_minutes,
+            compact_tokens: patch.compact_tokens ?? s.compact_tokens,
           },
         }),
       )
@@ -1100,6 +1101,38 @@ function DevRequestLimit() {
   )
 }
 
+// 建议压缩的阈值（R-224、R-225）：圆环变黄 / 变红和「建议压缩」都按它判定，一处配置。
+function CompactLimit() {
+  const q = useSettings()
+  const save = useSaveSettings()
+  const [busy, wrap] = useBusy()
+  const [v, setV] = useState('')
+  useEffect(() => {
+    if (q.data) setV(String(Math.round(q.data.compact_tokens / 1e4)))
+  }, [q.data])
+  const num = (x: string) => Math.min(200, Math.max(5, Math.round(Number(x)) || 30)) * 1e4
+  const dirty = q.data && num(v) !== q.data.compact_tokens
+  const L = t.settings.account.compact
+  return (
+    <Card className="space-y-4 p-4 sm:p-5">
+      <div>
+        <div className="text-sm font-semibold text-fg">{L.title}</div>
+        <p className="mt-1 text-xs text-fg-3">{L.hint}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={L.wan}>
+          <Input type="number" inputMode="numeric" min={5} max={200} value={v} onChange={(e) => setV(e.target.value)} />
+        </Field>
+      </div>
+      <div className="flex justify-end">
+        <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => wrap(() => save({ compact_tokens: num(v) }))}>
+          {t.common.save}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 function Account({ version }: { version: string }) {
   const q = useSettings()
   const save = useSaveSettings()
@@ -1135,6 +1168,7 @@ function Account({ version }: { version: string }) {
       </Card>
       <UploadLimits />
       <DevRequestLimit />
+      <CompactLimit />
       <Passkeys />
       <Card className="space-y-4 p-4 sm:p-5">
         <div className="text-sm font-semibold text-fg">{t.settings.account.password}</div>

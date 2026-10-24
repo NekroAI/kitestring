@@ -22,7 +22,6 @@ import { duration, shortPath, useNow } from '../lib/util'
 const shortClock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
 import { Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
-import { ctxLoad, ctxTip } from './assign'
 import { displayState } from '../ui/marks'
 import { useOpenReq } from './nav'
 import { Linkify, RefChip, ReqGlyph } from '../ui/refmark'
@@ -48,9 +47,9 @@ export function splitTool(label: string): [string, string] {
   return [name.replace(/^mcp__/, ''), rest.join(' · ')]
 }
 
-// sessionExtras：不常看的会话细节（轮数、工具、子任务、权限、worktree、上下文、工具过时），放在设备的悬停里（R-147）。
+// sessionExtras：不常看的会话细节（轮数、工具、子任务、权限、worktree、工具过时），放在设备的悬停里（R-147）。
+// 上下文占用常显在卡片的圆环上（R-225），这里不再重复。
 export function sessionExtras(s: Session): string {
-  const ctx = s.state !== 'ended' ? ctxLoad(s) : null
   return [
     t.session.device + '：' + s.device_name,
     s.turns > 0 && t.session.turns(s.turns),
@@ -58,7 +57,6 @@ export function sessionExtras(s: Session): string {
     s.subagents > 0 && t.session.subagentsTip(s.subagents),
     t.permMode[s.permission_mode],
     s.worktree && t.session.worktree,
-    ctx && ctxTip(ctx),
     s.tools_stale && s.state !== 'ended' && t.session.toolsStaleTip(s.tools_stale),
   ]
     .filter(Boolean)

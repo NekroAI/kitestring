@@ -13,6 +13,7 @@ import { useOpenReq, useOpenSession } from './nav'
 import { allStatuses, priorities, toFields, useSetStatus } from './requirements'
 import { ReqGlyph } from '../ui/refmark'
 import { sessionTitle } from './SessionCard'
+import { canHandoff, HandoffIcon, useRequestHandoff } from './compact'
 
 const copy = async (text: string) => (await copyText(text)) && toast.success(t.common.copied)
 
@@ -24,6 +25,7 @@ export function useSessionMenu() {
   const open = useOpenSession()
   const openReq = useOpenReq()
   const { markDone } = useActions()
+  const handoff = useRequestHandoff()
   return (s: Session): CtxItem[] => {
     const reqs = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
     const canDone = s.state !== 'ended'
@@ -46,6 +48,7 @@ export function useSessionMenu() {
       ...(reqs.length
         ? [{ type: 'sub' as const, label: t.menu.reqs(reqs.length), icon: <ListTodo />, items: reqs.map((r) => ({ label: r.title, hint: r.code, onSelect: () => openReq(r.code) })) }]
         : []),
+      ...(canHandoff(s) ? [{ label: t.menu.handoff, hint: t.menu.handoffHint, icon: <HandoffIcon />, onSelect: () => void handoff(s) }] : []),
       { type: 'separator' },
       { label: t.menu.copyResume, hint: resumeCommand(s), icon: <Terminal />, onSelect: () => void copy(resumeCommand(s)) },
       { label: t.menu.copySessionId, icon: <ClipboardCopy />, onSelect: () => void copy(s.session_id) },

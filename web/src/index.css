@@ -634,6 +634,9 @@ nav.fixed {
 
 /* 印记（R-96）：悬停或聚焦任一编号，同页所有同一对象一起亮起来。 */
 .ref-chip.lit { background: var(--lit); border-color: var(--accent); }
+/* 随句子折行的印记（R-225）：跟文字一样断行，边框和底色在每一行各画一段 */
+.ref-flow { display: inline; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.ref-flow > svg { display: inline-block; vertical-align: -0.15em; margin-right: 0.25em; }
 
 /* 工作台（R-147）：新进「要你处理」的卡片轻轻提示一次：一圈朱砂描边淡出，不加别的装饰动画。 */
 @keyframes ks-tier-flash {

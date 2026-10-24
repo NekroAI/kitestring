@@ -1,12 +1,13 @@
 import { Send, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Session } from '../api/client'
-import { usePlans, useSessions } from '../api/queries'
+import { usePlans, useSessions, useSettings } from '../api/queries'
 import { t } from '../i18n'
 import { RoleTag, StatusDot, displayState, presence } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { Button, Tip } from '../ui/base'
-import { cx } from '../lib/util'
+import { cx, wan } from '../lib/util'
+import { ctxLevel, DEFAULT_COMPACT, DEFAULT_WINDOW, type CtxLevel } from '../lib/ctx'
 import type { CtxItem } from '../ui/contextMenu'
 import { useActions } from './actions'
 import { sessionTitle } from './SessionCard'
@@ -16,17 +17,21 @@ import { sessionTitle } from './SessionCard'
 
 export type TargetGroup = 'now' | 'later' | 'stale'
 
-// 上下文占用（R-60）：知道窗口时按比例，不知道（Claude）时按绝对值——15 万起偏重，60 万起很重，建议开新会话接手。
-// 圆环的填充比例：不知道窗口时按 100 万算（Claude Code 的长上下文模型）。
-export type CtxLoad = { used: number; max: number; ratio: number; level: 'ok' | 'mid' | 'high'; label: string; short: string }
-const fmtK = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}k`)
+// 上下文占用（R-60、R-225）：轻重判定在 lib/ctx 的 ctxLevel（全站一处），阈值来自设置（R-224）。
+export type CtxLoad = { used: number; max: number; ratio: number; level: CtxLevel; limit: number; label: string; short: string }
+let compactAt = DEFAULT_COMPACT
+// useCompactSync：在外壳里调用一次，把设置里的阈值同步给 ctxLoad（设置变了外壳重渲染，下面的圆环跟着变）。
+export function useCompactSync() {
+  const q = useSettings()
+  compactAt = q.data?.compact_tokens || DEFAULT_COMPACT
+}
 export function ctxLoad(s: Session): CtxLoad | null {
   const used = s.context_tokens ?? 0
   const max = s.context_max ?? 0
   if (!used) return null
-  const level = max ? (used / max >= 0.8 ? 'high' : used / max >= 0.5 ? 'mid' : 'ok') : used >= 600_000 ? 'high' : used >= 150_000 ? 'mid' : 'ok'
-  const ratio = Math.min(1, used / (max || 1_000_000))
-  return { used, max, ratio, level, label: max ? `${fmtK(used)} / ${fmtK(max)}` : fmtK(used), short: max ? `${Math.round((used / max) * 100)}%` : fmtK(used) }
+  const { level, limit, ratio } = ctxLevel(used, max, compactAt)
+  const p = `${Math.round(ratio * 100)}%`
+  return { used, max, ratio, level, limit, label: max ? t.session.ctxOf(wan(used), wan(max), p) : t.session.ctxOfGuess(wan(used), wan(DEFAULT_WINDOW), p), short: max ? p : wan(used) }
 }
 
 // CtxRing：小圆环，填充比例 = 当前对话占上下文窗口的比例；偏重变黄、很重变红。
@@ -41,8 +46,8 @@ export function CtxRing({ c, className }: { c: CtxLoad; className?: string }) {
   )
 }
 
-const ctxColor = (c: CtxLoad) => (c.level === 'high' ? 'text-danger' : c.level === 'mid' ? 'text-wait' : 'text-fg-3')
-export const ctxTip = (c: CtxLoad) => (c.level === 'high' ? t.session.ctxHeavyTip(c.label) : c.level === 'mid' ? t.session.ctxTip(c.label) : t.session.ctxOkTip(c.label))
+export const ctxColor = (c: CtxLoad) => (c.level === 'high' ? 'text-danger' : c.level === 'mid' ? 'text-wait' : 'text-fg-3')
+export const ctxTip = (c: CtxLoad) => (c.level === 'high' ? t.session.ctxHeavyTip(c.label, wan(c.limit)) : c.level === 'mid' ? t.session.ctxTip(c.label, wan(c.limit)) : t.session.ctxOkTip(c.label))
 
 // CtxMark：会话卡 / 列表里的上下文占用——圆环加简短数字，悬停看详情。
 export function CtxMark({ s }: { s: Session }) {
