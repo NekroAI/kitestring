@@ -380,7 +380,7 @@ function Palette({ open, onClose, onAction, cur }: { open: boolean; onClose: () 
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <RDialog.Portal>
-        <RDialog.Overlay className="modal-fade fixed inset-0 z-50 bg-black/25 backdrop-blur-[2px] dark:bg-black/50" />
+        <RDialog.Overlay className="modal-fade fixed inset-0 z-50 bg-black/30 dark:bg-black/55" />
         <RDialog.Content
           aria-describedby={undefined}
           data-ks-modal=""
@@ -538,7 +538,7 @@ function HelpSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <RDialog.Portal>
-        <RDialog.Overlay className="modal-fade fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" />
+        <RDialog.Overlay className="modal-fade fixed inset-0 z-50 bg-black/35 dark:bg-black/55" />
         <RDialog.Content
           aria-describedby={undefined}
           data-ks-modal=""
