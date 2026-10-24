@@ -71,7 +71,17 @@ type recommendIn struct {
 }
 
 type briefIn struct {
-	Text string `json:"text" jsonschema:"简报：一段话（建议 150 字以内），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
+	Headline string   `json:"headline,omitempty" jsonschema:"一句话结论（建议 40 字以内）：工作台常驻条上只显示它，所以要自己读得通；不写时网页取简报第一句"`
+	Look     []string `json:"look,omitempty" jsonschema:"要用户先看的几条（建议 3 条以内，每条一句，写编号），展开后排在最前"`
+	Text     string   `json:"text" jsonschema:"简报：一段话（建议 200 字以内，超出照常保存并提示压缩），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
+}
+
+type handoffIn struct {
+	Doing   string `json:"doing" jsonschema:"在做的：每件事写需求编号、做到哪、分支 / worktree 在哪"`
+	Waiting string `json:"waiting,omitempty" jsonschema:"等用户的：待答决策、待验收的需求、要用户拍板的事（写编号）"`
+	Rules   string `json:"rules,omitempty" jsonschema:"约定和规矩：用户定过的、团队里说好的、还没做成系统的口头约定"`
+	Next    string `json:"next" jsonschema:"下一步：接任后先做什么"`
+	Notes   string `json:"notes,omitempty" jsonschema:"注意事项：坑、在跑的进程、别碰的东西"`
 }
 
 type morningAdviceIn struct {
@@ -81,18 +91,42 @@ type morningAdviceIn struct {
 }
 
 type morningIn struct {
-	Text   *string           `json:"text,omitempty" jsonschema:"总述：一段话（建议 150 字以内），先结论——用户离开期间整体推进到哪、你替用户定了几件、有什么要用户先看的；提到需求 / 决策写编号。不传表示不改，传空字符串清除"`
-	Advice []morningAdviceIn `json:"advice,omitempty" jsonschema:"逐条验收建议，每条覆盖该需求上一份；只能写给待验收的需求"`
+	Headline *string           `json:"headline,omitempty" jsonschema:"一句话结论（建议 40 字以内）：工作台常驻条上只显示它，所以要自己读得通；不传表示不改，传空字符串清除"`
+	Look     []string          `json:"look,omitempty" jsonschema:"要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改"`
+	Text     *string           `json:"text,omitempty" jsonschema:"总述：一段话（建议 200 字以内，超出照常保存并提示压缩），先结论——用户离开期间整体推进到哪、你替用户定了几件、有什么要用户先看的；提到需求 / 决策写编号。不传表示不改，传空字符串清除"`
+	Advice   []morningAdviceIn `json:"advice,omitempty" jsonschema:"逐条验收建议，每条覆盖该需求上一份；只能写给待验收的需求"`
 }
 
 type tellIn struct {
-	Text        string `json:"text" jsonschema:"要告诉 PM 的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13）"`
+	Text        string `json:"text" jsonschema:"要说的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13；问取舍时写清选项和你倾向哪个）"`
+	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
+	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"回复收到的团队消息时填它的编号（D-x）：回复自动送回发消息的一方"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
+	FYI         bool   `json:"fyi,omitempty" jsonschema:"只告知（R-227）：对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上。部署 / 重启、进展通报填 true；提问、求裁定、派活、回复不填（立刻叫醒）"`
 }
 
 func (t *tools) registerTeam(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的 PM 留言：进展、受阻、发现的问题、做完一批等要让 PM 知道的事。只送给 PM（它挂着 ks wait 时立刻收到），不进用户的收件箱；要用户拍板的事仍用 decision_raise。需求设为待验收时 PM 会自动收到通知，不必再发。项目没有 PM 时不会送出，也不报错。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的团队成员发消息（命令行 ks team tell）：按身份送给本项目现在的那个会话，不认会话名。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户拍板的事仍用 decision_raise。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
+			key, agent := t.caller(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "reply_to": in.ReplyTo, "agent_id": agent}
+			dropEmpty(body)
+			if in.FYI {
+				body["fyi"] = true
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/team/tell", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "handoff_write", Description: "交接（R-224）：用户点了「交接」、要换会话 / 换工具 / 换设备接任你的身份时，写一份结构化交接存进纸鸢（显示在你的会话时间线上）。新会话运行 ks role <身份> 时自动读到最新一份，你随即卸任：身份清除、不再被唤醒，之后不要再挂 ks wait。主调度有在跑的子任务时会被拒绝：先停派新活，等子任务交完再写。可以重复调用，覆盖还没被接任的那一份。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in handoffIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
 				return nil, nil, fmt.Errorf("无法识别当前会话")
@@ -100,9 +134,8 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			var out struct {
 				Message string `json:"message"`
 			}
-			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement}
-			dropEmpty(body)
-			if err := t.c.Do(ctx, "POST", "/agent/team/tell", body, &out); err != nil {
+			body := map[string]any{"session_key": key, "doing": in.Doing, "waiting": in.Waiting, "rules": in.Rules, "next": in.Next, "notes": in.Notes}
+			if err := t.c.Do(ctx, "POST", "/agent/handoff", body, &out); err != nil {
 				return nil, nil, err
 			}
 			return text(out.Message), nil, nil
@@ -113,13 +146,16 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			if key == "" {
 				return nil, nil, fmt.Errorf("无法识别当前会话")
 			}
-			if err := t.c.Do(ctx, "POST", "/agent/brief", map[string]any{"session_key": key, "text": in.Text}, nil); err != nil {
+			var out struct {
+				Hint string `json:"hint"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/brief", map[string]any{"session_key": key, "text": in.Text, "headline": in.Headline, "look": in.Look}, &out); err != nil {
 				return nil, nil, err
 			}
-			if in.Text == "" {
+			if in.Text == "" && in.Headline == "" && len(in.Look) == 0 {
 				return text("已清除简报。"), nil, nil
 			}
-			return text("简报已更新，用户在工作台顶部能看到。"), nil, nil
+			return text("简报已更新，用户在工作台顶部能看到。" + out.Hint), nil, nil
 		})
 	away := func(ctx context.Context, req *mcp.CallToolRequest, in morningIn) (*mcp.CallToolResult, any, error) {
 		key := t.sessionKey(ctx, req)
@@ -129,6 +165,12 @@ func (t *tools) registerTeam(s *mcp.Server) {
 		body := map[string]any{"session_key": key}
 		if in.Text != nil {
 			body["text"] = *in.Text
+		}
+		if in.Headline != nil {
+			body["headline"] = *in.Headline
+		}
+		if in.Look != nil {
+			body["look"] = in.Look
 		}
 		if len(in.Advice) > 0 {
 			body["advice"] = in.Advice
@@ -142,6 +184,20 @@ func (t *tools) registerTeam(s *mcp.Server) {
 		return text(out.Message), nil, nil
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: "away_set", Description: "主助理（Aide）用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
+	mcp.AddTool(s, &mcp.Tool{Name: "away_escalate", Description: "主助理（Aide）用：用户暂时离开时，把你拿不准、要用户尽快看的待决策推给用户（离开期间推送是分级过滤的，你能代答、已写建议的不推；拿不准的用它推）。要写一句理由。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in escalateIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/away/escalate", map[string]any{"session_key": key, "decision": in.Decision, "reason": in.Reason}, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
 	// morning_set 是 away_set 的旧名，保留给已在用的会话。
 	mcp.AddTool(s, &mcp.Tool{Name: "morning_set", Description: "（旧名，等同 away_set）" + "主助理（Aide）用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
 	recommend := func(ctx context.Context, req *mcp.CallToolRequest, path string, body map[string]any) (*mcp.CallToolResult, any, error) {
@@ -214,4 +270,9 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(out.Message), nil, nil
 		})
+}
+
+type escalateIn struct {
+	Decision string `json:"decision" jsonschema:"待决策编号，如 D-183"`
+	Reason   string `json:"reason" jsonschema:"一句话：为什么要用户尽快看（必填）"`
 }

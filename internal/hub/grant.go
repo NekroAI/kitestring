@@ -17,7 +17,8 @@ import (
 //   - 窗口按项目开，同一项目同时只有一个；有到期时间（最长 24 小时）和范围（最高风险档：low 或 medium）；随时可撤销，到期自动失效。
 //   - 只有被授权的那个主助理会话能代答，别的身份、别的会话一律拒绝；必须写理由，并给出自己的风险判断——
 //     风险档只升不降：取提问方标的和参谋判断中更高的一档，超出窗口范围就拒绝。提问方没标风险档按 high 算。
-//   - 硬规则永不代答：批准方案 / 计划（approval）、设计选型（选项或要拍板的点带效果图）、非决策类、已答复 / 已关闭、参谋自己提的；
+//   - 硬规则永不代答（R-210 起见 hardrule.go）：批准方案 / 计划（approval）、设计选型（选项或要拍板的点带效果图）、提问方标了 hard 的、
+//     主助理 hard_check 没填 none 的、兜底词命中的（拿不准）、非决策类、已答复 / 已关闭、参谋自己提的；
 //     要拍板的点（points）整体判定，任何一点命中硬规则整条都不代答。验收、批准计划本来不走决策接口，代答碰不到。
 //   - 代答留痕在决策上（谁、理由、风险档、原文、时间），网页标「主助理代答」；你可以推翻（重新作答），更正会送回提问方。
 //   - 窗口开着时，参谋可以代答的决策先不推送通知（不吵醒你），但仍留在收件箱里；参谋答了就移走。
@@ -26,7 +27,7 @@ const grantMaxSpan = 24 * time.Hour
 
 var riskZh = map[string]string{store.RiskLow: "低风险", store.RiskMedium: "中风险", store.RiskHigh: "高风险"}
 
-// proxyHard 返回 d 命中的硬规则（不能代答的原因）；adv 是参谋的会话键。没命中时为空。
+// proxyHard 返回 d 命中的硬规则或不能代答的原因；adv 是参谋的会话键。没命中时为空。
 func proxyHard(d store.Decision, adv string) string {
 	owner := d.OriginSession
 	if owner == "" {
@@ -41,25 +42,11 @@ func proxyHard(d store.Decision, adv string) string {
 		return d.Code + " 已经答复过了，不能再代答"
 	case owner != "" && owner == adv:
 		return "参谋自己提的决策不能自己代答"
-	case d.Approval:
-		return "批准方案 / 计划只由用户操作"
 	}
-	for _, fs := range d.OptionFiles {
-		if len(fs) > 0 {
-			return "设计选型（选项带效果图）只由用户拍板"
-		}
-	}
-	for _, p := range d.Points {
-		for _, it := range p.Items {
-			if it.Image != nil {
-				return "设计选型（要拍板的点带效果图）只由用户拍板"
-			}
-		}
-	}
-	return ""
+	return hardOf(d)
 }
 
-// proxyQuiet：d 所在项目有生效中的窗口、d 不命中硬规则、提问方标的风险档在范围内——参谋可以代答，先不推送。
+// proxyQuiet：d 所在项目有生效中的窗口、d 不命中硬规则也不「拿不准」、提问方标的风险档在范围内——参谋可以代答，先不推送。
 func (h *Hub) proxyQuiet(ctx context.Context, d store.Decision) bool {
 	if d.ProjectID == "" {
 		return false
@@ -68,11 +55,11 @@ func (h *Hub) proxyQuiet(ctx context.Context, d store.Decision) bool {
 	if err != nil {
 		return false
 	}
-	return proxyHard(d, g.SessionKey) == "" && store.RiskRank(store.NormRisk(d.Risk)) <= store.RiskRank(g.MaxRisk)
+	return proxyHard(d, g.SessionKey) == "" && unsureOf(d) == "" && store.RiskRank(store.NormRisk(d.Risk)) <= store.RiskRank(g.MaxRisk)
 }
 
 // proxyCheck 检查 caller 能不能代答 d，返回生效的风险档（提问方与参谋判断中更高的一档）。
-func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk, reason string) (store.Session, string, error) {
+func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk, reason, hardCheck string) (store.Session, string, error) {
 	if caller == "" {
 		return store.Session{}, "", huma.Error400BadRequest("代答要知道是哪个会话：请带上 session_key")
 	}
@@ -96,6 +83,9 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 	if why := proxyHard(d, caller); why != "" {
 		return x, "", huma.Error403Forbidden("硬规则，不能代答：" + why + "；留给用户")
 	}
+	if w := unsureOf(d); w != "" {
+		return x, "", huma.Error403Forbidden(fmt.Sprintf("拿不准，不能代答：%s 的问题或选项里提到「%s」，可能涉及硬规则，留给用户", d.Code, w))
+	}
 	switch advRisk {
 	case store.RiskLow, store.RiskMedium, store.RiskHigh:
 	default:
@@ -114,6 +104,13 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 	}
 	if strings.TrimSpace(reason) == "" {
 		return x, "", huma.Error400BadRequest("代答必须写理由：reason（ks 用 --reason），说明为什么这样答、为什么不必等用户")
+	}
+	switch hardCheck = strings.TrimSpace(hardCheck); {
+	case hardCheck == "none":
+	case hardKinds[hardCheck] != "":
+		return x, "", huma.Error403Forbidden(fmt.Sprintf("硬规则，不能代答：你判断 %s 属于「%s」，只由用户拍板；留给用户", d.Code, hardKinds[hardCheck]))
+	default:
+		return x, "", huma.Error400BadRequest("代答前要核对硬规则：hard_check = none 表示不属于以下任何一类；属于其中一类就不要代答，留给用户。旧版 MCP 没有 hard_check 参数：请用 ks decision answer --hard-check none，或用 /mcp 重连。" + hardKindsDoc)
 	}
 	return x, eff, nil
 }
@@ -187,14 +184,10 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			if b.ExpiresAt.Sub(now) > grantMaxSpan+time.Minute {
 				return nil, huma.Error400BadRequest("授权最长 24 小时")
 			}
-			g, err := h.store.CreateGrant(ctx, b.ProjectID, b.SessionKey, b.MaxRisk, b.ExpiresAt)
+			g, err := h.openGrant(ctx, b.ProjectID, b.SessionKey, b.MaxRisk, b.ExpiresAt, "", "")
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
 			}
-			h.tellGrant(ctx, g, fmt.Sprintf("用户开了参谋授权窗口 %s：到 %s 前，你可以代用户答复本项目%s以内的决策（decision_answer / ks decision answer，必须写理由和你自己的风险判断，风险档取提问方与你判断中更高的一档）。硬规则永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收。拿不准的留给用户。",
-				g.Code, g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]))
-			h.scheduleGrantExpiry(g)
-			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户开了参谋授权窗口 %s：授权给 %s，到 %s 前可代答%s以内的决策。", g.Code, h.actorName(ctx, g.SessionKey), g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]), g.SessionKey) // 被授权的主助理已由 tellGrant 告诉（R-171）
 			h.broker.publish("grants", "decisions")
 			return &grantOut{Body: g}, nil
 		})
@@ -223,6 +216,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				Choices []int    `json:"choices,omitempty" doc:"要拍板的点：逐点选第几个（从 0 开始）"`
 				Reject  bool     `json:"reject,omitempty"`
 				Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）"`
+				Verdict string   `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：批准还是拒绝（R-239）"`
 			}
 		}) (*decisionOut, error) {
 			d0, err := h.store.GetDecision(ctx, in.Ref)
@@ -246,13 +240,14 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				}
 				choices = in.Body.Choices
 			}
-			d, err := h.store.AnswerDecisionPoints(ctx, d0.ID, answer, files, choices, in.Body.Reason)
+			d, err := h.store.AnswerDecisionPoints(ctx, d0.ID, answer, files, choices, in.Body.Reason, answerVerdict(in.Body.Verdict, in.Body.Reject))
 			if err != nil {
 				return nil, apiErr(err)
 			}
 			h.decisionsChanged(ctx, d)
+			h.awayUser(ctx, "override", d.ProjectID, d.Code, d.Question, brief(d.Answer, 80)) // 离开期间你在哪台设备上推翻的（R-210）
 			if x, err := h.store.GetSession(ctx, d.ProxyBy); err == nil && x.State != store.StateEnded && x.DoneAt == nil {
-				if _, err := h.tell(ctx, x.Key, d.ProjectID, d.RequirementID, fmt.Sprintf("你代答的 %s「%s」被用户推翻了：你答的是「%s」，用户改为「%s」。更正已送给提问方。", d.Code, brief(d.Question, 40), brief(d.ProxyAnswer, 40), brief(d.Answer, 60))); err != nil {
+				if _, err := h.tellQuiet(ctx, x.Key, d.ProjectID, d.RequirementID, fmt.Sprintf("你代答的 %s「%s」被用户推翻了：你答的是「%s」，用户改为「%s」。更正已送给提问方。", d.Code, brief(d.Question, 40), brief(d.ProxyAnswer, 40), brief(d.Answer, 60))); err != nil {
 					h.log.Warn("通知参谋代答被推翻失败", "err", err)
 				}
 			}
@@ -262,7 +257,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 
 // tellGrant 给被授权的主助理 会话送一句说明（走团队消息，不进你的收件箱）。
 func (h *Hub) tellGrant(ctx context.Context, g store.Grant, text string) {
-	if _, err := h.tell(ctx, g.SessionKey, g.ProjectID, "", text); err != nil {
+	if _, err := h.tellQuiet(ctx, g.SessionKey, g.ProjectID, "", text); err != nil { // 只告知（R-227）
 		h.log.Warn("通知参谋授权变化失败", "err", err)
 	}
 }
@@ -307,6 +302,8 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 				Reason     string `json:"reason" doc:"为什么这样答、为什么不必等用户（必填）"`
 				Risk       string `json:"risk" doc:"你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档"`
 				Choices    []int  `json:"choices,omitempty" doc:"要拍板的点：逐点选第几个（从 0 开始）"`
+				Verdict    string `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：代答批准还是拒绝（R-239）；不填时按答复开头的「批准 / 拒绝」记一次"`
+				HardCheck  string `json:"hard_check,omitempty" doc:"硬规则核对（必填，R-210）：none = 核对过，不属于硬规则；填 product / design / semantics / permission / gate / irreversible / acceptance 中的一类表示属于它，会被拒绝"`
 			}
 		}) (*decisionOut, error) {
 			d0, err := h.store.GetDecision(ctx, in.Ref)
@@ -314,7 +311,7 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 				return nil, apiErr(err)
 			}
 			b := in.Body
-			x, eff, err := h.proxyCheck(ctx, d0, b.SessionKey, b.Risk, b.Reason)
+			x, eff, err := h.proxyCheck(ctx, d0, b.SessionKey, b.Risk, b.Reason, b.HardCheck)
 			if err != nil {
 				return nil, err
 			}
@@ -328,7 +325,7 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 			if answer == "" {
 				return nil, huma.Error400BadRequest("答复不能为空")
 			}
-			d, err := h.store.ProxyAnswerDecision(ctx, d0.ID, x.Key, answer, b.Reason, eff, choices)
+			d, err := h.store.ProxyAnswerDecision(ctx, d0.ID, x.Key, answer, b.Reason, eff, choices, b.Verdict)
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
 			}

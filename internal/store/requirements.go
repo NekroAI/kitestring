@@ -73,8 +73,10 @@ type Requirement struct {
 	FromDecision string `json:"from_decision,omitempty"`
 	// StatusChanges：状态变更历史（R-153），时间正序；上线前的旧需求没有
 	StatusChanges []StatusChange `json:"status_changes,omitempty"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
+	// Review：待验收时这一轮的评审验证情况（R-232、R-237），推导得出；没交给评审、也没收到审查意见时为空
+	Review    *ReviewState `json:"review,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
+	UpdatedAt time.Time    `json:"updated_at"`
 }
 
 // Evidence 是需求的验收证据。
@@ -258,8 +260,11 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 	if r.StatusChanges, err = s.ListStatusChanges(ctx, StatusQuery{RequirementID: r.ID}); err != nil {
 		return r, err
 	}
-	r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask, KindRelease, KindEdit)
-	return r, err
+	if r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask, KindRelease, KindEdit); err != nil {
+		return r, err
+	}
+	r.Review = s.ReviewOf(ctx, r, time.Now())
+	return r, nil
 }
 
 func (s *Store) fillReqSessions(ctx context.Context, r *Requirement) error {
@@ -311,6 +316,9 @@ func (s *Store) ListRequirements(ctx context.Context, projectID string, statuses
 	}
 	for i := range out {
 		if err := s.fillReqSessions(ctx, &out[i]); err != nil {
+			return nil, err
+		}
+		if err := s.fillReviewState(ctx, &out[i]); err != nil {
 			return nil, err
 		}
 	}

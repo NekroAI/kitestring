@@ -23,6 +23,7 @@ type roleOut struct {
 		Name       string   `json:"name" doc:"身份中文名（主助理 / 顾问 / 评审 / 主调度 / 开发）；无身份时为空"`
 		Prompt     string   `json:"prompt" doc:"身份提示词，ks role 直接打印给 Agent"`
 		Demoted    []string `json:"demoted" doc:"因本次接任主调度 / 主助理被降为无身份的会话"`
+		Handoff    bool     `json:"handoff" doc:"接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾"`
 	}
 }
 
@@ -40,11 +41,12 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 				return nil, huma.Error400BadRequest(roleUsage)
 			}
 			out.Body.SessionKey, out.Body.Role = in.Body.SessionKey, role
-			demoted, err := h.setRole(ctx, in.Body.SessionKey, role)
+			demoted, handoff, err := h.setRole(ctx, in.Body.SessionKey, role)
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role), demoted
+			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.roleNotes(ctx, in.Body.SessionKey)+handoff, demoted
+			out.Body.Handoff = handoff != ""
 			if out.Body.Demoted == nil {
 				out.Body.Demoted = []string{}
 			}
@@ -55,18 +57,23 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 const roleUsage = "身份只能是 aide（主助理）、advisor（顾问）、reviewer（评审）、pm（主调度）、dev（开发）之一，也认中文名和别称（清除身份用 none）"
 
 // setRole 设置会话身份；接任主调度 / 主助理时通知被降级的旧会话，并把身份下发给相关设备。
-func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, error) {
+// 同项目同身份有上一任写好的交接时一并接任（R-224）：返回要注入的交接内容，上一任卸任。
+func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, error) {
 	if !roles.Valid(role) {
-		return nil, huma.Error400BadRequest(roleUsage)
+		return nil, "", huma.Error400BadRequest(roleUsage)
 	}
 	x, err := h.store.GetSession(ctx, key)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	demoted, err := h.store.SetRole(ctx, key, role)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	if role != "" && x.RetiredAt != nil {
+		_ = h.store.SetRetired(ctx, key, false) // 卸任的会话重新声明身份：回到正常
+	}
+	handoff, demoted := h.takeOver(ctx, x, role, demoted)
 	devices := map[string]bool{x.DeviceID: true}
 	name := x.Title
 	if name == "" {
@@ -78,9 +85,13 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, error) {
 			continue
 		}
 		devices[old.DeviceID] = true
+		answer := fmt.Sprintf("你在项目「%s」的%s身份已由「%s」接任，你现在是没有身份的普通会话：不必再常驻挂 ks wait，把手上的事收个尾、说明进度后结束本轮即可；%s", old.ProjectName, roles.Display(role), name, handover[role])
+		if old.RetiredAt != nil {
+			answer = retiredNote(old.ProjectName, role, name) // 交接后卸任（R-224）
+		}
 		d, err := h.store.CreateDecision(ctx, store.Decision{
 			Kind: store.KindRole, SessionKey: k, ProjectID: old.ProjectID, Question: roles.Display(role) + " 已被接任",
-			Answer: fmt.Sprintf("你在项目「%s」的%s身份已由「%s」接任，你现在是没有身份的普通会话：不必再常驻挂 ks wait，把手上的事收个尾、说明进度后结束本轮即可；%s", old.ProjectName, roles.Display(role), name, handover[role]),
+			Answer: answer,
 		})
 		if err != nil {
 			h.log.Warn("记录 PM 降级通知失败", "err", err)
@@ -102,7 +113,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, error) {
 		h.devUp(ctx, key, x.Role != roles.Dev) // 新声明的开发报上线；够数时清除 need_devs 提醒并告诉 PM（R-116）
 	}
 	h.sessionChanged(key)
-	return demoted, nil
+	return demoted, handoff, nil
 }
 
 // handover：卸任时交代谁接手。

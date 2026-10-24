@@ -1,24 +1,25 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { AnimatePresence } from 'motion/react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, ShieldCheck, UserPlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Requirement, Session } from '../api/client'
 import { useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { copyText, cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
-import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input } from '../ui/base'
+import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input, Segmented } from '../ui/base'
 import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { displayState, presence, presenceDot } from '../ui/marks'
 import { Item, List } from '../ui/motion'
 import { useActions } from '../app/actions'
 import { useOpenAsk, useOpenReq } from '../app/nav'
-import { AskItem, useAsks } from '../app/asks'
+import { AskItem, useAsks, useStaying } from '../app/asks'
 import { useWorkbench } from '../app/inbox'
 import { NewReqModal, statusCls } from '../app/requirements'
 import { SessionRow } from '../app/thread'
-import { Linkify, ReqGlyph } from '../ui/refmark'
+import { RefLine, ReqGlyph } from '../ui/refmark'
 import { useRecent } from '../app/recent'
-import { GrantPanel } from '../app/grant'
+import { reviewHeld } from '../app/verify'
 
 // 项目：左侧项目列表常驻，右侧回答“这个项目现在怎样”（D-20 选定 B 主从双栏；窄屏退化为列表 → 详情）。
 
@@ -72,7 +73,7 @@ function useStats(): { list: Stat[]; loading: boolean } {
         live: mine.filter((s) => s.state !== 'ended' && s.state !== 'lost'),
         reqs: rq,
         open,
-        review: open.filter((r) => r.status === 'review').length,
+        review: open.filter((r) => r.status === 'review' && !reviewHeld(r)).length,
         last,
         needDevs: p.need_devs,
         needReason: p.need_reason,
@@ -221,15 +222,19 @@ function NeedDevs({ p, now }: { p: Stat; now: number }) {
 
 // ProjectAsks：这个项目里要你处理的事——固定大小的条目，点开审批抽屉（R-177）。
 function ProjectAsks({ id, now }: { id: string; now: number }) {
-  const asks = useAsks(useWorkbench()).filter((a) => a.projectId === id)
+  const asks = useStaying(useAsks(useWorkbench())).filter((a) => a.projectId === id)
   const openAsk = useOpenAsk()
   if (!asks.length) return null
   return (
     <Section title={`${t.desk.paneAsk} · ${asks.filter((a) => a.counted).length}`}>
-      <div className="grid grid-cols-1 gap-2 @container sm:grid-cols-2">
-        {asks.map((a) => (
-          <AskItem key={a.key} a={a} now={now} onOpen={openAsk} />
-        ))}
+      <div className="grid grid-cols-1 gap-x-2 @container sm:grid-cols-2">
+        <AnimatePresence initial={false}>
+          {asks.map((a) => (
+            <Item key={a.key} space={8} fluid layout>
+              <AskItem a={a} now={now} onOpen={openAsk} />
+            </Item>
+          ))}
+        </AnimatePresence>
       </div>
     </Section>
   )
@@ -240,10 +245,9 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [granting, setGranting] = useState(false)
   const counts = order.map((s) => [s, p.open.filter((r) => r.status === s).length] as const).filter(([, n]) => n)
   const done = p.reqs.filter((r) => r.status === 'done').length
-  const firstReview = p.open.filter((r) => r.status === 'review').sort((a, b) => a.updated_at.localeCompare(b.updated_at))[0]
+  const firstReview = p.open.filter((r) => r.status === 'review' && !reviewHeld(r)).sort((a, b) => a.updated_at.localeCompare(b.updated_at))[0]
   const live = [...p.live].sort((a, b) => Number(displayState(b) === 'parked') - Number(displayState(a) === 'parked') || b.last_active_at.localeCompare(a.last_active_at))
 
   // 最近进展：跨会话汇总这个项目的提交验收、退回、留言、交出与决策答复（与工作台右栏共用）
@@ -278,9 +282,6 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button icon={<ShieldCheck className="size-4" />} onClick={() => setGranting(true)}>
-            <span className="max-sm:hidden">{t.grant.open}</span>
-          </Button>
           <Button icon={<Settings2 className="size-4" />} onClick={() => setEditing(true)}>
             <span className="max-sm:hidden">{t.projects.settings}</span>
           </Button>
@@ -359,8 +360,8 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
           <Card className="divide-y divide-dashed divide-line px-4 py-1">
             {recent.map((e, i) => (
               <button key={i} onClick={() => e.code && openReq(e.code)} className="flex w-full items-center gap-3 py-2.5 text-left text-sm text-fg-2 hover:text-fg">
-                <span className="min-w-0 flex-1 truncate">
-                  <Linkify text={e.text} />
+                <span className="min-w-0 flex-1">
+                  <RefLine text={e.text} label={e.stage ? 'code' : 'title'} />
                 </span>
                 <span className="shrink-0 text-xs text-fg-3 tabular">{relTime(e.at, now)}</span>
               </button>
@@ -393,7 +394,6 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
 
       <NewReqModal open={creating} onClose={() => setCreating(false)} defaultProject={p.id} />
       <ProjectSettings p={p} open={editing} onClose={() => setEditing(false)} />
-      <GrantPanel projectId={p.id} open={granting} onClose={() => setGranting(false)} />
     </div>
   )
 }
@@ -409,6 +409,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const [hidden, setHidden] = useState(!!p.hidden)
   const [release, setRelease] = useState(!!projects.data?.projects.find((x) => x.id === p.id)?.agent_release)
   const [commitOnAccept, setCommitOnAccept] = useState(!!projects.data?.projects.find((x) => x.id === p.id)?.commit_on_accept)
+  const [policy, setPolicy] = useState(projects.data?.projects.find((x) => x.id === p.id)?.model_policy || 'balanced')
   const { mergeProject } = useActions()
   const confirm = useConfirm()
   const navigate = useNavigate()
@@ -429,7 +430,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality' })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -458,6 +459,11 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
         <Checkbox checked={commitOnAccept} onChange={setCommitOnAccept} hint={t.projects.commitOnAcceptHint}>
           {t.projects.commitOnAccept}
         </Checkbox>
+        <div>
+          <span className="mb-1.5 block text-[13px] font-medium text-fg-2">{t.projects.modelPolicy}</span>
+          <Segmented value={policy} onChange={setPolicy} options={Object.entries(t.projects.modelPolicyOptions).map(([value, label]) => ({ value, label }))} />
+          <span className="mt-1.5 block text-xs leading-relaxed text-fg-3">{t.projects.modelPolicyHints[policy]}</span>
+        </div>
         <Checkbox checked={hidden} onChange={setHidden} hint={t.projects.hideHint}>
           {t.projects.hide}
         </Checkbox>

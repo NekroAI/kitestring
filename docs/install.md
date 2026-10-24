@@ -38,6 +38,26 @@ Open `http://<hub address>:7310` in a browser and sign in. To reach the Hub from
 
 Start a Claude Code or Codex session and it shows up on the board within seconds.
 
+## Multiple Claude configs
+
+If you start Claude Code with different config directories (for example a shell function that exports `CLAUDE_CONFIG_DIR`), hook up each directory explicitly. Kitestring does not discover them on its own.
+
+```sh
+claude-x() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-x"; export ANTHROPIC_BASE_URL=…; export ANTHROPIC_API_KEY=…; command claude "$@" )
+
+ks install --claude-dir ~/.claude-x --launcher claude-x   # --launcher is optional; repeat the pair for more directories
+ks install --status                                        # per directory: hooks, MCP, permission, and what is missing compared with ~/.claude
+ks uninstall --claude-dir ~/.claude-x                      # remove this directory only; plain `ks uninstall` removes all
+```
+
+- The directory list is kept in `~/.kitestring/claude-dirs.json`; re-running `ks install` (or upgrading) updates `~/.claude` and every listed directory. A `CLAUDE_CONFIG_DIR` set in the current shell is hooked up too. `--dry-run` lists the changes per directory.
+- Each directory gets the hooks, the `mcp__kitestring` permission and the user-scope MCP registration (`claude mcp add` runs with that `CLAUDE_CONFIG_DIR`).
+- Sessions from a non-default directory show a small tag with the directory name (without the leading dot, e.g. `claude-x`) and "Claude Code · claude-x" in the session details. The default `~/.claude` shows nothing extra.
+- "Copy resume command" gives `<launcher> --resume <id>` when a launcher is set, otherwise `CLAUDE_CONFIG_DIR=<dir> claude --resume <id>` (the directory must already hold a login).
+- Credentials stay out: only the directory path and name are reported. `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` are never read, stored or logged.
+
+What is shared and what is separate: the Hub, the session list, requirement and decision data, and the role prompts (delivered by the Hub) are the same for every directory. Each config directory has its own user-level `CLAUDE.md`, project memory, custom agents, skills and login. `ks install --status` lists what `~/.claude` has that the directory lacks. To share personal preferences, symlink them yourself, e.g. `ln -s ~/.claude/CLAUDE.md ~/.claude-x/CLAUDE.md` (Kitestring never creates links for you).
+
 ## Updating
 
 Re-run the install script, then restart the services: on macOS run `ks install` again; on Linux run `systemctl --user restart kitestring-daemon` (and `kitestring-hub` on the Hub machine).

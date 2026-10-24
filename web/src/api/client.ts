@@ -11,6 +11,8 @@ export type Decision = Schemas['Decision']
 export type Grant = Schemas['Grant']
 export type MorningReport = Schemas['MorningReport']
 export type Advice = Schemas['Advice']
+export type AwayStatus = Schemas['AwayStatus']
+export type AwayReport = Schemas['AwayReport']
 export type Requirement = NN<Schemas['Requirement'], 'sessions'>
 export type Project = Schemas['Project']
 export type Workspace = Schemas['Workspace']
@@ -27,6 +29,7 @@ export type BlockItem = Schemas['Item']
 export type Payload = Schemas['Payload']
 export type Evidence = Schemas['Evidence']
 export type StatusChange = Schemas['StatusChange']
+export type ReviewState = Schemas['ReviewState']
 
 // 未登录回调：任何接口返回 401 时触发，由 App 跳回登录页。
 let onUnauthorized: () => void = () => {}

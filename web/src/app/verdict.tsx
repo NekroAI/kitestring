@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, CornerDownLeft, Undo2 } from 'lucide-react'
 import { AnimatePresence, motion, useIsPresent } from 'motion/react'
@@ -6,8 +6,10 @@ import { t } from '../i18n'
 import type { Scene } from '../i18n/zh'
 import { cx } from '../lib/util'
 import { dockView } from '../lib/pending'
+import { secsAt } from '../lib/undo'
 import { Button, Textarea } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
+import { Leaving, reducedMotion as reduced, spring } from '../ui/gesture'
 import { useActions } from './actions'
 
 // 统一的判断动作（R-161）：肯定 / 否定 / 回答 / 撤销在全站只有一种样式、一种节奏。
@@ -33,7 +35,7 @@ export const SEAL_MS = 700
 // 提交成功后保持「已盖印」多久：等列表刷新把卡片收起 / 需求块留在新列，避免先闪回原样（全站只在这里定义）
 export const SEALED_HOLD_MS = 2500
 
-export const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+export const reducedMotion = reduced
 const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms))
 
 // move：带文字的一般动作（改为进行中、开始计划、撤销授权、撤回放行），没有印章
@@ -48,6 +50,7 @@ export type Entry = {
   key: string
   at: number // 排上的时间（浮动条按它找最近一件）
   until: number
+  start: number // 排上那一刻的 performance.now()：遮罩圆环、淡入都从这里算起（R-218）
   act: Act
   scene: Scene
   label: string
@@ -108,8 +111,9 @@ export function schedule(key: string, o: ScheduleOpts) {
   if (pending.has(key)) return false
   const at = Date.now()
   const until = at + UNDO_MS
+  const start = performance.now()
   const timer = window.setTimeout(() => void fire(key), UNDO_MS)
-  pending.set(key, { key, at, until, act: o.act, scene: o.scene ?? 'accept', label: o.label ?? '', subject: o.subject ?? key, to: o.to, group: o.group, reopen: o.reopen, phase: 'wait', timer, commit: o.commit, beacon: o.beacon })
+  pending.set(key, { key, at, until, start, act: o.act, scene: o.scene ?? 'accept', label: o.label ?? '', subject: o.subject ?? key, to: o.to, group: o.group, reopen: o.reopen, phase: 'wait', timer, commit: o.commit, beacon: o.beacon })
   emit()
   return true
 }
@@ -212,19 +216,27 @@ export function useAdvance(key: string | undefined, on: boolean, advance: () => 
 
 // ---------- 锚点：元素看不看得见 ----------
 
-// 每件事在屏幕上可见的撤销条 / 遮罩有几个；为 0 时撤回挪到顶部浮动条。
-const anchors = new Map<string, number>()
-const bump = (key: string, d: number) => {
-  const n = (anchors.get(key) ?? 0) + d
-  if (n > 0) anchors.set(key, n)
-  else anchors.delete(key)
+// 每件事在视口里的撤销条 / 遮罩；都看不见（或都被抽屉、弹窗盖住）时撤回挪到顶部浮动条。
+const anchorEls = new Map<string, Set<HTMLElement>>()
+const bump = (key: string, el: HTMLElement, on: boolean) => {
+  const set = anchorEls.get(key) ?? new Set<HTMLElement>()
+  if (on) set.add(el)
+  else set.delete(el)
+  if (set.size) anchorEls.set(key, set)
+  else anchorEls.delete(key)
   emit()
 }
+// covered：开着抽屉 / 弹窗（模态）时，不在它里面的元素点不到——算看不见（R-218：手机上审批抽屉盖住了列表，撤回要到浮动条）
+const covered = (el: HTMLElement) => {
+  const open = document.querySelectorAll('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]')
+  return open.length > 0 && ![...open].some((d) => d.contains(el))
+}
+const anchors = { has: (key: string) => [...(anchorEls.get(key) ?? [])].some((el) => !covered(el)) }
 
 // useUndoAnchor：把撤销条 / 遮罩登记为这件事的锚点；元素进出视口（含列内滚动、抽屉翻走）时更新。
 // 正在退场的元素（抽屉翻页时滑走的上一件）不算：它马上就不在了，撤回应当立刻挪到浮动条。
 export function useUndoAnchor(k: string | undefined) {
-  const present = useIsPresent()
+  const present = useIsPresent() && !useContext(Leaving)
   const key = present ? k : undefined
   const [el, setEl] = useState<HTMLElement | null>(null)
   useEffect(() => {
@@ -235,7 +247,7 @@ export function useUndoAnchor(k: string | undefined) {
         const v = x.isIntersecting && x.intersectionRatio >= 0.5
         if (v !== vis) {
           vis = v
-          bump(key, v ? 1 : -1)
+          bump(key, el, v)
         }
       },
       { threshold: [0, 0.5, 1] },
@@ -243,86 +255,146 @@ export function useUndoAnchor(k: string | undefined) {
     io.observe(el)
     return () => {
       io.disconnect()
-      if (vis) bump(key, -1)
+      if (vis) bump(key, el, false)
     }
   }, [el, key])
   return setEl
 }
 
-// ---------- 撤销条 ----------
+// ---------- 撤销遮罩（R-218，D-539 定稿：圆环 + 原句 + 半透明遮罩）----------
+// 全站只有这一套：整块盖一层半透明遮罩（隐约看得到底下操作后的样子），左边原句「3 秒后改为待开始」，
+// 右边撤回按钮占满高度，按钮里一圈倒计时圆环。三种摆法：盖在块上（PendingCover：需求池、要你处理、列表行、审批抽屉底部判断栏）、
+// 行内一条（PendingBar：没有可盖的块时）、顶部浮动条（UndoDock，当一张小卡）。
+// 进度不靠 React：调度器记下操作那一刻的 performance.now()（start），圆环用 WAAPI 动画并把 startTime 设成 start——
+// 重新渲染、换列、翻页重新挂载都从同一处接着走，不会重来，也不会被打断；秒数只改文字节点，不碰动画元素（R-218 的根因：
+// 原来每 250ms 重渲染一次，按 Date.now() 重写正在跑的 CSS 动画的 delay，进度被一截截往前推，一顿一顿、提前走完）。
+// 系统开了减少动态效果时圆环是静止的整圈，只有秒数在变。
 
-function useSeconds(until: number) {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    const id = window.setInterval(() => tick((n) => n + 1), 250)
-    return () => window.clearInterval(id)
-  }, [])
-  return Math.max(1, Math.ceil((until - Date.now()) / 1000))
+const RING_R = 9
+const RING_C = 2 * Math.PI * RING_R
+
+// 圆环进度：startTime = 这件事进撤销期的那一刻
+function runRing(el: SVGCircleElement, start: number) {
+  if (reducedMotion() || typeof el.animate !== 'function') return null
+  const a = el.animate([{ strokeDashoffset: 0 }, { strokeDashoffset: RING_C }], { duration: UNDO_MS, fill: 'forwards', easing: 'linear' })
+  a.startTime = start
+  return a
 }
 
-// UndoBar：全站只有这一个撤销条——中性的墨蓝底，左边写「3 秒后通过」「3 秒后改为进行中」，右边撤销，底边一条倒计时线。
-// 三种摆法：行内（卡片底部，PendingBar）、遮罩（compact，盖在需求块上，PendingCover）、浮动（floating，顶部浮动条 UndoDock）。
-export function UndoBar({
-  until,
-  text,
-  onUndo,
-  floating,
-  compact,
-  done,
-  undoText,
-  extra,
-  className,
-}: {
-  until: number
-  text: (s: number) => ReactNode
-  onUndo: () => void
-  floating?: boolean
-  compact?: boolean
-  done?: boolean
-  undoText?: string
-  extra?: ReactNode
-  className?: string
-}) {
-  const s = useSeconds(until)
-  const left = Math.max(0, until - Date.now())
+// 淡入也从那一刻算起：换列 / 翻页重新挂载时不再闪一下
+function runFade(el: HTMLElement, start: number) {
+  if (reducedMotion() || typeof el.animate !== 'function') return null
+  const a = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, fill: 'both', easing: 'ease-out' })
+  a.startTime = start
+  return a
+}
+
+// hydrateUndo：复制出来的遮罩（需求换列时飞行的复制块，R-200）也接上同一个起点
+export function hydrateUndo(root: HTMLElement) {
+  root.querySelectorAll<SVGCircleElement>('circle[data-ring]').forEach((c) => runRing(c, Number(c.dataset.ring)))
+}
+
+function Ring({ start }: { start: number }) {
+  const ref = useRef<SVGCircleElement>(null)
+  useLayoutEffect(() => {
+    const a = ref.current && runRing(ref.current, start)
+    return () => a?.cancel()
+  }, [start])
   return (
-    <div
-      role="status"
-      className={cx(
-        'relative flex items-center overflow-hidden border border-accent/30 bg-accent-soft text-fg',
-        compact ? 'gap-1.5 rounded-lg py-0.5 pr-0.5 pl-2 text-xs' : 'gap-3 rounded-xl px-3 py-2 text-sm',
-        floating && 'w-[min(380px,calc(100vw-2rem))] shadow-pop',
-        className,
-      )}
-    >
-      <span className="min-w-0 flex-1 truncate tabular">{text(s)}</span>
-      {extra}
-      {!done && (
-        <Button
-          size={compact ? 'icon-sm' : 'sm'}
-          variant="ghost"
-          icon={<Undo2 className="size-3.5 shrink-0" />}
-          onClick={(e) => {
-            e.stopPropagation()
-            onUndo()
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          aria-label={undoText ?? t.verdict.undo}
-          title={undoText ?? t.verdict.undo}
-          className={cx('shrink-0 text-accent hover:text-accent', compact ? '-my-0.5' : '-my-1')}
-        >
-          {/* 遮罩摆法（需求块只有 156px 宽）只放图标，把位置留给「2 秒后改为阻塞」 */}
-          {!compact && (undoText ?? t.verdict.undo)}
-        </Button>
-      )}
-      {!done && <span aria-hidden className="ks-undo-line absolute bottom-0 left-0 h-0.5 w-full origin-left bg-accent" style={{ animationDuration: `${UNDO_MS}ms`, animationDelay: `${left - UNDO_MS}ms` }} />}
-    </div>
+    <svg viewBox="0 0 24 24" aria-hidden className="size-[22px] shrink-0 -rotate-90">
+      <circle cx="12" cy="12" r={RING_R} fill="none" strokeWidth="2.25" className="stroke-accent/20" />
+      <circle ref={ref} data-ring={start} cx="12" cy="12" r={RING_R} fill="none" strokeWidth="2.25" strokeLinecap="round" strokeDasharray={RING_C} className="stroke-accent" />
+    </svg>
   )
 }
 
-const entryText = (e: Entry, s: number, prefix?: string) => {
+const secsLeft = (start: number) => String(secsAt(start, performance.now(), UNDO_MS))
+
+// Secs：剩几秒——自己改自己的文字节点，不让外面重渲染
+function Secs({ start }: { start: number }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const el = ref.current
+      const v = secsLeft(start)
+      if (el && el.textContent !== v) el.textContent = v
+    }, 100)
+    return () => window.clearInterval(id)
+  }, [start])
+  return (
+    <span ref={ref} className="tabular">
+      {secsLeft(start)}
+    </span>
+  )
+}
+
+const MARK = '⁣'
+// 原句「3 秒后改为待开始」：数字那一处换成 Secs
+function Sentence({ e, prefix }: { e: Entry; prefix?: string }) {
   const word = actWord(e.act, e.label, e.scene)
-  return (prefix ? `${prefix} · ` : '') + (e.phase === 'wait' ? t.verdict.pending(word, s) : t.verdict.sealed(word))
+  if (e.phase !== 'wait') return <>{(prefix ? `${prefix} · ` : '') + t.verdict.sealed(word)}</>
+  const [a, b] = t.verdict.pending(word, MARK).split(MARK)
+  return (
+    <>
+      {prefix ? `${prefix} · ` : ''}
+      {a}
+      <Secs start={e.start} />
+      {b}
+    </>
+  )
+}
+
+type VeilProps = { e: Entry; start?: number; text?: ReactNode; prefix?: string; onUndo: () => void; undoText?: string; extra?: ReactNode }
+
+// Veil：遮罩的内容——左边原句，右边满高的撤回按钮（圆环 + 「撤销」）
+function Veil({ e, start, text, prefix, onUndo, undoText, extra }: VeilProps) {
+  const wait = e.phase === 'wait'
+  return (
+    <>
+      <span role="status" className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px] font-medium text-fg">
+        <span className="min-w-0 truncate">{text ?? <Sentence e={e} prefix={prefix} />}</span>
+        {extra}
+      </span>
+      {wait && (
+        <button
+          type="button"
+          onClick={(ev) => {
+            ev.stopPropagation()
+            onUndo()
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          aria-label={undoText ?? t.verdict.undo}
+          className="flex w-16 shrink-0 flex-col items-center justify-center gap-0.5 border-l border-accent/25 bg-surface/55 text-[12px] font-semibold text-accent transition-colors hover:bg-accent-soft active:bg-accent/15"
+        >
+          <Ring start={start ?? e.start} />
+          <span className="leading-4 whitespace-nowrap">{undoText ?? t.verdict.undo}</span>
+        </button>
+      )}
+    </>
+  )
+}
+
+// UndoBar：没有可盖的块时的一条（行内、浮动条）。和遮罩同一个样子：半透明底、左原句、右满高撤回。
+export function UndoBar({ className, floating, ...p }: VeilProps & { className?: string; floating?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const start = p.start ?? p.e.start
+  useLayoutEffect(() => {
+    const a = ref.current && runFade(ref.current, start)
+    return () => a?.cancel()
+  }, [start])
+  return (
+    <div
+      ref={ref}
+      data-undo=""
+      className={cx(
+        'relative flex min-h-12 items-stretch overflow-hidden rounded-xl border border-accent/30 bg-accent-soft/80 pointer-coarse:min-h-14',
+        floating && 'w-[min(380px,calc(100vw-2rem))] bg-surface/95 shadow-pop backdrop-blur-sm',
+        className,
+      )}
+    >
+      <Veil {...p} />
+    </div>
+  )
 }
 
 // PendingBar：某件事在撤销期时，卡片里（行内）显示的撤销条；盖印后变成不能撤销的「已通过」「已拒绝」。
@@ -332,31 +404,36 @@ export function PendingBar({ k, className, prefix }: { k: string; className?: st
   if (!e) return null
   return (
     <div ref={ref} className={className}>
-      <UndoBar until={e.until} done={e.phase !== 'wait'} text={(s) => entryText(e, s, prefix)} onUndo={() => undo(k)} />
+      <UndoBar e={e} prefix={prefix} onUndo={() => undo(k)} />
     </div>
   )
 }
 
-// PendingCover：遮罩摆法——盖在需求块（需求池、列表行）上：块已经在新位置，上面一层淡色 + 底部同一个撤销条和倒计时线；
-// 走完即生效、遮罩淡出。父元素需要 relative。只盖撤销期，盖印 / 提交后不再挡着。
+// PendingCover：盖在块上（需求池的块、要你处理的条目、列表行、审批抽屉底部的判断栏）：块已经是操作后的样子，
+// 上面一层半透明遮罩 + 原句 + 满高撤回。父元素需要 relative。只盖撤销期，盖印 / 提交后淡出。
 export function PendingCover({ k, className }: { k: string; className?: string }) {
   const e = usePending(k)
   const on = e?.phase === 'wait'
-  const ref = useUndoAnchor(on ? k : undefined)
+  const anchor = useUndoAnchor(on ? k : undefined)
+  const fade = useRef<Animation | null>(null)
+  const ref = (el: HTMLDivElement | null) => {
+    anchor(el)
+    fade.current?.cancel()
+    fade.current = el && e ? runFade(el, e.start) : null
+  }
   return (
     <AnimatePresence>
       {on && e && (
         <motion.div
-          key={e.at}
+          key={e.start}
           ref={ref}
           data-cover=""
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+          initial={false}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className={cx('pointer-events-none absolute inset-0 z-10 flex flex-col justify-end rounded-[inherit] bg-surface/35 p-1', className)}
+          className={cx('absolute inset-0 z-10 flex items-stretch overflow-hidden rounded-[inherit] bg-surface/65 backdrop-blur-[1.5px]', className)}
         >
-          <UndoBar compact until={e.until} text={(s) => entryText(e, s)} onUndo={() => undo(k)} className="pointer-events-auto" />
+          <Veil e={e} onUndo={() => undo(k)} />
         </motion.div>
       )}
     </AnimatePresence>
@@ -390,6 +467,17 @@ export function UndoDock() {
   useEffect(() => {
     if (!v.rest.length) setOpen(false)
   }, [v.rest.length])
+  // 抽屉、弹窗开关时重新看一遍哪些撤回被盖住了（有事在等生效时才看）
+  const waiting = all.some((e) => e.phase === 'wait')
+  useEffect(() => {
+    if (!waiting || typeof MutationObserver === 'undefined') return
+    let raf = 0
+    const mo = new MutationObserver(() => {
+      if (!raf) raf = requestAnimationFrame(() => ((raf = 0), tick((n) => n + 1)))
+    })
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-state'] })
+    return () => (mo.disconnect(), cancelAnimationFrame(raf))
+  }, [waiting])
   const back = (e: Entry) => {
     e.reopen?.()
     undo(e.key)
@@ -405,9 +493,10 @@ export function UndoDock() {
           <motion.div key={g.id} layout initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="pointer-events-auto">
             <UndoBar
               floating
-              until={Math.max(...g.items.map((x) => x.until))}
+              e={g.items[0]}
+              start={Math.max(...g.items.map((x) => x.start))}
               undoText={t.verdict.undoAll}
-              text={(s) => `${t.verdict.many(g.items.length)} · ${t.verdict.pending(actWord(g.items[0].act, g.items[0].label, g.items[0].scene), s)}`}
+              text={<GroupText items={g.items} />}
               onUndo={() => g.items.forEach((x) => undo(x.key))}
             />
           </motion.div>
@@ -416,12 +505,12 @@ export function UndoDock() {
           <motion.div key="latest" layout initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="pointer-events-auto flex flex-col items-center gap-1.5">
             <UndoBar
               floating
-              until={v.latest.until}
-              text={(s) => entryText(v.latest!, s, v.latest!.subject)}
+              e={v.latest}
+              prefix={v.latest.subject}
               onUndo={() => back(v.latest!)}
               extra={
                 v.rest.length > 0 && (
-                  <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex shrink-0 items-center gap-0.5 text-xs whitespace-nowrap text-fg-3 hover:text-fg">
+                  <button onClick={() => setOpen(!open)} aria-expanded={open} className="ml-auto flex shrink-0 items-center gap-0.5 text-xs font-normal whitespace-nowrap text-fg-3 hover:text-fg">
                     {t.verdict.more(v.rest.length)}
                     <ChevronDown className={cx('size-3 transition-transform', open && 'rotate-180')} />
                   </button>
@@ -430,13 +519,25 @@ export function UndoDock() {
             />
             {open &&
               v.rest.map((e) => (
-                <UndoBar key={e.key} floating compact until={e.until} text={(s) => entryText(e, s, e.subject)} onUndo={() => back(e)} className="w-[min(340px,calc(100vw-3rem))] shadow-card" />
+                <UndoBar key={e.key} floating e={e} prefix={e.subject} onUndo={() => back(e)} className="w-[min(340px,calc(100vw-3rem))] shadow-card" />
               ))}
           </motion.div>
         )}
       </AnimatePresence>
     </div>,
     document.body,
+  )
+}
+
+// 批量的一条：「n 项 · 3 秒后通过」，秒数按最晚排上的那件
+function GroupText({ items }: { items: Entry[] }) {
+  const last = items.reduce((a, b) => (b.start > a.start ? b : a))
+  return (
+    <>
+      {t.verdict.many(items.length)}
+      {' · '}
+      <Sentence e={last} />
+    </>
   )
 }
 
@@ -463,7 +564,7 @@ export function Seal({ k, show, act, scene, className }: { k?: string; show?: bo
           <motion.span
             initial={{ opacity: 0, scale: a === 'back' ? 1.3 : 1.7, rotate: -16 }}
             animate={{ opacity: a === 'back' ? 0.85 : 1, scale: 1, rotate: -10 }}
-            transition={{ type: 'spring', bounce: a === 'back' ? 0.15 : 0.38, duration: 0.42 }}
+            transition={spring()}
             className={cx('flex items-center justify-center rounded-xl border-[3px] bg-surface/80 font-display tracking-[0.2em] shadow-xs', a === 'back' ? 'h-14 w-28 text-lg' : 'h-20 w-32 text-2xl', tone)}
           >
             {t.verdict.stamp(actWord(a, '', scene ?? e?.scene))}
@@ -537,7 +638,9 @@ export function Verdict(p: VerdictProps) {
   useEffect(() => {
     if (hasNote) setNeed(false)
   }, [hasNote])
-  if (pend && p.pendingKey) return <PendingBar k={p.pendingKey} className={p.className} />
+  // 撤销期里：判断栏照原样留着，上面盖同一层遮罩（R-218：审批抽屉不翻页时遮罩盖在底部判断栏上）；盖印 / 提交后换成「已通过」
+  if (pend && p.pendingKey && pend.phase !== 'wait') return <PendingBar k={p.pendingKey} className={p.className} />
+  const cover = pend && p.pendingKey ? <PendingCover k={p.pendingKey} className="-m-1 rounded-xl" /> : null
 
   const off = p.disabled || p.busy || uploading
   const pass = () => {
@@ -592,7 +695,8 @@ export function Verdict(p: VerdictProps) {
   )
   if (p.stack)
     return (
-      <div className={cx('space-y-2.5', p.className)}>
+      <div className={cx('relative space-y-2.5', p.className)}>
+        {cover}
         <div>
           {box}
           {p.draft}
@@ -604,7 +708,8 @@ export function Verdict(p: VerdictProps) {
       </div>
     )
   return (
-    <div className={cx('flex flex-wrap items-end justify-end gap-2', p.className)}>
+    <div className={cx('relative flex flex-wrap items-end justify-end gap-2', p.className)}>
+      {cover}
       {p.extra}
       {box}
       {buttons}

@@ -25,55 +25,60 @@ const (
 
 // Session 是一个 agent 实例会话。
 type Session struct {
-	Key              string           `json:"key"`
-	Tool             string           `json:"tool"`
-	SessionID        string           `json:"session_id"`
-	DeviceID         string           `json:"device_id"`
-	DeviceName       string           `json:"device_name"`
-	ProjectID        string           `json:"project_id,omitempty"`
-	ProjectName      string           `json:"project_name,omitempty"`
-	Client           string           `json:"client"`
-	Model            string           `json:"model"`
-	Cwd              string           `json:"cwd"`
-	Branch           string           `json:"branch"`
-	Dirty            int              `json:"dirty"`
-	State            string           `json:"state"`
-	StateDetail      string           `json:"state_detail"`
-	LastPrompt       string           `json:"last_prompt"`
-	Summary          string           `json:"summary"`
-	StateSince       time.Time        `json:"state_since"` // 当前状态开始的时间
-	Turns            int              `json:"turns"`       // 用户提交过的轮数
-	TurnTools        int              `json:"turn_tools"`  // 本轮工具调用次数
-	LastTool         string           `json:"last_tool"`   // 最近一次工具动作简述
-	LastToolAt       *time.Time       `json:"last_tool_at,omitempty"`
-	Subagents        int              `json:"subagents"` // 正在运行的子 agent 数
-	PermMode         string           `json:"permission_mode"`
-	Compactions      int              `json:"compactions"`
-	Worktree         bool             `json:"worktree"`
-	Activity         []int            `json:"activity"`            // 最近 60 分钟每 5 分钟的事件数，旧 → 新
-	Title            string           `json:"title"`               // 模型生成的会话标题
-	DigestDone       string           `json:"digest_done"`         // 等你回复时：这一轮做了什么
-	DigestAsk        string           `json:"digest_ask"`          // 等你回复时：在等你决定什么
-	ReplyAsk         string           `json:"reply_ask,omitempty"` // 最后一条回复在问你时，它的最后一段（R-117）；你回复后清空
+	Key         string     `json:"key"`
+	Tool        string     `json:"tool"`
+	SessionID   string     `json:"session_id"`
+	DeviceID    string     `json:"device_id"`
+	DeviceName  string     `json:"device_name"`
+	ProjectID   string     `json:"project_id,omitempty"`
+	ProjectName string     `json:"project_name,omitempty"`
+	Client      string     `json:"client"`
+	Profile     string     `json:"profile,omitempty"`     // Claude 配置显示名（R-240）；默认目录为空
+	ProfileDir  string     `json:"profile_dir,omitempty"` // CLAUDE_CONFIG_DIR 路径
+	Launcher    string     `json:"launcher,omitempty"`    // 用户配的启动命令，如 claude-x
+	Model       string     `json:"model"`
+	Cwd         string     `json:"cwd"`
+	Branch      string     `json:"branch"`
+	Dirty       int        `json:"dirty"`
+	State       string     `json:"state"`
+	StateDetail string     `json:"state_detail"`
+	WaitKind    string     `json:"wait_kind" enum:",approval,question"` // 在等你什么（R-239）：approval 等你授权，question 用提问工具在问你；由 hook 事件定，不看文字
+	LastPrompt  string     `json:"last_prompt"`
+	Summary     string     `json:"summary"`
+	StateSince  time.Time  `json:"state_since"` // 当前状态开始的时间
+	Turns       int        `json:"turns"`       // 用户提交过的轮数
+	TurnTools   int        `json:"turn_tools"`  // 本轮工具调用次数
+	LastTool    string     `json:"last_tool"`   // 最近一次工具动作简述
+	LastToolAt  *time.Time `json:"last_tool_at,omitempty"`
+	Subagents   int        `json:"subagents"` // 正在运行的子 agent 数
+	PermMode    string     `json:"permission_mode"`
+	Compactions int        `json:"compactions"`
+	Worktree    bool       `json:"worktree"`
+	Activity    []int      `json:"activity"`    // 最近 60 分钟每 5 分钟的事件数，旧 → 新
+	Title       string     `json:"title"`       // 模型生成的会话标题
+	DigestDone  string     `json:"digest_done"` // 等你回复时：这一轮做了什么（模型摘要）
+	// ReplyAsk：最后一条回复像在问你时它的最后一段（R-117）。只给 ks wait 提醒会话「请提决策」用，不给网页（R-239：要你处理只认明确记录）
+	ReplyAsk         string           `json:"-"`
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
 	EndedAt          *time.Time       `json:"ended_at,omitempty"`
-	Instance         string           `json:"-"`                                    // 最新的终端（agent 进程）；同一对话可能在多个终端同时打开
-	PrevInstance     string           `json:"-"`                                    // 被取代、可能仍开着的较早终端
-	OtherTerminal    bool             `json:"other_terminal"`                       // 另有一个较早的终端也开着这个对话
-	DoneAt           *time.Time       `json:"done_at,omitempty"`                    // 你手动标为已完成；你再给它发消息时自动清除
-	Parked           bool             `json:"parked"`                               // Agent 用 ks wait 挂起等你的答复 / 验收 / 留言
-	ParkedUntil      *time.Time       `json:"parked_until,omitempty"`               // 挂起最长等到什么时候（R-74）
-	ToolsStale       string           `json:"tools_stale"`                          // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
-	ContextTokens    int              `json:"context_tokens"`                       // 最近一轮结束时的上下文 token 数（R-60）
-	ContextMax       int              `json:"context_max"`                          // 上下文窗口；不知道时为 0
-	Background       bool             `json:"background"`                           // 桌面应用自己在后台发起的任务（如 Codex 的项目建议），不是你的对话：不进工作台与各种计数、不参与派活（R-179）
+	Instance         string           `json:"-"`                                         // 最新的终端（agent 进程）；同一对话可能在多个终端同时打开
+	PrevInstance     string           `json:"-"`                                         // 被取代、可能仍开着的较早终端
+	OtherTerminal    bool             `json:"other_terminal"`                            // 另有一个较早的终端也开着这个对话
+	DoneAt           *time.Time       `json:"done_at,omitempty"`                         // 你手动标为已完成；你再给它发消息时自动清除
+	Parked           bool             `json:"parked"`                                    // Agent 用 ks wait 挂起等你的答复 / 验收 / 留言
+	ParkedUntil      *time.Time       `json:"parked_until,omitempty"`                    // 挂起最长等到什么时候（R-74）
+	ToolsStale       string           `json:"tools_stale"`                               // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
+	ContextTokens    int              `json:"context_tokens"`                            // 最近一轮结束时的上下文 token 数（R-60）
+	ContextMax       int              `json:"context_max"`                               // 上下文窗口；不知道时为 0
+	Background       bool             `json:"background"`                                // 桌面应用自己在后台发起的任务（如 Codex 的项目建议），不是你的对话：不进工作台与各种计数、不参与派活（R-179）
 	Role             string           `json:"role" enum:",aide,advisor,reviewer,pm,dev"` // 会话身份（R-82、R-190）：主助理 aide、顾问 advisor、评审 reviewer、主调度 pm、开发 dev，空为无身份
-	RecentTools      []ToolAct        `json:"recent_tools"`                         // 最近几次工具调用，旧 → 新（工作台滚动展示）
-	Ticks            []time.Time      `json:"ticks"`                                // 主会话近 10 分钟的工具调用时刻，旧 → 新，最多 maxSessionTicks 个（工作台时间线，R-170）
-	Tasks            []BgTask         `json:"tasks"`                                // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前
+	RecentTools      []ToolAct        `json:"recent_tools"`                              // 最近几次工具调用，旧 → 新（工作台滚动展示）
+	Ticks            []time.Time      `json:"ticks"`                                     // 主会话近 10 分钟的工具调用时刻，旧 → 新，最多 maxSessionTicks 个（工作台时间线，R-170）
+	Tasks            []BgTask         `json:"tasks"`                                     // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
+	RetiredAt        *time.Time       `json:"retired_at,omitempty"` // 交接给新会话后卸任的时间（R-224）：不再挂 ks wait、不再被唤醒
 }
 
 // BgTask 是会话下一个在跑的后台任务（R-162）：只有类型、标签、开始时间与最近动作，不含命令输出与对话内容。
@@ -131,20 +136,20 @@ type RequirementRef struct {
 }
 
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
-	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
+	s.client, s.profile, s.profile_dir, s.launcher, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.wait_kind, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background,
+	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt, doneAt, parkedUntil, tasks string
+	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
-		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
+		&x.Client, &x.Profile, &x.ProfileDir, &x.Launcher, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.WaitKind, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background,
+		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired,
 		&started, &active, &ended)
 	x.Tasks = []BgTask{}
 	if tasks != "" && tasks != "[]" {
@@ -168,6 +173,10 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	if parkedUntil != "" && x.Parked {
 		t := parseTS(parkedUntil)
 		x.ParkedUntil = &t
+	}
+	if retired != "" {
+		t := parseTS(retired)
+		x.RetiredAt = &t
 	}
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
@@ -342,17 +351,17 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 		b, _ := json.Marshal(x.Tasks)
 		tasks = string(b)
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, last_prompt, summary,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, profile, profile_dir, launcher, model, cwd, branch, dirty, state, state_detail, wait_kind, last_prompt, summary,
 			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, parked_until, tasks, background, started_at, last_active_at, ended_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, model = excluded.model,
-			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail,
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, profile = excluded.profile, profile_dir = excluded.profile_dir, launcher = excluded.launcher, model = excluded.model,
+			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail, wait_kind = excluded.wait_kind,
 			last_prompt = excluded.last_prompt, summary = excluded.summary, state_since = excluded.state_since, turns = excluded.turns,
 			turn_tools = excluded.turn_tools, last_tool = excluded.last_tool, last_tool_at = excluded.last_tool_at, subagents = excluded.subagents,
 			perm_mode = excluded.perm_mode, compactions = excluded.compactions, worktree = excluded.worktree,
 			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked, parked_until = excluded.parked_until, tasks = excluded.tasks, background = excluded.background,
 			last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
-		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail,
+		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Profile, x.ProfileDir, x.Launcher, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail, x.WaitKind,
 		x.LastPrompt, x.Summary, since, x.Turns, x.TurnTools, x.LastTool, toolAt, x.Subagents, x.PermMode, x.Compactions, x.Worktree,
 		x.Instance, x.PrevInstance, doneAt, x.Parked, parkedUntil, tasks, x.Background, ts(x.StartedAt), ts(x.LastActiveAt), ended)
 	return err
@@ -375,8 +384,9 @@ func (s *Store) SetSessionDone(ctx context.Context, key string, done bool) error
 }
 
 // SessionAI 是模型生成的会话信息；空字段表示不修改。
+// 不再让模型概括「在等你决定什么」（R-239）：会话在不在等你只认明确记录。
 type SessionAI struct {
-	Summary, Title, DigestDone, DigestAsk string
+	Summary, Title, DigestDone string
 }
 
 // SetSessionAI 更新模型生成的字段（异步生成完成后调用）。
@@ -385,9 +395,9 @@ func (s *Store) SetSessionAI(ctx context.Context, key string, a SessionAI) error
 		summary = CASE WHEN ? <> '' THEN ? ELSE summary END,
 		title = CASE WHEN ? <> '' THEN ? ELSE title END,
 		digest_done = CASE WHEN ? <> '' THEN ? ELSE digest_done END,
-		digest_ask = CASE WHEN ? <> '' THEN ? ELSE digest_ask END
+		digest_ask = ''
 		WHERE key = ?`,
-		a.Summary, a.Summary, a.Title, a.Title, a.DigestDone, a.DigestDone, a.DigestAsk, a.DigestAsk, key)
+		a.Summary, a.Summary, a.Title, a.Title, a.DigestDone, a.DigestDone, key)
 	return err
 }
 
@@ -604,7 +614,7 @@ func (s *Store) MarkDeviceLost(ctx context.Context, deviceID string) ([]string, 
 	if len(keys) == 0 {
 		return nil, nil
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE sessions SET state = ?, state_detail = '' WHERE device_id = ? AND ended_at IS NULL`, StateLost, deviceID)
+	_, err = s.db.ExecContext(ctx, `UPDATE sessions SET state = ?, state_detail = '', wait_kind = '' WHERE device_id = ? AND ended_at IS NULL`, StateLost, deviceID)
 	return keys, err
 }
 
@@ -782,19 +792,10 @@ func (x Session) Presence() string {
 		return "standby"
 	case x.State == StateRunning || x.State == StateBackground || x.State == StateWaitApproval:
 		return "working"
-	case x.State == StateWaitReply && askingUser(x.StateDetail):
+	case x.State == StateWaitReply && x.WaitKind == WaitQuestion:
 		return "working"
 	}
 	return "offline"
-}
-
-func askingUser(detail string) bool {
-	for _, p := range []string{"AskUserQuestion", "ExitPlanMode", "request_user_input"} {
-		if strings.HasPrefix(detail, p) {
-			return true
-		}
-	}
-	return false
 }
 
 // BackfillBackground 给旧数据补后台任务标记（R-179）：看每个未标记会话的第一条用户提示词，

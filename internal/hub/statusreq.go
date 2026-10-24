@@ -48,16 +48,15 @@ func statusRequestText(d store.Decision) string {
 	if d.Voided {
 		return fmt.Sprintf("已作废（%s 的状态在你申请后、用户批准前已被改动，不再是%s；这条申请没有执行，状态以现在的为准，需要的话按现状重新申请）", d.RequirementCode, reqStatusZh[d.RequestFrom])
 	}
-	a := strings.TrimSpace(d.Answer)
-	if rest, ok := strings.CutPrefix(a, "拒绝"); ok {
-		return rejectedText(what, strings.TrimLeft(rest, "；;：:，, \n")) + fmt.Sprintf("。%s 保持%s，不要再催用户改。", d.RequirementCode, reqStatusZh[d.RequestFrom])
-	}
-	rest, ok := strings.CutPrefix(a, "批准")
-	if !ok {
+	switch d.Verdict {
+	case store.VerdictRejected:
+		return rejectedText(what, answerNote(d.Answer, "拒绝")) + fmt.Sprintf("。%s 保持%s，不要再催用户改。", d.RequirementCode, reqStatusZh[d.RequestFrom])
+	case store.VerdictApproved:
+	default:
 		return d.Answer
 	}
 	t := fmt.Sprintf("批准（用户批准了%s）。纸鸢已把 %s 改为%s，不用你再改。", what, d.RequirementCode, reqStatusZh[d.RequestTo])
-	if note := strings.TrimLeft(rest, "；;：:，, \n"); note != "" {
+	if note := answerNote(d.Answer, "批准"); note != "" {
 		t += "附言：" + note
 	}
 	return t

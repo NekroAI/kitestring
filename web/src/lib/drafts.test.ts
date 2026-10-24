@@ -69,3 +69,11 @@ test('对象关闭后清草稿：关闭前写的清，关闭后再写的留', ()
   const gone = sweep(m, (k) => (k === 'req:R-1' || k === 'req:R-2' ? { at: 200 } : k === 'dec:D-1' ? {} : undefined))
   assert.deepEqual(gone.sort(), ['dec:D-1', 'req:R-1'])
 })
+
+test('非图片附件的引用照样存进草稿（R-221）：只存引用，不存文件本身', () => {
+  const ref = { id: 'f9', name: 'gesture-log.json', mime: 'application/json', size: 4096 }
+  const m: DraftMap = { 'req:R-73': { at: 1, d: { text: '日志见附件', files: [ref] } } }
+  const out = serialize(m, 2)
+  assert.deepEqual(out['req:R-73'].d.files, [ref])
+  assert.equal(hasContent({ text: '', files: [ref] }), true)
+})

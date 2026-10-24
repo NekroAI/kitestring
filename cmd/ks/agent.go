@@ -266,15 +266,15 @@ func runReq(args []string) error {
 	comment := fs.String("comment", "", "assign：交代给开发的话")
 	reason := fs.String("reason", "", "request：申请理由（必填）；status ready / assign 草稿：放行理由（只有 PM / Adv 能放行）；status draft：撤回原因；status shelved：搁置原因（必填）；edit：为什么改")
 	reasonKind := fs.String("reason-kind", "", "status shelved：搁置原因类别 duplicate（重复）/ changed（方向变了）/ dropped（不做了）/ other（其他，默认）")
-	verdict := fs.String("verdict", "", "evidence：一句结论（40 字以内）")
-	details := fs.String("details", "", "evidence：实现细节（默认折叠）")
-	blocksArg := fs.String("blocks", "", "evidence：表达块，JSON 数组或 JSON 文件路径")
+	verdict := fs.String("verdict", "", "evidence / review：一句结论（40 字以内）")
+	details := fs.String("details", "", "evidence：实现细节（默认折叠）；review：怎么验的")
+	blocksArg := fs.String("blocks", "", "evidence / review：表达块，JSON 数组或 JSON 文件路径")
 	var todo, aside stringList
 	fs.Var(&todo, "todo", "evidence：要你做的（机器验证不了的事），可重复")
 	fs.Var(&aside, "aside", "evidence：顺带改动，可重复")
 	var images, videos stringList
-	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
-	shotsArg := fs.String("images", "", "evidence：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
+	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence / review 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
+	shotsArg := fs.String("images", "", "evidence / review：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
@@ -294,7 +294,18 @@ func runReq(args []string) error {
 		if fs.NArg() < 1 {
 			return fmt.Errorf("用法：ks req get <R-编号>")
 		}
-		return agentCall("GET", "/agent/requirements/"+url.PathEscape(fs.Arg(0)), nil)
+		// 用户附的文件下载到本机，每个附件带上 path（R-221）
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		c := client.New(2 * time.Minute)
+		var out any
+		if err := c.Do(ctx, "GET", "/agent/requirements/"+url.PathEscape(fs.Arg(0)), nil, &out); err != nil {
+			return err
+		}
+		c.LocalizeFiles(ctx, out)
+		b, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Println(string(b))
+		return nil
 	case "create":
 		if *title == "" {
 			return fmt.Errorf("用法：ks req create --title <标题> [--detail ...] [--acceptance ...]")
@@ -368,15 +379,25 @@ func runReq(args []string) error {
 		}
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/assign", compact(map[string]any{"session_key": currentSession(*session), "to": *to, "comment": *comment, "reason": *reason}))
 	case "review":
-		// 审查员交审查意见（R-88）：ks req review R-12 <意见> [--image 截图.png]；不改需求状态
-		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req review <R-编号> <审查意见> [--image 截图.png]（只有 Rev 会话能交）")
+		// 审查员交审查意见 / 验证结果（R-88、R-232）：ks req review R-12 [意见] [--verdict 结论] [--blocks 清单.json] [--image 截图.png 或 JSON]；
+		// 不改需求状态。review_submit 是旧版、没有 blocks / images 字段时（例如 Codex 上的旧 MCP）用它兜底
+		if fs.NArg() < 1 || fs.NArg() < 2 && *verdict == "" {
+			return fmt.Errorf("用法：ks req review <R-编号> [审查意见] [--verdict 一句结论] [--blocks 清单.json] [--details 怎么验的] [--image 截图.png 或 '{\"path\":…,\"title\":…,\"boxes\":[…]}'] [--images 附图.json]（只有 Rev 会话能交；验证结果用 checklist 逐条 pass / fail / ask）\n表达块：%s", writing.BlocksGuide)
 		}
-		body := map[string]any{"summary": fs.Arg(1), "session_key": currentSession(*session)}
-		if err := attachFiles(body, images); err != nil {
+		body := map[string]any{"summary": fs.Arg(1), "session_key": currentSession(*session), "verdict": *verdict, "details": *details}
+		if err := attachShots(body, images, *shotsArg); err != nil {
 			return err
 		}
-		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/reviews", compact(body))
+		if _, err := attachBlocks(body, *blocksArg); err != nil {
+			return err
+		}
+		out, err := agentCallOut("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/reviews", compact(body))
+		if err != nil {
+			return err
+		}
+		printBlockWarnings(out)
+		printImageHints(out)
+		return nil
 	case "link":
 		if fs.NArg() < 1 || key == "" {
 			return fmt.Errorf("用法：ks req link <R-编号> [--session tool:id]")
@@ -410,15 +431,20 @@ func runAnswer(args []string) error {
 	answer := fs.String("answer", "", "答复；有要拍板的点时是附言")
 	reason := fs.String("reason", "", "为什么这样答、为什么不必等用户（必填）")
 	risk := fs.String("risk", "", "你自己的风险判断：low / medium / high（必填），取它和提问方标的中更高的一档")
+	verdict := fs.String("verdict", "", "批准类决策必填：approved 批准 / rejected 拒绝")
+	hardCheck := fs.String("hard-check", "", "硬规则核对（必填）：none = 不属于 product / design / semantics / permission / gate / irreversible / acceptance 任何一类；属于其中一类就不要代答")
 	var choices intList
 	fs.Var(&choices, "choice", "有要拍板的点时逐点选第几个（从 1 开始），按点的顺序重复")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("用法：ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low|medium|high [--choice 1 --choice 2]（只有被授权的 Adv 在用户的授权窗口内能用）")
+		return fmt.Errorf("用法：ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low|medium|high --hard-check none [--choice 1 --choice 2]（只有被授权的 Adv 在用户的授权窗口内能用）")
 	}
-	body := map[string]any{"session_key": cliSession(*session), "answer": *answer, "reason": *reason, "risk": *risk}
+	body := map[string]any{"session_key": cliSession(*session), "answer": *answer, "reason": *reason, "risk": *risk, "hard_check": *hardCheck}
+	if *verdict != "" {
+		body["verdict"] = *verdict
+	}
 	if len(choices) > 0 {
 		cs := make([]int, len(choices))
 		for i, c := range choices {
@@ -438,15 +464,17 @@ func runDecision(args []string) error {
 		return runAnswer(args[1:])
 	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--from D-x [--overturns]] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	question := fs.String("question", "", "问题：一句话，只问一件事（建议 60 字以内）")
 	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的待拍板的点另开决策（建议 400 字以内）")
-	rec := fs.String("recommend", "", "推荐")
+	rec := fs.String("recommend", "", "推荐及理由")
+	recOpt := fs.Int("recommend-option", 0, "推荐的是第几个 --option（从 1 开始）；不填时只有 --recommend 与某个选项文字完全相同才标推荐")
 	req := fs.String("req", "", "关联需求")
 	risk := fs.String("risk", "", "风险档 low / medium / high，不填按 high；产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high")
+	hard := fs.String("hard", "", "硬规则类别（属于其中一类就标上，标了主助理永不代答、风险档按 high）：product 产品方向 / design 设计选型 / semantics 语义或接口变更 / permission 权限变更 / gate 门禁或评测 / irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）/ acceptance 验收")
 	fromDec := fs.String("from", "", "来源决策（D-x）：接着哪条决策往下问，或要推翻哪条")
 	overturns := fs.Bool("overturns", false, "这条要推翻 --from 那条决策的结论")
 	var opts, optImgs stringList
@@ -466,6 +494,9 @@ func runDecision(args []string) error {
 		return fmt.Errorf("--question 不能为空")
 	}
 	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "risk": *risk, "from_decision": *fromDec, "session_key": cliSession(*session)}
+	if *hard != "" {
+		body["hard"] = *hard
+	}
 	if *overturns {
 		body["overturns"] = true
 	}
@@ -474,6 +505,9 @@ func runDecision(args []string) error {
 	}
 	if *approval {
 		body["approval"] = true
+	}
+	if *recOpt > 0 {
+		body["recommended_option"] = *recOpt - 1
 	}
 	if len(imgs) > 0 {
 		tmp := map[string]any{}
@@ -563,44 +597,35 @@ func runWait(args []string) error {
 	}
 	// 先自查（R-117）：名下没有用户能在面板上推进的事时先提示，再照常等待；查不到时不提示
 	var check struct {
-		Hint string `json:"hint"`
+		Hint    string `json:"hint"`
+		Retired bool   `json:"retired"`
 	}
 	cctx, ccancel := context.WithTimeout(context.Background(), 8*time.Second)
 	if err := client.New(8*time.Second).Do(cctx, "GET", "/wait/check?"+q.Encode(), nil, &check); err == nil && check.Hint != "" {
 		fmt.Print(check.Hint)
 	}
 	ccancel()
+	if check.Retired {
+		return nil // 已交接卸任（R-224）：不再挂起等待
+	}
 	fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
 	if v := q.Get("on"); v != "" && v != protocol.OnNone && v != protocol.OnDefault {
 		fmt.Fprintf(os.Stderr, "[Kitestring] 另外订阅了本项目的事件：%s；发生时也会唤醒你。\n", v)
 	}
-	// daemon 重启（例如升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒。
+	// daemon 重启（例如部署升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒（R-227）。
 	ctx := signalContext()
 	limit := daemon.MaxWait
 	if *timeout > 0 {
 		limit = min(*timeout, daemon.MaxWait)
 	}
-	deadline := time.Now().Add(limit)
-	var res daemon.WaitResult
-	for {
-		left := time.Until(deadline)
-		if left <= 0 {
-			res.Reason = "timeout"
-			break
-		}
+	res := waitLoop(ctx, time.Now().Add(limit), 3*time.Second, func(left time.Duration) (daemon.WaitResult, error) {
 		if *timeout > 0 {
 			q.Set("timeout", left.Round(time.Second).String())
 		}
-		err := client.New(left+time.Minute).Do(ctx, "GET", "/wait?"+q.Encode(), nil, &res)
-		if err == nil {
-			break
-		}
-		if ctx.Err() != nil {
-			res.Reason = "canceled"
-			break
-		}
-		time.Sleep(3 * time.Second)
-	}
+		var r daemon.WaitResult
+		err := client.New(left+time.Minute).Do(ctx, "GET", "/wait?"+q.Encode(), nil, &r)
+		return r, err
+	})
 	waited := res.Timeout
 	if d, err := time.ParseDuration(waited); err == nil {
 		waited = humanDuration(d)
@@ -631,6 +656,30 @@ func runWait(args []string) error {
 		}
 	}
 	return nil
+}
+
+// waitLoop 反复调用 call 挂起等待，直到拿到一个真正的结果或到截止时间（R-227）。
+// 连接断了（daemon 重启、升级，call 返回错误），或 daemon 收尾时回了 canceled 而本进程并没有被取消，都当作断线：
+// 隔 retry 再连，不把 Agent 唤醒。只有本进程被取消（Ctrl-C）才返回 canceled。
+func waitLoop(ctx context.Context, deadline time.Time, retry time.Duration, call func(left time.Duration) (daemon.WaitResult, error)) daemon.WaitResult {
+	for {
+		left := time.Until(deadline)
+		if left <= 0 {
+			return daemon.WaitResult{Reason: "timeout"}
+		}
+		res, err := call(left)
+		if ctx.Err() != nil {
+			return daemon.WaitResult{Reason: "canceled"}
+		}
+		if err == nil && res.Reason != "canceled" {
+			return res
+		}
+		select {
+		case <-ctx.Done():
+			return daemon.WaitResult{Reason: "canceled"}
+		case <-time.After(min(retry, max(time.Until(deadline), 0))):
+		}
+	}
 }
 
 // humanDuration：30m0s → 30 分钟，1h30m0s → 1 小时 30 分钟。

@@ -54,28 +54,41 @@ func TestReviewer(t *testing.T) {
 		t.Fatalf("交给非审查员应返回 400，实际 %d", code)
 	}
 
-	// 审查员挂着 ks wait；你在网页上把需求交给它
-	done := make(chan daemon.WaitResult, 1)
-	go func() {
-		var res daemon.WaitResult
-		_ = c.Do(ctx, "GET", "/wait?session_key=claude:rev&timeout=20s", nil, &res)
-		done <- res
-	}()
-	e.waitFor("审查员待命", func() bool { return e.session("claude:rev").Parked })
+	// 交验收时项目里有在线评审：纸鸢自动派了一条验证任务（R-232），审查员挂上 ks wait 立刻收到
+	wait := func() daemon.WaitResult {
+		t.Helper()
+		done := make(chan daemon.WaitResult, 1)
+		go func() {
+			var res daemon.WaitResult
+			_ = c.Do(ctx, "GET", "/wait?session_key=claude:rev&timeout=20s", nil, &res)
+			done <- res
+		}()
+		select {
+		case res := <-done:
+			return res
+		case <-time.After(15 * time.Second):
+			t.Fatal("审查员没有被唤醒")
+		}
+		return daemon.WaitResult{}
+	}
+	res := wait()
+	for _, want := range []string{"审查", r.Code, "导出 CSV", "不要改代码", "不要改需求状态", "review_submit", "自动派给你验证", "表头冻结", "ks req review"} {
+		if !strings.Contains(res.Text, want) {
+			t.Fatalf("自动派的验证任务缺「%s」：%s", want, res.Text)
+		}
+	}
+
+	// 你在网页上再把需求交给它（手动交给评审）
 	var d store.Decision
 	e.call("POST", "/api/requirements/"+r.Code+"/reviewer", map[string]any{"session_key": "claude:rev", "comment": "重点看空表"}, &d)
 	if d.Kind != store.KindReviewTask {
 		t.Fatalf("应记成审查任务：%+v", d)
 	}
-	select {
-	case res := <-done:
-		for _, want := range []string{"审查", r.Code, "导出 CSV", "不要改代码", "不要改需求状态", "review_submit", "重点看空表", "表头冻结"} {
-			if !strings.Contains(res.Text, want) {
-				t.Fatalf("审查员收到的内容缺「%s」：%s", want, res.Text)
-			}
+	res = wait()
+	for _, want := range []string{"审查", r.Code, "导出 CSV", "不要改代码", "不要改需求状态", "review_submit", "重点看空表", "表头冻结"} {
+		if !strings.Contains(res.Text, want) {
+			t.Fatalf("审查员收到的内容缺「%s」：%s", want, res.Text)
 		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("审查员没有被唤醒")
 	}
 	var got store.Requirement
 	e.call("GET", "/api/requirements/"+r.Code, nil, &got)

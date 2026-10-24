@@ -18,7 +18,8 @@ const (
 )
 
 type clientInfo struct {
-	IP string
+	IP     string
+	Device string // 网页请求来自哪类设备（iPhone、iPad、Mac…），离开期间记「你在哪台设备上处理」用（R-210）
 }
 
 const clientKey ctxKey = 2
@@ -38,7 +39,7 @@ func withClient(next http.Handler) http.Handler {
 
 func resolveClient(r *http.Request) clientInfo {
 	ip := remoteIP(r.RemoteAddr)
-	c := clientInfo{IP: ip}
+	c := clientInfo{IP: ip, Device: deviceLabel(r)}
 	if !trustedProxy(ip) {
 		return c
 	}

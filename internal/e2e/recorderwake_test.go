@@ -13,7 +13,7 @@ import (
 
 // 记下需求的主助理 / 顾问不因用户改状态被唤醒（R-198）：它们记需求时自动关联，但不是执行方。
 // 没订阅 status 的 ks wait 不退出，状态通知照旧入队，下次因别的消息唤醒时一并带上；订阅了 status 的照常唤醒、只收一条；
-// 执行方（关联在这条需求上做的 Dev）和派活的 PM 照旧被唤醒。
+// 状态变化现在整体只告知（R-227）：执行方 Dev、派活的 PM 也不被唤醒，只有需求被撤回草稿 / 搁置（要停手）才叫醒 Dev。
 func TestRecorderNotWokenByStatus(t *testing.T) {
 	e := setup(t)
 	cwd, _ := os.Getwd()
@@ -60,8 +60,8 @@ func TestRecorderNotWokenByStatus(t *testing.T) {
 	devW, pmW := parkWait(t, e, c, "claude:dev"), parkWait(t, e, c, "claude:pm")
 	aideTells := tellCount(e, "claude:aide")
 	setStatus(ra, "done")
-	woke(t, devW, "你关联的需求有变化", ra.Code, "改为已完成")
-	woke(t, pmW, ra.Code, "改为已完成")
+	drainQuiet(t, devW, "Dev（状态变化只告知）", "dev", "你关联的需求有变化", ra.Code, "改为已完成")
+	drainQuiet(t, pmW, "PM（状态变化只告知）", "pm", ra.Code, "改为已完成")
 	asleep(t, aideW, "主助理（没订阅 status）")
 	if n := tellCount(e, "claude:aide"); n != aideTells+1 {
 		t.Fatalf("主助理的状态通知应照旧入队一条：%d → %d", aideTells, n)
@@ -93,7 +93,7 @@ func TestRecorderNotWokenByStatus(t *testing.T) {
 	aideW = parkWaitOn(t, e, c, "claude:aide", "decision,review,blocked,stage,status")
 	aideTells = tellCount(e, "claude:aide")
 	setStatus(ra, "in_progress")
-	woke(t, aideW, "订阅的事件", "status", ra.Code, "改为进行中")
+	drainQuiet(t, aideW, "主助理（状态变化只告知）", "aide", "订阅的事件", "status", ra.Code, "改为进行中")
 	time.Sleep(200 * time.Millisecond)
 	if n := tellCount(e, "claude:aide"); n != aideTells+1 {
 		t.Fatalf("订阅了 status 的主助理只应收到一条：%d → %d", aideTells, n)

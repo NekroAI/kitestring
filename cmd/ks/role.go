@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -45,6 +46,7 @@ func runRole(args []string) error {
 		Label   string   `json:"label"`
 		Prompt  string   `json:"prompt"`
 		Demoted []string `json:"demoted"`
+		Handoff bool     `json:"handoff"`
 	}
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": key, "role": role}, &out); err != nil {
 		return err
@@ -53,7 +55,9 @@ func runRole(args []string) error {
 		fmt.Println("[Kitestring] 已清除本会话的身份，回到普通会话。")
 		return nil
 	}
-	if len(out.Demoted) > 0 {
+	if out.Handoff {
+		fmt.Printf("[Kitestring] 已接任%s：上一任写的交接附在下面，上一任已自动卸任。\n", roles.Display(role))
+	} else if len(out.Demoted) > 0 {
 		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）降为普通会话，并已收到通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
 	}
 	fmt.Print(out.Prompt)
@@ -77,35 +81,66 @@ func currentSession(flagVal string) string {
 	return cliSession("")
 }
 
+// currentTeller 识别 ks team tell 所在的对话和发消息的子任务（R-191）：按父进程找到会话，
+// 再取这个会话最近一条 ks team tell 命令是哪个子任务发的（主线程发的为空）。认不出时退回 currentSession。
+func currentTeller() (key, agent string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var res struct {
+		SessionKey string `json:"session_key"`
+		AgentID    string `json:"agent_id"`
+	}
+	if err := client.New(5*time.Second).Do(ctx, "GET", "/session?"+url.Values{"ppid": {strconv.Itoa(os.Getppid())}, "tell": {"1"}}.Encode(), nil, &res); err == nil && res.SessionKey != "" {
+		return res.SessionKey, res.AgentID
+	}
+	return cliSession(""), ""
+}
+
 // runBrief：ks brief <简报>——PM 写给用户的简报，显示在工作台顶部（R-113）；ks brief "" 清除。
 func runBrief(args []string) error {
 	fs := flag.NewFlagSet("brief", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	headline := fs.String("headline", "", "一句话结论（建议 40 字以内）：工作台常驻条上只显示它")
+	var look stringList
+	fs.Var(&look, "look", "要用户先看的一条（建议最多 3 条，可重复）")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("用法：ks brief <简报：一段话，先结论，提到需求写编号>（传空字符串清除）")
+		return fmt.Errorf("用法：ks brief [--headline 一句话结论] [--look 要先看的一条]... <简报：一段话（建议 200 字以内），先结论，提到需求写编号>（传空字符串清除）")
 	}
 	key := currentSession(*session)
 	if key == "" {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
 	}
-	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " ")})
+	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " "), "headline": *headline, "look": []string(look)})
 }
 
 // runMorning：主助理写离开期间小结（R-165）；ks morning 是旧名，保留别名。
 //
 //	ks away <总述>                          写总述（传空字符串清除）
 //	ks away advise <R-x> <pass|return|clear> <理由>   给待验收的需求写验收建议
+//	ks away status | report [A-x]               暂时离开的状态 / 时段报告（R-210）
+//	ks away escalate <D-x> --reason 理由         主助理把拿不准的待决策推给用户（R-210）
 func runMorning(args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "status", "report":
+			return runAwayReport(args)
+		case "escalate":
+			return runEscalate(args[1:])
+		}
+	}
 	fs := flag.NewFlagSet("morning", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	headline := fs.String("headline", "", "一句话结论（建议 40 字以内）：工作台常驻条上只显示它；不传则不改")
+	var look stringList
+	fs.Var(&look, "look", "要用户先看的一条（建议最多 3 条，可重复）；不传则不改")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
-	usage := fmt.Errorf("用法：ks away <总述：一段话，先结论，提到需求写编号>（传空字符串清除）\n      ks away advise <R-x> <pass|return|clear> <理由>")
-	if fs.NArg() < 1 {
+	usage := fmt.Errorf("用法：ks away [--headline 一句话结论] [--look 要先看的一条]... <总述：一段话（建议 200 字以内），先结论，提到需求写编号>（传空字符串清除）\n      ks away advise <R-x> <pass|return|clear> <理由>\n      ks away status | ks away report [A-x]\n      ks away escalate <D-x> --reason 理由")
+	if fs.NArg() < 1 && *headline == "" && len(look) == 0 {
 		return usage
 	}
 	key := currentSession(*session)
@@ -113,7 +148,15 @@ func runMorning(args []string) error {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
 	}
 	body := map[string]any{"session_key": key}
-	if a := fs.Args(); a[0] == "advise" {
+	if *headline != "" {
+		body["headline"] = *headline
+	}
+	if len(look) > 0 {
+		body["look"] = []string(look)
+	}
+	if a := fs.Args(); len(a) == 0 {
+		// 只写一句话结论 / 要先看的，不改总述
+	} else if a[0] == "advise" {
 		if len(a) < 3 {
 			return usage
 		}
@@ -133,10 +176,19 @@ func runTeam(args []string) error {
 	duration := fs.String("duration", "", "recommend：预计用多久")
 	minutes := fs.Int("minutes", 0, "recommend：批准时限（分钟），默认用设置里的（30）")
 	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
+	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）")
+	reply := fs.String("reply", "", "tell：回复收到的团队消息（填它的编号 D-x），回复会送回发消息的一方")
+	fyi := fs.Bool("fyi", false, "tell：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、派活、回复），立刻叫醒。部署 / 重启、进展通报用 --fyi")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
-	key := currentSession(*session)
+	tell := fs.NArg() > 0 && fs.Arg(0) == "tell"
+	key, agent := *session, ""
+	if tell && key == "" {
+		key, agent = currentTeller()
+	} else {
+		key = currentSession(key)
+	}
 	if key == "" {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
 	}
@@ -166,17 +218,71 @@ func runTeam(args []string) error {
 		}
 		return agentCall("POST", "/agent/team/need", map[string]any{"session_key": key, "count": n, "reason": *reason})
 	}
-	if fs.NArg() > 0 && fs.Arg(0) == "tell" {
-		// ks team tell <文字> [--req R-x]：给本项目的 PM 留言，只送给 PM、不进用户收件箱（R-135）
+	if tell {
+		// ks team tell <文字> [--to aide|pm|reviewer] [--reply D-x] [--req R-x]：按身份给本项目的团队成员发消息，
+		// 或回复收到的团队消息；只送给 Agent、不进用户收件箱（R-135 / R-191）
 		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
 		if text == "" {
-			return fmt.Errorf("用法：ks team tell <要告诉 PM 的话> [--req R-x]")
+			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer] [--req R-x]\n      ks team tell --reply D-x <回复>")
 		}
 		body := map[string]any{"session_key": key, "text": text}
-		if *req != "" {
-			body["requirement"] = *req
+		for k, v := range map[string]string{"requirement": *req, "to": *to, "reply_to": *reply, "agent_id": agent} {
+			if v != "" {
+				body[k] = v
+			}
+		}
+		if *fyi {
+			body["fyi"] = true
 		}
 		return agentCall("POST", "/agent/team/tell", body)
 	}
 	return agentCall("GET", "/agent/team?"+url.Values{"session_key": {key}}.Encode(), nil)
+}
+
+// runAwayReport：ks away status —— 用户是否暂时离开、离开多久、主助理处理几件、推送几条；
+// ks away report [A-x] —— 离开时段报告（默认最近一次）：替用户定了什么、放行了什么、交付了什么、还在等用户的、用户在各设备上处理了什么（R-210）。
+func runAwayReport(args []string) error {
+	path := "/agent/away"
+	if args[0] == "report" && len(args) > 1 {
+		path += "?ref=" + url.QueryEscape(args[1])
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var out struct {
+		Status json.RawMessage `json:"status"`
+		Report json.RawMessage `json:"report"`
+	}
+	if err := client.New(20*time.Second).Do(ctx, "GET", path, nil, &out); err != nil {
+		return err
+	}
+	raw := out.Status
+	if args[0] == "report" {
+		if len(out.Report) == 0 || string(out.Report) == "null" {
+			return fmt.Errorf("用户还没有点过「暂时离开」，没有时段报告")
+		}
+		raw = out.Report
+	}
+	var v any
+	_ = json.Unmarshal(raw, &v)
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
+	return nil
+}
+
+// runEscalate：ks away escalate D-x --reason 理由——主助理把拿不准、要用户尽快看的待决策推给用户（R-210）。
+func runEscalate(args []string) error {
+	fs := flag.NewFlagSet("away escalate", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	reason := fs.String("reason", "", "一句话：为什么要用户尽快看（必填）")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() < 1 {
+		return fmt.Errorf("用法：ks away escalate <D-x> --reason 理由")
+	}
+	key := currentSession(*session)
+	if key == "" {
+		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+	}
+	return agentCall("POST", "/agent/away/escalate", map[string]any{"session_key": key, "decision": fs.Arg(0), "reason": *reason})
 }

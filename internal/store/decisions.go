@@ -66,12 +66,15 @@ type Decision struct {
 	// Summary 是方案要点，每条一行（通常以需求编号开头）；有它时网页把完整说明折叠起来。
 	Summary          []string   `json:"summary,omitempty"`
 	Recommendation   string     `json:"recommendation"`
+	RecOption        int        `json:"rec_option" doc:"推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）"`
+	RecPick          *int       `json:"-"`           // 只用于创建：提问方明确给的推荐序号；CreateDecision 据此和推荐文字定 RecOption
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
 	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell,release,edit"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
 	Answer           string     `json:"answer"`
+	Verdict          string     `json:"verdict" enum:",approved,rejected" doc:"批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空"`
 	AnswerReason     string     `json:"answer_reason,omitempty" doc:"用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent"`
 	CreatedAt        time.Time  `json:"created_at"`
 	AnsweredAt       *time.Time `json:"answered_at,omitempty"`
@@ -82,7 +85,10 @@ type Decision struct {
 	// 风险档与参谋代答（R-163）：Risk 是提问方标的风险档（low / medium / high，空 = 没标，按 high 算）；
 	// ProxyBy 非空表示是 Adv 在你的授权窗口内代答的：ProxyRisk 是代答时取的风险档（提问方与参谋判断中更高的一档），
 	// ProxyAnswer 是代答原文；OverriddenAt 非空表示你推翻了代答，Answer 换成你的答复
-	Risk         string     `json:"risk,omitempty" enum:"low,medium,high"`
+	Risk string `json:"risk,omitempty" enum:"low,medium,high"`
+	// Hard 是提问方标的硬规则类别（R-210）：product / design / semantics / permission / gate / irreversible / acceptance；
+	// 标了就永不代答、风险档按 high。空 = 没标
+	Hard         string     `json:"hard,omitempty" enum:"product,design,semantics,permission,gate,irreversible,acceptance"`
 	ProxyBy      string     `json:"proxy_by,omitempty"`
 	ProxyReason  string     `json:"proxy_reason,omitempty"`
 	ProxyRisk    string     `json:"proxy_risk,omitempty"`
@@ -105,6 +111,11 @@ type Decision struct {
 	Voided       bool       `json:"voided,omitempty" doc:"改状态申请（R-188）：批准前需求状态已被改动，申请自动作废"`
 	// ByTitle：写这条记录的会话当时的标题（R-195）——修改、放行、派活记 assigned_by 的，Agent 提的决策记提问会话的；旧记录为空
 	ByTitle string `json:"by_title,omitempty" doc:"写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话"`
+	// 团队消息（R-191）：AssignedBy 是发消息的会话，FromRole 是它当时的身份；FromAgent 是发消息的子任务（一次性子代理）的 agent_id，
+	// 主线程发的为空；ReplyTo 是这条回复的那条团队消息的 ID
+	FromRole  string `json:"from_role,omitempty" doc:"团队消息（R-191）：发消息的会话当时的身份"`
+	FromAgent string `json:"from_agent,omitempty" doc:"团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空"`
+	ReplyTo   string `json:"reply_to,omitempty" doc:"团队消息（R-191）：这条回复的团队消息 ID"`
 }
 
 // snapDecision 给刚写入的记录补上会话标题快照（R-195）。
@@ -133,7 +144,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
 	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
-	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title
+	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option, x.hard
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -151,7 +162,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
 		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
-		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle)
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption, &d.Hard)
 	d.ExpiresAt = parseNullTS(sql.NullString{String: expires, Valid: expires != ""})
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
@@ -201,8 +212,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		n := now()
 		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole || d.Kind == KindReviewTask || d.Kind == KindTell {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
-			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?, ?)`,
-				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy)
+			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by, from_role, from_agent, reply_to) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy, d.FromRole, d.FromAgent, d.ReplyTo)
 			if err != nil {
 				return err
 			}
@@ -217,8 +228,12 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		if d.ExpiresAt != nil {
 			expires = ts(*d.ExpiresAt)
 		}
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo)
+		rec := RecOption(d.Options, d.Recommendation, d.RecPick)
+		if d.Approval {
+			rec = -1
+		}
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to, rec_option, hard) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo, rec, d.Hard)
 		if err != nil {
 			return err
 		}
@@ -279,12 +294,14 @@ func (s *Store) queryDecs(ctx context.Context, q string, args ...any) ([]Decisio
 
 // AnswerDecision 记录用户答复，状态进入“已决策待接收”。已接收的决策允许改答，会重新进入待接收。
 func (s *Store) AnswerDecision(ctx context.Context, ref, answer string, files []FileRef) (Decision, error) {
-	return s.AnswerDecisionPoints(ctx, ref, answer, files, nil, "")
+	return s.AnswerDecisionPoints(ctx, ref, answer, files, nil, "", "")
 }
 
 // AnswerDecisionPoints 作答；choices 是逐点的选择（R-112），没有要拍板的点时为 nil；
 // reason 是可选的一句话理由（R-157），去空白、最多 200 字，改答时以最新一次为准。
-func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, files []FileRef, choices []int, reason string) (Decision, error) {
+// verdict 是批准类决策的结论（VerdictApproved / VerdictRejected，R-239），由作答方明确给出；
+// 旧客户端没给时按所选选项（答复开头的「批准 / 拒绝」）定一次并存下。非批准类决策忽略。
+func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, files []FileRef, choices []int, reason, verdict string) (Decision, error) {
 	d, err := s.GetDecision(ctx, ref)
 	if err != nil {
 		return d, err
@@ -301,12 +318,24 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 	// 你给参谋代答过的决策重新作答 = 推翻代答（R-163）：记下推翻时间，代答原文留在 proxy_answer
 	n := now()
 	_, reason = NormShelveReason("", reason)
-	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_reason = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '',
-		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, reason, filesJSON(files), blocks.Encode(choices), n, n, d.ID)
+	verdict = answerVerdict(d, answer, verdict)
+	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_reason = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '', verdict = ?,
+		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, reason, filesJSON(files), blocks.Encode(choices), n, verdict, n, d.ID)
 	if err != nil {
 		return d, err
 	}
 	return s.GetDecision(ctx, d.ID)
+}
+
+// answerVerdict：批准类决策这次作答的结论。明确给出的为准；没给（旧客户端）时按所选选项文字定一次。
+func answerVerdict(d Decision, answer, verdict string) string {
+	if !d.Approval {
+		return ""
+	}
+	if verdict == VerdictApproved || verdict == VerdictRejected {
+		return verdict
+	}
+	return legacyVerdict(answer)
 }
 
 // ExpireRequest：限时请求到点仍没作答，按规则视为拒绝（R-169）——写入 answer、标记 timed_out，进入“已决策待接收”送给提问方。
@@ -319,8 +348,8 @@ func (s *Store) ExpireRequest(ctx context.Context, id, answer string) (Decision,
 	if d0.RequestKind == "" || d0.ExpiresAt == nil || time.Now().Before(*d0.ExpiresAt) || d0.Status != DecPending {
 		return d0, false, nil
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, timed_out = 1, answered_at = ?, delivered_at = NULL, delivered_turn = ''
-		WHERE id = ? AND status = ?`, DecAnswered, answer, now(), d0.ID, DecPending)
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, timed_out = 1, verdict = ?, answered_at = ?, delivered_at = NULL, delivered_turn = ''
+		WHERE id = ? AND status = ?`, DecAnswered, answer, VerdictRejected, now(), d0.ID, DecPending)
 	if err != nil {
 		return Decision{}, false, err
 	}

@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/NekroAI/kitestring/internal/profile"
 )
 
 // ClaudeEvents 是接入 Claude Code 的 hook 事件（见 hook-matrix.md）。
@@ -24,7 +26,7 @@ var ClaudeEvents = []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "P
 var CodexEvents = []string{"SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Interrupt", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"}
 
 // MCPTools 是 ks mcp 提供的工具，Codex 需要逐个配置免审批。
-var MCPTools = []string{"req_list", "req_get", "req_create", "req_update_status", "evidence_attach", "decision_raise", "decision_withdraw", "decision_answer", "away_set", "morning_set", "session_link_req"}
+var MCPTools = []string{"req_list", "req_get", "req_create", "req_update_status", "evidence_attach", "decision_raise", "decision_withdraw", "decision_answer", "away_set", "away_escalate", "morning_set", "session_link_req", "handoff_write"}
 
 const (
 	mcpName     = "kitestring"
@@ -35,14 +37,17 @@ const (
 
 // Options 控制安装范围。
 type Options struct {
-	KS      string // ks 可执行文件绝对路径
-	Claude  bool
-	Codex   bool
-	Daemon  bool // 注册 daemon 常驻服务
-	Hub     bool // 注册 hub 常驻服务
-	HubAddr string
-	DryRun  bool
-	Out     io.Writer
+	KS     string // ks 可执行文件绝对路径
+	Claude bool
+	Codex  bool
+	Daemon bool // 注册 daemon 常驻服务
+	Hub    bool // 注册 hub 常驻服务
+	// ClaudeDirs 是命令行指定的 Claude 配置目录（R-240）；安装时并入本机记录，卸载时只处理这些（为空则处理全部）
+	ClaudeDirs []profile.Dir
+	Status     bool // 只列出各配置目录的接入状态
+	HubAddr    string
+	DryRun     bool
+	Out        io.Writer
 }
 
 // Run 执行安装或卸载。
@@ -54,6 +59,9 @@ func Run(o Options, uninstall bool) error {
 	if err != nil {
 		return err
 	}
+	if o.Status {
+		return status(o, home)
+	}
 	var errs []error
 	step := func(name string, fn func() error) {
 		if err := fn(); err != nil {
@@ -62,8 +70,17 @@ func Run(o Options, uninstall bool) error {
 		}
 	}
 	if o.Claude {
-		step("Claude hooks", func() error { return claudeHooks(o, home, uninstall) })
-		step("Claude MCP", func() error { return claudeMCP(o, uninstall) })
+		dirs, err := claudeTargets(o, home, uninstall)
+		if err != nil {
+			return err
+		}
+		for _, d := range dirs {
+			if len(dirs) > 1 || !profile.IsDefault(home, d) {
+				fmt.Fprintf(o.Out, "\n[Claude 配置 %s]\n", configLabel(home, d))
+			}
+			step("Claude hooks（"+configLabel(home, d)+"）", func() error { return claudeHooks(o, d, uninstall) })
+			step("Claude MCP（"+configLabel(home, d)+"）", func() error { return claudeMCP(o, home, d, uninstall) })
+		}
 	}
 	if o.Codex {
 		step("Codex hooks", func() error { return codexHooks(o, home, uninstall) })
@@ -200,8 +217,8 @@ func marshal(v any) []byte {
 	return buf.Bytes()
 }
 
-func claudeHooks(o Options, home string, remove bool) error {
-	path := filepath.Join(home, ".claude", "settings.json")
+func claudeHooks(o Options, dir string, remove bool) error {
+	path := filepath.Join(dir, "settings.json")
 	root, err := readJSON(path)
 	if err != nil {
 		return err
@@ -239,27 +256,115 @@ func claudeHooks(o Options, home string, remove bool) error {
 	return writeFile(o, path, marshal(root), 0o644)
 }
 
-func claudeMCP(o Options, remove bool) error {
+// claudeMCP 注册（或移除）user scope 的 MCP。非默认目录带上对应的 CLAUDE_CONFIG_DIR，默认目录则去掉它，
+// 避免当前 shell 里的设置把默认目录的注册写到别处。
+func claudeMCP(o Options, home, dir string, remove bool) error {
 	bin, err := exec.LookPath("claude")
 	if err != nil {
 		return errors.New("未找到 claude 命令，跳过 MCP 注册")
 	}
+	prefix := ""
+	if !profile.IsDefault(home, dir) {
+		prefix = "CLAUDE_CONFIG_DIR=" + shellQuote(dir) + " "
+	}
+	env := claudeEnv(home, dir)
 	args := []string{"mcp", "remove", "--scope", "user", mcpName}
 	if o.DryRun {
-		fmt.Fprintf(o.Out, "  将执行：claude %s\n", strings.Join(args, " "))
+		fmt.Fprintf(o.Out, "  将执行：%sclaude %s\n", prefix, strings.Join(args, " "))
 	} else {
-		_ = exec.Command(bin, args...).Run() // 不存在时报错，忽略
+		c := exec.Command(bin, args...)
+		c.Env = env
+		_ = c.Run() // 不存在时报错，忽略
 	}
 	if !remove {
 		args = []string{"mcp", "add", "--scope", "user", mcpName, "--", o.KS, "mcp"}
 		if o.DryRun {
-			fmt.Fprintf(o.Out, "  将执行：claude %s\n", strings.Join(args, " "))
-		} else if out, err := exec.Command(bin, args...).CombinedOutput(); err != nil {
-			return fmt.Errorf("%v：%s", err, strings.TrimSpace(string(out)))
+			fmt.Fprintf(o.Out, "  将执行：%sclaude %s\n", prefix, strings.Join(args, " "))
+		} else {
+			c := exec.Command(bin, args...)
+			c.Env = env
+			if out, err := c.CombinedOutput(); err != nil {
+				return fmt.Errorf("%v：%s", err, strings.TrimSpace(string(out)))
+			}
 		}
 	}
 	fmt.Fprintln(o.Out, "✓ Claude MCP（user scope）")
 	return nil
+}
+
+// claudeEnv 返回执行 claude 命令的环境：去掉继承来的 CLAUDE_CONFIG_DIR，非默认目录再显式设上。
+func claudeEnv(home, dir string) []string {
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
+			env = append(env, e)
+		}
+	}
+	if !profile.IsDefault(home, dir) {
+		env = append(env, "CLAUDE_CONFIG_DIR="+dir)
+	}
+	return env
+}
+
+func configLabel(home, dir string) string {
+	if profile.IsDefault(home, dir) {
+		return "默认 " + dir
+	}
+	return profile.Name(dir) + " " + dir
+}
+
+// claudeTargets 算出这次要处理的 Claude 配置目录（默认目录排第一），并维护本机 claude-dirs.json。
+// 安装：默认目录 + 本机记录 + 命令行指定 + 当前 shell 的 CLAUDE_CONFIG_DIR，合并后写回记录。
+// 卸载：命令行指定了就只处理这些，否则处理全部；处理完从记录里去掉。
+func claudeTargets(o Options, home string, uninstall bool) ([]string, error) {
+	saved, err := profile.Load(home)
+	if err != nil {
+		return nil, fmt.Errorf("读取 %s：%w", profile.ListFile(home), err)
+	}
+	var explicit []profile.Dir
+	for _, d := range o.ClaudeDirs {
+		p, err := profile.Expand(home, d.Path)
+		if err != nil {
+			return nil, err
+		}
+		explicit = append(explicit, profile.Dir{Path: p, Launcher: d.Launcher})
+	}
+	var envDirs []profile.Dir
+	if e := os.Getenv("CLAUDE_CONFIG_DIR"); e != "" {
+		if p, err := profile.Expand(home, e); err == nil {
+			envDirs = append(envDirs, profile.Dir{Path: p})
+		}
+	}
+	var targets []profile.Dir
+	if uninstall && len(explicit) > 0 {
+		targets = explicit
+	} else {
+		targets = profile.Merge(profile.Merge(profile.Merge([]profile.Dir{{Path: profile.DefaultDir(home)}}, saved...), envDirs...), explicit...)
+	}
+	var out []string
+	for _, t := range targets {
+		out = append(out, t.Path)
+	}
+	// 维护记录（默认目录不记）
+	if !o.DryRun {
+		if uninstall {
+			saved = profile.Remove(saved, out...)
+		} else {
+			var custom []profile.Dir
+			for _, t := range targets {
+				if !profile.IsDefault(home, t.Path) {
+					custom = append(custom, t)
+				}
+			}
+			saved = profile.Merge(saved, custom...)
+		}
+		if err := profile.Save(home, saved); err != nil {
+			return nil, err
+		}
+	} else if !uninstall {
+		fmt.Fprintf(o.Out, "将记录 Claude 配置目录到 %s\n", profile.ListFile(home))
+	}
+	return out, nil
 }
 
 func codexHooks(o Options, home string, remove bool) error {

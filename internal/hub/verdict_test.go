@@ -34,31 +34,36 @@ func TestVerdictTextsDistinct(t *testing.T) {
 	if got := rejectedText("这个请求", " "); got != "拒绝（用户明确拒绝了这个请求，没有附言）" {
 		t.Fatalf("没有附言的拒绝：%s", got)
 	}
-	if got := returnedText("阶段 1", ""); got != "用户退回了阶段 1，要求修改（意见见附图）" {
+	if got := returnedText("阶段 1", ""); got != "用户退回了阶段 1，要求修改（意见见附件）" {
 		t.Fatalf("只有附图的退回：%s", got)
 	}
 }
 
 func TestApprovalText(t *testing.T) {
+	// 批准还是拒绝读结论字段 verdict（R-239），文字只用来取附言
+	const ok, no = store.VerdictApproved, store.VerdictRejected
 	cases := []struct {
 		approval bool
+		verdict  string
 		answer   string
 		want     string
 	}{
-		{true, "批准", "批准"},
-		{true, "批准；按第二版做", "批准；按第二版做"},
-		{true, "拒绝", "拒绝（用户明确拒绝了这个请求，没有附言）"},
-		{true, "拒绝；先别做", "拒绝（用户明确拒绝了这个请求）。附言：先别做"},
-		{true, "拒绝：方向不对", "拒绝（用户明确拒绝了这个请求）。附言：方向不对"},
-		{false, "拒绝", "拒绝"}, // 选项类决策的选项就叫「拒绝」时原样送达
+		{true, ok, "批准", "批准"},
+		{true, ok, "批准；按第二版做", "批准；按第二版做"},
+		{true, no, "拒绝", "拒绝（用户明确拒绝了这个请求，没有附言）"},
+		{true, no, "拒绝；先别做", "拒绝（用户明确拒绝了这个请求）。附言：先别做"},
+		{true, no, "拒绝：方向不对", "拒绝（用户明确拒绝了这个请求）。附言：方向不对"},
+		{true, no, "范围太大", "拒绝（用户明确拒绝了这个请求）。附言：范围太大"}, // 文字不以「拒绝」开头也按字段算拒绝
+		{true, ok, "拒绝不了，就这么做", "拒绝不了，就这么做"},          // 字段是批准，文字开头像拒绝也不算
+		{false, "", "拒绝", "拒绝"},                       // 选项类决策的选项就叫「拒绝」时原样送达
 	}
 	for _, c := range cases {
-		if got := approvalText(store.Decision{Approval: c.approval, Answer: c.answer}); got != c.want {
+		if got := approvalText(store.Decision{Approval: c.approval, Verdict: c.verdict, Answer: c.answer}); got != c.want {
 			t.Errorf("%v %q → %q，应为 %q", c.approval, c.answer, got, c.want)
 		}
 	}
 	// 用户亲手作答的理由照旧接在后面
-	if got := proxyText(store.Decision{Approval: true, Answer: "拒绝；先别做", AnswerReason: "成本高"}); got != "拒绝（用户明确拒绝了这个请求）。附言：先别做\n用户的理由：成本高" {
+	if got := proxyText(store.Decision{Approval: true, Verdict: no, Answer: "拒绝；先别做", AnswerReason: "成本高"}); got != "拒绝（用户明确拒绝了这个请求）。附言：先别做\n用户的理由：成本高" {
 		t.Fatalf("带理由：%q", got)
 	}
 }
@@ -67,12 +72,12 @@ func TestApprovalText(t *testing.T) {
 func TestRequestText(t *testing.T) {
 	base := store.Decision{Approval: true, RequestKind: store.RequestDevs, RequestCount: 2, Options: []string{"批准", "拒绝"}}
 	ok := base
-	ok.Answer = "批准；先做 R-3"
+	ok.Answer, ok.Verdict = "批准；先做 R-3", store.VerdictApproved
 	no := base
-	no.Answer = "拒绝；子代理够了"
+	no.Answer, no.Verdict = "拒绝；子代理够了", store.VerdictRejected
 	late := base
 	late.TimedOut = true
-	late.Answer = timeoutRejectText(requestWhat(late))
+	late.Answer, late.Verdict = timeoutRejectText(requestWhat(late)), store.VerdictRejected
 	for _, c := range []struct {
 		d          store.Decision
 		want, deny []string

@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/agent/away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看用户是否暂时离开，以及离开时段报告（R-210） */
+        get: operations["agent-get-away"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/away/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 主助理把拿不准、要用户尽快看的决策推给用户（R-210） */
+        post: operations["agent-escalate-away"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/brief": {
         parameters: {
             query?: never;
@@ -149,6 +183,23 @@ export interface paths {
         get: operations["agent-get-grant"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 写交接（R-224）：存进 Hub、显示在会话时间线；新会话声明同一身份时自动注入 */
+        post: operations["agent-handoff-write"];
         delete?: never;
         options?: never;
         head?: never;
@@ -331,7 +382,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rev 交审查意见（R-88）：不改需求状态，不拦截验收 */
+        /** Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；交给评审的待验收需求这时进用户的验收卡，有不通过的通知主调度 */
         post: operations["agent-submit-review"];
         delete?: never;
         options?: never;
@@ -398,6 +449,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["agent-link-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/sessions/{key}/state-note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 会话在纸鸢里的关键状态（关联的需求、待答决策、在跑的子任务），压缩上下文后随身份提示词补注入（R-224） */
+        get: operations["agent-state-note"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -498,7 +566,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 给本项目的 PM 留言（只送给 PM，不进用户收件箱，R-135） */
+        /**
+         * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。
+         */
         post: operations["agent-tell-pm"];
         delete?: never;
         options?: never;
@@ -580,6 +651,58 @@ export interface paths {
             cookie?: never;
         };
         get: operations["auth-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 暂时离开的状态：离开多久、主助理处理几件、推送几条（R-210） */
+        get: operations["get-away"];
+        put?: never;
+        /** 暂时离开：起点就是现在；同时给各项目的主助理开授权窗口（R-210） */
+        post: operations["start-away"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/away/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 结束离开：撤销这次离开开的授权窗口，返回最终时段报告（R-210） */
+        post: operations["end-away"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/away/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 离开时段报告：替你定了什么、放行了什么、交付了什么、还在等你的、要你先看的、你在各设备上处理了什么（R-210） */
+        get: operations["get-away-report"];
         put?: never;
         post?: never;
         delete?: never;
@@ -782,6 +905,23 @@ export interface paths {
         put?: never;
         /** 撤销参谋授权窗口（R-163） */
         post: operations["revoke-grant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lanes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）；后台命令（R-208） */
+        get: operations["get-lanes"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1430,6 +1570,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{key}/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 请会话交接（R-224）：通知它用 handoff_write 写交接，返回新会话接任要运行的命令 */
+        post: operations["request-handoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{key}/reply": {
         parameters: {
             query?: never;
@@ -1439,7 +1596,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 回复在等你回复的会话（送达方式同留言） */
+        /** 给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒） */
         post: operations["reply-session"];
         delete?: never;
         options?: never;
@@ -1490,6 +1647,24 @@ export interface paths {
         /** 需求状态变更历史：按需求 / 项目 / 时间段查（R-153） */
         get: operations["list-status-changes"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/token-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 各模型每百万 token 的价格（选填，R-206）与近 30 天用过的模型 */
+        get: operations["get-token-prices"];
+        /** 保存各模型的价格；四项都填了的模型才显示金额（R-206） */
+        put: operations["put-token-prices"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1626,11 +1801,18 @@ export interface components {
             answer?: string;
             /** @description 要拍板的点：逐点选第几个（从 0 开始） */
             choices?: number[] | null;
+            /** @description 硬规则核对（必填，R-210）：none = 核对过，不属于硬规则；填 product / design / semantics / permission / gate / irreversible / acceptance 中的一类表示属于它，会被拒绝 */
+            hard_check?: string;
             /** @description 为什么这样答、为什么不必等用户（必填） */
             reason: string;
             /** @description 你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档 */
             risk: string;
             session_key?: string;
+            /**
+             * @description 批准类决策：代答批准还是拒绝（R-239）；不填时按答复开头的「批准 / 拒绝」记一次
+             * @enum {string}
+             */
+            verdict?: "approved" | "rejected";
         };
         "Agent-assignRequest": {
             /** @description 交代给开发的话，例如为什么交给它、和哪条需求相关 */
@@ -1669,6 +1851,13 @@ export interface components {
             session_key?: string;
             stages: components["schemas"]["StageIn"][] | null;
             title: string;
+        };
+        "Agent-escalate-awayRequest": {
+            /** @description 决策编号（D-x） */
+            decision: string;
+            /** @description 一句话：为什么要用户尽快看（必填） */
+            reason?: string;
+            session_key?: string;
         };
         "Agent-link-sessionRequest": {
             requirement: string;
@@ -1713,31 +1902,31 @@ export interface components {
             to: string;
         };
         "Agent-set-briefRequest": {
+            /** @description 一句话结论（建议 40 字以内）：常驻条上只显示它（R-212）；不写时网页取正文第一句 */
+            headline?: string;
+            /** @description 要用户先看的几条（建议 3 条以内，每条一句，写编号）：展开后排在最前（R-212） */
+            look?: string[] | null;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
-            /** @description 简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；空字符串表示清除 */
+            /** @description 简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；建议 200 字以内，超出照常保存并提示压缩；headline、look、text 都为空表示清除 */
             text: string;
         };
         "Agent-set-morningRequest": {
             /** @description 逐条验收建议，每条覆盖该需求上一份 */
             advice?: components["schemas"]["AdviceIn"][] | null;
+            /** @description 一句话结论（建议 40 字以内，R-212）：常驻条上只显示它；不传表示不改，空字符串清除 */
+            headline?: string;
+            /** @description 要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改，传 [""] 清空 */
+            look?: string[] | null;
             /** @description 调用者（必须是本项目的主助理） */
             session_key: string;
-            /** @description 总述：一段话，先结论；不传表示不改，空字符串表示清除 */
+            /** @description 总述：一段话，先结论，建议 200 字以内，超出照常保存并提示压缩；不传表示不改 */
             text?: string;
         };
         "Agent-set-roleRequest": {
             /** @description aide / advisor / reviewer / pm / dev，也认中文名、英文简写和别称（如 主调度、参谋、Aide）；空为清除身份 */
             role: string;
             session_key: string;
-        };
-        "Agent-submit-reviewRequest": {
-            /** @description 附图 ID（先上传到 /api/agent/files） */
-            files?: string[] | null;
-            /** @description 提交意见的会话（身份必须是 reviewer） */
-            session_key: string;
-            /** @description 审查意见（可用 Markdown） */
-            summary: string;
         };
         "Agent-submit-stageRequest": {
             /** @description 表达块（R-97），同证据；不合法的块丢掉并在 block_warnings 里说明 */
@@ -1746,12 +1935,20 @@ export interface components {
             summary: string;
         };
         "Agent-tell-pmRequest": {
+            /** @description 发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上 */
+            agent_id?: string;
+            /** @description 只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、派活、回复，立刻叫醒）。部署 / 重启、进展通报这类用 true */
+            fyi?: boolean;
+            /** @description 回复收到的团队消息：填它的编号（D-x） */
+            reply_to?: string;
             /** @description 相关需求编号（如 R-12），可省略 */
             requirement?: string;
             /** @description 调用者 */
             session_key: string;
-            /** @description 要告诉 PM 的话 */
+            /** @description 要说的话 */
             text: string;
+            /** @description 收件身份：pm（默认）、aide、reviewer；也认中文名（主调度 / 主助理 / 评审）。回复时不填 */
+            to?: string;
         };
         "Agent-update-planRequest": {
             /** @description 不给表示不改目标 */
@@ -1791,6 +1988,11 @@ export interface components {
             replaced_by?: string;
             session_key?: string;
         };
+        AgentAwayOutBody: {
+            /** @description 最近一次离开的时段报告；从没离开过时为空 */
+            report?: components["schemas"]["AwayReport"];
+            status: components["schemas"]["AwayStatus"];
+        };
         AgentDecisionInBody: {
             /** @description 请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言 */
             approval?: boolean;
@@ -1799,6 +2001,11 @@ export interface components {
             context?: string;
             /** @description 来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x） */
             from_decision?: string;
+            /**
+             * @description 硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收
+             * @enum {string}
+             */
+            hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             /** @description 问题附带的图（例如待批准的方案图）的附件 ID */
             images?: string[] | null;
             /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
@@ -1810,6 +2017,11 @@ export interface components {
             points?: unknown[] | null;
             question: string;
             recommendation?: string;
+            /**
+             * Format: int64
+             * @description 推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配
+             */
+            recommended_option?: number;
             /** @description 关联需求 ID 或 R-编号 */
             requirement?: string;
             /**
@@ -1886,6 +2098,203 @@ export interface components {
             passkey_origins: string[] | null;
             version: string;
         };
+        Away: {
+            /**
+             * Format: date-time
+             * @description 「能处理的都处理完」从何时开始一直成立
+             */
+            calm_since?: string;
+            /** @description 离开编号（A-x） */
+            code: string;
+            /**
+             * Format: date-time
+             * @description 你点「结束离开」的时刻；空 = 还在离开中
+             */
+            ended_at?: string;
+            /**
+             * Format: int64
+             * @description 预估离开多久（分钟）；0 = 不确定
+             */
+            expect_minutes: number;
+            /** @description 这次离开期间连推送类也先攒着（拿不准的仍推） */
+            hold_push: boolean;
+            id: string;
+            /**
+             * @description 主助理可代答到哪一档：none 不代答（只写建议）/ low / medium
+             * @enum {string}
+             */
+            scope: "none" | "low" | "medium";
+            /**
+             * Format: date-time
+             * @description 最近一次生成阶段性报告的时间
+             */
+            settled_at?: string;
+            /**
+             * Format: date-time
+             * @description 点「暂时离开」的时刻，时段报告从这里算起
+             */
+            started_at: string;
+        };
+        AwayCounts: {
+            /**
+             * Format: int64
+             * @description 主助理写的验收建议
+             */
+            advised: number;
+            /**
+             * Format: int64
+             * @description 交付（交了证据、现在待验收 / 已完成）的需求
+             */
+            delivered: number;
+            /**
+             * Format: int64
+             * @description 勿扰时先攒着的
+             */
+            held: number;
+            /**
+             * Format: int64
+             * @description 合并进报告、没推的
+             */
+            merged: number;
+            /**
+             * Format: int64
+             * @description 不在离开时原本会推几条
+             */
+            normal: number;
+            /**
+             * Format: int64
+             * @description 主助理代答的决策
+             */
+            proxied: number;
+            /**
+             * Format: int64
+             * @description 推送了几条
+             */
+            pushed: number;
+            /**
+             * Format: int64
+             * @description 主调度 / 主助理放行的草稿
+             */
+            released: number;
+            /**
+             * Format: int64
+             * @description 不推的（主助理可代答、会话空闲）
+             */
+            skipped: number;
+            /**
+             * Format: int64
+             * @description 你在各设备上处理的
+             */
+            user: number;
+            /**
+             * Format: int64
+             * @description 还在等你的
+             */
+            waiting: number;
+        };
+        AwayEvent: {
+            /** Format: date-time */
+            at: string;
+            body?: string;
+            /** @description 你处理时用的设备，如 iPhone、Mac */
+            device?: string;
+            /** @description 通知事件（decision_raised、requirement_review…）或你的操作（answer、review、plan_start…） */
+            event: string;
+            /** @description 不在离开时这条会不会推送 */
+            normal: boolean;
+            project_id?: string;
+            /** @description 为什么归到这一档 */
+            reason?: string;
+            /** @description 关联编号：D-x / R-x / P-x */
+            ref?: string;
+            /**
+             * @description push 推了 / hold 勿扰先攒着 / merge 合并进报告 / skip 不推 / user 你在某台设备上处理了 / settled 阶段性报告
+             * @enum {string}
+             */
+            tier: "push" | "hold" | "merge" | "skip" | "user" | "settled";
+            title: string;
+        };
+        AwayItem: {
+            /** @description 要你先看 */
+            first: boolean;
+            /**
+             * @description 待决策 / 待批准计划 / 待验收 / 受阻
+             * @enum {string}
+             */
+            kind: "decision" | "plan" | "review" | "blocked";
+            project_name: string;
+            /** @description 离开期间推送过 */
+            pushed: boolean;
+            /** @description 为什么要你先看，或主助理的建议 */
+            reason?: string;
+            ref: string;
+            title: string;
+        };
+        AwayReport: {
+            away: components["schemas"]["Away"];
+            counts: components["schemas"]["AwayCounts"];
+            /** @description 离开已结束：这是最终报告 */
+            final: boolean;
+            /** @description 这次离开开的授权窗口 */
+            grants: components["schemas"]["Grant"][] | null;
+            /** @description 勿扰时先攒着、没推的 */
+            held: components["schemas"]["AwayEvent"][] | null;
+            /**
+             * Format: int64
+             * @description 离开了多久（分钟）
+             */
+            minutes: number;
+            /** @description 已超过预估时间（只做标记，不推送） */
+            over_estimate: boolean;
+            /** @description 各项目：替你定了什么（proxied 代答）、放行了什么（releases）、交付了什么（done）、团队消息、主助理总述 */
+            projects: components["schemas"]["MorningReport"][] | null;
+            /** @description 推送了的 */
+            pushes: components["schemas"]["AwayEvent"][] | null;
+            /** @description 阶段性报告（能处理的都处理完了）的时间点 */
+            settled: components["schemas"]["AwayEvent"][] | null;
+            /**
+             * Format: date-time
+             * @description 结束时刻；离开中为现在
+             */
+            until: string;
+            /** @description 还在等你的；first = 要你先看的，排在前面 */
+            waiting: components["schemas"]["AwayItem"][] | null;
+            /** @description 你在各设备上处理了什么（device 是设备） */
+            yours: components["schemas"]["AwayEvent"][] | null;
+        };
+        AwayStatus: {
+            /** @description 进行中的离开；不在离开时为空 */
+            away?: components["schemas"]["Away"];
+            /** @description 还有生效中的授权窗口；最长 24 小时，到期后离开保持、主助理不再代答 */
+            grant_active: boolean;
+            /** @description 这次离开开的授权窗口（含已到期的） */
+            grants: components["schemas"]["Grant"][] | null;
+            /**
+             * Format: int64
+             * @description 主助理已处理几件（代答 + 放行 + 验收建议）
+             */
+            handled: number;
+            /** @description 不在离开时：最近一次已结束的离开（看它的报告用） */
+            last?: components["schemas"]["Away"];
+            /**
+             * Format: int64
+             * @description 已离开多久（分钟）
+             */
+            minutes: number;
+            notices?: string[] | null;
+            /** @description 已超过预估时间（只做标记，不推送） */
+            over_estimate: boolean;
+            /**
+             * Format: int64
+             * @description 推送了几条
+             */
+            pushed: number;
+            /**
+             * Format: int64
+             * @description 你在各设备上处理了几件
+             */
+            yours: number;
+        };
         BarkConfig: {
             key: string;
             server: string;
@@ -1953,6 +2362,11 @@ export interface components {
              * @description 上边到图片顶部的距离 / 图片高（0～1）
              */
             y: number;
+        };
+        BriefOutBody: {
+            /** @description 一句话结论 / 要先看的 / 正文超出建议长度时的提示（照常保存） */
+            hint?: string;
+            ok: boolean;
         };
         CIState: {
             /** Format: date-time */
@@ -2079,7 +2493,13 @@ export interface components {
             device_name?: string;
             /** Format: date-time */
             expires_at?: string;
+            /** @description 团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空 */
+            from_agent?: string;
             from_decision?: string;
+            /** @description 团队消息（R-191）：发消息的会话当时的身份 */
+            from_role?: string;
+            /** @enum {string} */
+            hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -2101,8 +2521,15 @@ export interface components {
             proxy_reason?: string;
             proxy_risk?: string;
             question: string;
+            /**
+             * Format: int64
+             * @description 推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）
+             */
+            rec_option: number;
             recommendation: string;
             replaced_by?: string;
+            /** @description 团队消息（R-191）：这条回复的团队消息 ID */
+            reply_to?: string;
             /** Format: int64 */
             request_count?: number;
             /** @description 改状态申请（R-188）：申请时需求的状态 */
@@ -2122,6 +2549,11 @@ export interface components {
             status: string;
             summary?: string[] | null;
             timed_out?: boolean;
+            /**
+             * @description 批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空
+             * @enum {string}
+             */
+            verdict: "" | "approved" | "rejected";
             /** @description 改状态申请（R-188）：批准前需求状态已被改动，申请自动作废 */
             voided?: boolean;
         };
@@ -2164,7 +2596,13 @@ export interface components {
             device_name?: string;
             /** Format: date-time */
             expires_at?: string;
+            /** @description 团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空 */
+            from_agent?: string;
             from_decision?: string;
+            /** @description 团队消息（R-191）：发消息的会话当时的身份 */
+            from_role?: string;
+            /** @enum {string} */
+            hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -2186,8 +2624,15 @@ export interface components {
             proxy_reason?: string;
             proxy_risk?: string;
             question: string;
+            /**
+             * Format: int64
+             * @description 推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）
+             */
+            rec_option: number;
             recommendation: string;
             replaced_by?: string;
+            /** @description 团队消息（R-191）：这条回复的团队消息 ID */
+            reply_to?: string;
             /** Format: int64 */
             request_count?: number;
             /** @description 改状态申请（R-188）：申请时需求的状态 */
@@ -2207,6 +2652,11 @@ export interface components {
             status: string;
             summary?: string[] | null;
             timed_out?: boolean;
+            /**
+             * @description 批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空
+             * @enum {string}
+             */
+            verdict: "" | "approved" | "rejected";
             /** @description 改状态申请（R-188）：批准前需求状态已被改动，申请自动作废 */
             voided?: boolean;
         };
@@ -2318,10 +2768,13 @@ export interface components {
             id: string;
             instance?: string;
             last_reply?: string;
+            launcher?: string;
             model?: string;
             name: string;
             notification_type?: string;
             permission_mode?: string;
+            profile?: string;
+            profile_dir?: string;
             prompt?: string;
             reason?: string;
             reply?: string;
@@ -2397,6 +2850,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -2481,6 +2935,56 @@ export interface components {
             /** @description 参谋代答过的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
         };
+        Handoff: {
+            /** @description 在做的：需求编号、做到哪 */
+            doing: string;
+            from_session: string;
+            from_title: string;
+            id: string;
+            /** @description 下一步 */
+            next: string;
+            /** @description 注意事项：坑、别碰的东西、在跑的进程 */
+            notes: string;
+            project_id: string;
+            /** Format: date-time */
+            requested_at?: string;
+            role: string;
+            /** @description 约定和规矩：用户定过的、团队里说好的 */
+            rules: string;
+            /** @enum {string} */
+            status: "requested" | "written" | "taken";
+            /** Format: date-time */
+            taken_at?: string;
+            taken_by?: string;
+            taken_title?: string;
+            /** @description 等用户的：待答决策、待验收、要用户拍板的事 */
+            waiting: string;
+            /** Format: date-time */
+            written_at?: string;
+        };
+        HandoffOutBody: {
+            /** @description 新会话接任要运行的命令（ks takeover <身份>） */
+            command: string;
+            handoff: components["schemas"]["Handoff"];
+            /**
+             * Format: int64
+             * @description 主调度还在跑的子任务数：交接要等它们交完
+             */
+            waiting: number;
+        };
+        HandoffWriteInBody: {
+            /** @description 在做的：需求编号、做到哪 */
+            doing: string;
+            /** @description 下一步 */
+            next: string;
+            /** @description 注意事项：坑、在跑的进程、别碰的东西 */
+            notes?: string;
+            /** @description 约定和规矩：用户定过的、团队里说好的 */
+            rules?: string;
+            session_key: string;
+            /** @description 等用户的：待答决策、待验收、要用户拍板的事 */
+            waiting?: string;
+        };
         IgnoreOrphanInBody: {
             device_id: string;
             /** @description 根进程“进程号@启动时间”，取自列表 */
@@ -2532,13 +3036,162 @@ export interface components {
             answer: string;
             /** @description 逐点的选择（R-112）：与决策的 points 一一对应，填选项序号 */
             choices?: number[] | null;
-            /** @description 附图 ID */
+            /** @description 附件 ID（图片、录屏或任意文件） */
             files?: string[] | null;
             /** @description 可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上 */
             reason?: string;
             ref: string;
             /** @description 批准类的多点决策：拒绝（此时不要求逐点选择） */
             reject?: boolean;
+            /**
+             * @description 批准类决策：用户点的是批准还是拒绝（R-239），存成字段，放行检查和界面只读它
+             * @enum {string}
+             */
+            verdict?: "approved" | "rejected";
+        };
+        LaneAgent: {
+            a: string;
+            /**
+             * Format: int64
+             * @description 结束（SubagentStop 或会话结束），Unix 毫秒；没结束为空
+             */
+            end?: number;
+            k: string;
+            label: string;
+            /**
+             * Format: int64
+             * @description Unix 毫秒
+             */
+            start: number;
+            type: string;
+        };
+        LaneCold: {
+            a: string;
+            /**
+             * Format: int64
+             * @description Unix 毫秒
+             */
+            at: number;
+            /**
+             * @description idle 闲置超过缓存档位；compact 上下文压缩；model 换模型；start 第一次回复；other 看不出
+             * @enum {string}
+             */
+            cause: "idle" | "compact" | "model" | "start" | "other";
+            /**
+             * Format: int64
+             * @description 距上一次回复多少分钟
+             */
+            idle_min: number;
+            k: string;
+            model: string;
+            /** @description 换模型时，之前的模型 */
+            prev_model?: string;
+            /**
+             * Format: int64
+             * @description 这次重算的 token 数
+             */
+            tokens: number;
+        };
+        LaneData: {
+            agents: components["schemas"]["LaneAgent"][] | null;
+            /** @description 范围内的冷启动（缓存重建） */
+            colds: components["schemas"]["LaneCold"][] | null;
+            /**
+             * Format: int64
+             * @description 范围起点，Unix 分钟（含）
+             */
+            from: number;
+            /**
+             * Format: int64
+             * @description 服务端当前时间，Unix 毫秒
+             */
+            now: number;
+            rows: components["schemas"]["LaneRow"][] | null;
+            sessions: components["schemas"]["LaneSession"][] | null;
+            shells: components["schemas"]["ShellCmd"][] | null;
+            spans: components["schemas"]["LaneSpan"][] | null;
+            /**
+             * Format: int64
+             * @description 格子大小（分钟）：1 每分钟，60 每小时
+             */
+            step: number;
+            /**
+             * Format: int64
+             * @description 范围终点，Unix 分钟（不含）
+             */
+            to: number;
+            tok: components["schemas"]["LaneTok"][] | null;
+        };
+        LaneRow: {
+            /** @description 子任务的 agent_id；主会话为空 */
+            a: string;
+            /** @description 与 m 对应的调用次数 */
+            c: number[] | null;
+            /** @description 会话键 */
+            k: string;
+            /** @description 格子起点，Unix 分钟（秒 / 60），升序；按小时取时为整点 */
+            m: number[] | null;
+        };
+        LaneSession: {
+            background: boolean;
+            cwd: string;
+            /** Format: date-time */
+            ended_at?: string;
+            k: string;
+            /** Format: date-time */
+            last_active_at: string;
+            project_id: string;
+            project_name: string;
+            role: string;
+            title: string;
+            tool: string;
+        };
+        LaneSpan: {
+            a: string;
+            /**
+             * Format: int64
+             * @description 结束，Unix 毫秒；还没结束时为空
+             */
+            end?: number;
+            k: string;
+            /**
+             * @description tool 长命令（超过 20 秒）；wait 用 ks wait 待命
+             * @enum {string}
+             */
+            kind: "tool" | "wait";
+            /** @description 长命令的动作简述 */
+            label: string;
+            /** @description tool_use_id 或 KsWait 事件 id */
+            ref: string;
+            /**
+             * Format: int64
+             * @description 开始，Unix 毫秒
+             */
+            start: number;
+            /**
+             * Format: int64
+             * @description 待命最长等到什么时候（没结束时最多画到这里）
+             */
+            until?: number;
+        };
+        LaneTok: {
+            a: string;
+            /** @description 读缓存 */
+            cr: number[] | null;
+            /** @description 写缓存（两个档位合计） */
+            cw: number[] | null;
+            /** @description 其中写进 1 小时档的 */
+            cw1h: number[] | null;
+            /** @description 没命中缓存的输入 */
+            in: number[] | null;
+            k: string;
+            /** @description 格子起点，Unix 分钟；按小时取时为整点 */
+            m: number[] | null;
+            model: string;
+            /** @description 回复次数 */
+            n: number[] | null;
+            /** @description 输出 */
+            out: number[] | null;
         };
         LastReply: {
             /** Format: date-time */
@@ -2577,6 +3230,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -2602,6 +3256,9 @@ export interface components {
         "Merge-projectRequest": {
             /** @description 并入的目标项目 ID */
             into: string;
+        };
+        MessageOutBody: {
+            message: string;
         };
         MorningDelivery: {
             kind: string;
@@ -2634,6 +3291,10 @@ export interface components {
             at: string;
             /** @description 写总述的 Adv 会话 */
             by: string;
+            /** @description 一句话结论（建议 40 字以内，R-212）；老数据没有，网页取总述第一句 */
+            headline?: string;
+            /** @description 要你先看的几条（建议 3 条以内，每条一句，R-212） */
+            look?: string[] | null;
             text: string;
         };
         MorningOutBody: {
@@ -2764,6 +3425,11 @@ export interface components {
             /** @description 可选的一句话理由（R-157） */
             reason?: string;
             reject?: boolean;
+            /**
+             * @description 批准类决策：批准还是拒绝（R-239）
+             * @enum {string}
+             */
+            verdict?: "approved" | "rejected";
         };
         Passkey: {
             /** Format: date-time */
@@ -2990,12 +3656,15 @@ export interface components {
             /** Format: date-time */
             brief_at?: string;
             brief_by: string;
+            brief_headline?: string;
+            brief_look?: string[] | null;
             commit_on_accept: boolean;
             /** Format: date-time */
             created_at: string;
             doc_root: string;
             hidden: boolean;
             id: string;
+            model_policy: string;
             name: string;
             /** Format: date-time */
             need_at?: string;
@@ -3011,6 +3680,11 @@ export interface components {
             commit_on_accept?: boolean;
             doc_root: string;
             hidden?: boolean;
+            /**
+             * @description 子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先
+             * @enum {string}
+             */
+            model_policy?: "economy" | "balanced" | "quality";
             name: string;
             workspace_id?: string;
         };
@@ -3095,6 +3769,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -3160,6 +3835,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -3179,6 +3855,22 @@ export interface components {
             status: string;
             title: string;
         };
+        ReviewBody: {
+            /** @description 表达块（R-97）：验证结果放一个 checklist，逐条 pass / fail / ask 加一句依据；也可以附 figure / compare 截图。不合法的块丢掉并在 block_warnings 里说明，意见照常保存 */
+            blocks?: unknown[] | null;
+            /** @description 怎么验的（跑了哪些测试、演示环境怎么起的），默认折叠 */
+            details?: string;
+            /** @description 附图 ID（先上传到 /api/agent/files） */
+            files?: string[] | null;
+            /** @description 带标题与框的截图（R-183）：[{id: 附件 ID, title: 一句话标题, boxes: [{x, y, w, h, label, criterion}]}]，框用图片原始尺寸的比例坐标（0～1） */
+            images?: unknown[] | null;
+            /** @description 提交意见的会话（身份必须是 reviewer） */
+            session_key: string;
+            /** @description 审查意见正文（可用 Markdown）；给了 verdict / blocks 时可省略，由 hub 拼出纯文本 */
+            summary?: string;
+            /** @description 一句结论（40 字以内） */
+            verdict?: string;
+        };
         ReviewInBody: {
             items: components["schemas"]["ReviewItem"][] | null;
         };
@@ -3193,9 +3885,98 @@ export interface components {
             feedback: components["schemas"]["Decision"][] | null;
             requirements: components["schemas"]["Requirement"][] | null;
         };
+        ReviewState: {
+            /**
+             * Format: date-time
+             * @description 交给评审的时间
+             */
+            asked_at?: string;
+            /** @description 交验收时纸鸢自动派给在线评审的（否则是手动交给评审） */
+            auto?: boolean;
+            /**
+             * Format: date-time
+             * @description 等到什么时候：过了照常弹给用户，标「评审未完成」
+             */
+            due_at?: string;
+            /**
+             * Format: int64
+             * @description done：不通过的条数
+             */
+            fail: number;
+            /**
+             * Format: int64
+             * @description done：验证清单通过的条数
+             */
+            pass: number;
+            /** @description done：评审交的那条意见 */
+            review_id?: string;
+            /** Format: date-time */
+            reviewed_at?: string;
+            /** @description 在审的评审会话 */
+            session_key: string;
+            /** @description 评审会话的标题 */
+            session_title?: string;
+            /**
+             * @description reviewing 评审中（不进「要你处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见
+             * @enum {string}
+             */
+            state: "reviewing" | "overdue" | "done";
+            /**
+             * Format: int64
+             * @description done：验证清单总条数（没交清单为 0）
+             */
+            total: number;
+            /** @description done：评审的一句结论（没有时取意见开头） */
+            verdict?: string;
+        };
+        ReviewSubmitOutBody: {
+            acceptance: string;
+            block_warnings?: string[] | null;
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            detail: string;
+            doc_link: string;
+            evidence?: components["schemas"]["Evidence"][] | null;
+            feedback?: components["schemas"]["Decision"][] | null;
+            files: components["schemas"]["FileRef"][] | null;
+            from_decision?: string;
+            id: string;
+            image_hints?: string[] | null;
+            kind: string;
+            next_actor: string;
+            /** Format: date-time */
+            offered_at?: string;
+            offered_to?: string;
+            /** Format: int64 */
+            pending_decisions: number;
+            plan_code?: string;
+            plan_id?: string;
+            priority: string;
+            project_id?: string;
+            project_name?: string;
+            release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
+            review_id: string;
+            reviews?: components["schemas"]["Evidence"][] | null;
+            sessions: string[] | null;
+            source: string;
+            /** Format: int64 */
+            stage_seq?: number;
+            stage_status?: string;
+            stage_title?: string;
+            status: string;
+            status_changes?: components["schemas"]["StatusChange"][] | null;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         RoleOutBody: {
             /** @description 因本次接任主调度 / 主助理被降为无身份的会话 */
             demoted: string[] | null;
+            /** @description 接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾 */
+            handoff: boolean;
             /** @description 身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空 */
             label: string;
             /** @description 身份中文名（主助理 / 顾问 / 评审 / 主调度 / 开发）；无身份时为空 */
@@ -3233,7 +4014,6 @@ export interface components {
             cwd: string;
             device_id: string;
             device_name: string;
-            digest_ask: string;
             digest_done: string;
             /** Format: int64 */
             dirty: number;
@@ -3248,6 +4028,7 @@ export interface components {
             last_tool: string;
             /** Format: date-time */
             last_tool_at?: string;
+            launcher?: string;
             model: string;
             other_terminal: boolean;
             parked: boolean;
@@ -3256,11 +4037,14 @@ export interface components {
             /** Format: int64 */
             pending_decisions: number;
             permission_mode: string;
+            profile?: string;
+            profile_dir?: string;
             project_id?: string;
             project_name?: string;
             recent_tools: components["schemas"]["ToolAct"][] | null;
-            reply_ask?: string;
             requirements: components["schemas"]["RequirementRef"][] | null;
+            /** Format: date-time */
+            retired_at?: string;
             /** @enum {string} */
             role: "" | "aide" | "advisor" | "reviewer" | "pm" | "dev";
             session_id: string;
@@ -3282,10 +4066,13 @@ export interface components {
             turn_tools: number;
             /** Format: int64 */
             turns: number;
+            /** @enum {string} */
+            wait_kind: "" | "approval" | "question";
             worktree: boolean;
         };
         SessionDetailOutBody: {
             events: components["schemas"]["Event"][] | null;
+            handoffs?: components["schemas"]["Handoff"][] | null;
             last_reply?: components["schemas"]["LastReply"];
             session: components["schemas"]["Session"];
         };
@@ -3306,6 +4093,11 @@ export interface components {
             ai: components["schemas"]["AIFeatures"];
             /**
              * Format: int64
+             * @description 建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万
+             */
+            compact_tokens?: number;
+            /**
+             * Format: int64
              * @description PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30
              */
             dev_request_minutes?: number;
@@ -3315,6 +4107,11 @@ export interface components {
             summary_api_key?: string;
             summary_base_url: string;
             summary_model: string;
+            /**
+             * Format: int64
+             * @description 其它文件大小上限（MB），0 或留空用默认 20
+             */
+            upload_file_mb?: number;
             /**
              * Format: int64
              * @description 图片大小上限（MB），0 或留空用默认 10
@@ -3330,6 +4127,11 @@ export interface components {
             ai: components["schemas"]["AIFeatures"];
             /**
              * Format: int64
+             * @description 建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）
+             */
+            compact_tokens: number;
+            /**
+             * Format: int64
              * @description PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝
              */
             dev_request_minutes: number;
@@ -3341,6 +4143,11 @@ export interface components {
             summary_model: string;
             /**
              * Format: int64
+             * @description 其它文件（图片、录屏以外）大小上限（MB）
+             */
+            upload_file_mb: number;
+            /**
+             * Format: int64
              * @description 图片大小上限（MB）
              */
             upload_image_mb: number;
@@ -3349,6 +4156,31 @@ export interface components {
              * @description 录屏大小上限（MB）
              */
             upload_video_mb: number;
+        };
+        ShellCmd: {
+            a?: string;
+            cmd: string;
+            /** Format: int64 */
+            end?: number;
+            /** Format: int64 */
+            exit?: number;
+            /** @enum {string} */
+            hot?: "cpu" | "mem";
+            /** Format: int64 */
+            hot_at?: number;
+            k: string;
+            /** @enum {string} */
+            kind: "build" | "deploy" | "service" | "poll" | "other";
+            label: string;
+            last?: string;
+            ref: string;
+            /** Format: int64 */
+            rss_kb?: number;
+            /** Format: int64 */
+            start: number;
+            /** @enum {string} */
+            status: "running" | "ok" | "failed" | "stopped" | "ended" | "lost";
+            tid?: string;
         };
         Stage: {
             id: string;
@@ -3393,6 +4225,21 @@ export interface components {
             title: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        "Start-awayRequest": {
+            /**
+             * Format: int64
+             * @description 预估离开多久（分钟）：30 / 120 / 480，0 = 不确定。只用来标「已超过预估」
+             * @enum {integer}
+             */
+            expect_minutes: 30 | 120 | 480 | 0;
+            /** @description 这次离开期间连推送类也先攒着（拿不准的仍推） */
+            hold_push?: boolean;
+            /**
+             * @description 主助理可以替你答到哪一档：none 不代答（只写建议）/ low 低风险 / medium 中风险
+             * @enum {string}
+             */
+            scope: "none" | "low" | "medium";
         };
         StatusChange: {
             /**
@@ -3472,9 +4319,13 @@ export interface components {
             project_name: string;
         };
         TellOutBody: {
+            /** @description 这条团队消息的编号（D-x） */
+            code?: string;
             delivered: boolean;
             message: string;
-            /** @description 收到的 PM 会话键 */
+            /** @description 收到的会话的身份：pm / aide / reviewer；回复时是提问方的身份（可能为空） */
+            role?: string;
+            /** @description 收到的会话键 */
             to?: string;
         };
         "Test-pushRequest": {
@@ -3483,6 +4334,41 @@ export interface components {
         "Test-pushResponse": {
             /** Format: int64 */
             sent: number;
+        };
+        TokenPrice: {
+            /**
+             * Format: double
+             * @description 读缓存
+             */
+            cr?: number;
+            /**
+             * Format: double
+             * @description 写缓存
+             */
+            cw?: number;
+            /**
+             * Format: double
+             * @description 没命中缓存的输入
+             */
+            in?: number;
+            model: string;
+            /**
+             * Format: double
+             * @description 输出
+             */
+            out?: number;
+        };
+        TokenPrices: {
+            /** @description 金额前面写的货币符号，如 $ 或 ¥；空为 $ */
+            currency: string;
+            prices: components["schemas"]["TokenPrice"][] | null;
+        };
+        TokenPricesOutBody: {
+            /** @description 金额前面写的货币符号，如 $ 或 ¥；空为 $ */
+            currency: string;
+            /** @description 近 30 天有用量的模型 */
+            models: string[] | null;
+            prices: components["schemas"]["TokenPrice"][] | null;
         };
         ToolAct: {
             /** Format: date-time */
@@ -3510,6 +4396,8 @@ export interface components {
              * @description 名下等用户处理的事项件数
              */
             pending: number;
+            /** @description 会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待 */
+            retired?: boolean;
         };
         WeComConfig: {
             webhook: string;
@@ -3557,6 +4445,71 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "agent-get-away": {
+        parameters: {
+            query?: {
+                /** @description 离开编号（A-x）；不填为最近一次 */
+                ref?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAwayOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-escalate-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-escalate-awayRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MorningSetOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-set-brief": {
         parameters: {
             query?: never;
@@ -3576,7 +4529,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OkBodyBody"];
+                    "application/json": components["schemas"]["BriefOutBody"];
                 };
             };
             /** @description Error */
@@ -3842,6 +4795,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentGrantOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-handoff-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffWriteInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageOutBody"];
                 };
             };
             /** @description Error */
@@ -4268,7 +5254,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Agent-submit-reviewRequest"];
+                "application/json": components["schemas"]["ReviewBody"];
             };
         };
         responses: {
@@ -4278,7 +5264,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Requirement"];
+                    "application/json": components["schemas"]["ReviewSubmitOutBody"];
                 };
             };
             /** @description Error */
@@ -4417,6 +5403,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LinkOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-state-note": {
+        parameters: {
+            query?: {
+                /** @description SessionStart 的来源：compact（压缩后，补关键状态和子任务模型策略）、resume（恢复，只补子任务模型策略，R-228）；默认 compact */
+                source?: string;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageOutBody"];
                 };
             };
             /** @description Error */
@@ -4781,6 +5801,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "start-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Start-awayRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "end-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-away-report": {
+        parameters: {
+            query?: {
+                /** @description 离开编号（A-x）；不填为最近一次 */
+                ref?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayReport"];
                 };
             };
             /** @description Error */
@@ -5242,6 +6385,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Grant"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-lanes": {
+        parameters: {
+            query?: {
+                /** @description 范围起点，Unix 毫秒；不填为一小时前。最早 30 天前 */
+                from?: number;
+                /** @description 范围终点，Unix 毫秒；不填为现在 */
+                to?: number;
+                /** @description 格子大小（分钟）：1 每分钟（近 1 小时 / 6 小时 / 1 天档），60 每小时（近 1 周档） */
+                step?: 1 | 60;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LaneData"];
                 };
             };
             /** @description Error */
@@ -6768,6 +7947,37 @@ export interface operations {
             };
         };
     };
+    "request-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "reply-session": {
         parameters: {
             query?: never;
@@ -6920,6 +8130,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusChangesOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-token-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPricesOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "put-token-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenPrices"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPricesOutBody"];
                 };
             };
             /** @description Error */

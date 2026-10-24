@@ -139,7 +139,7 @@ func TestMorningReport(t *testing.T) {
 	d2 := raise(map[string]any{"question": "要不要改公开接口？", "risk": "high"})
 	d3 := raise(map[string]any{"question": "批准这个方案？", "approval": true, "risk": "low"})
 	d4 := raise(map[string]any{"question": "按钮文案用「导出」？", "risk": "low"})
-	if err := c.Do(ctx, "POST", "/agent/decisions/"+d1.Code+"/answer", map[string]any{"session_key": "claude:adv", "answer": "倒序", "reason": "和看板一致", "risk": "low"}, nil); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/decisions/"+d1.Code+"/answer", map[string]any{"session_key": "claude:adv", "answer": "倒序", "reason": "和看板一致", "risk": "low", "hard_check": "none"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Do(ctx, "POST", "/agent/team/tell", map[string]any{"session_key": "claude:dev", "text": "接口文档没写分页，先按 50 条做了"}, nil); err != nil {

@@ -6,6 +6,7 @@ import { t } from '../i18n'
 import { cx, duration, relTime } from '../lib/util'
 import { Badge, Button, Tip } from '../ui/base'
 import { useConfirm } from '../ui/overlay'
+import { Collapse, Item, List, useSettled } from '../ui/motion'
 import { useOpenSession } from './nav'
 import { PendingCover, schedule, usePendingMap } from './verdict'
 
@@ -44,16 +45,29 @@ function stopText(s: Stop) {
   return s.detail ? `${head}：${s.detail}` : head
 }
 
+// OrphanProcs：整块的出现 / 消失走同一套弹簧（R-216）；首次加载不播。块里的数据按 props 传，消失动画里内容保持原样。
 export function OrphanProcs({ now }: { now: number }) {
   const q = useOrphans()
+  const still = !useSettled(!!q.data)
+  const d = q.data
+  const show = !!d && (d.orphans.length > 0 || d.ignored.length > 0 || d.stops.some((x) => now - new Date(x.at).getTime() < RECENT_MS))
+  return <Collapse show={show} fluid still={still}>{d && <OrphanBlock now={now} data={d} />}</Collapse>
+}
+
+function OrphanBlock({ now, data }: { now: number; data: NonNullable<ReturnType<typeof useOrphans>['data']> }) {
   const qc = useQueryClient()
   const confirm = useConfirm()
   const [busy, setBusy] = useState<string | null>(null)
   const [showIgnored, setShowIgnored] = useState(false)
   const pend = usePendingMap()
-  const orphans = q.data?.orphans ?? []
-  const ignored = q.data?.ignored ?? []
-  const recent = (q.data?.stops ?? []).filter((s) => now - new Date(s.at).getTime() < RECENT_MS).slice(0, 3)
+  // 撤销期一结束（已提交或在提交）这个进程就在本地离开提醒块，不等重新取数（R-230）；提交失败时放回
+  const gone = (o: Orphan) => {
+    const e = pend.get(ignoreKey(o))
+    return !!e && e.phase !== 'wait'
+  }
+  const orphans = data.orphans.filter((o) => !gone(o))
+  const ignored = data.ignored
+  const recent = data.stops.filter((s) => now - new Date(s.at).getTime() < RECENT_MS).slice(0, 3)
   if (!orphans.length && !recent.length && !ignored.length) return null
   const nOrphan = orphans.filter((o) => o.state === 'orphan').length
 
@@ -177,9 +191,13 @@ export function OrphanProcs({ now }: { now: number }) {
         <span aria-hidden className="h-0 min-w-4 flex-1 border-t border-dashed border-line" />
       </div>
       <div className="rounded-[14px] border border-dashed border-wait/45 bg-surface px-1 py-0.5">
-        {orphans.map((o) => (
-          <OrphanRow key={o.device_id + o.id} o={o} now={now} busy={busy === o.id} ignoring={pend.has(ignoreKey(o))} onStop={() => void stop(o)} onIgnore={() => ignore(o)} />
-        ))}
+        <List>
+          {orphans.map((o, i) => (
+            <Item key={o.device_id + o.id} layout fluid>
+              <OrphanRow o={o} first={i === 0} now={now} busy={busy === o.id} ignoring={pend.has(ignoreKey(o))} onStop={() => void stop(o)} onIgnore={() => ignore(o)} />
+            </Item>
+          ))}
+        </List>
         {recent.length > 0 && (
           <div className={cx('px-2.5 py-1.5', orphans.length > 0 && 'border-t border-line')}>
             <div className="text-[11.5px] text-fg-3">{t.orphans.stopsTitle}</div>
@@ -196,7 +214,7 @@ export function OrphanProcs({ now }: { now: number }) {
 
 const ignoreKey = (o: Orphan) => `ignore:${o.device_id}:${o.id}`
 
-function OrphanRow({ o, now, busy, ignoring, onStop, onIgnore }: { o: Orphan; now: number; busy: boolean; ignoring: boolean; onStop: () => void; onIgnore: () => void }) {
+function OrphanRow({ o, first, now, busy, ignoring, onStop, onIgnore }: { o: Orphan; first: boolean; now: number; busy: boolean; ignoring: boolean; onStop: () => void; onIgnore: () => void }) {
   const openSession = useOpenSession()
   const detached = o.state === 'detached'
   const short = shortCmd(o.cmd)
@@ -204,7 +222,7 @@ function OrphanRow({ o, now, busy, ignoring, onStop, onIgnore }: { o: Orphan; no
   const load = [t.orphans.cpu(o.cpu), t.orphans.mem(o.rss_kb), o.procs > 1 ? t.orphans.procs(o.procs) : ''].filter(Boolean)
   const metaText = [...meta, ...load, o.local ? '' : o.device_name].filter(Boolean).join(' · ')
   return (
-    <div className="relative grid h-[52px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-line px-2.5 first:border-t-0">
+    <div className={cx('relative grid h-[52px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-2.5', !first && 'border-t border-line')}>
       <Tip content={detached ? t.orphans.detachedTip : t.orphans.orphanTip}>
         <span>
           <Badge tone={detached ? 'neutral' : 'wait'} className="w-[4.2em] justify-center">

@@ -48,22 +48,35 @@ agent 调用：
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力；evidence void <证据 id> --reason 作废交错的证据）
   req request <R-x> <ready|draft> --reason ...   申请改需求状态（草稿 → 待开始、重新打开已搁置的），用户在审批抽屉里批准后纸鸢直接改
   req assign <R-x> --to <会话|auto>   PM 把需求交给开发
-  req review <R-x> <意见> [--image]   Rev 交审查意见（不改需求状态）
+  req review <R-x> [意见] [--verdict] [--blocks] [--image]   Rev 交审查意见 / 验证结果（不改需求状态）
   commit list|link|ci ...   需求关联的提交与 CI（R-156）：标题末尾写（R-x）的提交自动关联；link 手动关联，ci 上报 CI 结果（只记录，不改仓库）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
-  team tell <文字> [--req R-x]   给本项目的 PM 留言（只送给 PM，不进用户收件箱；交验收时 PM 会自动收到通知）
+  team tell <文字> [--to aide|pm|reviewer] [--req R-x] [--fyi]
+                                 按身份给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），
+                                 进度和受阻告诉主调度；没有主助理时退回给主调度；交验收时主调度会自动收到通知；
+                                 项目没有主调度时不送，返回「本项目当前没有主调度，消息未送达」（不算出错）
+                                 --fyi 标明「只告知」（R-227）：对方不必动手，不唤醒它的 ks wait，下次因别的事被叫醒或用户发消息时一并带上；
+                                 不标则按要对方动手处理（提问、求裁定、派活、回复），立刻叫醒；部署 / 重启、进展通报用 --fyi
+  team tell --reply D-x <回复>   回复收到的团队消息，自动送回发消息的一方（子任务发的送到它所属的会话）
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
   away advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上
+  away status            用户是否暂时离开：离开多久、主助理处理几件、推送几条
+  away report [A-x]      离开时段报告（默认最近一次）：替用户定了什么、放行、交付、还在等用户的、用户在各设备上处理了什么
+  away escalate <D-x> --reason 理由   Adv 把拿不准、要用户尽快看的待决策推给用户
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结（只写跨需求的效果和遗留问题）
   decision raise ...     提出决策（一次只问一件事）
   decision withdraw <D-x> [--reason 原因] [--replaced-by D-y]   撤回自己提的、用户还没答复的决策（--replaced-by 的目标须仍待答，已关闭 / 回环会被拒）
   decision answer <D-x> --answer 答复 --reason 理由 --risk low   Adv 在用户的授权窗口内代答（R-163）
   写作规范：证据第一句是结论（40 字以内），再逐条写验收判定；证据超 600 字、决策说明超 400 字时照常保存并提示压缩
   表达块：req evidence / decision raise / plan submit 可加 --blocks 块.json（清单、对比、截图、流程、指标、改动范围、选项、表格），纸鸢统一渲染
-  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / Dev / Adv / Rev），打印身份提示词
+  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动卸任
+  takeover <身份> [--tool claude|codex] [--print]
+                         交接（R-224）：在项目目录启动新会话并带接任提示，新会话声明身份时自动读到上一任的交接
+  handoff --doing 在做的 --next 下一步 [--waiting ..] [--rules ..] [--notes ..] | --file 交接.json|.md
+                         交接（R-224）：没有 handoff_write 工具（MCP 是旧版）时用它写结构化交接，拒收条件相同
   wait [--timeout 1h] [--on decision,review,blocked,stage,settings,status]
                          挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）；
                          --on 另外订阅本项目别的会话的事件（提决策 / 交验收 / 受阻 / 阶段交小结 / 用户改项目设置 / 用户改需求状态），none 不订阅、default 按身份默认，不填沿用上次
@@ -109,6 +122,10 @@ func main() {
 		err = runWait(args)
 	case "role":
 		err = runRole(args)
+	case "handoff":
+		err = runHandoff(args)
+	case "takeover":
+		err = runTakeover(args)
 	case "brief":
 		err = runBrief(args)
 	case "away", "morning":

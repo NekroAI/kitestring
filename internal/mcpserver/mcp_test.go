@@ -11,7 +11,7 @@ func TestImageIDs(t *testing.T) {
 	var r map[string]any
 	_ = json.Unmarshal([]byte(`{
 		"files":[{"id":"desc"}],
-		"feedback":[{"answer_files":[{"id":"fb1"}]}],
+		"feedback":[{"answer_files":[{"id":"fb1"},{"id":"svg","mime":"image/svg+xml"},{"id":"log","mime":"application/json"}]}],
 		"evidence":[{"voided":true,"files":[{"id":"old"}]},{"voided":false,"files":[{"id":"shot","mime":"image/png"},{"id":"rec","mime":"video/webm"}]}]
 	}`), &r)
 	if got := imageIDs(r); !reflect.DeepEqual(got, []string{"desc", "fb1", "shot"}) {
@@ -40,7 +40,7 @@ func TestReqViewIsCompact(t *testing.T) {
 	raw := `{"code":"R-9","title":"登录页","status":"review","priority":"P1","kind":"design","plan_code":"P-1","stage_seq":2,"stage_title":"网页",
 		"detail":"记住我","acceptance":"三端可用","sessions":["claude:a"],"files":[{"id":"desc","mime":"image/png"}],
 		"evidence":[{"kind":"test","summary":"旧的","voided":true},{"kind":"screenshot","summary":"截图","files":[{"id":"shot","mime":"image/png"}]}],
-		"feedback":[{"code":"D-3","kind":"feedback","answer":"按钮太小","answer_files":[{"id":"fb","mime":"image/png"}]},{"code":"D-4","kind":"queue","answer":"P1"},{"code":"D-5","kind":"decision","question":"用哪个？","answer":""}],
+		"feedback":[{"code":"D-3","kind":"feedback","answer":"按钮太小","answer_files":[{"id":"fb","name":"问题.png","mime":"image/png","size":2048,"path":"/h/attachments/fb.png"},{"id":"lg","name":"gesture.json","mime":"application/json","size":120,"path":"/h/attachments/lg/gesture.json"}]},{"code":"D-4","kind":"queue","answer":"P1"},{"code":"D-5","kind":"decision","question":"用哪个？","answer":""}],
 		"created_at":"2026-10-23T00:00:00Z","id":"01X","next_actor":"user"}`
 	if err := json.Unmarshal([]byte(raw), &r); err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestReqViewIsCompact(t *testing.T) {
 		t.Fatalf("一行概要不符：%s", got)
 	}
 	out := r.String()
-	for _, want := range []string{"说明：记住我", "验收标准：三端可用", "证据（1 条）", "[screenshot] 截图（1 个附件）", "D-3 修改意见：按钮太小（附图 1 张）", "D-5 决策：用哪个？ → （待你答复）"} {
+	for _, want := range []string{"说明：记住我", "验收标准：三端可用", "证据（1 条）", "[screenshot] 截图（1 个附件）", "D-3 修改意见：按钮太小\n      附件 问题.png（2.0 KB）：/h/attachments/fb.png\n      附件 gesture.json（120 B）：/h/attachments/lg/gesture.json", "D-5 决策：用哪个？ → （待你答复）"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("精简视图缺少 %q：\n%s", want, out)
 		}

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/summary"
 )
@@ -13,8 +14,47 @@ import (
 // 完整 JSON 只在 req_get full = true 时返回。
 
 type fileView struct {
-	ID   string `json:"id"`
-	Mime string `json:"mime"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Mime      string `json:"mime"`
+	Size      int64  `json:"size"`
+	Path      string `json:"path"`       // 下载到本机的路径（R-221）
+	PathError string `json:"path_error"` // 没能下载时的原因
+}
+
+// fileLine 是一个附件的一行说明：「名字（大小）：本机路径」。
+func fileLine(f fileView) string {
+	s := f.Name
+	if s == "" {
+		s = f.ID
+	}
+	if f.Size > 0 {
+		s += "（" + sizeText(f.Size) + "）"
+	}
+	switch {
+	case f.Path != "":
+		s += "：" + f.Path
+	case f.PathError != "":
+		s += "：未能下载到本机（" + f.PathError + "），附件 ID " + f.ID
+	}
+	return s
+}
+
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
+// filesBlock 把一组附件写成缩进的若干行。
+func filesBlock(b *strings.Builder, indent string, fs []fileView) {
+	for _, f := range fs {
+		b.WriteString(indent + "附件 " + fileLine(f) + "\n")
+	}
 }
 
 type reqView struct {
@@ -127,6 +167,10 @@ func (r reqView) String() string {
 			fmt.Fprintf(&b, "%s：%s\n", kv[0], v)
 		}
 	}
+	if len(r.Files) > 0 {
+		b.WriteString("描述附件：\n")
+		filesBlock(&b, "  ", r.Files)
+	}
 	if len(r.Sessions) > 0 {
 		fmt.Fprintf(&b, "关联会话：%s\n", strings.Join(r.Sessions, "、"))
 	}
@@ -192,7 +236,9 @@ func (r reqView) String() string {
 			s = fmt.Sprintf("  - %s%s %s：%s", when, f.Code, fbLabel[f.Kind], f.Answer)
 		}
 		if len(f.AnswerFiles) > 0 {
-			s += fmt.Sprintf("（附图 %d 张）", len(f.AnswerFiles))
+			var fl strings.Builder
+			filesBlock(&fl, "      ", f.AnswerFiles)
+			s += "\n" + strings.TrimRight(fl.String(), "\n")
 		}
 		fb = append(fb, s)
 	}
@@ -207,7 +253,7 @@ func (r reqView) images() []string {
 	var ids []string
 	add := func(fs []fileView) {
 		for _, f := range fs {
-			if (f.Mime == "" || strings.HasPrefix(f.Mime, "image/")) && len(ids) < 8 {
+			if (f.Mime == "" || protocol.IsImage(f.Mime)) && len(ids) < 8 {
 				ids = append(ids, f.ID)
 			}
 		}

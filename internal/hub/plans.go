@@ -237,7 +237,7 @@ func withComment(text string, n note) string {
 	case n.text != "":
 		return text + "附言：" + n.text
 	case len(n.files) > 0:
-		return text + "附言见附图。"
+		return text + "附言见附件。"
 	}
 	return text
 }
@@ -577,6 +577,9 @@ func (h *Hub) registerPlans(api huma.API) {
 				return nil, err
 			}
 			x, err := h.startPlan(ctx, in.Ref, n)
+			if err == nil {
+				h.awayUser(ctx, "plan_start", x.ProjectID, x.Code, x.Title, "批准了计划") // R-210
+			}
 			return &planOut{Body: x}, err
 		})
 	huma.Register(api, huma.Operation{OperationID: "reject-plan", Method: http.MethodPost, Path: "/api/plans/{ref}/reject", Tags: tag, Summary: "不批准 Agent 拆出的计划（搁置，附言送达）"},
@@ -589,6 +592,9 @@ func (h *Hub) registerPlans(api huma.API) {
 				return nil, err
 			}
 			x, err := h.rejectPlan(ctx, in.Ref, n)
+			if err == nil {
+				h.awayUser(ctx, "plan_reject", x.ProjectID, x.Code, x.Title, "没有批准计划") // R-210
+			}
 			return &planOut{Body: x}, err
 		})
 	huma.Register(api, huma.Operation{OperationID: "pass-stage", Method: http.MethodPost, Path: "/api/plans/{ref}/stages/{seq}/pass", Tags: tag, Summary: "验收通过整个阶段，下一阶段自动开始"},
@@ -602,6 +608,9 @@ func (h *Hub) registerPlans(api huma.API) {
 				return nil, err
 			}
 			x, err := h.passStage(ctx, in.Ref, in.Seq, n)
+			if err == nil {
+				h.awayUser(ctx, "stage_pass", x.ProjectID, x.Code, x.Title, fmt.Sprintf("阶段 %d 验收通过", in.Seq)) // R-210
+			}
 			return &planOut{Body: x}, err
 		})
 	huma.Register(api, huma.Operation{OperationID: "revise-stage", Method: http.MethodPost, Path: "/api/plans/{ref}/stages/{seq}/revise", Tags: tag, Summary: "退回整个阶段（附意见）"},
@@ -615,6 +624,9 @@ func (h *Hub) registerPlans(api huma.API) {
 				return nil, err
 			}
 			x, err := h.reviseStage(ctx, in.Ref, in.Seq, n)
+			if err == nil {
+				h.awayUser(ctx, "stage_revise", x.ProjectID, x.Code, x.Title, fmt.Sprintf("退回了阶段 %d", in.Seq)) // R-210
+			}
 			return &planOut{Body: x}, err
 		})
 }

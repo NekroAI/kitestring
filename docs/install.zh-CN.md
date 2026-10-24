@@ -38,6 +38,26 @@ ks install --hub --claude=false --codex=false --daemon=false   # 注册为常驻
 
 开一个 Claude Code 或 Codex 会话，几秒内就会出现在看板上。
 
+## 多个 Claude 配置
+
+如果你用不同的配置目录开 Claude Code（比如用 shell 函数设置 `CLAUDE_CONFIG_DIR`），需要把每个目录手动接入，纸鸢不会自动发现。
+
+```sh
+claude-x() ( export CLAUDE_CONFIG_DIR="$HOME/.claude-x"; export ANTHROPIC_BASE_URL=…; export ANTHROPIC_API_KEY=…; command claude "$@" )
+
+ks install --claude-dir ~/.claude-x --launcher claude-x   # --launcher 可省；多个目录就重复写成对的参数
+ks install --status                                        # 逐个目录列出 hook、MCP、权限是否到位，以及相对 ~/.claude 缺了什么
+ks uninstall --claude-dir ~/.claude-x                      # 只移除这一个目录；不带参数的 ks uninstall 移除全部
+```
+
+- 目录列表记在本机 `~/.kitestring/claude-dirs.json`，之后不加参数重跑 `ks install`（或升级）会给 `~/.claude` 和列表里所有目录一起更新。当前 shell 里设了 `CLAUDE_CONFIG_DIR` 时也一并接入。`--dry-run` 按目录分别列出改动。
+- 每个目录都会写入 hooks、`mcp__kitestring` 权限白名单和 user scope 的 MCP 注册（执行 `claude mcp add` 时带上对应的 `CLAUDE_CONFIG_DIR`）。
+- 非默认目录的会话，卡片上有一个写目录名的小标签（去掉开头的点，如 `claude-x`），会话详情的客户端一行写成「Claude Code · claude-x · …」；默认的 `~/.claude` 不额外标注。
+- 「复制恢复命令」：配了启动命令给 `<启动命令> --resume <id>`，没配给 `CLAUDE_CONFIG_DIR=<目录> claude --resume <id>`（需要这个目录里已有登录凭证）。
+- 不碰凭证：只上报目录路径和显示名，`ANTHROPIC_API_KEY`、`ANTHROPIC_BASE_URL` 不读、不存、不写日志。
+
+哪些共用、哪些隔开：Hub、会话列表、需求和决策数据、角色提示词（由 Hub 注入）对所有目录都一样；用户级 `CLAUDE.md`、项目记忆、自定义子 Agent、skills 和登录凭证按配置目录隔开。`ks install --status` 会列出 `~/.claude` 里有、这个目录里缺的项。个人偏好想共用，请自己建软链接，例如 `ln -s ~/.claude/CLAUDE.md ~/.claude-x/CLAUDE.md`（纸鸢不会替你建）。
+
 ## 升级
 
 重跑安装脚本，再重启常驻服务：macOS 再运行一次 `ks install`；Linux 运行 `systemctl --user restart kitestring-daemon`（Hub 所在机器再重启 `kitestring-hub`）。

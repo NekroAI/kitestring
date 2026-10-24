@@ -42,6 +42,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("数据库迁移失败：%w", err)
 	}
+	if err := backfillLanes(db); err != nil { // 泳道时间线（R-205）：旧库从事件记录补出历史分钟
+		db.Close()
+		return nil, fmt.Errorf("补录泳道时间线失败：%w", err)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -105,6 +109,7 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "replaced_by", "TEXT NOT NULL DEFAULT ''"},
 	{"projects", "agent_release", "INTEGER NOT NULL DEFAULT 0"},
 	{"projects", "commit_on_accept", "INTEGER NOT NULL DEFAULT 0"},
+	{"projects", "model_policy", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "wait_on", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "tasks", "TEXT NOT NULL DEFAULT '[]'"},
 	{"decisions", "risk", "TEXT NOT NULL DEFAULT ''"},
@@ -140,6 +145,35 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "by_title", "TEXT NOT NULL DEFAULT ''"},
 	{"review_advice", "by_title", "TEXT NOT NULL DEFAULT ''"},
 	{"review_advice", "by_role", "TEXT NOT NULL DEFAULT ''"},
+	// 团队消息按身份寻址（R-191）：发消息时发送方的身份、发自哪个子任务（agent_id）、回复的是哪条团队消息（决策 ID）
+	{"decisions", "from_role", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "from_agent", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "reply_to", "TEXT NOT NULL DEFAULT ''"},
+	// 交接卸任（R-224）：被新会话接任后不再挂 ks wait、不再被唤醒；重新声明身份时清除
+	{"sessions", "retired_at", "TEXT NOT NULL DEFAULT ''"},
+	// 状态只认明确记录（R-239）：等待类型、批准 / 拒绝、推荐选项存成字段，老数据补列时一次性回填
+	{"sessions", "wait_kind", "TEXT NOT NULL DEFAULT ''"},
+	// Claude 配置来源（R-240）：非默认 CLAUDE_CONFIG_DIR 的显示名、目录和启动命令
+	{"sessions", "profile", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "profile_dir", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "launcher", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "verdict", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "rec_option", "INTEGER NOT NULL DEFAULT -1"},
+	// 顶部简报的一句话结论和要先看的几条（R-212）
+	{"morning_notes", "headline", "TEXT NOT NULL DEFAULT ''"},
+	{"morning_notes", "look", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "brief_headline", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "brief_look", "TEXT NOT NULL DEFAULT ''"},
+	// 暂时离开（R-210）：决策上标的硬规则类别；授权窗口属于哪次离开
+	{"decisions", "hard", "TEXT NOT NULL DEFAULT ''"},
+	{"grants", "away_id", "TEXT NOT NULL DEFAULT ''"},
+}
+
+// columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。
+var columnFills = map[string]func(*sql.DB) error{
+	"sessions.wait_kind":   fillWaitKind,
+	"decisions.verdict":    fillVerdict,
+	"decisions.rec_option": fillRecOption,
 }
 
 // sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。
@@ -162,6 +196,11 @@ func migrate(db *sql.DB) error {
 		if n == 0 {
 			if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, c.table, c.column, c.ddl)); err != nil {
 				return err
+			}
+			if fill := columnFills[c.table+"."+c.column]; fill != nil {
+				if err := fill(db); err != nil {
+					return fmt.Errorf("回填 %s.%s：%w", c.table, c.column, err)
+				}
 			}
 		}
 	}

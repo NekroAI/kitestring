@@ -38,29 +38,47 @@ type Settings struct {
 	Upload        UploadLimits       `json:"upload"`
 	// DevRequestMinutes：PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝（R-169）；0 = 默认 30
 	DevRequestMinutes int `json:"dev_request_minutes,omitempty"`
+	// CompactTokens：上下文超过它就提示「建议压缩」（R-224），也是会话圆环变红的线、一半处变黄（R-225）；0 = 默认 30 万
+	CompactTokens int `json:"compact_tokens,omitempty"`
 }
 
-// UploadLimits 附件大小上限（MB），0 表示用默认值（R-72）。
+const (
+	defaultCompactTokens = 300_000
+	minCompactTokens     = 50_000
+	maxCompactTokens     = 2_000_000
+)
+
+// compactTokens 返回生效的建议压缩阈值。
+func (s Settings) compactTokens() int {
+	if s.CompactTokens <= 0 {
+		return defaultCompactTokens
+	}
+	return min(max(s.CompactTokens, minCompactTokens), maxCompactTokens)
+}
+
+// UploadLimits 附件大小上限（MB），0 表示用默认值（R-72）；FileMB 是图片、录屏以外的文件（R-221）。
 type UploadLimits struct {
 	ImageMB int `json:"image_mb,omitempty"`
 	VideoMB int `json:"video_mb,omitempty"`
+	FileMB  int `json:"file_mb,omitempty"`
 }
 
 const (
 	defaultImageMB = 10
 	defaultVideoMB = 50
+	defaultFileMB  = 20
 	maxUploadMB    = 4096
 )
 
 // bytes 返回生效的上限（字节）。
-func (u UploadLimits) bytes() (image, video int64) {
+func (u UploadLimits) bytes() (image, video, file int64) {
 	pick := func(v, def int) int64 {
 		if v <= 0 {
 			v = def
 		}
 		return int64(min(v, maxUploadMB)) << 20
 	}
-	return pick(u.ImageMB, defaultImageMB), pick(u.VideoMB, defaultVideoMB)
+	return pick(u.ImageMB, defaultImageMB), pick(u.VideoMB, defaultVideoMB), pick(u.FileMB, defaultFileMB)
 }
 
 const settingsKey = "hub_settings"
@@ -83,6 +101,7 @@ type Hub struct {
 	dirtyTmr *time.Timer
 	orphans  map[string]deviceOrphans            // deviceID → daemon 上报的孤儿 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
 	stops    map[string]chan protocol.StopResult // 停止请求 → 等 daemon 回结果
+	lanes    *laneState                          // 泳道时间线（R-205）
 }
 
 // New 创建 Hub。
@@ -99,6 +118,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		dirty:    map[string]bool{},
 		orphans:  map[string]deviceOrphans{},
 		stops:    map[string]chan protocol.StopResult{},
+		lanes:    newLaneState(),
 	}
 	if st != nil {
 		st.OnRequestVoided = h.onStatusRequestVoided // 改状态申请因状态被改动而作废，送回申请方（R-188）
@@ -171,6 +191,9 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	h.migrateAide(ctx) // 身份调整（R-190）：先清掉绑在非主助理上的窗口，再排到期通知
 	h.resumeGrantExpiry(ctx)
 	h.resumeRequestExpiry(ctx)
+	go h.laneMaintenance(ctx)
+	go h.reviewWatch(ctx) // 交给评审 30 分钟没动静的，照常弹给用户（R-237）
+	go h.awayLoop(ctx) // 暂时离开：每分钟判断一次能处理的是否都处理完（R-210）
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
@@ -215,6 +238,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		return err
 	}
 	key := protocol.SessionKey(ev.Tool, ev.SessionID)
+	h.laneEvent(ctx, key, ev) // 泳道时间线（R-205）：只更新这一分钟
 	var prev *store.Session
 	if cur, err := h.store.GetSession(ctx, key); err == nil {
 		prev = &cur
@@ -299,10 +323,10 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	case next.Background:
 		// 后台任务不生成标题 / 摘要，不占模型额度（R-179）
 	case ev.Name == "UserPromptSubmit" && ev.Source != protocol.SourceAuto:
-		if next.DigestDone != "" || next.DigestAsk != "" {
+		if next.DigestDone != "" {
 			_ = h.store.ClearDigest(ctx, key)
 		}
-		if next.ReplyAsk != "" { // 你在终端里回了它，不再算在等你回复（R-117）
+		if next.ReplyAsk != "" { // 你在终端里回了它，ks wait 不再按上一轮的问句提醒它（R-117）
 			_ = h.store.ClearReplyAsk(ctx, key)
 		}
 		go h.aiOnPrompt(key, ev.Prompt)
@@ -379,7 +403,8 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 			continue
 		}
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: proxyText(d), Delivered: d.Status == store.DecDelivered,
-			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: d.Kind == store.KindTell && d.Question == quietTellQ}
+			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: d.Kind == store.KindTell && d.Question == quietTellQ,
+			Replyable: d.Kind == store.KindTell && d.AssignedBy != ""}
 		if d.Kind == store.KindPlan {
 			pd.ReqCode, pd.ReqTitle = d.PlanCode, d.Question // 计划进展：编号与标题是计划的
 		}
@@ -499,8 +524,21 @@ func (h *Hub) notifySession(x store.Session, event, title, body string) {
 	}, "/?s="+url.QueryEscape(x.Key))
 }
 
-// sendNotify 异步发送通知。projectID 为空或项目未归属工作空间时使用默认渠道。
-func (h *Hub) sendNotify(projectID string, m notify.Message, path string) {
+// sendNotify 发送通知：离开期间先按推送分级过滤（R-210，见 away.go），不在离开时照旧发送。
+// meta 可指定分级、关联编号与原因；不给时按事件类型取默认分级。
+func (h *Hub) sendNotify(projectID string, m notify.Message, path string, meta ...pushMeta) {
+	var pm pushMeta
+	if len(meta) > 0 {
+		pm = meta[0]
+	}
+	if !h.awayGate(projectID, m, path, pm) {
+		return
+	}
+	h.deliverNotify(projectID, m, path)
+}
+
+// deliverNotify 异步发送通知。projectID 为空或项目未归属工作空间时使用默认渠道。
+func (h *Hub) deliverNotify(projectID string, m notify.Message, path string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()

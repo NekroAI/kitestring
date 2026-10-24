@@ -161,3 +161,10 @@ export async function copyText(text: string): Promise<boolean> {
     return false
   }
 }
+
+// wan：token 数的写法（不到 1 万写原数，之后按「万」）
+export function wan(n: number) {
+  if (n < 1e4) return String(Math.round(n))
+  const w = n / 1e4
+  return `${w < 100 ? w.toFixed(1).replace(/\.0$/, '') : Math.round(w)} 万`
+}

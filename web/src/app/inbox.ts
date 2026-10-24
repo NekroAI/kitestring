@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import type { Decision, Requirement, Session } from '../api/client'
-import { useDecisions, useRequirements, useSessions } from '../api/queries'
+import { useDecisions, usePlans, useRequirements, useSessions } from '../api/queries'
 import { displayState } from '../ui/marks'
 import { usePlanTodo } from './plans'
+import { reviewHeld } from './verify'
 
 // 工作台数据模型：项目 → 对话。
 // 一个“线程”是一个需要你处理的对话，汇集它所有在等你的事：决策、待验收、待转交、提问 / 授权 / 回复。
@@ -43,6 +44,7 @@ export function useWorkbench() {
   const decisions = useDecisions()
   const reqs = useRequirements()
   const plans = usePlanTodo()
+  const plansQ = usePlans() // 计划也进「要你处理」（待批准、待阶段验收），到齐前算加载中（R-211）
 
   return useMemo(() => {
     const ss = sessions.data?.sessions ?? []
@@ -75,8 +77,9 @@ export function useWorkbench() {
       th.decisions.push(d)
       th.urgency = Math.min(th.urgency, 0)
     }
-    // 待验收：归到最近活跃的关联会话
-    for (const r of rs.filter((x) => x.status === 'review')) {
+    // 待验收：归到最近活跃的关联会话。交给评审的，评审交意见前不进「要你处理」（R-237）
+    const now = Date.now()
+    for (const r of rs.filter((x) => x.status === 'review' && !reviewHeld(x, now))) {
       const linked = r.sessions.map((k) => byKey.get(k)).filter((x): x is Session => !!x)
       linked.sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))
       const s = linked.find((x) => x.state !== 'ended') ?? linked[0]
@@ -133,7 +136,7 @@ export function useWorkbench() {
     const all = [...threads.values()]
 
     return {
-      loading: sessions.isPending || decisions.isPending || reqs.isPending,
+      loading: sessions.isPending || decisions.isPending || reqs.isPending || plansQ.isPending,
       error: sessions.error || decisions.error || reqs.error,
       refetch: () => {
         void sessions.refetch()
@@ -149,5 +152,5 @@ export function useWorkbench() {
       plans, // 在等你的计划：待批准、待阶段验收
       todo: all.reduce((n, th) => n + th.items, 0) + plans.length,
     }
-  }, [sessions, decisions, reqs, plans])
+  }, [sessions, decisions, reqs, plans, plansQ.isPending])
 }

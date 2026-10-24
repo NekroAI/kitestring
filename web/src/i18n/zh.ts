@@ -42,11 +42,11 @@ export const zh = {
     pass: (s: Scene) => VERB[s].pass,
     back: (s: Scene) => VERB[s].back,
     undo: '撤销',
-    note: (s: Scene) => `附言（${VERB[s].back}时必填，可贴图）`,
-    noteOptional: '附言（可选，可贴图）',
+    note: (s: Scene) => `附言（${VERB[s].back}时必填，可附图片或文件）`,
+    noteOptional: '附言（可选，可附图片或文件）',
     needNote: (s: Scene) => (s === 'accept' || s === 'plan' ? `${VERB[s].back}要写下意见：哪里要改` : `${VERB[s].back}要写下理由`),
     // 撤销条：「3 秒后通过」「R-12 · 3 秒后退回」「D-8 · 3 秒后拒绝」「R-12 · 3 秒后改为进行中」
-    pending: (act: string, s: number) => `${s} 秒后${act}`,
+    pending: (act: string, s: number | string) => `${s} 秒后${act}`,
     move: (status: string) => `改为${status}`,
     many: (n: number) => `${n} 项`,
     // 顶部浮动条（R-201）：批量只出一条「n 项 · 3 秒后通过 · 全部撤回」；连续审批只显示最近一件，旁边「还有 n 件在等生效」
@@ -64,6 +64,10 @@ export const zh = {
     askTitle: (code: string) => `${ACC.back} ${code}`,
     askDesc: '写下哪里要改，会一起送给 Agent；已有的验收证据会作废。',
     askPlaceholder: '哪里要改？',
+    // 列表左滑拒绝批准类决策（R-73）：先写理由
+    rejectTitle: (s: Scene, code: string) => `${VERB[s].back} ${code}`,
+    rejectDesc: '写下理由，会一起送给 Agent。',
+    rejectPlaceholder: (s: Scene) => `为什么${VERB[s].back}？`,
     keyPass: (s: Scene) => `${VERB[s].pass} · ⌘↵`,
     keyBack: (s: Scene) => `${VERB[s].back} · ⌘⌫`,
     stageNext: (next: number | null) => (next ? `${ACC.pass}后开始阶段 ${next}` : `${ACC.pass}后计划完成`),
@@ -155,7 +159,7 @@ export const zh = {
       return `${both('advisor')}：只答问题、做设计（出方案、效果图、记草稿），可以有多个，不常驻`
     },
     get reviewer() {
-      return `${both('reviewer')}：只做审查，意见挂在需求上；任何工具（含 Codex）的会话都能担任`
+      return `${both('reviewer')}：审查和验证，结论挂在需求上，不改代码和状态；任何工具（含 Codex）的会话都能担任`
     },
     get pm() {
       return `${both('pm')}：替你干活，每项目一个、常驻——排期、派子任务、合并部署、写简报`
@@ -240,19 +244,14 @@ export const zh = {
     unignore: '取消忽略',
   },
   desk: {
-    counts: (act: number, run: number, parked: number, reply: number, asks = 0) =>
-      [act ? `${act} 件要你处理` : '没有要你处理的事', asks && `${asks} 个在等你回复`, run && `${run} 个在跑`, parked && `${parked} 个待命`, reply && `${reply} 个久未回复`].filter(Boolean).join(' · '),
-    // 「在等你回复」（R-117）：最后一条回复在问你、却没提正式决策的会话。放在「要你处理」档，但不计入件数
-    asks: (n: number) => `另有 ${n} 个在等你回复`,
-    asksTip: '它最后的回复在问你，但没有提正式的决策，不计入件数',
-    awaiting: '在等你回复',
-    awaitingHint: '它最后的回复在问你，但没有提正式的决策',
-    fullReply: '看全文',
-    replyPlaceholder: '直接回复它',
-    replyParked: '它挂着等待，回复后立刻接着干',
-    replyIdle: '它这一轮已结束，回复在你下次给它发消息时送达',
-    replySend: '回复',
-    replySent: (parked: boolean) => (parked ? '已回复，它会立刻接着干' : '已回复，会在你下次给它发消息时送达'),
+    counts: (act: number, run: number, parked: number, reply: number) =>
+      [act ? `${act} 件要你处理` : '没有要你处理的事', run && `${run} 个在跑`, parked && `${parked} 个待命`, reply && `${reply} 个久未回复`].filter(Boolean).join(' · '),
+    // 会话面板上直接给会话发一句话（R-117、R-239）：只是留言，不算待办
+    replyPlaceholder: '写一句话给它',
+    replyParked: '它挂着等待，发出后立刻接着干',
+    replyIdle: '它这一轮已结束，消息在你下次给它发消息时送达',
+    replySend: '发送',
+    replySent: (parked: boolean) => (parked ? '已发送，它会立刻接着干' : '已发送，会在你下次给它发消息时送达'),
     tier: { act: '要你处理', run: '在跑', rest: '待命 / 空闲 / 久未回复' },
     ended: (n: number) => `已结束 ${n}`,
     dotTip: { act: '要你处理', run: '在跑', park: '待命' } as Record<string, string>,
@@ -288,9 +287,66 @@ export const zh = {
       quiet: (d: string) => `${d} 没动`,
       approve: (detail: string) => `请求执行：${detail}`,
       youHint: '有事在「要你处理」里等你',
-      review: (code: string, title: string) => `交了验收：${code} ${title}`,
-      lastAct: (when: string, tool: string) => `上次动作 ${when}${tool ? ' · ' + tool : ''}`,
+      more: (n: number) => `（还有 ${n} 件）`,
+      lastAct: (tool: string) => `上次动作：${tool}`,
       noWords: '没有留下话',
+    },
+    // 泳道时间线（R-205）：4 档分度值、悬停数字、子任务合并
+    zoom: { h1: '近 1 小时', h6: '近 6 小时', d1: '近 1 天', w1: '近 1 周' } as Record<string, string>,
+    zoomShort: { h1: '1 小时', h6: '6 小时', d1: '1 天', w1: '1 周' } as Record<string, string>,
+    zoomTip: (bucket: string) => `时间线分度值，所有泳道一起切换 · 每格 ${bucket}`,
+    tl: {
+      calls: (n: number) => (n ? `调用 ${n} 次` : '没有调用'),
+      long: (label: string, d: string) => `长命令 ${label}（${d}）`,
+      longRunning: (label: string, d: string) => `长命令 ${label}（已跑 ${d}，还在跑）`,
+      moreLong: (n: number) => `另有 ${n} 个长命令`,
+      wait: '待命（ks wait）',
+      subAgg: (n: number) => `子任务（共 ${n} 个）`,
+      subMore: (n: number) => `还有 ${n} 个子任务在这段时间里跑过`,
+      // 子任务行只写一个带含义的时间（R-214）：结束了写「多久前结束」，在跑的写「最近动作多久前」或「已跑多久」
+      endedAt: (ago: string) => `${ago}结束`,
+      lastAct: (ago: string) => `最近动作 ${ago}`,
+      running: (dur: string) => `已跑 ${dur}`,
+      endedSession: (ago: string) => `已结束 · ${ago}`,
+      ago: { now: '刚刚', sec: (n: number) => `${n} 秒前`, min: (n: number) => `${n} 分钟前`, hour: (n: number) => `${n} 小时前`, day: (n: number) => `${n} 天前` },
+      span: { sec: (n: number) => `${n} 秒`, min: (n: number) => `${n} 分钟`, hour: (n: number) => `${n} 小时`, day: (n: number) => `${n} 天` },
+      sum: (zoom: string, n: number) => `${zoom} · 调用 ${n} 次`,
+      bucket: (min: number) => (min >= 60 ? `${min / 60} 小时` : `${min} 分钟`),
+      // token 用量（R-206）：新算 = 没命中缓存的输入 + 写缓存 + 输出；命中率 = 读缓存 / 全部输入
+      tok: (fresh: string, hit: string) => `新算 ${fresh} token · 命中 ${hit}`,
+      tokLabel: (zoom: string, fresh: string, hit: string) => `${zoom} · 新算 ${fresh} · 命中 ${hit}`,
+      tokBrief: (zoom: string, fresh: string, hit: string) => `${zoom} · 新算 ${fresh} token · 命中 ${hit}`,
+      money: (v: string) => `约 ${v}`,
+      cold: (cause: string, n: string) => `缓存重建 · ${cause} · 重算 ${n} token`,
+      coldCause: {
+        idle: (min: number) => `闲置 ${min >= 120 ? `${Math.round(min / 60)} 小时` : `${min} 分钟`}`,
+        compact: '上下文压缩',
+        model: (from: string, to: string) => (from ? `换模型（${from} → ${to}）` : '换模型'),
+        start: '刚开始',
+        other: '起因不明',
+      },
+      moreCold: (n: number) => `另有 ${n} 次缓存重建`,
+      // shell 泳道（R-208）：后台命令每条一行
+      sh: {
+        kind: { build: '构建/测试', deploy: '部署', service: '服务', poll: '轮询', other: '其他' } as Record<string, string>,
+        running: '运行中',
+        ok: (d: string) => `完成 · ${d}`,
+        failed: (code: number | null) => (code == null ? '失败' : `失败 · 退出码 ${code}`),
+        stopped: '被停止',
+        ended: '已结束 · 退出码未知',
+        lost: '已结束 · 时间和退出码未知',
+        hotCpu: (d: string) => `CPU 占满 ${d}`,
+        hotMem: (mb: string, d: string) => `内存持续上涨 · ${mb} · ${d}`,
+        more: (n: number) => `还有 ${n} 个后台命令`,
+        count: (n: number, failed: number) => (failed ? `后台命令 ${n} 个 · 失败 ${failed} 个` : `后台命令 ${n} 个`),
+        failDot: (n: number) => `后台命令失败 ${n} 个`,
+        tipStart: (at: string) => `${at} 开始`,
+        tipEnd: (at: string, d: string) => `${at} 结束 · 共 ${d}`,
+        tipRunning: (d: string) => `已跑 ${d}，还在跑`,
+        tipEndUnknown: '结束时间未知',
+        tipLast: (line: string) => `最后一行：${line}`,
+        tipAgent: (name: string) => `子任务 · ${name}`,
+      },
     },
     paneAsk: '要你处理',
     paneLanes: '会话',
@@ -309,7 +365,6 @@ export const zh = {
     briefMore: (n: number) => `另有 ${n} 条`,
     offline: '已断线 · 画面已静止，正在重连',
     sumLine: (todo: number, run: number) => `${todo} 件要你处理 · ${run} 个在跑`,
-    asksN: (n: number) => `+${n} 在等你回复`,
     // R-170 返工：空状态、最近结束、离开期间小结收起
     allClear: '一切正常',
     allClearSub: '没有要你处理的事',
@@ -329,7 +384,7 @@ export const zh = {
 
   // 审批抽屉与「要你处理」条目（R-177）
   ask: {
-    kind: { review: '验收', decide: '拍板', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', reply: '回复', proxy: '代答' } as Record<string, string>,
+    kind: { review: '验收', decide: '拍板', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答' } as Record<string, string>,
     score: (pass: number, total: number) => `${pass}/${total} 达标`,
     rec: (rec: string) => `推荐：${rec}`,
     options: (n: number) => `${n} 个选项`,
@@ -437,13 +492,13 @@ export const zh = {
     you: '你最后说的话',
     action: '最近动作',
     asking: '在问你',
+    message: '给它发消息',
     planConfirm: '请你确认计划',
     approval: '请求执行',
     approvalHint: '在该设备上确认',
     background: '在等后台任务，完成后会自动继续',
     toolsMore: (x: number) => `+${x}`,
     digestDone: '做完了',
-    digestAsk: '等你决定',
     turns: (x: number) => `第 ${x} 轮`,
     turnsTip: '你发出的消息轮数',
     toolsTip: (x: number) => `本轮调用了 ${x} 次工具`,
@@ -486,10 +541,18 @@ export const zh = {
     otherTerminalShort: '另一个终端也开着这个对话，只有最新终端领活',
     toolsStale: '工具待更新',
     ctxLabel: '上下文',
-    ctxHeavyShort: '很重，建议开新会话接手',
-    ctxOkTip: (v: string) => `上下文已用 ${v}，还很宽裕`,
-    ctxTip: (v: string) => `上下文已用 ${v}，偏重：再接大活容易触发压缩、丢细节`,
-    ctxHeavyTip: (v: string) => `上下文已用 ${v}，很重：新的需求建议交给新会话，交给它时也会排在后面`,
+    ctxOf: (used: string, max: string, pct: string) => `${used} / ${max}（${pct}）`,
+    ctxOfGuess: (used: string, win: string, pct: string) => `${used} / 约 ${win}（${pct}）`,
+    ctxOkTip: (v: string) => `上下文 ${v}，还宽裕`,
+    ctxTip: (v: string, limit: string) => `上下文 ${v}，偏重：到 ${limit} 建议压缩`,
+    ctxHeavyTip: (v: string, limit: string) => `上下文 ${v}，超过 ${limit}，建议压缩：每次调用都要整段读一遍缓存，额度消耗大。新的需求也会排在后面交给它`,
+    // 建议压缩（R-224）：点一下复制按身份写好的 /compact 命令，纸鸢不替你执行
+    compact: '建议压缩',
+    compactLine: (used: string) => `上下文 ${used} · 建议压缩`,
+    compactCopyTip: '点一下复制按身份写好的 /compact 命令，到这个会话的终端里粘贴执行',
+    compactCopyTipCodex: '点一下复制 /compact，到这个会话的终端里粘贴执行（Codex 的 /compact 不带保留说明）',
+    compactCopied: '已复制压缩命令，到终端粘贴执行',
+    compactCopy: '复制命令',
     toolsStaleTip: (v: string) => `这个会话的 Kitestring 工具还是升级前的版本（${v}），看不到新功能。重启会话，或在终端里输入 /mcp 重连 kitestring 后生效；Agent 也已被提醒改用 ks 命令行`,
     sessionId: '会话 ID',
     startedAt: '开始',
@@ -534,7 +597,35 @@ export const zh = {
       SessionEnd: '会话结束',
       KsWait: '进入待命',
       KsWaitEnd: '结束等待',
+      KsHandoffWritten: '写了交接',
+      KsHandoffTaken: '接任，读了上一任的交接',
     } as Record<string, string>,
+  },
+
+  // 按身份生成的压缩命令（R-224）：/compact 后面写清「保留什么」，摘要时照它留
+  compactCmd: (role: string, project: string) =>
+    ({
+      aide: `/compact 保留：我是 ${project} 主助理；在做和待验收的需求、等用户拍板的决策；用户定过的规矩；未完成的约定`,
+      pm: `/compact 保留：我是 ${project} 主调度；派活队列、各分支和部署状态、在跑的子任务`,
+      advisor: `/compact 保留：我是 ${project} 顾问；在讨论的问题和方案、用户的倾向、要记的草稿`,
+      reviewer: `/compact 保留：我是 ${project} 评审；在审的需求、已提和待提的审查意见`,
+      dev: `/compact 保留：我是 ${project} 开发；在做的需求和验收标准、改过的文件和分支、没跑完的检查`,
+    })[role] ?? `/compact 保留：在做的需求和进度、用户提过的要求、下一步`,
+  // 会话交接（R-224）
+  handoff: {
+    action: '交接',
+    asked: '已通知它写交接',
+    askedWait: (n: number) => `已通知它写交接 · 先等 ${n} 个子任务交完`,
+    copiedCmd: (cmd: string) => `接任命令已复制：写好后在项目目录运行 ${cmd}`,
+    runCmd: (cmd: string) => `写好后在项目目录运行 ${cmd}`,
+    title: '交接',
+    requested: '等它写交接',
+    written: '交接已写好 · 在项目目录运行接任命令',
+    taken: (by: string) => `已由「${by}」接任`,
+    takenFrom: (from: string) => `接任了「${from}」的交接`,
+    retired: '已交接卸任：不再被唤醒',
+    copyCmd: '复制接任命令',
+    sections: { doing: '在做的', waiting: '等用户的', rules: '约定和规矩', next: '下一步', notes: '注意事项' } as Record<string, string>,
   },
 
   device: {
@@ -561,7 +652,7 @@ export const zh = {
     drafts: (x: number) => `${x} 条答复待发送`,
     keyTip: '数字键选择 · ⌘↵ 发送',
     joinAnswer: (choice: string, note: string) => `${choice}；${note}`,
-    seeImages: '见附图',
+    seeImages: '见附件',
     status: {
       pending: '待决策',
       answered: '待送达',
@@ -635,7 +726,7 @@ export const zh = {
     position: (i: number, n: number, review: boolean) => `${i} / ${n}${review ? ' 待验收' : ''}`,
     allReviewed: (project: string) => `${project} 的待验收都处理完了`,
     lineAsk: (n: number) => `有 ${n} 个问题等你回答`,
-    notePlaceholder: '给 Agent 留言：补充要求、提醒或贴图，你下次给它发消息时送达',
+    notePlaceholder: '给 Agent 留言：补充要求、提醒，可附图片或文件，你下次给它发消息时送达',
     noteSend: '留言',
     noteSent: '已留言，会在你下次给它发消息时送达',
     line: {
@@ -736,8 +827,9 @@ export const zh = {
   },
 
   attach: {
-    add: '图片',
-    hint: '也可以直接粘贴或拖入图片、录屏',
+    add: '附件',
+    hint: '添加附件：图片、录屏或任意文件，也可以直接粘贴、拖入',
+    file: '文件',
     drop: '松开以添加',
     remove: '移除',
     zoom: '放大看',
@@ -752,6 +844,14 @@ export const zh = {
     wait: '附件还在上传，传完再发送',
     tooLarge: (mb: number) => `图片不能超过 ${mb} MB（可在设置 → 账户里调整）`,
     videoTooLarge: (mb: number) => `录屏不能超过 ${mb} MB（可在设置 → 账户里调整）`,
+    fileTooLarge: (name: string, mb: number) => `「${name}」超过了 ${mb} MB 的文件上限（可在设置 → 账户里调整）`,
+    previewOf: (name: string) => `查看 ${name}`,
+    downloadOf: (name: string) => `下载 ${name}`,
+    download: '下载',
+    downloadFull: '下载完整文件',
+    previewMore: (n: number) => `只显示前 ${n} 行`,
+    previewFailed: '读不到这个文件的内容，可以下载后查看',
+    empty: '（空文件）',
     proxyTooLarge: '文件超过了服务器前面反向代理允许的大小，需要调大代理的上传上限（如 client_max_body_size）',
   },
 
@@ -794,6 +894,13 @@ export const zh = {
     get commitOnAcceptHint() {
       return rt`你验收通过一条需求后，纸鸢给负责的${'pm'}送一条消息，由它只提交属于这条需求的改动（中文说明、带需求编号）；纸鸢自己不动仓库，也从不推送，推送永远要你明确要求。被退回的需求不提交`
     },
+    modelPolicy: '子任务模型策略',
+    modelPolicyOptions: { economy: '经济', balanced: '均衡', quality: '质量优先' } as Record<string, string>,
+    modelPolicyHints: {
+      economy: '尽量用便宜的小模型；只有新机制、跨模块或返工过的活才用最强的',
+      balanced: '机械活用便宜的，设计取舍和复杂实现用最强的',
+      quality: '实现和审查都用最强的；只有纯搜索、读文件才用便宜的',
+    } as Record<string, string>,
     autoDispatchHint: '你确认为待开始的需求，会在关联的会话一轮做完或待命时整批送过去（一次最多 10 条）；关掉后需要你手动交给会话',
     title: '项目',
     openCount: (n: number) => (n ? `${n} 条未完成` : '没有未完成需求'),
@@ -819,6 +926,7 @@ export const zh = {
     evRevise: (code: string, text: string) => `你${ACC.back} ${code}：${text}`,
     evDone: (code: string) => `你${ACC.pass}了 ${code}`,
     evStage: (code: string, n: number, title: string) => `你${ACC.pass}了 ${code} 阶段 ${n}：${title}`,
+    evStageWith: (code: string, n: number, title: string, by: number) => `${code} 阶段 ${n} 随阶段 ${by} 一起${ACC.pass}：${title}`,
     evAnswer: (code: string, verb = VERB.answer.pass) => `你${verb}了 ${code}`,
     evProxy: (code: string) => rt`${'aide'}代答了 ${code}`,
     evTimeout: (code: string) => `${code} 超时未批，按规则视为拒绝`,
@@ -897,7 +1005,7 @@ export const zh = {
       return rt`交给${'reviewer'}`
     },
     get title() {
-      return rt`交给${'reviewer'} · 只审查，不改状态、不影响验收`
+      return rt`交给${'reviewer'} · 审查和验证，不改状态；交意见前不进「要你处理」`
     },
     get none() {
       return rt`本项目还没有${'reviewer'}会话。开一个会话（Claude Code、Codex 都行），对它说下面这句话：`
@@ -912,9 +1020,29 @@ export const zh = {
     get badge() {
       return rt`${'reviewer'}`
     },
-    hint: '审查意见只供参考：不改变需求状态，也不影响验收',
+    hint: '评审只审查和验证：不改需求状态；交给它的待验收需求，评审交意见前不进「要你处理」',
     more: '展开全部',
     less: '收起',
+  },
+  // 评审验证（R-232、R-237）：交给评审的待验收需求，评审交意见前不进「要你处理」
+  verify: {
+    reviewing: (who: string) => rt`${'reviewer'}中` + (who ? ` · ${who}` : ''),
+    get inProgress() {
+      return rt`${'reviewer'}中`
+    },
+    get overdue() {
+      return rt`${'reviewer'}未完成`
+    },
+    unfinished: '未完成',
+    pass: (p: number, n: number) => `通过 ${p}/${n}`,
+    fail: (n: number) => `不通过 ${n} 条`,
+    done: '已交意见',
+    mark: (x: string) => rt`${'reviewer'} ` + x,
+    reviewingTip: (who: string) => `${who || '评审'} 在验证，交意见前不进「要你处理」；不想等也可以直接验收`,
+    overdueTip: (who: string) => `${who || '评审'} 没在时限内交意见，已照常交给你验收`,
+    get auto() {
+      return rt`纸鸢自动交给${'reviewer'}`
+    },
   },
   own: {
     draftShort: '待你确认',
@@ -996,6 +1124,7 @@ export const zh = {
     stageState: { locked: '未解锁', active: '进行中', review: '待阶段验收', passed: `已${ACC.pass}` } as Record<string, string>,
     lockedHint: (n: number) => `阶段 ${n} ${ACC.pass}后开始`,
     passedAt: (when: string) => `已${ACC.pass} · ${when}`,
+    passedWith: (by: number, when: string) => `随阶段 ${by} 一起${ACC.pass} · ${when}`,
     finishedHint: '需求都已做完，可以验收这一阶段',
     reviewHint: '需求都已做完，等你验收这一阶段',
     summary: '阶段小结（Agent 提交）',
@@ -1028,7 +1157,10 @@ export const zh = {
     undoDone: '取消已完成',
     reqs: (n: number) => `关联需求（${n}）`,
     copyResume: '复制恢复命令',
+    resumeLoginHint: '需要这个目录里已有登录凭证',
     copySessionId: '复制会话 ID',
+    handoff: '交接给新会话…',
+    handoffHint: '通知它写交接，复制接任命令',
     status: '改状态',
     priority: '改优先级',
     copyCode: '复制编号',
@@ -1427,7 +1559,7 @@ export const zh = {
       f: {
         summary: { name: '进展摘要', desc: '每轮结束后，用一句话说明会话进行到哪了' },
         title: { name: '会话标题与阶段', desc: '给会话起标题，并标出实现中、测试中等阶段' },
-        digest: { name: '回复要点', desc: '等你回复时，提炼它做完了什么、在等你决定什么' },
+        digest: { name: '回复要点', desc: '一轮结束时，提炼它这一轮做完了什么' },
         decision_title: { name: '决策短标题', desc: '把较长的问题压缩成一眼能看懂的标题' },
         recap: { name: '时段回顾', desc: '在工作台一键回顾今天、昨晚做了什么' },
       } as Record<string, { name: string; desc: string }>,
@@ -1458,6 +1590,20 @@ export const zh = {
       privacy: '开启进展摘要、标题或回复要点后，每轮最后一条回复（截断到 1500 字）会发送到 Hub。',
     },
 
+    // 模型价格（R-206，选填）
+    prices: {
+      title: '模型价格（选填）',
+      hint: '工作台的泳道只看 token 数和缓存命中率，默认不显示金额。某个模型四项价格都填了，才在泳道标签和悬停里附上估算金额。',
+      unit: '每百万 token 的价格',
+      currency: '货币符号',
+      model: '模型',
+      cols: { in: '输入', out: '输出', cw: '写缓存', cr: '读缓存' },
+      incomplete: '价格没填全，不显示金额',
+      add: '添加模型',
+      addPlaceholder: '模型名，如 claude-opus-5-5',
+      empty: '还没有读到用量的模型。会话跑起来后，用到的模型会列在这里。',
+    },
+
     account: {
       publicUrl: '公网地址',
       publicUrlTip: '通知中的链接会指向这个地址',
@@ -1466,6 +1612,7 @@ export const zh = {
         hint: '单个文件的上限，网页和 Agent 上传都按这里检查。调到 50 MB 以上时，Hub 前面的反向代理也要放得下（如 nginx / openresty 的 client_max_body_size）。',
         image: '图片（MB）',
         video: '录屏（MB）',
+        file: '其它文件（MB）',
       },
       devRequest: {
         get title() {
@@ -1475,6 +1622,11 @@ export const zh = {
           return rt`${'pm'}默认用子任务（一次性子代理）干活，需要并行时才推荐开${'dev'}会话。推荐出现在「要你处理」里，不推送；到点没批按规则视为不开。`
         },
         minutes: '时限（分钟）',
+      },
+      compact: {
+        title: '建议压缩的上下文阈值',
+        hint: '会话上下文超过它时，工作台的圆环变红、标「建议压缩」，点一下复制按身份写好的 /compact 命令；到一半时圆环变黄。不推送，也不进「要你处理」。知道窗口大小的会话（如 Codex）取它和窗口 80% 中小的。',
+        wan: '阈值（万 token）',
       },
       password: '修改密码',
       oldPassword: '当前密码',
@@ -1569,6 +1721,67 @@ export const zh = {
     blocked: '受阻',
     verdict: { pass: `建议${ACC.pass}`, return: `建议${ACC.back}` } as Record<string, string>,
     held: '没代答：',
+  },
+  // 顶部简报条与暂时离开（R-212、R-210）
+  brief: {
+    look: '待你查看',
+    layers: { look: '待你查看', decided: '为你决策', done: '阶段完成', going: '尚在推进' },
+    empty: { look: '没有要你看的', decided: '没有替你定的', done: '这段时间没有交付', going: '没有在做的' },
+    capsule: (n: number) => `待你查看 ${n}`,
+    capsuleTip: '与左栏「要你处理」同数',
+    more: (n: number) => `还有 ${n} 条`,
+    fewer: '收起',
+    byAide: '主助理',
+    paused: '轮播已暂停',
+    pageOf: (i: number, n: number) => `${i}/${n}`,
+    noNote: '还没写总述',
+    reportReady: (dur: string) => `离开 ${dur}，时段报告已生成`,
+    reportOpen: '看报告',
+    textMore: '展开全文',
+    textLess: '收起全文',
+    tells: (n: number) => `团队消息 ${n} 条`,
+    yours: (n: number) => `你在其它设备上处理了 ${n} 件`,
+    yoursItem: (device: string) => `在 ${device || '其它设备'}`,
+    stateIdle: '暂无简报',
+    judged: '自己判断',
+  },
+  away: {
+    start: '暂时离开',
+    startTip: '点一下开始离开时段：期间只推送主助理处理不了的决策',
+    title: '暂时离开',
+    intro: '从现在起算离开时段；离开期间主助理能处理的不打扰你，处理不了的才推送，回来或结束后给你一份时段报告。',
+    expect: '预计离开多久',
+    expects: [
+      { value: '30', label: '30 分钟' },
+      { value: '120', label: '2 小时' },
+      { value: '480', label: '8 小时' },
+      { value: '0', label: '不确定' },
+    ],
+    expectHint: '只用来在状态条上标「已超过预估」，不会自动结束。',
+    scope: '主助理可以替你答到哪一档',
+    scopes: [
+      { value: 'none', label: '不代答' },
+      { value: 'low', label: '低风险' },
+      { value: 'medium', label: '中风险' },
+    ],
+    scopeHint: '产品方向、设计选型、语义 / 接口、权限、门禁、不可逆操作、验收永远留给你。授权窗口最长 24 小时，到期离开保持。',
+    hold: '这次离开期间，连推送类也先攒着',
+    holdHint: '拿不准的、硬规则类的决策仍然会推。',
+    confirm: '开始离开',
+    started: '已开始离开',
+    active: '离开中',
+    elapsed: (d: string) => d,
+    expectShort: (m: number) => (m === 0 ? '预估不确定' : m < 60 ? `预估 ${m} 分钟` : `预估 ${m / 60} 小时`),
+    over: '已超过预估',
+    handled: (n: number) => `主助理处理 ${n} 件`,
+    yours: (n: number) => `你处理 ${n} 件`,
+    pushed: (n: number) => `推送 ${n} 条`,
+    end: '结束离开',
+    ended: '已结束离开，时段报告在顶部简报条里',
+    endTip: '只有你点这里才会结束离开；在任何设备上处理事情都不会结束它',
+    noGrant: '授权窗口已到期，主助理不再代答；离开保持，推送照常分级',
+    drawerNote: '离开中 · 你在这里的处理会记进报告',
+    deviceMark: (device: string) => `你在${device}上处理`,
   },
 }
 

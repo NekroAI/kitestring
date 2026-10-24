@@ -10,6 +10,7 @@ import { RoleTag, ToolMark } from '../ui/marks'
 import { ProxyNote } from './grant'
 import { HoldNote } from './morning'
 import { fileUrl, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
+import { isImage } from '../lib/files'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
@@ -24,18 +25,9 @@ import { DecisionChain } from './chain'
 import { PendingBar, Seal, usePending, Verdict, verdictKey } from './verdict'
 import { requestLeft } from './asks'
 import { isStatusReq, StatusReqNote } from './statusReq'
+import { approvedOf, recOf } from '../lib/waiting'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
-function recIndex(options: string[], rec: string): number {
-  const r = rec.trim()
-  if (!r) return -1
-  const exact = options.findIndex((o) => o.trim() === r)
-  if (exact >= 0) return exact
-  return options.findIndex((o) => {
-    const x = o.trim()
-    return x.length >= 2 && (r.startsWith(x) || r.includes(`「${x}」`) || r.includes(`“${x}”`) || r.includes(`**${x}**`))
-  })
-}
 
 // 来源行：独立展示时显示项目与设备；嵌在会话卡片里时只显示编号、需求与时间。
 function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boolean }) {
@@ -122,9 +114,12 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
   const draft = dr.value
   const options = useMemo(() => d.options ?? [], [d.options])
   const rec = d.recommendation?.trim() ?? ''
-  const ri = useMemo(() => recIndex(options, rec), [options, rec])
+  const ri = recOf(d) // 推荐选项读字段 rec_option（R-239），不拿推荐文字去匹配
   // 多点决策（R-112）：逐点选择，默认选推荐；附言和附图照旧
   const multi = !!d.points?.length
+  // 背景附件：图片大图显示，其它文件（R-221）显示为文件块
+  const ctxImgs = (d.context_files ?? []).filter((f) => isImage(f.mime))
+  const ctxOther = (d.context_files ?? []).filter((f) => !isImage(f.mime))
   const approval = !!d.approval
   // 用词场景（R-176）：批准类决策「批准 / 拒绝」，选项类「回答」
   const scene = d.request_kind ? 'request' : approval ? 'approval' : 'answer' // Agent 的限时请求（R-169）同样是「批准 / 拒绝」
@@ -137,7 +132,8 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
     : !!rec && !approval && ((typeof draft.choice === 'number' && ri >= 0 && draft.choice !== ri) || (draft.choice === 'other' && options.length > 0))
   const reason = deviates ? (draft.reason ?? '').trim() : ''
   // 撤销期 / 盖印中（R-201：和需求验收同一个调度器，键是 dec:D-8）
-  const sendingAt = !!usePending(decKey(d.code))
+  const pendE = usePending(decKey(d.code))
+  const sendingAt = !!pendE
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const free = !multi && (options.length === 0 || draft.choice === 'other')
   const title = d.short_title || d.question
@@ -198,18 +194,19 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
         )}
         <BlockList blocks={d.blocks} />
 
-        {!!d.context_files?.length && (
-          <div className={cx('grid gap-2.5', d.context_files.length > 1 && 'grid-cols-2')}>
-            {d.context_files.map((f) => (
+        {!!ctxImgs.length && (
+          <div className={cx('grid gap-2.5', ctxImgs.length > 1 && 'grid-cols-2')}>
+            {ctxImgs.map((f) => (
               <div key={f.id} className="group/ctx relative overflow-hidden rounded-xl border border-line bg-sunken">
                 <img src={fileUrl(f.id)} alt={f.name} loading="lazy" className="max-h-[360px] w-full object-cover object-top" />
                 <span className="absolute top-2 right-2 opacity-0 transition group-hover/ctx:opacity-100 pointer-coarse:opacity-100">
-                  <ZoomButton f={f} group={d.context_files ?? undefined} />
+                  <ZoomButton f={f} group={ctxImgs} />
                 </span>
               </div>
             ))}
           </div>
         )}
+        {ctxOther.length > 0 && <Thumbs files={ctxOther} />}
 
         {multi && <Points d={d} picks={picks} onPick={(i, k) => setDraft(d.code, { picks: picks.map((c, j) => (j === i ? k : c)) })} />}
 
@@ -326,10 +323,11 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
           />
         )}
 
-        {sendingAt ? (
+        {pendE && pendE.phase !== 'wait' ? (
           <PendingBar k={decKey(d.code)} />
         ) : (
           <Verdict
+            pendingKey={decKey(d.code)}
             mode={approval ? 'verdict' : 'answer'}
             scene={scene}
             stack={free || drawer}
@@ -503,11 +501,12 @@ export function DecisionRow({ d }: { d: Decision }) {
 export function DecisionPeek({ d }: { d: Decision }) {
   const now = useNow()
   const opts = d.options ?? []
-  const rec = recIndex(opts, d.recommendation || '')
-  // 你选的：批准类按答复开头认（choices 在批准类里另有用途），选项类用 choices，没有时同样按答复开头认
+  const rec = recOf(d)
+  // 你选的：批准类读结论字段 verdict（R-239）；选项类用 choices，没有时按答复开头的选项文字认（答复就是所选选项的原文）
   const ans = (d.answer || '').trim()
   const byAns = opts.findIndex((o) => !!o.trim() && ans.startsWith(o.trim()))
-  const picked = new Set(!d.approval && d.choices?.length ? d.choices : byAns >= 0 ? [byAns] : [])
+  const ok = approvedOf(d)
+  const picked = new Set(d.approval ? (ok === undefined ? [] : [ok ? 0 : 1]) : d.choices?.length ? d.choices : byAns >= 0 ? [byAns] : [])
   const tone = d.status === 'delivered' ? 'run' : d.status === 'answered' ? 'reply' : d.status === 'pending' ? 'wait' : 'neutral'
   return (
     <div className="space-y-3">

@@ -37,8 +37,9 @@ func TestRolePromptCustom(t *testing.T) {
 	compact := func() string {
 		return hook(t, "claude", map[string]any{"session_id": "dev-1", "cwd": cwd, "hook_event_name": "SessionStart", "source": "compact"})
 	}
-	if p := setRole(); p != roles.Prompt(roles.Dev) {
-		t.Fatalf("没改写时 ks role 应是默认模板")
+	// 末尾还跟着验证分工（R-232）：项目里没有在线评审，开发照旧全做
+	if p := setRole(); !strings.HasPrefix(p, roles.Prompt(roles.Dev)+roles.PolicyNote(roles.Dev, "")) || !strings.Contains(p, "验证分工：本项目现在没有在线评审") {
+		t.Fatalf("没改写时 ks role 应是默认模板加默认（均衡）子任务模型策略和验证分工：%s", p)
 	}
 
 	var list []hub.RolePromptView
@@ -91,7 +92,7 @@ func TestRolePromptCustom(t *testing.T) {
 	if v.Custom || v.Outdated || v.Body != roles.DefaultBody(roles.Dev) {
 		t.Fatalf("恢复后应是默认：%+v", v)
 	}
-	if p := setRole(); p != roles.Prompt(roles.Dev) {
+	if p := setRole(); !strings.HasPrefix(p, roles.Prompt(roles.Dev)+roles.PolicyNote(roles.Dev, "")+"[Kitestring] 验证分工") {
 		t.Fatalf("恢复默认后 ks role 应是默认模板")
 	}
 	e.waitFor("压缩补发回到默认", func() bool {

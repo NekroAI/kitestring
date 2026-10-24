@@ -39,6 +39,9 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	if ev.Client != "" {
 		x.Client = ev.Client
 	}
+	if ev.Profile != "" {
+		x.Profile, x.ProfileDir, x.Launcher = ev.Profile, ev.ProfileDir, ev.Launcher
+	}
 	if ev.Model != "" {
 		x.Model = ev.Model
 	}
@@ -110,7 +113,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		}
 		if ev.Name == "PreToolUse" && asksUser(ev.ToolName) {
 			x.TurnTools++
-			x.State, x.StateDetail = store.StateWaitReply, toolLabel(ev.ToolName, ev.ToolBrief)
+			x.State, x.StateDetail, x.WaitKind = store.StateWaitReply, toolLabel(ev.ToolName, ev.ToolBrief), store.WaitQuestion
 			break
 		}
 		switch ev.Name {
@@ -143,7 +146,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	case "PermissionRequest":
 		if asksUser(ev.ToolName) {
 			// 向用户提问 / 请用户确认计划也走授权通道，但对用户来说是“等你回答”。
-			x.State, x.StateDetail = store.StateWaitReply, toolLabel(ev.ToolName, ev.ToolBrief)
+			x.State, x.StateDetail, x.WaitKind = store.StateWaitReply, toolLabel(ev.ToolName, ev.ToolBrief), store.WaitQuestion
 			break
 		}
 		x.State = store.StateWaitApproval
@@ -156,7 +159,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			if x.Parked {
 				break // 待命时 Claude Code 照常发“空闲”提醒，不算等你回复
 			}
-			x.State, x.StateDetail = store.StateWaitReply, ""
+			x.State, x.StateDetail, x.WaitKind = store.StateWaitReply, "", ""
 		}
 	case protocol.EventWait:
 		// Agent 用 ks wait 挂起：待命，你在 Kitestring 上一回应它就继续。
@@ -174,7 +177,7 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			if ev.Reason == "delivered" || (ev.Reason == "timeout" && roles.Resident(x.Role)) {
 				x.State = store.StateRunning // 收到你的答复，马上继续；常驻的 PM / 开发超时后会接着等，不算等你（R-83）
 			} else {
-				x.State = store.StateWaitReply
+				x.State, x.WaitKind = store.StateWaitReply, ""
 			}
 		}
 	case "Stop":
@@ -188,9 +191,9 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.State, x.StateDetail = store.StateBackground, bgDetail(ev.BgTasks, ev.BgBrief)
 			break
 		}
-		x.State, x.StateDetail = store.StateWaitReply, ""
+		x.State, x.StateDetail, x.WaitKind = store.StateWaitReply, "", ""
 	case "Interrupt":
-		x.State, x.StateDetail = store.StateWaitReply, ""
+		x.State, x.StateDetail, x.WaitKind = store.StateWaitReply, "", ""
 	case "SessionEnd":
 		if x.State == store.StateEnded && x.EndedAt != nil {
 			break // 已经结束过（daemon 按进程补发的结束可能重复），不覆盖结束时间
@@ -200,6 +203,14 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		x.State, x.StateDetail = store.StateEnded, ""
 		x.Subagents = 0
 		x.Tasks = nil
+	}
+	// 等待类型（R-239）只由事件定：等授权就是 approval；提问工具在问时上面明确记成 question，结束一轮、被打断等回到 ""。
+	switch x.State {
+	case store.StateWaitApproval:
+		x.WaitKind = store.WaitApproval
+	case store.StateWaitReply:
+	default:
+		x.WaitKind = ""
 	}
 	if x.State != prevState || x.StateSince.IsZero() {
 		x.StateSince = ev.Time

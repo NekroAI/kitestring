@@ -5,6 +5,7 @@ import type { Scene } from '../i18n/zh'
 import { useActions } from './actions'
 import { schedule, scheduleMany, undo, type Act, type ScheduleOpts } from './verdict'
 import { dropDraft } from './draft'
+import { verdictOf } from '../lib/waiting'
 
 // 决策答复的发件箱。
 // - 草稿：每条决策的选择与文字，和其它输入框同一个 useDraft（app/draft.tsx，键 dec:D-8，R-202）；原来的 ks.drafts.v2 在那里搬过去。
@@ -35,9 +36,11 @@ export function composeAnswer(d: Draft | undefined, options: string[]): string {
 export const decKey = (code: string) => `dec:${code}`
 
 // SendItem：一条答复。多点决策时 answer 是附言，choices 是逐点的选择，reject 表示整体拒绝；act / scene 决定撤销条和印章的用词。
-type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; act: Act; scene: Scene }
+// after：提交成功后再做（例如清掉列表左滑拒绝时写的理由草稿）
+type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; act: Act; scene: Scene; after?: () => void }
 
-const toBody = (it: SendItem) => ({ ref: it.code, answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason })
+// 批准类决策随答复带上结论 verdict（按用户点的按钮，R-239），Hub 存成字段，放行检查和界面只读它
+const toBody = (it: SendItem) => ({ ref: it.code, answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason, verdict: verdictOf(it.scene, it.act) })
 
 type Ctx = {
   send: (items: SendItem[]) => void
@@ -62,6 +65,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
         // 改状态申请在你批准前状态已被改动（R-188）：后端把它作废了，告诉你没有执行
         if (res.decisions?.some((d) => d.voided)) toast(t.ask.status.voidedToast)
         dropDraft(decDraftKey(it.code)) // 提交成功才清草稿：撤销期里撤回时草稿还在
+        it.after?.()
         return true
       },
     }),

@@ -38,6 +38,24 @@ func asleep(t *testing.T, done chan daemon.WaitResult, who string) {
 	}
 }
 
+// drainQuiet（R-227）：断言 done 的 ks wait 没被只告知的消息叫醒，再模拟用户发消息（下一轮开始），
+// 取出攒着的只告知消息，并检查其中包含 want；返回注入的全文。
+func drainQuiet(t *testing.T, done chan daemon.WaitResult, who, sid string, want ...string) string {
+	t.Helper()
+	asleep(t, done, who)
+	cwd, _ := os.Getwd()
+	out := hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "继续", "prompt_id": "q-" + time.Now().Format("150405.000000")})
+	if !strings.Contains(out, "只告知") {
+		t.Fatalf("%s 下一轮开始时应附上只告知的团队消息：%s", who, out)
+	}
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Fatalf("%s 下一轮的注入应包含 %q：%s", who, w, out)
+		}
+	}
+	return out
+}
+
 // 事件订阅（R-164）：Adv 默认订阅 decision / review，PM 默认订阅 review / blocked；
 // 别的会话提决策、交验收、设为受阻时，订阅了的等待中会话被唤醒并收到一句说明；没订阅的（无身份、Dev）不被唤醒；
 // 交验收不给已收到派活通知的 PM 重复送；--on 改订阅、不填沿用上次、none 不订阅；不进用户收件箱。
@@ -241,8 +259,8 @@ func TestUserWebChangesNotify(t *testing.T) {
 	pmW, advW, plainW := parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv"), parkWait(t, e, c, "claude:plain")
 	devTells := tellCount(e, "claude:dev")
 	setProject(map[string]any{"agent_release": true})
-	woke(t, pmW, "订阅的事件", "settings", "用户打开了项目", p.Name, "放行", "关 → 开")
-	woke(t, advW, "用户打开了项目", "放行")
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "订阅的事件", "settings", "用户打开了项目", p.Name, "放行", "关 → 开")
+	drainQuiet(t, advW, "Adv（改设置只告知）", "adv", "用户打开了项目", "放行")
 	asleep(t, plainW, "无身份会话")
 	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
 	pmTells, advTells := tellCount(e, "claude:pm"), tellCount(e, "claude:adv")
@@ -254,16 +272,16 @@ func TestUserWebChangesNotify(t *testing.T) {
 
 	// 2. 关自动派发：只改了它，消息只写它
 	setProject(map[string]any{"agent_release": true, "auto_dispatch": false})
-	woke(t, pmW, "用户关闭了项目", "自动派发", "开 → 关")
-	woke(t, advW, "自动派发")
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "用户关闭了项目", "自动派发", "开 → 关")
+	drainQuiet(t, advW, "Adv（改设置只告知）", "adv", "自动派发")
 
 	// 3. 开授权窗口：被授权的 Adv 只收授权通知一条，PM 收到设置变化；撤销同理
 	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
 	pmTells, advTells = tellCount(e, "claude:pm"), tellCount(e, "claude:adv")
 	var g store.Grant
 	e.call("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(time.Hour).Format(time.RFC3339Nano)}, &g)
-	woke(t, pmW, "settings", "用户开了参谋授权窗口", g.Code)
-	woke(t, advW, "用户开了参谋授权窗口", g.Code)
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "settings", "用户开了参谋授权窗口", g.Code)
+	drainQuiet(t, advW, "Adv（授权变化只告知）", "adv", "用户开了参谋授权窗口", g.Code)
 	time.Sleep(200 * time.Millisecond)
 	if n := tellCount(e, "claude:adv"); n != advTells+1 {
 		t.Fatalf("被授权的 Adv 只应收到一条授权通知：%d → %d", advTells, n)
@@ -274,8 +292,8 @@ func TestUserWebChangesNotify(t *testing.T) {
 	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
 	advTells = tellCount(e, "claude:adv")
 	e.call("POST", "/api/grants/"+g.Code+"/revoke", nil, nil)
-	woke(t, pmW, "用户撤销了参谋授权窗口", g.Code)
-	woke(t, advW, "用户撤销了参谋授权窗口", g.Code)
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "用户撤销了参谋授权窗口", g.Code)
+	drainQuiet(t, advW, "Adv（授权变化只告知）", "adv", "用户撤销了参谋授权窗口", g.Code)
 	time.Sleep(200 * time.Millisecond)
 	if n := tellCount(e, "claude:adv"); n != advTells+1 {
 		t.Fatalf("撤销时被授权的 Adv 只应收到一条：%d → %d", advTells, n)
@@ -298,7 +316,7 @@ func TestUserWebChangesNotify(t *testing.T) {
 	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
 	pmTells, advTells, devTells = tellCount(e, "claude:pm"), tellCount(e, "claude:adv"), tellCount(e, "claude:dev")
 	setStatus("shelved")
-	woke(t, pmW, "这条需求是你派的", r.Code, "用户把", "从草稿改为已搁置")
+	drainQuiet(t, pmW, "PM（状态变化只告知）", "pm", "这条需求是你派的", r.Code, "用户把", "从草稿改为已搁置")
 	asleep(t, advW, "Adv（没订阅 status）")
 	time.Sleep(200 * time.Millisecond)
 	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
@@ -317,7 +335,7 @@ func TestUserWebChangesNotify(t *testing.T) {
 	e.call("PUT", "/api/requirements/"+r.Code, map[string]any{"title": "导出 CSV（改名）", "status": "shelved", "project_id": project}, nil)
 	asleep(t, advW, "Adv（状态没变）")
 	setStatus("draft")
-	woke(t, advW, "订阅的事件", "status", r.Code, "从已搁置改为草稿")
+	drainQuiet(t, advW, "Adv（状态变化只告知）", "adv", "订阅的事件", "status", r.Code, "从已搁置改为草稿")
 	time.Sleep(200 * time.Millisecond)
 	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
 		t.Fatalf("PM 只应收到一条：%d → %d", pmTells, n)
@@ -375,8 +393,8 @@ func TestUserReviewPlanGrantNotify(t *testing.T) {
 	pmW, advW := parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
 	pmTells, devTells, advTells := tellCount(e, "claude:pm"), tellCount(e, "claude:dev"), tellCount(e, "claude:adv")
 	review(r1.Code, "accept", "")
-	woke(t, pmW, r1.Code, "从待验收改为已完成")
-	woke(t, advW, "订阅的事件", "status", r1.Code, "从待验收改为已完成")
+	drainQuiet(t, pmW, "PM（状态变化只告知）", "pm", r1.Code, "从待验收改为已完成")
+	drainQuiet(t, advW, "Adv（状态变化只告知）", "adv", "订阅的事件", "status", r1.Code, "从待验收改为已完成")
 	time.Sleep(200 * time.Millisecond)
 	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
 		t.Fatalf("验收通过 PM 只应收到一条：%d → %d", pmTells, n)
@@ -394,7 +412,7 @@ func TestUserReviewPlanGrantNotify(t *testing.T) {
 	pmTells, devTells = tellCount(e, "claude:pm"), tellCount(e, "claude:dev")
 	review(r2.Code, "revise", "表头缺失")
 	woke(t, pmW, r2.Code, "表头缺失")
-	woke(t, advW, "订阅的事件", "status", r2.Code, "从待验收改为进行中")
+	drainQuiet(t, advW, "Adv（状态变化只告知）", "adv", "订阅的事件", "status", r2.Code, "从待验收改为进行中")
 	time.Sleep(200 * time.Millisecond)
 	if n := tellCount(e, "claude:pm"); n != pmTells {
 		t.Fatalf("退回意见已送给 PM，不应再多一条状态通知：%d → %d", pmTells, n)
@@ -415,18 +433,18 @@ func TestUserReviewPlanGrantNotify(t *testing.T) {
 	advW = parkWait(t, e, c, "claude:adv")
 	devTells = tellCount(e, "claude:dev")
 	e.call("POST", "/api/plans/"+x.Code+"/start", map[string]any{}, nil)
-	woke(t, advW, "status", "用户批准了计划", x.Code, "阶段 1")
+	drainQuiet(t, advW, "Adv（计划进展只告知）", "adv", "status", "用户批准了计划", x.Code, "阶段 1")
 	advW = parkWait(t, e, c, "claude:adv")
 	e.call("POST", "/api/plans/"+x.Code+"/stages/1/revise", map[string]any{"comment": "接口缺分页"}, nil)
-	wokeUntil(t, e, c, "claude:adv", advW, "用户退回了计划", x.Code, "阶段 1")
+	drainQuiet(t, advW, "Adv（计划进展只告知）", "adv", "用户退回了计划", x.Code, "阶段 1")
 	e.call("PUT", "/api/requirements/"+a.Code, map[string]any{"title": a.Title, "status": "done", "project_id": project}, nil)
-	woke(t, parkWait(t, e, c, "claude:adv"), "status", a.Code, "已完成") // 单条改状态那条
+	drainQuiet(t, parkWait(t, e, c, "claude:adv"), "Adv（状态变化只告知）", "adv", "status", a.Code, "已完成") // 单条改状态那条
 	advW = parkWait(t, e, c, "claude:adv")
 	e.call("POST", "/api/plans/"+x.Code+"/stages/1/pass", map[string]any{}, nil)
-	wokeUntil(t, e, c, "claude:adv", advW, "用户验收通过了计划", x.Code, "阶段 2「网页」已解锁")
+	drainQuiet(t, advW, "Adv（计划进展只告知）", "adv", "用户验收通过了计划", x.Code, "阶段 2「网页」已解锁")
 	advW = parkWait(t, e, c, "claude:adv")
 	e.call("POST", "/api/plans/"+y.Code+"/reject", map[string]any{"comment": "先别做"}, nil)
-	wokeUntil(t, e, c, "claude:adv", advW, "用户退回了计划", y.Code)
+	drainQuiet(t, advW, "Adv（计划进展只告知）", "adv", "用户退回了计划", y.Code)
 	time.Sleep(200 * time.Millisecond)
 	// 负责会话收到的是计划进展 / 派活，不是状态通知；除单条改状态那一条外没有多出 tell
 	if n := tellCount(e, "claude:dev"); n > devTells+1 {
@@ -437,12 +455,13 @@ func TestUserReviewPlanGrantNotify(t *testing.T) {
 	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
 	var g store.Grant
 	e.call("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(2 * time.Second).Format(time.RFC3339Nano)}, &g)
-	wokeUntil(t, e, c, "claude:pm", pmW, "用户开了参谋授权窗口", g.Code)
-	wokeUntil(t, e, c, "claude:adv", advW, "用户开了参谋授权窗口", g.Code)
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "用户开了参谋授权窗口", g.Code)
+	drainQuiet(t, advW, "Adv（授权变化只告知）", "adv", "用户开了参谋授权窗口", g.Code)
 	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
 	pmTells, advTells = tellCount(e, "claude:pm"), tellCount(e, "claude:adv")
-	wokeUntil(t, e, c, "claude:pm", pmW, g.Code, "授权窗口", "已到期")
-	wokeUntil(t, e, c, "claude:adv", advW, g.Code, "授权窗口", "已到期")
+	time.Sleep(2500 * time.Millisecond) // 到期通知也只告知，不叫醒
+	drainQuiet(t, pmW, "PM（到期只告知）", "pm", g.Code, "授权窗口", "已到期")
+	drainQuiet(t, advW, "Adv（到期只告知）", "adv", g.Code, "授权窗口", "已到期")
 	time.Sleep(300 * time.Millisecond)
 	if tellCount(e, "claude:pm") != pmTells+1 || tellCount(e, "claude:adv") != advTells+1 {
 		t.Fatal("到期通知每人只应一条")
@@ -451,10 +470,10 @@ func TestUserReviewPlanGrantNotify(t *testing.T) {
 	// 5. 撤销过的窗口到点不再通知
 	pmW = parkWait(t, e, c, "claude:pm")
 	e.call("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(1500 * time.Millisecond).Format(time.RFC3339Nano)}, &g)
-	wokeUntil(t, e, c, "claude:pm", pmW, "用户开了参谋授权窗口", g.Code)
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "用户开了参谋授权窗口", g.Code)
 	pmW = parkWait(t, e, c, "claude:pm")
 	e.call("POST", "/api/grants/"+g.Code+"/revoke", nil, nil)
-	wokeUntil(t, e, c, "claude:pm", pmW, "用户撤销了参谋授权窗口", g.Code)
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "用户撤销了参谋授权窗口", g.Code)
 	pmW = parkWait(t, e, c, "claude:pm")
 	asleep(t, pmW, "PM（窗口已撤销，到点不再通知）")
 	time.Sleep(1500 * time.Millisecond)
@@ -463,21 +482,4 @@ func TestUserReviewPlanGrantNotify(t *testing.T) {
 	if n := pendingCount(e); n != before {
 		t.Fatalf("这些通知不应进用户收件箱：%d → %d", before, n)
 	}
-}
-
-// wokeUntil：等待中的会话可能先收到前面事件的残留消息（同一批团队消息合并送达），再重新挂起直到收到含 want 的那条。
-func wokeUntil(t *testing.T, e *env, c *client.Client, key string, done chan daemon.WaitResult, want ...string) {
-	t.Helper()
-	for i := 0; i < 4; i++ {
-		res := <-done
-		ok := true
-		for _, w := range want {
-			ok = ok && strings.Contains(res.Text, w)
-		}
-		if ok {
-			return
-		}
-		done = parkWait(t, e, c, key)
-	}
-	t.Fatalf("没有等到含 %v 的消息", want)
 }

@@ -3,29 +3,37 @@ import type { Decision, Plan, Requirement, Session } from '../api/client'
 import { useMorning, useRequirement } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime } from '../lib/util'
+import { sessionAsk } from '../lib/waiting'
 import { displayState, RoleBadge, RoleTag } from '../ui/marks'
 import { plainText } from '../ui/markdown'
 import type { useWorkbench } from './inbox'
 import { gateStage, needsApproval } from './plans'
-import { awaitingReply } from './replyBox'
 import { sessionTitle, splitTool } from './SessionCard'
 import { isStatusReq, StatusReqLines } from './statusReq'
-import { DraftMark } from './draft'
+import { DraftMark, dropDraft } from './draft'
+import { Check, Undo2 } from 'lucide-react'
+import { SwipeRow, type RowAction } from '../ui/gesture'
+import { useAskReason } from '../ui/overlay'
+import { composeAnswer, decKey, useOutbox } from './outbox'
+import { PendingCover, usePending, usePendingMap, useReqVerdict } from './verdict'
+import { ReviewMark } from './verify'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
 // 不铺开证据、不就地展开、不就地作答；点开进抽屉，抽屉里可以上一条 / 下一条连续处理。
+// 唯一的例外（D-491，R-73）：触屏上验收、批准类决策可以左滑露出「通过 / 退回」（useAskActions）。
 // 条目的键也是抽屉的地址（?a=键）：r:R-1 需求验收、d:D-2 决策、p:P-3 计划批准、g:P-3 阶段验收、o:D-4 转交、
-// s:会话键 会话在等授权 / 在问你、m:会话键 在等你回复（不计件数）、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
+// s:会话键 会话在等授权 / 用提问工具在问你、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
+// 只认明确记录（R-239）：会话只在对话里写了问句、没提决策的，不进这里。
 
-export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'reply' | 'proxy'
+export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy'
 
 export type Ask = {
   key: string
   kind: AskKind
   title: string
   at: string // 从什么时候开始等你
-  counted: boolean // 计入「要你处理」件数（在等你回复的会话不计）
+  counted: boolean // 计入「要你处理」件数（代答记录不计）
   code?: string
   s?: Session
   projectId: string
@@ -38,8 +46,8 @@ export type Ask = {
 
 type WB = ReturnType<typeof useWorkbench>
 
-// 越小越靠前：拍板 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交 → 在等你回复；同类里等得越久越靠前。
-const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, orphan: 4, reply: 5, proxy: 9 }
+// 越小越靠前：拍板 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交；同类里等得越久越靠前。
+const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, orphan: 4, proxy: 9 }
 
 // buildAsks：从工作台数据算出全部条目（工作台、侧栏角标、抽屉队列同一口径）。
 export function buildAsks(wb: WB): Ask[] {
@@ -65,14 +73,10 @@ export function buildAsks(wb: WB): Ask[] {
     for (const d of th.orphans) push({ key: `o:${d.code}`, kind: 'orphan', title: d.short_title || d.question, at: d.answered_at ?? d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     if (s && s.state !== 'ended') {
       const ds = displayState(s)
-      if (ds === 'waiting_approval' || ds === 'waiting_answer')
-        push({ key: `s:${s.key}`, kind: ds === 'waiting_approval' ? 'permit' : 'question', title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: true, s, projectId: s.project_id || '', projectName: s.project_name || '' })
-      else if (awaitingReply(s)) push({ key: `m:${s.key}`, kind: 'reply', title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: false, s, projectId: s.project_id || '', projectName: s.project_name || '' })
+      const k = ds === 'done' ? '' : sessionAsk(s) // 等授权、提问工具在问才算（R-239）
+      if (k) push({ key: `s:${s.key}`, kind: k, title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: true, s, projectId: s.project_id || '', projectName: s.project_name || '' })
     }
   }
-  for (const g of wb.projects)
-    for (const s of g.active)
-      if (awaitingReply(s)) push({ key: `m:${s.key}`, kind: 'reply', title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: false, s, projectId: s.project_id || '', projectName: s.project_name || '' })
   for (const x of wb.plans) {
     const st = gateStage(x)
     if (st) push({ key: `g:${x.code}`, kind: 'stage', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: st.seq, projectId: x.project_id || '', projectName: x.project_name || '' })
@@ -83,6 +87,35 @@ export function buildAsks(wb: WB): Ask[] {
 
 export function useAsks(wb: WB) {
   return useMemo(() => buildAsks(wb), [wb])
+}
+
+// pendingKeyOf：这件事在撤销期 / 盖印中用的键（与 Verdict 的 pendingKey、发件箱的 decKey 一致）。
+export function pendingKeyOf(a: Ask | undefined) {
+  if (!a) return undefined
+  if (a.kind === 'review') return a.code
+  if (a.kind === 'plan') return `plan:${a.code}`
+  if (a.kind === 'stage') return `stage:${a.code}:${a.stage}`
+  if (a.d && (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request')) return decKey(a.d.code)
+  return undefined
+}
+
+// useLeft：撤销期一结束（进入盖印 / 已提交）这件事就在本地离开「要你处理」，不等服务端刷新（R-230，原则第 8 条）；
+// 撤销期里（wait）还在列表里，元素上盖着撤销条；提交失败时调度器放掉这件事，它自己回到列表（带进场动画）。
+// 只管列表和件数；审批抽屉的队列仍按完整的 asks 走（已下判断的事在抽屉里照常显示印章）。
+export function useLeft() {
+  const pend = usePendingMap()
+  return (a: Ask) => {
+    const k = pendingKeyOf(a)
+    const e = k ? pend.get(k) : undefined
+    return !!e && e.act !== 'move' && e.phase !== 'wait'
+  }
+}
+
+// useStaying：去掉已经离开的，结果按内容稳定（调度器的状态变了才换数组，别处的 useMemo 不会白算）。
+export function useStaying(all: Ask[]) {
+  const left = useLeft()
+  const gone = all.filter(left).map((a) => a.key).join('|')
+  return useMemo(() => (gone ? all.filter((a) => !gone.split('|').includes(a.key)) : all), [all, gone])
 }
 
 export { useOpenAsk } from './nav'
@@ -128,7 +161,6 @@ const kindTone: Record<AskKind, string> = {
   orphan: 'text-fg-2',
   permit: 'text-wait',
   question: 'text-reply',
-  reply: 'text-reply',
   proxy: 'text-accent',
 }
 
@@ -187,10 +219,21 @@ function statusLine(a: Ask, now: number): React.ReactNode {
       return t.desk.lane.approve(a.s?.state_detail ?? '')
     case 'question':
       return splitTool(a.s?.state_detail ?? '')[1] || t.session.asking
-    case 'reply':
-      return a.s?.reply_ask?.split('\n').map((x) => x.trim()).filter(Boolean).at(-1) ?? ''
     case 'proxy':
       return d?.proxy_answer ?? ''
+  }
+}
+
+// askLine：泳道上「等你」那一行写的明确记录本身（R-239）：哪条决策、哪条验收、请求执行什么、提问工具问什么。
+export function askLine(a: Ask): string {
+  switch (a.kind) {
+    case 'permit':
+      return t.desk.lane.approve(a.s?.state_detail ?? '')
+    case 'question':
+      return splitTool(a.s?.state_detail ?? '')[1] || t.session.asking
+    default:
+      // 带编号的写「类型 + 编号」，编号在泳道上画成带标题的印记，不再重复标题
+      return [t.ask.kind[a.kind], a.code || a.title].filter(Boolean).join(' ')
   }
 }
 
@@ -220,27 +263,89 @@ function Advice({ a }: { a: Ask }) {
   return null
 }
 
+// swipeKey：这件事在撤销期里用的键（与审批抽屉、Verdict 一致）；没有左滑快捷操作的返回 undefined。
+function swipeKey(a: Ask) {
+  if (a.kind === 'review' && a.code) return a.code
+  const d = a.d
+  // 只给批准类单点决策（批准 / 拒绝）；选项类要先选、多点决策要逐点选，进抽屉做
+  if ((a.kind === 'approve' || a.kind === 'request') && d && d.approval && !d.points?.length && d.status === 'pending' && !d.voided) return decKey(d.code)
+  return undefined
+}
+
+// useAskActions：列表左滑露出的「通过 / 退回」（D-491，是 R-177「审批只在右侧抽屉里作答」的例外，见 docs/principles.md 第 2 条）。
+// 点了才执行，走全站同一个撤销期（verdict.tsx 的 schedule）；退回 / 拒绝先写意见（原因框，R-202 的草稿：关掉再打开还在，提交成功才清）。
+function useAskActions(a: Ask): RowAction[] {
+  const verdict = useReqVerdict()
+  const { send } = useOutbox()
+  const ask = useAskReason()
+  const key = swipeKey(a)
+  if (!key) return []
+  if (a.kind === 'review') {
+    const code = a.code!
+    const draft = `reason:${code}:back`
+    return [
+      {
+        label: t.verdict.back('accept'),
+        icon: <Undo2 />,
+        tone: 'plain',
+        run: async () => {
+          const r = await ask({ title: t.verdict.askTitle(code), description: t.verdict.askDesc, confirmText: t.verdict.back('accept'), placeholder: t.verdict.askPlaceholder, kinds: [], required: true, multiline: true, draft })
+          if (r) verdict.back(code, { comment: r.note, after: () => dropDraft(draft) })
+        },
+      },
+      { label: t.verdict.pass('accept'), icon: <Check />, tone: 'primary', run: () => void verdict.pass(code) },
+    ]
+  }
+  const d = a.d!
+  const scene = d.request_kind ? 'request' : 'approval'
+  const options = d.options ?? []
+  const draft = `reason:${d.code}:back`
+  return [
+    {
+      label: t.verdict.back(scene),
+      icon: <Undo2 />,
+      tone: 'plain',
+      run: async () => {
+        const r = await ask({ title: t.verdict.rejectTitle(scene, d.code), description: t.verdict.rejectDesc, confirmText: t.verdict.back(scene), placeholder: t.verdict.rejectPlaceholder(scene), kinds: [], required: true, multiline: true, draft })
+        if (r) send([{ code: d.code, answer: composeAnswer({ choice: 1, note: r.note }, options), act: 'back', scene, after: () => dropDraft(draft) }])
+      },
+    },
+    { label: t.verdict.pass(scene), icon: <Check />, tone: 'primary', run: () => send([{ code: d.code, answer: composeAnswer({ choice: 0, note: '' }, options), act: 'pass', scene }]) },
+  ]
+}
+
 // AskItem：固定高度的条目，点开审批抽屉。高度不随内容变（标题、状态都只占一行）。
-export function AskItem({
+// 触屏上验收、批准类决策可以左滑露出「通过 / 退回」（swipe = false 时不给，例如会话面板里）。
+export function AskItem(props: Parameters<typeof AskCard>[0] & { swipe?: boolean }) {
+  const { swipe = true, ...rest } = props
+  const actions = useAskActions(props.a)
+  const key = swipeKey(props.a)
+  const pend = usePending(key)
+  if (!swipe || !actions.length) return <AskCard {...rest} spotKey={props.a.s?.key ?? ''} />
+  return (
+    <SwipeRow actions={actions} disabled={!!pend} className="shrink-0" spotKey={props.a.s?.key ?? ''}>
+      <AskCard {...rest} />
+      {key && <PendingCover k={key} />}
+    </SwipeRow>
+  )
+}
+
+function AskCard({
   a,
   now,
   onOpen,
   active,
-  lit,
-  fresh,
   showProject,
-  onHover,
   className,
+  spotKey,
 }: {
   a: Ask
   now: number
   onOpen: (key: string) => void
   active?: boolean
-  lit?: boolean
-  fresh?: boolean
   showProject?: boolean
-  onHover?: (k: string | null) => void
   className?: string
+  spotKey?: string
 }) {
   const s = a.s
   const who = s ? sessionTitle(s) : a.projectName || t.thread.noSession
@@ -252,15 +357,12 @@ export function AskItem({
       data-nav-item=""
       data-ask={a.key}
       onClick={() => onOpen(a.key)}
-      onMouseEnter={onHover && s ? () => onHover(s.key) : undefined}
-      onMouseLeave={onHover ? () => onHover(null) : undefined}
+      data-spot-key={spotKey}
       className={cx(
-        'group grid w-full shrink-0 content-center gap-y-0.5 overflow-hidden rounded-[14px] border bg-surface px-3.5 text-left shadow-card transition-[border,box-shadow,background] duration-150 hover:border-line-strong hover:shadow-pop',
+        'group grid w-full shrink-0 content-center gap-y-0.5 overflow-hidden rounded-[14px] border bg-surface px-3.5 text-left shadow-card transition-[border,box-shadow,background,opacity,filter] duration-200 hover:border-line-strong hover:shadow-pop',
         sr ? 'h-[106px] grid-rows-4' : 'h-[86px] grid-rows-3',
         a.counted ? 'border-reply/25' : 'border-line',
         active && 'border-accent/60 ring-2 ring-accent/25',
-        fresh && 'desk-drop',
-        lit && 'desk-lit',
         className,
       )}
     >
@@ -270,7 +372,7 @@ export function AskItem({
         <span className="min-w-0 truncate">{showProject && a.projectName && s ? `${a.projectName}${t.common.sep}${who}` : who}</span>
         {/* 有没发出的草稿（R-202） */}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          <DraftMark owners={[a.code, s && (a.kind === 'reply' || a.kind === 'question' || a.kind === 'permit') ? `s:${s.key}` : undefined]} />
+          <DraftMark owners={[a.code, s && (a.kind === 'question' || a.kind === 'permit') ? `s:${s.key}` : undefined]} />
           <span className="tabular">{relTime(a.at, now)}</span>
         </span>
       </span>
@@ -283,6 +385,7 @@ export function AskItem({
       ) : (
         <span className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5 text-fg-2">
           <span className="min-w-0 flex-1 truncate">{statusLine(a, now)}</span>
+          {a.kind === 'review' && <ReviewMark r={a.req} />}
           <Advice a={a} />
         </span>
       )}

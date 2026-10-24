@@ -43,12 +43,16 @@ export function useActions() {
   }, [run])
 
   return {
-    answer: (answers: { ref: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string }[]) =>
+    answer: (answers: { ref: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; verdict?: 'approved' | 'rejected' }[]) =>
       send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
     reassign: (ref: string, sessionKey: string) =>
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
     openGrant: (body: { project_id: string; session_key: string; expires_at: string; max_risk: 'low' | 'medium' }) =>
       run(() => unwrap(api.POST('/api/grants', { body })), ['grants', 'decisions']),
+    // 暂时离开（R-210）
+    startAway: (body: { expect_minutes: 30 | 120 | 480 | 0; scope: 'none' | 'low' | 'medium'; hold_push?: boolean }) =>
+      run(() => unwrap(api.POST('/api/away', { body })), ['away', 'grants', 'decisions', 'morning']),
+    endAway: () => run(() => unwrap(api.POST('/api/away/end')), ['away', 'grants', 'decisions', 'morning']),
     revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions', 'morning']),
     overrideDecision: (ref: string, answer: string) =>
       send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions', 'morning']),
@@ -63,7 +67,7 @@ export function useActions() {
       run(() => unwrap(api.POST('/api/requirements/{ref}/assign', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions', 'sessions']),
     askReview: (ref: string, sessionKey: string, comment = '') =>
       run(() => unwrap(api.POST('/api/requirements/{ref}/reviewer', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions']),
-    // 回复在等你回复的会话（R-117）：送达方式同留言，挂着 ks wait 时立刻唤醒
+    // 在会话面板上给会话发一句话（R-117、R-239）：送达方式同留言，挂着 ks wait 时立刻唤醒
     replySession: (key: string, comment: string, files: string[]) =>
       send(() => unwrap(api.POST('/api/sessions/{key}/reply', { params: { path: { key } }, body: { comment, files } })), ['sessions', 'decisions']),
     markDone: (key: string, done: boolean) => run(() => unwrap(api.POST('/api/sessions/{key}/done', { params: { path: { key } }, body: { done } })), ['sessions']),
@@ -97,7 +101,7 @@ export function useActions() {
 
     deleteDevice: (id: string) => run(() => unwrap(api.DELETE('/api/devices/{id}', { params: { path: { id } } })), ['devices', 'sessions']),
 
-    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean; agent_release?: boolean; commit_on_accept?: boolean }) =>
+    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean; agent_release?: boolean; commit_on_accept?: boolean; model_policy?: 'economy' | 'balanced' | 'quality' }) =>
       run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
     mergeProject: (id: string, into: string) =>
       run(() => unwrap(api.POST('/api/projects/{id}/merge', { params: { path: { id } }, body: { into } })), ['projects', 'sessions', 'requirements', 'decisions', 'plans']),

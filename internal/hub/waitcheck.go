@@ -16,6 +16,7 @@ import (
 // 关联的待验收需求、它负责的计划里待批准的计划或待验收的阶段。一件都没有时，用户在面板上看不到它在等什么，
 // ks wait 先输出提示再照常等待（不拒绝：PM / 开发常驻待命本身是正常的）。
 // 最后一条回复像在问用户时提示加重：要问的事先用 decision_raise 发上去；只是待命时只轻轻提一句。
+// 关键词判断（store.AskTail）只用在这里提醒会话本身，不给用户看（R-239）：「要你处理」和「等你」只认明确记录。
 
 type waitCheck struct {
 	Pending int      `json:"pending" doc:"名下等用户处理的事项件数"`
@@ -23,6 +24,7 @@ type waitCheck struct {
 	Asking  bool     `json:"asking" doc:"最后一条回复看起来在问用户"`
 	Ask     string   `json:"ask,omitempty" doc:"判断依据：最后一条回复的最后一段"`
 	Hint    string   `json:"hint,omitempty" doc:"要输出给 Agent 的提示；有待处理事项时为空"`
+	Retired bool     `json:"retired,omitempty" doc:"会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待"`
 }
 
 // pendingFor 列出会话 key 名下等用户处理的事项。
@@ -73,6 +75,9 @@ func (h *Hub) checkWait(ctx context.Context, key, text string) (waitCheck, error
 	if err != nil {
 		return waitCheck{}, apiErr(err)
 	}
+	if x.RetiredAt != nil {
+		return waitCheck{Items: []string{}, Retired: true, Hint: "[Kitestring] 你已交接卸任（身份已由新会话接任），不要再挂 ks wait：用一两句话收尾后结束本轮。纸鸢不会再唤醒你。\n"}, nil
+	}
 	items, err := h.pendingFor(ctx, key)
 	if err != nil {
 		return waitCheck{}, err
@@ -92,7 +97,7 @@ func (h *Hub) checkWait(ctx context.Context, key, text string) (waitCheck, error
 	}
 	if out.Asking {
 		out.Hint = "[Kitestring] 注意：你最后的回复像是在问用户，但面板上没有你提的待答决策、待验收需求或待批准的计划 / 待验收的阶段——用户在面板上看不到你在等什么。" +
-			"要问用户的事，先用 decision_raise（命令行 ks decision raise）发上去，用户在面板上一答就会唤醒你；工作台会暂时把你的最后回复显示为「在等你回复」，但正式的问题要走决策。本次照常等待。\n"
+			"要问用户的事，先用 decision_raise（命令行 ks decision raise）发上去，用户在面板上一答就会唤醒你；对话里的问句不会出现在用户的「要你处理」里，用户看不到。本次照常等待。\n"
 	} else {
 		out.Hint = "[Kitestring] 提示：你名下没有等用户处理的事项（待答决策、待验收需求、待批准的计划或待验收的阶段）。只是待命接活的话照常等就行；" +
 			"如果其实在等用户回答，用户在面板上看不到——先用 decision_raise 发上去。\n"
@@ -117,11 +122,11 @@ func (h *Hub) registerAgentWaitCheck(api huma.API) {
 		})
 }
 
-// registerSessionReply：工作台上直接回复「在等你回复」的会话（R-117）。用留言的送达通道（kind = note，不关联需求）：
-// 挂着 ks wait 时立刻唤醒，否则在你下次给它发消息时送达。回复后它不再显示为在等你回复。
+// registerSessionReply：在会话面板上直接给会话发一句话（R-117、R-239）。用留言的送达通道（kind = note，不关联需求）：
+// 挂着 ks wait 时立刻唤醒，否则在你下次给它发消息时送达。只是留言，不算待办、不进「要你处理」。
 func (h *Hub) registerSessionReply(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "reply-session", Method: http.MethodPost, Path: "/api/sessions/{key}/reply", Tags: []string{"sessions"},
-		Summary: "回复在等你回复的会话（送达方式同留言）"},
+		Summary: "给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒）"},
 		func(ctx context.Context, in *struct {
 			Key  string `path:"key"`
 			Body struct {

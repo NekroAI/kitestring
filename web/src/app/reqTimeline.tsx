@@ -13,13 +13,14 @@ import { Item, List } from '../ui/motion'
 import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionComposer } from './DecisionCard'
 import { ProxyNote } from './grant'
-import { EvidenceCard, EvidenceRow, VoidedEvidence } from './evidence'
+import { EvidenceBody, EvidenceCard, EvidenceRow, hasPayload, VoidedEvidence } from './evidence'
 import { DecisionChain } from './chain'
 import { CommitTags, shortSha, useReqCommits } from './commits'
 import { isStatusReq, StatusArrow, statusTone } from './statusReq'
 import { Who } from './who'
 import { releaseKey, useWithdrawRelease } from './requirements'
 import { PendingBar } from './verdict'
+import { approvedOf } from '../lib/waiting'
 
 // 需求抽屉只有这一条时间线（R-195）：从上往下按时间排，每份证据只出现一次——本轮最新的一份展开，其余收成一行，点开就地展开。
 // 每条记录都写清是谁做的：身份胶囊 + 会话标题（动作当时的标题，悬停看现在的），点开是那个会话。
@@ -288,7 +289,8 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       ),
     })
   }
-  // 审查意见（R-88）：审查员给的参考，和验收证据分开标明，不开新一轮
+  // 审查意见（R-88）：审查员给的参考，和验收证据分开标明，不开新一轮。
+  // 带结构化结果的（R-232 评审验证：一句结论、checklist、截图）按证据的样子画，套在评审的底色里
   for (const e of r.reviews ?? []) {
     entries.push({
       at: e.created_at,
@@ -308,8 +310,16 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             </>
           }
         >
-          <ReviewBody text={e.summary} />
-          {!!e.files?.length && <Thumbs files={e.files} />}
+          {hasPayload(e) ? (
+            <div className="@container rounded-xl border border-wait/25 bg-wait-soft/40 px-3.5 py-3">
+              <EvidenceBody e={e} r={r} />
+            </div>
+          ) : (
+            <>
+              <ReviewBody text={e.summary} />
+              {!!e.files?.length && <Thumbs files={e.files} />}
+            </>
+          )}
         </Node>
       ),
     })
@@ -328,8 +338,12 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             at={at}
             head={
               <>
-                <Who actor="user" />
-                <Act>{t.proof.reviewTask}</Act>
+                {f.assigned_by === 'auto' ? <Act>{t.verify.auto}</Act> : (
+                  <>
+                    <Who actor="user" />
+                    <Act>{t.proof.reviewTask}</Act>
+                  </>
+                )}
                 <Who actor="agent" session={f.session_key} className="max-w-[16em]" />
                 <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
               </>
@@ -491,7 +505,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
     }
     if (isStatusReq(d) && d.status !== 'closed') {
       // 改状态申请（R-188）：批准 / 拒绝 / 作废三种结局，批准的那次状态变化并在这里
-      const ok = !d.voided && (d.answer ?? '').trim().startsWith('批准')
+      const ok = !d.voided && approvedOf(d) === true // 读结论字段（R-239）
       const at = d.answered_at ?? d.created_at
       const note = d.voided ? '' : (d.answer ?? '').trim().replace(/^(批准|拒绝)[；;：:，,\s]*/, '')
       entries.push({

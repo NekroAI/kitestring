@@ -16,7 +16,8 @@ import (
 )
 
 // 离开期间小结（R-165）：你离开期间参谋做了什么、替你定了什么，工作台顶部集中呈现；你回来先看这里。
-//   - 「离开期间」：项目最近一个参谋授权窗口的开启时间到现在（窗口生效中，或结束不到 12 小时）；
+//   - 「离开期间」：用户点了「暂时离开」（R-210）时就从那一刻算起（离开中，或结束不到 12 小时）；从没点过的老数据才按下面推算：
+//     项目最近一个参谋授权窗口的开启时间到现在（窗口生效中，或结束不到 12 小时）；
 //     没有这样的窗口时，以参谋写总述的时间往前 12 小时；两者都没有就不出小结。
 //   - 参谋只写两样（away_set / ks away，旧名 morning_set / ks morning 仍可用；只有主助理能写）：一段总述，和逐条验收建议（写进对应需求）。
 //   - 其余由 hub 汇总：① 完成了什么（期间交了证据、现在待验收 / 已完成的需求，附提交）、团队消息；
@@ -25,7 +26,7 @@ import (
 
 const (
 	morningTTL     = 12 * time.Hour // 窗口结束 / 总述写下超过这么久，小结不再出现
-	morningTextMax = 800
+	morningTextMax = 2000           // 防滥用的硬上限；建议长度 200 字，超出照常保存并提示压缩（R-212）
 	morningTells   = 8
 )
 
@@ -104,6 +105,10 @@ func grantEnd(g store.Grant) time.Time {
 
 // morningWindow 算项目的离开期间：返回起点、据以计算的窗口；ok = false 表示不出小结。
 func (h *Hub) morningWindow(ctx context.Context, projectID string, note *store.MorningNote, at time.Time) (time.Time, *store.Grant, bool) {
+	// 暂时离开（R-210）：起点就是点「离开」的时刻（离开中，或结束不到 12 小时）；从没点过离开的老数据沿用下面的推算
+	if a, err := h.store.LatestAway(ctx); err == nil && (a.Active() || at.Sub(*a.EndedAt) < morningTTL) {
+		return a.StartedAt, h.awayGrant(ctx, a, projectID), true
+	}
 	if gs, err := h.store.ListGrants(ctx, projectID, 1); err == nil && len(gs) > 0 {
 		g := gs[0]
 		if g.Status == store.GrantActive || at.Sub(grantEnd(g)) < morningTTL {
@@ -157,6 +162,16 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 	if !ok {
 		return nil
 	}
+	r, err := h.periodReport(ctx, p, since, g, note)
+	if err != nil {
+		return err
+	}
+	out.Body.Reports = append(out.Body.Reports, r)
+	return nil
+}
+
+// periodReport 汇总项目 since 之后的一段时间：完成了什么、团队消息、替你定了什么、留给你的计数。
+func (h *Hub) periodReport(ctx context.Context, p store.Project, since time.Time, g *store.Grant, note *store.MorningNote) (MorningReport, error) {
 	if note != nil && note.At.Before(since) {
 		note = nil // 上一次离开时写的总述
 	}
@@ -164,7 +179,7 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 
 	reqs, err := h.store.ListRequirements(ctx, p.ID, nil)
 	if err != nil {
-		return err
+		return r, err
 	}
 	byID := map[string]store.Requirement{}
 	for _, x := range reqs {
@@ -181,7 +196,7 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 	// ① 完成了什么
 	evs, err := h.store.EvidenceSince(ctx, p.ID, since)
 	if err != nil {
-		return err
+		return r, err
 	}
 	idx := map[string]int{}
 	for _, e := range evs {
@@ -206,7 +221,7 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 
 	tells, err := h.store.ProjectDecisionsSince(ctx, p.ID, store.KindTell, since, 200)
 	if err != nil {
-		return err
+		return r, err
 	}
 	r.TellCount = len(tells)
 	for i, d := range tells {
@@ -218,11 +233,11 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 
 	// ② 替你定了什么
 	if r.Proxied, err = h.store.ProxiedSince(ctx, p.ID, since); err != nil {
-		return err
+		return r, err
 	}
 	rels, err := h.store.ProjectDecisionsSince(ctx, p.ID, store.KindRelease, since, 100)
 	if err != nil {
-		return err
+		return r, err
 	}
 	for _, d := range rels {
 		r.Releases = append(r.Releases, morningRelease{Code: d.Code, RequirementCode: d.RequirementCode, RequirementTitle: d.RequirementTitle, By: d.AssignedBy, Role: d.Context, Reason: d.Answer, Withdrawn: d.CloseReason != "", At: d.CreatedAt})
@@ -231,11 +246,10 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 	// ③④ 只计数
 	pending, err := h.store.PendingDecisions(ctx, p.ID)
 	if err != nil {
-		return err
+		return r, err
 	}
 	r.Pending = len(pending)
-	out.Body.Reports = append(out.Body.Reports, r)
-	return nil
+	return r, nil
 }
 
 type adviceIn struct {
@@ -282,7 +296,9 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey string     `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的主助理）"`
-				Text       *string    `json:"text,omitempty" doc:"总述：一段话，先结论；不传表示不改，空字符串表示清除"`
+				Text       *string    `json:"text,omitempty" doc:"总述：一段话，先结论，建议 200 字以内，超出照常保存并提示压缩；不传表示不改"`
+				Headline   *string    `json:"headline,omitempty" doc:"一句话结论（建议 40 字以内，R-212）：常驻条上只显示它；不传表示不改，空字符串清除"`
+				Look       []string   `json:"look,omitempty" doc:"要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改，传 [\"\"] 清空"`
 				Advice     []adviceIn `json:"advice,omitempty" doc:"逐条验收建议，每条覆盖该需求上一份"`
 			}
 		}) (*morningSetOut, error) {
@@ -293,8 +309,8 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 			if me.Role != roles.Aide || me.ProjectID == "" {
 				return nil, huma.Error403Forbidden(notAide("写离开期间小结和验收建议", me.Role))
 			}
-			if in.Body.Text == nil && len(in.Body.Advice) == 0 {
-				return nil, huma.Error400BadRequest("什么都没写：传 text（总述）或 advice（验收建议）")
+			if in.Body.Text == nil && in.Body.Headline == nil && in.Body.Look == nil && len(in.Body.Advice) == 0 {
+				return nil, huma.Error400BadRequest("什么都没写：传 headline（一句话结论）、text（总述）或 advice（验收建议）")
 			}
 			// 先全部检查，再一起写入：一条不合格就整次拒绝
 			type item struct {
@@ -322,15 +338,28 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 				items = append(items, item{r, a})
 			}
 			var done []string
-			if in.Body.Text != nil {
-				text := strings.TrimSpace(*in.Body.Text)
-				if utf8.RuneCountInString(text) > morningTextMax {
-					text = string([]rune(text)[:morningTextMax])
+			var hint string
+			if in.Body.Text != nil || in.Body.Headline != nil || in.Body.Look != nil {
+				// 没传的字段保留上一份（R-212）
+				cur, _ := h.store.GetMorning(ctx, me.ProjectID)
+				text, headline, look := cur.Text, cur.Headline, cur.Look
+				if in.Body.Text != nil {
+					text = strings.TrimSpace(*in.Body.Text)
+					if utf8.RuneCountInString(text) > morningTextMax {
+						text = string([]rune(text)[:morningTextMax])
+					}
 				}
-				if err := h.store.SetMorning(ctx, me.ProjectID, text, me.Key); err != nil {
+				if in.Body.Headline != nil {
+					headline = strings.TrimSpace(*in.Body.Headline)
+				}
+				if in.Body.Look != nil {
+					look = cleanLook(in.Body.Look)
+				}
+				if err := h.store.SetMorning(ctx, me.ProjectID, text, me.Key, headline, look); err != nil {
 					return nil, err
 				}
-				if text == "" {
+				hint = shapeHints(headline, look, text, morningTextAdv)
+				if text == "" && headline == "" && len(look) == 0 {
 					done = append(done, "已清除总述")
 				} else {
 					done = append(done, "总述已更新")
@@ -348,7 +377,7 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 			}
 			h.broker.publish("morning")
 			out := &morningSetOut{}
-			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的离开期间小结、「要你处理」的验收卡上能看到。"
+			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的离开期间小结、「要你处理」的验收卡上能看到。" + hint
 			return out, nil
 		})
 }

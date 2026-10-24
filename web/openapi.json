@@ -221,6 +221,10 @@
               "null"
             ]
           },
+          "hard_check": {
+            "description": "硬规则核对（必填，R-210）：none = 核对过，不属于硬规则；填 product / design / semantics / permission / gate / irreversible / acceptance 中的一类表示属于它，会被拒绝",
+            "type": "string"
+          },
           "reason": {
             "description": "为什么这样答、为什么不必等用户（必填）",
             "type": "string"
@@ -230,6 +234,14 @@
             "type": "string"
           },
           "session_key": {
+            "type": "string"
+          },
+          "verdict": {
+            "description": "批准类决策：代答批准还是拒绝（R-239）；不填时按答复开头的「批准 / 拒绝」记一次",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
             "type": "string"
           }
         },
@@ -374,6 +386,27 @@
         ],
         "type": "object"
       },
+      "Agent-escalate-awayRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "description": "决策编号（D-x）",
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "description": "一句话：为什么要用户尽快看（必填）",
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "type": "object"
+      },
       "Agent-link-sessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -481,13 +514,27 @@
       "Agent-set-briefRequest": {
         "additionalProperties": false,
         "properties": {
+          "headline": {
+            "description": "一句话结论（建议 40 字以内）：常驻条上只显示它（R-212）；不写时网页取正文第一句",
+            "type": "string"
+          },
+          "look": {
+            "description": "要用户先看的几条（建议 3 条以内，每条一句，写编号）：展开后排在最前（R-212）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "session_key": {
             "description": "调用者（必须是本项目的 PM）",
             "minLength": 1,
             "type": "string"
           },
           "text": {
-            "description": "简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；空字符串表示清除",
+            "description": "简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；建议 200 字以内，超出照常保存并提示压缩；headline、look、text 都为空表示清除",
             "type": "string"
           }
         },
@@ -510,13 +557,27 @@
               "null"
             ]
           },
+          "headline": {
+            "description": "一句话结论（建议 40 字以内，R-212）：常驻条上只显示它；不传表示不改，空字符串清除",
+            "type": "string"
+          },
+          "look": {
+            "description": "要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改，传 [\"\"] 清空",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "session_key": {
             "description": "调用者（必须是本项目的主助理）",
             "minLength": 1,
             "type": "string"
           },
           "text": {
-            "description": "总述：一段话，先结论；不传表示不改，空字符串表示清除",
+            "description": "总述：一段话，先结论，建议 200 字以内，超出照常保存并提示压缩；不传表示不改",
             "type": "string"
           }
         },
@@ -540,35 +601,6 @@
         "required": [
           "session_key",
           "role"
-        ],
-        "type": "object"
-      },
-      "Agent-submit-reviewRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "files": {
-            "description": "附图 ID（先上传到 /api/agent/files）",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "session_key": {
-            "description": "提交意见的会话（身份必须是 reviewer）",
-            "type": "string"
-          },
-          "summary": {
-            "description": "审查意见（可用 Markdown）",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_key",
-          "summary"
         ],
         "type": "object"
       },
@@ -598,6 +630,18 @@
       "Agent-tell-pmRequest": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "description": "发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上",
+            "type": "string"
+          },
+          "fyi": {
+            "description": "只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、派活、回复，立刻叫醒）。部署 / 重启、进展通报这类用 true",
+            "type": "boolean"
+          },
+          "reply_to": {
+            "description": "回复收到的团队消息：填它的编号（D-x）",
+            "type": "string"
+          },
           "requirement": {
             "description": "相关需求编号（如 R-12），可省略",
             "type": "string"
@@ -608,8 +652,12 @@
             "type": "string"
           },
           "text": {
-            "description": "要告诉 PM 的话",
+            "description": "要说的话",
             "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "description": "收件身份：pm（默认）、aide、reviewer；也认中文名（主调度 / 主助理 / 评审）。回复时不填",
             "type": "string"
           }
         },
@@ -729,6 +777,22 @@
         },
         "type": "object"
       },
+      "AgentAwayOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/AwayReport",
+            "description": "最近一次离开的时段报告；从没离开过时为空"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AwayStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "AgentDecisionInBody": {
         "additionalProperties": false,
         "properties": {
@@ -749,6 +813,19 @@
           },
           "from_decision": {
             "description": "来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）",
+            "type": "string"
+          },
+          "hard": {
+            "description": "硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收",
+            "enum": [
+              "product",
+              "design",
+              "semantics",
+              "permission",
+              "gate",
+              "irreversible",
+              "acceptance"
+            ],
             "type": "string"
           },
           "images": {
@@ -798,6 +875,11 @@
           },
           "recommendation": {
             "type": "string"
+          },
+          "recommended_option": {
+            "description": "推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配",
+            "format": "int64",
+            "type": "integer"
           },
           "requirement": {
             "description": "关联需求 ID 或 R-编号",
@@ -1059,6 +1141,427 @@
         ],
         "type": "object"
       },
+      "Away": {
+        "additionalProperties": false,
+        "properties": {
+          "calm_since": {
+            "description": "「能处理的都处理完」从何时开始一直成立",
+            "format": "date-time",
+            "type": "string"
+          },
+          "code": {
+            "description": "离开编号（A-x）",
+            "type": "string"
+          },
+          "ended_at": {
+            "description": "你点「结束离开」的时刻；空 = 还在离开中",
+            "format": "date-time",
+            "type": "string"
+          },
+          "expect_minutes": {
+            "description": "预估离开多久（分钟）；0 = 不确定",
+            "format": "int64",
+            "type": "integer"
+          },
+          "hold_push": {
+            "description": "这次离开期间连推送类也先攒着（拿不准的仍推）",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "description": "主助理可代答到哪一档：none 不代答（只写建议）/ low / medium",
+            "enum": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "type": "string"
+          },
+          "settled_at": {
+            "description": "最近一次生成阶段性报告的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "started_at": {
+            "description": "点「暂时离开」的时刻，时段报告从这里算起",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "started_at",
+          "expect_minutes",
+          "scope",
+          "hold_push"
+        ],
+        "type": "object"
+      },
+      "AwayCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "advised": {
+            "description": "主助理写的验收建议",
+            "format": "int64",
+            "type": "integer"
+          },
+          "delivered": {
+            "description": "交付（交了证据、现在待验收 / 已完成）的需求",
+            "format": "int64",
+            "type": "integer"
+          },
+          "held": {
+            "description": "勿扰时先攒着的",
+            "format": "int64",
+            "type": "integer"
+          },
+          "merged": {
+            "description": "合并进报告、没推的",
+            "format": "int64",
+            "type": "integer"
+          },
+          "normal": {
+            "description": "不在离开时原本会推几条",
+            "format": "int64",
+            "type": "integer"
+          },
+          "proxied": {
+            "description": "主助理代答的决策",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pushed": {
+            "description": "推送了几条",
+            "format": "int64",
+            "type": "integer"
+          },
+          "released": {
+            "description": "主调度 / 主助理放行的草稿",
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "不推的（主助理可代答、会话空闲）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "user": {
+            "description": "你在各设备上处理的",
+            "format": "int64",
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "还在等你的",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proxied",
+          "released",
+          "advised",
+          "delivered",
+          "user",
+          "pushed",
+          "held",
+          "merged",
+          "skipped",
+          "normal",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "AwayEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "device": {
+            "description": "你处理时用的设备，如 iPhone、Mac",
+            "type": "string"
+          },
+          "event": {
+            "description": "通知事件（decision_raised、requirement_review…）或你的操作（answer、review、plan_start…）",
+            "type": "string"
+          },
+          "normal": {
+            "description": "不在离开时这条会不会推送",
+            "type": "boolean"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "为什么归到这一档",
+            "type": "string"
+          },
+          "ref": {
+            "description": "关联编号：D-x / R-x / P-x",
+            "type": "string"
+          },
+          "tier": {
+            "description": "push 推了 / hold 勿扰先攒着 / merge 合并进报告 / skip 不推 / user 你在某台设备上处理了 / settled 阶段性报告",
+            "enum": [
+              "push",
+              "hold",
+              "merge",
+              "skip",
+              "user",
+              "settled"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "tier",
+          "event",
+          "title",
+          "normal"
+        ],
+        "type": "object"
+      },
+      "AwayItem": {
+        "additionalProperties": false,
+        "properties": {
+          "first": {
+            "description": "要你先看",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "待决策 / 待批准计划 / 待验收 / 受阻",
+            "enum": [
+              "decision",
+              "plan",
+              "review",
+              "blocked"
+            ],
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "pushed": {
+            "description": "离开期间推送过",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "为什么要你先看，或主助理的建议",
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "title",
+          "project_name",
+          "first",
+          "pushed"
+        ],
+        "type": "object"
+      },
+      "AwayReport": {
+        "additionalProperties": false,
+        "properties": {
+          "away": {
+            "$ref": "#/components/schemas/Away"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/AwayCounts"
+          },
+          "final": {
+            "description": "离开已结束：这是最终报告",
+            "type": "boolean"
+          },
+          "grants": {
+            "description": "这次离开开的授权窗口",
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "held": {
+            "description": "勿扰时先攒着、没推的",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "minutes": {
+            "description": "离开了多久（分钟）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "over_estimate": {
+            "description": "已超过预估时间（只做标记，不推送）",
+            "type": "boolean"
+          },
+          "projects": {
+            "description": "各项目：替你定了什么（proxied 代答）、放行了什么（releases）、交付了什么（done）、团队消息、主助理总述",
+            "items": {
+              "$ref": "#/components/schemas/MorningReport"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "pushes": {
+            "description": "推送了的",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "settled": {
+            "description": "阶段性报告（能处理的都处理完了）的时间点",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "until": {
+            "description": "结束时刻；离开中为现在",
+            "format": "date-time",
+            "type": "string"
+          },
+          "waiting": {
+            "description": "还在等你的；first = 要你先看的，排在前面",
+            "items": {
+              "$ref": "#/components/schemas/AwayItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "yours": {
+            "description": "你在各设备上处理了什么（device 是设备）",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "away",
+          "until",
+          "minutes",
+          "over_estimate",
+          "final",
+          "grants",
+          "counts",
+          "projects",
+          "waiting",
+          "yours",
+          "pushes",
+          "held",
+          "settled"
+        ],
+        "type": "object"
+      },
+      "AwayStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "away": {
+            "$ref": "#/components/schemas/Away",
+            "description": "进行中的离开；不在离开时为空"
+          },
+          "grant_active": {
+            "description": "还有生效中的授权窗口；最长 24 小时，到期后离开保持、主助理不再代答",
+            "type": "boolean"
+          },
+          "grants": {
+            "description": "这次离开开的授权窗口（含已到期的）",
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "handled": {
+            "description": "主助理已处理几件（代答 + 放行 + 验收建议）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last": {
+            "$ref": "#/components/schemas/Away",
+            "description": "不在离开时：最近一次已结束的离开（看它的报告用）"
+          },
+          "minutes": {
+            "description": "已离开多久（分钟）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "over_estimate": {
+            "description": "已超过预估时间（只做标记，不推送）",
+            "type": "boolean"
+          },
+          "pushed": {
+            "description": "推送了几条",
+            "format": "int64",
+            "type": "integer"
+          },
+          "yours": {
+            "description": "你在各设备上处理了几件",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minutes",
+          "over_estimate",
+          "handled",
+          "yours",
+          "pushed",
+          "grants",
+          "grant_active"
+        ],
+        "type": "object"
+      },
       "BarkConfig": {
         "additionalProperties": false,
         "properties": {
@@ -1248,6 +1751,22 @@
           "y",
           "w",
           "h"
+        ],
+        "type": "object"
+      },
+      "BriefOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "hint": {
+            "description": "一句话结论 / 要先看的 / 正文超出建议长度时的提示（照常保存）",
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
         ],
         "type": "object"
       },
@@ -1627,7 +2146,27 @@
             "format": "date-time",
             "type": "string"
           },
+          "from_agent": {
+            "description": "团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空",
+            "type": "string"
+          },
           "from_decision": {
+            "type": "string"
+          },
+          "from_role": {
+            "description": "团队消息（R-191）：发消息的会话当时的身份",
+            "type": "string"
+          },
+          "hard": {
+            "enum": [
+              "product",
+              "design",
+              "semantics",
+              "permission",
+              "gate",
+              "irreversible",
+              "acceptance"
+            ],
             "type": "string"
           },
           "id": {
@@ -1723,10 +2262,19 @@
           "question": {
             "type": "string"
           },
+          "rec_option": {
+            "description": "推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）",
+            "format": "int64",
+            "type": "integer"
+          },
           "recommendation": {
             "type": "string"
           },
           "replaced_by": {
+            "type": "string"
+          },
+          "reply_to": {
+            "description": "团队消息（R-191）：这条回复的团队消息 ID",
             "type": "string"
           },
           "request_count": {
@@ -1789,6 +2337,15 @@
           "timed_out": {
             "type": "boolean"
           },
+          "verdict": {
+            "description": "批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空",
+            "enum": [
+              "",
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
+          },
           "voided": {
             "description": "改状态申请（R-188）：批准前需求状态已被改动，申请自动作废",
             "type": "boolean"
@@ -1804,11 +2361,13 @@
           "approval",
           "context_files",
           "recommendation",
+          "rec_option",
           "short_title",
           "kind",
           "answer_files",
           "status",
           "answer",
+          "verdict",
           "created_at"
         ],
         "type": "object"
@@ -1963,7 +2522,27 @@
             "format": "date-time",
             "type": "string"
           },
+          "from_agent": {
+            "description": "团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空",
+            "type": "string"
+          },
           "from_decision": {
+            "type": "string"
+          },
+          "from_role": {
+            "description": "团队消息（R-191）：发消息的会话当时的身份",
+            "type": "string"
+          },
+          "hard": {
+            "enum": [
+              "product",
+              "design",
+              "semantics",
+              "permission",
+              "gate",
+              "irreversible",
+              "acceptance"
+            ],
             "type": "string"
           },
           "id": {
@@ -2059,10 +2638,19 @@
           "question": {
             "type": "string"
           },
+          "rec_option": {
+            "description": "推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）",
+            "format": "int64",
+            "type": "integer"
+          },
           "recommendation": {
             "type": "string"
           },
           "replaced_by": {
+            "type": "string"
+          },
+          "reply_to": {
+            "description": "团队消息（R-191）：这条回复的团队消息 ID",
             "type": "string"
           },
           "request_count": {
@@ -2125,6 +2713,15 @@
           "timed_out": {
             "type": "boolean"
           },
+          "verdict": {
+            "description": "批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空",
+            "enum": [
+              "",
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
+          },
           "voided": {
             "description": "改状态申请（R-188）：批准前需求状态已被改动，申请自动作废",
             "type": "boolean"
@@ -2140,11 +2737,13 @@
           "approval",
           "context_files",
           "recommendation",
+          "rec_option",
           "short_title",
           "kind",
           "answer_files",
           "status",
           "answer",
+          "verdict",
           "created_at"
         ],
         "type": "object"
@@ -2433,6 +3032,9 @@
           "last_reply": {
             "type": "string"
           },
+          "launcher": {
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
@@ -2443,6 +3045,12 @@
             "type": "string"
           },
           "permission_mode": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "profile_dir": {
             "type": "string"
           },
           "prompt": {
@@ -2698,6 +3306,9 @@
           },
           "release": {
             "$ref": "#/components/schemas/Release"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
           },
           "reviews": {
             "items": {
@@ -2999,6 +3610,144 @@
         ],
         "type": "object"
       },
+      "Handoff": {
+        "additionalProperties": false,
+        "properties": {
+          "doing": {
+            "description": "在做的：需求编号、做到哪",
+            "type": "string"
+          },
+          "from_session": {
+            "type": "string"
+          },
+          "from_title": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "next": {
+            "description": "下一步",
+            "type": "string"
+          },
+          "notes": {
+            "description": "注意事项：坑、别碰的东西、在跑的进程",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "rules": {
+            "description": "约定和规矩：用户定过的、团队里说好的",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "requested",
+              "written",
+              "taken"
+            ],
+            "type": "string"
+          },
+          "taken_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "taken_by": {
+            "type": "string"
+          },
+          "taken_title": {
+            "type": "string"
+          },
+          "waiting": {
+            "description": "等用户的：待答决策、待验收、要用户拍板的事",
+            "type": "string"
+          },
+          "written_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "role",
+          "from_session",
+          "from_title",
+          "status",
+          "doing",
+          "waiting",
+          "rules",
+          "next",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "HandoffOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "新会话接任要运行的命令（ks takeover \u003c身份\u003e）",
+            "type": "string"
+          },
+          "handoff": {
+            "$ref": "#/components/schemas/Handoff"
+          },
+          "waiting": {
+            "description": "主调度还在跑的子任务数：交接要等它们交完",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "handoff",
+          "command",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "HandoffWriteInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "doing": {
+            "description": "在做的：需求编号、做到哪",
+            "type": "string"
+          },
+          "next": {
+            "description": "下一步",
+            "type": "string"
+          },
+          "notes": {
+            "description": "注意事项：坑、在跑的进程、别碰的东西",
+            "type": "string"
+          },
+          "rules": {
+            "description": "约定和规矩：用户定过的、团队里说好的",
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "waiting": {
+            "description": "等用户的：待答决策、待验收、要用户拍板的事",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "doing",
+          "next"
+        ],
+        "type": "object"
+      },
       "IgnoreOrphanInBody": {
         "additionalProperties": false,
         "properties": {
@@ -3115,7 +3864,7 @@
             ]
           },
           "files": {
-            "description": "附图 ID",
+            "description": "附件 ID（图片、录屏或任意文件）",
             "items": {
               "type": "string"
             },
@@ -3134,11 +3883,457 @@
           "reject": {
             "description": "批准类的多点决策：拒绝（此时不要求逐点选择）",
             "type": "boolean"
+          },
+          "verdict": {
+            "description": "批准类决策：用户点的是批准还是拒绝（R-239），存成字段，放行检查和界面只读它",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
           }
         },
         "required": [
           "ref",
           "answer"
+        ],
+        "type": "object"
+      },
+      "LaneAgent": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "end": {
+            "description": "结束（SubagentStop 或会话结束），Unix 毫秒；没结束为空",
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "start": {
+            "description": "Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "label",
+          "type",
+          "start"
+        ],
+        "type": "object"
+      },
+      "LaneCold": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "at": {
+            "description": "Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cause": {
+            "description": "idle 闲置超过缓存档位；compact 上下文压缩；model 换模型；start 第一次回复；other 看不出",
+            "enum": [
+              "idle",
+              "compact",
+              "model",
+              "start",
+              "other"
+            ],
+            "type": "string"
+          },
+          "idle_min": {
+            "description": "距上一次回复多少分钟",
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "prev_model": {
+            "description": "换模型时，之前的模型",
+            "type": "string"
+          },
+          "tokens": {
+            "description": "这次重算的 token 数",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "model",
+          "at",
+          "tokens",
+          "cause",
+          "idle_min"
+        ],
+        "type": "object"
+      },
+      "LaneData": {
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/LaneAgent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "colds": {
+            "description": "范围内的冷启动（缓存重建）",
+            "items": {
+              "$ref": "#/components/schemas/LaneCold"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "from": {
+            "description": "范围起点，Unix 分钟（含）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "now": {
+            "description": "服务端当前时间，Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LaneRow"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/LaneSession"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "shells": {
+            "items": {
+              "$ref": "#/components/schemas/ShellCmd"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/LaneSpan"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "step": {
+            "description": "格子大小（分钟）：1 每分钟，60 每小时",
+            "format": "int64",
+            "type": "integer"
+          },
+          "to": {
+            "description": "范围终点，Unix 分钟（不含）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "tok": {
+            "items": {
+              "$ref": "#/components/schemas/LaneTok"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "now",
+          "step",
+          "from",
+          "to",
+          "rows",
+          "spans",
+          "agents",
+          "sessions",
+          "tok",
+          "colds",
+          "shells"
+        ],
+        "type": "object"
+      },
+      "LaneRow": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "description": "子任务的 agent_id；主会话为空",
+            "type": "string"
+          },
+          "c": {
+            "description": "与 m 对应的调用次数",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "k": {
+            "description": "会话键",
+            "type": "string"
+          },
+          "m": {
+            "description": "格子起点，Unix 分钟（秒 / 60），升序；按小时取时为整点",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "m",
+          "c"
+        ],
+        "type": "object"
+      },
+      "LaneSession": {
+        "additionalProperties": false,
+        "properties": {
+          "background": {
+            "type": "boolean"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "k": {
+            "type": "string"
+          },
+          "last_active_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "k",
+          "title",
+          "role",
+          "tool",
+          "project_id",
+          "project_name",
+          "cwd",
+          "background",
+          "last_active_at"
+        ],
+        "type": "object"
+      },
+      "LaneSpan": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "end": {
+            "description": "结束，Unix 毫秒；还没结束时为空",
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "tool 长命令（超过 20 秒）；wait 用 ks wait 待命",
+            "enum": [
+              "tool",
+              "wait"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "description": "长命令的动作简述",
+            "type": "string"
+          },
+          "ref": {
+            "description": "tool_use_id 或 KsWait 事件 id",
+            "type": "string"
+          },
+          "start": {
+            "description": "开始，Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "until": {
+            "description": "待命最长等到什么时候（没结束时最多画到这里）",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "kind",
+          "ref",
+          "label",
+          "start"
+        ],
+        "type": "object"
+      },
+      "LaneTok": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "cr": {
+            "description": "读缓存",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "cw": {
+            "description": "写缓存（两个档位合计）",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "cw1h": {
+            "description": "其中写进 1 小时档的",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "in": {
+            "description": "没命中缓存的输入",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "k": {
+            "type": "string"
+          },
+          "m": {
+            "description": "格子起点，Unix 分钟；按小时取时为整点",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "n": {
+            "description": "回复次数",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "out": {
+            "description": "输出",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "model",
+          "m",
+          "in",
+          "cw",
+          "cw1h",
+          "cr",
+          "out",
+          "n"
         ],
         "type": "object"
       },
@@ -3274,6 +4469,9 @@
           "release": {
             "$ref": "#/components/schemas/Release"
           },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
           "reviews": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -3402,6 +4600,18 @@
         ],
         "type": "object"
       },
+      "MessageOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
       "MorningDelivery": {
         "additionalProperties": false,
         "properties": {
@@ -3494,6 +4704,20 @@
           "by": {
             "description": "写总述的 Adv 会话",
             "type": "string"
+          },
+          "headline": {
+            "description": "一句话结论（建议 40 字以内，R-212）；老数据没有，网页取总述第一句",
+            "type": "string"
+          },
+          "look": {
+            "description": "要你先看的几条（建议 3 条以内，每条一句，R-212）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "text": {
             "type": "string"
@@ -3961,6 +5185,14 @@
           },
           "reject": {
             "type": "boolean"
+          },
+          "verdict": {
+            "description": "批准类决策：批准还是拒绝（R-239）",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -4682,6 +5914,18 @@
           "brief_by": {
             "type": "string"
           },
+          "brief_headline": {
+            "type": "string"
+          },
+          "brief_look": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "commit_on_accept": {
             "type": "boolean"
           },
@@ -4696,6 +5940,9 @@
             "type": "boolean"
           },
           "id": {
+            "type": "string"
+          },
+          "model_policy": {
             "type": "string"
           },
           "name": {
@@ -4728,6 +5975,7 @@
           "hidden",
           "agent_release",
           "commit_on_accept",
+          "model_policy",
           "created_at",
           "need_devs",
           "need_reason",
@@ -4753,6 +6001,15 @@
           },
           "hidden": {
             "type": "boolean"
+          },
+          "model_policy": {
+            "description": "子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先",
+            "enum": [
+              "economy",
+              "balanced",
+              "quality"
+            ],
+            "type": "string"
           },
           "name": {
             "minLength": 1,
@@ -5068,6 +6325,9 @@
           "release": {
             "$ref": "#/components/schemas/Release"
           },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
           "reviews": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -5334,6 +6594,9 @@
           "release": {
             "$ref": "#/components/schemas/Release"
           },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
           "reviews": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -5430,6 +6693,57 @@
         ],
         "type": "object"
       },
+      "ReviewBody": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "description": "表达块（R-97）：验证结果放一个 checklist，逐条 pass / fail / ask 加一句依据；也可以附 figure / compare 截图。不合法的块丢掉并在 block_warnings 里说明，意见照常保存",
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "details": {
+            "description": "怎么验的（跑了哪些测试、演示环境怎么起的），默认折叠",
+            "type": "string"
+          },
+          "files": {
+            "description": "附图 ID（先上传到 /api/agent/files）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "images": {
+            "description": "带标题与框的截图（R-183）：[{id: 附件 ID, title: 一句话标题, boxes: [{x, y, w, h, label, criterion}]}]，框用图片原始尺寸的比例坐标（0～1）",
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "session_key": {
+            "description": "提交意见的会话（身份必须是 reviewer）",
+            "type": "string"
+          },
+          "summary": {
+            "description": "审查意见正文（可用 Markdown）；给了 verdict / blocks 时可省略，由 hub 拼出纯文本",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "一句结论（40 字以内）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
+        ],
+        "type": "object"
+      },
       "ReviewInBody": {
         "additionalProperties": false,
         "properties": {
@@ -5509,6 +6823,264 @@
         ],
         "type": "object"
       },
+      "ReviewState": {
+        "additionalProperties": false,
+        "properties": {
+          "asked_at": {
+            "description": "交给评审的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "auto": {
+            "description": "交验收时纸鸢自动派给在线评审的（否则是手动交给评审）",
+            "type": "boolean"
+          },
+          "due_at": {
+            "description": "等到什么时候：过了照常弹给用户，标「评审未完成」",
+            "format": "date-time",
+            "type": "string"
+          },
+          "fail": {
+            "description": "done：不通过的条数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pass": {
+            "description": "done：验证清单通过的条数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "review_id": {
+            "description": "done：评审交的那条意见",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "在审的评审会话",
+            "type": "string"
+          },
+          "session_title": {
+            "description": "评审会话的标题",
+            "type": "string"
+          },
+          "state": {
+            "description": "reviewing 评审中（不进「要你处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见",
+            "enum": [
+              "reviewing",
+              "overdue",
+              "done"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "description": "done：验证清单总条数（没交清单为 0）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "verdict": {
+            "description": "done：评审的一句结论（没有时取意见开头）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "session_key",
+          "pass",
+          "fail",
+          "total"
+        ],
+        "type": "object"
+      },
+      "ReviewSubmitOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "type": "string"
+          },
+          "block_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "doc_link": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "feedback": {
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "from_decision": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "image_hints": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "next_actor": {
+            "type": "string"
+          },
+          "offered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "offered_to": {
+            "type": "string"
+          },
+          "pending_decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
+          "review_id": {
+            "type": "string"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "stage_seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage_status": {
+            "type": "string"
+          },
+          "stage_title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_changes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "id",
+          "code",
+          "title",
+          "detail",
+          "status",
+          "priority",
+          "kind",
+          "source",
+          "acceptance",
+          "doc_link",
+          "files",
+          "created_by",
+          "next_actor",
+          "pending_decisions",
+          "sessions",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "RoleOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -5521,6 +7093,10 @@
               "array",
               "null"
             ]
+          },
+          "handoff": {
+            "description": "接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾",
+            "type": "boolean"
           },
           "label": {
             "description": "身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空",
@@ -5547,7 +7123,8 @@
           "label",
           "name",
           "prompt",
-          "demoted"
+          "demoted",
+          "handoff"
         ],
         "type": "object"
       },
@@ -5632,9 +7209,6 @@
           "device_name": {
             "type": "string"
           },
-          "digest_ask": {
-            "type": "string"
-          },
           "digest_done": {
             "type": "string"
           },
@@ -5667,6 +7241,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "launcher": {
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
@@ -5687,6 +7264,12 @@
           "permission_mode": {
             "type": "string"
           },
+          "profile": {
+            "type": "string"
+          },
+          "profile_dir": {
+            "type": "string"
+          },
           "project_id": {
             "type": "string"
           },
@@ -5702,9 +7285,6 @@
               "null"
             ]
           },
-          "reply_ask": {
-            "type": "string"
-          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/RequirementRef"
@@ -5713,6 +7293,10 @@
               "array",
               "null"
             ]
+          },
+          "retired_at": {
+            "format": "date-time",
+            "type": "string"
           },
           "role": {
             "enum": [
@@ -5785,6 +7369,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "wait_kind": {
+            "enum": [
+              "",
+              "approval",
+              "question"
+            ],
+            "type": "string"
+          },
           "worktree": {
             "type": "boolean"
           }
@@ -5802,6 +7394,7 @@
           "dirty",
           "state",
           "state_detail",
+          "wait_kind",
           "last_prompt",
           "summary",
           "state_since",
@@ -5815,7 +7408,6 @@
           "activity",
           "title",
           "digest_done",
-          "digest_ask",
           "started_at",
           "last_active_at",
           "other_terminal",
@@ -5839,6 +7431,15 @@
           "events": {
             "items": {
               "$ref": "#/components/schemas/Event"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "handoffs": {
+            "items": {
+              "$ref": "#/components/schemas/Handoff"
             },
             "type": [
               "array",
@@ -5911,6 +7512,13 @@
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
+          "compact_tokens": {
+            "description": "建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万",
+            "format": "int64",
+            "maximum": 2000000,
+            "minimum": 0,
+            "type": "integer"
+          },
           "dev_request_minutes": {
             "description": "PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30",
             "format": "int64",
@@ -5933,6 +7541,13 @@
           },
           "summary_model": {
             "type": "string"
+          },
+          "upload_file_mb": {
+            "description": "其它文件大小上限（MB），0 或留空用默认 20",
+            "format": "int64",
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
           },
           "upload_image_mb": {
             "description": "图片大小上限（MB），0 或留空用默认 10",
@@ -5964,6 +7579,11 @@
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
+          "compact_tokens": {
+            "description": "建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）",
+            "format": "int64",
+            "type": "integer"
+          },
           "dev_request_minutes": {
             "description": "PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝",
             "format": "int64",
@@ -5993,6 +7613,11 @@
           "summary_model": {
             "type": "string"
           },
+          "upload_file_mb": {
+            "description": "其它文件（图片、录屏以外）大小上限（MB）",
+            "format": "int64",
+            "type": "integer"
+          },
           "upload_image_mb": {
             "description": "图片大小上限（MB）",
             "format": "int64",
@@ -6014,7 +7639,93 @@
           "notify_events",
           "upload_image_mb",
           "upload_video_mb",
-          "dev_request_minutes"
+          "upload_file_mb",
+          "dev_request_minutes",
+          "compact_tokens"
+        ],
+        "type": "object"
+      },
+      "ShellCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "cmd": {
+            "type": "string"
+          },
+          "end": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "exit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "hot": {
+            "enum": [
+              "cpu",
+              "mem"
+            ],
+            "type": "string"
+          },
+          "hot_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "build",
+              "deploy",
+              "service",
+              "poll",
+              "other"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "last": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "rss_kb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "start": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "ok",
+              "failed",
+              "stopped",
+              "ended",
+              "lost"
+            ],
+            "type": "string"
+          },
+          "tid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "k",
+          "ref",
+          "kind",
+          "label",
+          "cmd",
+          "start",
+          "status"
         ],
         "type": "object"
       },
@@ -6194,6 +7905,40 @@
           "stages",
           "created_at",
           "updated_at"
+        ],
+        "type": "object"
+      },
+      "Start-awayRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expect_minutes": {
+            "description": "预估离开多久（分钟）：30 / 120 / 480，0 = 不确定。只用来标「已超过预估」",
+            "enum": [
+              30,
+              120,
+              480,
+              0
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "hold_push": {
+            "description": "这次离开期间连推送类也先攒着（拿不准的仍推）",
+            "type": "boolean"
+          },
+          "scope": {
+            "description": "主助理可以替你答到哪一档：none 不代答（只写建议）/ low 低风险 / medium 中风险",
+            "enum": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "expect_minutes",
+          "scope"
         ],
         "type": "object"
       },
@@ -6443,14 +8188,22 @@
       "TellOutBody": {
         "additionalProperties": false,
         "properties": {
+          "code": {
+            "description": "这条团队消息的编号（D-x）",
+            "type": "string"
+          },
           "delivered": {
             "type": "boolean"
           },
           "message": {
             "type": "string"
           },
+          "role": {
+            "description": "收到的会话的身份：pm / aide / reviewer；回复时是提问方的身份（可能为空）",
+            "type": "string"
+          },
           "to": {
-            "description": "收到的 PM 会话键",
+            "description": "收到的会话键",
             "type": "string"
           }
         },
@@ -6483,6 +8236,105 @@
         },
         "required": [
           "sent"
+        ],
+        "type": "object"
+      },
+      "TokenPrice": {
+        "additionalProperties": false,
+        "properties": {
+          "cr": {
+            "description": "读缓存",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "cw": {
+            "description": "写缓存",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "in": {
+            "description": "没命中缓存的输入",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "out": {
+            "description": "输出",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "type": "object"
+      },
+      "TokenPrices": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "description": "金额前面写的货币符号，如 $ 或 ¥；空为 $",
+            "maxLength": 8,
+            "type": "string"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPrice"
+            },
+            "maxItems": 200,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "currency",
+          "prices"
+        ],
+        "type": "object"
+      },
+      "TokenPricesOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "description": "金额前面写的货币符号，如 $ 或 ¥；空为 $",
+            "maxLength": 8,
+            "type": "string"
+          },
+          "models": {
+            "description": "近 30 天有用量的模型",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPrice"
+            },
+            "maxItems": 200,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "models",
+          "currency",
+          "prices"
         ],
         "type": "object"
       },
@@ -6562,6 +8414,10 @@
             "description": "名下等用户处理的事项件数",
             "format": "int64",
             "type": "integer"
+          },
+          "retired": {
+            "description": "会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6706,6 +8562,90 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/away": {
+      "get": {
+        "operationId": "agent-get-away",
+        "parameters": [
+          {
+            "description": "离开编号（A-x）；不填为最近一次",
+            "explode": false,
+            "in": "query",
+            "name": "ref",
+            "schema": {
+              "description": "离开编号（A-x）；不填为最近一次",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAwayOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "查看用户是否暂时离开，以及离开时段报告（R-210）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/away/escalate": {
+      "post": {
+        "operationId": "agent-escalate-away",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-escalate-awayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MorningSetOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "主助理把拿不准、要用户尽快看的决策推给用户（R-210）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/brief": {
       "post": {
         "operationId": "agent-set-brief",
@@ -6724,7 +8664,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OkBodyBody"
+                  "$ref": "#/components/schemas/BriefOutBody"
                 }
               }
             },
@@ -7100,6 +9040,47 @@
           }
         },
         "summary": "查看本项目当前的参谋授权窗口（R-163）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/handoff": {
+      "post": {
+        "operationId": "agent-handoff-write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoffWriteInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "写交接（R-224）：存进 Hub、显示在会话时间线；新会话声明同一身份时自动注入",
         "tags": [
           "agent"
         ]
@@ -7688,7 +9669,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Agent-submit-reviewRequest"
+                "$ref": "#/components/schemas/ReviewBody"
               }
             }
           },
@@ -7699,7 +9680,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Requirement"
+                  "$ref": "#/components/schemas/ReviewSubmitOutBody"
                 }
               }
             },
@@ -7716,7 +9697,7 @@
             "description": "Error"
           }
         },
-        "summary": "Rev 交审查意见（R-88）：不改需求状态，不拦截验收",
+        "summary": "Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；交给评审的待验收需求这时进用户的验收卡，有不通过的通知主调度",
         "tags": [
           "agent"
         ]
@@ -7908,6 +9889,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/sessions/{key}/state-note": {
+      "get": {
+        "operationId": "agent-state-note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "SessionStart 的来源：compact（压缩后，补关键状态和子任务模型策略）、resume（恢复，只补子任务模型策略，R-228）；默认 compact",
+            "explode": false,
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "description": "SessionStart 的来源：compact（压缩后，补关键状态和子任务模型策略）、resume（恢复，只补子任务模型策略，R-228）；默认 compact",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话在纸鸢里的关键状态（关联的需求、待答决策、在跑的子任务），压缩上下文后随身份提示词补注入（R-224）",
         "tags": [
           "agent"
         ]
@@ -8172,6 +10204,7 @@
     },
     "/api/agent/team/tell": {
       "post": {
+        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。",
         "operationId": "agent-tell-pm",
         "requestBody": {
           "content": {
@@ -8205,7 +10238,7 @@
             "description": "Error"
           }
         },
-        "summary": "给本项目的 PM 留言（只送给 PM，不进用户收件箱，R-135）",
+        "summary": "给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）",
         "tags": [
           "agent"
         ]
@@ -8419,6 +10452,150 @@
         },
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/away": {
+      "get": {
+        "operationId": "get-away",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "暂时离开的状态：离开多久、主助理处理几件、推送几条（R-210）",
+        "tags": [
+          "away"
+        ]
+      },
+      "post": {
+        "operationId": "start-away",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Start-awayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "暂时离开：起点就是现在；同时给各项目的主助理开授权窗口（R-210）",
+        "tags": [
+          "away"
+        ]
+      }
+    },
+    "/api/away/end": {
+      "post": {
+        "operationId": "end-away",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "结束离开：撤销这次离开开的授权窗口，返回最终时段报告（R-210）",
+        "tags": [
+          "away"
+        ]
+      }
+    },
+    "/api/away/report": {
+      "get": {
+        "operationId": "get-away-report",
+        "parameters": [
+          {
+            "description": "离开编号（A-x）；不填为最近一次",
+            "explode": false,
+            "in": "query",
+            "name": "ref",
+            "schema": {
+              "description": "离开编号（A-x）；不填为最近一次",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "离开时段报告：替你定了什么、放行了什么、交付了什么、还在等你的、要你先看的、你在各设备上处理了什么（R-210）",
+        "tags": [
+          "away"
         ]
       }
     },
@@ -9036,6 +11213,77 @@
         "summary": "撤销参谋授权窗口（R-163）",
         "tags": [
           "grants"
+        ]
+      }
+    },
+    "/api/lanes": {
+      "get": {
+        "operationId": "get-lanes",
+        "parameters": [
+          {
+            "description": "范围起点，Unix 毫秒；不填为一小时前。最早 30 天前",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "范围起点，Unix 毫秒；不填为一小时前。最早 30 天前",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "范围终点，Unix 毫秒；不填为现在",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "范围终点，Unix 毫秒；不填为现在",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "格子大小（分钟）：1 每分钟（近 1 小时 / 6 小时 / 1 天档），60 每小时（近 1 周档）",
+            "explode": false,
+            "in": "query",
+            "name": "step",
+            "schema": {
+              "default": 1,
+              "description": "格子大小（分钟）：1 每分钟（近 1 小时 / 6 小时 / 1 天档），60 每小时（近 1 周档）",
+              "enum": [
+                1,
+                60
+              ],
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaneData"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）；后台命令（R-208）",
+        "tags": [
+          "sessions"
         ]
       }
     },
@@ -11091,6 +13339,47 @@
         ]
       }
     },
+    "/api/sessions/{key}/handoff": {
+      "post": {
+        "operationId": "request-handoff",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "请会话交接（R-224）：通知它用 handoff_write 写交接，返回新会话接任要运行的命令",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/sessions/{key}/reply": {
       "post": {
         "operationId": "reply-session",
@@ -11136,7 +13425,7 @@
             "description": "Error"
           }
         },
-        "summary": "回复在等你回复的会话（送达方式同留言）",
+        "summary": "给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒）",
         "tags": [
           "sessions"
         ]
@@ -11320,6 +13609,76 @@
         "summary": "需求状态变更历史：按需求 / 项目 / 时间段查（R-153）",
         "tags": [
           "requirements"
+        ]
+      }
+    },
+    "/api/token-prices": {
+      "get": {
+        "operationId": "get-token-prices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPricesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "各模型每百万 token 的价格（选填，R-206）与近 30 天用过的模型",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "put-token-prices",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenPrices"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPricesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "保存各模型的价格；四项都填了的模型才显示金额（R-206）",
+        "tags": [
+          "settings"
         ]
       }
     },

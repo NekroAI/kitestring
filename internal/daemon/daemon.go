@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/NekroAI/kitestring/internal/profile"
 	"io"
 	"log/slog"
 	"net"
@@ -65,11 +66,15 @@ type Daemon struct {
 	orph          orphanState            // 孤儿 / 已脱离的后台进程（R-209）
 	direct        chan protocol.Envelope // 不落盘、连着 Hub 时直接发的消息（孤儿列表、停止结果）
 	orphanKick    chan struct{}
+	usage         *usageScanner // token 用量（R-206）
+	shells        *shellTracker // 后台命令（R-208）
 }
 
 type toolUse struct {
 	session string
+	agent   string // 子任务的 agent_id；会话主线程为空（R-191）
 	at      time.Time
+	tell    bool // 是一次 ks team tell 命令（按 ppid 认会话时据此认出发消息的子任务）
 }
 
 // sessionInfo 缓存每个会话不常变化的信息。
@@ -78,6 +83,8 @@ type sessionInfo struct {
 	model      string
 	transcript string // 对话记录文件；ks wait 开始时从这里读最新一段回复（R-117）
 	cwd        string // 最近一次事件的工作目录（记后台进程属于哪个项目，R-209）
+	profile    profile.Info
+	profileSet bool
 }
 
 // New 创建 daemon。
@@ -95,6 +102,15 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	}
 	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
 	d.toolCond = sync.NewCond(&d.mu)
+	if d.usage, err = openUsage(q.db); err != nil {
+		q.close()
+		return nil, fmt.Errorf("打开用量记录失败：%w", err)
+	}
+	if d.shells, err = openShells(q.db); err != nil {
+		q.close()
+		return nil, fmt.Errorf("打开后台命令记录失败：%w", err)
+	}
+	d.usage.onLine = d.shells.transcriptLine
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(hub)
@@ -135,6 +151,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.log.Info("daemon 已启动", "socket", sock, "hub", d.cfg.HubURL)
 	go d.watchInstances(ctx)
 	go d.watchTasks(ctx)
+	go d.watchUsage(ctx)
 
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -187,6 +204,8 @@ func (d *Daemon) session(ctx context.Context) error {
 	d.setConnected(true)
 	d.log.Info("已连接 Hub")
 	d.resendOrphans()
+	d.usage.reset()
+	d.shells.reset()
 
 	readErr := make(chan error, 1)
 	acked := make(chan struct{}, 1)
@@ -255,6 +274,10 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		if err := d.q.ack(e.Ack); err != nil {
 			d.log.Warn("清理已确认消息失败", "err", err)
 		}
+	case protocol.MsgUsageAck:
+		d.usage.acked(e.Ack)
+	case protocol.MsgShellsAck:
+		d.shells.acked(e.Ack)
 	case protocol.MsgDecisions:
 		for _, dec := range e.Decisions {
 			for _, f := range dec.Files {
@@ -414,7 +437,12 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		}
 	}
 	if name == "PreToolUse" && ev.ToolUseID != "" && strings.HasPrefix(ev.ToolName, "mcp__") {
-		d.rememberToolUse(ev.ToolUseID, key)
+		d.rememberToolUse(ev.ToolUseID, toolUse{session: key, agent: ev.AgentID})
+	}
+	if name == "PreToolUse" && ev.ToolUseID != "" && isShellTool(ev.ToolName) {
+		if in, ok := p["tool_input"].(map[string]any); ok && strings.Contains(str(in, "command"), "team tell") {
+			d.rememberToolUse(ev.ToolUseID, toolUse{session: key, agent: ev.AgentID, tell: true})
+		}
 	}
 	if name == "PreToolUse" || name == "PermissionRequest" {
 		if in, ok := p["tool_input"].(map[string]any); ok {
@@ -457,10 +485,18 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if tp := str(p, "transcript_path"); tp != "" {
 		info.transcript = tp
 	}
+	transcript := info.transcript
 	if ev.Cwd != "" {
 		info.cwd = ev.Cwd
 	}
 	ev.Client = info.client
+	if req.Tool == protocol.ToolClaude {
+		if !info.profileSet {
+			home, _ := os.UserHomeDir()
+			info.profile, info.profileSet = profile.Resolve(home, req.Env["CLAUDE_CONFIG_DIR"]), true
+		}
+		ev.Profile, ev.ProfileDir, ev.Launcher = info.profile.Name, info.profile.Dir, info.profile.Launcher
+	}
 	if ev.Model == "" {
 		ev.Model = info.model
 	}
@@ -475,6 +511,10 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)
 	}
 	d.noteTaskEvent(key, p, &ev)
+	d.shells.onHook(key, p, &ev)
+	if d.usage != nil {
+		d.usage.track(key, transcript)
+	}
 	return ev, true
 }
 
@@ -662,7 +702,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		}
 	}
 	if len(reviewTasks) > 0 {
-		b.WriteString("[Kitestring] 用户请你审查以下需求（审查任务）：只做审查分析，不要改代码、不要改需求状态、不要 session_link_req；用 req_get 读需求和证据，审查完用 review_submit（命令行 ks req review）把审查意见交到需求上：\n")
+		b.WriteString("[Kitestring] 以下需求交给你审查和验证（审查任务，用户手动交的或交验收时纸鸢自动派的）：不要改代码、不要改需求状态、不要 session_link_req；用 req_get 读需求和证据，做完用 review_submit（命令行 ks req review）把结论交到需求上：\n")
 		for _, dec := range reviewTasks {
 			d.writeItem(&b, dec)
 		}
@@ -673,9 +713,24 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			d.writeItem(&b, dec)
 		}
 	}
-	if len(tells) > 0 {
+	// 团队消息分两档（R-227）：要动手的和只告知的分开写，只告知的是攒着没叫醒你、这次一起附上的
+	var tellAct, tellFYI []protocol.Decision
+	for _, dec := range tells {
+		if dec.Quiet {
+			tellFYI = append(tellFYI, dec)
+		} else {
+			tellAct = append(tellAct, dec)
+		}
+	}
+	if len(tellAct) > 0 {
 		b.WriteString("[Kitestring] 团队消息（来自本项目的其他会话，不是用户发的；按内容跟进，不必回复用户）：\n")
-		for _, dec := range tells {
+		for _, dec := range tellAct {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(tellFYI) > 0 {
+		b.WriteString("[Kitestring] 团队消息 · 只告知（攒着没有叫醒你，这次一并附上；不必动手，需要时自己看）：\n")
+		for _, dec := range tellFYI {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -714,11 +769,44 @@ func (d *Daemon) rolePrompt(ev protocol.Event) string {
 	if ev.Name != "SessionStart" || (ev.Source != "resume" && ev.Source != "compact") {
 		return ""
 	}
+	key := protocol.SessionKey(ev.Tool, ev.SessionID)
 	d.mu.Lock()
-	role := d.roles[protocol.SessionKey(ev.Tool, ev.SessionID)]
+	role := d.roles[key]
 	body := d.customPrompts[role]
 	d.mu.Unlock()
-	return roles.Compose(role, body)
+	p := roles.Compose(role, body)
+	if p != "" {
+		// 压缩后另附会话在纸鸢里的关键状态（R-224）：关联的需求、待答决策、在跑的子任务，补摘要漏掉的；
+		// 恢复和压缩都附项目的子任务模型策略（R-228），改了策略后新开的、恢复的会话拿到的是最新的
+		p += d.stateNote(key, ev.Source)
+	}
+	return p
+}
+
+// stateNote 向 Hub 取会话的关键状态（R-224）；取不到时返回空，不耽误 hook。
+func (d *Daemon) stateNote(key, source string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/sessions/"+url.PathEscape(key)+"/state-note?source="+url.QueryEscape(source), nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+d.cfg.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var out struct {
+		Message string `json:"message"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out) != nil || out.Message == "" {
+		return ""
+	}
+	return "\n" + out.Message
 }
 
 // writeItem 写一条答复或修改意见；附件给出本地路径，agent 可直接读取。
@@ -744,6 +832,9 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 				fmt.Fprintf(b, "  %s\n", line)
 			}
 		}
+		if dec.Replyable {
+			fmt.Fprintf(b, "  要回复就用 ks team tell --reply %s <回复>（或 pm_notify 的 reply_to），会自动送回发消息的一方。\n", dec.Code)
+		}
 	case "assign", "review_task":
 		fmt.Fprintf(b, "- %s「%s」\n", dec.ReqCode, oneLine(dec.ReqTitle))
 		for _, line := range strings.Split(dec.Answer, "\n") {
@@ -763,30 +854,45 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 	}
 	for _, f := range dec.Files {
 		label := "附图"
-		if strings.HasPrefix(f.Mime, "video/") {
+		switch {
+		case protocol.IsVideo(f.Mime):
 			label = "录屏"
+		case !protocol.IsImage(f.Mime):
+			label = "文件"
 		}
-		p := d.attachmentPath(f)
-		if _, err := os.Stat(p); err != nil && label == "附图" {
+		p := AttachmentPath(f)
+		if _, err := os.Stat(p); err != nil && label != "录屏" {
 			d.fetchAttachment(f) // 送达前仍未下载完成：同步再试一次（录屏太大，不在 hook 里等）
 		}
 		if _, err := os.Stat(p); err == nil {
-			fmt.Fprintf(b, "  %s：%s\n", label, p)
+			if label == "文件" {
+				fmt.Fprintf(b, "  %s「%s」：%s\n", label, f.Name, p)
+			} else {
+				fmt.Fprintf(b, "  %s：%s\n", label, p)
+			}
 		} else {
 			fmt.Fprintf(b, "  %s（未能下载，可在 Kitestring 网页查看）：%s\n", label, f.Name)
 		}
 	}
 }
 
-var mimeExt = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm"}
-
-func (d *Daemon) attachmentPath(f protocol.File) string {
-	return filepath.Join(Home(), "attachments", f.ID+mimeExt[f.Mime])
+// AttachmentPath 是附件下载到本机后的路径：图片、录屏是 attachments/<ID>.<扩展名>（老路径不变）；
+// 其它文件保留原文件名，放在 attachments/<ID>/<文件名>（R-221）。
+func AttachmentPath(f protocol.File) string {
+	dir := filepath.Join(Home(), "attachments")
+	if ext := protocol.MediaExt(f.Mime); ext != "" || f.Name == "" {
+		return filepath.Join(dir, f.ID+ext)
+	}
+	name := strings.NewReplacer("/", "_", "\\", "_", "\x00", "_").Replace(filepath.Base(f.Name))
+	if name == "." || name == ".." || name == "" {
+		name = "file"
+	}
+	return filepath.Join(dir, f.ID, name)
 }
 
 // fetchAttachment 把附件（图片或录屏）下载到本机（已存在则跳过）。
 func (d *Daemon) fetchAttachment(f protocol.File) {
-	p := d.attachmentPath(f)
+	p := AttachmentPath(f)
 	if _, err := os.Stat(p); err == nil {
 		return
 	}
@@ -814,7 +920,7 @@ func (d *Daemon) fetchAttachment(f protocol.File) {
 	if err != nil {
 		return
 	}
-	_, err = io.Copy(tmp, io.LimitReader(resp.Body, 52<<20))
+	_, err = io.Copy(tmp, io.LimitReader(resp.Body, 4<<30)) // 大小由 Hub 的上传上限管
 	tmp.Close()
 	if err != nil {
 		os.Remove(tmp.Name())
@@ -848,8 +954,8 @@ func backgroundTasks(p map[string]any) (int, string) {
 	return n, summary.Truncate(strings.Join(strings.Fields(brief), " "), 80)
 }
 
-// rememberToolUse 记录 MCP 工具调用来自哪个会话（PreToolUse 先于 MCP 请求到达）。
-func (d *Daemon) rememberToolUse(id, session string) {
+// rememberToolUse 记录 MCP 工具调用（和 ks team tell 命令）来自哪个会话、哪个子任务（PreToolUse 先于 MCP 请求 / 命令运行到达）。
+func (d *Daemon) rememberToolUse(id string, u toolUse) {
 	d.mu.Lock()
 	now := time.Now()
 	for k, v := range d.toolUses {
@@ -857,13 +963,14 @@ func (d *Daemon) rememberToolUse(id, session string) {
 			delete(d.toolUses, k)
 		}
 	}
-	d.toolUses[id] = toolUse{session: session, at: now}
+	u.at = now
+	d.toolUses[id] = u
 	d.mu.Unlock()
 	d.toolCond.Broadcast()
 }
 
-// lookupToolUse 等待至多 wait，返回 tool_use_id 对应的会话。
-func (d *Daemon) lookupToolUse(id string, wait time.Duration) string {
+// lookupToolUse 等待至多 wait，返回 tool_use_id 对应的调用。
+func (d *Daemon) lookupToolUse(id string, wait time.Duration) toolUse {
 	deadline := time.Now().Add(wait)
 	stop := time.AfterFunc(wait, d.toolCond.Broadcast)
 	defer stop.Stop()
@@ -871,10 +978,10 @@ func (d *Daemon) lookupToolUse(id string, wait time.Duration) string {
 	defer d.mu.Unlock()
 	for {
 		if v, ok := d.toolUses[id]; ok {
-			return v.session
+			return v
 		}
 		if !time.Now().Before(deadline) {
-			return ""
+			return toolUse{}
 		}
 		d.toolCond.Wait()
 	}
@@ -882,21 +989,47 @@ func (d *Daemon) lookupToolUse(id string, wait time.Duration) string {
 
 // handleSessionLookup：ks mcp 用本次调用的 tool_use_id 查询会话（Claude Code 恢复会话后，MCP 进程环境里的会话 ID 会过期）。
 // 也可以用 ppid（ks 命令的父进程）查：沿父进程找到 Agent 进程，再按它最近一次 hook 对应的会话（ks role 用）。
+//
+// 两种方式都顺带返回发起调用的子任务 agent_id（R-191，会话主线程为空）：MCP 按 tool_use_id 对上；
+// 按 ppid 查时带 tell=1（ks team tell 用），取这个会话最近一条还没认领的 ks team tell 命令，认领后删掉。
 func (d *Daemon) handleSessionLookup(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	var key string
+	var key, agent string
 	if ppid, _ := strconv.Atoi(q.Get("ppid")); ppid > 0 {
 		if inst := d.agentInstance(ppid); inst != "" {
 			d.mu.Lock()
 			key = d.instances[inst]
+			if q.Get("tell") != "" && key != "" {
+				agent = d.claimTell(key)
+			}
 			d.mu.Unlock()
 		}
 	} else {
-		key = d.lookupToolUse(q.Get("tool_use_id"), time.Second)
+		u := d.lookupToolUse(q.Get("tool_use_id"), time.Second)
+		key, agent = u.session, u.agent
 		d.noteTools(key, r.Header.Get(versionHeader)) // Claude 的 MCP 每次调用都先来这里查会话
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"session_key": key})
+	out := map[string]string{"session_key": key}
+	if agent != "" {
+		out["agent_id"] = agent
+	}
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// claimTell 取会话 key 最近两分钟内最新一条 ks team tell 命令的子任务 agent_id 并删掉这条记录；调用方持有 d.mu。
+func (d *Daemon) claimTell(key string) string {
+	var id string
+	var best toolUse
+	for k, v := range d.toolUses {
+		if v.tell && v.session == key && time.Since(v.at) < 2*time.Minute && v.at.After(best.at) {
+			id, best = k, v
+		}
+	}
+	if id != "" {
+		delete(d.toolUses, id)
+	}
+	return best.agent
 }
 
 var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
@@ -913,7 +1046,7 @@ func toolBrief(tool string, in map[string]any) string {
 	switch tool {
 	case "Bash", "shell", "exec_command", "local_shell":
 		if c := str(in, "command"); c != "" {
-			return clean(c, 80)
+			return clean(c, 200)
 		}
 		if arr, ok := in["command"].([]any); ok {
 			parts := make([]string, 0, len(arr))
@@ -922,7 +1055,7 @@ func toolBrief(tool string, in map[string]any) string {
 					parts = append(parts, s)
 				}
 			}
-			return clean(strings.Join(parts, " "), 80)
+			return clean(strings.Join(parts, " "), 200)
 		}
 	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit":
 		if f := str(in, "file_path"); f != "" {

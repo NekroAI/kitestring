@@ -263,6 +263,7 @@ type ChipProps = {
   onOpen?: (code: string) => void
   className?: string
   label?: 'code' | 'title' // title：图标 + 短标题 + 缩小变淡的编号（引用别的对象时用，R-151）；code：图标 + 编号
+  flow?: boolean // 随句子一起折行（R-225）：窄栏里印记不再整块挤到下一行、把一句话切成几段
 }
 
 // RefChip：一个对象，三种尺寸，同一套零件。
@@ -274,7 +275,7 @@ export function shortTitle(title: string) {
   return s.length > 12 ? s.slice(0, 12) + '…' : s
 }
 
-export function RefChip({ code, size = 'inline', status, title, suffix, hint, turn, showStatus, link = true, onOpen, className, label = 'code' }: ChipProps) {
+export function RefChip({ code, size = 'inline', status, title, suffix, hint, turn, showStatus, link = true, onOpen, className, label = 'code', flow }: ChipProps) {
   const info = useRefInfo(code)
   const open = useOpenRef()
   const on = useLit(code)
@@ -308,8 +309,9 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
       }}
       onBlur={() => setLit('')}
       className={cx(
-        'ref-chip inline-flex max-w-full shrink-0 items-center gap-1 rounded-md border border-line bg-surface-2 whitespace-nowrap text-fg-2 transition-[background,border-color] outline-none',
-        byTitle ? 'ref-title py-px pr-1.5 pl-1 align-[-0.3em] text-[0.93em] leading-[1.35]' : 'py-0 pr-1.5 pl-1 align-[-3px] font-mono text-[11px] leading-4 font-semibold',
+        'ref-chip rounded-md border border-line bg-surface-2 text-fg-2 transition-[background,border-color] outline-none',
+        flow ? 'ref-flow' : 'inline-flex max-w-full shrink-0 items-center gap-1 whitespace-nowrap',
+        byTitle ? cx('ref-title py-px pr-1.5 pl-1 text-[0.93em] leading-[1.35]', !flow && 'align-[-0.3em]') : cx('py-0 pr-1.5 pl-1 font-mono text-[11px] leading-4 font-semibold', !flow && 'align-[-3px]'),
         link && 'cursor-pointer hover:border-accent hover:bg-[var(--lit)] focus-visible:border-accent focus-visible:bg-[var(--lit)]',
         on && 'lit',
         size === 'inline' && className,
@@ -318,8 +320,9 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
       <RefGlyph code={code} status={st} />
       {byTitle ? (
         <>
-          <span className="min-w-0 truncate font-medium text-fg">{shortTitle(name)}</span>
-          <span className="shrink-0 font-mono text-[0.8em] text-fg-3">{code}</span>
+          <span className={cx('font-medium text-fg', !flow && 'min-w-0 truncate')}>{shortTitle(name)}</span>
+          {flow && ' '}
+          <span className="shrink-0 font-mono text-[0.8em] whitespace-nowrap text-fg-3">{code}</span>
         </>
       ) : (
         code
@@ -371,15 +374,44 @@ export const refPattern = /(?<![A-Za-z0-9_-])([RPD]-\d+)(?![A-Za-z0-9_-])/g
 
 // RefText：文本里认出的一个编号。索引里有这个对象才画成印记，否则原样输出（不误伤）。
 // 文本里的编号都是在引用别的对象，默认显示短标题（R-151）。
-export function RefText({ code, label = 'title' }: { code: string; label?: 'code' | 'title' }) {
+export function RefText({ code, label = 'title', flow }: { code: string; label?: 'code' | 'title'; flow?: boolean }) {
   const info = useRefInfo(code)
-  return info ? <RefChip code={code} className="mx-0.5" label={label} /> : <>{code}</>
+  return info ? <RefChip code={code} className="mx-0.5" label={label} flow={flow} /> : <>{code}</>
 }
 
 // Linkify：把一段纯文本里的 R-/P-/D- 编号换成印记。
-export function Linkify({ text, label }: { text: string; label?: 'code' | 'title' }) {
+// flow：印记随句子一起折行（窄栏里多行截断的句子用，R-225）。
+export function Linkify({ text, label, flow }: { text: string; label?: 'code' | 'title'; flow?: boolean }) {
   if (!text) return null
   const parts = text.split(refPattern)
   if (parts.length === 1) return <>{text}</>
-  return <>{parts.map((p, i) => (i % 2 ? <RefText key={i} code={p} label={label} /> : p))}</>
+  return <>{parts.map((p, i) => (i % 2 ? <RefText key={i} code={p} label={label} flow={flow} /> : p))}</>
+}
+
+// RefLine：一句动态。窄栏放不下时先截句尾（阶段名、留言），对象的印记收窄标题但不被整个吞掉（R-231：
+// 以前整句一起截断，印记放不下时整个对象变成一个省略号，只剩「你通过了 …」）。
+export function RefLine({ text, label }: { text: string; label?: 'code' | 'title' }) {
+  const parts = text.split(refPattern)
+  const last = parts.length - 1
+  return (
+    <span className="flex min-w-0 items-baseline gap-x-1 overflow-hidden whitespace-nowrap">
+      {parts.map((p, i) =>
+        i % 2 ? (
+          <span key={i} className={label === 'code' ? 'flex shrink-0' : 'flex min-w-0 shrink [&>.ref-chip]:min-w-0 [&>.ref-chip]:shrink'}>
+            <RefText code={p} label={label} />
+          </span>
+        ) : i === last && p.includes('：') ? (
+          // 句尾「阶段 2：标题」「：留言内容」——冒号前的（阶段几）一定看全，冒号后的才截
+          <span key={i} className="flex shrink-[3]">
+            {p.slice(0, p.indexOf('：')).trim() && <span className="shrink-0">{p.slice(0, p.indexOf('：')).trim()}</span>}
+            <span className="min-w-[2em] truncate">{p.slice(p.indexOf('：')).trim()}</span>
+          </span>
+        ) : p.trim() ? (
+          <span key={i} className="shrink-0">
+            {p.trim()}
+          </span>
+        ) : null,
+      )}
+    </span>
+  )
 }

@@ -326,3 +326,181 @@ CREATE TABLE IF NOT EXISTS commits (
 	created_at   TEXT NOT NULL,
 	PRIMARY KEY (project_id, sha)
 );
+
+-- 工作台泳道时间线（R-205）：每个会话、每个子任务每分钟的工具调用次数（PreToolUse）。
+-- agent_id 为空是主会话那条。新事件只把它所在那一分钟加一，算过的分钟不再重算（daemon 断线重放的迟到事件补进它真实的那一分钟）。
+-- minute 是 Unix 分钟（秒 / 60）。保留 30 天；lane_hours 同时按小时累计（近 1 周档直接读它），30 天前的只剩小时级。
+-- token 用量（R-206）按模型分行，放在旁表 lane_tokens / lane_token_hours。
+CREATE TABLE IF NOT EXISTS lane_minutes (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL,
+	calls       INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_minutes_minute ON lane_minutes(minute);
+CREATE TABLE IF NOT EXISTS lane_hours (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL, -- 整点的 Unix 分钟
+	calls       INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_hours_minute ON lane_hours(minute);
+
+-- 时间线上的时段（R-205）：kind = tool 长命令（工具开始到结束超过 20 秒），wait 用 ks wait 待命。
+-- ref 是 tool_use_id 或 KsWait 事件的 id；end_ms 为空表示还没结束（待命最长画到 until_ms）。时间都是 Unix 毫秒。保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_spans (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	kind        TEXT NOT NULL,
+	ref         TEXT NOT NULL,
+	label       TEXT NOT NULL DEFAULT '',
+	start_ms    INTEGER NOT NULL,
+	end_ms      INTEGER,
+	until_ms    INTEGER,
+	PRIMARY KEY (session_key, kind, ref)
+);
+CREATE INDEX IF NOT EXISTS lane_spans_start ON lane_spans(start_ms);
+
+-- 子任务（R-205）：每个子代理一行，结束后也留着（时间线上留到滑出窗口），保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_agents (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL,
+	label       TEXT NOT NULL DEFAULT '',
+	agent_type  TEXT NOT NULL DEFAULT '',
+	started_ms  INTEGER NOT NULL,
+	ended_ms    INTEGER,
+	PRIMARY KEY (session_key, agent_id)
+);
+
+-- token 用量（R-206）：各设备 daemon 从对话记录读出、按分钟汇总上传的数字（不含对话内容），每个会话 / 子任务、每个模型、每分钟一行。
+-- inp 没命中缓存的输入，cw 写缓存（cw1h 是其中 1 小时档的，其余 5 分钟档），cr 读缓存，out 输出，n 回复次数。新算 = inp + cw + out；命中率 = cr / (cr + inp + cw)。
+-- daemon 发的是累计值（绝对值），这里直接覆盖，重发不重复计；lane_token_hours 由同一小时的分钟重新求和。保留与压缩和 lane_minutes 一样。
+CREATE TABLE IF NOT EXISTS lane_tokens (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	model       TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL,
+	inp         INTEGER NOT NULL DEFAULT 0,
+	cw          INTEGER NOT NULL DEFAULT 0,
+	cw1h        INTEGER NOT NULL DEFAULT 0,
+	cr          INTEGER NOT NULL DEFAULT 0,
+	out         INTEGER NOT NULL DEFAULT 0,
+	n           INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute, model)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_tokens_minute ON lane_tokens(minute);
+CREATE TABLE IF NOT EXISTS lane_token_hours (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	model       TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL, -- 整点的 Unix 分钟
+	inp         INTEGER NOT NULL DEFAULT 0,
+	cw          INTEGER NOT NULL DEFAULT 0,
+	cw1h        INTEGER NOT NULL DEFAULT 0,
+	cr          INTEGER NOT NULL DEFAULT 0,
+	out         INTEGER NOT NULL DEFAULT 0,
+	n           INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute, model)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_token_hours_minute ON lane_token_hours(minute);
+
+-- 冷启动（R-206）：单次回复写缓存超过 1.5 万 token。cause：idle 闲置 / compact 上下文压缩 / model 换模型 / start 第一次回复 / other。保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_colds (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	at_ms       INTEGER NOT NULL,
+	model       TEXT NOT NULL DEFAULT '',
+	tokens      INTEGER NOT NULL,
+	cause       TEXT NOT NULL,
+	idle_min    INTEGER NOT NULL DEFAULT 0,
+	prev_model  TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (session_key, agent_id, at_ms)
+);
+CREATE INDEX IF NOT EXISTS lane_colds_at ON lane_colds(at_ms);
+
+-- 后台命令（R-208，shell 泳道）：各设备 daemon 记下的 run_in_background 命令（Codex 是会话下的后台 shell），每条一行，daemon 有变化时整条覆盖。
+-- ref 是 tool_use_id（Codex 是“sh-进程号@启动时间”），tid 是对应 R-162 后台任务的 ID；kind：build 构建 / 测试、deploy 部署、service 服务、poll 轮询、other。
+-- status：running / ok / failed / stopped / ended（已结束，退出码未知）/ lost（结束时间也不知道）。last_line 是最后一行输出的摘要（截断），不存输出内容。
+-- hot：跑飞（cpu / mem），hot_ms 开始时刻，rss_kb 当时整棵进程树的内存。时间都是 Unix 毫秒。保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_shells (
+	session_key TEXT NOT NULL,
+	ref         TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	tid         TEXT NOT NULL DEFAULT '',
+	device_id   TEXT NOT NULL DEFAULT '',
+	kind        TEXT NOT NULL DEFAULT 'other',
+	label       TEXT NOT NULL DEFAULT '',
+	cmd         TEXT NOT NULL DEFAULT '',
+	start_ms    INTEGER NOT NULL,
+	end_ms      INTEGER,
+	status      TEXT NOT NULL,
+	exit_code   INTEGER,
+	last_line   TEXT NOT NULL DEFAULT '',
+	hot         TEXT NOT NULL DEFAULT '',
+	hot_ms      INTEGER,
+	rss_kb      INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, ref)
+);
+CREATE INDEX IF NOT EXISTS lane_shells_start ON lane_shells(start_ms);
+
+-- 会话交接（R-224）：换会话 / 换工具 / 换设备时，旧会话用 handoff_write 写结构化交接，新会话 ks role 接任时自动注入。
+-- status：requested 用户点了「交接」、等旧会话写；written 已写好、等新会话接任；taken 已被接任（taken_by / taken_at）。
+CREATE TABLE IF NOT EXISTS handoffs (
+	id           TEXT PRIMARY KEY,
+	project_id   TEXT NOT NULL,
+	role         TEXT NOT NULL,
+	from_session TEXT NOT NULL,
+	from_title   TEXT NOT NULL DEFAULT '',
+	status       TEXT NOT NULL,
+	doing        TEXT NOT NULL DEFAULT '',
+	waiting      TEXT NOT NULL DEFAULT '',
+	rules        TEXT NOT NULL DEFAULT '',
+	next         TEXT NOT NULL DEFAULT '',
+	notes        TEXT NOT NULL DEFAULT '',
+	requested_at TEXT NOT NULL DEFAULT '',
+	written_at   TEXT NOT NULL DEFAULT '',
+	taken_by     TEXT NOT NULL DEFAULT '',
+	taken_title  TEXT NOT NULL DEFAULT '',
+	taken_at     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS handoffs_project_role ON handoffs(project_id, role);
+CREATE INDEX IF NOT EXISTS handoffs_from ON handoffs(from_session);
+
+-- 暂时离开（R-210）：你点「暂时离开」时记一行，起点就是这一刻；只能由你点「结束离开」结束（ended_at）。
+-- expect_minutes 是预估离开多久（0 = 不确定），只用来标「已超过预估」；scope 是给主助理的授权范围（none 不代答 / low / medium），
+-- 开离开时按它给各项目的主助理开授权窗口（grants.away_id 指回这里）；hold_push = 这次离开期间连推送类也先攒着（拿不准的仍推）。
+-- calm_since：最近一次「能处理的都处理完」开始成立的时间；settled_at：最近一次生成阶段性报告的时间；
+CREATE TABLE IF NOT EXISTS aways (
+	id             TEXT PRIMARY KEY,
+	seq            INTEGER NOT NULL UNIQUE, -- A-<seq>
+	started_at     TEXT NOT NULL,
+	expect_minutes INTEGER NOT NULL DEFAULT 0,
+	scope          TEXT NOT NULL DEFAULT 'none',
+	hold_push      INTEGER NOT NULL DEFAULT 0,
+	ended_at       TEXT NOT NULL DEFAULT '',
+	calm_since     TEXT NOT NULL DEFAULT '',
+	settled_at     TEXT NOT NULL DEFAULT '',
+	worked         INTEGER NOT NULL DEFAULT 0 -- 上次阶段性报告之后有没有发生过事（会话在跑、有推送 / 处理）
+);
+
+-- 离开期间发生的事（R-210），给时段报告用：
+-- tier = push 推了 / hold 勿扰先攒着 / merge 合并进报告 / skip 不推（已可代答、会话空闲）/ user 你在某台设备上处理了 / settled 阶段性报告；
+-- event 是通知事件或你的操作，ref 是关联编号（D-x / R-x / P-x），device 是你处理时用的设备（如 iPhone）；
+-- normal = 不在离开时这条会不会推
+CREATE TABLE IF NOT EXISTS away_events (
+	id         TEXT PRIMARY KEY,
+	away_id    TEXT NOT NULL REFERENCES aways(id) ON DELETE CASCADE,
+	at         TEXT NOT NULL,
+	tier       TEXT NOT NULL,
+	event      TEXT NOT NULL DEFAULT '',
+	project_id TEXT NOT NULL DEFAULT '',
+	ref        TEXT NOT NULL DEFAULT '',
+	title      TEXT NOT NULL DEFAULT '',
+	body       TEXT NOT NULL DEFAULT '',
+	reason     TEXT NOT NULL DEFAULT '',
+	device     TEXT NOT NULL DEFAULT '',
+	normal     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS away_events_away ON away_events(away_id, at);

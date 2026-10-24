@@ -23,6 +23,8 @@ const (
 	EventDeviceLost        = "device_lost"
 	// EventNeedDevs：PM 请你开开发会话（R-87）。和“新决策”一样是 Agent 请你处理的事，跟随它的订阅，不单独设开关。
 	EventNeedDevs = "need_devs"
+	// EventAwaySettled：暂时离开期间能处理的都处理完了（R-210），每次离开最多 1 条。跟随「新决策」的订阅，不单独设开关。
+	EventAwaySettled = "away_settled"
 )
 
 // AllEvents 是可配置的通知事件，用于设置页展示。
@@ -42,7 +44,7 @@ type Message struct {
 
 // Wants 判断配置是否订阅了该事件。
 func Wants(cfg store.NotifyConfig, event string) bool {
-	if event == EventNeedDevs {
+	if event == EventNeedDevs || event == EventAwaySettled {
 		event = EventDecisionRaised
 	}
 	events := cfg.Events

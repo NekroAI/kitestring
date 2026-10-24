@@ -35,6 +35,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerRelease(webAPI)
 	h.registerGrantWeb(webAPI)
 	h.registerMorningWeb(webAPI)
+	h.registerAwayWeb(webAPI)
 	h.registerReviewerWeb(webAPI)
 	h.registerPlans(webAPI)
 	h.registerNeedWeb(webAPI)
@@ -52,6 +53,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentTell(agentAPI)
 	h.registerAgentGrant(agentAPI)
 	h.registerAgentMorning(agentAPI)
+	h.registerAgentAway(agentAPI)
 	h.registerAgentWaitCheck(agentAPI)
 	h.registerSessionReply(webAPI)
 	h.registerStatusWeb(webAPI)
@@ -61,8 +63,11 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerChainWeb(webAPI)
 	h.registerChainAgent(agentAPI)
 	h.registerCommitsWeb(webAPI)
+	h.registerLanesWeb(webAPI)
 	h.registerCommitsAgent(agentAPI)
 	h.registerOrphansWeb(webAPI)
+	h.registerHandoffWeb(webAPI)
+	h.registerHandoffAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -106,6 +111,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerRelease(api)
 	h.registerGrantWeb(api)
 	h.registerMorningWeb(api)
+	h.registerAwayWeb(api)
 	h.registerReviewerWeb(api)
 	h.registerPlans(api)
 	h.registerNeedWeb(api)
@@ -123,6 +129,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentTell(api)
 	h.registerAgentGrant(api)
 	h.registerAgentMorning(api)
+	h.registerAgentAway(api)
 	h.registerAgentWaitCheck(api)
 	h.registerSessionReply(api)
 	h.registerStatusWeb(api)
@@ -132,8 +139,11 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerChainWeb(api)
 	h.registerChainAgent(api)
 	h.registerCommitsWeb(api)
+	h.registerLanesWeb(api)
 	h.registerCommitsAgent(api)
 	h.registerOrphansWeb(api)
+	h.registerHandoffWeb(api)
+	h.registerHandoffAgent(api)
 	return api.OpenAPI()
 }
 
@@ -279,6 +289,8 @@ type sessionDetailOut struct {
 		Events  []protocol.Event `json:"events"`
 		// LastReply：最近一轮结束时的最后一条回复（Markdown，最长 2 万字）；还没有时省略（R-109）
 		LastReply *store.LastReply `json:"last_reply,omitempty"`
+		// Handoffs：这个会话交出去的和接手的交接（R-224），新的在前
+		Handoffs []store.Handoff `json:"handoffs,omitempty"`
 	}
 }
 
@@ -339,6 +351,8 @@ type projectIn struct {
 		AgentRelease *bool `json:"agent_release,omitempty"`
 		// CommitOnAccept：验收通过后提示 主调度 提交属于该需求的改动（不推送）（R-192）；不传表示不修改
 		CommitOnAccept *bool `json:"commit_on_accept,omitempty"`
+		// ModelPolicy：子任务模型策略（R-228）：economy（经济）/ balanced（均衡，默认）/ quality（质量优先）；不传表示不修改
+		ModelPolicy *string `json:"model_policy,omitempty" enum:"economy,balanced,quality" doc:"子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先"`
 	}
 }
 
@@ -357,10 +371,11 @@ type answersIn struct {
 		Answers []struct {
 			Ref     string   `json:"ref"`
 			Answer  string   `json:"answer" doc:"答复；有要拍板的点（points）时是附言，可空"`
-			Files   []string `json:"files,omitempty" doc:"附图 ID"`
+			Files   []string `json:"files,omitempty" doc:"附件 ID（图片、录屏或任意文件）"`
 			Choices []int    `json:"choices,omitempty" doc:"逐点的选择（R-112）：与决策的 points 一一对应，填选项序号"`
 			Reject  bool     `json:"reject,omitempty" doc:"批准类的多点决策：拒绝（此时不要求逐点选择）"`
 			Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上"`
+			Verdict string   `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：用户点的是批准还是拒绝（R-239），存成字段，放行检查和界面只读它"`
 		} `json:"answers" minItems:"1"`
 	}
 }
@@ -443,7 +458,9 @@ type SettingsView struct {
 	NotifyEvents  []string           `json:"notify_events"`
 	ImageMB       int                `json:"upload_image_mb" doc:"图片大小上限（MB）"`
 	VideoMB       int                `json:"upload_video_mb" doc:"录屏大小上限（MB）"`
+	FileMB        int                `json:"upload_file_mb" doc:"其它文件（图片、录屏以外）大小上限（MB）"`
 	DevRequestMin int                `json:"dev_request_minutes" doc:"PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝"`
+	CompactTokens int                `json:"compact_tokens" doc:"建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）"`
 }
 
 type settingsIn struct {
@@ -456,7 +473,9 @@ type settingsIn struct {
 		NotifyDefault store.NotifyConfig `json:"notify_default"`
 		ImageMB       int                `json:"upload_image_mb,omitempty" minimum:"0" maximum:"4096" doc:"图片大小上限（MB），0 或留空用默认 10"`
 		VideoMB       int                `json:"upload_video_mb,omitempty" minimum:"0" maximum:"4096" doc:"录屏大小上限（MB），0 或留空用默认 50"`
+		FileMB        int                `json:"upload_file_mb,omitempty" minimum:"0" maximum:"4096" doc:"其它文件大小上限（MB），0 或留空用默认 20"`
 		DevRequestMin int                `json:"dev_request_minutes,omitempty" minimum:"0" maximum:"1440" doc:"PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30"`
+		CompactTokens int                `json:"compact_tokens,omitempty" minimum:"0" maximum:"2000000" doc:"建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万"`
 	}
 }
 
@@ -469,11 +488,11 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	img, vid := s.Upload.bytes()
+	img, vid, file := s.Upload.bytes()
 	return &settingsOut{Body: SettingsView{
 		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
-		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0),
+		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0), CompactTokens: s.compactTokens(),
 	}}, nil
 }
 
@@ -524,7 +543,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if out.Body.Events, err = h.store.SessionEvents(ctx, in.Key, 50); err != nil {
 				return nil, err
 			}
-			out.Body.LastReply, err = h.store.GetLastReply(ctx, in.Key)
+			if out.Body.LastReply, err = h.store.GetLastReply(ctx, in.Key); err != nil {
+				return nil, err
+			}
+			out.Body.Handoffs, err = h.store.HandoffsOf(ctx, in.Key)
 			return out, err
 		})
 
@@ -614,6 +636,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.CommitOnAccept != nil {
 				commit = *in.Body.CommitOnAccept
 			}
+			policy := cur.ModelPolicy
+			if in.Body.ModelPolicy != nil {
+				policy = *in.Body.ModelPolicy
+			}
 			if in.Body.AgentRelease != nil {
 				release = *in.Body.AgentRelease
 			}
@@ -623,7 +649,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.Hidden != nil {
 				hidden = *in.Body.Hidden
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit})
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy})
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -855,10 +881,12 @@ func (h *Hub) registerWeb(api huma.API) {
 						choices = a.Choices
 					}
 				}
-				d, err := h.store.AnswerDecisionPoints(ctx, a.Ref, answer, files, choices, a.Reason)
+				d, err := h.store.AnswerDecisionPoints(ctx, a.Ref, answer, files, choices, a.Reason, answerVerdict(a.Verdict, a.Reject))
 				if err != nil {
 					return nil, apiErr(err)
 				}
+				// 离开期间你在哪台设备上答的（R-210）
+				h.awayUser(ctx, "answer", d.ProjectID, d.Code, d.Question, brief(approvalText(d), 80))
 				h.onRequestAnswered(ctx, d)  // 批准开 Dev 会话 → 推送接入语（R-169）
 				h.applyStatusRequest(ctx, d) // 批准改状态申请 → 纸鸢改状态（R-188）
 				out.Body.Decisions = append(out.Body.Decisions, d)
@@ -1040,8 +1068,9 @@ func (h *Hub) registerWeb(api huma.API) {
 				cur.Summary.APIKey = b.SummaryKey
 			}
 			cur.NotifyDefault = b.NotifyDefault
-			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB}
+			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB, FileMB: b.FileMB}
 			cur.DevRequestMinutes = b.DevRequestMin
+			cur.CompactTokens = b.CompactTokens
 			if err := h.SaveSettings(ctx, cur); err != nil {
 				return nil, err
 			}
@@ -1114,21 +1143,23 @@ type summaryTestOut struct {
 
 type agentDecisionIn struct {
 	Body struct {
-		SessionKey     string   `json:"session_key,omitempty" doc:"提出决策的会话，由 daemon 填写"`
-		Question       string   `json:"question" minLength:"1"`
-		Context        string   `json:"context,omitempty"`
-		Options        []string `json:"options,omitempty"`
-		OptionImages   []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
-		Approval       bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
-		Images         []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
-		Blocks         []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
-		Points         []any    `json:"points,omitempty" doc:"要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
-		Summary        []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
-		Recommendation string   `json:"recommendation,omitempty"`
-		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
-		FromDecision   string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
-		Overturns      bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
-		Risk           string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
+		SessionKey        string   `json:"session_key,omitempty" doc:"提出决策的会话，由 daemon 填写"`
+		Question          string   `json:"question" minLength:"1"`
+		Context           string   `json:"context,omitempty"`
+		Options           []string `json:"options,omitempty"`
+		OptionImages      []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
+		Approval          bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
+		Images            []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
+		Blocks            []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
+		Points            []any    `json:"points,omitempty" doc:"要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
+		Summary           []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
+		Recommendation    string   `json:"recommendation,omitempty"`
+		RecommendedOption *int     `json:"recommended_option,omitempty" doc:"推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配"`
+		Requirement       string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
+		FromDecision      string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
+		Overturns         bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
+		Risk              string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
+		Hard              string   `json:"hard,omitempty" enum:"product,design,semantics,permission,gate,irreversible,acceptance" doc:"硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收"`
 	}
 }
 
@@ -1227,6 +1258,9 @@ func (h *Hub) registerAgent(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
+			if h.isReviewer(ctx, in.Body.SessionKey) {
+				return nil, huma.Error403Forbidden("评审只审查和验证，不改需求状态；验证结果用 review_submit（命令行 ks req review）交到需求上，状态由开发 / 主调度 / 用户改")
+			}
 			ctx = store.WithActor(ctx, store.Actor{Session: in.Body.SessionKey})
 			if in.Body.Status == store.ReqShelved {
 				ctx = store.WithActor(ctx, store.Actor{ReasonKind: in.Body.ReasonKind, Reason: in.Body.Reason})
@@ -1266,6 +1300,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			if r.Status != before.Status && (r.Status == store.ReqReview || r.Status == store.ReqBlocked) {
 				told := ""
 				if r.Status == store.ReqReview {
+					h.autoReview(ctx, r, in.Body.SessionKey)         // 本项目有在线评审就自动派验证任务（R-232）
 					told = h.onReview(ctx, r.ID, in.Body.SessionKey) // 告诉派活的 PM（R-135）
 				}
 				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
@@ -1273,7 +1308,13 @@ func (h *Hub) registerAgent(api huma.API) {
 				}
 			}
 			if r.Status == store.ReqReview {
-				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
+					r = full
+				}
+				// 交给了评审的，等评审交意见（或 30 分钟到点）再推给用户（R-237）
+				if !r.Review.Holding() {
+					h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+				}
 			}
 			return &reqOut{Body: r}, nil
 		})
@@ -1324,6 +1365,9 @@ func (h *Hub) registerAgent(api huma.API) {
 				return nil, huma.Error400BadRequest("证据需要正文：summary，或 verdict（一句结论）加 blocks")
 			}
 			// 标成截图 / 录屏却没附文件，用户验收时会看不到任何东西：直接拒绝，让 agent 补上附件。
+			if h.isReviewer(ctx, b.SessionKey) {
+				return nil, huma.Error400BadRequest("评审的审查意见和验证结果用 review_submit（命令行 ks req review）交，不算验收证据；它同样支持 verdict、checklist 和截图")
+			}
 			switch strings.ToLower(b.Kind) {
 			case store.EvidenceReview:
 				// 审查意见走 review_submit（R-88）：只有审查员能交，且不算验收证据
@@ -1349,7 +1393,10 @@ func (h *Hub) registerAgent(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-raise-decision", Method: http.MethodPost, Path: "/api/agent/decisions", Tags: tag},
 		func(ctx context.Context, in *agentDecisionIn) (*decisionRaisedOut, error) {
 			b := in.Body
-			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation, Risk: b.Risk, Overturns: b.Overturns}
+			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation, Risk: b.Risk, Overturns: b.Overturns, Hard: b.Hard}
+			if d.Hard != "" {
+				d.Risk = store.RiskHigh // 标了硬规则类别：风险档按 high（R-210）
+			}
 			from, err := h.fromDecision(ctx, b.FromDecision)
 			if err != nil {
 				return nil, err
@@ -1375,6 +1422,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				d.Options = []string{"批准", "拒绝"}
 				b.OptionImages = nil
 			}
+			d.RecPick = b.RecommendedOption // 推荐选项存成字段（R-239），CreateDecision 定 rec_option
 			if len(b.Images) > 0 {
 				fs, err := h.store.ResolveFiles(ctx, b.Images)
 				if err != nil {
@@ -1421,10 +1469,8 @@ func (h *Hub) registerAgent(api huma.API) {
 			h.broker.publish("decisions", "sessions", "requirements")
 			go h.aiOnDecision(d)
 			h.onDecisionRaised(ctx, d) // 订阅了 decision 的会话（R-164）
-			// 授权窗口开着、参谋可以代答的决策先不推送（不吵醒你，R-163）；仍留在收件箱里
-			if !h.proxyQuiet(ctx, d) {
-				h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
-			}
+			// 授权窗口开着、参谋可以代答的决策先不推送（不吵醒你，R-163）；仍留在收件箱里。离开期间按硬规则 / 拿不准分级（R-210）
+			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d), h.decisionPush(ctx, d))
 			out := &decisionRaisedOut{}
 			out.Body.Decision = d
 			out.Body.BlockWarnings = warns

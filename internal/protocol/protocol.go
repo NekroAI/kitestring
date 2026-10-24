@@ -41,17 +41,22 @@ type Event struct {
 	SessionID string    `json:"session_id"`
 	Cwd       string    `json:"cwd,omitempty"`
 	Client    string    `json:"client,omitempty"`
-	Model     string    `json:"model,omitempty"`
-	TurnID    string    `json:"turn_id,omitempty"` // Codex turn_id / Claude prompt_id
-	Source    string    `json:"source,omitempty"`  // SessionStart.source
-	Reason    string    `json:"reason,omitempty"`  // SessionEnd.reason
-	Prompt    string    `json:"prompt,omitempty"`  // UserPromptSubmit，截断
-	ToolName  string    `json:"tool_name,omitempty"`
-	ToolUseID string    `json:"tool_use_id,omitempty"`
-	ToolBrief string    `json:"tool_brief,omitempty"` // 工具动作简述（命令截断 / 文件名），不含代码正文
-	NotifType string    `json:"notification_type,omitempty"`
-	PermMode  string    `json:"permission_mode,omitempty"`
-	AgentType string    `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
+	// Claude 配置来源（R-240）：非默认 CLAUDE_CONFIG_DIR 才有。Profile 是显示名，ProfileDir 是目录路径，
+	// Launcher 是用户配的启动命令。只含目录与命令名，不含任何凭证或网关地址（D13）
+	Profile    string `json:"profile,omitempty"`
+	ProfileDir string `json:"profile_dir,omitempty"`
+	Launcher   string `json:"launcher,omitempty"`
+	Model      string `json:"model,omitempty"`
+	TurnID     string `json:"turn_id,omitempty"` // Codex turn_id / Claude prompt_id
+	Source     string `json:"source,omitempty"`  // SessionStart.source
+	Reason     string `json:"reason,omitempty"`  // SessionEnd.reason
+	Prompt     string `json:"prompt,omitempty"`  // UserPromptSubmit，截断
+	ToolName   string `json:"tool_name,omitempty"`
+	ToolUseID  string `json:"tool_use_id,omitempty"`
+	ToolBrief  string `json:"tool_brief,omitempty"` // 工具动作简述（命令截断 / 文件名），不含代码正文
+	NotifType  string `json:"notification_type,omitempty"`
+	PermMode   string `json:"permission_mode,omitempty"`
+	AgentType  string `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
 	// AgentID：子 Agent 的标识。Claude Code 在子 Agent 里触发的 hook 带 agent_id（session_id 仍是主会话的），
 	// 主线程没有；SubagentStart / SubagentStop 也带。Hub 据此把子 Agent 的工具事件只算作后台任务，不改主会话状态（R-115）
 	AgentID   string `json:"agent_id,omitempty"`
@@ -119,8 +124,9 @@ type Decision struct {
 	Kind       string    `json:"kind,omitempty"`      // decision | feedback | note | assign | plan
 	ReqCode    string    `json:"req_code,omitempty"`  // 关联需求编号；kind=plan 时是计划编号（P-n）
 	ReqTitle   string    `json:"req_title,omitempty"`
-	Files      []File    `json:"files,omitempty"` // 答复 / 意见附图
-	Quiet      bool      `json:"quiet,omitempty"` // 不唤醒 ks wait（R-198）：照旧注入，下一轮开始或因别的消息唤醒时一并带上
+	Files      []File    `json:"files,omitempty"`     // 答复 / 意见的附件（图片、录屏或任意文件）
+	Quiet      bool      `json:"quiet,omitempty"`     // 不唤醒 ks wait（R-198）：照旧注入，下一轮开始或因别的消息唤醒时一并带上
+	Replyable  bool      `json:"replyable,omitempty"` // 会话发来的团队消息（R-191）：送达时写上怎么回复，回复自动送回发消息的一方
 }
 
 // File 是随决策下行的附件（图片或录屏）引用；daemon 下载到本地后在送达文字里给出路径。
@@ -144,6 +150,10 @@ const (
 	MsgOrphans     = "orphans"      // daemon → hub：本机会话结束后还在跑（或已脱离 Agent）的后台进程全集（覆盖式，R-209）
 	MsgStopProc    = "stop_proc"    // hub → daemon：停止其中一个（daemon 核对 pid + 启动时间后才发信号）
 	MsgStopResult  = "stop_result"  // daemon → hub：停止结果
+	MsgUsage       = "usage"        // daemon → hub：按分钟汇总的 token 用量与冷启动（只有数字，R-206）
+	MsgUsageAck    = "usage_ack"    // hub → daemon：已存下的用量批次（Ack 里是批次号）
+	MsgShells      = "shells"       // daemon → hub：后台命令的起止、结果与最后一行输出摘要（R-208，有变化的才发）
+	MsgShellsAck   = "shells_ack"   // hub → daemon：已存下的后台命令批次（Ack 里是批次号）
 )
 
 // DeviceConfig 是 Hub 下发给 daemon 的运行配置。
@@ -168,6 +178,87 @@ type Envelope struct {
 	Orphans     []OrphanProc      `json:"orphans,omitempty"`
 	StopProc    *StopProc         `json:"stop_proc,omitempty"`
 	StopResult  *StopResult       `json:"stop_result,omitempty"`
+	// token 用量（R-206）：Batch 是批次号，Hub 存好后用 MsgUsageAck 回这个号
+	Batch string        `json:"batch,omitempty"`
+	Usage []UsageMinute `json:"usage,omitempty"`
+	Colds []ColdStart   `json:"colds,omitempty"`
+	// 后台命令（R-208）：Batch 同上，Hub 存好后用 MsgShellsAck 回批次号
+	Shells []ShellCmd `json:"shells,omitempty"`
+}
+
+// UsageMinute 是本机从对话记录里读出的、某会话（或子任务）某模型某一分钟的 token 用量累计值（绝对值，Hub 直接覆盖，重发不重复计）。
+// 只有会话键、子任务编号、模型名和数字，不带对话内容（R-206）。
+type UsageMinute struct {
+	Key      string `json:"k"`
+	Agent    string `json:"a,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Minute   int64  `json:"m"`    // Unix 分钟
+	Input    int64  `json:"in"`   // 没命中缓存的输入
+	CacheW   int64  `json:"cw"`   // 写缓存（含两个档位）
+	CacheW1h int64  `json:"cw1h"` // 其中写进 1 小时档的（其余是 5 分钟档）
+	CacheR   int64  `json:"cr"`   // 读缓存（只算命中率）
+	Output   int64  `json:"out"`  // 输出
+	Requests int    `json:"n"`    // 回复次数（去重后）
+}
+
+// 冷启动起因（R-206）。
+const (
+	ColdIdle    = "idle"    // 闲置超过缓存档位
+	ColdCompact = "compact" // 上下文压缩
+	ColdModel   = "model"   // 换了模型
+	ColdFirst   = "start"   // 这份记录的第一次回复
+	ColdOther   = "other"   // 看不出起因
+)
+
+// ColdStart 是一次缓存重建：单次回复写缓存（Codex 是未命中缓存的输入）超过阈值。
+type ColdStart struct {
+	Key       string `json:"k"`
+	Agent     string `json:"a,omitempty"`
+	Model     string `json:"model,omitempty"`
+	At        int64  `json:"at"`     // Unix 毫秒
+	Tokens    int64  `json:"tokens"` // 这次重算的 token 数
+	Cause     string `json:"cause" enum:"idle,compact,model,start,other"`
+	IdleMin   int    `json:"idle_min"` // 距上一次回复多少分钟（第一次回复为 0）
+	PrevModel string `json:"prev_model,omitempty"`
+}
+
+// 后台命令的结果（R-208）。
+const (
+	ShellRunning = "running" // 还在跑
+	ShellOK      = "ok"      // 成功（退出码 0）
+	ShellFailed  = "failed"  // 失败（退出码非 0）
+	ShellStopped = "stopped" // 被停止（Agent 停掉、到了后台时限、被信号终止、纸鸢停的）
+	ShellEnded   = "ended"   // 已结束，退出码未知（进程不在了，没收到结束通知）
+	ShellLost    = "lost"    // 结束时间和退出码都不知道（本功能上线前开始、进程早已不在的）
+)
+
+// 后台命令的类型（R-208，按命令自动识别）。
+const (
+	ShellBuild   = "build"   // 构建 / 测试
+	ShellDeploy  = "deploy"  // 部署
+	ShellService = "service" // 服务（开发服务器等常驻进程）
+	ShellPoll    = "poll"    // 轮询（until / while 循环里 sleep、tail -f、gh run watch）
+	ShellOther   = "other"
+)
+
+// ShellCmd 是一条后台命令（R-208）：Claude Code run_in_background 的命令，或 Codex 会话下活过宽限期的后台 shell。
+// 只带类型、描述、命令、起止、退出码和最后一行输出的摘要（截断），不带输出内容本身。
+type ShellCmd struct {
+	Key    string `json:"k"`
+	Agent  string `json:"a,omitempty"`   // 子任务里开的：子任务的 agent_id
+	Ref    string `json:"ref"`           // tool_use_id；Codex 的后台 shell 是“sh-进程号@启动时间”
+	Task   string `json:"tid,omitempty"` // 对应 R-162 后台任务的 ID（sh-进程号），网页据此不重复列
+	Kind   string `json:"kind" enum:"build,deploy,service,poll,other"`
+	Label  string `json:"label"` // run_in_background 的描述，没有就是命令摘要（截断）
+	Cmd    string `json:"cmd"`   // 完整命令（截断到 1000 字），悬停时看
+	Start  int64  `json:"start"` // Unix 毫秒
+	End    int64  `json:"end,omitempty"`
+	Status string `json:"status" enum:"running,ok,failed,stopped,ended,lost"`
+	Exit   *int   `json:"exit,omitempty"`
+	Last   string `json:"last,omitempty"`               // 最后一行输出（截到 160 字），只在本机读输出文件得到
+	Hot    string `json:"hot,omitempty" enum:"cpu,mem"` // 跑飞：CPU 长时间占满 / 内存持续上涨
+	HotAt  int64  `json:"hot_at,omitempty"`             // 从什么时候开始（Unix 毫秒）
+	RSSKB  int64  `json:"rss_kb,omitempty"`             // 跑飞时整棵进程树的常驻内存
 }
 
 // 后台进程状态（R-209）。
@@ -258,3 +349,21 @@ type HookResponse struct {
 	// Block 非空时 hook 拦下这次结束（Stop），并把它作为理由交给 Agent 继续处理（R-83）
 	Block string `json:"block,omitempty"`
 }
+
+// 附件类型（R-221）：只有这几种图片、录屏在页面里直接显示；其它文件（包括 SVG、HTML）一律按下载返回，不在页面里打开。
+var inlineMime = map[string]string{
+	"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+	"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+}
+
+// InlineMime：可以在页面里直接显示的图片或录屏。
+func InlineMime(mime string) bool { _, ok := inlineMime[mime]; return ok }
+
+// IsImage：能直接显示的图片（不含 SVG）。
+func IsImage(mime string) bool { return InlineMime(mime) && len(mime) > 6 && mime[:6] == "image/" }
+
+// IsVideo：能直接播放的录屏。
+func IsVideo(mime string) bool { return InlineMime(mime) && len(mime) > 6 && mime[:6] == "video/" }
+
+// MediaExt 是图片 / 录屏的扩展名；其它类型返回空。
+func MediaExt(mime string) string { return inlineMime[mime] }

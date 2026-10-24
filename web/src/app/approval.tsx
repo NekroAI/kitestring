@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
-import { AnimatePresence, motion } from 'motion/react'
 import { CheckCheck, ChevronLeft, ChevronRight, CircleCheck, PanelRight, X } from 'lucide-react'
 import type { Decision, Session } from '../api/client'
-import { useDecisions, usePlans, useSessions } from '../api/queries'
+import { useAway, useDecisions, useMorning, usePlans, usePrefetchReqs, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { Button, Tip } from '../ui/base'
+import { Button, Skeleton, Tip } from '../ui/base'
 import { Panel } from '../ui/overlay'
+import { Pager } from '../ui/gesture'
 import { RoleBadge } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
-import { askKindLabel, askTitle, buildAsks, decisionKind, type Ask } from './asks'
+import { askKindLabel, askTitle, buildAsks, decisionKind, pendingKeyOf, type Ask } from './asks'
 import { useKsEvent } from './command'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import { ProxyNote, OverrideBox } from './grant'
@@ -19,10 +19,8 @@ import { useWorkbench } from './inbox'
 import { useGoBack, useOpenSession } from './nav'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { AdviceNote } from './morning'
-import { decKey } from './outbox'
 import { PlanBody } from './plans'
-import { ReplyBox } from './replyBox'
-import { BackButton, ReqView } from './reqDrawer'
+import { BackButton, DrawerSkeleton, ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
 import { isStatusReq, StatusReqNote } from './statusReq'
 import { useAdvance, usePendingMap } from './verdict'
@@ -36,21 +34,6 @@ import { useAdvance, usePendingMap } from './verdict'
 
 type Dir = 'next' | 'prev' | 'pass'
 
-const slide = {
-  enter: (d: Dir) => ({ x: d === 'prev' ? -56 : 56, opacity: 0 }),
-  center: { x: 0, opacity: 1, rotate: 0 },
-  exit: (d: Dir) => ({ x: d === 'prev' ? 96 : -56, opacity: 0, rotate: d === 'pass' ? 1.2 : 0 }),
-}
-
-// pendingKeyOf：这件事在撤销期 / 盖印中用的键（与 Verdict 的 pendingKey、发件箱的 decKey 一致）。
-function pendingKeyOf(a: Ask | undefined) {
-  if (!a) return undefined
-  if (a.kind === 'review') return a.code
-  if (a.kind === 'plan') return `plan:${a.code}`
-  if (a.kind === 'stage') return `stage:${a.code}:${a.stage}`
-  if (a.d && (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request')) return decKey(a.d.code)
-  return undefined
-}
 
 // useDecided：这件事已经下了判断（撤销期、盖印中或已提交）。
 function useDecided(a: Ask | undefined) {
@@ -88,7 +71,7 @@ function useAskSource() {
     const x = (plans.data ?? []).find((v) => v.code === id)
     if ((p === 'p' || p === 'g') && x) return { key, kind: p === 'g' ? 'stage' : 'plan', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: x.current, projectId: x.project_id ?? '', projectName: x.project_name ?? '' }
     const s = (sessions.data?.sessions ?? []).find((v) => v.key === id)
-    if ((p === 's' || p === 'm') && s) return { key, kind: p === 'm' ? 'reply' : 'question', title: sessionTitle(s), at: s.state_since, counted: p === 's', s, projectId: s.project_id ?? '', projectName: s.project_name ?? '' }
+    if (p === 's' && s) return { key, kind: s.state === 'waiting_approval' ? 'permit' : 'question', title: sessionTitle(s), at: s.state_since, counted: true, s, projectId: s.project_id ?? '', projectName: s.project_name ?? '' }
     if (p === 'r') return { key, kind: 'review', title: id, at: '', counted: true, code: id, projectId: '', projectName: '' }
     return undefined
   }
@@ -97,7 +80,7 @@ function useAskSource() {
 
 export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onClose: () => void }) {
   const [, setParams] = useSearchParams()
-  const { asks, find } = useAskSource()
+  const { asks, find, loading } = useAskSource()
   const live = useMemo(() => new Set(asks.map((a) => a.key)), [asks])
   const [order, setOrder] = useState<string[]>([])
   const [dir, setDir] = useState<Dir>('next')
@@ -134,7 +117,14 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   const prev = inQueue ? order.slice(0, idx).reverse().find((k) => live.has(k)) : undefined
   const next = inQueue ? order.slice(idx + 1).find((k) => live.has(k)) : undefined
   const liveOrder = order.filter((k) => live.has(k))
-  const pos = askKey && live.has(askKey) ? liveOrder.indexOf(askKey) + 1 : 0
+  // 再往外一件的需求详情先取好（邻件本身已画在带子上）
+  const reviewCode = (k?: string) => {
+    const a = k ? find(k) : undefined
+    return a?.kind === 'review' ? a.code : undefined
+  }
+  const liveBefore = (k: string) => order.slice(0, order.indexOf(k)).reverse().find((x) => live.has(x))
+  const liveAfter = (k: string) => order.slice(order.indexOf(k) + 1).find((x) => live.has(x))
+  usePrefetchReqs([reviewCode(prev && liveBefore(prev)), reviewCode(next && liveAfter(next))])
 
   const go = (key: string, d: Dir) => {
     internal.current = true
@@ -167,6 +157,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
     }
   }
   const sealed = useDecided(cur)
+  const awayOn = !!useAway().data?.away // 离开中：这里的处理照常生效，记进时段报告（R-210）
   // 下了判断就翻到下一件（盖一下印之后）；撤回时回到这一件
   const here = askKey
   useAdvance(pendingKeyOf(cur), inQueue && !finished, advance, () => here && go(here, 'prev'))
@@ -205,36 +196,86 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
     const a = k ? find(k) : undefined
     return a ? `${askKindLabel(a)} · ${a.title}` : undefined
   }
-  const top = (
-    <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
-      {goBack ? <BackButton back={goBack} /> : inQueue && (
-        <>
-          <Tip content={label(prev)}>
-            <button className={navBtn} disabled={!prev} aria-label={t.ask.prev} onClick={() => prev && go(prev, 'prev')}>
-              <ChevronLeft className="size-[18px]" />
-            </button>
-          </Tip>
-          <Tip content={label(next)}>
-            <button className={navBtn} disabled={!next} aria-label={t.ask.next} onClick={() => next && go(next, 'next')}>
-              <ChevronRight className="size-[18px]" />
-            </button>
-          </Tip>
-          <span className="ml-1 text-xs whitespace-nowrap text-fg-3 tabular">{pos ? `${t.ask.queue} · ${t.ask.position(pos, liveOrder.length)}` : t.ask.queue}</span>
-        </>
-      )}
-      <span className="ml-auto flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-fg-3">
-        {cur && !finished && (
+  // 顶栏按「哪一件」画：邻件在带子上露出来时，顶栏就已经是它自己的（第几件、类型、编号），切过来时不变
+  const navOf = (key: string) => {
+    const inQ = order.includes(key) && find(key)?.kind !== 'proxy'
+    const i = order.indexOf(key)
+    return {
+      inQ,
+      prev: inQ ? order.slice(0, i).reverse().find((k) => live.has(k)) : undefined,
+      next: inQ ? order.slice(i + 1).find((k) => live.has(k)) : undefined,
+      pos: live.has(key) ? liveOrder.indexOf(key) + 1 : 0,
+    }
+  }
+  const topFor = (key: string) => {
+    const a = find(key)
+    const n = navOf(key)
+    return (
+      <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
+        {goBack ? <BackButton back={goBack} /> : loading && !n.inQ ? (
+          // 加载中先占住前后切换的位置（R-211）
+          <span aria-hidden className="flex items-center gap-1">
+            <span className={navBtn}>
+              <ChevronLeft className="size-[18px] opacity-30" />
+            </span>
+            <span className={navBtn}>
+              <ChevronRight className="size-[18px] opacity-30" />
+            </span>
+            <Skeleton className="ml-1 h-3 w-24" />
+          </span>
+        ) : n.inQ && (
           <>
-            <b className="shrink-0 font-semibold tracking-wider text-fg-2">{askKindLabel(cur)}</b>
-            {cur.code && <RefChip code={cur.code} link={false} />}
+            <Tip content={label(n.prev)}>
+              <button className={navBtn} disabled={!n.prev} aria-label={t.ask.prev} onClick={() => n.prev && go(n.prev, 'prev')}>
+                <ChevronLeft className="size-[18px]" />
+              </button>
+            </Tip>
+            <Tip content={label(n.next)}>
+              <button className={navBtn} disabled={!n.next} aria-label={t.ask.next} onClick={() => n.next && go(n.next, 'next')}>
+                <ChevronRight className="size-[18px]" />
+              </button>
+            </Tip>
+            <span className="ml-1 text-xs whitespace-nowrap text-fg-3 tabular">{n.pos ? `${t.ask.queue} · ${t.ask.position(n.pos, liveOrder.length)}` : t.ask.queue}</span>
           </>
         )}
-      </span>
-      <button className={navBtn} aria-label={t.common.close} onClick={onClose}>
-        <X className="size-[18px]" />
-      </button>
-    </div>
-  )
+        <span className="ml-auto flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-fg-3">
+          {awayOn && <span className="truncate text-accent">{t.away.drawerNote}</span>}
+          {a && (
+            <>
+              <b className="shrink-0 font-semibold tracking-wider text-fg-2">{askKindLabel(a)}</b>
+              {a.code && <RefChip code={a.code} link={false} />}
+            </>
+          )}
+        </span>
+        <button className={navBtn} aria-label={t.common.close} onClick={onClose}>
+          <X className="size-[18px]" />
+        </button>
+      </div>
+    )
+  }
+  const top = topFor(askKey ?? '')
+  // 邻件是否已下了判断（撤销期 / 盖印中），和 useDecided 同一口径
+  const decidedOf = (a: Ask | undefined) => {
+    const pk = pendingKeyOf(a)
+    const e = pk ? pendMap.get(pk) : undefined
+    return !!e && e.act !== 'move'
+  }
+  // 带子上的任意一页：这一件、上一件、下一件同一个画法（邻件提前画好，拖出来就是真实内容）
+  const page = (key: string) => {
+    if (key === 'finished') return <AllDone top={topFor('')} onClose={onClose} />
+    const a = find(key)
+    const tp = key === askKey ? top : topFor(key)
+    // 数据没到齐时先画骨架，不先闪一下「已经处理了」（R-211）
+    if (a) return <AskBody a={a} top={tp} sealed={key === askKey ? sealed : decidedOf(a)} />
+    if (loading)
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {tp}
+          <DrawerSkeleton />
+        </div>
+      )
+    return <Gone top={tp} />
+  }
 
   return (
     <PeekScope peek={peek}>
@@ -246,29 +287,20 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
       aside={peek.stack.length && askKey ? <RefPeek peek={peek} from={`a:${askKey}`} mainLabel={cur?.code} /> : undefined}
       onAsideClose={peek.close}
       title={cur ? `${askKindLabel(cur)} ${cur.title}` : t.ask.queue}
-      onSwipe={(d) => {
-        if (d === 'left' && next) go(next, 'next')
-        else if (d === 'right' && prev) go(prev, 'prev')
-        else return false
-        return true
-      }}
     >
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <AnimatePresence initial={false} custom={dir} mode="popLayout">
-          <motion.div
-            key={finished ? 'finished' : (askKey ?? '')}
-            custom={dir}
-            variants={slide}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
-            className="flex min-h-0 flex-1 flex-col bg-surface"
-          >
-            {finished ? <AllDone top={top} onClose={onClose} /> : cur ? <AskBody a={cur} top={top} sealed={sealed} /> : <Gone top={top} />}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      {/* 左右拖 / 妙控板双指横滑切换上一件 / 下一件（R-73），和顶栏 ‹ ›、← → 同一条带子 */}
+      <Pager
+        k={finished ? 'finished' : (askKey ?? '')}
+        dir={dir === 'prev' ? -1 : 1}
+        prev={finished ? undefined : prev}
+        next={finished ? undefined : next}
+        onNav={(d) => {
+          const k = d > 0 ? next : prev
+          if (!k) return false
+          go(k, d > 0 ? 'next' : 'prev')
+        }}
+        render={page}
+      />
     </Panel>
     </PeekScope>
   )
@@ -278,6 +310,15 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
 function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }) {
   const decisions = useDecisions()
   const plans = usePlans()
+  const morning = useMorning()
+  // 验收建议挂在抽屉顶上，到齐前先画骨架，免得建议后到把整页往下推（R-211）
+  if (a.kind === 'review' && morning.isPending)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {top}
+        <DrawerSkeleton />
+      </div>
+    )
   if (a.kind === 'review')
     return (
       <ReqView
@@ -310,7 +351,7 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
   }
   if (a.kind === 'orphan' && d) return <OrphanBody d={d} top={top} />
   if (a.kind === 'proxy' && d) return <ProxyBody d={d} top={top} />
-  if (a.s) return <SessionBody s={a.s} reply={a.kind === 'reply'} top={top} />
+  if (a.s) return <SessionBody s={a.s} top={top} />
   return <Gone top={top} />
 }
 
@@ -368,8 +409,8 @@ function ProxyBody({ d, top }: { d: Decision; top: ReactNode }) {
   )
 }
 
-// SessionBody：会话在等你——等授权 / 在问你时要回终端处理；在等你回复时就在这里回复。
-function SessionBody({ s, reply, top }: { s: Session; reply: boolean; top: ReactNode }) {
+// SessionBody：会话在等你——等授权 / 用提问工具在问你，要回终端处理。
+function SessionBody({ s, top }: { s: Session; top: ReactNode }) {
   const open = useOpenSession()
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -383,7 +424,7 @@ function SessionBody({ s, reply, top }: { s: Session; reply: boolean; top: React
           </Button>
         </div>
         <Callout s={s} />
-        {reply ? <ReplyBox s={s} /> : <p className="text-[13px] leading-relaxed text-fg-3">{t.ask.terminal}</p>}
+        <p className="text-[13px] leading-relaxed text-fg-3">{t.ask.terminal}</p>
       </Scroll>
     </div>
   )

@@ -154,8 +154,10 @@
     /* 应用式界面：页面不随手势缩放（看图器自己处理捏合） */
     touch-action: pan-x pan-y;
     font-feature-settings: 'cv11', 'ss01';
-    /* 页面整体不回弹：iOS 上回弹会把底部切换栏一起拖走（R-24）；内部滚动区各自 overscroll-contain */
+    /* 页面整体不回弹：iOS 上回弹会把底部切换栏一起拖走（R-24）；内部滚动区各自 overscroll-contain。
+       横向也不回弹、不连到浏览器的前进 / 后退：妙控板双指横滑归纸鸢（R-73，配合 ui/gesture.tsx 的 installWheelGuard） */
     overscroll-behavior: none;
+    overscroll-behavior-x: none;
   }
   body {
     @apply bg-bg text-fg antialiased;
@@ -292,6 +294,14 @@
 }
 [data-state='closed'].panel-slide {
   animation: ks-slide-out 0.18s ease-in forwards;
+}
+/* 抽屉里的上一件 / 下一件（R-73）：竖向滚动区只让浏览器竖着滚，横向交给带子（touchmove 一直可拦） */
+.ks-pager :where(.overflow-y-auto, .overflow-auto) {
+  touch-action: pan-y;
+}
+/* 右拖关闭（R-73）：面板已经跟手弹出去了，不再播关闭动画 */
+[data-flung] {
+  animation: none !important;
 }
 /* 命令面板（R-127）：从上方轻轻落下 */
 @keyframes ks-cmd-in {
@@ -624,6 +634,9 @@ nav.fixed {
 
 /* 印记（R-96）：悬停或聚焦任一编号，同页所有同一对象一起亮起来。 */
 .ref-chip.lit { background: var(--lit); border-color: var(--accent); }
+/* 随句子折行的印记（R-225）：跟文字一样断行，边框和底色在每一行各画一段 */
+.ref-flow { display: inline; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.ref-flow > svg { display: inline-block; vertical-align: -0.15em; margin-right: 0.25em; }
 
 /* 工作台（R-147）：新进「要你处理」的卡片轻轻提示一次：一圈朱砂描边淡出，不加别的装饰动画。 */
 @keyframes ks-tier-flash {
@@ -632,21 +645,6 @@ nav.fixed {
 }
 .tier-flash { border-radius: 0.75rem; animation: ks-tier-flash 1.6s ease-out 1; }
 @media (prefers-reduced-motion: reduce) { .tier-flash { animation: none; } }
-
-/* 撤销条底边的倒计时线（R-161）：从满到空，时长与延迟由组件按剩余时间设置 */
-@keyframes ks-undo-shrink {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
-}
-.ks-undo-line {
-  animation-name: ks-undo-shrink;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
-}
 
 /* ---------- 工作台驾驶舱（R-170） ---------- */
 /* 指示灯：只在主会话发生动作时闪一下（不做常驻波纹）；只有「等你」会呼吸。减少动效时上面的全局规则会把它们都停掉。 */
@@ -689,22 +687,13 @@ nav.fixed {
     box-shadow: 0 0 0 5px color-mix(in srgb, var(--reply) 28%, transparent);
   }
 }
-/* 动作流新进的一行、待办新进的一张：只在出现时动一次 */
+/* 动作流新进的一行：只在出现时动一次 */
 .desk-in {
   animation: desk-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @keyframes desk-in {
   from {
     transform: translateY(8px);
-    opacity: 0;
-  }
-}
-.desk-drop {
-  animation: desk-drop 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-@keyframes desk-drop {
-  from {
-    transform: translateY(-12px);
     opacity: 0;
   }
 }
@@ -716,11 +705,6 @@ nav.fixed {
 .desk-offline *,
 .desk-offline *::before {
   animation-play-state: paused !important;
-}
-/* 待办与它的会话互相点亮（纸鸢的线） */
-.desk-lit {
-  outline: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
 }
 .desk-scroll {
   scrollbar-width: thin;

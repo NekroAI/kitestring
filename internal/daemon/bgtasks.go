@@ -223,7 +223,7 @@ type proc struct {
 // listProcs 读一次本机进程表。
 func listProcs() ([]proc, error) {
 	cmd := exec.Command("ps", "-A", "-ww", "-o", "pid=,ppid=,%cpu=,rss=,stat=,lstart=,etime=,command=")
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd.Env = psEnv()
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -247,6 +247,17 @@ func listProcs() ([]proc, error) {
 		ps = append(ps, proc{pid: pid, ppid: ppid, cpu: cpu, rss: rss, start: strings.Join(f[5:10], " "), age: parseEtime(f[10]), cmd: strings.Join(f[11:], " ")})
 	}
 	return ps, nil
+}
+
+// psEnv：启动时间按 C 的格式写（lstart 的段数固定），命令行按 UTF-8 原样输出（C 下中文会被转义成 M-x，对不上调用，R-208）。
+func psEnv() []string {
+	env := make([]string, 0, len(os.Environ())+3)
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "LC_ALL=") && !strings.HasPrefix(kv, "LC_TIME=") && !strings.HasPrefix(kv, "LC_CTYPE=") {
+			env = append(env, kv)
+		}
+	}
+	return append(env, "LC_TIME=C", "LC_CTYPE=en_US.UTF-8")
 }
 
 // parseEtime 解析 ps 的 etime（[[dd-]hh:]mm:ss）。
@@ -324,9 +335,11 @@ func matchCall(procCmd string, c *shellCall) bool {
 }
 
 // sessionTasks 按进程表算出一个会话当前在跑的后台 shell（调用方持锁）。
-func sessionTasks(now time.Time, children []proc, calls map[string]*shellCall) []protocol.Task {
+// matched 是对上了后台调用的 shell（tool_use_id → 进程），不论活了多久（R-208 据此按进程号 + 启动时间盯住它）；
+// loose 是没对上任何调用、活过宽限期的后台 shell（Codex 的后台命令只能这样认）。
+func sessionTasks(now time.Time, children []proc, calls map[string]*shellCall) (out []protocol.Task, matched map[string]proc, loose []proc) {
 	used := map[string]bool{}
-	var out []protocol.Task
+	matched = map[string]proc{}
 	var unmatched []proc
 	for _, p := range children {
 		if !isShellProc(p.cmd) || ignoreProcRe.MatchString(p.cmd) {
@@ -336,6 +349,9 @@ func sessionTasks(now time.Time, children []proc, calls map[string]*shellCall) [
 		for id, c := range calls {
 			if !used[id] && matchCall(p.cmd, c) {
 				hit, used[id] = c, true
+				if c.bg {
+					matched[id] = p
+				}
 				break
 			}
 		}
@@ -381,9 +397,16 @@ func sessionTasks(now time.Time, children []proc, calls map[string]*shellCall) [
 			}
 		}
 		out = kept
+		keptLoose := unmatched[:0]
+		for _, p := range unmatched {
+			if !drop["sh-"+strconv.Itoa(p.pid)] {
+				keptLoose = append(keptLoose, p)
+			}
+		}
+		unmatched = keptLoose
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.Before(out[j].StartedAt) })
-	return out
+	return out, matched, unmatched
 }
 
 func taskSig(ts []protocol.Task) string {
@@ -458,6 +481,13 @@ func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 	}
 	var reports []report
 	var shells []bgShell
+	seen := map[string]shellSeen{}
+	pend := map[string]map[string]*shellCall{}
+	if d.shells != nil {
+		for _, key := range byPid {
+			pend[key] = d.shells.calls(key)
+		}
+	}
 	d.mu.Lock()
 	for pid, key := range byPid {
 		if shared[pid] {
@@ -470,7 +500,19 @@ func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 				delete(calls, id)
 			}
 		}
-		tasks := sessionTasks(now, children[pid], calls)
+		// 记着的后台命令（R-208，daemon 重启后、从对话记录补上的）也拿来对进程
+		if len(pend[key]) > 0 {
+			all := make(map[string]*shellCall, len(calls)+len(pend[key]))
+			for id, c := range pend[key] {
+				all[id] = c
+			}
+			for id, c := range calls {
+				all[id] = c
+			}
+			calls = all
+		}
+		tasks, matched, loose := sessionTasks(now, children[pid], calls)
+		seen[key] = shellSeen{matched: matched, loose: loose}
 		for _, tk := range tasks {
 			if sp, err := strconv.Atoi(strings.TrimPrefix(tk.ID, "sh-")); err == nil {
 				shells = append(shells, bgShell{key: key, agent: agentInst[pid], pid: sp})
@@ -491,6 +533,10 @@ func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 	}
 	d.mu.Unlock()
 	d.recordShells(now, ps, shells)
+	if d.shells != nil {
+		d.shells.tick(now, ps, seen)
+		d.sendShells()
+	}
 	for _, r := range reports {
 		tool, sid, ok := strings.Cut(r.key, ":")
 		if !ok {

@@ -15,10 +15,14 @@ import { DecisionRow } from './DecisionCard'
 import { useOpenAsk } from './nav'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { AskItem, decisionAsk } from './asks'
+import { decKey } from './outbox'
+import { usePendingMap } from './verdict'
 import { CtxRing, ctxLoad, useAssign } from './assign'
+import { canHandoff, CompactRow, HandoffCard, HandoffIcon, useRequestHandoff, type Handoff } from './compact'
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
+import { canMessage, MessageBox } from './messageBox'
 import { bgCount, liveTasks, TaskList, tasksUnknown } from './tasks'
 import { Linkify, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 
@@ -177,7 +181,9 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const shown = peek.stack.length === 1 ? peek.stack[0] : null
   const s: Session | undefined = q.data?.session
   const mine = (decisions.data ?? []).filter((d) => d.session_key === sessionKey)
-  const pending = mine.filter((d) => d.status === 'pending')
+  const pendMap = usePendingMap()
+  // 撤销期一结束就在本地离开（R-230）
+  const pending = mine.filter((d) => d.status === 'pending' && !(pendMap.get(decKey(d.code))?.phase && pendMap.get(decKey(d.code))?.phase !== 'wait'))
   // 能交给它开工的需求：没做完、没锁在计划后面阶段、不是它已经在做的；同项目、高优先级排前面
   const rank: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
   const givable = (reqs.data ?? [])
@@ -190,6 +196,18 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const doneReqs = (s?.requirements ?? []).filter((r) => closed(r.status))
   const answered = mine.filter((d) => d.status !== 'pending')
   const events = q.data?.events ?? []
+  const handoffs = (q.data?.handoffs ?? []) as Handoff[]
+  // 交接也记进时间线（R-224）：写了交接 / 接任读了交接
+  const timeline = useMemo(() => {
+    const extra = handoffs.flatMap((h) => {
+      const rows: HubEvent[] = []
+      if (h.written_at && h.from_session === sessionKey) rows.push({ id: `hw-${h.id}`, name: 'KsHandoffWritten', time: h.written_at } as HubEvent)
+      if (h.taken_at && h.taken_by === sessionKey) rows.push({ id: `ht-${h.id}`, name: 'KsHandoffTaken', time: h.taken_at } as HubEvent)
+      return rows
+    })
+    return extra.length ? [...events, ...extra].sort((a, b) => (b.time ?? '').localeCompare(a.time ?? '')) : events
+  }, [events, handoffs, sessionKey])
+  const requestHandoff = useRequestHandoff()
   const lastAt = events.reduce((m, e) => (e.time && e.time > m ? e.time : m), '')
   const reqRow = (r: Session['requirements'][number]) => (
     <div key={r.id} className="flex items-center gap-2 px-3 py-2">
@@ -217,6 +235,16 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
       onAsideClose={peek.close}
       onClose={onClose}
       wide
+      actions={
+        s &&
+        canHandoff(s) && (
+          <Tip content={t.menu.handoffHint}>
+            <Button size="sm" variant="ghost" icon={<HandoffIcon className="size-3.5" />} onClick={() => void requestHandoff(s)}>
+              {t.handoff.action}
+            </Button>
+          </Tip>
+        )
+      }
       title={
         s ? (
           <span className="flex items-center gap-2.5">
@@ -249,6 +277,18 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           <div className="mb-5 empty:hidden">
             <Callout s={s} />
           </div>
+          <div className="mb-5 empty:hidden">
+            <CompactRow s={s} />
+          </div>
+          {handoffs.length > 0 && (
+            <Section title={t.handoff.title}>
+              <div className="space-y-2">
+                {handoffs.slice(0, 2).map((h) => (
+                  <HandoffCard key={h.id} h={h} me={s.key} />
+                ))}
+              </div>
+            </Section>
+          )}
 
           <Collapse show={pending.length > 0}>
             <Section title={t.decision.status.pending}>
@@ -256,7 +296,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                 {/* 只放固定大小的条目，点开审批抽屉作答（R-177） */}
                 {pending.map((d) => (
                   <Item key={d.id} space={12}>
-                    <AskItem a={decisionAsk(d)} now={now} onOpen={openAsk} />
+                    <AskItem a={decisionAsk(d)} now={now} onOpen={openAsk} swipe={false} />
                   </Item>
                 ))}
               </List>
@@ -264,6 +304,12 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           </Collapse>
 
           {q.data?.lastReply && <LastReply text={q.data.lastReply.text} at={q.data.lastReply.at} now={now} />}
+
+          {canMessage(s) && (
+            <Section title={t.session.message}>
+              <MessageBox s={s} />
+            </Section>
+          )}
 
           <Section title={t.session.current} right={<Sparkline data={s.activity} state={s.state} />}>
             <div className="space-y-2.5 rounded-2xl border border-line p-3.5">
@@ -377,14 +423,14 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
               )}
               <Fold label={t.session.timeline} hint={events.length ? t.session.lastActivity(relTime(lastAt, now)) : undefined}>
                 <div className="p-3">
-                  <Timeline events={events} />
+                  <Timeline events={timeline} />
                 </div>
               </Fold>
               <Fold label={t.session.sessionInfo} hint={t.session.infoHint}>
                 <div className="p-3.5">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 ">
               <Info label={t.session.device}>{s.device_name}</Info>
-              <Info label={t.session.client}>{[t.tool[s.tool], s.client].filter(Boolean).join(t.common.sep)}</Info>
+              <Info label={t.session.client}>{[t.tool[s.tool], s.profile, s.client].filter(Boolean).join(t.common.sep)}</Info>
               <Info label={t.session.model} mono>
                 {s.model}
               </Info>
@@ -393,7 +439,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                   <span className="inline-flex items-center gap-1.5">
                     <CtxRing c={ctxLoad(s)!} />
                     {ctxLoad(s)!.label}
-                    {ctxLoad(s)!.level === 'high' && ` · ${t.session.ctxHeavyShort}`}
+                    {ctxLoad(s)!.level === 'high' && ` · ${t.session.compact}`}
                   </span>
                 )}
               </Info>

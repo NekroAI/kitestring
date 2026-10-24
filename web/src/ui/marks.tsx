@@ -18,10 +18,11 @@ export const stateStyle: Record<string, { dot: string; pill: string; ring?: stri
 }
 
 // displayState 把后端状态映射成界面状态（区分“等你回复”和“等你回答问题”）。
-export function displayState(s: { state: string; state_detail?: string; done_at?: string | null; last_active_at?: string }): string {
+// 在问你只认 Hub 记下的等待类型 wait_kind（提问工具发起时由事件定，R-239），不看状态说明的文字。
+export function displayState(s: { state: string; wait_kind?: string; done_at?: string | null; last_active_at?: string }): string {
   // 你手动标为已完成（或把卡在“运行中”的旧对话收起）：之后它真的又有动静，才按实际状态显示
   if (s.done_at && s.state !== 'ended' && (!s.last_active_at || s.last_active_at <= s.done_at || (s.state !== 'running' && s.state !== 'background'))) return 'done'
-  if (s.state === 'waiting_reply' && /^(AskUserQuestion|ExitPlanMode|request_user_input)\b/.test(s.state_detail ?? '')) return 'waiting_answer'
+  if (s.state === 'waiting_reply' && s.wait_kind === 'question') return 'waiting_answer'
   return s.state
 }
 
@@ -53,7 +54,7 @@ export function StatusPill({ state, since, now, compact, bg }: { state: string; 
 
 // presence：常驻身份（主调度 / 开发 / 主助理）的在线状态（R-84、R-190）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；
 // 结束了一轮却没挂上 ks wait、已结束或失联为离线。其它身份不需要常驻，返回空。
-type RoleSession = { role?: string; state: string; state_detail?: string; parked?: boolean; done_at?: string | null; last_active_at?: string }
+type RoleSession = { role?: string; state: string; wait_kind?: string; parked?: boolean; done_at?: string | null; last_active_at?: string }
 // anyRole：离开期间小结等需要给 Adv 也标在线点时传 true（R-165）
 export function presence(s: RoleSession, anyRole = false): '' | 'standby' | 'working' | 'offline' {
   if (!anyRole && s.role !== 'pm' && s.role !== 'dev' && s.role !== 'aide') return ''
@@ -89,6 +90,16 @@ export function RoleBadge({ s }: { s: RoleSession }) {
       <span className="inline-flex shrink-0">
         <RoleTag role={role} presence={p || undefined} />
       </span>
+    </Tip>
+  )
+}
+
+// ProfileBadge：非默认 Claude 配置目录的会话，在标题旁放一个小标签写显示名（R-240）；默认目录不显示。
+export function ProfileBadge({ s }: { s: { profile?: string; profile_dir?: string } }) {
+  if (!s.profile) return null
+  return (
+    <Tip content={s.profile_dir || s.profile}>
+      <span className="inline-flex h-[18px] max-w-[9rem] shrink-0 items-center truncate rounded-md border border-line bg-surface-2 px-1.5 font-mono text-[11px] text-fg-2">{s.profile}</span>
     </Tip>
   )
 }

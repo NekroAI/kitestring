@@ -401,7 +401,7 @@ func (d *Daemon) scanOrphans(now time.Time, ps []proc) {
 		envs = d.orph.envs
 	}
 	items, recs := d.classifyNow(now, ps, envs(ps))
-	// 记过但已经不在的进程：标记结束（R-208 再补准确的结束时间与退出码）
+	// 记过但已经不在的进程：标记结束（同一进程是后台命令时，R-208 的记录会补上准确的结束时间与退出码）
 	live := map[string]bool{}
 	for _, p := range ps {
 		live[procID(p.pid, p.start)] = true
@@ -574,6 +574,9 @@ func (d *Daemon) stopProc(req protocol.StopProc) protocol.StopResult {
 		res.Result = protocol.StopRunning
 	}
 	d.q.procStopped(time.Now(), it.root.pid, it.root.start, name, res.Result)
+	if remain == 0 {
+		d.shells.markStopped(it.root.pid, it.root.start)
+	}
 	return res
 }
 

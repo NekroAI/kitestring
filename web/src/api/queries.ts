@@ -18,6 +18,7 @@ export const qk = {
   devices: ['devices'] as const,
   projects: ['projects'] as const,
   settings: ['settings'] as const,
+  tokenPrices: ['settings', 'token-prices'] as const,
   rolePrompts: ['role-prompts'] as const,
 }
 
@@ -89,7 +90,7 @@ export function useSessionDetail(key: string | null) {
   return useQuery({
     queryKey: qk.session(key ?? ''),
     queryFn: () => unwrap(api.GET('/api/sessions/{key}', { params: { path: { key: key! } } })),
-    select: (d) => ({ session: normSession(d.session), events: d.events ?? [], lastReply: d.last_reply }),
+    select: (d) => ({ session: normSession(d.session), events: d.events ?? [], lastReply: d.last_reply, handoffs: d.handoffs ?? [] }),
     enabled: !!key,
   })
 }
@@ -123,6 +124,23 @@ export function useMorning() {
   })
 }
 
+// 暂时离开（R-210）：离开中 / 最近一次离开，离开多久、主助理处理几件、推送几条。
+export function useAway() {
+  return useQuery({
+    queryKey: ['away'],
+    queryFn: () => unwrap(api.GET('/api/away')),
+  })
+}
+
+// 离开时段报告（R-210）：你在各设备上处理了什么等；enabled 为 false 时不取。
+export function useAwayReport(enabled: boolean) {
+  return useQuery({
+    queryKey: ['away', 'report'],
+    queryFn: () => unwrap(api.GET('/api/away/report', { params: { query: {} } })),
+    enabled,
+  })
+}
+
 export function useRequirements() {
   return useQuery({
     queryKey: qk.requirements,
@@ -141,13 +159,26 @@ export function usePool(projectId?: string) {
   })
 }
 
+export const requirementQuery = (ref: string) => ({
+  queryKey: qk.requirement(ref),
+  queryFn: () => unwrap(api.GET('/api/requirements/{ref}', { params: { path: { ref } } })),
+})
+
 export function useRequirement(ref: string | null) {
   return useQuery({
-    queryKey: qk.requirement(ref ?? ''),
-    queryFn: () => unwrap(api.GET('/api/requirements/{ref}', { params: { path: { ref: ref! } } })),
+    ...requirementQuery(ref ?? ''),
     select: normReq,
     enabled: !!ref,
   })
+}
+
+// usePrefetchReqs：抽屉里提前取再往外一件的详情（邻件本身已经画在带子上，数据随之取好），连续翻页时露出来的不是骨架（R-73）
+export function usePrefetchReqs(codes: (string | undefined)[]) {
+  const qc = useQueryClient()
+  const key = codes.filter(Boolean).join(',')
+  useEffect(() => {
+    for (const c of key ? key.split(',') : []) void qc.prefetchQuery({ ...requirementQuery(c), staleTime: 15_000 })
+  }, [key, qc])
 }
 
 export function usePlans() {
@@ -181,12 +212,22 @@ export function useSettings() {
   })
 }
 
+// 各模型的价格（R-206，选填）：四项都填了的模型才显示金额
+export function useTokenPrices() {
+  return useQuery({
+    queryKey: qk.tokenPrices,
+    queryFn: () => unwrap(api.GET('/api/token-prices')),
+    staleTime: 5 * 60_000,
+  })
+}
+
 // 主题 → 需要失效的查询前缀。
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],
   decisions: [['decisions'], ['grants'], ['morning']],
   grants: [['grants'], ['morning']],
   morning: [['morning']],
+  away: [['away'], ['morning'], ['grants']],
   requirements: [['requirements'], ['plans'], ['morning']],
   plans: [['plans']],
   devices: [['devices'], ['sessions']],
@@ -195,8 +236,12 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   orphans: [['orphans']],
 }
 
+// laneSink：泳道时间线（R-205）的实时推送与断线后补拉，由 app/laneFeed 接上。
+export const laneSink: { push: (p: unknown) => void; resync: () => void } = { push: () => {}, resync: () => {} }
+
 function invalidateTopics(qc: QueryClient, topics: string[]) {
   for (const topic of topics) {
+    if (topic === 'lanes') laneSink.resync() // 推送丢过（慢客户端），泳道时间线补拉一次
     for (const key of topicKeys[topic] ?? []) {
       void qc.invalidateQueries({ queryKey: key })
     }
@@ -285,7 +330,10 @@ export function useLiveUpdates(enabled: boolean) {
         setConnected(true)
         setLive(true)
         // 重连后补齐断线期间错过的变化。
-        if (everConnected) void qc.invalidateQueries()
+        if (everConnected) {
+          void qc.invalidateQueries()
+          laneSink.resync()
+        }
         everConnected = true
       })
       es.addEventListener('session', (ev) => {
@@ -295,6 +343,14 @@ export function useLiveUpdates(enabled: boolean) {
           applySessionPatch(qc, p.rev, p.session)
         } catch {
           void qc.invalidateQueries({ queryKey: qk.sessions })
+        }
+      })
+      es.addEventListener('lane', (ev) => {
+        seen()
+        try {
+          laneSink.push(JSON.parse((ev as MessageEvent<string>).data))
+        } catch {
+          laneSink.resync()
         }
       })
       es.addEventListener('changed', (ev) => {

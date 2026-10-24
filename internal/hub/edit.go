@@ -81,7 +81,7 @@ func (h *Hub) editApproved(ctx context.Context, r store.Requirement, ref string)
 		return huma.Error403Forbidden(fmt.Sprintf("%s 用户还没答复，等用户批准后再改", d.Code))
 	case d.ProxyBy != "" && d.OverriddenAt == nil:
 		return huma.Error403Forbidden(fmt.Sprintf("%s 是 主助理代答的，改验收标准要用户本人批准。%s", d.Code, editApprovalHint(r)))
-	case !strings.HasPrefix(strings.TrimSpace(d.Answer), "批准"):
+	case d.Verdict != store.VerdictApproved: // 读结论字段，不看答复文字（R-239）
 		return huma.Error403Forbidden(fmt.Sprintf("用户没有批准 %s（答复：%s），不能改验收标准", d.Code, brief(d.Answer, 60)))
 	}
 	return nil

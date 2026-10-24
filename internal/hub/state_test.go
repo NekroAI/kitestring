@@ -1,6 +1,8 @@
 package hub
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -217,5 +219,35 @@ func TestSessionEndTwiceKeepsFirstEndedAt(t *testing.T) {
 	next := applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "SessionEnd", Reason: "process_gone", Time: t0.Add(time.Hour)})
 	if next.EndedAt == nil || !next.EndedAt.Equal(t0) {
 		t.Fatalf("结束时间被覆盖：%v", next.EndedAt)
+	}
+}
+
+// Claude 配置来源（R-240）：事件带来源就记到会话上，存库后读得回来；默认目录的事件不带来源，也不抹掉已有来源。
+func TestSessionProfileRoundTrip(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	dev, err := st.CreateDevice(ctx, "d", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	x := applyEvent(nil, dev.ID, "", protocol.Event{Tool: "claude", SessionID: "p1", Name: "SessionStart", Time: t0, Profile: "claude-x", ProfileDir: "/h/.claude-x", Launcher: "claude-x"})
+	if err := st.SaveSession(ctx, x); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.GetSession(ctx, "claude:p1")
+	if err != nil || got.Profile != "claude-x" || got.ProfileDir != "/h/.claude-x" || got.Launcher != "claude-x" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	y := applyEvent(&got, dev.ID, "", protocol.Event{Tool: "claude", SessionID: "p1", Name: "Stop", Time: t0.Add(time.Second)})
+	if y.Profile != "claude-x" {
+		t.Fatal("后续不带来源的事件不应抹掉来源")
+	}
+	d := applyEvent(nil, dev.ID, "", protocol.Event{Tool: "claude", SessionID: "p2", Name: "SessionStart", Time: t0})
+	if d.Profile != "" {
+		t.Fatal("默认目录的会话不应有来源")
 	}
 }

@@ -14,6 +14,7 @@ import { Collapse, Item, List as MotionList } from '../ui/motion'
 import { cx, relTime, useMedia, useNow, usePref } from '../lib/util'
 import { useTouchDrag } from '../ui/touchDrag'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
+import { GhostSkeleton, useGhost } from '../ui/shape'
 import { PriorityTag } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { allStatuses, NewReqModal, ReleaseBadge, StatusMenu, useSetStatus } from '../app/requirements'
@@ -21,10 +22,16 @@ import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark
 import { nextView, useKsEvent } from '../app/command'
 import { Flights } from '../app/flight'
 import { PendingCover, usePendingMap } from '../app/verdict'
+import { G } from '../ui/gesture'
 import { DraftMark } from '../app/draft'
 import { shownStatus } from '../lib/pending'
+import { ReviewBadge } from '../app/verify'
 import {
   catColor,
+  COL_PAD,
+  DRAFT_PAD,
+  TILE_GAP,
+  TILE_MIN,
   DistBar,
   DoneBody,
   DoneCol,
@@ -74,8 +81,8 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
     <div className={cx('rounded-xl transition-colors', expanded ? 'bg-surface shadow-card ring-1 ring-line' : 'hover:bg-hover/60')}>
       <Ctx items={menu(r)} className="rounded-xl">
         <div role="button" tabIndex={0} data-nav-item="" onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5">
-          {/* 撤销期（R-201）：这一行已显示新状态，右半边盖同一个撤销条 */}
-          <PendingCover k={r.code} className="left-auto w-[min(320px,60%)] bg-transparent" />
+          {/* 撤销期（R-201 / R-218）：这一行已显示新状态，整行盖同一层撤销遮罩 */}
+          <PendingCover k={r.code} />
           <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', expanded && 'rotate-90')} />
           <span onClick={(e) => e.stopPropagation()}>
             <StatusMenu r={r} />
@@ -89,6 +96,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
           <PlanBadge r={r} className="max-sm:hidden" />
           <DesignBadge r={r} className="max-sm:hidden" />
           <ReleaseBadge r={r} className="max-sm:hidden" />
+          <ReviewBadge r={r} className="max-sm:hidden" />
           {r.pending_decisions > 0 && (
             <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
               <span className="inline-flex items-center gap-1 text-xs text-wait tabular">
@@ -159,7 +167,6 @@ type BoardProps = {
     onConfirmEach: () => void
 }
 
-const WIDE = 1240 // 内容区至少这么宽才横排：草稿列占剩余宽度，其余状态是窄列
 const PHONE = 700 // 内容区窄于此用手机布局
 
 function Board({ width, pool, items, shelved, active, onAll, onConfirmEach }: BoardProps) {
@@ -173,40 +180,55 @@ function Board({ width, pool, items, shelved, active, onAll, onConfirmEach }: Bo
 
   if (active) return <div className="flex h-full"><StatusGrid status={active} items={by(active)} width={width} onConfirmEach={onConfirmEach} /></div>
 
-  if (width >= WIDE) {
-    // 越宽越能用满：窄列随宽度放宽、能显示的条数增加，多出来的宽度全给草稿列（列数随之增加，需求块保持 ~230px 宽）
-    const narrow = width >= 2600 ? 248 : width >= 2000 ? 216 : width >= 1560 ? 176 : 156
-    const doneW = width >= 2600 ? 320 : width >= 2000 ? 280 : width >= 1560 ? 244 : 212
-    const cols = flowStatuses.length + (shelved ? 1 : 0)
-    const draftW = width - narrow * cols - doneW - 12 * (cols + 1)
+  // 横排：草稿块、状态列、已完成列用同一个需求块宽度 tw（不小于 TILE_MIN）。
+  // 取放得下的最多草稿列数 n，把剩余宽度均摊给所有块（越宽列数越多，块宽基本不变）；n < 2 就放不下，走纵向。
+  const k = flowStatuses.length + (shelved ? 1 : 0)
+  const GAP = 12
+  let n = 0
+  let tw = 0
+  for (let c = 16; c >= 2; c--) {
+    const w = (width - GAP * (k + 1) - DRAFT_PAD - TILE_GAP * (c - 1) - COL_PAD * (k + 1)) / (c + k + 1)
+    if (w >= TILE_MIN) {
+      n = c
+      tw = Math.floor(w)
+      break
+    }
+  }
+  if (n) {
+    const colW = tw + COL_PAD
     return (
       <div className="flex h-full items-stretch gap-3">
-        <DraftBlock items={by('draft')} cols={Math.max(2, Math.min(12, Math.floor((draftW - 12) / 230)))} onConfirmEach={onConfirmEach} className="flex-1" compact={draftW < 560} />
+        <DraftBlock items={by('draft')} cols={n} width={n * tw + TILE_GAP * (n - 1) + DRAFT_PAD} onConfirmEach={onConfirmEach} />
         {flowStatuses.map((s) => (
-          <NarrowCol key={s} status={s} items={by(s)} width={narrow} fill />
+          <NarrowCol key={s} status={s} items={by(s)} width={colW} fill />
         ))}
-        <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={doneW} fill />
-        {shelved && <NarrowCol status="shelved" items={by('shelved')} width={narrow} fill />}
+        <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={colW} fill />
+        {shelved && <NarrowCol status="shelved" items={by('shelved')} width={colW} fill />}
       </div>
     )
   }
-  // 纵向：先「在流转」一行四列，再草稿整块，最后已完成（与搁置）折叠成一行摘要
-  const flowing = flowStatuses.reduce((n, s) => n + by(s).length, 0)
+  // 纵向：先「在流转」一行，再草稿整块，最后已完成（与搁置）折叠成一行摘要。
+  // 块宽仍是同一个：草稿按可用宽度取列数，在流转各列取同样的块宽，一行放不下四列就排成两行两列，不压窄。
+  const dn = Math.max(1, Math.floor((width - DRAFT_PAD + TILE_GAP) / (TILE_MIN + TILE_GAP)))
+  const vtw = Math.floor((width - DRAFT_PAD - TILE_GAP * (dn - 1)) / dn)
+  const flowCol = vtw + COL_PAD
+  const flowCols = 4 * flowCol + 3 * GAP <= width ? 4 : 2
+  const flowing = flowStatuses.reduce((x, s) => x + by(s).length, 0)
   const sh = by('shelved')
   return (
     <div className="flex h-full flex-col gap-4">
-      <section className="flex max-h-[40%] shrink-0 flex-col">
+      <section className={cx('flex shrink-0 flex-col', flowCols === 4 ? 'max-h-[40%]' : 'max-h-[50%]')}>
         <div className="mb-2 flex shrink-0 items-center gap-2 px-1">
           <span className="text-[13px] font-semibold text-fg">{t.pool.flowing}</span>
           <span className="text-xs text-fg-3 tabular">{flowing}</span>
         </div>
-        <div className="grid min-h-0 grid-cols-4 grid-rows-[minmax(0,1fr)] gap-3">
+        <div className="grid min-h-0 auto-rows-[minmax(0,1fr)] justify-start gap-3" style={{ gridTemplateColumns: `repeat(${flowCols}, ${flowCol}px)` }}>
           {flowStatuses.map((s) => (
             <NarrowCol key={s} status={s} items={by(s)} fill />
           ))}
         </div>
       </section>
-      <DraftBlock items={by('draft')} cols={width >= 1000 ? 4 : width >= 760 ? 3 : 2} onConfirmEach={onConfirmEach} compact={width < 900} className="shrink" />
+      <DraftBlock items={by('draft')} cols={dn} onConfirmEach={onConfirmEach} className="shrink" />
       <FoldRow status="done" n={done.length} summary={t.pool.doneSummary(week, pool.done_yesterday)}>
         <DoneBody items={done} days={pool.done_daily} onAll={() => onAll('done')} />
       </FoldRow>
@@ -264,7 +286,8 @@ function PhoneBoard({ items, statuses, status, setStatus, pool }: { items: Requi
           if (!s) return
           const dx = e.changedTouches[0].clientX - s.x
           const dy = e.changedTouches[0].clientY - s.y
-          if (Math.abs(dx) > 64 && Math.abs(dx) > Math.abs(dy) * 1.6) step(dx < 0 ? 1 : -1)
+          // 横滑换列：阈值与全站手势同一套（R-73），左缘起手留给浏览器返回
+          if (s.x >= G.edge && Math.abs(dx) > G.rowOpen && Math.abs(dx) > Math.abs(dy) * G.ratio) step(dx < 0 ? 1 : -1)
         }}
       >
         <PhoneList status={status} items={list} />
@@ -300,6 +323,10 @@ export default function RequirementsPage() {
   const phone = width > 0 && width < PHONE
   // 桌面 / 平板的盘面占满视口剩余高度，各区域内滚动；手机维持整页纵向滚动
   const fillH = useFillHeight(rootEl, view === 'pool' && !phone && width > 0)
+  // 加载骨架按上次的版面画（R-211）：需求池和计数一起到齐前都算加载中，否则分布条、计数会在需求块出来后再插进来
+  const loading = q.isPending || (view !== 'plans' && pool.isPending) || !width
+  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null)
+  const ghost = useGhost(`ks.skel.pool.${view}.${phone ? 'p' : 'd'}`, contentEl, !loading && !search)
   const newItem = () => (view === 'plans' ? setCreatingPlan(true) : setCreating(true))
 
   // V / 命令面板切换视图（R-127）
@@ -422,7 +449,7 @@ export default function RequirementsPage() {
       )}
     </div>
   )
-  const subtitle = q.isPending ? ' ' : view === 'plans' ? planSummary : projName ? t.pool.subtitleProject(projName) : t.pool.subtitle
+  const subtitle = q.isPending ? '\u00a0' : view === 'plans' ? planSummary : projName ? t.pool.subtitleProject(projName) : t.pool.subtitle
   // 分布条的计数同样按操作后的状态（同一信息只在一处表达，列头和分布条不能对不上）
   const p0 = pool.data
   const p = useMemo(() => {
@@ -538,8 +565,8 @@ export default function RequirementsPage() {
 
       {q.isError ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
-      ) : q.isPending || !width ? (
-        <CardSkeleton rows={2} />
+      ) : loading ? (
+        ghost ? <GhostSkeleton ghost={ghost} /> : <CardSkeleton rows={2} />
       ) : view === 'plans' ? (
         <PlansView project={project || undefined} showClosed={closedPlans} onNew={() => setCreatingPlan(true)} />
       ) : !all.length ? (
@@ -557,9 +584,9 @@ export default function RequirementsPage() {
           </Empty>
         </Card>
       ) : (
-        <>
+        <div ref={setContentEl} className={fillH ? 'flex min-h-0 flex-1 flex-col' : undefined}>
           {p && (
-            <div className={cx('space-y-3', phone ? 'mb-4' : 'mb-5')}>
+            <div data-skel-kids className={cx('space-y-3', phone ? 'mb-4' : 'mb-5')}>
               <DistBar counts={p.counts} statuses={allStatuses} active={phone ? null : active} onPick={pickSeg} thin={phone} />
               {phone ? (
                 <>
@@ -598,7 +625,7 @@ export default function RequirementsPage() {
               </PoolProvider>
             )
           )}
-        </>
+        </div>
       )}
 
       {phone && view !== 'plans' && (
