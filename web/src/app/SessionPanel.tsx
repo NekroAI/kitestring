@@ -22,6 +22,7 @@ import { canHandoff, CompactRow, HandoffCard, HandoffIcon, useRequestHandoff, ty
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
+import { canMessage, MessageBox } from './messageBox'
 import { bgCount, liveTasks, TaskList, tasksUnknown } from './tasks'
 import { Linkify, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 
@@ -303,6 +304,12 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           </Collapse>
 
           {q.data?.lastReply && <LastReply text={q.data.lastReply.text} at={q.data.lastReply.at} now={now} />}
+
+          {canMessage(s) && (
+            <Section title={t.session.message}>
+              <MessageBox s={s} />
+            </Section>
+          )}
 
           <Section title={t.session.current} right={<Sparkline data={s.activity} state={s.state} />}>
             <div className="space-y-2.5 rounded-2xl border border-line p-3.5">

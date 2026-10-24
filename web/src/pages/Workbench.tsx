@@ -14,7 +14,7 @@ import { useWorkbench } from '../app/inbox'
 import { RecapPanel } from '../app/Recap'
 import { sessionTitle } from '../app/SessionCard'
 import { SessionRow } from '../app/thread'
-import { AskItem, useAsks, useOpenAsk, useStaying, type Ask } from '../app/asks'
+import { AskItem, askLine, useAsks, useOpenAsk, useStaying, type Ask } from '../app/asks'
 import { BriefStrip, HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
 import { EndedLane, Lane, LaneAxis, laneTone, setLaneZoom, setOffline, ZoomSwitch, type LaneMode, type Tone } from '../app/lanes'
 import { ensureZoom, laneStore, prefetchLanes, useLanePrices, useLaneSnap } from '../app/laneFeed'
@@ -40,7 +40,7 @@ const projectHref = (key: string) => (key && !key.startsWith('cwd:') && key !== 
 
 // ---------- 数据 ----------
 
-type LaneRow = { s: Session; pk: string; name: string; tone: Tone }
+type LaneRow = { s: Session; pk: string; name: string; tone: Tone; you?: string }
 type Group = { pk: string; name: string; rows: LaneRow[]; done: SessionMeta[] }
 
 const toneRank: Record<Tone, number> = { you: 0, run: 1, bg: 2, park: 3, idle: 4, sub: 9 }
@@ -64,13 +64,19 @@ function useDesk(wb: ReturnType<typeof useWorkbench>, asks: Ask[], k: string, no
   return useMemo(() => {
     const lanes: LaneRow[] = []
     const ended: Session[] = []
-    const waiting = new Set(asks.filter((a) => a.s).map((a) => a.s!.key))
+    // 每个会话在「要你处理」里的条目（已按先后排好）：泳道「等你」那一行写第一条明确记录本身（R-239）
+    const mine = new Map<string, Ask[]>()
+    for (const a of asks) if (a.s) mine.set(a.s.key, [...(mine.get(a.s.key) ?? []), a])
+    const youOf = (k: string) => {
+      const list = mine.get(k)
+      return list?.length ? askLine(list[0]) + (list.length > 1 ? t.desk.lane.more(list.length - 1) : '') : undefined
+    }
     const seen = new Set<string>()
     const place = (s: Session, pk: string, name: string) => {
       if (seen.has(s.key) || !match(s, k)) return
       seen.add(s.key)
       if (s.state === 'ended' || displayState(s) === 'done') ended.push(s)
-      else lanes.push({ s, pk, name, tone: laneTone(s, waiting.has(s.key)) })
+      else lanes.push({ s, pk, name, tone: laneTone(s, mine.has(s.key)), you: youOf(s.key) })
     }
     for (const g of wb.projects) {
       for (const th of g.threads) if (th.s) place(th.s, g.key, g.name)
@@ -343,19 +349,12 @@ export default function WorkbenchPage() {
   const quiet = desk.lanes.filter((x) => x.tone === 'idle').length
   const multi = desk.groups.length > 1
   const multiAsk = new Set(asks.map((a) => a.projectId)).size > 1
-  const replies = asks.length - todo.length
 
   // ---- 左：要你处理 ----
   const askPane = (
     <section className={cx('flex min-h-0 min-w-0 flex-col gap-2.5', phone && tab !== 'ask' && 'hidden')}>
       {!phone && (
-        <PaneHead title={t.desk.paneAsk} n={wb.loading || asks.length ? <Held k="ks.skel.askN" text={String(todo.length)} loading={wb.loading} /> : undefined}>
-          {replies > 0 && (
-            <Tip content={t.desk.asksTip}>
-              <span className="truncate rounded-full bg-reply-soft px-2 py-0.5 text-[11px] text-reply">{t.desk.asksN(replies)}</span>
-            </Tip>
-          )}
-        </PaneHead>
+        <PaneHead title={t.desk.paneAsk} n={wb.loading || asks.length ? <Held k="ks.skel.askN" text={String(todo.length)} loading={wb.loading} /> : undefined} />
       )}
       <motion.div layoutScroll ref={setAskBox} className={cx('desk-scroll flex min-h-0 flex-col gap-2', !phone && 'flex-1 overflow-y-auto overscroll-contain p-0.5 pr-1.5')}>
         {wb.loading ? (
@@ -407,7 +406,7 @@ export default function WorkbenchPage() {
       ),
       ...g.rows.map((r) => (
         <Item key={r.s.key} space={8} layout fluid still={still}>
-          <Lane s={r.s} tone={r.tone} now={now} mode={mode} zoom={zoom} still={still} />
+          <Lane s={r.s} tone={r.tone} now={now} mode={mode} zoom={zoom} still={still} you={r.you} />
         </Item>
       )),
       ...g.done.map((m) => (

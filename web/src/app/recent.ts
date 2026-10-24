@@ -3,6 +3,7 @@ import type { Requirement } from '../api/client'
 import { useDecisions, usePlans, useRequirements } from '../api/queries'
 import { t } from '../i18n'
 import { passedWith } from './plans'
+import { approvedOf } from '../lib/waiting'
 
 // 最近动态：跨会话汇总交证据、退回、留言、派活、完成与决策答复。项目页与工作台右栏共用。
 export type RecentItem = { at: string; code: string; text: string; dot: string; stage?: boolean }
@@ -41,9 +42,8 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
   }, [list, projectId, limit, decisions.data, plans.data])
 }
 
-// answerVerb：最近动态里你对决策做了什么（R-176）——批准类决策写「批准 / 拒绝」，选项类写「回答」。
-function answerVerb(d: { approval?: boolean; options?: string[] | null; answer?: string }) {
+// answerVerb：最近动态里你对决策做了什么（R-176）——批准类决策写「批准 / 拒绝」（读结论字段 verdict，R-239），选项类写「回答」。
+function answerVerb(d: { approval?: boolean; verdict?: string }) {
   if (!d.approval) return t.verdict.pass('answer')
-  const opt0 = d.options?.[0]
-  return opt0 && d.answer?.startsWith(opt0) ? t.verdict.pass('approval') : t.verdict.back('approval')
+  return approvedOf(d) === false ? t.verdict.back('approval') : t.verdict.pass('approval')
 }

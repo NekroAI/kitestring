@@ -636,6 +636,7 @@ export function LaneAxis({ zoom, mode, now }: { zoom: Zoom; mode: LaneMode; now:
 // ---------- 状态 ----------
 
 // laneTone：泳道的状态（决定高低、颜色和状态标）。等你：在问你 / 等授权，或有事项在「要你处理」里而它没在跑。
+// 只认明确记录（R-239）：waiting 来自「要你处理」的条目（决策、验收、授权、提问工具），对话里的问句不算。
 export function laneTone(s: Session, waiting: boolean): Tone {
   const ds = displayState(s)
   if (ds === 'running') return 'run'
@@ -701,19 +702,19 @@ export function workReq(s: Session) {
   return s.requirements.find((x) => x.status !== 'done' && x.status !== 'shelved')
 }
 
-// lastWords：待命 / 空闲泳道上它最后说的一句话（做完了什么、在等什么），其次是摘要、你最后说的话。
+// lastWords：待命 / 空闲泳道上它这一轮做了什么，其次是摘要、你最后说的话。
 export function lastWords(s: Session) {
-  const ask = s.reply_ask?.split('\n').map((x) => x.trim()).filter(Boolean).at(-1)
-  return s.digest_ask || ask || s.digest_done || s.summary || s.last_prompt || ''
+  return s.digest_done || s.summary || s.last_prompt || ''
 }
 
-// youLine：等你的会话在问什么。
-function youLine(s: Session) {
+// youLine：等你的会话在等什么——写「要你处理」里那条明确记录本身（you，由工作台按条目给出，R-239）；
+// 没给时按会话自己的等待类型（等授权 / 提问工具），都没有写一句「有事在要你处理里等你」。不从对话或模型摘要里猜。
+function youLine(s: Session, you?: string) {
+  if (you) return you
   const ds = displayState(s)
   if (ds === 'waiting_approval') return t.desk.lane.approve(s.state_detail)
   if (ds === 'waiting_answer') return splitTool(s.state_detail)[1] || t.session.asking
-  const r = s.requirements.find((x) => x.status === 'review')
-  return s.digest_ask || s.reply_ask?.split('\n').filter(Boolean).at(-1) || (r ? t.desk.lane.review(r.code, r.title) : '') || s.digest_done || t.desk.lane.youHint
+  return t.desk.lane.youHint
 }
 
 // ---------- 当前动作 ----------
@@ -976,9 +977,9 @@ export function laneHeight(tone: Tone, tasks: number, mode: LaneMode, tokLine = 
   return base + (tasks ? tasks * 24 + 6 : 0) + (tokLine && (mode === 'mid' || mode === 'narrow') ? 16 : 0)
 }
 
-export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; still?: boolean }
+export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; still?: boolean; you?: string }
 
-export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: LaneProps) {
+export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still, you }: LaneProps) {
   useFeedTicks(s)
   const open = useOpenSession()
   const menu = useSessionMenu()
@@ -1019,7 +1020,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
         </Tip>
       </div>
       {live && mode !== 'full' && <ActLine s={s} />}
-      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply"><Linkify text={youLine(s)} flow /></div>}
+      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply"><Linkify text={youLine(s, you)} flow /></div>}
       {quiet && (mode === 'mid' || mode === 'narrow') && words && <div className="truncate text-[12px] leading-4 text-fg-3"><Linkify text={words} flow /></div>}
       {(mode === 'mid' || mode === 'narrow') && <TokLabel k={s.key} zoom={zoom} now={now} />}
     </div>
@@ -1034,7 +1035,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
       </div>
     ) : (
       <div className="flex min-w-0 flex-col justify-center gap-1 border-l border-line px-4 py-2">
-        <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? <Linkify text={youLine(s)} flow /> : words ? <Linkify text={words} flow /> : t.desk.lane.noWords}</p>
+        <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? <Linkify text={youLine(s, you)} flow /> : words ? <Linkify text={words} flow /> : t.desk.lane.noWords}</p>
         {/* 底行按优先级取舍（R-225）：用量在右、先放；上次动作放得下才出现，放不下整项换到看不见的第二行，不截成一个字 */}
         {(quiet || tokLabel) && (
           <div className="flex h-4 min-w-0 flex-row-reverse flex-wrap items-center gap-x-3 overflow-hidden">
@@ -1076,7 +1077,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
               )
             )}
             {right}
-            {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply"><Linkify text={youLine(s)} flow /></div>}
+            {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply"><Linkify text={youLine(s, you)} flow /></div>}
             {phone && quiet && words && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-fg-3"><Linkify text={words} flow /></div>}
           </div>
           <div className={cx('relative', tasks.length > 0 && 'pb-1.5')}>

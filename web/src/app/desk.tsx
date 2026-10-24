@@ -21,6 +21,7 @@ import { TokBrief, Wind } from './lanes'
 import type { Zoom } from '../lib/lanedata'
 import { Team } from '../pages/Projects'
 import { usePendingMap } from './verdict'
+import { approvedOf } from '../lib/waiting'
 
 // 工作台的周边部件（R-113 → R-147 → R-170）：顶部唯一的简报位（离开期间小结 / PM 简报，背后一条随活跃度起伏的风）、
 // 窄窗的计划胶囊、右栏「风向」（进行中的计划、最近动态串成一条竖线、队伍固定在底部）、左栏底部「刚处理」。
@@ -65,7 +66,7 @@ export const asking = (s: Session) => {
 }
 
 // useTodo：计入件数的「要你处理」条目（R-177，app/asks.tsx）：一件事算一件——待验收需求连同挂在它上面的决策算一件，
-// 会话等授权、在问你各算一件；只是一轮做完在等你回复、没有正式问题的会话不算。
+// 会话等授权、用提问工具在问你各算一件；只在对话里写了问句、没有正式记录的会话不进来（R-239）。
 export function useTodo(wb: WB): Ask[] {
   const all = useMemo(() => buildAsks(wb), [wb])
   return useStaying(all).filter((a) => a.counted)
@@ -368,8 +369,9 @@ export function useHandled(now: number, limit = 4): Handled[] {
     }
     for (const d of decisions.data ?? []) {
       if (d.kind !== 'decision' || !d.answered_at || d.timed_out || d.voided || (d.proxy_by && !d.overridden_at)) continue // 超时视为拒绝（R-169）、申请作废（R-188）都不是你做的判断
-      const opt0 = d.options?.[0]
-      const act = d.approval ? (opt0 && d.answer?.startsWith(opt0) ? 'pass' : 'back') : 'answer'
+      const ok = approvedOf(d) // 批准 / 拒绝读结论字段（R-239）
+      if (d.approval && ok === undefined) continue
+      const act = d.approval ? (ok ? 'pass' : 'back') : 'answer'
       out.push({ at: d.answered_at, act, scene: d.request_kind ? 'request' : d.approval ? 'approval' : 'answer', text: d.short_title || d.question })
     }
     // 阶段验收：你通过一个阶段时，后面需求早已逐条验收完的阶段会一并自动通过（D-60），计划随之完成——这是你的一次判断，

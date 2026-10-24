@@ -1510,7 +1510,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 回复在等你回复的会话（送达方式同留言） */
+        /** 给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒） */
         post: operations["reply-session"];
         delete?: never;
         options?: never;
@@ -1720,6 +1720,11 @@ export interface components {
             /** @description 你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档 */
             risk: string;
             session_key?: string;
+            /**
+             * @description 批准类决策：代答批准还是拒绝（R-239）；不填时按答复开头的「批准 / 拒绝」记一次
+             * @enum {string}
+             */
+            verdict?: "approved" | "rejected";
         };
         "Agent-assignRequest": {
             /** @description 交代给开发的话，例如为什么交给它、和哪条需求相关 */
@@ -1899,6 +1904,11 @@ export interface components {
             points?: unknown[] | null;
             question: string;
             recommendation?: string;
+            /**
+             * Format: int64
+             * @description 推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配
+             */
+            recommended_option?: number;
             /** @description 关联需求 ID 或 R-编号 */
             requirement?: string;
             /**
@@ -2194,6 +2204,11 @@ export interface components {
             proxy_reason?: string;
             proxy_risk?: string;
             question: string;
+            /**
+             * Format: int64
+             * @description 推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）
+             */
+            rec_option: number;
             recommendation: string;
             replaced_by?: string;
             /** @description 团队消息（R-191）：这条回复的团队消息 ID */
@@ -2217,6 +2232,11 @@ export interface components {
             status: string;
             summary?: string[] | null;
             timed_out?: boolean;
+            /**
+             * @description 批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空
+             * @enum {string}
+             */
+            verdict: "" | "approved" | "rejected";
             /** @description 改状态申请（R-188）：批准前需求状态已被改动，申请自动作废 */
             voided?: boolean;
         };
@@ -2285,6 +2305,11 @@ export interface components {
             proxy_reason?: string;
             proxy_risk?: string;
             question: string;
+            /**
+             * Format: int64
+             * @description 推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）
+             */
+            rec_option: number;
             recommendation: string;
             replaced_by?: string;
             /** @description 团队消息（R-191）：这条回复的团队消息 ID */
@@ -2308,6 +2333,11 @@ export interface components {
             status: string;
             summary?: string[] | null;
             timed_out?: boolean;
+            /**
+             * @description 批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空
+             * @enum {string}
+             */
+            verdict: "" | "approved" | "rejected";
             /** @description 改状态申请（R-188）：批准前需求状态已被改动，申请自动作废 */
             voided?: boolean;
         };
@@ -2691,6 +2721,11 @@ export interface components {
             ref: string;
             /** @description 批准类的多点决策：拒绝（此时不要求逐点选择） */
             reject?: boolean;
+            /**
+             * @description 批准类决策：用户点的是批准还是拒绝（R-239），存成字段，放行检查和界面只读它
+             * @enum {string}
+             */
+            verdict?: "approved" | "rejected";
         };
         LaneAgent: {
             a: string;
@@ -3064,6 +3099,11 @@ export interface components {
             /** @description 可选的一句话理由（R-157） */
             reason?: string;
             reject?: boolean;
+            /**
+             * @description 批准类决策：批准还是拒绝（R-239）
+             * @enum {string}
+             */
+            verdict?: "approved" | "rejected";
         };
         Passkey: {
             /** Format: date-time */
@@ -3646,7 +3686,6 @@ export interface components {
             cwd: string;
             device_id: string;
             device_name: string;
-            digest_ask: string;
             digest_done: string;
             /** Format: int64 */
             dirty: number;
@@ -3672,7 +3711,6 @@ export interface components {
             project_id?: string;
             project_name?: string;
             recent_tools: components["schemas"]["ToolAct"][] | null;
-            reply_ask?: string;
             requirements: components["schemas"]["RequirementRef"][] | null;
             /** Format: date-time */
             retired_at?: string;
@@ -3697,6 +3735,8 @@ export interface components {
             turn_tools: number;
             /** Format: int64 */
             turns: number;
+            /** @enum {string} */
+            wait_kind: "" | "approval" | "question";
             worktree: boolean;
         };
         SessionDetailOutBody: {

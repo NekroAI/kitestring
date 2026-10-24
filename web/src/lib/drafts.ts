@@ -9,7 +9,7 @@
 //   override:D-8        推翻参谋代答
 //   plan:P-3            计划批准 / 退回附言；stage:P-3:2 阶段验收附言
 //   planedit:P-3        编辑计划；planedit:new 新建计划
-//   reply:会话键         会话「在等你回复」的回复框
+//   reply:会话键         会话面板上「给它发消息」的输入框
 //   newreq              新建需求
 
 export type DraftData = Record<string, unknown>

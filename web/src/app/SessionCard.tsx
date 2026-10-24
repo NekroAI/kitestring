@@ -124,25 +124,14 @@ export function Callout({ s }: { s: Session }) {
       </Tip>
     )
   }
-  if (ds === 'waiting_reply' && (s.digest_done || s.digest_ask)) {
+  // 一轮结束时模型提炼的「这一轮做了什么」；不再概括「在等你什么」（R-239：在不在等你只认明确记录）
+  if (ds === 'waiting_reply' && s.digest_done) {
     return (
-      <div className="space-y-1.5 rounded-xl bg-reply-soft px-3 py-2.5 text-sm">
-        {s.digest_done && (
-          <div className="flex items-start gap-2">
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-run" />
-            <span className="leading-relaxed text-fg">
-              <Linkify text={s.digest_done} />
-            </span>
-          </div>
-        )}
-        {s.digest_ask && (
-          <div className="flex items-start gap-2">
-            <HelpCircle className="mt-0.5 size-4 shrink-0 text-reply" />
-            <span className="leading-relaxed font-medium text-fg">
-              <Linkify text={s.digest_ask} />
-            </span>
-          </div>
-        )}
+      <div className="flex items-start gap-2 rounded-xl bg-sunken px-3 py-2.5 text-sm">
+        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-run" />
+        <span className="leading-relaxed text-fg">
+          <Linkify text={s.digest_done} />
+        </span>
       </div>
     )
   }

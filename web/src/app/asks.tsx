@@ -3,11 +3,11 @@ import type { Decision, Plan, Requirement, Session } from '../api/client'
 import { useMorning, useRequirement } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime } from '../lib/util'
+import { sessionAsk } from '../lib/waiting'
 import { displayState, RoleBadge, RoleTag } from '../ui/marks'
 import { plainText } from '../ui/markdown'
 import type { useWorkbench } from './inbox'
 import { gateStage, needsApproval } from './plans'
-import { awaitingReply } from './replyBox'
 import { sessionTitle, splitTool } from './SessionCard'
 import { isStatusReq, StatusReqLines } from './statusReq'
 import { DraftMark, dropDraft } from './draft'
@@ -23,16 +23,17 @@ import { ReviewMark } from './verify'
 // 不铺开证据、不就地展开、不就地作答；点开进抽屉，抽屉里可以上一条 / 下一条连续处理。
 // 唯一的例外（D-491，R-73）：触屏上验收、批准类决策可以左滑露出「通过 / 退回」（useAskActions）。
 // 条目的键也是抽屉的地址（?a=键）：r:R-1 需求验收、d:D-2 决策、p:P-3 计划批准、g:P-3 阶段验收、o:D-4 转交、
-// s:会话键 会话在等授权 / 在问你、m:会话键 在等你回复（不计件数）、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
+// s:会话键 会话在等授权 / 用提问工具在问你、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
+// 只认明确记录（R-239）：会话只在对话里写了问句、没提决策的，不进这里。
 
-export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'reply' | 'proxy'
+export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy'
 
 export type Ask = {
   key: string
   kind: AskKind
   title: string
   at: string // 从什么时候开始等你
-  counted: boolean // 计入「要你处理」件数（在等你回复的会话不计）
+  counted: boolean // 计入「要你处理」件数（代答记录不计）
   code?: string
   s?: Session
   projectId: string
@@ -45,8 +46,8 @@ export type Ask = {
 
 type WB = ReturnType<typeof useWorkbench>
 
-// 越小越靠前：拍板 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交 → 在等你回复；同类里等得越久越靠前。
-const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, orphan: 4, reply: 5, proxy: 9 }
+// 越小越靠前：拍板 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交；同类里等得越久越靠前。
+const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, orphan: 4, proxy: 9 }
 
 // buildAsks：从工作台数据算出全部条目（工作台、侧栏角标、抽屉队列同一口径）。
 export function buildAsks(wb: WB): Ask[] {
@@ -72,14 +73,10 @@ export function buildAsks(wb: WB): Ask[] {
     for (const d of th.orphans) push({ key: `o:${d.code}`, kind: 'orphan', title: d.short_title || d.question, at: d.answered_at ?? d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     if (s && s.state !== 'ended') {
       const ds = displayState(s)
-      if (ds === 'waiting_approval' || ds === 'waiting_answer')
-        push({ key: `s:${s.key}`, kind: ds === 'waiting_approval' ? 'permit' : 'question', title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: true, s, projectId: s.project_id || '', projectName: s.project_name || '' })
-      else if (awaitingReply(s)) push({ key: `m:${s.key}`, kind: 'reply', title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: false, s, projectId: s.project_id || '', projectName: s.project_name || '' })
+      const k = ds === 'done' ? '' : sessionAsk(s) // 等授权、提问工具在问才算（R-239）
+      if (k) push({ key: `s:${s.key}`, kind: k, title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: true, s, projectId: s.project_id || '', projectName: s.project_name || '' })
     }
   }
-  for (const g of wb.projects)
-    for (const s of g.active)
-      if (awaitingReply(s)) push({ key: `m:${s.key}`, kind: 'reply', title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: false, s, projectId: s.project_id || '', projectName: s.project_name || '' })
   for (const x of wb.plans) {
     const st = gateStage(x)
     if (st) push({ key: `g:${x.code}`, kind: 'stage', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: st.seq, projectId: x.project_id || '', projectName: x.project_name || '' })
@@ -164,7 +161,6 @@ const kindTone: Record<AskKind, string> = {
   orphan: 'text-fg-2',
   permit: 'text-wait',
   question: 'text-reply',
-  reply: 'text-reply',
   proxy: 'text-accent',
 }
 
@@ -223,10 +219,21 @@ function statusLine(a: Ask, now: number): React.ReactNode {
       return t.desk.lane.approve(a.s?.state_detail ?? '')
     case 'question':
       return splitTool(a.s?.state_detail ?? '')[1] || t.session.asking
-    case 'reply':
-      return a.s?.reply_ask?.split('\n').map((x) => x.trim()).filter(Boolean).at(-1) ?? ''
     case 'proxy':
       return d?.proxy_answer ?? ''
+  }
+}
+
+// askLine：泳道上「等你」那一行写的明确记录本身（R-239）：哪条决策、哪条验收、请求执行什么、提问工具问什么。
+export function askLine(a: Ask): string {
+  switch (a.kind) {
+    case 'permit':
+      return t.desk.lane.approve(a.s?.state_detail ?? '')
+    case 'question':
+      return splitTool(a.s?.state_detail ?? '')[1] || t.session.asking
+    default:
+      // 带编号的写「类型 + 编号」，编号在泳道上画成带标题的印记，不再重复标题
+      return [t.ask.kind[a.kind], a.code || a.title].filter(Boolean).join(' ')
   }
 }
 
@@ -365,7 +372,7 @@ function AskCard({
         <span className="min-w-0 truncate">{showProject && a.projectName && s ? `${a.projectName}${t.common.sep}${who}` : who}</span>
         {/* 有没发出的草稿（R-202） */}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          <DraftMark owners={[a.code, s && (a.kind === 'reply' || a.kind === 'question' || a.kind === 'permit') ? `s:${s.key}` : undefined]} />
+          <DraftMark owners={[a.code, s && (a.kind === 'question' || a.kind === 'permit') ? `s:${s.key}` : undefined]} />
           <span className="tabular">{relTime(a.at, now)}</span>
         </span>
       </span>

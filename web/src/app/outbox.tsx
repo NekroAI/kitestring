@@ -5,6 +5,7 @@ import type { Scene } from '../i18n/zh'
 import { useActions } from './actions'
 import { schedule, scheduleMany, undo, type Act, type ScheduleOpts } from './verdict'
 import { dropDraft } from './draft'
+import { verdictOf } from '../lib/waiting'
 
 // 决策答复的发件箱。
 // - 草稿：每条决策的选择与文字，和其它输入框同一个 useDraft（app/draft.tsx，键 dec:D-8，R-202）；原来的 ks.drafts.v2 在那里搬过去。
@@ -38,7 +39,8 @@ export const decKey = (code: string) => `dec:${code}`
 // after：提交成功后再做（例如清掉列表左滑拒绝时写的理由草稿）
 type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; act: Act; scene: Scene; after?: () => void }
 
-const toBody = (it: SendItem) => ({ ref: it.code, answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason })
+// 批准类决策随答复带上结论 verdict（按用户点的按钮，R-239），Hub 存成字段，放行检查和界面只读它
+const toBody = (it: SendItem) => ({ ref: it.code, answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason, verdict: verdictOf(it.scene, it.act) })
 
 type Ctx = {
   send: (items: SendItem[]) => void

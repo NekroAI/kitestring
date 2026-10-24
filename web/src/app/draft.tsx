@@ -293,7 +293,7 @@ export function useDraftSweep() {
         case 'reply': {
           if (!ss) return undefined
           const s = ss.get(k.slice('reply:'.length))
-          return !s || s.state === 'ended' || !s.reply_ask ? {} : undefined
+          return !s || s.state === 'ended' ? {} : undefined
         }
         default:
           return undefined

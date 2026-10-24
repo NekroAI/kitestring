@@ -20,7 +20,6 @@ import { useGoBack, useOpenSession } from './nav'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { AdviceNote } from './morning'
 import { PlanBody } from './plans'
-import { ReplyBox } from './replyBox'
 import { BackButton, DrawerSkeleton, ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
 import { isStatusReq, StatusReqNote } from './statusReq'
@@ -72,7 +71,7 @@ function useAskSource() {
     const x = (plans.data ?? []).find((v) => v.code === id)
     if ((p === 'p' || p === 'g') && x) return { key, kind: p === 'g' ? 'stage' : 'plan', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: x.current, projectId: x.project_id ?? '', projectName: x.project_name ?? '' }
     const s = (sessions.data?.sessions ?? []).find((v) => v.key === id)
-    if ((p === 's' || p === 'm') && s) return { key, kind: p === 'm' ? 'reply' : 'question', title: sessionTitle(s), at: s.state_since, counted: p === 's', s, projectId: s.project_id ?? '', projectName: s.project_name ?? '' }
+    if (p === 's' && s) return { key, kind: s.state === 'waiting_approval' ? 'permit' : 'question', title: sessionTitle(s), at: s.state_since, counted: true, s, projectId: s.project_id ?? '', projectName: s.project_name ?? '' }
     if (p === 'r') return { key, kind: 'review', title: id, at: '', counted: true, code: id, projectId: '', projectName: '' }
     return undefined
   }
@@ -350,7 +349,7 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
   }
   if (a.kind === 'orphan' && d) return <OrphanBody d={d} top={top} />
   if (a.kind === 'proxy' && d) return <ProxyBody d={d} top={top} />
-  if (a.s) return <SessionBody s={a.s} reply={a.kind === 'reply'} top={top} />
+  if (a.s) return <SessionBody s={a.s} top={top} />
   return <Gone top={top} />
 }
 
@@ -408,8 +407,8 @@ function ProxyBody({ d, top }: { d: Decision; top: ReactNode }) {
   )
 }
 
-// SessionBody：会话在等你——等授权 / 在问你时要回终端处理；在等你回复时就在这里回复。
-function SessionBody({ s, reply, top }: { s: Session; reply: boolean; top: ReactNode }) {
+// SessionBody：会话在等你——等授权 / 用提问工具在问你，要回终端处理。
+function SessionBody({ s, top }: { s: Session; top: ReactNode }) {
   const open = useOpenSession()
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -423,7 +422,7 @@ function SessionBody({ s, reply, top }: { s: Session; reply: boolean; top: React
           </Button>
         </div>
         <Callout s={s} />
-        {reply ? <ReplyBox s={s} /> : <p className="text-[13px] leading-relaxed text-fg-3">{t.ask.terminal}</p>}
+        <p className="text-[13px] leading-relaxed text-fg-3">{t.ask.terminal}</p>
       </Scroll>
     </div>
   )
