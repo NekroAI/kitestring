@@ -201,7 +201,7 @@ export function LegacyEvidence({ e, big }: { e: Evidence; big?: boolean }) {
           <Md text={e.summary} className="text-sm" />
           <Thumbs files={rest} />
         </div>
-        <div className="min-w-0 space-y-4 @max-[680px]:hidden">
+        <div className="min-w-0 space-y-6 @max-[680px]:hidden @min-[680px]:sticky @min-[680px]:top-5 @min-[680px]:max-h-[100cqh] @min-[680px]:self-start @min-[680px]:overflow-y-auto @min-[680px]:overscroll-contain @min-[680px]:pr-1 @min-[680px]:[scrollbar-width:thin]">
           {imgs.map((f, k) => (
             <BlockView key={f.id} block={{ id: f.id, type: 'figure', image: f }} figNo={k + 1} limit />
           ))}
