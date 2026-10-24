@@ -6,7 +6,7 @@ import { absTime, relTime, useNow } from '../lib/util'
 import { Badge, Tip } from '../ui/base'
 import { Linkify } from '../ui/refmark'
 import { DecisionComposer } from './DecisionCard'
-import { EvidenceView, hasPayload, LegacyEvidence } from './evidence'
+import { EvidenceView, hasPayload, LegacyEvidence, VoidedEvidence } from './evidence'
 import { ReqTimeline } from './reqTimeline'
 import { evidenceKind } from './review'
 
@@ -35,11 +35,13 @@ export function rounds(r: Requirement) {
   const evidence = r.evidence ?? []
   const current = revises.length + 1
   const byRound = (k: number) => evidence.filter((e) => roundOf(e.created_at) === k && (k < current || !e.voided))
+  // Agent 主动作废（有理由）的证据，本轮也不当主证据；折叠成一行留在时间线里（R-189）
   return { revises, current, byRound }
 }
 
 function OneEvidence({ e, r, wide }: { e: Evidence; r: Requirement; wide?: boolean }) {
-  return hasPayload(e) ? <EvidenceView e={e} acceptance={r.acceptance} /> : <LegacyEvidence e={e} big={wide} />
+  const body = hasPayload(e) ? <EvidenceView e={e} acceptance={r.acceptance} /> : <LegacyEvidence e={e} big={wide} />
+  return e.voided && e.void_reason ? <VoidedEvidence e={e}>{body}</VoidedEvidence> : body
 }
 
 export function AcceptView({ r, decisions }: { r: Requirement; decisions: Decision[] }) {

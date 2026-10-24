@@ -38,6 +38,7 @@ type reqView struct {
 	StageStatus      string     `json:"stage_status"`
 	Files            []fileView `json:"files"`
 	Evidence         []struct {
+		ID      string     `json:"id"`
 		Kind    string     `json:"kind"`
 		Summary string     `json:"summary"`
 		Link    string     `json:"link"`
@@ -139,8 +140,14 @@ func (r reqView) String() string {
 			if len(e.Files) > 0 {
 				s += fmt.Sprintf("（%d 个附件）", len(e.Files))
 			}
+			if e.ID != "" {
+				s += "（id " + e.ID + "）"
+			}
 			b.WriteString(s + "\n")
 		}
+	}
+	if n := len(r.Evidence) - r.evidenceCount(); n > 0 {
+		fmt.Fprintf(&b, "已作废的证据 %d 条（不列出）\n", n)
 	}
 	if len(r.Reviews) > 0 {
 		fmt.Fprintf(&b, "审查意见（%d 条，Rev 给的参考，不改状态）：\n", len(r.Reviews))

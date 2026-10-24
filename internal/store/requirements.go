@@ -87,9 +87,14 @@ type Evidence struct {
 	Link          string    `json:"link"`
 	Files         []FileRef `json:"files"`
 	// Payload 是结构化证据（R-97）：一句结论、清单与表达块、要你做的、折叠的细节。旧证据没有，只按 summary 显示。
-	Payload   *blocks.Payload `json:"payload,omitempty"`
-	Voided    bool            `json:"voided"`
-	CreatedAt time.Time       `json:"created_at"`
+	Payload *blocks.Payload `json:"payload,omitempty"`
+	Voided  bool            `json:"voided"`
+	// 作废留痕（R-189）：Agent 主动作废的证据带理由、谁、什么时候；验收被退回时批量作废的没有这几项
+	VoidReason string     `json:"void_reason,omitempty" doc:"作废理由（Agent 主动作废时必填；验收退回时批量作废的为空）"`
+	VoidedBy   string     `json:"voided_by,omitempty" doc:"作废的会话键"`
+	VoidedRole string     `json:"voided_role,omitempty" doc:"作废时该会话的身份"`
+	VoidedAt   *time.Time `json:"voided_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 func reqCode(seq int) string { return "R-" + strconv.Itoa(seq) }
@@ -441,22 +446,57 @@ func (s *Store) ListReviews(ctx context.Context, reqID string) ([]Evidence, erro
 }
 
 func (s *Store) listEvidence(ctx context.Context, reqID, cond string) ([]Evidence, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, payload, voided, created_at FROM evidence WHERE requirement_id = ? AND `+cond+` ORDER BY created_at`, reqID, EvidenceReview)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+evidenceCols+` FROM evidence WHERE requirement_id = ? AND `+cond+` ORDER BY created_at`, reqID, EvidenceReview)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []Evidence{}
 	for rows.Next() {
-		var e Evidence
-		var created, files, payload string
-		if err := rows.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &payload, &e.Voided, &created); err != nil {
+		e, err := scanEvidence(rows)
+		if err != nil {
 			return nil, err
 		}
-		e.Payload = blocks.Decode[blocks.Payload](payload)
-		e.Files = parseFiles(files)
-		e.CreatedAt = parseTS(created)
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+const evidenceCols = `id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, payload, voided, void_reason, voided_by, voided_role, voided_at, created_at`
+
+func scanEvidence(row interface{ Scan(...any) error }) (Evidence, error) {
+	var e Evidence
+	var created, files, payload, voidedAt string
+	if err := row.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &payload, &e.Voided, &e.VoidReason, &e.VoidedBy, &e.VoidedRole, &voidedAt, &created); err != nil {
+		return e, err
+	}
+	e.Payload = blocks.Decode[blocks.Payload](payload)
+	e.Files = parseFiles(files)
+	e.CreatedAt = parseTS(created)
+	if voidedAt != "" {
+		t := parseTS(voidedAt)
+		e.VoidedAt = &t
+	}
+	return e, nil
+}
+
+// GetEvidence 按编号取一条证据（含审查意见）。
+func (s *Store) GetEvidence(ctx context.Context, id string) (Evidence, error) {
+	e, err := scanEvidence(s.db.QueryRowContext(ctx, `SELECT `+evidenceCols+` FROM evidence WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return e, ErrNotFound
+	}
+	return e, err
+}
+
+// VoidEvidence 作废一条证据（R-189）：记下谁、什么身份、什么时候、为什么；已作废的不能重复作废。
+func (s *Store) VoidEvidence(ctx context.Context, id, by, role, reason string) (Evidence, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE evidence SET voided = 1, void_reason = ?, voided_by = ?, voided_role = ?, voided_at = ? WHERE id = ? AND voided = 0`, reason, by, role, now(), id)
+	if err != nil {
+		return Evidence{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Evidence{}, fmt.Errorf("这条证据已经作废")
+	}
+	return s.GetEvidence(ctx, id)
 }

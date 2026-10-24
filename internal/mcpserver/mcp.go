@@ -166,6 +166,11 @@ type evidenceIn struct {
 	Videos  []string         `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
 }
 
+type evidenceVoidIn struct {
+	Evidence string `json:"evidence" jsonschema:"要作废的证据编号：evidence_attach 返回里的证据 id，或 req_get 证据条目里的 id"`
+	Reason   string `json:"reason" jsonschema:"作废理由，一句话（必填，显示在需求上，例如：字数超标，已重交）"`
+}
+
 type decisionWithdrawIn struct {
 	Decision   string `json:"decision" jsonschema:"要撤回的决策编号，如 D-135"`
 	Reason     string `json:"reason,omitempty" jsonschema:"撤回原因，一句话（显示在需求时间线上）"`
@@ -380,7 +385,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据，用户验收时读它。推荐结构化地交：verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；界面类附 figure 或 compare，流程类附 flow；截图（images、figure、compare）每张写一句话标题（title），改动的地方用 boxes 矩形框标出来，图按顺序全部显示：重点看的放前面，补充、测试一类的放后面；todo 只写机器验证不了的事，没有就不写；实现细节放 details、顺带改动放 aside，两者默认折叠。也可以只写 summary（按同样顺序写成文字）。交之前先自查截图里的文字有没有被截断、溢出或重叠。" + writing.UIEvidenceGuide + "超过字数阈值照常保存，返回里会提示压缩。\n" + writing.BlocksGuide},
+	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据，用户验收时读它。推荐结构化地交：verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；界面类附 figure 或 compare，流程类附 flow；截图（images、figure、compare）每张写一句话标题（title），改动的地方用 boxes 矩形框标出来，图按顺序全部显示：重点看的放前面，补充、测试一类的放后面；todo 只写机器验证不了的事，没有就不写；实现细节放 details、顺带改动放 aside，两者默认折叠。也可以只写 summary（按同样顺序写成文字）。交之前先自查截图里的文字有没有被截断、溢出或重叠。交错的证据用 evidence_void 作废后重交，不要堆着（返回里有证据 id）。" + writing.UIEvidenceGuide + "超过字数阈值照常保存，返回里会提示压缩。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": t.sessionKey(ctx, req), "verdict": in.Verdict, "details": in.Details}
 			dropEmpty(body)
@@ -416,6 +421,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			var out struct {
 				reqView
+				EvidenceID    string   `json:"evidence_id"`
 				BlockWarnings []string `json:"block_warnings"`
 				ImageHints    []string `json:"image_hints"`
 			}
@@ -427,6 +433,9 @@ func (t *tools) register(s *mcp.Server) {
 				msg += fmt.Sprintf("，本次附件 %d 个", len(ids))
 			}
 			msg += "；状态：" + zh(out.Status)
+			if out.EvidenceID != "" {
+				msg += "\n证据 id：" + out.EvidenceID + "（交错了用 evidence_void 作废后重交）"
+			}
 			msg += blockWarnings(out.BlockWarnings)
 			msg += imageHints(out.ImageHints)
 			if in.Summary != "" {
@@ -438,6 +447,14 @@ func (t *tools) register(s *mcp.Server) {
 				msg += "\n" + h
 			}
 			return text(msg), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "evidence_void", Description: "作废一条交错的证据（格式不对、字数超标、误交、被新证据取代）。交错的证据用它作废后重交，不要堆着。只有交这条证据的会话，或本项目的主调度 / 主助理能作废；必须写理由。作废的证据在需求上折叠成一行「已作废 · 理由」，用户可展开看原文，记录谁、什么时候、为什么作废；不再计入证据条数。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceVoidIn) (*mcp.CallToolResult, any, error) {
+			var out reqView
+			if err := t.c.Do(ctx, "POST", "/agent/evidence/"+url.PathEscape(in.Evidence)+"/void", map[string]any{"session_key": t.sessionKey(ctx, req), "reason": in.Reason}, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(fmt.Sprintf("%s 的证据 %s 已作废（还有效的证据 %d 条）", out.Code, in.Evidence, out.evidenceCount())), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别拍板时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。" + writing.DecisionTableGuide + "要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {

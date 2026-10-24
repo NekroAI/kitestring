@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { Block, Evidence, Payload } from '../api/client'
 import { t } from '../i18n'
-import { cx } from '../lib/util'
+import { absTime, cx } from '../lib/util'
 import { fileUrl, Lightbox, Thumbs } from '../ui/attach'
 import { BlockView, Checklist, criteriaOf, figureNumbers, refLabeler, Score, shotFile } from '../ui/blocks'
 import { BoxLayer } from '../ui/shots'
@@ -228,5 +228,22 @@ function ShotStrip({ shots, figs, lit }: { shots: Block[]; figs: Record<string, 
         )
       })}
     </div>
+  )
+}
+
+// VoidedEvidence：Agent 作废的证据（R-189）折成一行「已作废 · 理由」，点开看原文。
+// 验收退回时批量作废的没有理由（void_reason 为空），不走这里，仍按原样显示。
+export function VoidedEvidence({ e, by, children }: { e: Evidence; by?: string; children: ReactNode }) {
+  return (
+    <details data-void-evidence className="group rounded-xl border border-line bg-sunken/60 px-3 py-2">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-fg-2 [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 shrink-0 text-fg-3 transition-transform group-open:rotate-90" />
+        <span className="min-w-0 flex-1 truncate">{t.review.voidedRow(e.void_reason ?? '')}</span>
+      </summary>
+      <div className="mt-2 space-y-2 opacity-80">
+        {e.voided_at && <p className="text-xs text-fg-3">{t.review.voidedBy(by ?? '', absTime(e.voided_at))}</p>}
+        {children}
+      </div>
+    </details>
   )
 }

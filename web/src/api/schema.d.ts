@@ -121,6 +121,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/evidence/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 作废一条证据（R-189）：交这条证据的会话，或本项目的 PM / 主助理；必须写理由 */
+        post: operations["agent-void-evidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/grant": {
         parameters: {
             query?: never;
@@ -1702,6 +1719,12 @@ export interface components {
             /** @enum {string} */
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
         };
+        "Agent-void-evidenceRequest": {
+            /** @description 作废理由，一句话（必填） */
+            reason: string;
+            /** @description 调用者会话 */
+            session_key: string;
+        };
         "Agent-wait-checkRequest": {
             /** @description 对话记录里最新的一段回复；不传时用上一轮结束时的最后回复 */
             text?: string;
@@ -2264,7 +2287,15 @@ export interface components {
             requirement_id: string;
             session_key?: string;
             summary: string;
+            /** @description 作废理由（Agent 主动作废时必填；验收退回时批量作废的为空） */
+            void_reason?: string;
             voided: boolean;
+            /** Format: date-time */
+            voided_at?: string;
+            /** @description 作废的会话键 */
+            voided_by?: string;
+            /** @description 作废时该会话的身份 */
+            voided_role?: string;
         };
         EvidenceOutBody: {
             acceptance: string;
@@ -2277,6 +2308,8 @@ export interface components {
             detail: string;
             doc_link: string;
             evidence?: components["schemas"]["Evidence"][] | null;
+            /** @description 这次交的证据编号（R-189），要作废它时用（evidence_void / ks req evidence void） */
+            evidence_id?: string;
             feedback?: components["schemas"]["Decision"][] | null;
             files: components["schemas"]["FileRef"][] | null;
             from_decision?: string;
@@ -3573,6 +3606,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-void-evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 证据编号（evidence_attach 返回的 evidence_id，或需求里证据的 id） */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-void-evidenceRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Requirement"];
                 };
             };
             /** @description Error */

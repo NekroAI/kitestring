@@ -45,6 +45,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentRoles(agentAPI)
 	h.registerAgentTeam(agentAPI)
 	h.registerReviewerAgent(agentAPI)
+	h.registerAgentEvidence(agentAPI)
 	h.registerAgentNeed(agentAPI)
 	h.registerStatusRequest(agentAPI)
 	h.registerAgentBrief(agentAPI)
@@ -114,6 +115,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentRoles(api)
 	h.registerAgentTeam(api)
 	h.registerReviewerAgent(api)
+	h.registerAgentEvidence(api)
 	h.registerAgentNeed(api)
 	h.registerStatusRequest(api)
 	h.registerAgentBrief(api)
@@ -384,6 +386,7 @@ type reqCreatedOut struct {
 type evidenceOut struct {
 	Body struct {
 		store.Requirement
+		EvidenceID    string   `json:"evidence_id,omitempty" doc:"这次交的证据编号（R-189），要作废它时用（evidence_void / ks req evidence void）"`
 		BlockWarnings []string `json:"block_warnings,omitempty" doc:"没有保存的块及原因；证据本身已保存"`
 		ImageHints    []string `json:"image_hints,omitempty" doc:"附图的提示（R-183）：没写标题、改动框写错被丢掉等；证据本身已保存"`
 	}
@@ -1328,13 +1331,15 @@ func (h *Hub) registerAgent(api huma.API) {
 					return nil, huma.Error400BadRequest("证据类型为 " + b.Kind + " 时必须附上图片或录屏（MCP 用 images / videos，命令行用 --image / --video）")
 				}
 			}
-			if _, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: b.SessionKey, Kind: b.Kind, Summary: summary, Link: b.Link, Files: files, Payload: payload}); err != nil {
+			added, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: b.SessionKey, Kind: b.Kind, Summary: summary, Link: b.Link, Files: files, Payload: payload})
+			if err != nil {
 				return nil, apiErr(err)
 			}
 			h.broker.publish("requirements")
 			r, err = h.store.GetRequirement(ctx, r.ID)
 			out := &evidenceOut{}
 			out.Body.Requirement = r
+			out.Body.EvidenceID = added.ID
 			out.Body.BlockWarnings = warns
 			out.Body.ImageHints = hints
 			return out, apiErr(err)
