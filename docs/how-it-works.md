@@ -68,7 +68,7 @@ Waiting sessions show as "standing by" on the board, with how long they have wai
 | `req_update_status` | move a requirement along, e.g. to review |
 | `evidence_attach` | attach test results, commits, screenshots or recordings for review |
 | `decision_raise` | ask you to decide, with options, a recommendation and option images |
-| `plan_create` `plan_get` `stage_submit` | split a large goal into stages, follow it, submit a finished stage |
+| `plan_create` `plan_update` `plan_get` `stage_submit` | split a large goal into stages, follow it, submit a finished stage |
 
 The same operations are available on the command line (`ks req`, `ks plan`, `ks decision`, `ks wait`; see `ks --help`), which is handy when an agent's MCP connection is older than the installed `ks`.
 

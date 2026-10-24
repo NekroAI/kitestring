@@ -206,17 +206,37 @@ func TestAgentPlanNeedsApproval(t *testing.T) {
 		t.Fatalf("Agent 拆的计划应待批准：%+v", x)
 	}
 
-	// 不批准：搁置，附言（带图）送达
+	// 退回必须附意见
+	if e.callStatus("POST", "/api/plans/"+x.Code+"/reject", map[string]any{"comment": " "}) < 400 {
+		t.Fatal("退回计划不写意见应被拒")
+	}
+
+	// 退回：回到草稿（已退回，不再算待批准），附言（带图）送达（R-176）
 	img := e.upload(t, "mark.png", tinyPNG)
 	e.call("POST", "/api/plans/"+x.Code+"/reject", map[string]any{"comment": "先别动幂等", "files": []string{img.ID}}, &x)
-	if x.Status != store.PlanShelved {
-		t.Fatalf("不批准后应搁置：%s", x.Status)
+	if x.Status != store.PlanDraft || !x.Returned {
+		t.Fatalf("退回后应回到草稿并标记已退回：%+v", x)
 	}
 	var out string
-	e.waitFor("未批准附言送达", func() bool {
+	e.waitFor("退回附言送达", func() bool {
 		out = prompt("p1")
-		return strings.Contains(out, "用户退回了这个计划（已搁置，不会开工），要求修改：先别动幂等") && strings.Contains(out, "附图")
+		return strings.Contains(out, "用户退回了这个计划，要求修改：先别动幂等；改完后可重新提交") && strings.Contains(out, "附图") && strings.Contains(out, "plan_update")
 	})
+
+	// Agent 修改后重新提交同一个计划：去掉幂等阶段，回到待批准
+	if err := c.Do(context.Background(), "PUT", "/agent/plans/"+x.Code, map[string]any{
+		"goal": "只做回调梳理", "session_key": "claude:pa-1",
+		"stages": []map[string]any{{"id": x.Stages[0].ID, "title": "梳理", "requirements": []map[string]any{{"title": "列出回调路径"}}}},
+	}, &x); err != nil {
+		t.Fatal(err)
+	}
+	if x.Status != store.PlanDraft || x.Returned || x.Goal != "只做回调梳理" || len(x.Stages) != 1 {
+		t.Fatalf("重新提交后应回到待批准且内容已改：%+v", x)
+	}
+	// 没被退回的计划不能这样改
+	if err := c.Do(context.Background(), "PUT", "/agent/plans/"+x.Code, map[string]any{"title": "偷改"}, nil); err == nil {
+		t.Fatal("待批准的计划不应能被 Agent 直接修改")
+	}
 
 	// 之后又批准：开始，阶段 1 交给它
 	e.call("POST", "/api/plans/"+x.Code+"/start", map[string]any{"comment": "还是做吧"}, &x)

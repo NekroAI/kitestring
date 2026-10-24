@@ -31,7 +31,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户拍板时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图，用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
-- 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开工。计划开始或阶段解锁时，该阶段的需求会交给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动交给你。plan_get 查看计划进度。
+- 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开工。计划开始或阶段解锁时，该阶段的需求会交给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动交给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认最长等 1 小时，可用 --timeout 调整，最长 12h；后台任务的超时要设得比它长），它结束时你会被唤醒。
   - Codex：没有“后台命令结束后唤醒”的机制，要在前台运行 ks wait（自动最多等 30 分钟，不用加 --timeout；shell 工具的超时设成 35 分钟以上）。命令还在运行时继续等它结束，不要中断、不要重复运行。超时时它会提示你收尾：照做，用一两句话说明进度和在等什么，然后结束本轮，不要再运行 ks wait 续等。前台等待期间这一轮一直开着，Codex 会定期查看命令输出，每次消耗少量额度（主要是缓存读取），所以最多 30 分钟。
@@ -204,6 +204,13 @@ type planCreateIn struct {
 	Title  string        `json:"title" jsonschema:"计划标题"`
 	Goal   string        `json:"goal,omitempty" jsonschema:"计划目标：做完后达到什么效果"`
 	Stages []planStageIn `json:"stages" jsonschema:"按先后顺序排列的阶段；前一阶段验收通过后才开始下一阶段"`
+}
+
+type planUpdateIn struct {
+	Plan   string        `json:"plan" jsonschema:"被用户退回的计划编号（如 P-1）"`
+	Title  string        `json:"title,omitempty" jsonschema:"新标题；不给表示不改"`
+	Goal   *string       `json:"goal,omitempty" jsonschema:"新目标；不给表示不改"`
+	Stages []planStageIn `json:"stages,omitempty" jsonschema:"改后的完整阶段列表；不给表示不改阶段。会整体按它重排，没出现的需求会移出计划"`
 }
 
 type planRefIn struct {
@@ -500,6 +507,20 @@ func (t *tools) register(s *mcp.Server) {
 				return nil, nil, err
 			}
 			msg := out.Code + " 已提交，等待用户批准；批准后第一阶段的需求会交给你。\n" + out.String()
+			for _, n := range out.Notices {
+				msg += "\n注意：" + n
+			}
+			return text(msg), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "plan_update", Description: "用户退回了你的计划（附意见）后，按意见修改并重新提交同一个计划，不要另建新计划：计划回到用户的“待批准”。只能用于被退回的计划。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in planUpdateIn) (*mcp.CallToolResult, any, error) {
+			body := map[string]any{"title": in.Title, "goal": in.Goal, "stages": in.Stages, "session_key": t.sessionKey(ctx, req)}
+			dropEmpty(body)
+			var out planView
+			if err := t.c.Do(ctx, "PUT", "/agent/plans/"+url.PathEscape(in.Plan), body, &out); err != nil {
+				return nil, nil, err
+			}
+			msg := out.Code + " 已按意见修改并重新提交，等待用户批准。\n" + out.String()
 			for _, n := range out.Notices {
 				msg += "\n注意：" + n
 			}

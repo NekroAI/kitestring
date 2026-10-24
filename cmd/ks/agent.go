@@ -569,7 +569,7 @@ func humanDuration(d time.Duration) string {
 // runPlan：计划操作。create 从 JSON 文件读计划结构（与 MCP plan_create 相同：title、goal、stages[{title, requirements[{ref | title, detail, acceptance, priority, kind}]}]）。
 func runPlan(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("用法：ks plan create --file plan.json | get <P-编号> | submit <P-编号> <阶段序号> <小结>")
+		return fmt.Errorf("用法：ks plan create --file plan.json | update <P-编号> --file plan.json | get <P-编号> | submit <P-编号> <阶段序号> <小结>")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("plan "+sub, flag.ContinueOnError)
@@ -603,6 +603,28 @@ func runPlan(args []string) error {
 			body["session_key"] = key
 		}
 		return agentCall("POST", "/agent/plans", body)
+	case "update":
+		if fs.NArg() < 1 || *file == "" {
+			return fmt.Errorf(`用法：ks plan update <P-编号> --file plan.json（用户退回计划后，按意见修改并重新提交；可只给要改的 title / goal / stages）`)
+		}
+		var raw []byte
+		var err error
+		if *file == "-" {
+			raw, err = io.ReadAll(os.Stdin)
+		} else {
+			raw, err = os.ReadFile(*file)
+		}
+		if err != nil {
+			return err
+		}
+		body := map[string]any{}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return fmt.Errorf("计划 JSON 格式不对：%w", err)
+		}
+		if key != "" {
+			body["session_key"] = key
+		}
+		return agentCall("PUT", "/agent/plans/"+url.PathEscape(fs.Arg(0)), body)
 	case "get":
 		if fs.NArg() < 1 {
 			return fmt.Errorf("用法：ks plan get <P-编号>")

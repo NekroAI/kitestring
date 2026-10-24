@@ -10,7 +10,7 @@ import { displayState, presence, RoleTag } from '../ui/marks'
 import { Linkify, PlanGlyph, shortTitle } from '../ui/refmark'
 import type { ProjectGroup, useWorkbench } from './inbox'
 import { useOpenPlan } from './nav'
-import { planState, StageRail } from './plans'
+import { needsApproval, planState, StageRail } from './plans'
 import { useRecent } from './recent'
 import { MorningReports } from './morning'
 import { Wind } from './lanes'
@@ -104,7 +104,7 @@ export function useTodo(wb: WB): Todo[] {
 function usePlansInFlight() {
   const plans = usePlans()
   // 进行中与等你批准的都留着，批准后不会从工作台消失（R-147）
-  return (plans.data ?? []).filter((x) => x.status === 'active' || (x.status === 'draft' && x.created_by === 'agent'))
+  return (plans.data ?? []).filter((x) => x.status === 'active' || needsApproval(x))
 }
 
 const finished = (r: { status: string }) => r.status === 'done' || r.status === 'shelved'

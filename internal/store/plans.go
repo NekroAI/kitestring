@@ -40,6 +40,7 @@ type Plan struct {
 	OwnerSession string    `json:"owner_session"`
 	Status       string    `json:"status" enum:"draft,active,done,shelved"`
 	CreatedBy    string    `json:"created_by"`
+	Returned     bool      `json:"returned"` // 用户退回后回到草稿，等 Agent 修改并重新提交；重新提交后清除，回到待批准（R-176）
 	Paused       bool      `json:"paused"`  // 已通过阶段里有需求被重开，修好前不能继续往下
 	Current      int       `json:"current"` // 当前阶段序号（第一个未通过的阶段）；全部通过为 0
 	Stages       []Stage   `json:"stages"`
@@ -96,14 +97,14 @@ func (p Plan) Stage(seq int) (Stage, bool) {
 	return Stage{}, false
 }
 
-const planSelect = `SELECT x.id, x.seq, COALESCE(x.project_id, ''), COALESCE(p.name, ''), x.title, x.goal, x.owner_session, x.status, x.created_by, x.created_at, x.updated_at
+const planSelect = `SELECT x.id, x.seq, COALESCE(x.project_id, ''), COALESCE(p.name, ''), x.title, x.goal, x.owner_session, x.status, x.created_by, x.returned, x.created_at, x.updated_at
 	FROM plans x LEFT JOIN projects p ON p.id = x.project_id`
 
 func scanPlan(row interface{ Scan(...any) error }) (Plan, error) {
 	var x Plan
 	var seq int
 	var created, updated string
-	err := row.Scan(&x.ID, &seq, &x.ProjectID, &x.ProjectName, &x.Title, &x.Goal, &x.OwnerSession, &x.Status, &x.CreatedBy, &created, &updated)
+	err := row.Scan(&x.ID, &seq, &x.ProjectID, &x.ProjectName, &x.Title, &x.Goal, &x.OwnerSession, &x.Status, &x.CreatedBy, &x.Returned, &created, &updated)
 	x.Code = planCode(seq)
 	x.CreatedAt = parseTS(created)
 	x.UpdatedAt = parseTS(updated)
@@ -383,6 +384,12 @@ func (s *Store) UpdatePlan(ctx context.Context, x Plan, stages []StageInput) (Pl
 // SetPlanStatus 修改计划状态。
 func (s *Store) SetPlanStatus(ctx context.Context, id, status string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE plans SET status = ?, updated_at = ? WHERE id = ?`, status, now(), id)
+	return err
+}
+
+// SetPlanReturned 标记 / 清除「已退回待改」。
+func (s *Store) SetPlanReturned(ctx context.Context, id string, returned bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE plans SET returned = ?, updated_at = ? WHERE id = ?`, returned, now(), id)
 	return err
 }
 

@@ -5,7 +5,7 @@ import { usePlans, usePool, useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
 import { ReqView } from '../app/reqDrawer'
 import { DesignBadge } from '../app/design'
-import { PlanBadge, PlanEditor, PlansView } from '../app/plans'
+import { PlanBadge, PlanEditor, PlansView, needsApproval } from '../app/plans'
 import { OwnBadge, useOwnership } from '../app/ownership'
 import { Ctx } from '../ui/contextMenu'
 import { useReqMenu } from '../app/menus'
@@ -353,7 +353,7 @@ export default function RequirementsPage() {
   // 计划视图的副标题说计划（R-131）：几个在推进、几个等你批准
   const planSummary = useMemo(() => {
     const list = (plans.data ?? []).filter((x) => !project || x.project_id === project)
-    return t.plan.countLine(list.filter((x) => x.status === 'active').length, list.filter((x) => x.status === 'draft' && x.created_by === 'agent').length)
+    return t.plan.countLine(list.filter((x) => x.status === 'active').length, list.filter(needsApproval).length)
   }, [plans.data, project])
 
   const since = useMemo(() => new Map((pool.data?.items ?? []).map((x) => [x.code, x])), [pool.data])

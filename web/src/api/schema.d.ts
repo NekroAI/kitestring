@@ -180,7 +180,8 @@ export interface paths {
             cookie?: never;
         };
         get: operations["agent-get-plan"];
-        put?: never;
+        /** Agent 修改被用户退回的计划并重新提交，计划回到待批准（R-176） */
+        put: operations["agent-update-plan"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1619,6 +1620,15 @@ export interface components {
             /** @description 要告诉 PM 的话 */
             text: string;
         };
+        "Agent-update-planRequest": {
+            /** @description 不给表示不改目标 */
+            goal?: string;
+            session_key?: string;
+            /** @description 不给表示不改阶段；给了就按它重排（已有阶段带 id） */
+            stages?: components["schemas"]["StageIn"][] | null;
+            /** @description 不给表示不改标题 */
+            title?: string;
+        };
         "Agent-update-statusRequest": {
             /** @description 放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）；搁置（shelved）时必填的搁置原因（R-157） */
             reason?: string;
@@ -2524,6 +2534,7 @@ export interface components {
             paused: boolean;
             project_id?: string;
             project_name?: string;
+            returned: boolean;
             stages: components["schemas"]["Stage"][] | null;
             /** @enum {string} */
             status: "draft" | "active" | "done" | "shelved";
@@ -2557,6 +2568,7 @@ export interface components {
             paused: boolean;
             project_id?: string;
             project_name?: string;
+            returned: boolean;
             stages: components["schemas"]["Stage"][] | null;
             /** @enum {string} */
             status: "draft" | "active" | "done" | "shelved";
@@ -3039,6 +3051,7 @@ export interface components {
             paused: boolean;
             project_id?: string;
             project_name?: string;
+            returned: boolean;
             stages: components["schemas"]["Stage"][] | null;
             /** @enum {string} */
             status: "draft" | "active" | "done" | "shelved";
@@ -3540,6 +3553,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-update-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-update-planRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanCreatedOutBody"];
                 };
             };
             /** @description Error */

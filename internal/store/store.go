@@ -117,6 +117,7 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "answer_reason", "TEXT NOT NULL DEFAULT ''"},
 	{"status_changes", "reason_kind", "TEXT NOT NULL DEFAULT ''"},
 	{"status_changes", "reason", "TEXT NOT NULL DEFAULT ''"},
+	{"plans", "returned", "INTEGER NOT NULL DEFAULT 0"},
 }
 
 func migrate(db *sql.DB) error {

@@ -46,6 +46,7 @@ const toneCls: Record<Tone, string> = {
 
 // planState：计划现在处在哪一步、是不是在等你。
 export function planState(x: Plan): { label: string; tone: Tone; needsYou: boolean } {
+  if (x.status === 'draft' && x.returned) return { label: t.plan.state.returned, tone: 'draft', needsYou: false }
   if (x.status === 'draft') return x.created_by === 'agent' ? { label: t.plan.state.approve, tone: 'approve', needsYou: true } : { label: t.plan.state.draft, tone: 'draft', needsYou: false }
   if (x.status === 'done') return { label: t.plan.state.done, tone: 'done', needsYou: false }
   if (x.status === 'shelved') return { label: t.plan.state.shelved, tone: 'shelved', needsYou: false }
@@ -117,7 +118,7 @@ export function PlanCard({ x, act }: { x: Plan; act?: boolean }) {
       data-nav-item=""
       onClick={() => open(x.code)}
       onKeyDown={(e) => e.key === 'Enter' && open(x.code)}
-      className={cx('relative cursor-pointer overflow-hidden p-4 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', state.needsYou && 'border-reply/35 ring-1 ring-reply/25', x.status === 'draft' && x.created_by === 'agent' && 'border-dashed')}
+      className={cx('relative cursor-pointer overflow-hidden p-4 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', state.needsYou && 'border-reply/35 ring-1 ring-reply/25', needsApproval(x) && 'border-dashed')}
     >
       <div className="flex items-center gap-2.5">
         <RefChip code={x.code} status={x.status} link={false} />
@@ -255,7 +256,7 @@ export const gateStage = (x: Plan) => {
   const st = x.status === 'active' ? currentStage(x) : undefined
   return st && (stageFinished(st) || st.status === 'review') ? st : undefined
 }
-const needsApproval = (x: Plan) => x.status === 'draft' && x.created_by === 'agent'
+export const needsApproval = (x: Plan) => x.status === 'draft' && x.created_by === 'agent' && !x.returned
 
 function usePlanVerdict() {
   const { passStage, reviseStage, startPlan, rejectPlan } = useActions()

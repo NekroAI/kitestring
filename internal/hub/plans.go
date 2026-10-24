@@ -259,6 +259,9 @@ func (h *Hub) startPlan(ctx context.Context, ref string, n note) (store.Plan, er
 	if err := h.store.SetPlanStatus(ctx, x.ID, store.PlanActive); err != nil {
 		return x, err
 	}
+	if x.Returned {
+		_ = h.store.SetPlanReturned(ctx, x.ID, false)
+	}
 	st, _ := x.Stage(x.Current)
 	verb := "开始"
 	if x.CreatedBy == "agent" {
@@ -271,23 +274,22 @@ func (h *Hub) startPlan(ctx context.Context, ref string, n note) (store.Plan, er
 	return h.planChanged(ctx, x.ID)
 }
 
-// rejectPlan 不批准 Agent 拆出的计划：搁置，并把附言送给它。
+// rejectPlan 用户退回 Agent 拆出的计划：回到草稿（标记已退回），附言送给它，改完可重新提交（R-176）。退回必须附意见或图片（R-161）。
 func (h *Hub) rejectPlan(ctx context.Context, ref string, n note) (store.Plan, error) {
 	x, err := h.store.GetPlan(ctx, ref)
 	if err != nil {
 		return x, apiErr(err)
 	}
-	if x.Status != store.PlanDraft {
+	if x.Status != store.PlanDraft || x.Returned {
 		return x, huma.Error400BadRequest(x.Code + " 不在待批准状态")
 	}
-	if err := h.store.SetPlanStatus(ctx, x.ID, store.PlanShelved); err != nil {
+	if n.empty() {
+		return x, huma.Error400BadRequest("请写下退回的意见或附上图片")
+	}
+	if err := h.store.SetPlanReturned(ctx, x.ID, true); err != nil {
 		return x, err
 	}
-	msg := "用户退回了这个计划（已搁置，不会开工），没有写意见"
-	if !n.empty() {
-		msg = returnedText("这个计划（已搁置，不会开工）", n.text)
-	}
-	h.planMsg(ctx, x, msg+"\n按意见调整后重新用 plan_create 提交。", n.files...)
+	h.planMsg(ctx, x, returnedText("这个计划", n.text)+"；改完后可重新提交\n用 plan_update（命令行 ks plan update "+x.Code+" --file plan.json）修改并重新提交这个计划，不要另建新计划。", n.files...)
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -652,6 +654,51 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划 · " + x.Code, Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
+			x, err = h.planChanged(ctx, x.ID)
+			out := &planCreatedOut{}
+			out.Body.Plan, out.Body.Notices = x, notices
+			return out, err
+		})
+	huma.Register(api, huma.Operation{OperationID: "agent-update-plan", Method: http.MethodPut, Path: "/api/agent/plans/{ref}", Tags: tag, Summary: "Agent 修改被用户退回的计划并重新提交，计划回到待批准（R-176）"},
+		func(ctx context.Context, in *struct {
+			Ref  string `path:"ref"`
+			Body struct {
+				Title      string    `json:"title,omitempty" doc:"不给表示不改标题"`
+				Goal       *string   `json:"goal,omitempty" doc:"不给表示不改目标"`
+				Stages     []stageIn `json:"stages,omitempty" doc:"不给表示不改阶段；给了就按它重排（已有阶段带 id）"`
+				SessionKey string    `json:"session_key,omitempty"`
+			}
+		}) (*planCreatedOut, error) {
+			cur, err := h.store.GetPlan(ctx, in.Ref)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			if cur.Status != store.PlanDraft || !cur.Returned {
+				return nil, huma.Error400BadRequest(cur.Code + " 没有被用户退回，不能这样修改（已提交待批准的计划等用户处理）")
+			}
+			b := in.Body
+			var stages []store.StageInput
+			var notices []string
+			if b.Stages != nil {
+				if stages, notices, err = h.resolveStages(ctx, b.Stages, cur.ProjectID, "agent", b.SessionKey, true); err != nil {
+					return nil, err
+				}
+			}
+			next := store.Plan{ID: cur.ID, Title: cur.Title, Goal: cur.Goal, ProjectID: cur.ProjectID, OwnerSession: cur.OwnerSession}
+			if strings.TrimSpace(b.Title) != "" {
+				next.Title = b.Title
+			}
+			if b.Goal != nil {
+				next.Goal = *b.Goal
+			}
+			x, err := h.store.UpdatePlan(ctx, next, stages)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			if err := h.store.SetPlanReturned(ctx, x.ID, false); err != nil {
+				return nil, err
+			}
+			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划（已按意见修改） · " + x.Code, Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
 			x, err = h.planChanged(ctx, x.ID)
 			out := &planCreatedOut{}
 			out.Body.Plan, out.Body.Notices = x, notices

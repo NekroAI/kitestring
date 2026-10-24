@@ -809,6 +809,7 @@ export const zh = {
     autoNext: `阶段${ACC.pass}后自动把下一阶段交给它`,
     state: {
       approve: '待你批准',
+      returned: '已退回 · 等 Agent 修改',
       draft: '未开始',
       review: (n: number) => `待你验收阶段 ${n}`,
       finished: (n: number) => `阶段 ${n} 已做完`,
