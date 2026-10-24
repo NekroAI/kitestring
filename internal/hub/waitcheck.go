@@ -23,6 +23,7 @@ type waitCheck struct {
 	Asking  bool     `json:"asking" doc:"最后一条回复看起来在问用户"`
 	Ask     string   `json:"ask,omitempty" doc:"判断依据：最后一条回复的最后一段"`
 	Hint    string   `json:"hint,omitempty" doc:"要输出给 Agent 的提示；有待处理事项时为空"`
+	Retired bool     `json:"retired,omitempty" doc:"会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待"`
 }
 
 // pendingFor 列出会话 key 名下等用户处理的事项。
@@ -72,6 +73,9 @@ func (h *Hub) checkWait(ctx context.Context, key, text string) (waitCheck, error
 	x, err := h.store.GetSession(ctx, key)
 	if err != nil {
 		return waitCheck{}, apiErr(err)
+	}
+	if x.RetiredAt != nil {
+		return waitCheck{Items: []string{}, Retired: true, Hint: "[Kitestring] 你已交接卸任（身份已由新会话接任），不要再挂 ks wait：用一两句话收尾后结束本轮。纸鸢不会再唤醒你。\n"}, nil
 	}
 	items, err := h.pendingFor(ctx, key)
 	if err != nil {

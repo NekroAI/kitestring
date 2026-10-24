@@ -444,3 +444,26 @@ CREATE TABLE IF NOT EXISTS lane_shells (
 	PRIMARY KEY (session_key, ref)
 );
 CREATE INDEX IF NOT EXISTS lane_shells_start ON lane_shells(start_ms);
+
+-- 会话交接（R-224）：换会话 / 换工具 / 换设备时，旧会话用 handoff_write 写结构化交接，新会话 ks role 接任时自动注入。
+-- status：requested 用户点了「交接」、等旧会话写；written 已写好、等新会话接任；taken 已被接任（taken_by / taken_at）。
+CREATE TABLE IF NOT EXISTS handoffs (
+	id           TEXT PRIMARY KEY,
+	project_id   TEXT NOT NULL,
+	role         TEXT NOT NULL,
+	from_session TEXT NOT NULL,
+	from_title   TEXT NOT NULL DEFAULT '',
+	status       TEXT NOT NULL,
+	doing        TEXT NOT NULL DEFAULT '',
+	waiting      TEXT NOT NULL DEFAULT '',
+	rules        TEXT NOT NULL DEFAULT '',
+	next         TEXT NOT NULL DEFAULT '',
+	notes        TEXT NOT NULL DEFAULT '',
+	requested_at TEXT NOT NULL DEFAULT '',
+	written_at   TEXT NOT NULL DEFAULT '',
+	taken_by     TEXT NOT NULL DEFAULT '',
+	taken_title  TEXT NOT NULL DEFAULT '',
+	taken_at     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS handoffs_project_role ON handoffs(project_id, role);
+CREATE INDEX IF NOT EXISTS handoffs_from ON handoffs(from_session);

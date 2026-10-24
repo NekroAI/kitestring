@@ -744,11 +744,43 @@ func (d *Daemon) rolePrompt(ev protocol.Event) string {
 	if ev.Name != "SessionStart" || (ev.Source != "resume" && ev.Source != "compact") {
 		return ""
 	}
+	key := protocol.SessionKey(ev.Tool, ev.SessionID)
 	d.mu.Lock()
-	role := d.roles[protocol.SessionKey(ev.Tool, ev.SessionID)]
+	role := d.roles[key]
 	body := d.customPrompts[role]
 	d.mu.Unlock()
-	return roles.Compose(role, body)
+	p := roles.Compose(role, body)
+	if p != "" && ev.Source == "compact" {
+		// 压缩后另附会话在纸鸢里的关键状态（R-224）：关联的需求、待答决策、在跑的子任务，补摘要漏掉的
+		p += d.stateNote(key)
+	}
+	return p
+}
+
+// stateNote 向 Hub 取会话的关键状态（R-224）；取不到时返回空，不耽误 hook。
+func (d *Daemon) stateNote(key string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/sessions/"+url.PathEscape(key)+"/state-note", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+d.cfg.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var out struct {
+		Message string `json:"message"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out) != nil || out.Message == "" {
+		return ""
+	}
+	return "\n" + out.Message
 }
 
 // writeItem 写一条答复或修改意见；附件给出本地路径，agent 可直接读取。

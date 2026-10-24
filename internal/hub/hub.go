@@ -38,6 +38,22 @@ type Settings struct {
 	Upload        UploadLimits       `json:"upload"`
 	// DevRequestMinutes：PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝（R-169）；0 = 默认 30
 	DevRequestMinutes int `json:"dev_request_minutes,omitempty"`
+	// CompactTokens：上下文超过它就提示「建议压缩」（R-224），也是会话圆环变红的线、一半处变黄（R-225）；0 = 默认 30 万
+	CompactTokens int `json:"compact_tokens,omitempty"`
+}
+
+const (
+	defaultCompactTokens = 300_000
+	minCompactTokens     = 50_000
+	maxCompactTokens     = 2_000_000
+)
+
+// compactTokens 返回生效的建议压缩阈值。
+func (s Settings) compactTokens() int {
+	if s.CompactTokens <= 0 {
+		return defaultCompactTokens
+	}
+	return min(max(s.CompactTokens, minCompactTokens), maxCompactTokens)
 }
 
 // UploadLimits 附件大小上限（MB），0 表示用默认值（R-72）；FileMB 是图片、录屏以外的文件（R-221）。

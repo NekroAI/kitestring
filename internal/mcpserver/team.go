@@ -74,6 +74,14 @@ type briefIn struct {
 	Text string `json:"text" jsonschema:"简报：一段话（建议 150 字以内），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
 }
 
+type handoffIn struct {
+	Doing   string `json:"doing" jsonschema:"在做的：每件事写需求编号、做到哪、分支 / worktree 在哪"`
+	Waiting string `json:"waiting,omitempty" jsonschema:"等用户的：待答决策、待验收的需求、要用户拍板的事（写编号）"`
+	Rules   string `json:"rules,omitempty" jsonschema:"约定和规矩：用户定过的、团队里说好的、还没做成系统的口头约定"`
+	Next    string `json:"next" jsonschema:"下一步：接任后先做什么"`
+	Notes   string `json:"notes,omitempty" jsonschema:"注意事项：坑、在跑的进程、别碰的东西"`
+}
+
 type morningAdviceIn struct {
 	Requirement string `json:"requirement" jsonschema:"待验收的需求编号（如 R-12）"`
 	Verdict     string `json:"verdict" jsonschema:"pass = 建议通过；return = 建议退回；clear = 撤掉建议"`
@@ -105,6 +113,21 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "reply_to": in.ReplyTo, "agent_id": agent}
 			dropEmpty(body)
 			if err := t.c.Do(ctx, "POST", "/agent/team/tell", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "handoff_write", Description: "交接（R-224）：用户点了「交接」、要换会话 / 换工具 / 换设备接任你的身份时，写一份结构化交接存进纸鸢（显示在你的会话时间线上）。新会话运行 ks role <身份> 时自动读到最新一份，你随即卸任：身份清除、不再被唤醒，之后不要再挂 ks wait。主调度有在跑的子任务时会被拒绝：先停派新活，等子任务交完再写。可以重复调用，覆盖还没被接任的那一份。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in handoffIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			body := map[string]any{"session_key": key, "doing": in.Doing, "waiting": in.Waiting, "rules": in.Rules, "next": in.Next, "notes": in.Notes}
+			if err := t.c.Do(ctx, "POST", "/agent/handoff", body, &out); err != nil {
 				return nil, nil, err
 			}
 			return text(out.Message), nil, nil

@@ -67,7 +67,9 @@ agent 调用：
   decision answer <D-x> --answer 答复 --reason 理由 --risk low   Adv 在用户的授权窗口内代答（R-163）
   写作规范：证据第一句是结论（40 字以内），再逐条写验收判定；证据超 600 字、决策说明超 400 字时照常保存并提示压缩
   表达块：req evidence / decision raise / plan submit 可加 --blocks 块.json（清单、对比、截图、流程、指标、改动范围、选项、表格），纸鸢统一渲染
-  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / Dev / Adv / Rev），打印身份提示词
+  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动卸任
+  takeover <身份> [--tool claude|codex] [--print]
+                         交接（R-224）：在项目目录启动新会话并带接任提示，新会话声明身份时自动读到上一任的交接
   wait [--timeout 1h] [--on decision,review,blocked,stage,settings,status]
                          挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）；
                          --on 另外订阅本项目别的会话的事件（提决策 / 交验收 / 受阻 / 阶段交小结 / 用户改项目设置 / 用户改需求状态），none 不订阅、default 按身份默认，不填沿用上次
@@ -113,6 +115,8 @@ func main() {
 		err = runWait(args)
 	case "role":
 		err = runRole(args)
+	case "takeover":
+		err = runTakeover(args)
 	case "brief":
 		err = runBrief(args)
 	case "away", "morning":

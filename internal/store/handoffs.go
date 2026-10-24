@@ -1,0 +1,155 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"time"
+
+	"github.com/NekroAI/kitestring/internal/protocol"
+)
+
+// 会话交接（R-224）：旧会话写结构化交接，新会话声明同一身份时自动注入，旧会话随之卸任。
+
+const (
+	HandoffRequested = "requested" // 用户点了「交接」，等旧会话写
+	HandoffWritten   = "written"   // 已写好，等新会话接任
+	HandoffTaken     = "taken"     // 已被接任
+)
+
+// Handoff 是一份交接。
+type Handoff struct {
+	ID          string     `json:"id"`
+	ProjectID   string     `json:"project_id"`
+	Role        string     `json:"role"`
+	FromSession string     `json:"from_session"`
+	FromTitle   string     `json:"from_title"`
+	Status      string     `json:"status" enum:"requested,written,taken"`
+	Doing       string     `json:"doing" doc:"在做的：需求编号、做到哪"`
+	Waiting     string     `json:"waiting" doc:"等用户的：待答决策、待验收、要用户拍板的事"`
+	Rules       string     `json:"rules" doc:"约定和规矩：用户定过的、团队里说好的"`
+	Next        string     `json:"next" doc:"下一步"`
+	Notes       string     `json:"notes" doc:"注意事项：坑、别碰的东西、在跑的进程"`
+	RequestedAt *time.Time `json:"requested_at,omitempty"`
+	WrittenAt   *time.Time `json:"written_at,omitempty"`
+	TakenBy     string     `json:"taken_by,omitempty"`
+	TakenTitle  string     `json:"taken_title,omitempty"`
+	TakenAt     *time.Time `json:"taken_at,omitempty"`
+}
+
+const handoffCols = `id, project_id, role, from_session, from_title, status, doing, waiting, rules, next, notes, requested_at, written_at, taken_by, taken_title, taken_at`
+
+func scanHandoff(row interface{ Scan(...any) error }) (Handoff, error) {
+	var h Handoff
+	var req, wr, tk string
+	err := row.Scan(&h.ID, &h.ProjectID, &h.Role, &h.FromSession, &h.FromTitle, &h.Status, &h.Doing, &h.Waiting, &h.Rules, &h.Next, &h.Notes, &req, &wr, &h.TakenBy, &h.TakenTitle, &tk)
+	opt := func(s string) *time.Time {
+		if s == "" {
+			return nil
+		}
+		t := parseTS(s)
+		return &t
+	}
+	h.RequestedAt, h.WrittenAt, h.TakenAt = opt(req), opt(wr), opt(tk)
+	return h, err
+}
+
+// openHandoff 找会话还没被接任的交接（requested / written）。
+func (s *Store) openHandoff(ctx context.Context, from, role string) (Handoff, error) {
+	h, err := scanHandoff(s.db.QueryRowContext(ctx, `SELECT `+handoffCols+` FROM handoffs WHERE from_session = ? AND role = ? AND status <> ? ORDER BY requested_at DESC, written_at DESC LIMIT 1`, from, role, HandoffTaken))
+	if errors.Is(err, sql.ErrNoRows) {
+		return h, ErrNotFound
+	}
+	return h, err
+}
+
+// RequestHandoff 记下用户要这个会话交接；已有还没被接任的交接时沿用它（重复点不重复建）。
+func (s *Store) RequestHandoff(ctx context.Context, projectID, role, from string) (Handoff, error) {
+	if h, err := s.openHandoff(ctx, from, role); err == nil {
+		return h, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return h, err
+	}
+	title, _ := sessionSnap(ctx, s.db, from)
+	now := time.Now().UTC()
+	h := Handoff{ID: protocol.NewID(), ProjectID: projectID, Role: role, FromSession: from, FromTitle: title, Status: HandoffRequested, RequestedAt: &now}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO handoffs(id, project_id, role, from_session, from_title, status, requested_at) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+		h.ID, h.ProjectID, h.Role, h.FromSession, h.FromTitle, h.Status, ts(now))
+	return h, err
+}
+
+// WriteHandoff 写入交接内容：有还没被接任的交接就覆盖它（可以改写），没有就新建（会话自己主动写）。
+func (s *Store) WriteHandoff(ctx context.Context, projectID, role, from string, c Handoff) (Handoff, error) {
+	h, err := s.openHandoff(ctx, from, role)
+	if errors.Is(err, ErrNotFound) {
+		h = Handoff{ID: protocol.NewID(), ProjectID: projectID, Role: role, FromSession: from}
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO handoffs(id, project_id, role, from_session, status) VALUES(?, ?, ?, ?, ?)`, h.ID, projectID, role, from, HandoffWritten); err != nil {
+			return h, err
+		}
+	} else if err != nil {
+		return h, err
+	}
+	title, _ := sessionSnap(ctx, s.db, from)
+	now := time.Now().UTC()
+	if _, err := s.db.ExecContext(ctx, `UPDATE handoffs SET status = ?, from_title = ?, doing = ?, waiting = ?, rules = ?, next = ?, notes = ?, written_at = ? WHERE id = ?`,
+		HandoffWritten, title, c.Doing, c.Waiting, c.Rules, c.Next, c.Notes, ts(now), h.ID); err != nil {
+		return h, err
+	}
+	return s.GetHandoff(ctx, h.ID)
+}
+
+// GetHandoff 按 ID 读一份交接。
+func (s *Store) GetHandoff(ctx context.Context, id string) (Handoff, error) {
+	h, err := scanHandoff(s.db.QueryRowContext(ctx, `SELECT `+handoffCols+` FROM handoffs WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return h, ErrNotFound
+	}
+	return h, err
+}
+
+// TakeHandoff 新会话声明身份时接任：取同项目同身份、别的会话写好的最新一份交接，标为已接任。没有时返回 ErrNotFound。
+func (s *Store) TakeHandoff(ctx context.Context, projectID, role, by string) (Handoff, error) {
+	h, err := scanHandoff(s.db.QueryRowContext(ctx, `SELECT `+handoffCols+` FROM handoffs WHERE project_id = ? AND role = ? AND status = ? AND from_session <> ? ORDER BY written_at DESC LIMIT 1`,
+		projectID, role, HandoffWritten, by))
+	if errors.Is(err, sql.ErrNoRows) {
+		return h, ErrNotFound
+	}
+	if err != nil {
+		return h, err
+	}
+	title, _ := sessionSnap(ctx, s.db, by)
+	now := time.Now().UTC()
+	if _, err := s.db.ExecContext(ctx, `UPDATE handoffs SET status = ?, taken_by = ?, taken_title = ?, taken_at = ? WHERE id = ?`, HandoffTaken, by, title, ts(now), h.ID); err != nil {
+		return h, err
+	}
+	h.Status, h.TakenBy, h.TakenTitle, h.TakenAt = HandoffTaken, by, title, &now
+	return h, nil
+}
+
+// HandoffsOf 列出会话交出去的和接手的交接（新的在前，最多 10 份）。
+func (s *Store) HandoffsOf(ctx context.Context, key string) ([]Handoff, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+handoffCols+` FROM handoffs WHERE from_session = ? OR taken_by = ? ORDER BY COALESCE(NULLIF(taken_at, ''), NULLIF(written_at, ''), requested_at) DESC LIMIT 10`, key, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Handoff{}
+	for rows.Next() {
+		h, err := scanHandoff(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// SetRetired 标记会话已交接卸任（R-224）；retired = false 时清除（重新声明身份）。
+func (s *Store) SetRetired(ctx context.Context, key string, retired bool) error {
+	v := ""
+	if retired {
+		v = ts(time.Now().UTC())
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET retired_at = ? WHERE key = ?`, v, key)
+	return err
+}

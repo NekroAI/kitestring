@@ -155,6 +155,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 写交接（R-224）：存进 Hub、显示在会话时间线；新会话声明同一身份时自动注入 */
+        post: operations["agent-handoff-write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/morning": {
         parameters: {
             query?: never;
@@ -398,6 +415,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["agent-link-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/sessions/{key}/state-note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 会话在纸鸢里的关键状态（关联的需求、待答决策、在跑的子任务），压缩上下文后随身份提示词补注入（R-224） */
+        get: operations["agent-state-note"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1444,6 +1478,23 @@ export interface paths {
         put?: never;
         /** 手动标记 / 取消“已完成”（你再给它发消息时自动取消） */
         post: operations["mark-session-done"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{key}/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 请会话交接（R-224）：通知它用 handoff_write 写交接，返回新会话接任要运行的命令 */
+        post: operations["request-handoff"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2537,6 +2588,56 @@ export interface components {
             /** @description 参谋代答过的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
         };
+        Handoff: {
+            /** @description 在做的：需求编号、做到哪 */
+            doing: string;
+            from_session: string;
+            from_title: string;
+            id: string;
+            /** @description 下一步 */
+            next: string;
+            /** @description 注意事项：坑、别碰的东西、在跑的进程 */
+            notes: string;
+            project_id: string;
+            /** Format: date-time */
+            requested_at?: string;
+            role: string;
+            /** @description 约定和规矩：用户定过的、团队里说好的 */
+            rules: string;
+            /** @enum {string} */
+            status: "requested" | "written" | "taken";
+            /** Format: date-time */
+            taken_at?: string;
+            taken_by?: string;
+            taken_title?: string;
+            /** @description 等用户的：待答决策、待验收、要用户拍板的事 */
+            waiting: string;
+            /** Format: date-time */
+            written_at?: string;
+        };
+        HandoffOutBody: {
+            /** @description 新会话接任要运行的命令（ks takeover <身份>） */
+            command: string;
+            handoff: components["schemas"]["Handoff"];
+            /**
+             * Format: int64
+             * @description 主调度还在跑的子任务数：交接要等它们交完
+             */
+            waiting: number;
+        };
+        HandoffWriteInBody: {
+            /** @description 在做的：需求编号、做到哪 */
+            doing: string;
+            /** @description 下一步 */
+            next: string;
+            /** @description 注意事项：坑、在跑的进程、别碰的东西 */
+            notes?: string;
+            /** @description 约定和规矩：用户定过的、团队里说好的 */
+            rules?: string;
+            session_key: string;
+            /** @description 等用户的：待答决策、待验收、要用户拍板的事 */
+            waiting?: string;
+        };
         IgnoreOrphanInBody: {
             device_id: string;
             /** @description 根进程“进程号@启动时间”，取自列表 */
@@ -2802,6 +2903,9 @@ export interface components {
         "Merge-projectRequest": {
             /** @description 并入的目标项目 ID */
             into: string;
+        };
+        MessageOutBody: {
+            message: string;
         };
         MorningDelivery: {
             kind: string;
@@ -3396,6 +3500,8 @@ export interface components {
         RoleOutBody: {
             /** @description 因本次接任主调度 / 主助理被降为无身份的会话 */
             demoted: string[] | null;
+            /** @description 接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾 */
+            handoff: boolean;
             /** @description 身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空 */
             label: string;
             /** @description 身份中文名（主助理 / 顾问 / 评审 / 主调度 / 开发）；无身份时为空 */
@@ -3461,6 +3567,8 @@ export interface components {
             recent_tools: components["schemas"]["ToolAct"][] | null;
             reply_ask?: string;
             requirements: components["schemas"]["RequirementRef"][] | null;
+            /** Format: date-time */
+            retired_at?: string;
             /** @enum {string} */
             role: "" | "aide" | "advisor" | "reviewer" | "pm" | "dev";
             session_id: string;
@@ -3486,6 +3594,7 @@ export interface components {
         };
         SessionDetailOutBody: {
             events: components["schemas"]["Event"][] | null;
+            handoffs?: components["schemas"]["Handoff"][] | null;
             last_reply?: components["schemas"]["LastReply"];
             session: components["schemas"]["Session"];
         };
@@ -3504,6 +3613,11 @@ export interface components {
         };
         SettingsInBody: {
             ai: components["schemas"]["AIFeatures"];
+            /**
+             * Format: int64
+             * @description 建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万
+             */
+            compact_tokens?: number;
             /**
              * Format: int64
              * @description PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30
@@ -3533,6 +3647,11 @@ export interface components {
         };
         SettingsView: {
             ai: components["schemas"]["AIFeatures"];
+            /**
+             * Format: int64
+             * @description 建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）
+             */
+            compact_tokens: number;
             /**
              * Format: int64
              * @description PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝
@@ -3784,6 +3903,8 @@ export interface components {
              * @description 名下等用户处理的事项件数
              */
             pending: number;
+            /** @description 会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待 */
+            retired?: boolean;
         };
         WeComConfig: {
             webhook: string;
@@ -4116,6 +4237,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentGrantOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-handoff-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffWriteInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageOutBody"];
                 };
             };
             /** @description Error */
@@ -4691,6 +4845,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LinkOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-state-note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageOutBody"];
                 };
             };
             /** @description Error */
@@ -7065,6 +7250,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionDetailOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "request-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffOutBody"];
                 };
             };
             /** @description Error */

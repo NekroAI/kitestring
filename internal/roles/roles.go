@@ -181,3 +181,9 @@ func Compose(role, body string) string {
 
 // Prompt 返回注入给 Agent 的默认身份提示词；无身份时为空。用户改写过的版本由 Hub 下发（R-98）。
 func Prompt(role string) string { return Compose(role, "") }
+
+// TakeoverPrompt：ks takeover 启动新会话时带的接任提示（R-224）。新会话按它声明身份，纸鸢在 ks role 的输出里附上上一任的交接。
+func TakeoverPrompt(role string) string {
+	return "连接到纸鸢，接任本项目的" + Display(role) + "：先运行 ks role " + role +
+		"。输出里会附上上一任写的交接（在做的、等用户的、约定和规矩、下一步、注意事项）；读完先回我一句确认（已接任、接手了哪几件事、下一步），再按交接继续。"
+}

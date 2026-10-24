@@ -148,6 +148,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "from_role", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "from_agent", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "reply_to", "TEXT NOT NULL DEFAULT ''"},
+	// 交接卸任（R-224）：被新会话接任后不再挂 ks wait、不再被唤醒；重新声明身份时清除
+	{"sessions", "retired_at", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。

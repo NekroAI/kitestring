@@ -3035,6 +3035,144 @@
         ],
         "type": "object"
       },
+      "Handoff": {
+        "additionalProperties": false,
+        "properties": {
+          "doing": {
+            "description": "在做的：需求编号、做到哪",
+            "type": "string"
+          },
+          "from_session": {
+            "type": "string"
+          },
+          "from_title": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "next": {
+            "description": "下一步",
+            "type": "string"
+          },
+          "notes": {
+            "description": "注意事项：坑、别碰的东西、在跑的进程",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "rules": {
+            "description": "约定和规矩：用户定过的、团队里说好的",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "requested",
+              "written",
+              "taken"
+            ],
+            "type": "string"
+          },
+          "taken_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "taken_by": {
+            "type": "string"
+          },
+          "taken_title": {
+            "type": "string"
+          },
+          "waiting": {
+            "description": "等用户的：待答决策、待验收、要用户拍板的事",
+            "type": "string"
+          },
+          "written_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "role",
+          "from_session",
+          "from_title",
+          "status",
+          "doing",
+          "waiting",
+          "rules",
+          "next",
+          "notes"
+        ],
+        "type": "object"
+      },
+      "HandoffOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "新会话接任要运行的命令（ks takeover \u003c身份\u003e）",
+            "type": "string"
+          },
+          "handoff": {
+            "$ref": "#/components/schemas/Handoff"
+          },
+          "waiting": {
+            "description": "主调度还在跑的子任务数：交接要等它们交完",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "handoff",
+          "command",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "HandoffWriteInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "doing": {
+            "description": "在做的：需求编号、做到哪",
+            "type": "string"
+          },
+          "next": {
+            "description": "下一步",
+            "type": "string"
+          },
+          "notes": {
+            "description": "注意事项：坑、在跑的进程、别碰的东西",
+            "type": "string"
+          },
+          "rules": {
+            "description": "约定和规矩：用户定过的、团队里说好的",
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "waiting": {
+            "description": "等用户的：待答决策、待验收、要用户拍板的事",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "doing",
+          "next"
+        ],
+        "type": "object"
+      },
       "IgnoreOrphanInBody": {
         "additionalProperties": false,
         "properties": {
@@ -3873,6 +4011,18 @@
         },
         "required": [
           "into"
+        ],
+        "type": "object"
+      },
+      "MessageOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
         ],
         "type": "object"
       },
@@ -5996,6 +6146,10 @@
               "null"
             ]
           },
+          "handoff": {
+            "description": "接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾",
+            "type": "boolean"
+          },
           "label": {
             "description": "身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空",
             "type": "string"
@@ -6021,7 +6175,8 @@
           "label",
           "name",
           "prompt",
-          "demoted"
+          "demoted",
+          "handoff"
         ],
         "type": "object"
       },
@@ -6188,6 +6343,10 @@
               "null"
             ]
           },
+          "retired_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "role": {
             "enum": [
               "",
@@ -6319,6 +6478,15 @@
               "null"
             ]
           },
+          "handoffs": {
+            "items": {
+              "$ref": "#/components/schemas/Handoff"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "last_reply": {
             "$ref": "#/components/schemas/LastReply"
           },
@@ -6385,6 +6553,13 @@
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
+          "compact_tokens": {
+            "description": "建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万",
+            "format": "int64",
+            "maximum": 2000000,
+            "minimum": 0,
+            "type": "integer"
+          },
           "dev_request_minutes": {
             "description": "PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30",
             "format": "int64",
@@ -6445,6 +6620,11 @@
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
+          "compact_tokens": {
+            "description": "建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）",
+            "format": "int64",
+            "type": "integer"
+          },
           "dev_request_minutes": {
             "description": "PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝",
             "format": "int64",
@@ -6501,7 +6681,8 @@
           "upload_image_mb",
           "upload_video_mb",
           "upload_file_mb",
-          "dev_request_minutes"
+          "dev_request_minutes",
+          "compact_tokens"
         ],
         "type": "object"
       },
@@ -7240,6 +7421,10 @@
             "description": "名下等用户处理的事项件数",
             "format": "int64",
             "type": "integer"
+          },
+          "retired": {
+            "description": "会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待",
+            "type": "boolean"
           }
         },
         "required": [
@@ -7778,6 +7963,47 @@
           }
         },
         "summary": "查看本项目当前的参谋授权窗口（R-163）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/handoff": {
+      "post": {
+        "operationId": "agent-handoff-write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoffWriteInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "写交接（R-224）：存进 Hub、显示在会话时间线；新会话声明同一身份时自动注入",
         "tags": [
           "agent"
         ]
@@ -8586,6 +8812,47 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/sessions/{key}/state-note": {
+      "get": {
+        "operationId": "agent-state-note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话在纸鸢里的关键状态（关联的需求、待答决策、在跑的子任务），压缩上下文后随身份提示词补注入（R-224）",
         "tags": [
           "agent"
         ]
@@ -11836,6 +12103,47 @@
           }
         },
         "summary": "手动标记 / 取消“已完成”（你再给它发消息时自动取消）",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{key}/handoff": {
+      "post": {
+        "operationId": "request-handoff",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "请会话交接（R-224）：通知它用 handoff_write 写交接，返回新会话接任要运行的命令",
         "tags": [
           "sessions"
         ]

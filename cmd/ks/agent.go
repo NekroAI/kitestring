@@ -574,13 +574,17 @@ func runWait(args []string) error {
 	}
 	// 先自查（R-117）：名下没有用户能在面板上推进的事时先提示，再照常等待；查不到时不提示
 	var check struct {
-		Hint string `json:"hint"`
+		Hint    string `json:"hint"`
+		Retired bool   `json:"retired"`
 	}
 	cctx, ccancel := context.WithTimeout(context.Background(), 8*time.Second)
 	if err := client.New(8*time.Second).Do(cctx, "GET", "/wait/check?"+q.Encode(), nil, &check); err == nil && check.Hint != "" {
 		fmt.Print(check.Hint)
 	}
 	ccancel()
+	if check.Retired {
+		return nil // 已交接卸任（R-224）：不再挂起等待
+	}
 	fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
 	if v := q.Get("on"); v != "" && v != protocol.OnNone && v != protocol.OnDefault {
 		fmt.Fprintf(os.Stderr, "[Kitestring] 另外订阅了本项目的事件：%s；发生时也会唤醒你。\n", v)

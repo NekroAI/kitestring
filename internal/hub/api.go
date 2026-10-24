@@ -64,6 +64,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerLanesWeb(webAPI)
 	h.registerCommitsAgent(agentAPI)
 	h.registerOrphansWeb(webAPI)
+	h.registerHandoffWeb(webAPI)
+	h.registerHandoffAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -136,6 +138,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerLanesWeb(api)
 	h.registerCommitsAgent(api)
 	h.registerOrphansWeb(api)
+	h.registerHandoffWeb(api)
+	h.registerHandoffAgent(api)
 	return api.OpenAPI()
 }
 
@@ -281,6 +285,8 @@ type sessionDetailOut struct {
 		Events  []protocol.Event `json:"events"`
 		// LastReply：最近一轮结束时的最后一条回复（Markdown，最长 2 万字）；还没有时省略（R-109）
 		LastReply *store.LastReply `json:"last_reply,omitempty"`
+		// Handoffs：这个会话交出去的和接手的交接（R-224），新的在前
+		Handoffs []store.Handoff `json:"handoffs,omitempty"`
 	}
 }
 
@@ -447,6 +453,7 @@ type SettingsView struct {
 	VideoMB       int                `json:"upload_video_mb" doc:"录屏大小上限（MB）"`
 	FileMB        int                `json:"upload_file_mb" doc:"其它文件（图片、录屏以外）大小上限（MB）"`
 	DevRequestMin int                `json:"dev_request_minutes" doc:"PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝"`
+	CompactTokens int                `json:"compact_tokens" doc:"建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）"`
 }
 
 type settingsIn struct {
@@ -461,6 +468,7 @@ type settingsIn struct {
 		VideoMB       int                `json:"upload_video_mb,omitempty" minimum:"0" maximum:"4096" doc:"录屏大小上限（MB），0 或留空用默认 50"`
 		FileMB        int                `json:"upload_file_mb,omitempty" minimum:"0" maximum:"4096" doc:"其它文件大小上限（MB），0 或留空用默认 20"`
 		DevRequestMin int                `json:"dev_request_minutes,omitempty" minimum:"0" maximum:"1440" doc:"PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30"`
+		CompactTokens int                `json:"compact_tokens,omitempty" minimum:"0" maximum:"2000000" doc:"建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万"`
 	}
 }
 
@@ -477,7 +485,7 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 	return &settingsOut{Body: SettingsView{
 		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
-		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0),
+		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0), CompactTokens: s.compactTokens(),
 	}}, nil
 }
 
@@ -528,7 +536,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if out.Body.Events, err = h.store.SessionEvents(ctx, in.Key, 50); err != nil {
 				return nil, err
 			}
-			out.Body.LastReply, err = h.store.GetLastReply(ctx, in.Key)
+			if out.Body.LastReply, err = h.store.GetLastReply(ctx, in.Key); err != nil {
+				return nil, err
+			}
+			out.Body.Handoffs, err = h.store.HandoffsOf(ctx, in.Key)
 			return out, err
 		})
 
@@ -1046,6 +1057,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			cur.NotifyDefault = b.NotifyDefault
 			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB, FileMB: b.FileMB}
 			cur.DevRequestMinutes = b.DevRequestMin
+			cur.CompactTokens = b.CompactTokens
 			if err := h.SaveSettings(ctx, cur); err != nil {
 				return nil, err
 			}

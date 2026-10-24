@@ -45,6 +45,7 @@ func runRole(args []string) error {
 		Label   string   `json:"label"`
 		Prompt  string   `json:"prompt"`
 		Demoted []string `json:"demoted"`
+		Handoff bool     `json:"handoff"`
 	}
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": key, "role": role}, &out); err != nil {
 		return err
@@ -53,7 +54,9 @@ func runRole(args []string) error {
 		fmt.Println("[Kitestring] 已清除本会话的身份，回到普通会话。")
 		return nil
 	}
-	if len(out.Demoted) > 0 {
+	if out.Handoff {
+		fmt.Printf("[Kitestring] 已接任%s：上一任写的交接附在下面，上一任已自动卸任。\n", roles.Display(role))
+	} else if len(out.Demoted) > 0 {
 		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）降为普通会话，并已收到通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
 	}
 	fmt.Print(out.Prompt)

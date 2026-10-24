@@ -74,6 +74,7 @@ type Session struct {
 	Tasks            []BgTask         `json:"tasks"`                                // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
+	RetiredAt        *time.Time       `json:"retired_at,omitempty"` // 交接给新会话后卸任的时间（R-224）：不再挂 ks wait、不再被唤醒
 }
 
 // BgTask 是会话下一个在跑的后台任务（R-162）：只有类型、标签、开始时间与最近动作，不含命令输出与对话内容。
@@ -133,18 +134,18 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background,
+	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt, doneAt, parkedUntil, tasks string
+	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background,
+		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired,
 		&started, &active, &ended)
 	x.Tasks = []BgTask{}
 	if tasks != "" && tasks != "[]" {
@@ -168,6 +169,10 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	if parkedUntil != "" && x.Parked {
 		t := parseTS(parkedUntil)
 		x.ParkedUntil = &t
+	}
+	if retired != "" {
+		t := parseTS(retired)
+		x.RetiredAt = &t
 	}
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
