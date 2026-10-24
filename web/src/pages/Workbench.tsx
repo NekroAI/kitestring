@@ -438,7 +438,7 @@ export default function WorkbenchPage() {
       <PaneHead title={phone ? '' : t.desk.paneLanes} n={<Held k={`ks.skel.laneN.${mode === 'full' ? 'f' : 's'}`} text={mode === 'full' ? t.desk.laneSub(run, park, quiet) : t.desk.laneSubShort(run, desk.lanes.length)} loading={laneLoading} />}>
         <ZoomSwitch zoom={zoom} onChange={pickZoom} short={mode !== 'full'} />
         <span className="flex-1" />
-        <div className={cx('relative shrink-0', mode === 'full' ? 'w-56' : 'w-36')}>
+        <div className={cx('relative min-w-[5.5rem] shrink', mode === 'full' ? 'w-56' : 'w-36')}>
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-3" />
           <Input ref={search} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && (setQ(''), e.currentTarget.blur())} placeholder={t.home.search} className="h-8 pr-8 pl-8 text-[13px]" />
           <span className={cx('pointer-events-none absolute top-1/2 right-2 -translate-y-1/2', mode !== 'full' && 'hidden')}>
