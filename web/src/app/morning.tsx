@@ -28,10 +28,7 @@ export function ProxyLine({ d, onOpen }: { d: Decision; onOpen?: () => void }) {
       title={d.proxy_reason ?? ''}
       onClick={
         rc
-          ? () => {
-              onOpen?.()
-              openRef(rc)
-            }
+          ? () => openRef(rc)
           : undefined
       }
     >
@@ -66,17 +63,14 @@ export function ProxyLine({ d, onOpen }: { d: Decision; onOpen?: () => void }) {
 }
 
 // ReleaseLine：一条放行，一行——需求、谁放行的、理由（悬停看全）；可撤回。
-export function ReleaseLine({ x, onOpen }: { x: NonNullable<MorningReport['releases']>[number]; onOpen?: () => void }) {
+export function ReleaseLine({ x }: { x: NonNullable<MorningReport['releases']>[number] }) {
   const wr = useWithdrawRelease()
   const openRef = useOpenRef()
   return (
     <div
       className={cx(rowCls, 'cursor-pointer hover:bg-hover/60')}
       title={x.reason}
-      onClick={() => {
-        onOpen?.()
-        openRef(x.requirement_code)
-      }}
+      onClick={() => openRef(x.requirement_code)}
     >
       <RefChip code={x.requirement_code} />
       <span className="min-w-0 flex-1 truncate">
