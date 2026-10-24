@@ -477,6 +477,19 @@ html [data-sonner-toaster] [data-close-button] {
   }
 }
 
+/* 全屏标注编辑器（R-174）：整层不可选、不弹系统长按菜单（拷贝 / 查询 / 翻译），手写笔扫过提示文字也不会选中；
+   只有「文字」工具正在输入的文本框例外。放在媒体查询外：iPad 接了妙控键盘时可能报告 pointer: fine。 */
+.ks-noselect,
+.ks-noselect * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+.ks-noselect textarea.ks-selectable {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
 /* 长按菜单的触发区：不弹出系统的文字选择 / 图片保存气泡 */
 .ctx-target {
   -webkit-touch-callout: none;

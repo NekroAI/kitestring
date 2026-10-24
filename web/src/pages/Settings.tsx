@@ -10,6 +10,7 @@ import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
 import { absTime, copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
+import { usePenOnly } from '../ui/annotate'
 import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
@@ -698,14 +699,35 @@ function Appearance() {
     { v: 'dark', icon: Moon, label: t.theme.dark },
   ]
   return (
-    <div className="grid max-w-md grid-cols-3 gap-3">
-      {opts.map((o) => (
-        <button key={o.v} onClick={() => setPref(o.v)} className={cx('flex flex-col items-center gap-2 rounded-2xl border p-4 transition-colors', pref === o.v ? 'border-accent bg-accent-soft ring-1 ring-accent/40' : 'border-line bg-surface hover:border-line-strong')}>
-          <o.icon className={cx('size-6', pref === o.v ? 'text-accent' : 'text-fg-3')} />
-          <span className="text-sm font-medium text-fg">{o.label}</span>
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="mb-8 grid max-w-md grid-cols-3 gap-3">
+        {opts.map((o) => (
+          <button key={o.v} onClick={() => setPref(o.v)} className={cx('flex flex-col items-center gap-2 rounded-2xl border p-4 transition-colors', pref === o.v ? 'border-accent bg-accent-soft ring-1 ring-accent/40' : 'border-line bg-surface hover:border-line-strong')}>
+            <o.icon className={cx('size-6', pref === o.v ? 'text-accent' : 'text-fg-3')} />
+            <span className="text-sm font-medium text-fg">{o.label}</span>
+          </button>
+        ))}
+      </div>
+      <AnnotateGroup />
+    </>
+  )
+}
+
+// 圈画标注（R-174）：「手指不画（防误触）」的本机默认值，与标注工具栏上的开关是同一个偏好。
+function AnnotateGroup() {
+  const [penOnly, setPenOnly] = usePenOnly()
+  return (
+    <Group title={t.annotate.setting}>
+      <Card className="overflow-hidden">
+        <Row>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-fg">{t.annotate.settingPenOnly}</div>
+            <div className="mt-0.5 text-xs text-fg-3">{t.annotate.settingPenOnlyHint}</div>
+          </div>
+          <Switch checked={penOnly} onChange={setPenOnly} />
+        </Row>
+      </Card>
+    </Group>
   )
 }
 

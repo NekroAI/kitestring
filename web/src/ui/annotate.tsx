@@ -1,13 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from 'react'
 import { Dialog } from 'radix-ui'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowUpRight, Check, PenLine, Redo2, Square, Type, Undo2, X } from 'lucide-react'
+import { ArrowUpRight, Check, PenLine, PenTool, Redo2, Square, Type, Undo2, X } from 'lucide-react'
 import { t } from '../i18n'
-import { cx } from '../lib/util'
+import { cx, usePref } from '../lib/util'
 import { Button, Tip } from './base'
 
 // 圈画标注：在截图 / 效果图上画笔、框、箭头、写字，导出为一张新图片附在意见里（D-21 ②）。
 // 手写笔：按压力度决定笔画粗细；一旦用过笔，手指触摸不再落笔（防手掌误触）。鼠标、触控板、手指同样可用。
+// 手指不画（防误触，R-174）：开着时手指触摸一律不落笔（也不放文字框），只有手写笔和鼠标能画。
+// 工具栏开关与设置页「圈画标注 · 手指不画」是同一个本机偏好（按设备记住）。
 // 所有坐标按图片宽高归一化保存，导出时按原图分辨率重绘，放大后线条依然清楚。
 
 type Pt = { x: number; y: number; p: number }
@@ -83,6 +85,9 @@ function draw(ctx: CanvasRenderingContext2D, shapes: Shape[], W: number, H: numb
   }
 }
 
+export const PEN_ONLY_KEY = 'ks.annotate.penOnly'
+export const usePenOnly = () => usePref(PEN_ONLY_KEY, false)
+
 // shield：全屏浮层（看图、标注）挡住指针 / 触摸事件继续冒泡。浮层虽然渲染在 body 上，React 事件仍沿组件树冒泡，
 // 会被外层抽屉当成“左右滑动切换需求”“下拉关闭”——Apple Pencil 画一笔横线就会把抽屉切走（R-39）。
 const stop = (e: SyntheticEvent) => e.stopPropagation()
@@ -107,9 +112,9 @@ export function Annotator({ src, name, open, onClose, onDone }: { src: string; n
         {open && (
           <Dialog.Portal forceMount>
             <Dialog.Overlay asChild forceMount>
-              <motion.div className="fixed inset-0 z-[80] bg-black/90" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+              <motion.div className="ks-noselect fixed inset-0 z-[80] bg-black/90" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
             </Dialog.Overlay>
-            <Dialog.Content forceMount aria-describedby={undefined} data-ks-modal="" {...shield} className="fixed inset-0 z-[80] outline-none">
+            <Dialog.Content forceMount aria-describedby={undefined} data-ks-modal="" {...shield} onContextMenu={(e) => e.preventDefault()} className="ks-noselect fixed inset-0 z-[80] outline-none">
               <Dialog.Title className="sr-only">{t.annotate.title}</Dialog.Title>
               <Editor src={src} name={name} onClose={onClose} onDone={onDone} />
             </Dialog.Content>
@@ -133,6 +138,7 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
   const [busy, setBusy] = useState(false)
   const live = useRef<Shape | null>(null)
   const penSeen = useRef(false)
+  const [penOnly, setPenOnly] = usePenOnly()
   const active = useRef<number | null>(null)
 
   // 载入原图（同源，导出不会被污染）
@@ -178,7 +184,7 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
 
   const down = (e: ReactPointerEvent) => {
     if (e.pointerType === 'pen') penSeen.current = true
-    if (penSeen.current && e.pointerType === 'touch') return // 用过笔后忽略手掌 / 手指
+    if ((penOnly || penSeen.current) && e.pointerType === 'touch') return // 只认手写笔 / 用过笔后：忽略手掌 / 手指
     if (active.current !== null || typing) return
     e.currentTarget.setPointerCapture(e.pointerId)
     active.current = e.pointerId
@@ -283,6 +289,12 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
             </Tip>
           ))}
           <span className="mx-1 h-6 w-px bg-white/15" />
+          <Tip content={penOnly ? t.annotate.penOnlyOn : t.annotate.penOnlyOff}>
+            <button aria-label={t.annotate.penOnly} aria-pressed={penOnly} onClick={() => setPenOnly(!penOnly)} className={cx(btn, penOnly && 'bg-white/20 text-white')}>
+              <PenTool className="size-5" />
+            </button>
+          </Tip>
+          <span className="mx-1 h-6 w-px bg-white/15" />
           {COLORS.map((c) => (
             <button key={c} aria-label={c} onClick={() => setColor(c)} className="flex size-10 items-center justify-center pointer-coarse:size-12">
               <span className={cx('size-6 rounded-full border-2 transition', color === c ? 'scale-110 border-white' : 'border-white/30')} style={{ background: c }} />
@@ -307,7 +319,7 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
       <div ref={wrap} className="relative flex min-h-0 flex-1 items-center justify-center p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {size && (
           <div className="relative overflow-hidden rounded-lg shadow-pop" style={{ width: size.w, height: size.h }}>
-            <img src={src} alt={name} draggable={false} className="absolute inset-0 size-full select-none" />
+            <img src={src} alt={name} draggable={false} className="pointer-events-none absolute inset-0 size-full select-none" />
             <canvas
               ref={cv}
               onPointerDown={down}
@@ -330,13 +342,13 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
                   }
                   if (e.key === 'Escape') setTyping(null)
                 }}
-                className="absolute min-w-40 resize-none rounded-md border border-white/60 bg-black/40 px-2 py-1 text-base font-semibold text-white outline-none placeholder:text-white/50"
+                className="ks-selectable absolute min-w-40 resize-none rounded-md border border-white/60 bg-black/40 px-2 py-1 text-base font-semibold text-white outline-none placeholder:text-white/50"
                 style={{ left: `${typing.at.x * 100}%`, top: `${typing.at.y * 100}%`, color }}
               />
             )}
           </div>
         )}
-        <p className="pointer-events-none absolute bottom-[max(0.5rem,env(safe-area-inset-bottom))] text-xs text-white/50">{t.annotate.hint}</p>
+        <p className="pointer-events-none absolute bottom-[max(0.5rem,env(safe-area-inset-bottom))] text-xs text-white/50">{penOnly ? t.annotate.hintPenOnly : t.annotate.hint}</p>
       </div>
     </div>
   )

@@ -663,6 +663,13 @@ export const zh = {
     suffix: '标注',
     textPlaceholder: '写点什么，回车完成',
     hint: '手写笔按压力度决定粗细；用过笔后手掌不会误触',
+    hintPenOnly: '手指不画（防误触）：只有手写笔和鼠标能画；按压力度决定粗细',
+    penOnly: '手指不画（防误触）',
+    penOnlyOn: '手指不画（防误触）：已开。只有手写笔和鼠标能画，手指碰到画面不落笔',
+    penOnlyOff: '手指不画（防误触）：已关。开启后只有手写笔和鼠标能画，手指碰到画面不落笔',
+    setting: '圈画标注',
+    settingPenOnly: '手指不画（防误触）',
+    settingPenOnlyHint: '开启后标注时只有手写笔（如 Apple Pencil）和鼠标能画，手指、手掌碰到画面不落笔。标注工具栏上也能随时切换；只记在这台设备上，iPad 和电脑各自记住。',
   },
   assign: {
     button: '交给会话',
