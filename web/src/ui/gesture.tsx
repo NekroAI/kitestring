@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { animate, motion, useMotionValue, useMotionValueEvent, useTransform, type AnimationPlaybackControls, type MotionValue, type Transition } from 'motion/react'
 import { cx } from '../lib/util'
-import { clamp, decide, G, rebase, rub, WheelSegment } from '../lib/gesture'
+import { clamp, G, rebase, rub } from '../lib/gesture'
+import { springCurve, StripCore, type StripOpts } from '../lib/strip'
 
 // 全站手势（R-73，D-491 定稿）：一套参数、一种弹簧、按下即打断。
 // - 参数与纯逻辑（松手判定、妙控板一段手势的聚合）在 lib/gesture.ts，这里是接到 DOM / React 上的部分。
@@ -170,8 +171,6 @@ export function installWheelGuard() {
 
 // ---------- 胶片带 ----------
 
-type Gesture = { from: number; page: number; samples: { t: number; v: number }[]; wheel?: boolean }
-
 export type Strip = {
   pos: MotionValue<number>
   snapTo: (page: number, velocity?: number, then?: () => void) => void
@@ -185,146 +184,99 @@ export type Strip = {
   stop: () => void
 }
 
-// useStrip：一条按页排的带子（第 k 页在 k × W）。手指 / 触控板拖多少，带子就跟着走多少（只写 motion value，不触发 React 渲染）；
-// 松手按位移与速度决定翻页还是弹回；一次手势最多走一页，弹簧动画随时可被新的手势打断、从当前位置接着拖。
-// 妙控板：一串 wheel 事件按「一段手势」聚合（lib/gesture.ts 的 WheelSegment），一段只判定一次，惯性尾巴吞掉。
+// useStrip：一条按页排的带子（第 k 页在 k × W）。逻辑在 lib/strip.ts 的 StripCore（可回放测试），这里接上 motion：
+// 位置是 motion value（拖动中只写它，不触发 React 渲染），弹簧是全站同一种（spring()）。
 // limit：带子能走的范围 [lo, hi]（px），超出部分越拖越沉；land：决定落到哪一页（默认直接弹过去）；onRest：动画停下。
-export function useStrip(W: number, o: { limit?: () => [number, number] | null; land?: (page: number, velocity: number) => void; onRest?: () => void; name?: string } = {}): Strip {
+// compositorSpring：同一种弹簧，但按轨迹生成关键帧交给 WAAPI（合成线程跑，不吃主线程帧率）。
+// 被打断（stop）时按当前时刻在轨迹上插值出位置，写回 motion value，再取消动画——屏幕上接得住；
+// 跑的过程中每 16ms 把当前位置报给 tick（抽屉切换「走过半页就切」用），不改 motion value、不触发渲染。
+function compositorSpring(el: HTMLElement, pos: MotionValue<number>, to: number, velocity: number, onDone: () => void, tick: (v: number) => void, expose: (f: (() => { x: number; v: number }) | null) => void): AnimationPlaybackControls {
+  const from = pos.get()
+  const curve = springCurve(from, to, velocity)
+  const t0 = performance.now()
+  const at = (now: number) => {
+    const f = Math.min(curve.xs.length - 1, Math.max(0, (now - t0) / curve.step))
+    const i = Math.floor(f)
+    const j = Math.min(curve.xs.length - 1, i + 1)
+    const x = curve.xs[i] + (curve.xs[j] - curve.xs[i]) * (f - i)
+    return { x, v: ((curve.xs[j] - curve.xs[i]) / curve.step) * 1000 }
+  }
+  const a = el.animate(
+    curve.xs.map((x) => ({ transform: `translate3d(${-x}px,0,0)` })),
+    { duration: Math.max(1, curve.duration), easing: 'linear', fill: 'forwards' },
+  )
+  a.startTime = t0
+  let alive = true
+  const probe = window.setInterval(() => alive && tick(at(performance.now()).x), 16)
+  expose(() => at(performance.now()))
+  const finish = (x: number) => {
+    alive = false
+    window.clearInterval(probe)
+    expose(null)
+    pos.set(x)
+    a.cancel()
+  }
+  a.onfinish = () => {
+    if (!alive) return
+    finish(to)
+    onDone()
+  }
+  glog({ k: 'compositor', from: Math.round(from), to: Math.round(to), ms: Math.round(curve.duration) })
+  return { stop: () => alive && finish(at(performance.now()).x) } as unknown as AnimationPlaybackControls
+}
+
+// el：带子对应的元素（transform = translate3d(-位置)）。给了就把松手后的弹簧交给 WAAPI，由合成线程跑：
+// iPadOS / iOS Safari 默认把页面渲染（含 requestAnimationFrame）限制在 60Hz 左右（设置里的「Prefer Page Rendering
+// Updates near 60fps」默认开），而 Core Animation 跑的 transform 动画在 ProMotion 上能到 120Hz（WebKit bug 257862 / 267541）。
+export function useStrip(W: number, o: Omit<StripOpts, 'W'> & { el?: () => HTMLElement | null } = {}): Strip {
   const pos = useMotionValue(0)
   const w = useRef(W)
   w.current = W || 1
   const opts = useRef(o)
   opts.current = o
-  const anim = useRef<AnimationPlaybackControls | null>(null)
-  const aim = useRef<number | null>(null) // 正在弹向的那一页：动画中途再翻页时从它往后数
-  const gesture = useRef<Gesture | null>(null)
-  const seg = useRef(new WheelSegment())
-  const pending = useRef<(() => void) | null>(null)
-  const idle = useRef(0)
   const ref = useRef<Strip>(null!)
+  const live = useRef<(() => { x: number; v: number }) | null>(null) // 合成线程上的弹簧此刻的位置 / 速度
   if (!ref.current) {
-    const stop = () => {
-      anim.current?.stop()
-      anim.current = null
-    }
-    // then：走到之后要做的事（抽屉切换）。差不多到了（1.5px 内）、动画走完、或者中途被新的手势按住，都立刻做——
-    // 不能因为被打断就不做：真机上用户常在上一次还没完全停稳时就开始下一次滑动（R-73 真机日志）
-    const flush = () => {
-      const f = pending.current
-      pending.current = null
-      f?.()
-    }
-    const snapTo = (page: number, velocity = 0, then?: () => void) => {
-      stop()
-      // 朝目标走的速度太大会冲过头再弹回来（妙控板一下 100 多 px 的尖峰很常见）：限制到这种弹簧刚好不过冲的速度，
-      // 往回甩（离开目标）的速度照常带上
-      const dist = page * w.current - pos.get()
-      if (Math.abs(dist) < 1 || Math.sign(velocity) === Math.sign(dist)) velocity = Math.sign(velocity) * Math.min(Math.abs(velocity), Math.sqrt(G.stiffness) * Math.abs(dist))
-      aim.current = page
-      pending.current = then ?? null
-      glog({ k: 'snap', src: opts.current.name, page, v: Math.round(velocity), from: Math.round(pos.get()) })
-      const a = springTo(pos, page * w.current, velocity, () => {
-        if (anim.current !== a) return
-        aim.current = null
-        anim.current = null
-        flush()
-        opts.current.onRest?.()
-      })
-      anim.current = a
-    }
-    const land = (page: number, velocity: number) => (opts.current.land ? opts.current.land(page, velocity) : snapTo(page, velocity))
-    const go = (d: number) => land((aim.current ?? Math.round(pos.get() / w.current)) + d, 0)
-    // 拖动开始：打断正在进行的动画，从当前位置接着走；以动画正要去的那一页为基准（连续翻页不丢页）
-    const begin = () => {
-      stop()
-      flush()
-      const from = pos.get()
-      const page = aim.current ?? Math.round(from / w.current)
-      aim.current = null
-      gesture.current = { from, page, samples: [{ t: performance.now(), v: from }] }
-    }
-    // dx：手指 / 触控板相对开始时的水平位移（向左为负，即往下一页）。带子最多走到基准页的前后一页
-    const move = (dx: number) => {
-      const g = gesture.current
-      if (!g) return
-      const W = w.current
-      let v = clamp(g.from - dx, Math.min(g.from, (g.page - 1) * W), Math.max(g.from, (g.page + 1) * W))
-      const lim = opts.current.limit?.()
-      if (lim) {
-        const [lo, hi] = [Math.min(lim[0], g.from), Math.max(lim[1], g.from)]
-        // 两端没有邻件：越拖越沉，最多露出 200px 左右（妙控板一次滑动常常推一千多 px）
-        if (v < lo) v = lo - rub(lo - v, 200)
-        else if (v > hi) v = hi + rub(v - hi, 200)
-      }
-      pos.set(v)
-      g.samples.push({ t: performance.now(), v })
-      while (g.samples.length > 2 && performance.now() - g.samples[0].t > 100) g.samples.shift()
-    }
-    // 松手：按这次手势走了多少与速度决定翻页还是弹回。velocity：给定的松手速度（px/s，正数是往下一页）
-    const end = (velocity?: number) => {
-      const g = gesture.current
-      gesture.current = null
-      if (!g) return
-      const [a, b] = [g.samples[0], g.samples[g.samples.length - 1]]
-      const vel = velocity ?? (b.t > a.t ? ((b.v - a.v) / (b.t - a.t)) * 1000 : 0)
-      const W = w.current
-      const off = pos.get() - g.from
-      const page = g.page + decide(off, vel, W, g.wheel)
-      const lim = opts.current.limit?.()
-      glog({ k: 'release', src: opts.current.name, off: Math.round(off), v: Math.round(vel), page, base: g.page, wheel: !!g.wheel })
-      if (lim && (page * W < lim[0] - 1 || page * W > lim[1] + 1)) return snapTo(g.page, vel)
-      if (page === g.page) return snapTo(page, vel)
-      land(page, vel)
-    }
-    // 返回 true 表示这次滚轮归翻页（竖向为主、又不在一段横滑里的不归）
-    // t：事件自己的时间戳（event.timeStamp）。主线程忙（例如刚切换、新页面在渲染）时事件会攒一会儿再一起派发，
-    // 用处理时刻判断停顿会把惯性尾巴误认成新的一次滑动（R-73 真机日志回放发现）
-    const wheel = (dx: number, dy: number, t?: number): boolean => {
-      if (gesture.current && !gesture.current.wheel) return true // 触屏正在拖
-      const now = t ?? performance.now()
-      const act = seg.current.feed(dx, dy, now, w.current)
-      if (act.t === 'pass') return false
-      window.clearTimeout(idle.current)
-      idle.current = window.setTimeout(() => {
-        const r = seg.current.idle(performance.now())
-        if (r?.t === 'release' && gesture.current?.wheel) end(-r.velocity)
-      }, G.wheelIdle + 10)
-      if (act.t === 'swallow') return true
-      if (act.t === 'begin') {
-        if (gesture.current) end()
-        begin()
-        gesture.current!.wheel = true
-      }
-      if (!gesture.current?.wheel) return true
-      move(act.offset)
-      if (act.t === 'release') end(-act.velocity)
-      return true
-    }
-    // shift：带子换了基准页（抽屉里这一件变成了邻件）——屏幕上不动，只换参照；进行中的拖动和动画接着走、速度不丢
-    const shift = (dx: number, settleTo?: number) => {
-      const W = w.current
-      const running = !!anim.current
-      const v = running ? pos.getVelocity() : 0
-      const target = aim.current
-      stop()
-      pos.set(pos.get() + dx)
-      const g = gesture.current
-      if (g) {
-        g.from += dx
-        g.page += dx / W
-        for (const s of g.samples) s.v += dx
-      }
-      glog({ k: 'shift', src: opts.current.name, dx: Math.round(dx), pos: Math.round(pos.get()), v: Math.round(v) })
-      if (g) return
-      if (settleTo !== undefined) {
-        if (running || Math.abs(pos.get() - settleTo * W) > 0.5) snapTo(settleTo, v)
-      } else if (running && target !== null) snapTo(target + dx / W, v)
-    }
+    const core = new StripCore(
+      {
+        get: () => pos.get(),
+        set: (v) => pos.set(v),
+        velocity: () => live.current?.().v ?? pos.getVelocity(),
+        spring: (to, velocity, onDone) => {
+          const el = opts.current.el?.()
+          return el && !reducedMotion() && typeof el.animate === 'function' ? compositorSpring(el, pos, to, velocity, onDone, (v) => core.tick(v), (fn) => (live.current = fn)) : springTo(pos, to, velocity, onDone)
+        },
+        now: () => performance.now(),
+        setTimer: (fn, ms) => window.setTimeout(fn, ms),
+        clearTimer: (id) => window.clearTimeout(id),
+        log: (row) => glog(row),
+      },
+      {
+        W: () => w.current,
+        limit: () => opts.current.limit?.() ?? null,
+        land: (page, v) => (opts.current.land ? opts.current.land(page, v) : core.snapTo(page, v)),
+        onRest: () => opts.current.onRest?.(),
+        get name() {
+          return opts.current.name
+        },
+      },
+    )
     pos.on('change', (v) => {
       if (logOn) glog({ k: 'pos', src: opts.current.name, v: Math.round(v * 10) / 10 })
-      if (pending.current && aim.current !== null && Math.abs(v - aim.current * w.current) < 1.5) flush()
+      core.tick(v)
     })
-    ref.current = { pos, snapTo, go, begin, move, end, wheel, shift, dragging: () => !!gesture.current, stop }
+    ref.current = {
+      pos,
+      snapTo: (page, v, then) => core.snapTo(page, v, then),
+      go: (d) => core.go(d),
+      begin: () => core.begin(),
+      move: (dx) => core.move(dx),
+      end: (v) => core.end(v),
+      wheel: (dx, dy, t) => core.wheel(dx, dy, t),
+      shift: (dx, to) => core.shift(dx, to),
+      dragging: () => core.dragging(),
+      stop: () => core.stop(),
+    }
   }
   return ref.current
 }
@@ -489,6 +441,7 @@ export function Pager({ k, dir, prev, next, onNav, render }: { k: string; dir: n
   navRef.current = onNav
   const strip = useStrip(W, {
     name: 'pager',
+    el: () => track.current,
     limit: () => [nb.current.prev || nb.current.leave?.side === -1 ? -W : 0, nb.current.next || nb.current.leave?.side === 1 ? W : 0],
     land: (page, v) => {
       if (page === 0) return strip.snapTo(0, v)

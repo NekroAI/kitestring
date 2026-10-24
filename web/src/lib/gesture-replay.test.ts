@@ -36,7 +36,7 @@ function replay() {
 
 test('真机日志：用户的每一次滑动都被认成一段新手势（不会被当成上一次的惯性尾巴吞掉）', () => {
   const acts = replay()
-  const begins = acts.filter((x) => x.a.t === 'begin').map((x) => x.i)
+  const begins = acts.filter((x) => x.a.t === 'begin' || x.a.t === 'restart').map((x) => x.i)
   const missed = starts.filter((s) => !begins.some((b) => b >= s && b <= s + 6))
   assert.deepEqual(missed.map((i) => `${i}@${ev[i].t}ms`), [], `这些滑动没有被接住：${missed.length} / ${starts.length}`)
 })
@@ -45,7 +45,7 @@ test('真机日志：每一段只判定一次；判定后的惯性尾巴不再�
   const acts = replay()
   let state: 'idle' | 'tracking' | 'done' = 'idle'
   for (const { a, t } of acts) {
-    if (a.t === 'begin') state = 'tracking'
+    if (a.t === 'begin' || a.t === 'restart') state = 'tracking'
     else if (a.t === 'move') assert.equal(state, 'tracking', `${t}ms：判定之后还在拉动带子`)
     else if (a.t === 'release') {
       assert.equal(state, 'tracking', `${t}ms：同一段判定了两次`)
@@ -58,8 +58,8 @@ test('真机日志：带子位移连续——每个事件最多走它自己的 d
   const acts = replay()
   let last = 0
   for (const { a, i } of acts) {
-    if (a.t === 'begin') last = 0
-    if (a.t === 'begin' || a.t === 'move' || a.t === 'release') {
+    if (a.t === 'begin' || a.t === 'restart') last = 0
+    if (a.t === 'begin' || a.t === 'restart' || a.t === 'move' || a.t === 'release') {
       const off = (a as { offset: number }).offset
       assert.ok(Math.abs(off - last) <= Math.abs(ev[i].dx) + 0.01, `${ev[i].t}ms 跳了 ${off - last}`)
       last = off
@@ -69,7 +69,7 @@ test('真机日志：带子位移连续——每个事件最多走它自己的 d
 
 test('真机日志：每一次够远 / 够快的滑动都切换一次，方向和手指一致', () => {
   const acts = replay()
-  const navs = acts.filter((x) => x.a.t === 'release').map((x) => {
+  const navs = acts.filter((x) => x.a.t === 'release' || x.a.t === 'restart').map((x) => {
     const r = x.a as { offset: number; velocity: number }
     return decide(-r.offset, -r.velocity, W, true)
   })

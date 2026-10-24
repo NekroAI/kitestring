@@ -81,12 +81,13 @@ test('手指阶段往回拖（先慢下来再反向）：跟着往回走，不�
   assert.equal((acts[acts.length - 1] as { offset: number }).offset, -seq.reduce((x, y) => x + y, 0))
 })
 
-test('惯性还在快速推进时突然反向：这一段就此判定，后面是新的一段', () => {
+test('惯性还在快速推进时突然反向：这一段就此判定，这一下就是新一段的开始', () => {
   const seg = new WheelSegment()
   const seq = [10, 20, 30, 30, 26, 22, -4, -6, -9]
   const acts = seq.map((dx, i) => seg.feed(dx, 0, i * 8, W))
-  assert.equal(acts[6].t, 'release')
-  assert.equal(acts[7].t, 'begin')
+  // 反向的这一下同时判定上一段、开始新的一段（新手势优先，不丢这一下）
+  assert.equal(acts[6].t, 'restart')
+  assert.equal(acts[7].t, 'move')
 })
 
 test('走满一页立即判定', () => {

@@ -40,6 +40,7 @@ export type WheelAct =
   | { t: 'swallow' } // 这一段已经判定过，惯性尾巴（含反向的小值）吞掉，不再驱动位移
   | { t: 'begin'; offset: number } // 新的一段手势。offset 和触屏的手指位移同义：-ΣdeltaX，负数 = 往下一页
   | { t: 'move'; offset: number } // 手指还在：带子跟到 offset
+  | { t: 'restart'; offset: number; velocity: number } // 上一段就此判定（velocity 是它的速度），这一下开始新的一段（offset 是新一段的）
   | { t: 'release'; offset: number; velocity: number } // 判定时刻（手指离开进入惯性，或走满一页）；velocity 是 offset 的变化速度（px/s）
 
 // WheelSegment：把妙控板的一串 wheel 事件聚合成「一段手势」。浏览器不告诉我们手指什么时候离开，
@@ -70,8 +71,16 @@ export class WheelSegment {
   // 事件流中间没有停顿（R-73 真机日志）：手指一按上，惯性立刻停，力度骤降到 1～3 再重新起势；或者方向直接反过来。
   private fresh(dx: number, t: number) {
     const a = Math.abs(dx)
-    if (t - this.lastT > G.wheelGap) return true // 停了一下
+    if (t - this.lastT > G.wheelGap) {
+      // 停了一下：力度明显的就是新的一次；只有 1～2px 的，可能是很慢的惯性尾巴（真机上越到最后事件越稀，
+      // R-73 第三轮日志里一串 -1 中间隔着 50～80ms），重新从这里看它会不会起势
+      if (a >= 3) return true
+      this.tailMin = this.tailPrev = a
+      this.rises = 0
+      return false
+    }
     if (a >= 3 && Math.sign(dx) === -this.dir) return true // 方向反过来（真机的惯性不会反向；1～2 的反向小抖动不算）
+    if (a >= this.tailPrev * 2 + 4) return true // 衰减中突然一大下（1 → 9）：手指重新推起来了
     this.rises = a > this.tailPrev ? this.rises + 1 : a === this.tailPrev ? this.rises : 0 // 持平不算起势也不清零
     this.tailPrev = a
     if (a < this.tailMin) this.tailMin = a
@@ -88,9 +97,11 @@ export class WheelSegment {
       if (this.done) return { t: 'swallow' }
       // 还在快速滑动（惯性中）时方向突然反过来：是用户新的一次反向滑动，这一段就此判定，下一下开始新的一段。
       // 手指自己往回拖（想取消）时会先慢下来再反向，不走这里，照常跟着往回走。
+      // 新手势优先：这一下就是新一段的第一下（不先让上一段的弹簧往前走一帧再接住）
       if (a >= 3 && Math.sign(dx) === -this.dir && this.prev >= 8) {
-        this.prev = 0
-        return this.release(t)
+        const r = this.release(t) as { offset: number; velocity: number }
+        this.start(dx, t)
+        return { t: 'restart', offset: this.acc, velocity: r.velocity }
       }
       // 惯性被手指按停：力度在两下之内从 10 以上骤降到三成以下（惯性本身是平滑衰减的）——用户开始了下一次滑动，这一段就此判定
       if (this.prev2 >= 10 && a <= this.prev2 * 0.3 && a <= this.prev * 0.6) {
@@ -99,6 +110,11 @@ export class WheelSegment {
       }
       this.acc -= dx
       this.push(t)
+      // 手指往回拖（方向反过来）：从这里起是新的一段运动，峰值和回落从头算——否则反向刚起步的 1、3、4 会被当成惯性停了
+      if (dx && Math.sign(dx) !== this.dir) {
+        this.peak = a
+        this.drops = 0
+      }
       // 判定时刻：走满一页；或者惯性基本停了（力度连续几下降到峰值的一成以下）。手指阶段的减速、离手前的回落都不判定——
       // 真机上 Chrome 在离手后先有一段惯性起势（力度回升甚至一个尖峰）再衰减，在回落处判定会把起势误认成新的一次滑动，
       // 一次滑动切两件（R-73 真机日志）。惯性推动带子是跟手的一部分（方向不变，不会往回拉）。
@@ -111,6 +127,12 @@ export class WheelSegment {
       return { t: 'move', offset: this.acc }
     }
     if (a <= Math.abs(dy) || a === 0) return { t: 'pass' }
+    this.start(dx, t)
+    return { t: 'begin', offset: this.acc }
+  }
+
+  private start(dx: number, t: number) {
+    const a = Math.abs(dx)
     this.active = true
     this.done = false
     this.lastT = t
@@ -121,7 +143,6 @@ export class WheelSegment {
     this.dir = Math.sign(dx)
     this.samples = []
     this.push(t)
-    return { t: 'begin', offset: this.acc }
   }
 
   // idle：事件停了 G.wheelIdle（由调用方的计时器调用）。还没判定的这一段在这里判定。
