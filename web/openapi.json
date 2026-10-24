@@ -720,7 +720,7 @@
             "type": "string"
           },
           "replaced_by": {
-            "description": "取代它的决策编号，如 D-142",
+            "description": "取代它的决策编号，如 D-142；必须仍待用户答复，已关闭 / 已撤回 / 已答复或会形成回环时拒绝",
             "type": "string"
           },
           "session_key": {

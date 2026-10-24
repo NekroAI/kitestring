@@ -318,7 +318,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "decision_withdraw", Description: "撤回自己提的、用户还没答复的决策：提错了、要修订时用，不要再提一条并在标题写“请忽略上一条”。撤回后从用户面板消失，在需求时间线留一条“已撤回”；修订时先 decision_raise 发新的，再用 replaced_by 指向它。只能撤回本会话提的；用户已答复的不能撤回。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_withdraw", Description: "撤回自己提的、用户还没答复的决策：提错了、要修订时用，不要再提一条并在标题写“请忽略上一条”。撤回后从用户面板消失，在需求时间线留一条“已撤回”；修订时先 decision_raise 发新的，再用 replaced_by 指向它。只能撤回本会话提的；用户已答复的不能撤回。replaced_by 指向的决策必须仍待用户答复：已关闭 / 已撤回 / 已答复、不存在或会形成回环（互相取代）都会被拒绝，先确认再撤回。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionWithdrawIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"reason": in.Reason, "replaced_by": in.ReplacedBy, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)

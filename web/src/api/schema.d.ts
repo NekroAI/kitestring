@@ -1736,7 +1736,7 @@ export interface components {
         "Agent-withdraw-decisionRequest": {
             /** @description 撤回原因 */
             reason?: string;
-            /** @description 取代它的决策编号，如 D-142 */
+            /** @description 取代它的决策编号，如 D-142；必须仍待用户答复，已关闭 / 已撤回 / 已答复或会形成回环时拒绝 */
             replaced_by?: string;
             session_key?: string;
         };
