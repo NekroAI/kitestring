@@ -11,7 +11,7 @@ import { cx, duration, relTime, usePref } from '../lib/util'
 import { Button, Checkbox, Segmented } from '../ui/base'
 import { presence, RoleTag } from '../ui/marks'
 import { Modal } from '../ui/overlay'
-import { Linkify, RefChip } from '../ui/refmark'
+import { Linkify, RefChip, useOpenRef } from '../ui/refmark'
 import { useActions } from './actions'
 import type { Ask } from './asks'
 import { TokBrief, Wind } from './lanes'
@@ -213,6 +213,11 @@ function ItemRow({ x, now }: { x: Item; now: number }) {
 
 function Panel({ items, asks, reports, now, close, active }: { items: Item[]; asks: Ask[]; reports: MorningReport[]; now: number; close: () => void; active: boolean }) {
   const openAsk = useOpenAsk()
+  const openRef = useOpenRef()
+  const openCode = (code: string) => {
+    close()
+    openRef(code)
+  }
   const projects = useProjects()
   const reqs = useRequirements()
   const away = useAway()
@@ -260,14 +265,14 @@ function Panel({ items, asks, reports, now, close, active }: { items: Item[]; as
             )),
             ...releases.map((x) => (
               <li key={x.code}>
-                <ReleaseLine x={x} />
+                <ReleaseLine x={x} onOpen={close} />
               </li>
             )),
           ]}
         </Layer>
         <Layer title={t.brief.layers.done} n={done.length} empty={t.brief.empty.done}>
           {done.map((x) => (
-            <Row key={x.requirement_code}>
+            <Row key={x.requirement_code} onClick={() => openCode(x.requirement_code)}>
               <RefChip code={x.requirement_code} status={x.status} />
               <span className="min-w-0 flex-1 truncate text-fg">{x.requirement_title}</span>
               <span className="shrink-0 text-xs text-fg-3 tabular">{relTime(x.at, now)}</span>
@@ -276,7 +281,7 @@ function Panel({ items, asks, reports, now, close, active }: { items: Item[]; as
         </Layer>
         <Layer title={t.brief.layers.going} n={going.length} empty={t.brief.empty.going}>
           {going.map((r) => (
-            <Row key={r.code}>
+            <Row key={r.code} onClick={() => openCode(r.code)}>
               <RefChip code={r.code} status={r.status} />
               <span className="min-w-0 flex-1 truncate text-fg">{r.title}</span>
               <span className="shrink-0 text-xs text-fg-3 max-sm:hidden">{pname(r.project_id)}</span>
