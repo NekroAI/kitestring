@@ -382,6 +382,7 @@ type evidenceOut struct {
 	Body struct {
 		store.Requirement
 		BlockWarnings []string `json:"block_warnings,omitempty" doc:"没有保存的块及原因；证据本身已保存"`
+		ImageHints    []string `json:"image_hints,omitempty" doc:"附图的提示（R-183）：没写标题、改动框写错被丢掉等；证据本身已保存"`
 	}
 }
 
@@ -1265,6 +1266,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				Summary    string   `json:"summary,omitempty" doc:"证据正文；给了 verdict / blocks 时可省略，由 hub 拼出纯文本"`
 				Link       string   `json:"link,omitempty"`
 				Files      []string `json:"files,omitempty" doc:"截图等附图 ID（先上传到 /api/agent/files）"`
+				Images     []any    `json:"images,omitempty" doc:"带标题与改动框的附图（R-183），排在 files 后面，按给的顺序显示：[{id: 附件 ID, title: 一句话标题, boxes: [{x, y, w, h, label}]}]，框用图片原始尺寸的比例坐标（0～1）。写错的框丢掉并在 image_hints 里说明，证据照常保存"`
 				SessionKey string   `json:"session_key,omitempty"`
 				Verdict    string   `json:"verdict,omitempty" doc:"一句结论（40 字以内）"`
 				Todo       []string `json:"todo,omitempty" doc:"要你做的：只写机器验证不了的事"`
@@ -1282,9 +1284,18 @@ func (h *Hub) registerAgent(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			shots, hints := blocks.ParseImages(b.Images, h.blockFile(ctx))
+			files = mergeFiles(files, shots)
 			payload, warns := blocks.ParsePayload(b.Verdict, b.Todo, b.Details, b.Aside, b.Blocks, h.blockFile(ctx))
 			if payload != nil {
 				files = mergeFiles(files, blocks.Files(payload.Blocks))
+			}
+			all := make([]blocks.File, len(files))
+			for i, f := range files {
+				all[i] = blocks.File(f)
+			}
+			if hint := blocks.TitleHints(all, payload.BlockList()); hint != "" {
+				hints = append(hints, hint)
 			}
 			summary := strings.TrimSpace(b.Summary)
 			if summary == "" {
@@ -1311,6 +1322,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			out := &evidenceOut{}
 			out.Body.Requirement = r
 			out.Body.BlockWarnings = warns
+			out.Body.ImageHints = hints
 			return out, apiErr(err)
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-raise-decision", Method: http.MethodPost, Path: "/api/agent/decisions", Tags: tag},

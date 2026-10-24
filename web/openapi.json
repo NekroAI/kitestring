@@ -294,6 +294,14 @@
               "null"
             ]
           },
+          "images": {
+            "description": "带标题与改动框的附图（R-183），排在 files 后面，按给的顺序显示：[{id: 附件 ID, title: 一句话标题, boxes: [{x, y, w, h, label}]}]，框用图片原始尺寸的比例坐标（0～1）。写错的框丢掉并在 image_hints 里说明，证据照常保存",
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "kind": {
             "description": "例：test、screenshot、commit、doc、manual",
             "type": "string"
@@ -1156,6 +1164,42 @@
         "required": [
           "id",
           "type"
+        ],
+        "type": "object"
+      },
+      "Box": {
+        "additionalProperties": false,
+        "properties": {
+          "h": {
+            "description": "框高 / 图片高（0～1）",
+            "format": "double",
+            "type": "number"
+          },
+          "label": {
+            "description": "一句标签，如：这里改成标题优先",
+            "type": "string"
+          },
+          "w": {
+            "description": "框宽 / 图片宽（0～1）",
+            "format": "double",
+            "type": "number"
+          },
+          "x": {
+            "description": "左边到图片左边的距离 / 图片宽（0～1）",
+            "format": "double",
+            "type": "number"
+          },
+          "y": {
+            "description": "上边到图片顶部的距离 / 图片高（0～1）",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
         ],
         "type": "object"
       },
@@ -2500,6 +2544,16 @@
           "id": {
             "type": "string"
           },
+          "image_hints": {
+            "description": "附图的提示（R-183）：没写标题、改动框写错被丢掉等；证据本身已保存",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "kind": {
             "type": "string"
           },
@@ -2610,6 +2664,16 @@
       "File": {
         "additionalProperties": false,
         "properties": {
+          "boxes": {
+            "description": "改动框：按图片原始尺寸的比例坐标（0～1）",
+            "items": {
+              "$ref": "#/components/schemas/Box"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -2622,6 +2686,10 @@
           "size": {
             "format": "int64",
             "type": "integer"
+          },
+          "title": {
+            "description": "一句话标题",
+            "type": "string"
           }
         },
         "required": [
@@ -2635,6 +2703,16 @@
       "FileRef": {
         "additionalProperties": false,
         "properties": {
+          "boxes": {
+            "description": "改动框：按图片原始尺寸的比例坐标（0～1）",
+            "items": {
+              "$ref": "#/components/schemas/Box"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -2647,6 +2725,10 @@
           "size": {
             "format": "int64",
             "type": "integer"
+          },
+          "title": {
+            "description": "截图的一句话标题",
+            "type": "string"
           }
         },
         "required": [

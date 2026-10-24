@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
 import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
 import { Annotator, shield, useAnnotateTarget } from './annotate'
+import { BoxLayer, BoxLegend, BoxToggle, shotTitle, type Box } from './shots'
 import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
@@ -12,7 +13,8 @@ import { useSettings } from '../api/queries'
 
 // 附件：任何可以写字的地方都可以贴图（粘贴、拖拽、选择文件），也可以附 MP4 / WebM 录屏。
 
-export type FileRef = { id: string; name: string; mime: string; size: number }
+// title / boxes：证据截图的一句话标题与改动框（R-183），只有证据的附图有
+export type FileRef = { id: string; name: string; mime: string; size: number; title?: string | null; boxes?: Box[] | null }
 
 export const fileUrl = (id: string) => `/api/files/${encodeURIComponent(id)}`
 
@@ -246,6 +248,7 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
   const anim = useRef<AnimationPlaybackControls | null>(null)
   const gesture = useRef<Gesture | null>(null)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
+  const [hideBoxes, setHideBoxes] = useState(false) // 改动框（R-183）：翻页时保持同一个开关
 
   const aim = useRef<number | null>(null) // 正在弹向的那一页：动画中途再翻页时从它往后数
   const snapTo = (page: number, velocity = 0) => {
@@ -382,11 +385,11 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
               <motion.div className="fixed inset-0 z-[70] bg-black/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
             </Dialog.Overlay>
             <Dialog.Content forceMount aria-describedby={undefined} data-ks-modal="" {...shield} className="fixed inset-0 z-[70] overflow-hidden outline-none">
-              <Dialog.Title className="sr-only">{cur.name}</Dialog.Title>
+              <Dialog.Title className="sr-only">{shotTitle(cur)}</Dialog.Title>
               <motion.div className="absolute inset-0" style={{ x: trackX }}>
                 {pages.map((j) => (
                   <div key={j} className="absolute inset-0" style={{ transform: `translateX(${j * W}px)` }}>
-                    <Viewer f={at(j)} active={j === k} intro={j === 0} chromeHost={host} onClose={() => setOpen(false)} nav={nav} />
+                    <Viewer f={at(j)} active={j === k} intro={j === 0} chromeHost={host} onClose={() => setOpen(false)} nav={nav} hideBoxes={hideBoxes} onToggleBoxes={() => setHideBoxes((v) => !v)} />
                   </div>
                 ))}
               </motion.div>
@@ -412,7 +415,7 @@ const LOCK_MS = 800
 // 只有手势和动画进行中才用 transform 跟手（R-121）。
 type Nav = { i: number; n: number; go: (d: number) => void; begin: () => void; move: (dx: number) => void; end: () => void; wheel: (dx: number, dy: number) => boolean }
 
-function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { f: FileRef; onClose: () => void; nav?: Nav; active?: boolean; intro?: boolean; chromeHost?: HTMLElement | null }) {
+function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hideBoxes = false, onToggleBoxes }: { f: FileRef; onClose: () => void; nav?: Nav; active?: boolean; intro?: boolean; chromeHost?: HTMLElement | null; hideBoxes?: boolean; onToggleBoxes?: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   const [v, setV] = useState<View>({ s: 1, x: 0, y: 0 })
   const [smooth, setSmooth] = useState(false)
@@ -590,14 +593,17 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
           {video ? (
             <video src={fileUrl(f.id)} controls autoPlay playsInline className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg bg-black shadow-pop" />
           ) : (
-            <img
-              src={fileUrl(f.id)}
-              alt={f.name}
-              draggable={false}
-              onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-              className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] shrink-0 rounded-lg object-contain shadow-pop"
-              style={imgStyle()}
-            />
+            // 图和改动框包在同一个容器里一起缩放、平移（R-183）
+            <div className="pointer-events-auto relative shrink-0 rounded-lg shadow-pop" style={imgStyle()}>
+              <img
+                src={fileUrl(f.id)}
+                alt={shotTitle(f)}
+                draggable={false}
+                onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                className={cx('block rounded-lg object-contain', imgStyle().width ? 'size-full' : 'max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)]')}
+              />
+              <BoxLayer boxes={f.boxes} hidden={hideBoxes} />
+            </div>
           )}
         </motion.div>
       </div>
@@ -626,8 +632,16 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost }: { 
           </button>
         </Dialog.Close>
       </motion.div>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {/* 标题与改动框的标签（R-183）：没写标题的显示文件名 */}
+        {!video && (f.title || f.boxes?.length) ? (
+          <div className="pointer-events-auto order-first w-full max-w-xl rounded-lg bg-black/60 px-3 py-2 text-white backdrop-blur sm:w-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="text-sm font-medium break-words">{shotTitle(f)}</div>
+            <BoxLegend boxes={f.boxes} className="mt-1.5 text-white/85" />
+          </div>
+        ) : null}
         <span className="flex items-center gap-2">
+          {!video && !!f.boxes?.length && onToggleBoxes && <BoxToggle hidden={hideBoxes} onToggle={onToggleBoxes} dark />}
           {target && !video && (
             <button onClick={() => setAnnotating(true)} className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-medium text-black backdrop-blur hover:bg-white">
               <PenLine className="size-3.5" />

@@ -3,7 +3,8 @@ import { Maximize2 } from 'lucide-react'
 import type { Block, BlockItem } from '../api/client'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { fileUrl, isVideo, Lightbox, type FileRef } from './attach'
+import { fileUrl, isVideo, Lightbox, ZoomButton, type FileRef } from './attach'
+import { BoxLayer, BoxLegend, BoxToggle, shotTitle } from './shots'
 import { Linkify } from './refmark'
 
 // 表达块（R-97）：Agent 交证据、提决策、交阶段小结时附的结构化图示，种类固定（见 internal/blocks）。
@@ -115,7 +116,8 @@ export function Checklist({
 
 // ---------- 截图与对比 ----------
 
-function Media({ f, className, limit }: { f: FileRef; className?: string; limit?: boolean }) {
+// Media：一张截图（或录屏）。改动框叠在图上，与图同尺寸；limit 时限高 50dvh（R-181），框随图一起被裁。
+function Media({ f, className, limit, hideBoxes, group }: { f: FileRef; className?: string; limit?: boolean; hideBoxes?: boolean; group?: FileRef[] }) {
   const box = useRef<HTMLSpanElement>(null)
   const [cut, setCut] = useState(false) // 图被限高裁掉了一截（R-181）
   const measure = () => {
@@ -124,10 +126,13 @@ function Media({ f, className, limit }: { f: FileRef; className?: string; limit?
   }
   if (isVideo(f.mime)) return <video src={fileUrl(f.id)} controls playsInline preload="metadata" className={cx('block w-full rounded-[10px] border border-line bg-sunken', className)} />
   return (
-    <Lightbox f={f}>
-      <button type="button" aria-label={f.name} className="group relative block w-full cursor-zoom-in">
-        <span ref={box} className={cx('block', limit && 'relative max-h-[50dvh] overflow-hidden rounded-[10px]')}>
-          <img src={fileUrl(f.id)} alt={f.name} loading="lazy" onLoad={limit ? measure : undefined} className={cx('block h-auto w-full rounded-[10px] border border-line bg-sunken', className)} />
+    <Lightbox f={f} group={group}>
+      <button type="button" aria-label={shotTitle(f)} className="group relative block w-full cursor-zoom-in">
+        <span ref={box} className={cx('block overflow-hidden rounded-[10px] border border-line bg-sunken', limit && 'relative max-h-[50dvh]')}>
+          <span className="relative block">
+            <img src={fileUrl(f.id)} alt={shotTitle(f)} loading="lazy" onLoad={limit ? measure : undefined} className={cx('block h-auto w-full', className)} />
+            <BoxLayer boxes={f.boxes} hidden={hideBoxes} />
+          </span>
         </span>
         {limit && cut && <span aria-hidden className="pointer-events-none absolute inset-x-px bottom-px h-16 rounded-b-[10px] bg-gradient-to-t from-bg via-bg/70 to-transparent" />}
         <span className="absolute top-2 right-2 flex size-7 items-center justify-center rounded-lg bg-black/45 text-white opacity-0 backdrop-blur transition group-hover:opacity-100 pointer-coarse:opacity-100">
@@ -138,92 +143,39 @@ function Media({ f, className, limit }: { f: FileRef; className?: string; limit?
   )
 }
 
-// Compare：前后对比。拖动图片移动分界线；下面的“之前 / 对半 / 之后”一点切换（D-131）。
-// 图上的“之前 / 之后”标签默认隐藏，点一下图片显示（半透明，不挡内容），再点一下隐藏（R-111 退回意见）。
-// 拖动和点按用指针事件自己分：移动超过 4px 算拖动，否则算点按；键盘用一个看不见的 range 调。
-export function Compare({ before, after }: { before: FileRef; after: FileRef }) {
-  const [cut, setCut] = useState(50)
-  const [jump, setJump] = useState(false) // 点按切换时带过渡，拖动时跟手
-  const [tags, setTags] = useState(false)
-  const [ratio, setRatio] = useState<number | null>(null)
-  const drag = useRef<{ x: number; moved: boolean } | null>(null)
-  const go = (v: number) => {
-    setJump(true)
-    setCut(v)
-  }
-  const at = (e: React.PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect()
-    return Math.min(100, Math.max(0, ((e.clientX - r.left) / r.width) * 100))
-  }
-  const ease = jump ? 'clip-path .28s ease, left .28s ease' : undefined
-  const tag = 'pointer-events-none absolute top-2 rounded-[5px] bg-black/35 px-1.5 py-px text-[11px] font-semibold text-white/90 backdrop-blur-[2px] transition-opacity duration-200'
-  const seg = [
-    { v: 100, label: t.blocks.before },
-    { v: 50, label: t.blocks.half },
-    { v: 0, label: t.blocks.after },
+// Compare：前后对比（R-183，D-304）。默认显示「改后 + 改动框」，点一下图切到改前同一位置，再点切回；不再拖分界线。
+// 两张图叠在同一格里，切换只换透明度，不闪、不跳；左上角的小标签写明现在看的是哪张。右上角看大图（改后、改前两页）。
+export function Compare({ before, after, title, limit, hideBoxes }: { before: FileRef; after: FileRef; title?: string; limit?: boolean; hideBoxes?: boolean }) {
+  const [old, setOld] = useState(false)
+  const tag = 'pointer-events-none absolute top-2 left-2 rounded-[5px] px-1.5 py-px text-[11px] font-semibold backdrop-blur-[2px]'
+  const pages: FileRef[] = [
+    { ...after, title: [t.blocks.after, title || after.title].filter(Boolean).join(' · ') },
+    { ...before, boxes: null, title: [t.blocks.before, title || before.title].filter(Boolean).join(' · ') },
   ]
   return (
     <div className="grid gap-1.5">
-      <div
-        className="relative cursor-ew-resize touch-pan-y overflow-hidden rounded-[10px] border border-line bg-sunken select-none"
-        style={{ aspectRatio: ratio ?? 16 / 10 }}
-        onPointerDown={(e) => {
-          if (e.button !== 0) return
-          drag.current = { x: e.clientX, moved: false }
-          e.currentTarget.setPointerCapture(e.pointerId)
-        }}
-        onPointerMove={(e) => {
-          const d = drag.current
-          if (!d) return
-          if (!d.moved && Math.abs(e.clientX - d.x) < 4) return
-          d.moved = true
-          setJump(false)
-          setCut(at(e))
-        }}
-        onPointerUp={() => {
-          if (drag.current && !drag.current.moved) setTags((v) => !v) // 点按：显示 / 隐藏标签
-          drag.current = null
-        }}
-        onPointerCancel={() => (drag.current = null)}
-      >
-        <img src={fileUrl(before.id)} alt={`${t.blocks.before}：${before.name}`} draggable={false} onLoad={(e) => setRatio(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight || null)} className="pointer-events-none absolute inset-0 size-full object-cover object-top-left" />
-        <img src={fileUrl(after.id)} alt={`${t.blocks.after}：${after.name}`} draggable={false} className="pointer-events-none absolute inset-0 size-full object-cover object-top-left" style={{ clipPath: `inset(0 0 0 ${cut}%)`, transition: ease }} />
-        <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-seal" style={{ left: `${cut}%`, transition: ease, opacity: cut === 0 || cut === 100 ? 0 : 1 }} />
-        <span aria-hidden className={cx(tag, 'left-2', tags ? 'opacity-100' : 'opacity-0')}>
-          {t.blocks.before}
-        </span>
-        <span aria-hidden className={cx(tag, 'right-2', tags ? 'opacity-100' : 'opacity-0')}>
-          {t.blocks.after}
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={cut}
-          onChange={(e) => {
-            setJump(false)
-            setCut(Number(e.target.value))
-          }}
-          aria-label={t.blocks.dragCompare}
-          className="sr-only"
-        />
+      <div className="group relative">
+        <button
+          type="button"
+          aria-pressed={old}
+          aria-label={t.blocks.compareToggle}
+          onClick={() => setOld((v) => !v)}
+          className={cx('relative block w-full cursor-pointer overflow-hidden rounded-[10px] border border-line bg-sunken select-none', limit && 'max-h-[50dvh]')}
+        >
+          <span className="grid [&>*]:[grid-area:1/1]">
+            <img src={fileUrl(before.id)} alt={`${t.blocks.before}：${title || before.name}`} draggable={false} className={cx('block h-auto w-full transition-opacity duration-200', old ? 'opacity-100' : 'opacity-0')} />
+            <span className={cx('relative block self-start transition-opacity duration-200', old ? 'opacity-0' : 'opacity-100')}>
+              <img src={fileUrl(after.id)} alt={`${t.blocks.after}：${title || after.name}`} draggable={false} className="block h-auto w-full" />
+              <BoxLayer boxes={after.boxes} hidden={hideBoxes} />
+            </span>
+          </span>
+          <span aria-hidden className={cx(tag, old ? 'bg-black/55 text-white' : 'bg-seal text-seal-fg')}>
+            {old ? t.blocks.before : t.blocks.after}
+          </span>
+        </button>
+        <ZoomButton f={pages[old ? 1 : 0]} group={pages} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100" />
       </div>
-      <div className="flex justify-center">
-        <div role="radiogroup" aria-label={t.blocks.dragCompare} className="inline-flex rounded-lg border border-line bg-surface-2 p-0.5 text-xs">
-          {seg.map((x) => (
-            <button
-              key={x.v}
-              type="button"
-              role="radio"
-              aria-checked={cut === x.v}
-              onClick={() => go(x.v)}
-              className={cx('rounded-md px-3 py-1 font-medium transition-colors pointer-coarse:px-4 pointer-coarse:py-1.5', cut === x.v ? 'bg-surface text-fg shadow-xs' : 'text-fg-3 hover:text-fg')}
-            >
-              {x.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <span className="text-center text-xs text-fg-3">{old ? t.blocks.toAfter : t.blocks.toBefore}</span>
     </div>
   )
 }
@@ -357,18 +309,27 @@ function Cap({ children }: { children: ReactNode }) {
   return <span className="block text-xs font-medium tracking-[0.06em] text-fg-2">{children}</span>
 }
 
-// BlockView：画一个块。figNo 是截图的编号；lit 时加高亮框（清单项点过来时）。
-export function BlockView({ block, figNo, lit, criteria, className, limit }: { block: Block; figNo?: number; lit?: boolean; criteria?: Record<number, string>; className?: string; limit?: boolean }) {
+// figureTitle：截图 / 对比块的标题（R-183）：块的 title，没有时用图注，再没有用图片自己的标题，最后用文件名兜底。
+export function figureTitle(b: Block) {
+  const f = b.type === 'compare' ? b.after : b.image
+  return b.title?.trim() || b.caption?.trim() || (f ? shotTitle(f) : '')
+}
+
+// BlockView：画一个块。figNo 是截图的编号；lit 时加高亮框（清单项点过来时）。group：看大图时可以左右翻的同组图片。
+export function BlockView({ block, figNo, lit, criteria, className, limit, group }: { block: Block; figNo?: number; lit?: boolean; criteria?: Record<number, string>; className?: string; limit?: boolean; group?: FileRef[] }) {
   const b = block
+  const [hideBoxes, setHideBoxes] = useState(false)
+  const shot = b.type === 'figure' || b.type === 'compare'
   const typeName = b.type === 'flow' ? t.blocks.flow : b.type === 'metrics' ? t.blocks.metrics : b.type === 'scope' ? t.blocks.scope : b.type === 'options' ? t.blocks.options : b.type === 'table' ? t.blocks.table : b.type === 'checklist' ? t.blocks.checklist : ''
-  const cap = b.type === 'figure' || b.type === 'compare' ? b.title : [typeName, b.title].filter(Boolean).join(' · ')
+  const title = shot ? figureTitle(b) : ''
+  const boxes = b.type === 'compare' ? b.after?.boxes : b.type === 'figure' ? b.image?.boxes : null
   let body: ReactNode = null
   switch (b.type) {
     case 'figure':
-      body = b.image && <Media f={b.image} limit={limit} />
+      body = b.image && <Media f={shotFile(b)!} limit={limit} hideBoxes={hideBoxes} group={group} />
       break
     case 'compare':
-      body = b.before && b.after && <Compare before={b.before} after={b.after} />
+      body = b.before && b.after && <Compare before={b.before} after={b.after} title={title} limit={limit} hideBoxes={hideBoxes} />
       break
     case 'flow':
       body = (
@@ -401,17 +362,35 @@ export function BlockView({ block, figNo, lit, criteria, className, limit }: { b
       break
   }
   if (!body) return null
-  const caption = b.type === 'figure' ? [figNo ? t.blocks.figure(figNo) : '', b.caption].filter(Boolean).join(' · ') : b.caption
+  // 截图的图注：标题已经用了图注时不再重复
+  const caption = shot ? (b.caption?.trim() && b.caption.trim() !== title ? b.caption : '') : b.caption
   return (
     <figure
       data-block={b.id}
       className={cx('grid min-w-0 scroll-mt-20 gap-1.5 rounded-xl outline-offset-4 transition-[outline-color] duration-300', lit ? 'outline-2 outline-accent' : 'outline-2 outline-transparent', className)}
     >
-      {cap && <Cap>{cap}</Cap>}
+      {shot ? (
+        <div className="flex min-w-0 items-start gap-2">
+          <span className="min-w-0 flex-1 text-[13px] leading-snug font-medium break-words text-fg">
+            {figNo ? <span className="mr-1.5 text-xs font-normal text-fg-3 tabular">{t.blocks.figure(figNo)}</span> : null}
+            {title}
+          </span>
+          {!!boxes?.length && <BoxToggle hidden={hideBoxes} onToggle={() => setHideBoxes((v) => !v)} className="-mt-0.5 -mr-1.5" />}
+        </div>
+      ) : (
+        (typeName || b.title) && <Cap>{[typeName, b.title].filter(Boolean).join(' · ')}</Cap>
+      )}
       {body}
+      {shot && <BoxLegend boxes={boxes} />}
       {caption && <figcaption className="text-xs break-words text-fg-3">{caption}</figcaption>}
     </figure>
   )
+}
+
+// shotFile：截图块的图片，带上块的标题（看大图时显示）。
+export function shotFile(b: Block): FileRef | undefined {
+  const f = b.type === 'compare' ? b.after : b.image
+  return f ? { ...f, title: figureTitle(b) } : undefined
 }
 
 // BlockList：按顺序画一组块（决策说明、阶段小结里用）。

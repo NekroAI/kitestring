@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
@@ -17,6 +18,9 @@ type FileRef struct {
 	Name string `json:"name"`
 	Mime string `json:"mime"`
 	Size int64  `json:"size"`
+	// Title / Boxes：证据截图的一句话标题与改动框（R-183），只在证据的附图里有；旧数据没有
+	Title string       `json:"title,omitempty" doc:"截图的一句话标题"`
+	Boxes []blocks.Box `json:"boxes,omitempty" doc:"改动框：按图片原始尺寸的比例坐标（0～1）"`
 }
 
 // CreateFile 登记一个已写入磁盘的附件。

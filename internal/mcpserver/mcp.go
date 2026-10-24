@@ -151,7 +151,7 @@ type evidenceIn struct {
 	Aside   []string         `json:"aside,omitempty" jsonschema:"和本需求无关的顺带改动，每条一句，默认折叠"`
 	Summary string           `json:"summary,omitempty" jsonschema:"证据正文（可用 Markdown）。给了 verdict 和 blocks 时可以不写，纸鸢会拼出纯文本；只写文字时按顺序写：1. 第一句是结论，40 字以内，写用户能看到的变化（例如：登录页支持“记住我”，重开浏览器不用再登录）；2. 逐条对照验收标准，每条写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图（如：图 1）；3. 你需要做的：只写机器验证不了、要用户动手或拍板的事，没有就不写；4. 风险或副作用（可选）；5. 实现细节放最后（改了哪些文件、测试命令）；和本需求无关的顺带改动单列，或另记需求。全文建议 600 字以内"`
 	Link    string           `json:"link,omitempty" jsonschema:"链接或文件路径"`
-	Images  []string         `json:"images,omitempty" jsonschema:"本机截图等图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时会直接看到。已经放进 figure / compare 块的图不用再列"`
+	Images  []any            `json:"images,omitempty" jsonschema:"截图（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时按这里的顺序全部显示：重点看的放前面，补充、测试一类的放后面。每项写成 {path: 本机路径, title: 一句话标题（20 字以内，如：工作台 · 带鱼屏 · 没有待办时）, boxes: [{x, y, w, h, label: 一句标签}]}；boxes 用矩形框标出这次改动的地方，坐标是图片原始尺寸的比例（0～1，左上角为原点），网页画在图上、可一键隐藏。只写路径字符串也行，但网页只能用文件名当标题。已经放进 figure / compare 块的图不用再列"`
 	Videos  []string         `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
 }
 
@@ -355,7 +355,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据，用户验收时读它。推荐结构化地交：verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；界面类附 figure 或 compare，流程类附 flow；todo 只写机器验证不了的事，没有就不写；实现细节放 details、顺带改动放 aside，两者默认折叠。也可以只写 summary（按同样顺序写成文字）。交之前先自查截图里的文字有没有被截断、溢出或重叠。超过字数阈值照常保存，返回里会提示压缩。\n" + writing.BlocksGuide},
+	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据，用户验收时读它。推荐结构化地交：verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；界面类附 figure 或 compare，流程类附 flow；截图（images、figure、compare）每张写一句话标题（title），改动的地方用 boxes 矩形框标出来，图按顺序全部显示：重点看的放前面，补充、测试一类的放后面；todo 只写机器验证不了的事，没有就不写；实现细节放 details、顺带改动放 aside，两者默认折叠。也可以只写 summary（按同样顺序写成文字）。交之前先自查截图里的文字有没有被截断、溢出或重叠。超过字数阈值照常保存，返回里会提示压缩。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": t.sessionKey(ctx, req), "verdict": in.Verdict, "details": in.Details}
 			dropEmpty(body)
@@ -366,12 +366,25 @@ func (t *tools) register(s *mcp.Server) {
 				body["aside"] = in.Aside
 			}
 			cache := map[string]string{}
-			ids, err := t.uploadCached(ctx, append(in.Images, in.Videos...), cache)
+			ids, err := t.uploadCached(ctx, in.Videos, cache)
 			if err != nil {
 				return nil, nil, err
 			}
 			if len(ids) > 0 {
 				body["files"] = ids
+			}
+			if len(in.Images) > 0 {
+				if err := blocks.LocalizeImages(in.Images, cache, func(p string) (string, error) {
+					up, err := t.upload(ctx, []string{p})
+					if err != nil {
+						return "", err
+					}
+					return up[0], nil
+				}); err != nil {
+					return nil, nil, err
+				}
+				body["images"] = in.Images
+				ids = append(ids, make([]string, len(in.Images))...)
 			}
 			if err := t.addBlocks(ctx, body, in.Blocks, cache); err != nil {
 				return nil, nil, err
@@ -379,6 +392,7 @@ func (t *tools) register(s *mcp.Server) {
 			var out struct {
 				reqView
 				BlockWarnings []string `json:"block_warnings"`
+				ImageHints    []string `json:"image_hints"`
 			}
 			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/evidence", body, &out); err != nil {
 				return nil, nil, err
@@ -389,6 +403,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			msg += "；状态：" + zh(out.Status)
 			msg += blockWarnings(out.BlockWarnings)
+			msg += imageHints(out.ImageHints)
 			if in.Summary != "" {
 				if h := writing.EvidenceHint(in.Summary); h != "" {
 					msg += "\n" + h
@@ -645,7 +660,15 @@ func blockWarnings(w []string) string {
 	if len(w) == 0 {
 		return ""
 	}
-	return "\n有块没有保存（其余内容已保存）：\n- " + strings.Join(w, "\n- ")
+	return "\n有块或改动框没有保存（其余内容已保存）：\n- " + strings.Join(w, "\n- ")
+}
+
+// imageHints 把 hub 退回的附图提示（没写标题、框写错，R-183）拼进工具返回。
+func imageHints(w []string) string {
+	if len(w) == 0 {
+		return ""
+	}
+	return "\n附图提示（证据已保存）：\n- " + strings.Join(w, "\n- ")
 }
 
 func hasChecklist(in []map[string]any) bool {
