@@ -249,7 +249,7 @@ function PhoneBoard({ items, statuses, status, setStatus, pool }: { items: Requi
       </div>
       <p className="mt-2 mb-3 text-xs text-fg-3">{t.pool.mobileHint}</p>
       <div
-        className="min-h-[40vh]"
+        className="min-h-[40vh] pb-[calc(5rem+env(safe-area-inset-bottom))]"
         onTouchStart={(e) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY })}
         onTouchEnd={(e) => {
           const s = touch.current
