@@ -9,8 +9,9 @@ import { Badge, Button } from '../ui/base'
 import { Collapse } from '../ui/motion'
 import { presence, RoleTag } from '../ui/marks'
 import { Linkify, RefChip } from '../ui/refmark'
-import { useActions } from './actions'
 import { useOpenAsk } from './nav'
+import { releaseKey, useWithdrawRelease } from './requirements'
+import { PendingBar } from './verdict'
 
 // 离开期间小结（R-165，D-179；版式按顾问意见）：你离开期间参谋做了什么、替你定了什么，占工作台顶部唯一的简报位。
 //   - 有小结的项目由小结占位，PM 简报收成卡里的一行「PM：……」；没有小结的项目照旧显示 PM 简报（见 desk.tsx Briefs）。
@@ -99,8 +100,7 @@ function DoneList({ r, now }: { r: MorningReport; now: number }) {
 }
 
 function ReleaseRow({ x }: { x: NonNullable<MorningReport['releases']>[number] }) {
-  const { withdrawRelease } = useActions()
-  const [busy, setBusy] = useState(false)
+  const wr = useWithdrawRelease()
   return (
     <div className="space-y-1 text-[13px]">
       <div className="flex min-w-0 items-center gap-2">
@@ -108,18 +108,10 @@ function ReleaseRow({ x }: { x: NonNullable<MorningReport['releases']>[number] }
         <span className="line-clamp-2 min-w-0 flex-1 font-medium text-fg">{x.requirement_title}</span>
         {x.withdrawn ? (
           <Badge tone="accent">{t.morning.withdrawn}</Badge>
+        ) : wr.pending(x.requirement_code) ? (
+          <PendingBar k={releaseKey(x.requirement_code)} className="-my-1 shrink-0" />
         ) : (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="-my-1 shrink-0"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true)
-              if (await withdrawRelease(x.requirement_code, t.morning.withdrawReason)) toast(t.morning.withdrawDone(x.requirement_code))
-              setBusy(false)
-            }}
-          >
+          <Button size="sm" variant="ghost" className="-my-1 shrink-0" onClick={() => wr.withdraw(x.requirement_code, t.morning.withdrawReason, () => toast(t.morning.withdrawDone(x.requirement_code)))}>
             <Undo2 className="size-3.5" />
             {t.morning.withdraw}
           </Button>

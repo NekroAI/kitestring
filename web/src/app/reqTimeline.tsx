@@ -12,13 +12,14 @@ import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
 import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionComposer } from './DecisionCard'
-import { useActions } from './actions'
 import { ProxyNote } from './grant'
 import { EvidenceCard, EvidenceRow, VoidedEvidence } from './evidence'
 import { DecisionChain } from './chain'
 import { CommitTags, shortSha, useReqCommits } from './commits'
 import { isStatusReq, StatusArrow, statusTone } from './statusReq'
 import { Who } from './who'
+import { releaseKey, useWithdrawRelease } from './requirements'
+import { PendingBar } from './verdict'
 
 // 需求抽屉只有这一条时间线（R-195）：从上往下按时间排，每份证据只出现一次——本轮最新的一份展开，其余收成一行，点开就地展开。
 // 每条记录都写清是谁做的：身份胶囊 + 会话标题（动作当时的标题，悬停看现在的），点开是那个会话。
@@ -154,9 +155,8 @@ const Act = ({ children }: { children: ReactNode }) => <span className="text-fg-
 export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decision[] }) {
   const now = useNow()
   const morning = useMorning()
-  const { withdrawRelease } = useActions()
+  const wr = useWithdrawRelease()
   const commitsQ = useReqCommits(r.code)
-  const [withdrawing, setWithdrawing] = useState(false)
   const [opened, setOpened] = useState<Set<string>>(() => new Set()) // 点开的旧证据
   const toggle = (id: string) =>
     setOpened((s) => {
@@ -396,18 +396,14 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             {withdrawn && <p className="text-sm text-fg-2">{f.close_reason}</p>}
             {!withdrawn && canWithdraw && r.release?.code === f.code && (
               <div>
-                <Button
-                  size="sm"
-                  disabled={withdrawing}
-                  onClick={async () => {
-                    setWithdrawing(true)
-                    if (await withdrawRelease(r.code)) toast(t.timeline.releaseWithdrawn)
-                    setWithdrawing(false)
-                  }}
-                >
-                  <Undo2 className="size-3.5" />
-                  {t.timeline.releaseWithdraw}
-                </Button>
+                {wr.pending(r.code) ? (
+                  <PendingBar k={releaseKey(r.code)} />
+                ) : (
+                  <Button size="sm" onClick={() => wr.withdraw(r.code, '', () => toast(t.timeline.releaseWithdrawn))}>
+                    <Undo2 className="size-3.5" />
+                    {t.timeline.releaseWithdraw}
+                  </Button>
+                )}
               </div>
             )}
           </Node>

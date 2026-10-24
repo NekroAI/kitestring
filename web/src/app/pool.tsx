@@ -13,6 +13,7 @@ import type { useTouchDrag } from '../ui/touchDrag'
 import { useReqMenu } from './menus'
 import { useOpenReq } from './nav'
 import { allStatuses, priorities, useSetStatus } from './requirements'
+import { PendingCover } from './verdict'
 
 // 需求池盘面（R-133）：分布条、池子指标、按状态流动排列的需求块。
 // 布局按内容区的实际宽度排（不看视口）：侧栏展开或折叠时，盘面自动在宽屏横排与纵向之间切换。
@@ -395,6 +396,7 @@ export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
       role="button"
       tabIndex={0}
       data-nav-item=""
+      data-tile={r.code}
       onClick={() => open(r.code)}
       onKeyDown={(e) => e.key === 'Enter' && open(r.code)}
       draggable={!coarse}
@@ -418,6 +420,8 @@ export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
         </span>
       </div>
       <div className={cx('mt-1 text-[13px] leading-[1.35] font-medium text-fg', c.phone ? 'line-clamp-3' : 'line-clamp-2')}>{r.title}</div>
+      {/* 撤销期（R-201）：块已经在新列，上面盖撤销条和倒计时线，走完即生效 */}
+      <PendingCover k={r.code} />
     </div>
   )
   return (
@@ -457,6 +461,8 @@ function useDrop(status: string) {
 
 // 区域内滚动的内容区：两侧留一点边距，需求块悬停上浮和阴影不被裁掉
 const scrollBody = '-mx-1 overflow-y-auto overscroll-contain px-1 py-0.5'
+// 列的滚动区标 data-col-scroll：换列动画（flight.tsx）据此把目标滚到能看到、判断旧位置是否被裁掉
+const colScroll = { 'data-col-scroll': '' }
 
 const zone = (over: boolean) => cx('rounded-2xl transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : 'bg-sunken/70')
 
@@ -485,7 +491,7 @@ export function NarrowCol({ status, items, className, width, fill }: { status: s
     <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col p-2', fill ? 'self-stretch' : 'self-start', width && 'shrink-0', zone(over), className)}>
       <ColHead status={status} n={items.length} />
       {items.length ? (
-        <div className={cx('flex min-h-0 flex-col gap-2', scrollBody)}>
+        <div {...colScroll} className={cx('flex min-h-0 flex-col gap-2', scrollBody)}>
           {items.map((r) => (
             <Tile key={r.id} r={r} faded={status === 'shelved'} />
           ))}
@@ -515,7 +521,7 @@ export function DraftBlock({ items, cols, onConfirmEach, className }: { items: R
         }
       />
       {items.length ? (
-        <div className={cx('min-h-0 space-y-2.5', scrollBody)}>
+        <div {...colScroll} className={cx('min-h-0 space-y-2.5', scrollBody)}>
           {priorities.map((p) => {
             const layer = items.filter((r) => r.priority === p)
             if (!layer.length) return null
@@ -582,9 +588,9 @@ export function DoneBody({ items, days, onAll, className, fit }: { items: Requir
   return (
     <div className={cx(fit ? 'flex min-h-0 flex-1 flex-col gap-2.5' : 'space-y-2.5', className)}>
       <DoneBars days={days} />
-      <div ref={listRef} className={cx('space-y-0.5', fit && 'min-h-0 flex-1 overflow-y-auto overscroll-contain')}>
+      <div ref={listRef} {...colScroll} className={cx('space-y-0.5', fit && 'min-h-0 flex-1 overflow-y-auto overscroll-contain')}>
         {items.slice(0, fit ? n : 7).map((r) => (
-          <button key={r.id} onClick={() => open(r.code)} className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1 py-1 text-left opacity-75 transition hover:bg-hover hover:opacity-100">
+          <button key={r.id} data-tile={r.code} onClick={() => open(r.code)} className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1 py-1 text-left opacity-75 transition hover:bg-hover hover:opacity-100">
             <RefChip code={r.code} title="" status={r.status} link={false} />
             <span className="min-w-0 flex-1 truncate text-xs text-fg-2">{r.title}</span>
           </button>
@@ -641,7 +647,7 @@ export function StatusGrid({ status, items, width, onConfirmEach, bare }: { stat
     <section {...(bare ? {} : props)} className={cx('flex max-h-full min-h-0 flex-col', !bare && 'p-2.5', !bare && zone(over))}>
       {!bare && <ColHead status={status} n={items.length} />}
       {items.length ? (
-        <div className={cx('grid min-h-0 gap-2', scrollBody)} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        <div {...colScroll} className={cx('grid min-h-0 gap-2', scrollBody)} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
           {items.map((r) => (
             <Tile key={r.id} r={r} faded={status === 'done' || status === 'shelved'} />
           ))}

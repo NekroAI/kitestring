@@ -1,13 +1,15 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { t } from '../i18n'
+import type { Scene } from '../i18n/zh'
 import { loadPref, savePref } from '../lib/util'
 import { useActions } from './actions'
-import { reducedMotion, SEAL_MS, sendBeacon, SHOW_STAMP, UNDO_MS } from './verdict'
+import { schedule, scheduleMany, undo, type Act, type ScheduleOpts } from './verdict'
 
 // 决策答复的草稿与发件箱。
 // - 草稿：每条决策的选择与文字，保存在本机，刷新不丢。
-// - 发件箱：点了回答 / 批准 / 退回后先进撤销期（与全站同一时长 UNDO_MS，R-161），期间可撤销；到时一次性提交。
+// - 发件箱：点了回答 / 批准 / 拒绝后进撤销期——和需求验收、计划同一个调度器（verdict.tsx 的 schedule，R-201），
+//   计时、盖印、提交、页面关闭时立即提交都在那里；这里只把答复变成一次提交。撤销期的键是 decKey(code)。
 
 import type { FileRef } from '../ui/attach'
 
@@ -28,18 +30,18 @@ export function composeAnswer(d: Draft | undefined, options: string[]): string {
   return ''
 }
 
-// SendItem：一条答复。多点决策时 answer 是附言，choices 是逐点的选择，reject 表示整体拒绝。
-type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string }
+// decKey：决策答复在撤销期里的键
+export const decKey = (code: string) => `dec:${code}`
 
-type Payload = { answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string }
-const toBody = (due: [string, Payload][]) => due.map(([ref, v]) => ({ ref, answer: v.answer, files: v.files, choices: v.choices, reject: v.reject, reason: v.reason }))
+// SendItem：一条答复。多点决策时 answer 是附言，choices 是逐点的选择，reject 表示整体拒绝；act / scene 决定撤销条和印章的用词。
+type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; act: Act; scene: Scene }
+
+const toBody = (it: SendItem) => ({ ref: it.code, answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason })
 
 type Ctx = {
   drafts: Record<string, Draft>
   setDraft: (code: string, patch: Partial<Draft>) => void
   clearDrafts: (codes?: string[]) => void
-  queued: Record<string, number> // code → 计划发送时间
-  sealed: Record<string, 'seal' | 'done'> // 到点后：盖印中 / 已提交等卡片收起（D-229）
   send: (items: SendItem[]) => void
   cancel: (code: string) => void
 }
@@ -49,10 +51,6 @@ const OutboxCtx = createContext<Ctx | null>(null)
 export function OutboxProvider({ children }: { children: ReactNode }) {
   const { answer } = useActions()
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => loadPref(DRAFTS_KEY, {}))
-  const [queued, setQueued] = useState<Record<string, number>>({})
-  const pending = useRef(new Map<string, Payload & { timer: number }>())
-  const sealing = useRef(new Map<string, Payload>()) // 盖印中、还没发出的答复（页面关闭时也要发）
-  const [sealed, setSealed] = useState<Record<string, 'seal' | 'done'>>({})
 
   useEffect(() => savePref(DRAFTS_KEY, drafts), [drafts])
 
@@ -75,83 +73,39 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  // 到点：先盖印、停顿片刻（与需求验收同一段生效动画），再一次性提交；成功后保持「已盖印」直到卡片收起。
-  const flush = useCallback(async () => {
-    const due: [string, Payload][] = [...pending.current.entries()].map(([c, v]) => [c, v])
-    if (!due.length) return
-    pending.current.forEach((v) => window.clearTimeout(v.timer))
-    pending.current.clear()
-    const codes = due.map(([c]) => c)
-    const mark = (v?: 'seal' | 'done') =>
-      setSealed((cur) => {
-        const next = { ...cur }
-        codes.forEach((c) => (v ? (next[c] = v) : delete next[c]))
-        return next
-      })
-    due.forEach(([c, v]) => sealing.current.set(c, v))
-    mark('seal')
-    if (SHOW_STAMP && !reducedMotion()) await new Promise((r) => window.setTimeout(r, SEAL_MS))
-    if (codes.some((c) => !sealing.current.has(c))) return // 页面关闭时已经发出
-    codes.forEach((c) => sealing.current.delete(c))
-    const res = await answer(toBody(due))
-    setQueued((cur) => {
-      const next = { ...cur }
-      codes.forEach((c) => delete next[c])
-      return next
-    })
-    // 完成反馈统一为印章 + 卡片收起 + 最近动态记一条（R-161 / D-229），不另弹「已答复」
-    if (!res) return mark()
-    // 改状态申请在你批准前状态已被改动（R-188）：后端把它作废了，告诉你没有执行
-    if (res.decisions?.some((d) => d.voided)) toast(t.ask.status.voidedToast)
-    clearDrafts(codes)
-    mark('done')
-    window.setTimeout(() => mark(), 2500)
-  }, [answer, clearDrafts])
+  // 完成反馈统一为印章 + 卡片收起 + 最近动态记一条（R-161 / D-229），不另弹「已答复」
+  const opts = useCallback(
+    (it: SendItem): { key: string } & ScheduleOpts => ({
+      key: decKey(it.code),
+      act: it.act,
+      scene: it.scene,
+      subject: it.code,
+      beacon: { method: 'POST', url: '/api/decisions/answers', body: { answers: [toBody(it)] } },
+      commit: async () => {
+        const res = await answer([toBody(it)])
+        if (!res) return false
+        // 改状态申请在你批准前状态已被改动（R-188）：后端把它作废了，告诉你没有执行
+        if (res.decisions?.some((d) => d.voided)) toast(t.ask.status.voidedToast)
+        clearDrafts([it.code])
+        return true
+      },
+    }),
+    [answer, clearDrafts],
+  )
 
   const send = useCallback(
     (items: SendItem[]) => {
-      const at = Date.now() + UNDO_MS
-      for (const it of items) {
-        const old = pending.current.get(it.code)
-        if (old) window.clearTimeout(old.timer)
-        // 所有排队项共用一个到期时间，到期时一起提交。
-        pending.current.set(it.code, { answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason, timer: window.setTimeout(() => void flush(), UNDO_MS) })
-      }
-      setQueued((cur) => {
-        const next = { ...cur }
-        items.forEach((it) => (next[it.code] = at))
-        return next
-      })
+      if (items.length === 1) {
+        const { key, ...o } = opts(items[0])
+        schedule(key, o)
+      } else scheduleMany(items.map(opts))
     },
-    [flush],
+    [opts],
   )
 
-  const cancel = useCallback((code: string) => {
-    const p = pending.current.get(code)
-    if (p) window.clearTimeout(p.timer)
-    pending.current.delete(code)
-    setQueued((cur) => {
-      const next = { ...cur }
-      delete next[code]
-      return next
-    })
-  }, [])
+  const cancel = useCallback((code: string) => void undo(decKey(code)), [])
 
-  // 标签页只是隐藏时照常计时、到点提交（撤销机会不丢）；页面真的关闭或刷新时用 keepalive 立即发出，避免丢失（R-161）。
-  useEffect(() => {
-    const onHide = () => {
-      const due: [string, Payload][] = [...pending.current.entries(), ...sealing.current.entries()]
-      if (!due.length) return
-      pending.current.forEach((v) => window.clearTimeout(v.timer))
-      pending.current.clear()
-      sealing.current.clear()
-      sendBeacon({ method: 'POST', url: '/api/decisions/answers', body: { answers: toBody(due) } })
-    }
-    window.addEventListener('pagehide', onHide)
-    return () => window.removeEventListener('pagehide', onHide)
-  }, [])
-
-  return <OutboxCtx.Provider value={{ drafts, setDraft, clearDrafts, queued, sealed, send, cancel }}>{children}</OutboxCtx.Provider>
+  return <OutboxCtx.Provider value={{ drafts, setDraft, clearDrafts, send, cancel }}>{children}</OutboxCtx.Provider>
 }
 
 export function useOutbox() {

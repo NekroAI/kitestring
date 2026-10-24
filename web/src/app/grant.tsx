@@ -10,6 +10,7 @@ import { Menu, Panel } from '../ui/overlay'
 import { RoleTag } from '../ui/marks'
 import { Linkify, RefChip } from '../ui/refmark'
 import { useActions } from './actions'
+import { done, PendingBar, schedule, usePendingMap } from './verdict'
 import { sessionTitle } from './SessionCard'
 
 // 主助理授权窗口（R-163、R-190）：你不在时授权本项目的主助理，在到期前代你答复范围内的决策；代答留痕、可推翻。
@@ -19,6 +20,24 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hou
 
 // isActive：窗口生效中且没到期（到期按本机时间判断，不等服务端刷新）。
 const isActive = (g: Grant, now: number) => g.status === 'active' && new Date(g.expires_at).getTime() > now
+
+// useRevokeGrant：撤销授权同样有 3 秒撤销期（R-201 / D-413），按钮换成撤销条；键 grant:G-2
+const grantKey = (code: string) => `grant:${code}`
+function useRevokeGrant() {
+  const { revokeGrant } = useActions()
+  const pend = usePendingMap()
+  return {
+    pending: (code: string) => pend.has(grantKey(code)),
+    revoke: (code: string) =>
+      schedule(grantKey(code), {
+        act: 'move',
+        label: t.verdict.revokeGrant,
+        subject: code,
+        beacon: { method: 'POST', url: `/api/grants/${code}/revoke`, body: {} },
+        commit: () => done(revokeGrant(code), () => toast(t.grant.revoked)),
+      }),
+  }
+}
 
 function useSessionName() {
   const sessions = useSessions()
@@ -32,7 +51,7 @@ function useSessionName() {
 export function GrantBanner() {
   const now = useNow()
   const grants = useGrants()
-  const { revokeGrant } = useActions()
+  const rg = useRevokeGrant()
   const [panel, setPanel] = useState<string | null>(null)
   const active = (grants.data?.grants ?? []).filter((g) => isActive(g, now))
   return (
@@ -52,9 +71,13 @@ export function GrantBanner() {
             <Button size="sm" onClick={() => setPanel(g.project_id)}>
               {t.grant.viewAll}
             </Button>
-            <Button size="sm" onClick={async () => (await revokeGrant(g.code)) && toast(t.grant.revoked)}>
-              {t.grant.revoke}
-            </Button>
+            {rg.pending(g.code) ? (
+              <PendingBar k={grantKey(g.code)} />
+            ) : (
+              <Button size="sm" onClick={() => rg.revoke(g.code)}>
+                {t.grant.revoke}
+              </Button>
+            )}
           </span>
         </div>
       ))}
@@ -233,7 +256,7 @@ export function GrantPanel({ projectId, open, onClose }: { projectId: string; op
   const grants = useGrants(projectId)
   const projects = useProjects()
   const name = useSessionName()
-  const { revokeGrant } = useActions()
+  const rg = useRevokeGrant()
   const list = grants.data?.grants ?? []
   const active = list.find((g) => isActive(g, now))
   const project = projects.data?.projects.find((p) => p.id === projectId)
@@ -254,9 +277,13 @@ export function GrantPanel({ projectId, open, onClose }: { projectId: string; op
               <span className="truncate">{name(active.session_key)}</span>
             </span>
             <span className="text-fg-2">{t.grant.scopeShort[active.max_risk]}</span>
-            <Button size="sm" className="ml-auto" onClick={async () => (await revokeGrant(active.code)) && toast(t.grant.revoked)}>
-              {t.grant.revoke}
-            </Button>
+            {rg.pending(active.code) ? (
+              <PendingBar k={grantKey(active.code)} className="ml-auto" />
+            ) : (
+              <Button size="sm" className="ml-auto" onClick={() => rg.revoke(active.code)}>
+                {t.grant.revoke}
+              </Button>
+            )}
           </div>
         ) : (
           projectId && (

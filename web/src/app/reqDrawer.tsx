@@ -26,7 +26,7 @@ import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
 import { OwnLine, useOwnership } from './ownership'
 import { useKsEvent } from './command'
-import { PendingBar, Seal, usePending, useReqVerdict, Verdict } from './verdict'
+import { PendingBar, Seal, useAdvance, usePending, usePendingMap, useReqVerdict, Verdict } from './verdict'
 import { plainText } from '../ui/markdown'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 
@@ -42,7 +42,7 @@ type Dir = 'next' | 'prev' | 'pass'
 // ---------- 主体 ----------
 
 // peek：左边那张只读预览纸（R-196）——不带底部的留言 / 验收。
-export function ReqView({ refId, top, onAdvance, peek }: { refId: string; top?: ReactNode; onAdvance?: (code: string) => void; peek?: boolean }) {
+export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; peek?: boolean }) {
   const q = useRequirement(refId)
   const decisions = useDecisions()
   const r = q.data
@@ -121,7 +121,6 @@ export function ReqView({ refId, top, onAdvance, peek }: { refId: string; top?: 
             <Composer
               key={r.code}
               r={r}
-              onAdvance={onAdvance}
               pending={related.filter((d) => d.status === 'pending').length}
               onJump={() => (reviewing ? toLatest(true) : scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }))}
               incoming={incoming}
@@ -150,6 +149,7 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
   const sessByKey = new Map((sessions.data?.sessions ?? []).map((s) => [s.key, s]))
   const linkable = (sessions.data?.sessions ?? []).filter((s) => !r.sessions.includes(s.key) && s.state !== 'ended')
   const chip = 'inline-flex max-w-[220px] items-center gap-1.5 rounded-md bg-sunken px-2.5 py-1 text-sm text-fg-2 transition hover:text-fg active:scale-[0.97]'
+  const movePending = usePending(r.code)?.act === 'move'
 
   return (
     <header className="shrink-0 border-b border-line px-4 pt-1 pb-3 sm:px-5">
@@ -270,13 +270,15 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
           </div>
         </div>
       </Collapse>
+      {/* 在抽屉里改状态（R-201）：撤销条就在状态下面，不用去找盘面上被抽屉挡住的块 */}
+      {movePending && <PendingBar k={r.code} className="mt-2.5" />}
     </header>
   )
 }
 
 // Composer：底部输入。待验收时是统一的 Verdict（R-161）：[附言（退回时必填）][退回][通过]，都先进撤销期，到点盖印；
 // 连续验收时盖印后滑到下一条。其它状态——可以随时给 Agent 留言（只送达，不改需求状态）。
-function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: Requirement; onAdvance?: (code: string) => void; pending: number; onJump: () => void; incoming?: File[]; onIncoming?: () => void }) {
+function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement; pending: number; onJump: () => void; incoming?: File[]; onIncoming?: () => void }) {
   const { note } = useActions()
   const verdict = useReqVerdict()
   const own = useOwnership()(r)
@@ -301,11 +303,10 @@ function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: 
     })
   const ids = files.map((f) => f.id)
   // 通过时也可以带附言（作为留言送达，需求仍是已完成）。
-  // 连续验收时撤销期不挡下一步（docs/principles.md 第 8 条）：点了通过立刻翻到下一件，撤回挪到顶部浮动条（toast）
+  // 连续验收时撤销期不挡下一步（docs/principles.md 第 8 条）：盖一下印就翻到下一件（ReqPanel 的 useAdvance），撤回挪到顶部浮动条
   const pass = () => {
     if (pend) return
-    const ok = verdict.pass(r.code, { comment: text, files: ids, after: clear, toast: !!onAdvance })
-    if (ok && onAdvance) onAdvance(r.code)
+    verdict.pass(r.code, { comment: text, files: ids, after: clear })
   }
   const back = () => {
     if (pend) return
@@ -405,6 +406,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const detail = useRequirement(refId).data
   const peek = usePeek(refId, refId)
   const goBack = useGoBack()
+  const pendMap = usePendingMap()
 
   // 从外部打开（不是抽屉内切换）时，确定这次要连续处理的范围：同一项目的待验收，或同一项目未关闭的需求。
   useEffect(() => {
@@ -443,9 +445,10 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       { replace: true },
     )
   }
-  // 连续验收：这一条盖印（Seal 在 ReqView 里）之后滑到下一条
+  // 连续验收：这一条一进撤销期，盖一下印（Seal 在 ReqView 里）就滑到下一条；浮动条里撤回时回到这一条（R-201）
   const onAdvance = (code: string) => {
-    const target = queue.filter((x) => x.code !== code && (!anchor?.review || x.status === 'review'))
+    // 已经下了判断、还在撤销期里的不算下一件（它在服务端仍是待验收）
+    const target = queue.filter((x) => x.code !== code && (!anchor?.review || x.status === 'review') && !pendMap.has(x.code))
     const after = target.find((x) => queue.indexOf(x) > idx) ?? target[target.length - 1]
     if (after) go(after.code, 'pass')
     else {
@@ -453,6 +456,8 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       setFinished(t.reqs.allReviewed(cur?.project_name || t.reqs.noProject))
     }
   }
+  const here = refId
+  useAdvance(here ?? undefined, !!anchor?.review && !finished, () => here && onAdvance(here), () => here && go(here, 'prev'), 'pass')
 
   // 逐条确认：确认（改为待开始）或搁置后滑到下一条草稿；没有了就显示「草稿都处理完了」
   const draftAct = async (status: 'ready' | 'shelved') => {
@@ -606,7 +611,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
             transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
             className="flex min-h-0 flex-1 flex-col bg-surface"
           >
-            {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} onAdvance={anchor?.review ? onAdvance : undefined} />}
+            {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} />}
           </motion.div>
         </AnimatePresence>
       </div>
