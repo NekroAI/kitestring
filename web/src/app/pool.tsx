@@ -89,6 +89,14 @@ export function Legend({ items }: { items: { key: string; label: string; color: 
 
 // ---------- 宽度 ----------
 
+// 需求块的统一宽度（R-223）：草稿区的块、各状态列里的块都不窄于它，同一页上大小一致。
+export const TILE_MIN = 200
+// 状态列 / 已完成列的内边距（p-2 左右各 8）
+export const COL_PAD = 16
+// 草稿块的内边距（p-2.5 左右各 10）与块间距
+export const DRAFT_PAD = 20
+export const TILE_GAP = 8
+
 export function useWidth() {
   const [el, setEl] = useState<HTMLElement | null>(null)
   const [w, setW] = useState(0)
@@ -415,7 +423,7 @@ export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
       <div className="flex min-w-0 items-center gap-1.5">
         <RefChip code={r.code} title="" status={r.status} link={false} />
         {r.kind === 'design' && <span className="shrink-0 rounded bg-accent-soft px-1 text-[11px] leading-4 font-medium text-accent">{t.design.label}</span>}
-        {r.plan_code && <span className="shrink-0 rounded bg-sunken px-1 font-mono text-[11px] leading-4 font-semibold text-fg-2">{r.plan_code}</span>}
+        {r.plan_code && <span className="min-w-0 truncate rounded bg-sunken px-1 font-mono text-[11px] leading-4 font-semibold text-fg-2">{r.plan_code}</span>}
         <DraftMark owners={[r.code]} />
         <span className="ml-auto shrink-0 text-[11px] whitespace-nowrap text-fg-3 tabular" title={t.pool.ageTip(createdAt(r.created_at))}>
           {ageText(r.created_at, now)}
@@ -506,10 +514,10 @@ export function NarrowCol({ status, items, className, width, fill }: { status: s
 }
 
 // DraftBlock：草稿整块，按 P0～P3 分层，层内多列网格；列头写「等你确认才会排期」和「逐条确认」入口。
-export function DraftBlock({ items, cols, onConfirmEach, className }: { items: Requirement[]; cols: number; onConfirmEach: () => void; className?: string; compact?: boolean }) {
+export function DraftBlock({ items, cols, onConfirmEach, className, width }: { items: Requirement[]; cols: number; onConfirmEach: () => void; className?: string; compact?: boolean; width?: number }) {
   const { over, props } = useDrop('draft')
   return (
-    <section {...props} className={cx('flex max-h-full min-h-0 min-w-0 flex-col p-2.5', zone(over), className)}>
+    <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col p-2.5', width && 'shrink-0', zone(over), className)}>
       <ColHead
         status="draft"
         n={items.length}

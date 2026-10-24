@@ -27,6 +27,10 @@ import { DraftMark } from '../app/draft'
 import { shownStatus } from '../lib/pending'
 import {
   catColor,
+  COL_PAD,
+  DRAFT_PAD,
+  TILE_GAP,
+  TILE_MIN,
   DistBar,
   DoneBody,
   DoneCol,
@@ -161,7 +165,6 @@ type BoardProps = {
     onConfirmEach: () => void
 }
 
-const WIDE = 1240 // 内容区至少这么宽才横排：草稿列占剩余宽度，其余状态是窄列
 const PHONE = 700 // 内容区窄于此用手机布局
 
 function Board({ width, pool, items, shelved, active, onAll, onConfirmEach }: BoardProps) {
@@ -175,40 +178,55 @@ function Board({ width, pool, items, shelved, active, onAll, onConfirmEach }: Bo
 
   if (active) return <div className="flex h-full"><StatusGrid status={active} items={by(active)} width={width} onConfirmEach={onConfirmEach} /></div>
 
-  if (width >= WIDE) {
-    // 越宽越能用满：窄列随宽度放宽、能显示的条数增加，多出来的宽度全给草稿列（列数随之增加，需求块保持 ~230px 宽）
-    const narrow = width >= 2600 ? 248 : width >= 2000 ? 216 : width >= 1560 ? 176 : 156
-    const doneW = width >= 2600 ? 320 : width >= 2000 ? 280 : width >= 1560 ? 244 : 212
-    const cols = flowStatuses.length + (shelved ? 1 : 0)
-    const draftW = width - narrow * cols - doneW - 12 * (cols + 1)
+  // 横排：草稿块、状态列、已完成列用同一个需求块宽度 tw（不小于 TILE_MIN）。
+  // 取放得下的最多草稿列数 n，把剩余宽度均摊给所有块（越宽列数越多，块宽基本不变）；n < 2 就放不下，走纵向。
+  const k = flowStatuses.length + (shelved ? 1 : 0)
+  const GAP = 12
+  let n = 0
+  let tw = 0
+  for (let c = 16; c >= 2; c--) {
+    const w = (width - GAP * (k + 1) - DRAFT_PAD - TILE_GAP * (c - 1) - COL_PAD * (k + 1)) / (c + k + 1)
+    if (w >= TILE_MIN) {
+      n = c
+      tw = Math.floor(w)
+      break
+    }
+  }
+  if (n) {
+    const colW = tw + COL_PAD
     return (
       <div className="flex h-full items-stretch gap-3">
-        <DraftBlock items={by('draft')} cols={Math.max(2, Math.min(12, Math.floor((draftW - 12) / 230)))} onConfirmEach={onConfirmEach} className="flex-1" compact={draftW < 560} />
+        <DraftBlock items={by('draft')} cols={n} width={n * tw + TILE_GAP * (n - 1) + DRAFT_PAD} onConfirmEach={onConfirmEach} />
         {flowStatuses.map((s) => (
-          <NarrowCol key={s} status={s} items={by(s)} width={narrow} fill />
+          <NarrowCol key={s} status={s} items={by(s)} width={colW} fill />
         ))}
-        <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={doneW} fill />
-        {shelved && <NarrowCol status="shelved" items={by('shelved')} width={narrow} fill />}
+        <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={colW} fill />
+        {shelved && <NarrowCol status="shelved" items={by('shelved')} width={colW} fill />}
       </div>
     )
   }
-  // 纵向：先「在流转」一行四列，再草稿整块，最后已完成（与搁置）折叠成一行摘要
-  const flowing = flowStatuses.reduce((n, s) => n + by(s).length, 0)
+  // 纵向：先「在流转」一行，再草稿整块，最后已完成（与搁置）折叠成一行摘要。
+  // 块宽仍是同一个：草稿按可用宽度取列数，在流转各列取同样的块宽，一行放不下四列就排成两行两列，不压窄。
+  const dn = Math.max(1, Math.floor((width - DRAFT_PAD + TILE_GAP) / (TILE_MIN + TILE_GAP)))
+  const vtw = Math.floor((width - DRAFT_PAD - TILE_GAP * (dn - 1)) / dn)
+  const flowCol = vtw + COL_PAD
+  const flowCols = 4 * flowCol + 3 * GAP <= width ? 4 : 2
+  const flowing = flowStatuses.reduce((x, s) => x + by(s).length, 0)
   const sh = by('shelved')
   return (
     <div className="flex h-full flex-col gap-4">
-      <section className="flex max-h-[40%] shrink-0 flex-col">
+      <section className={cx('flex shrink-0 flex-col', flowCols === 4 ? 'max-h-[40%]' : 'max-h-[50%]')}>
         <div className="mb-2 flex shrink-0 items-center gap-2 px-1">
           <span className="text-[13px] font-semibold text-fg">{t.pool.flowing}</span>
           <span className="text-xs text-fg-3 tabular">{flowing}</span>
         </div>
-        <div className="grid min-h-0 grid-cols-4 grid-rows-[minmax(0,1fr)] gap-3">
+        <div className="grid min-h-0 auto-rows-[minmax(0,1fr)] justify-start gap-3" style={{ gridTemplateColumns: `repeat(${flowCols}, ${flowCol}px)` }}>
           {flowStatuses.map((s) => (
             <NarrowCol key={s} status={s} items={by(s)} fill />
           ))}
         </div>
       </section>
-      <DraftBlock items={by('draft')} cols={width >= 1000 ? 4 : width >= 760 ? 3 : 2} onConfirmEach={onConfirmEach} compact={width < 900} className="shrink" />
+      <DraftBlock items={by('draft')} cols={dn} onConfirmEach={onConfirmEach} className="shrink" />
       <FoldRow status="done" n={done.length} summary={t.pool.doneSummary(week, pool.done_yesterday)}>
         <DoneBody items={done} days={pool.done_daily} onAll={() => onAll('done')} />
       </FoldRow>
