@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useDecisions, usePlans, useRequirements } from '../api/queries'
-import { useOpenAsk, useOpenPlan, useOpenReq } from '../app/nav'
+import { PeekContext, SideReqContext, useNavReq, useOpenAsk, useOpenPlan } from '../app/nav'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Tip } from './base'
@@ -207,23 +207,35 @@ function useLit(code: string) {
   return useSyncExternalStore(subscribeLit, () => lit === code)
 }
 
-// useOpenRef：点哪个印记都落到同一个地方。需求开需求抽屉，计划开计划抽屉；
+// useOpenRef：点哪个印记都落到同一个地方。在抽屉里（R-196）交给左边那张纸；否则需求开需求抽屉，计划开计划抽屉；
 // 待答的决策开审批抽屉；答过的决策没有自己的面板，落到它挂着的需求（或计划）上，都没有时回工作台。
 export function useOpenRef() {
-  const openReq = useOpenReq()
+  const peek = useContext(PeekContext)
+  const side = useContext(SideReqContext)
+  const go = useGoRef()
+  return (code: string) => {
+    if (peek) return peek(code)
+    if (side && refKind(code) === 'req') return side(code)
+    go(code)
+  }
+}
+
+// useGoRef：直接切过去（不经过左边那张纸）；back 是原来那个抽屉，新抽屉顶上出现「‹ 返回」（R-196「在这里打开」）。
+export function useGoRef() {
+  const openReq = useNavReq()
   const openPlan = useOpenPlan()
   const nav = useNavigate()
   const openAsk = useOpenAsk()
   const index = useContext(RefIndexContext)
-  return (code: string) => {
+  return (code: string, back?: string) => {
     const kind = refKind(code)
-    if (kind === 'req') return openReq(code)
-    if (kind === 'plan') return openPlan(code)
+    if (kind === 'req') return openReq(code, back)
+    if (kind === 'plan') return openPlan(code, back)
     const d = index?.get(code)
     // 还在等你答的决策点开审批抽屉（R-177）；挂在待验收需求上的，落到那件验收
-    if (d?.status === 'pending') return openAsk(d.reqCode && index?.get(d.reqCode)?.status === 'review' ? `r:${d.reqCode}` : `d:${code}`)
-    if (d?.reqCode) openReq(d.reqCode)
-    else if (d?.planCode) openPlan(d.planCode)
+    if (d?.status === 'pending') return openAsk(d.reqCode && index?.get(d.reqCode)?.status === 'review' ? `r:${d.reqCode}` : `d:${code}`, back)
+    if (d?.reqCode) openReq(d.reqCode, back)
+    else if (d?.planCode) openPlan(d.planCode, back)
     else nav('/')
   }
 }
