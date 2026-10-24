@@ -19,6 +19,10 @@ type Shape =
   | { kind: 'text'; color: string; size: number; at: Pt; text: string }
 type Tool = 'pen' | 'rect' | 'arrow' | 'text'
 
+const TAP_GAP = 150 // 多指“几乎同时”按下的间隔上限（毫秒）
+const TAP_MS = 250 // 从第一根手指按下到全部抬起的时长上限
+const TAP_MOVE = 10 // 每根手指允许的移动（像素）
+
 const COLORS = ['#e5483a', '#f2b33d', '#3f78c4', '#ffffff', '#1f1d1a']
 
 function draw(ctx: CanvasRenderingContext2D, shapes: Shape[], W: number, H: number) {
@@ -182,7 +186,44 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
     return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, p: pen ? Math.max(0.05, e.pressure || 0.5) : 0.5 }
   }
 
+  // 多指轻点（R-174）：两指轻点撤销、三指轻点重做（网页拿不到 Apple Pencil 双击，这是绘图 App 常用的替代）。
+  // 判定：几根手指在 TAP_GAP 内先后按下、从第一根按下起 TAP_MS 内全部抬起、每根移动不超过 TAP_MOVE。
+  // 第二根手指一落下，正在用手指画的那一笔就作废，所以轻点不会留下线。
+  const fingers = useRef(new Map<number, { x: number; y: number }>())
+  const tap = useRef<{ t0: number; n: number; ok: boolean } | null>(null)
+  const trackDown = (e: ReactPointerEvent) => {
+    const now = performance.now()
+    if (fingers.current.size === 0) tap.current = { t0: now, n: 0, ok: true }
+    fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const g = tap.current!
+    g.n = Math.max(g.n, fingers.current.size)
+    if (fingers.current.size > 1) {
+      if (now - g.t0 > TAP_GAP) g.ok = false
+      if (live.current && active.current !== null && active.current !== e.pointerId && fingers.current.has(active.current)) {
+        live.current = null // 手指画的那一笔作废
+        active.current = null
+        render()
+      }
+    }
+  }
+  const trackMove = (e: ReactPointerEvent) => {
+    const f = fingers.current.get(e.pointerId)
+    if (f && tap.current && Math.hypot(e.clientX - f.x, e.clientY - f.y) > TAP_MOVE) tap.current.ok = false
+  }
+  const trackUp = (e: ReactPointerEvent) => {
+    if (!fingers.current.delete(e.pointerId) || fingers.current.size) return
+    const g = tap.current
+    tap.current = null
+    if (!g || !g.ok || e.type === 'pointercancel' || performance.now() - g.t0 > TAP_MS || typing) return
+    if (g.n === 2) undo()
+    else if (g.n === 3) again()
+  }
+
   const down = (e: ReactPointerEvent) => {
+    if (e.pointerType === 'touch') {
+      trackDown(e)
+      if (fingers.current.size > 1) return // 多指不落笔
+    }
     if (e.pointerType === 'pen') penSeen.current = true
     if ((penOnly || penSeen.current) && e.pointerType === 'touch') return // 只认手写笔 / 用过笔后：忽略手掌 / 手指
     if (active.current !== null || typing) return
@@ -199,6 +240,7 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
     render()
   }
   const move = (e: ReactPointerEvent) => {
+    if (e.pointerType === 'touch') trackMove(e)
     if (e.pointerId !== active.current || !live.current) return
     // 取合并事件，笔迹更顺
     const evs = (e.nativeEvent as PointerEvent).getCoalescedEvents?.() ?? [e.nativeEvent]
@@ -208,6 +250,7 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
     render()
   }
   const up = (e: ReactPointerEvent) => {
+    if (e.pointerType === 'touch') trackUp(e)
     if (e.pointerId !== active.current) return
     active.current = null
     const sh = live.current
@@ -301,12 +344,12 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
             </button>
           ))}
           <span className="mx-1 h-6 w-px bg-white/15" />
-          <Tip content={t.annotate.undo}>
+          <Tip content={t.annotate.undoTip}>
             <button className={btn} aria-label={t.annotate.undo} disabled={!shapes.length} onClick={undo}>
               <Undo2 className="size-5" />
             </button>
           </Tip>
-          <Tip content={t.annotate.redo}>
+          <Tip content={t.annotate.redoTip}>
             <button className={btn} aria-label={t.annotate.redo} disabled={!redo.length} onClick={again}>
               <Redo2 className="size-5" />
             </button>
@@ -348,7 +391,6 @@ function Editor({ src, name, onClose, onDone }: { src: string; name: string; onC
             )}
           </div>
         )}
-        <p className="pointer-events-none absolute bottom-[max(0.5rem,env(safe-area-inset-bottom))] text-xs text-white/50">{penOnly ? t.annotate.hintPenOnly : t.annotate.hint}</p>
       </div>
     </div>
   )

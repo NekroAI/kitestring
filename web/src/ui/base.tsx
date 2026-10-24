@@ -310,7 +310,7 @@ export function Tip({ content, children, side = 'top' }: { content: ReactNode; c
         {children}
       </Tooltip.Trigger>
       <Tooltip.Portal>
-        <Tooltip.Content side={side} sideOffset={6} collisionPadding={8} className="tip-pop z-[60] max-w-[280px] rounded-lg bg-fg px-2.5 py-1.5 text-xs leading-relaxed text-bg shadow-pop">
+        <Tooltip.Content side={side} sideOffset={6} collisionPadding={8} className="tip-pop z-[90] max-w-[280px] rounded-lg bg-fg px-2.5 py-1.5 text-xs leading-relaxed text-bg shadow-pop">
           {content}
         </Tooltip.Content>
       </Tooltip.Portal>
