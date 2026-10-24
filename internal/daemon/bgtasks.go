@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,7 @@ type shellCall struct {
 
 // agentCall 是父会话发起、还没对上 SubagentStart 的子代理调用。
 type agentCall struct {
+	seq  int64 // daemon.db 里的行号（0 表示只在内存）
 	typ  string
 	desc string
 	at   time.Time
@@ -105,29 +107,107 @@ func (d *Daemon) noteTaskEvent(key string, p map[string]any, ev *protocol.Event)
 			}
 			t.calls[key][ev.ToolUseID] = &shellCall{cmd: cmd, desc: str(in, "description"), bg: bg, at: now}
 		case isAgentTool(ev.ToolName):
-			q := t.agents[key]
-			for len(q) > 0 && now.Sub(q[0].at) > 10*time.Minute {
-				q = q[1:]
+			c := agentCall{typ: str(in, "subagent_type"), desc: str(in, "description"), at: now}
+			if d.q != nil {
+				d.q.agentCallsAdd(key, c)
+			} else {
+				t.agents[key] = append(d.agentQueue(key, now), c)
 			}
-			t.agents[key] = append(q, agentCall{typ: str(in, "subagent_type"), desc: str(in, "description"), at: now})
 		}
 	case "PostToolUse", "PostToolUseFailure":
 		if c := t.calls[key][ev.ToolUseID]; c != nil && !c.bg {
 			delete(t.calls[key], ev.ToolUseID)
 		}
 	case "SubagentStart":
-		q := t.agents[key]
+		q := d.agentQueue(key, now)
 		for i, a := range q {
 			if a.typ == "" || ev.AgentType == "" || a.typ == ev.AgentType {
 				ev.ToolBrief = summary.Truncate(strings.Join(strings.Fields(a.desc), " "), 80)
-				t.agents[key] = append(q[:i:i], q[i+1:]...)
+				if d.q != nil {
+					d.q.agentCallDel(a.seq)
+				} else {
+					t.agents[key] = append(q[:i:i], q[i+1:]...)
+				}
 				break
 			}
+		}
+		if ev.ToolBrief == "" {
+			// 配不上（重启前派出的、或 hook 漏了）：从子代理自己的记录里取第一句提示词当名字
+			ev.ToolBrief = subagentPromptName(str(p, "transcript_path"), ev.AgentID)
 		}
 	case "SessionEnd":
 		delete(t.calls, key)
 		delete(t.agents, key)
+		if d.q != nil {
+			d.q.agentCallsClear(key)
+		}
 	}
+}
+
+// agentQueue 返回会话待对上的子代理调用（先进先出，丢掉 10 分钟前的；有 daemon.db 时以它为准，重启不丢，调用方持锁）。
+func (d *Daemon) agentQueue(key string, now time.Time) []agentCall {
+	if d.q == nil {
+		q := d.tasks.agents[key]
+		for len(q) > 0 && now.Sub(q[0].at) > 10*time.Minute {
+			q = q[1:]
+		}
+		d.tasks.agents[key] = q
+		return q
+	}
+	var out []agentCall
+	for _, r := range d.q.agentCallsLoad(key) {
+		if now.Sub(r.at) > 10*time.Minute {
+			d.q.agentCallDel(r.seq)
+			continue
+		}
+		c := r.agentCall
+		c.seq = r.seq
+		out = append(out, c)
+	}
+	return out
+}
+
+// subagentPromptName 读子代理记录（<会话>/subagents/agent-<id>.jsonl）里第一条提示词，取第一句当名字；读不到返回空。
+func subagentPromptName(transcript, agentID string) string {
+	if transcript == "" || agentID == "" {
+		return ""
+	}
+	path := filepath.Join(strings.TrimSuffix(transcript, ".jsonl"), "subagents", "agent-"+agentID+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	var buf [64 << 10]byte
+	n, _ := f.Read(buf[:])
+	line, _, _ := strings.Cut(string(buf[:n]), "\n")
+	var m struct {
+		Message struct {
+			Content any `json:"content"`
+		} `json:"message"`
+	}
+	if json.Unmarshal([]byte(line), &m) != nil {
+		return ""
+	}
+	text := ""
+	switch c := m.Message.Content.(type) {
+	case string:
+		text = c
+	case []any:
+		for _, b := range c {
+			if bm, ok := b.(map[string]any); ok {
+				if s, _ := bm["text"].(string); s != "" {
+					text = s
+					break
+				}
+			}
+		}
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	if i := strings.IndexAny(text, "。！？"); i > 8 {
+		text = text[:i]
+	}
+	return summary.Truncate(text, 60)
 }
 
 // proc 是进程表里的一行。

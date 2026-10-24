@@ -394,6 +394,7 @@ export const zh = {
     tasks: '后台任务',
     // 子代理在界面上统一叫「子任务」，后台 shell 叫「shell」（R-190）
     taskKind: { shell: 'shell', agent: '子任务' } as Record<string, string>,
+    taskUnnamed: '名字未知',
     taskCounts: (shell: number, agent: number) => ['后台任务', shell && `shell ${shell}`, agent && `子任务 ${agent}`].filter(Boolean).join(' · '),
     taskRunning: (d: string) => `已运行 ${d}`,
     tasksHint: '时间线是近 10 分钟，右边是现在；只记名称与时间，不看命令输出',

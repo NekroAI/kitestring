@@ -11,7 +11,7 @@ import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
 import { sessionTitle, splitTool } from './SessionCard'
-import { liveTasks, type BgTask } from './tasks'
+import { liveTasks, taskName, type BgTask } from './tasks'
 import { reducedMotion } from './verdict'
 
 // 工作台的会话泳道（R-170，D-228 原型）：每个会话一条——左边工具图标（Claude / Codex，R-187）、标题、身份（D-177 描边胶囊 + 在线点）、
@@ -356,7 +356,7 @@ const cols: Record<LaneMode, string> = {
 }
 
 function SubLane({ task, now, mode, last }: { task: BgTask; now: number; mode: LaneMode; last: boolean }) {
-  const label = task.label || task.agent_type || t.session.taskKind[task.kind]
+  const { text: label, guess } = taskName(task)
   const [tool, brief] = task.last_action ? splitTool(task.last_action) : ['', '']
   const ticks = (task.ticks ?? []).map(Date.parse)
   return (
@@ -368,8 +368,8 @@ function SubLane({ task, now, mode, last }: { task: BgTask; now: number; mode: L
           <span className="absolute top-1/2 left-0 w-full border-t border-line-strong" />
         </span>
         <span className="w-9 shrink-0 text-[10.5px] opacity-80">{t.session.taskKind[task.kind]}</span>
-        <Tip truncated content={label}>
-          <span className="min-w-0 flex-1 truncate">{label}</span>
+        <Tip truncated={!guess} content={guess ? `${t.session.taskUnnamed}${t.common.sep}${label}` : label}>
+          <span className={cx('min-w-0 flex-1 truncate', guess && 'italic opacity-80')}>{label}</span>
         </Tip>
         {mode !== 'full' && <span className="shrink-0 text-[11px] tabular">{shortDuration(task.started_at, now)}</span>}
       </div>
