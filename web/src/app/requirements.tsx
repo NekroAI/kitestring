@@ -162,7 +162,7 @@ export function ReleaseBadge({ r, className }: { r: Requirement; className?: str
 }
 
 // useEditDraft：编辑已有内容的草稿（R-202）：draftKey 为空时不缓存。和原文一样就不算草稿；
-// 失焦保存后清掉；「清空」只清文字（撤销期里失焦不保存空内容），「恢复原文」回到编辑前。
+// 失焦保存后清掉；「清空」立即清掉文字，「恢复原文」回到编辑前（3 秒撤销期）。
 function useEditDraft(draftKey: string | undefined, value: string) {
   const dr = useDraft<{ text: string }>(draftKey, { text: value }, (v) => v.text !== value)
   return dr
@@ -175,7 +175,6 @@ export function EditableText({ value, onSave, placeholder, multiline, wrap, clas
   const v = dr.value.text
   const setV = (text: string) => dr.set({ text })
   const commit = () => {
-    if (dr.clearing && !v.trim()) return // 刚点了清空：等撤销期走完，不把空内容存进去
     if (v.trim() !== value.trim()) onSave(v.trim())
     dr.drop()
   }
@@ -235,7 +234,6 @@ export function EditableMd({ value, onSave, placeholder, className, draftKey }: 
           className={className}
           onDone={(save) => {
             const v = dr.value.text
-            if (save && dr.clearing && !v.trim()) return setEditing(false)
             setEditing(false)
             if (save && v.trim() !== value.trim()) onSave(v.trim())
             dr.drop()

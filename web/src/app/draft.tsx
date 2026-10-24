@@ -9,7 +9,8 @@ import { PendingBar, schedule, undo, usePending } from './verdict'
 // 输入草稿（R-202，docs/principles.md 第 9 条）：所有带缓存的输入框共用这一个 useDraft(key)。
 // - 只存在本机浏览器；单段文字最多 2 万字、贴图只存已上传文件的引用、总量约 1MB，超出先清最久没动的（规则在 lib/drafts.ts）。
 // - 什么时候清：提交成功（drop）；撤销期内撤回不清（提交成功的回调里才 drop）；对象关闭（已完成 / 已答复 / 已搁置）后自动清（useDraftSweep）；7 天没动的清。
-// - 回来时直接恢复，下面一行小字「已恢复上次没写完的内容 · 清空」（DraftLine）；「清空」走全站同一套撤销期（verdict.tsx 的 schedule，第 8 条），3 秒内可撤回。
+// - 回来时直接恢复，下面一行小字「已恢复上次没写完的内容 · 清空」（DraftLine）；「清空」立即清掉文字和贴图并删除草稿，不走撤销期（用户 2026-10-24 退回意见）；
+//   编辑已有内容时的「恢复原文」走全站同一套撤销期（verdict.tsx 的 schedule，第 8 条），3 秒内可撤回。
 // - localStorage 读写都包在 try 里：拿不到（隐私模式、被禁用）时只在内存里存，照常能写能发。
 
 let mem: DraftMap | null = null
@@ -117,19 +118,21 @@ function useStore() {
   return store()
 }
 
-// 「清空」的撤销期键；撤销期里显示 next（默认是初始值），走完才真的清
+// 「恢复原文」的撤销期键；撤销期里显示初始值（原文），走完才删草稿
 const clearKeyOf = (key: string) => `draft:${key}`
 const clearNext = new Map<string, DraftData | undefined>()
 
 export type DraftHandle<T extends DraftData> = {
   value: T
   set: (patch: Partial<T>) => void
-  // clear：清空（next 不传时回到初始值；编辑已有内容时传 { text: '' }），3 秒撤销期；label 是撤销条上的动作（默认「清空」，「恢复原文」）
-  clear: (next?: Partial<T>, label?: string) => void
+  // clear：清空，立即生效、不给撤销（next 不传时回到初始值；编辑已有内容时传 { text: '' }）
+  clear: (next?: Partial<T>) => void
+  // revert：恢复原文（回到初始值），3 秒撤销期
+  revert: () => void
   drop: () => void // 提交成功：立刻清掉，不给撤销
   dirty: boolean // 有内容（有草稿）
   restored: boolean // 打开时就有上次没写完的内容
-  clearing: boolean // 在「清空」的撤销期里
+  clearing: boolean // 在「恢复原文」的撤销期里
   clearKey?: string
 }
 
@@ -159,7 +162,7 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
     clearing,
     clearKey: ck,
     set: (patch) => {
-      // 清空的撤销期里又写了：不再撤回，以新写的为准
+      // 恢复原文的撤销期里又写了：不再撤回，以新写的为准
       if (clearing && ck) {
         undo(ck)
         return write({ ...value, ...patch })
@@ -168,17 +171,22 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
       const cur = key ? (store()[key]?.d as Partial<T> | undefined) : local
       write({ ...init, ...cur, ...patch } as T)
     },
-    clear: (next, label) => {
-      if (!key || !ck) return setLocal(next)
-      clearNext.set(ck, next as DraftData | undefined)
+    clear: (next) => {
+      if (clearing && ck) undo(ck)
+      if (!key) return setLocal(next)
+      const v = { ...init, ...next } as T
+      if (next && has(v)) put(key, v)
+      else dropDraft(key)
+    },
+    revert: () => {
+      if (!key || !ck) return setLocal(undefined)
+      clearNext.set(ck, undefined)
       schedule(ck, {
         act: 'move',
-        label: label ?? t.draft.clear,
+        label: t.draft.revert,
         subject: t.draft.subject,
         commit: async () => {
-          const v = { ...init, ...next } as T
-          if (next && has(v)) put(key, v)
-          else dropDraft(key)
+          dropDraft(key)
           return true
         },
       })
@@ -188,7 +196,7 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
 }
 
 // DraftLine：输入框下面的一行小字——回来时「已恢复上次没写完的内容 · 清空」，平时有内容就只有「清空」；
-// 编辑已有内容时还有「恢复原文」（revert）。清空 / 恢复原文后这一行换成撤销条，3 秒内可撤回。
+// 编辑已有内容时还有「恢复原文」（revert）。清空立即生效；恢复原文后这一行换成撤销条，3 秒内可撤回。
 // 点这几个字不让输入框失焦（失焦就保存了）。
 export function DraftLine<T extends DraftData>({ h, empty, revert, noClear, className }: { h: DraftHandle<T>; empty?: Partial<T>; revert?: boolean; noClear?: boolean; className?: string }) {
   if (h.clearing && h.clearKey) return <PendingBar k={h.clearKey} className={cx('mt-1.5', className)} />
@@ -203,7 +211,7 @@ export function DraftLine<T extends DraftData>({ h, empty, revert, noClear, clas
       </button>
     ),
     revert && (
-      <button key="r" type="button" onMouseDown={keep} onClick={() => h.clear(undefined, t.draft.revert)} className={link}>
+      <button key="r" type="button" onMouseDown={keep} onClick={h.revert} className={link}>
         {t.draft.revert}
       </button>
     ),
