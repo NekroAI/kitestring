@@ -45,10 +45,10 @@ func runInstall(args []string, uninstall bool) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	// 指定了 --claude-dir 就只处理这些 Claude 目录：Codex 和 daemon 除非显式写了对应开关，否则不碰
+	// 卸载时指定了 --claude-dir 就只处理这些 Claude 目录：Codex 和 daemon 除非显式写了对应开关，否则不碰
 	set := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
-	if len(dirs.dirs) > 0 {
+	if uninstall && len(dirs.dirs) > 0 {
 		if !set["codex"] {
 			*codex = false
 		}

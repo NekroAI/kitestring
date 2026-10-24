@@ -104,22 +104,21 @@ func TestUninstallWithoutArgsCleansEverything(t *testing.T) {
 	}
 }
 
-func TestInstallClaudeDirOnlyTouchesThatDir(t *testing.T) {
+func TestInstallClaudeDirAddsToListAndKeepsDefaults(t *testing.T) {
 	home, codex, plist := installEnv(t)
 	x := filepath.Join(home, ".claude-x")
 	if err := runInstall([]string{"--claude-dir", x}, false); err != nil {
 		t.Fatal(err)
 	}
-	if read(t, filepath.Join(x, "settings.json")) == "<missing>" {
-		t.Fatal("指定目录应被写入")
+	for _, d := range []string{x, filepath.Join(home, ".claude")} {
+		if read(t, filepath.Join(d, "settings.json")) == "<missing>" {
+			t.Fatalf("%s 应被写入", d)
+		}
 	}
-	if read(t, filepath.Join(home, ".claude", "settings.json")) != "<missing>" {
-		t.Fatal("默认 Claude 目录不应被写")
+	if read(t, codex) == "<missing>" {
+		t.Fatal("install 照旧装 Codex")
 	}
-	if read(t, codex) != "<missing>" {
-		t.Fatal("Codex 配置不应被写")
-	}
-	if read(t, plist) != "<missing>" {
-		t.Fatal("不应注册 daemon 服务")
+	if read(t, plist) == "<missing>" {
+		t.Fatal("install 照旧装 daemon 服务")
 	}
 }
