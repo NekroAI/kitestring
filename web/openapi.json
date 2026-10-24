@@ -4309,6 +4309,9 @@
           "brief_by": {
             "type": "string"
           },
+          "commit_on_accept": {
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -4351,6 +4354,7 @@
           "auto_dispatch",
           "hidden",
           "agent_release",
+          "commit_on_accept",
           "created_at",
           "need_devs",
           "need_reason",
@@ -4366,6 +4370,9 @@
             "type": "boolean"
           },
           "auto_dispatch": {
+            "type": "boolean"
+          },
+          "commit_on_accept": {
             "type": "boolean"
           },
           "doc_root": {

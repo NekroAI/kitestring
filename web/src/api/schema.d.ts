@@ -2797,6 +2797,7 @@ export interface components {
             /** Format: date-time */
             brief_at?: string;
             brief_by: string;
+            commit_on_accept: boolean;
             /** Format: date-time */
             created_at: string;
             doc_root: string;
@@ -2814,6 +2815,7 @@ export interface components {
         ProjectInBody: {
             agent_release?: boolean;
             auto_dispatch?: boolean;
+            commit_on_accept?: boolean;
             doc_root: string;
             hidden?: boolean;
             name: string;

@@ -168,6 +168,7 @@ func projectSettingsChanges(before, after store.Project) []string {
 		}
 	}
 	flip(before.AgentRelease, after.AgentRelease, "「允许主调度 / 主助理放行草稿」放行开关")
+	flip(before.CommitOnAccept, after.CommitOnAccept, "「验收通过后自动提交」（需求验收通过时提示主调度提交属于它的改动，不推送）")
 	flip(before.AutoDispatch, after.AutoDispatch, "「自动派发」（会话空闲时自动送达排给它的待开始需求）")
 	return out
 }
@@ -187,6 +188,10 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 	}
 	text := fmt.Sprintf("用户把 %s「%s」从%s改为%s。", after.Code, brief(after.Title, 40), reqStatusZh[before.Status], reqStatusZh[after.Status])
 	told := slices.Clone(skip)
+	// 验收通过且项目开了「验收通过后自动提交」（R-192）：给负责的主调度送一条合成消息（状态变化 + 提交提示），不再另送 status 通知。
+	if to := h.commitHint(ctx, after, text); to != "" {
+		told = append(told, to)
+	}
 	// 放行为待开始且项目自动派发开着：会话空闲时排给它的需求会整批送达，那就是通知，这里不再重复送；订阅了 status 的照常收到。
 	if after.Status == store.ReqReady {
 		if p, err := h.store.GetProject(ctx, after.ProjectID); err == nil && p.AutoDispatch {
@@ -221,4 +226,30 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 // 订阅了 status 的其它会话收到一句说明。
 func (h *Hub) onUserPlanEvent(ctx context.Context, x store.Plan, text string) {
 	h.broadcast(ctx, protocol.OnStatus, x.ProjectID, "", text, x.OwnerSession)
+}
+
+// commitHint（R-192）：需求 r 刚被验收通过，项目开了「验收通过后自动提交」时，给负责的主调度（派活的 PM，没有时为项目 PM）送一条团队消息，
+// 请它按项目设置提交属于这条需求的改动、不推送。纸鸢自己不执行 git，只送消息；head 是同一事件已有的状态说明，合成一条送出，调用方不用再给它送 status 通知。
+// 返回已送到的会话键（没送为空）。
+func (h *Hub) commitHint(ctx context.Context, r store.Requirement, head string) string {
+	if r.Status != store.ReqDone || r.ProjectID == "" {
+		return ""
+	}
+	p, err := h.store.GetProject(ctx, r.ProjectID)
+	if err != nil || !p.CommitOnAccept {
+		return ""
+	}
+	to := h.assigner(ctx, r)
+	if to == "" {
+		return ""
+	}
+	if head != "" {
+		head += " "
+	}
+	msg := fmt.Sprintf("团队消息（status · %s）：%s%s 已验收，按项目设置提交属于它的改动（不推送）。只提交这条需求的文件，提交说明用中文并带需求编号 %s；提交由你来做，纸鸢不动仓库。", waitOnZh[protocol.OnStatus], head, r.Code, r.Code)
+	if _, err := h.tell(ctx, to, r.ProjectID, r.ID, msg); err != nil {
+		h.log.Warn("送验收后提交提示失败", "err", err, "to", to)
+		return ""
+	}
+	return to
 }

@@ -731,6 +731,10 @@ export const zh = {
     get agentReleaseHint() {
       return rt`${'pm'}或${'aide'}可以把做法明确的草稿改为待开始（派草稿也算），必须写理由，进展里记下谁放行、为什么，你可以一键撤回；验收${ACC.pass}仍只由你操作。${'dev'}、${'advisor'}不能放行`
     },
+    commitOnAccept: '验收通过后自动提交',
+    get commitOnAcceptHint() {
+      return rt`你验收通过一条需求后，纸鸢给负责的${'pm'}送一条消息，由它只提交属于这条需求的改动（中文说明、带需求编号）；纸鸢自己不动仓库，也从不推送，推送永远要你明确要求。被退回的需求不提交`
+    },
     autoDispatchHint: '你确认为待开始的需求，会在关联的会话一轮做完或待命时整批送过去（一次最多 10 条）；关掉后需要你手动交给会话',
     title: '项目',
     openCount: (n: number) => (n ? `${n} 条未完成` : '没有未完成需求'),
