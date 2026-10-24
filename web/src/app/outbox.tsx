@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { toast } from 'sonner'
 import { t } from '../i18n'
 import { loadPref, savePref } from '../lib/util'
 import { useActions } from './actions'
@@ -100,6 +101,8 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     })
     // 完成反馈统一为印章 + 卡片收起 + 最近动态记一条（R-161 / D-229），不另弹「已答复」
     if (!res) return mark()
+    // 改状态申请在你批准前状态已被改动（R-188）：后端把它作废了，告诉你没有执行
+    if (res.decisions?.some((d) => d.voided)) toast(t.ask.status.voidedToast)
     clearDrafts(codes)
     mark('done')
     window.setTimeout(() => mark(), 2500)

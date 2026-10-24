@@ -124,10 +124,16 @@ type reqCreateIn struct {
 
 type reqStatusIn struct {
 	Ref    string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
-	Status string `json:"status" jsonschema:"新状态：draft in_progress blocked review shelved；ready（放行）只有 PM / Adv 在项目开了放行时能设，且必须写 reason；done 只能由用户验收后设置"`
+	Status string `json:"status" jsonschema:"新状态：draft in_progress blocked review shelved；ready（放行）只有 PM / Adv 在项目开了放行时能设，且必须写 reason（没开放行时用 req_request_status 申请用户批准）；done 只能由用户验收后设置"`
 	Reason string `json:"reason,omitempty" jsonschema:"设为 ready（放行草稿）时必填：一句理由，说明为什么做法明确、可以直接排期；设为 shelved（搁置）时必填：一句话说明为什么搁置；改回草稿（撤回放行）时可写原因"`
 	// ReasonKind 是搁置原因的类别（R-157）
 	ReasonKind string `json:"reason_kind,omitempty" jsonschema:"搁置时的原因类别：duplicate 重复 / changed 方向变了 / dropped 不做了 / other 其他（默认）"`
+}
+
+type reqRequestStatusIn struct {
+	Ref    string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	To     string `json:"to" jsonschema:"目标状态：ready（草稿 / 已搁置 → 待开始）或 draft（已搁置 → 草稿）；其它状态不能申请"`
+	Reason string `json:"reason" jsonschema:"一句理由：为什么现在可以改，用户在审批里看到"`
 }
 
 type reqEditIn struct {
@@ -332,6 +338,20 @@ func (t *tools) register(s *mcp.Server) {
 				msg += fmt.Sprintf("（证据 %d 条）", out.evidenceCount())
 			}
 			return text(msg), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "req_request_status", Description: "申请改需求状态（R-188）：要用户确认某条需求时用它——把草稿改为待开始，或重新打开已搁置的需求（已搁置 → 待开始 / 草稿）。写一句 reason。申请出现在用户的「要你处理」，用户在审批抽屉里批准后由纸鸢直接改状态（不用你再改），时间线记成「用户批准了 Agent 的申请」；拒绝、或批准前状态已被改动而自动作废，结果都会送到你这里。不推送、不限时；同一条需求已有在等的申请时不重复建。不要再在对话里写「请在面板上把 R-x 设为待开始」。项目开了「允许 PM / Adv 放行草稿」时，PM / Adv 对做法明确的草稿仍可直接用 req_update_status 放行，不用申请。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in reqRequestStatusIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/status-request", map[string]any{"session_key": key, "to": in.To, "reason": in.Reason}, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目 PM / Adv；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 阻塞 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqEditIn) (*mcp.CallToolResult, any, error) {

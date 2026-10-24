@@ -76,9 +76,9 @@ func TestRelease(t *testing.T) {
 		}
 	}
 	_, err := status(r1.Code, "claude:pm", "ready", "做法明确")
-	mustFail(err, "先请用户放行", "开关关着时 PM 放行")
+	mustFail(err, "req_request_status", "开关关着时 PM 放行")
 	err = c.Do(ctx, "POST", "/agent/requirements/"+r4.Code+"/assign", map[string]any{"session_key": "claude:pm", "to": "claude:dev", "reason": "做法明确"}, nil)
-	mustFail(err, "先请用户放行", "开关关着时 PM 派草稿")
+	mustFail(err, "req_request_status", "开关关着时 PM 派草稿")
 	if get(r4.Code).Status != store.ReqDraft {
 		t.Fatal("被拒绝的派活不应改状态")
 	}
@@ -265,7 +265,7 @@ func TestLinkDraftRelease(t *testing.T) {
 	if got.Status != store.ReqDraft || got.Release != nil || count(got.Requirement) != 0 {
 		t.Fatalf("开关关着时关联草稿不应改状态：%s %+v", got.Status, got.Release)
 	}
-	if len(got.Notices) == 0 || !strings.Contains(got.Notices[0], "先请用户放行") {
+	if len(got.Notices) == 0 || !strings.Contains(got.Notices[0], "req_request_status") {
 		t.Fatalf("应提示先请用户放行：%v", got.Notices)
 	}
 	linkedPM := false

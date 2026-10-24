@@ -326,7 +326,7 @@ export function useHandled(now: number, limit = 4): Handled[] {
       if (r.status === 'done') out.push({ at: r.updated_at, act: 'pass', scene: 'accept', text: r.title })
     }
     for (const d of decisions.data ?? []) {
-      if (d.kind !== 'decision' || !d.answered_at || d.timed_out || (d.proxy_by && !d.overridden_at)) continue // 超时视为拒绝的不是你做的判断（R-169）
+      if (d.kind !== 'decision' || !d.answered_at || d.timed_out || d.voided || (d.proxy_by && !d.overridden_at)) continue // 超时视为拒绝（R-169）、申请作废（R-188）都不是你做的判断
       const opt0 = d.options?.[0]
       const act = d.approval ? (opt0 && d.answer?.startsWith(opt0) ? 'pass' : 'back') : 'answer'
       out.push({ at: d.answered_at, act, scene: d.request_kind ? 'request' : d.approval ? 'approval' : 'answer', text: d.short_title || d.question })

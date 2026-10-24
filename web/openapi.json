@@ -446,6 +446,30 @@
         ],
         "type": "object"
       },
+      "Agent-request-statusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "一句理由：为什么现在可以改（用户在审批里看到）",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "申请的会话",
+            "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "description": "目标状态：ready（草稿 / 已搁置 → 待开始）或 draft（已搁置 → 草稿）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "to",
+          "reason"
+        ],
+        "type": "object"
+      },
       "Agent-set-briefRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1681,10 +1705,19 @@
             "format": "int64",
             "type": "integer"
           },
+          "request_from": {
+            "description": "改状态申请（R-188）：申请时需求的状态",
+            "type": "string"
+          },
           "request_kind": {
             "enum": [
-              "devs"
+              "devs",
+              "status"
             ],
+            "type": "string"
+          },
+          "request_to": {
+            "description": "改状态申请（R-188）：申请改成的状态",
             "type": "string"
           },
           "requirement_code": {
@@ -1726,6 +1759,10 @@
             ]
           },
           "timed_out": {
+            "type": "boolean"
+          },
+          "voided": {
+            "description": "改状态申请（R-188）：批准前需求状态已被改动，申请自动作废",
             "type": "boolean"
           }
         },
@@ -2000,10 +2037,19 @@
             "format": "int64",
             "type": "integer"
           },
+          "request_from": {
+            "description": "改状态申请（R-188）：申请时需求的状态",
+            "type": "string"
+          },
           "request_kind": {
             "enum": [
-              "devs"
+              "devs",
+              "status"
             ],
+            "type": "string"
+          },
+          "request_to": {
+            "description": "改状态申请（R-188）：申请改成的状态",
             "type": "string"
           },
           "requirement_code": {
@@ -2045,6 +2091,10 @@
             ]
           },
           "timed_out": {
+            "type": "boolean"
+          },
+          "voided": {
+            "description": "改状态申请（R-188）：批准前需求状态已被改动，申请自动作废",
             "type": "boolean"
           }
         },
@@ -5827,7 +5877,7 @@
             "type": "string"
           },
           "via": {
-            "description": "经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划",
+            "description": "经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 / request 用户批准了 Agent 的改状态申请（ref 是申请的 D-x，R-188）",
             "type": "string"
           }
         },
@@ -5857,6 +5907,26 @@
         },
         "required": [
           "changes"
+        ],
+        "type": "object"
+      },
+      "StatusRequestOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "existing": {
+            "description": "这条需求已有在等用户批准的改状态申请，没有新建",
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "existing",
+          "message"
         ],
         "type": "object"
       },
@@ -7240,6 +7310,57 @@
             "description": "Error"
           }
         },
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/requirements/{ref}/status-request": {
+      "post": {
+        "operationId": "agent-request-status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-request-statusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusRequestOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Agent 申请改需求状态：用户在审批抽屉里批准后由纸鸢改（R-188）",
         "tags": [
           "agent"
         ]

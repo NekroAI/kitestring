@@ -26,7 +26,7 @@ type Actor struct {
 	Kind    string // user | agent | system
 	Session string // Agent 会话键
 	Role    string // 会话当时的身份；空时写入时按会话现在的身份补上
-	Via     string // web | agent | create | link | release | withdraw | revise | accept | assign | plan
+	Via     string // web | agent | create | link | release | withdraw | revise | accept | assign | plan | request
 	Ref     string // 关联记录的编号（D-x 放行 / 修改意见，P-x 计划）
 	// 搁置原因（R-157）：Kind 是 duplicate / changed / dropped / other，Reason 是一句话；都可空（用户搁置时可选）
 	ReasonKind string
@@ -83,7 +83,7 @@ type StatusChange struct {
 	Actor           string    `json:"actor" enum:"user,agent,system" doc:"操作者：你 / Agent 会话 / 系统"`
 	Session         string    `json:"session,omitempty" doc:"操作的会话键（Agent 操作时）"`
 	Role            string    `json:"role,omitempty" doc:"会话当时的身份：pm / dev / advisor / reviewer"`
-	Via             string    `json:"via" doc:"经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划"`
+	Via             string    `json:"via" doc:"经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 / request 用户批准了 Agent 的改状态申请（ref 是申请的 D-x，R-188）"`
 	Ref             string    `json:"ref,omitempty" doc:"关联记录的编号：D-x 是这次放行、退回修改、撤回的那条放行；P-x 是计划"`
 	ReasonKind      string    `json:"reason_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他（R-157）；只有搁置的变化可能有，旧记录没有"`
 	Reason          string    `json:"reason,omitempty" doc:"搁置原因的一句话（R-157）"`

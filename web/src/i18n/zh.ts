@@ -286,6 +286,22 @@ export const zh = {
       rule: '到点没批按规则视为不开，PM 继续用一次性子代理',
       joinAfter: '批准后推送接入语，项目页显示怎么开',
     },
+    // Agent 申请改需求状态（R-188）：请求类，批准 / 拒绝
+    status: {
+      kind: '申请',
+      why: '理由：',
+      change: '申请',
+      noDetail: '（没有说明）',
+      showFull: '展开需求原文',
+      hideFull: '收起需求原文',
+      acceptance: '验收标准',
+      changedNow: (st: string) => `需求现在是${st}，批准时会作废`,
+      rule: (from: string, to: string) => `批准后纸鸢直接把需求改为${to}，时间线记成「你批准了 Agent 的申请」；拒绝后需求保持${from}，理由会送给 Agent。`,
+      voided: '这条申请已作废',
+      voidedWhy: (from: string) => `需求的状态在申请后、你批准前已被改动（不再是${from}），申请没有执行；Agent 已收到。`,
+      voidedToast: '申请已作废：需求状态在你批准前已被改动，没有执行',
+      title: (code: string, to: string) => `${code} 改为${to}`,
+    },
   },
 
   ref: {
@@ -718,6 +734,7 @@ export const zh = {
     evAnswer: (code: string, verb = VERB.answer.pass) => `你${verb}了 ${code}`,
     evProxy: (code: string) => `Adv 代答了 ${code}`,
     evTimeout: (code: string) => `${code} 超时未批，按规则视为拒绝`,
+    evVoided: (code: string) => `${code} 申请已作废：需求状态在批准前被改动`,
     hide: '在项目列表里隐藏',
     hideHint: '误识别的目录、不想看到的项目可以隐藏；它的会话和需求照常显示，项目列表底部可以展开找回',
     hiddenCount: (n: number) => `已隐藏 ${n} 个`,
@@ -935,6 +952,15 @@ export const zh = {
     bySystem: '纸鸢',
     changed: '把状态改为',
     shelveWhy: '搁置原因',
+    statusReq: {
+      approved: '你批准了 Agent 的申请',
+      rejected: '你拒绝了 Agent 的申请',
+      voided: 'Agent 的申请已作废',
+      pendingTitle: 'Agent 申请改状态',
+      why: (who: string) => `${who} 的理由`,
+      note: '附言',
+      voidedWhy: '批准前需求状态已被改动，申请没有执行',
+    },
     via: {
       link: '· 开始做',
       withdraw: '· 撤回放行',

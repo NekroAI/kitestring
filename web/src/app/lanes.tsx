@@ -6,6 +6,7 @@ import { cx, duration, relTime, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { Ctx } from '../ui/contextMenu'
 import { displayState, RoleBadge, ToolMark } from '../ui/marks'
+import { Linkify } from '../ui/refmark'
 import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
@@ -312,7 +313,7 @@ function Feed({ s, n }: { s: Session; n: number }) {
         return (
           <div key={Date.parse(a.at) + a.label} className={cx('truncate', last ? 'desk-in text-fg' : 'text-fg-3')}>
             {last ? '▸ ' : '✓ '}
-            {name} {brief}
+            {name} <Linkify text={brief} label="code" />
           </div>
         )
       })}
@@ -328,7 +329,7 @@ function ActLine({ s }: { s: Session }) {
   const [name, brief] = splitTool(a.label)
   return (
     <div key={a.at} className="desk-in truncate font-mono text-[11.5px] leading-4 text-fg-2">
-      ▸ {name} {brief}
+      ▸ {name} <Linkify text={brief} label="code" />
     </div>
   )
 }
@@ -434,8 +435,8 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
         </Tip>
       </div>
       {live && mode !== 'full' && <ActLine s={s} />}
-      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply">{youLine(s)}</div>}
-      {quiet && (mode === 'mid' || mode === 'narrow') && words && <div className="truncate text-[12px] leading-4 text-fg-3">{words}</div>}
+      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply"><Linkify text={youLine(s)} /></div>}
+      {quiet && (mode === 'mid' || mode === 'narrow') && words && <div className="truncate text-[12px] leading-4 text-fg-3"><Linkify text={words} /></div>}
     </div>
   )
   // 右（宽处）：在跑放最近 4 个动作；等你放它在问什么；待命 / 空闲放最后一句话和上次动作的时间
@@ -447,7 +448,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
       </div>
     ) : (
       <div className="flex min-w-0 flex-col justify-center gap-1 border-l border-line px-4 py-2">
-        <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? youLine(s) : words || t.desk.lane.noWords}</p>
+        <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? <Linkify text={youLine(s)} /> : words ? <Linkify text={words} /> : t.desk.lane.noWords}</p>
         {quiet && <LastAct s={s} now={now} />}
       </div>
     ))
@@ -485,8 +486,8 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
               )
             )}
             {right}
-            {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply">{youLine(s)}</div>}
-            {phone && quiet && words && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-fg-3">{words}</div>}
+            {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply"><Linkify text={youLine(s)} /></div>}
+            {phone && quiet && words && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-fg-3"><Linkify text={words} /></div>}
           </div>
           {tasks.length > 0 && (
             <div className="pb-1.5">

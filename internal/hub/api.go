@@ -47,6 +47,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentTeam(agentAPI)
 	h.registerReviewerAgent(agentAPI)
 	h.registerAgentNeed(agentAPI)
+	h.registerStatusRequest(agentAPI)
 	h.registerAgentBrief(agentAPI)
 	h.registerAgentTell(agentAPI)
 	h.registerAgentGrant(agentAPI)
@@ -115,6 +116,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentTeam(api)
 	h.registerReviewerAgent(api)
 	h.registerAgentNeed(api)
+	h.registerStatusRequest(api)
 	h.registerAgentBrief(api)
 	h.registerAgentTell(api)
 	h.registerAgentGrant(api)
@@ -824,12 +826,19 @@ func (h *Hub) registerWeb(api huma.API) {
 					return nil, err
 				}
 				answer, choices := a.Answer, []int(nil)
+				d0, err := h.store.GetDecision(ctx, a.Ref)
+				if err != nil {
+					return nil, apiErr(err)
+				}
+				// 改状态申请（R-188）：需求状态在批准前已被改动 → 这条申请作废，不再记答复
+				if vd, voided, err := h.checkStatusRequest(ctx, d0); err != nil {
+					return nil, err
+				} else if voided {
+					out.Body.Decisions = append(out.Body.Decisions, vd)
+					continue
+				}
 				if len(a.Choices) > 0 || a.Reject {
 					// 多点决策：hub 把逐点的选择拼成答复，注入给 Agent 的内容不依赖网页怎么写
-					d0, err := h.store.GetDecision(ctx, a.Ref)
-					if err != nil {
-						return nil, apiErr(err)
-					}
 					if len(d0.Points) > 0 {
 						if answer, err = pointsAnswer(d0, a.Choices, a.Answer, a.Reject); err != nil {
 							return nil, huma.Error400BadRequest(err.Error())
@@ -841,7 +850,8 @@ func (h *Hub) registerWeb(api huma.API) {
 				if err != nil {
 					return nil, apiErr(err)
 				}
-				h.onRequestAnswered(ctx, d) // 批准开 Dev 会话 → 推送接入语（R-169）
+				h.onRequestAnswered(ctx, d)  // 批准开 Dev 会话 → 推送接入语（R-169）
+				h.applyStatusRequest(ctx, d) // 批准改状态申请 → 纸鸢改状态（R-188）
 				out.Body.Decisions = append(out.Body.Decisions, d)
 				if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 					devices[x.DeviceID] = true
@@ -1459,7 +1469,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				}
 			case store.ReqDraft:
 				if x.Role != roles.PM && x.Role != roles.Advisor {
-					out.Body.Notices = append(out.Body.Notices, "已关联，但这条还是草稿，请 PM 放行")
+					out.Body.Notices = append(out.Body.Notices, "已关联，但这条还是草稿，请 PM 放行，或用 req_request_status 申请用户批准")
 					break
 				}
 				p, perr := h.store.GetProject(ctx, r.ProjectID)

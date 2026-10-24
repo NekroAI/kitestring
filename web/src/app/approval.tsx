@@ -11,7 +11,7 @@ import { Panel } from '../ui/overlay'
 import { RoleBadge } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
-import { buildAsks, decisionKind, type Ask } from './asks'
+import { askKindLabel, askTitle, buildAsks, decisionKind, type Ask } from './asks'
 import { useKsEvent } from './command'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import { ProxyNote, OverrideBox } from './grant'
@@ -23,6 +23,7 @@ import { PlanBody } from './plans'
 import { ReplyBox } from './replyBox'
 import { ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
+import { isStatusReq, StatusReqNote } from './statusReq'
 import { reducedMotion, SEAL_MS, usePendingMap } from './verdict'
 
 // 审批抽屉（R-177）：所有要你下判断的事只在这里处理——需求验收、阶段验收、计划批准、批准类 / 选项类决策、
@@ -75,7 +76,7 @@ function useAskSource() {
     const [p, ...rest] = key.split(':')
     const id = rest.join(':')
     const d = (decisions.data ?? []).find((x) => x.code === id)
-    if (p === 'x' && d) return { key, kind: 'proxy', title: d.short_title || d.question, at: d.proxy_at ?? d.answered_at ?? d.created_at, counted: false, code: d.code, d, projectId: d.project_id ?? '', projectName: d.project_name ?? '' }
+    if (p === 'x' && d) return { key, kind: 'proxy', title: askTitle(d), at: d.proxy_at ?? d.answered_at ?? d.created_at, counted: false, code: d.code, d, projectId: d.project_id ?? '', projectName: d.project_name ?? '' }
     const old = seen.current.get(key)
     if (old) {
       // 用最新的数据刷新（决策、计划会变）
@@ -84,7 +85,7 @@ function useAskSource() {
       if (x) return { ...old, plan: x }
       return old
     }
-    if ((p === 'd' || p === 'o') && d) return { key, kind: p === 'o' ? 'orphan' : decisionKind(d), title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, d, projectId: d.project_id ?? '', projectName: d.project_name ?? '' }
+    if ((p === 'd' || p === 'o') && d) return { key, kind: p === 'o' ? 'orphan' : decisionKind(d), title: askTitle(d), at: d.created_at, counted: true, code: d.code, d, projectId: d.project_id ?? '', projectName: d.project_name ?? '' }
     const x = (plans.data ?? []).find((v) => v.code === id)
     if ((p === 'p' || p === 'g') && x) return { key, kind: p === 'g' ? 'stage' : 'plan', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: x.current, projectId: x.project_id ?? '', projectName: x.project_name ?? '' }
     const s = (sessions.data?.sessions ?? []).find((v) => v.key === id)
@@ -164,8 +165,10 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   }, [sealed, askKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const wasLive = useRef(false)
   const isLive = !!askKey && live.has(askKey)
+  // 改状态申请在看的时候作废了（R-188）：停在这里显示「已作废」，不自动滑走
+  const voided = isStatusReq(cur?.d) && !!cur?.d?.voided
   useEffect(() => {
-    if (wasLive.current && !isLive && inQueue && !sealed && !finished) advance()
+    if (wasLive.current && !isLive && inQueue && !sealed && !finished && !voided) advance()
     wasLive.current = isLive
   }, [isLive, askKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -193,7 +196,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   const navBtn = 'flex size-8 items-center justify-center rounded-lg text-fg-2 transition hover:bg-hover hover:text-fg active:scale-95 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10'
   const label = (k?: string) => {
     const a = k ? find(k) : undefined
-    return a ? `${t.ask.kind[a.kind]} · ${a.title}` : undefined
+    return a ? `${askKindLabel(a)} · ${a.title}` : undefined
   }
   const top = (
     <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
@@ -215,7 +218,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
       <span className="ml-auto flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-fg-3">
         {cur && !finished && (
           <>
-            <b className="shrink-0 font-semibold tracking-wider text-fg-2">{t.ask.kind[cur.kind]}</b>
+            <b className="shrink-0 font-semibold tracking-wider text-fg-2">{askKindLabel(cur)}</b>
             {cur.code && <RefChip code={cur.code} link={false} />}
           </>
         )}
@@ -232,7 +235,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
       onClose={onClose}
       wide="approval"
       bare
-      title={cur ? `${t.ask.kind[cur.kind]} ${cur.title}` : t.ask.queue}
+      title={cur ? `${askKindLabel(cur)} ${cur.title}` : t.ask.queue}
       onSwipe={(d) => {
         if (d === 'left' && next) go(next, 'next')
         else if (d === 'right' && prev) go(prev, 'prev')
@@ -285,6 +288,7 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
   }
   const d: Decision | undefined = a.d ? ((decisions.data ?? []).find((v) => v.code === a.d!.code) ?? a.d) : undefined
   if (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request') {
+    if (d && isStatusReq(d) && d.voided) return <VoidedBody d={d} top={top} />
     if (!d || (d.status !== 'pending' && !sealed)) return <Gone top={top} />
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -305,6 +309,19 @@ function Scroll({ children, className }: { children: ReactNode; className?: stri
 
 function Foot({ children }: { children: ReactNode }) {
   return <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">{children}</footer>
+}
+
+// VoidedBody：改状态申请已作废（R-188）——批准前需求状态被改动过，申请没有执行；只展示，不再作答。
+function VoidedBody({ d, top }: { d: Decision; top: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {top}
+      <Scroll>
+        <h3 className="font-display text-[17px] leading-snug font-semibold text-fg">{d.question}</h3>
+        <StatusReqNote d={d} />
+      </Scroll>
+    </div>
+  )
 }
 
 function OrphanBody({ d, top }: { d: Decision; top: ReactNode }) {
