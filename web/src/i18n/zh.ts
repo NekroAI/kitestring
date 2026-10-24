@@ -588,7 +588,7 @@ export const zh = {
       done: '已验收完成',
       shelved: '已搁置',
     } as Record<string, string>,
-    createdBy: (when: string, agent: boolean) => (agent ? `Agent 创建于 ${when}` : `创建于 ${when}`),
+    createdAt: (when: string) => `创建于 ${when}`,
     accept: '验收通过',
     reviewBanner: '已完成，等你验收',
     deleteConfirm: '删除后无法恢复。',

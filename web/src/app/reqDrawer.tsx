@@ -15,6 +15,7 @@ import { Menu, Panel, useConfirm } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { useOpenSession } from './nav'
+import { Who } from './who'
 import { EditableMd, EditableText, priorities, ReleaseBadge, StatusMenu, toFields, useSetStatus } from './requirements'
 import { sortDrafts } from './pool'
 import { ReqTimeline } from './reqTimeline'
@@ -397,6 +398,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const internal = useRef(false)
   const [anchor, setAnchor] = useState<{ project: string; review: boolean; drafts?: boolean } | null>(null)
   const cur = all.find((x) => x.code === refId)
+  const detail = useRequirement(refId).data
 
   // 从外部打开（不是抽屉内切换）时，确定这次要连续处理的范围：同一项目的待验收，或同一项目未关闭的需求。
   useEffect(() => {
@@ -480,6 +482,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   }, !!refId)
 
   const navBtn = 'flex size-8 items-center justify-center rounded-lg text-fg-2 transition hover:bg-hover hover:text-fg active:scale-95 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10'
+  const created = detail?.code === cur?.code ? detail?.status_changes?.find((c) => c.via === 'create') : undefined
   const top = (
     <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
       {queue.length > 1 && (
@@ -501,7 +504,16 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
         {cur && (
           <>
             <RefChip code={cur.code} status={cur.status} link={false} />
-            <span className="truncate max-sm:hidden"> · {t.reqs.createdBy(relTime(cur.created_at, now), cur.created_by === 'agent')}</span>
+            {/* 谁创建的（R-195 第 5 点）：身份胶囊 + 当时的会话标题，点开是那个会话；老数据没记录会话的写「Agent（没记录是哪个会话）」 */}
+            <span className="flex min-w-0 items-center gap-1 max-sm:hidden">
+              <span className="shrink-0">·</span>
+              {created ? (
+                <Who actor={created.actor} session={created.session} role={created.role} title={created.session_title} className="max-w-[18em]" />
+              ) : (
+                <Who actor={cur.created_by === 'user' ? 'user' : 'agent'} />
+              )}
+              <span className="shrink-0 whitespace-nowrap">{t.reqs.createdAt(relTime(cur.created_at, now))}</span>
+            </span>
           </>
         )}
       </span>
