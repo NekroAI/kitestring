@@ -7,6 +7,7 @@ import { cx, duration, relTime } from '../lib/util'
 import { Badge, Button, Tip } from '../ui/base'
 import { useConfirm } from '../ui/overlay'
 import { useOpenSession } from './nav'
+import { PendingCover, schedule, usePendingMap } from './verdict'
 
 // 孤儿进程（R-209）：会话结束后它开的后台进程还在跑（或已脱离 Agent）。工作台会话区末尾单独一块，没有时不显示。
 // 「停止」经 Hub 交给进程所在设备的 daemon，daemon 核对 pid + 启动时间后才发信号；先 SIGTERM，几秒不退再问要不要强制。
@@ -21,7 +22,11 @@ export function useOrphans() {
     queryKey: ['orphans'],
     queryFn: () => unwrap(api.GET('/api/orphans')),
     refetchInterval: 60_000, // CPU / 内存、已运行时长；列表变化走实时推送
-    select: (d) => ({ orphans: d.orphans ?? [], stops: d.stops ?? [] }),
+    select: (d) => ({
+      orphans: d.orphans ?? [],
+      ignored: d.ignored ?? [],
+      stops: d.stops ?? [],
+    }),
   })
 }
 
@@ -44,13 +49,86 @@ export function OrphanProcs({ now }: { now: number }) {
   const qc = useQueryClient()
   const confirm = useConfirm()
   const [busy, setBusy] = useState<string | null>(null)
+  const [showIgnored, setShowIgnored] = useState(false)
+  const pend = usePendingMap()
   const orphans = q.data?.orphans ?? []
+  const ignored = q.data?.ignored ?? []
   const recent = (q.data?.stops ?? []).filter((s) => now - new Date(s.at).getTime() < RECENT_MS).slice(0, 3)
-  if (!orphans.length && !recent.length) return null
+  if (!orphans.length && !recent.length && !ignored.length) return null
   const nOrphan = orphans.filter((o) => o.state === 'orphan').length
 
+  // 忽略（R-209 退回意见）：只对孤儿，不发信号，只是不再提醒；走统一的 3 秒撤销期（R-201），到点才记到 Hub
+  const ignoreBody = (o: Orphan, undo = false) => ({
+    device_id: o.device_id,
+    id: o.id,
+    undo,
+  })
+  const ignore = (o: Orphan) =>
+    schedule(ignoreKey(o), {
+      act: 'move',
+      label: t.orphans.ignoreAct,
+      subject: shortCmd(o.cmd),
+      beacon: {
+        method: 'POST',
+        url: '/api/orphans/ignore',
+        body: ignoreBody(o),
+      },
+      commit: async () => {
+        try {
+          await unwrap(api.POST('/api/orphans/ignore', { body: ignoreBody(o) }))
+          await qc.invalidateQueries({ queryKey: ['orphans'] })
+          return true
+        } catch (e) {
+          toast.error(errMsg(e))
+          return false
+        }
+      },
+    })
+  const unignore = async (o: Orphan) => {
+    try {
+      await unwrap(api.POST('/api/orphans/ignore', { body: ignoreBody(o, true) }))
+      void qc.invalidateQueries({ queryKey: ['orphans'] })
+    } catch (e) {
+      toast.error(errMsg(e))
+    }
+  }
+  const ignoredFooter = ignored.length > 0 && (
+    <div className="px-2.5 py-1">
+      <button onClick={() => setShowIgnored(!showIgnored)} aria-expanded={showIgnored} className="text-[11.5px] text-fg-3 hover:text-fg-2">
+        {t.orphans.ignored(ignored.length)} · {showIgnored ? t.orphans.hide : t.orphans.view}
+      </button>
+      {showIgnored &&
+        ignored.map((o) => (
+          <div key={o.device_id + o.id} className="flex h-7 min-w-0 items-center gap-2 text-[11.5px] whitespace-nowrap text-fg-3 tabular">
+            <Tip content={o.cmd} truncated={shortCmd(o.cmd) === o.cmd}>
+              <code className="min-w-0 truncate font-mono text-fg-2">{shortCmd(o.cmd)}</code>
+            </Tip>
+            <span className="shrink-0">
+              · {[o.project_name, o.ports?.length ? t.orphans.port(o.ports) : '', t.orphans.ran(duration(o.started_at, now))].filter(Boolean).join(' · ')} ·{' '}
+              {t.orphans.ignoredAt(relTime(o.ignored_at, now))}
+            </span>
+            <span className="flex-1" />
+            <button onClick={() => void unignore(o)} className="shrink-0 text-fg-2 hover:text-accent">
+              {t.orphans.unignore}
+            </button>
+          </div>
+        ))}
+    </div>
+  )
+  // 只剩被忽略的：不出提醒块，只留一行不显眼的「已忽略 n 个 · 查看」
+  if (!orphans.length && !recent.length)
+    return (
+      <section aria-label={t.orphans.title} className="shrink-0 pt-1">
+        {ignoredFooter}
+      </section>
+    )
+
   const send = async (o: Orphan, force: boolean) => {
-    const r = await unwrap(api.POST('/api/orphans/stop', { body: { device_id: o.device_id, id: o.id, force } }))
+    const r = await unwrap(
+      api.POST('/api/orphans/stop', {
+        body: { device_id: o.device_id, id: o.id, force },
+      }),
+    )
     void qc.invalidateQueries({ queryKey: ['orphans'] })
     return r
   }
@@ -72,7 +150,12 @@ export function OrphanProcs({ now }: { now: number }) {
     try {
       let r = await send(o, false)
       if (r.result === 'running') {
-        const force = await confirm({ title: t.orphans.forceTitle, description: t.orphans.forceBody(5), confirmText: t.orphans.forceOk, danger: true })
+        const force = await confirm({
+          title: t.orphans.forceTitle,
+          description: t.orphans.forceBody(5),
+          confirmText: t.orphans.forceOk,
+          danger: true,
+        })
         if (force) r = await send(o, true)
       }
       const msg = stopText(r)
@@ -95,7 +178,7 @@ export function OrphanProcs({ now }: { now: number }) {
       </div>
       <div className="rounded-[14px] border border-dashed border-wait/45 bg-surface px-1 py-0.5">
         {orphans.map((o) => (
-          <OrphanRow key={o.device_id + o.id} o={o} now={now} busy={busy === o.id} onStop={() => void stop(o)} />
+          <OrphanRow key={o.device_id + o.id} o={o} now={now} busy={busy === o.id} ignoring={pend.has(ignoreKey(o))} onStop={() => void stop(o)} onIgnore={() => ignore(o)} />
         ))}
         {recent.length > 0 && (
           <div className={cx('px-2.5 py-1.5', orphans.length > 0 && 'border-t border-line')}>
@@ -105,27 +188,28 @@ export function OrphanProcs({ now }: { now: number }) {
             ))}
           </div>
         )}
+        {ignoredFooter && <div className={cx((orphans.length > 0 || recent.length > 0) && 'border-t border-line')}>{ignoredFooter}</div>}
       </div>
     </section>
   )
 }
 
-function OrphanRow({ o, now, busy, onStop }: { o: Orphan; now: number; busy: boolean; onStop: () => void }) {
+const ignoreKey = (o: Orphan) => `ignore:${o.device_id}:${o.id}`
+
+function OrphanRow({ o, now, busy, ignoring, onStop, onIgnore }: { o: Orphan; now: number; busy: boolean; ignoring: boolean; onStop: () => void; onIgnore: () => void }) {
   const openSession = useOpenSession()
   const detached = o.state === 'detached'
   const short = shortCmd(o.cmd)
-  const meta = [
-    o.project_name,
-    o.ports?.length ? t.orphans.port(o.ports) : '',
-    t.orphans.ran(duration(o.started_at, now)),
-  ].filter(Boolean)
+  const meta = [o.project_name, o.ports?.length ? t.orphans.port(o.ports) : '', t.orphans.ran(duration(o.started_at, now))].filter(Boolean)
   const load = [t.orphans.cpu(o.cpu), t.orphans.mem(o.rss_kb), o.procs > 1 ? t.orphans.procs(o.procs) : ''].filter(Boolean)
   const metaText = [...meta, ...load, o.local ? '' : o.device_name].filter(Boolean).join(' · ')
   return (
-    <div className="grid h-[52px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-line px-2.5 first:border-t-0">
+    <div className="relative grid h-[52px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-line px-2.5 first:border-t-0">
       <Tip content={detached ? t.orphans.detachedTip : t.orphans.orphanTip}>
         <span>
-          <Badge tone={detached ? 'neutral' : 'wait'} className="w-[4.2em] justify-center">{detached ? t.orphans.detached : t.orphans.orphan}</Badge>
+          <Badge tone={detached ? 'neutral' : 'wait'} className="w-[4.2em] justify-center">
+            {detached ? t.orphans.detached : t.orphans.orphan}
+          </Badge>
         </span>
       </Tip>
       <div className="min-w-0">
@@ -148,19 +232,29 @@ function OrphanRow({ o, now, busy, onStop }: { o: Orphan; now: number; busy: boo
           )}
         </div>
       </div>
-      {o.device_online ? (
-        <Button size="sm" variant="danger" loading={busy} onClick={onStop}>
-          {busy ? t.orphans.stopping : t.orphans.stop}
-        </Button>
-      ) : (
-        <Tip content={t.orphans.offlineTip}>
-          <span>
-            <Button size="sm" disabled>
-              {t.orphans.offline}
+      <div className="flex items-center gap-1">
+        {!detached && (
+          <Tip content={t.orphans.ignoreTip}>
+            <Button size="sm" variant="ghost" disabled={ignoring || busy} onClick={onIgnore}>
+              {t.orphans.ignore}
             </Button>
-          </span>
-        </Tip>
-      )}
+          </Tip>
+        )}
+        {o.device_online ? (
+          <Button size="sm" variant="danger" loading={busy} disabled={ignoring} onClick={onStop}>
+            {busy ? t.orphans.stopping : t.orphans.stop}
+          </Button>
+        ) : (
+          <Tip content={t.orphans.offlineTip}>
+            <span>
+              <Button size="sm" disabled>
+                {t.orphans.offline}
+              </Button>
+            </span>
+          </Tip>
+        )}
+      </div>
+      <PendingCover k={ignoreKey(o)} />
     </div>
   )
 }

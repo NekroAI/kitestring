@@ -81,3 +81,91 @@ func TestStopOrphanRelay(t *testing.T) {
 		t.Fatalf("列表 / 记录不对：%+v", list.Body)
 	}
 }
+
+// R-209 退回意见：忽略只对孤儿；按 pid + 启动时间记，pid 复用的新进程不受影响；Hub 重启后仍有效；取消忽略、进程退出后失效；都留痕。
+func TestIgnoreOrphan(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hub.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+	dev, err := st.CreateDevice(ctx, "工作机", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphan := protocol.OrphanProc{ID: "47505@Sun Oct 18 01:27:31 2026", Pid: 47505, Start: "Sun Oct 18 01:27:31 2026", State: protocol.ProcOrphan, Cmd: "pnpm dev --port 5199"}
+	detached := protocol.OrphanProc{ID: "300@Sat Oct 24 09:00:00 2026", Pid: 300, Start: "Sat Oct 24 09:00:00 2026", State: protocol.ProcDetached, Cmd: "node server.js"}
+	h.setOrphans(dev.ID, []protocol.OrphanProc{orphan, detached})
+	ignore := func(h *Hub, id string, undo bool) (*ignoreOrphanOut, error) {
+		in := &ignoreOrphanIn{}
+		in.Body.DeviceID, in.Body.ID, in.Body.Undo = dev.ID, id, undo
+		return h.ignoreOrphan(ctx, in)
+	}
+	list := func(h *Hub) (vis, ign []string) {
+		out, err := h.listOrphans(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, o := range out.Body.Orphans {
+			vis = append(vis, o.ID)
+		}
+		for _, o := range out.Body.Ignored {
+			ign = append(ign, o.ID)
+		}
+		return
+	}
+	if _, err := ignore(h, detached.ID, false); err == nil {
+		t.Fatal("已脱离（会话还在）的不能忽略")
+	}
+	rec, err := ignore(h, orphan.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Body.By != "user" || rec.Body.DeviceName != "工作机" || rec.Body.Pid != 47505 {
+		t.Fatalf("忽略没留痕：%+v", rec.Body)
+	}
+	if vis, ign := list(h); len(vis) != 1 || vis[0] != detached.ID || len(ign) != 1 || ign[0] != orphan.ID {
+		t.Fatalf("忽略后应只剩已脱离的那个，被忽略的单独列：%v %v", vis, ign)
+	}
+	// Hub 重启：换一个 Hub、同一个库，daemon 重新上报后仍是忽略的
+	st.Close()
+	st2, err := store.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	h2 := New(st2, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h2.setOrphans(dev.ID, []protocol.OrphanProc{orphan, detached})
+	if vis, ign := list(h2); len(vis) != 1 || len(ign) != 1 {
+		t.Fatalf("重启后忽略应仍有效：%v %v", vis, ign)
+	}
+	// 取消忽略
+	if _, err := ignore(h2, orphan.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if vis, ign := list(h2); len(vis) != 2 || len(ign) != 0 {
+		t.Fatalf("取消忽略后应重新列出：%v %v", vis, ign)
+	}
+	var undoneBy string
+	_ = st2.DB().QueryRow(`SELECT undone_by FROM proc_ignores WHERE proc_id = ?`, orphan.ID).Scan(&undoneBy)
+	if undoneBy != "user" {
+		t.Fatal("取消忽略没留痕")
+	}
+	// 再忽略；进程退出（列表里没了），pid 被复用的新进程（同 pid、不同启动时间）照常列出
+	if _, err := ignore(h2, orphan.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	reused := orphan
+	reused.ID, reused.Start = "47505@Sat Oct 24 12:00:00 2026", "Sat Oct 24 12:00:00 2026"
+	h2.setOrphans(dev.ID, []protocol.OrphanProc{reused})
+	if vis, ign := list(h2); len(vis) != 1 || vis[0] != reused.ID || len(ign) != 0 {
+		t.Fatalf("pid 复用的新进程不该受忽略影响：%v %v", vis, ign)
+	}
+	var ended int
+	_ = st2.DB().QueryRow(`SELECT COUNT(*) FROM proc_ignores WHERE ended_at IS NOT NULL`).Scan(&ended)
+	if ended != 1 {
+		t.Fatal("进程退出后忽略应失效")
+	}
+}

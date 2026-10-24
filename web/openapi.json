@@ -2999,6 +2999,27 @@
         ],
         "type": "object"
       },
+      "IgnoreOrphanInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "id": {
+            "description": "根进程“进程号@启动时间”，取自列表",
+            "type": "string"
+          },
+          "undo": {
+            "description": "true = 取消忽略",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "device_id",
+          "id"
+        ],
+        "type": "object"
+      },
       "Item": {
         "additionalProperties": false,
         "properties": {
@@ -3788,6 +3809,10 @@
           "id": {
             "type": "string"
           },
+          "ignored_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "local": {
             "description": "进程在 Hub 所在的这台机器上",
             "type": "boolean"
@@ -3865,6 +3890,16 @@
       "OrphansOutBody": {
         "additionalProperties": false,
         "properties": {
+          "ignored": {
+            "description": "你忽略了的孤儿（还在跑；不在 orphans 里、不提醒）",
+            "items": {
+              "$ref": "#/components/schemas/Orphan"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "orphans": {
             "items": {
               "$ref": "#/components/schemas/Orphan"
@@ -3887,6 +3922,7 @@
         },
         "required": [
           "orphans",
+          "ignored",
           "stops"
         ],
         "type": "object"
@@ -4482,6 +4518,70 @@
           "status",
           "since",
           "days"
+        ],
+        "type": "object"
+      },
+      "ProcIgnore": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "description": "谁忽略的：user = 你（网页）",
+            "type": "string"
+          },
+          "cmd": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "device_name": {
+            "type": "string"
+          },
+          "ended_at": {
+            "description": "进程退出、记录失效的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "pid": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "proc_id": {
+            "description": "进程号@启动时间",
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "undone_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "undone_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "device_name",
+          "proc_id",
+          "pid",
+          "cmd",
+          "project",
+          "session_key",
+          "by",
+          "at"
         ],
         "type": "object"
       },
@@ -9049,6 +9149,47 @@
           }
         },
         "summary": "会话结束后还在跑（或已脱离 Agent）的后台进程，与最近的停止记录（R-209）",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/orphans/ignore": {
+      "post": {
+        "operationId": "ignore-orphan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IgnoreOrphanInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcIgnore"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "忽略 / 取消忽略一个孤儿进程：不再列出、不提醒；按进程号 + 启动时间记，进程退出后失效（R-209）",
         "tags": [
           "sessions"
         ]
