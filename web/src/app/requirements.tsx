@@ -10,7 +10,7 @@ import { cx, loadPref, savePref, useDesktop, usePref } from '../lib/util'
 import { Badge, Button, Card, Switch, Textarea, Tip } from '../ui/base'
 import { FullSheet, Menu, Panel, useAskReason, type MenuItem } from '../ui/overlay'
 import { done, schedule, useReqVerdict } from './verdict'
-import { displayState, PriorityDot, PriorityTag, StatusDot } from '../ui/marks'
+import { displayState, presence, PriorityDot, PriorityTag, RoleTag, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
@@ -415,6 +415,7 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
                 <button className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm text-fg hover:bg-hover">
                   {to && (targetGroup(to) === 'now' ? <Zap className="size-4 shrink-0 text-accent" /> : <StatusDot state={displayState(to)} />)}
                   <span className="min-w-0 flex-1 truncate">{to ? targetLabel(to) : t.assign.nobody}</span>
+                  {to?.role && <RoleTag role={to.role} presence={presence(to) || undefined} />}
                   {to && <span className={cx('shrink-0 text-xs', targetGroup(to) === 'now' ? 'text-accent' : 'text-fg-3')}>{t.assign.when[targetGroup(to)]}</span>}
                   <ChevronDown className="size-3 shrink-0 opacity-60" />
                 </button>

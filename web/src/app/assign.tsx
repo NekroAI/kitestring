@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import type { Session } from '../api/client'
 import { usePlans, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { StatusDot, displayState } from '../ui/marks'
+import { RoleTag, StatusDot, displayState, presence } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { Button, Tip } from '../ui/base'
 import { cx } from '../lib/util'
@@ -104,6 +104,7 @@ export function targetItems(sessions: Session[], projectId: string | null | unde
         label: (
           <span className="flex min-w-0 items-baseline gap-1.5">
             <span className="truncate">{sessionTitle(s)}</span>
+            {s.role && <RoleTag role={s.role} presence={presence(s) || undefined} className="self-center" />}
             <span className="shrink-0 text-xs text-fg-3">{t.state[displayState(s)]}</span>
           </span>
         ),
