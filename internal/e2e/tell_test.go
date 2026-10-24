@@ -86,8 +86,23 @@ func TestTellPM(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/team/tell", map[string]any{"session_key": "claude:dev", "text": "在吗"}, &tell); err != nil {
 		t.Fatalf("没有 PM 时留言不应报错：%v", err)
 	}
-	if tell.Delivered || !strings.Contains(tell.Message, "没有 PM") {
-		t.Fatalf("没有 PM 时应说明没送出：%+v", tell)
+	if tell.Delivered || tell.Message != "本项目当前没有主调度，消息未送达" {
+		t.Fatalf("没有主调度时应返回「本项目当前没有主调度，消息未送达」且不报错：%+v", tell)
+	}
+	// 显式写 to=pm 和默认一样；ks team tell 与 MCP pm_notify 都走这个接口
+	tell.Message = ""
+	if err := c.Do(ctx, "POST", "/agent/team/tell", map[string]any{"session_key": "claude:dev", "text": "在吗", "to": "主调度"}, &tell); err != nil || tell.Delivered || tell.Message != "本项目当前没有主调度，消息未送达" {
+		t.Fatalf("to=主调度 也应返回未送达且不报错：%+v %v", tell, err)
+	}
+	if ds, _ := e.store.ListDecisions(ctx, nil, 100); func() bool {
+		for _, d := range ds {
+			if d.Kind == store.KindTell {
+				return true
+			}
+		}
+		return false
+	}() {
+		t.Fatal("没有主调度时不应有团队消息入队")
 	}
 
 	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:dev", "dev"}} {

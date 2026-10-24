@@ -225,6 +225,9 @@ func (h *Hub) agentName(ctx context.Context, key, agent string) string {
 	return "（" + agent + "）"
 }
 
+// noPMNote 是项目没有主调度时发给主调度的团队消息的返回：照旧不送，但明说没送到，不当成错误（R-191）。
+const noPMNote = "本项目当前没有主调度，消息未送达"
+
 type tellOut struct {
 	Body struct {
 		Delivered bool   `json:"delivered"`
@@ -238,7 +241,7 @@ type tellOut struct {
 func (h *Hub) registerAgentTell(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-tell-pm", Method: http.MethodPost, Path: "/api/agent/team/tell", Tags: []string{"agent"},
 		Summary:     "给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）",
-		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。"},
+		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey  string `json:"session_key" minLength:"1" doc:"调用者"`
@@ -330,7 +333,7 @@ func (h *Hub) registerAgentTell(api huma.API) {
 					case roles.Reviewer:
 						return nil, huma.Error409Conflict("本项目现在没有在线的评审会话，消息没有送出；要审查请让主调度派审查任务，要用户拍板的事用 decision_raise。")
 					default:
-						out.Body.Message = "本项目现在没有 PM，消息没有送出；要用户拍板的事用 decision_raise。"
+						out.Body.Message = noPMNote
 						return out, nil
 					}
 				}
