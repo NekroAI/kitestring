@@ -3,7 +3,7 @@ import { Dialog as RDialog, DropdownMenu } from 'radix-ui'
 import { Drawer } from 'vaul'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, X } from 'lucide-react'
-import { cx, useDesktop } from '../lib/util'
+import { cx, useDesktop, useMedia } from '../lib/util'
 import { t } from '../i18n'
 import { Button, Input, Textarea } from './base'
 
@@ -83,8 +83,26 @@ export function FullSheet({ open, onClose, title, header, children }: { open: bo
   )
 }
 
-export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean | 'approval'; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode }) {
+// AsideStackedContext（R-196）：左边那张纸此刻是不是盖在面板上（放不下并排时 / 手机），纸顶据此写「‹ 返回 R-x」。
+export const AsideStackedContext = createContext(false)
+
+// 左边那张纸（R-196）：面板宽度 + 纸至少 460 + 边距放得下就并排，放不下就盖在面板上（面板略缩、右边露一条边）。
+const PANEL_W = { approval: 860, wide: 640, normal: 520 }
+
+export function Panel({ open, onClose, title, subtitle, children, actions, wide, bare, onSwipe, aside, onAsideClose }: { open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; wide?: boolean | 'approval'; bare?: boolean; onSwipe?: (dir: 'left' | 'right') => boolean; aside?: ReactNode; onAsideClose?: () => void }) {
   const desktop = useDesktop()
+  const mainW = wide === 'approval' ? PANEL_W.approval : wide ? PANEL_W.wide : PANEL_W.normal
+  const side = useMedia(`(min-width: ${mainW + 24 + 460}px)`)
+  const stacked = !!aside && !side
+  // Esc / 向右轻扫先收起左边那张纸，再关面板
+  const swipe = (dir: 'left' | 'right') => {
+    if (aside && onAsideClose && dir === 'right') {
+      onAsideClose()
+      return true
+    }
+    return onSwipe?.(dir) ?? false
+  }
+  const paper = 'flex flex-col overflow-hidden rounded-2xl border border-line shadow-pop'
   if (desktop) {
     return (
       <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
@@ -94,30 +112,54 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
           <RDialog.Content
             aria-describedby={undefined}
             onOpenAutoFocus={(e) => e.preventDefault()}
-            {...swipeToClose(onClose, onSwipe)}
+            onEscapeKeyDown={(e) => {
+              if (aside && onAsideClose) {
+                e.preventDefault()
+                onAsideClose()
+              }
+            }}
+            {...swipeToClose(onClose, swipe)}
             className="panel-slide fixed top-2 right-2 bottom-2 z-50 flex gap-2 outline-none"
           >
-            <AnimatePresence initial={false}>
-              {aside && (
-                <motion.div
-                  key="aside"
-                  initial={{ opacity: 0, x: 28 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 28 }}
-                  transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
-                  className="flex w-[min(600px,calc(100vw-660px))] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop"
-                >
-                  {aside}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <AsideStackedContext value={stacked}>
+              <AnimatePresence initial={false}>
+                {aside && (
+                  <motion.div
+                    key={stacked ? 'aside-stack' : 'aside'}
+                    data-aside=""
+                    initial={{ opacity: 0, x: 28 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 28 }}
+                    transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
+                    className={cx(
+                      paper,
+                      'bg-surface-2',
+                      // 并排：纸宽 = 剩下的地方（最多 640）；盖在上面：和面板左边对齐，右边让出 28px 露出后面那张
+                      stacked ? 'absolute inset-y-0 right-7 left-0 z-10' : 'w-[min(640px,calc(100vw-var(--panel-w)-24px))]',
+                    )}
+                    style={{ ['--panel-w' as string]: `${mainW}px` }}
+                  >
+                    {aside}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </AsideStackedContext>
             <div
               className={cx(
-                'flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop transition-[width] duration-300 ease-out',
-                // approval：审批抽屉（需求验收 / 决策 / 计划批准 / 会话等你……）不论内容类型同一个宽度，翻页不跳（R-178）；
-                // 证据图库排得下三列（R-195）；左侧并排再开一层的抽屉（aside）仍用普通宽度，保证两层排得下
-                wide === 'approval' && !aside ? 'w-[min(860px,calc(100vw-1rem))]' : wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]',
+                paper,
+                'bg-surface transition-[width,transform,filter] duration-300 ease-out',
+                // approval：审批抽屉（需求验收 / 决策 / 计划批准 / 会话等你……）不论内容类型同一个宽度，翻页不跳（R-178）；证据图库排得下三列（R-195）
+                wide === 'approval' ? 'w-[min(860px,calc(100vw-1rem))]' : wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]',
+                // 纸盖在上面时，后面这张略缩、变暗，往左让一点（R-196）
+                stacked && '-translate-x-3.5 scale-[.985] brightness-[.93]',
               )}
+              onClickCapture={(e) => {
+                // 盖在上面时，点后面那张露出的边 = 收起纸回到它
+                if (!stacked || !onAsideClose) return
+                e.stopPropagation()
+                e.preventDefault()
+                onAsideClose()
+              }}
             >
             {bare ? (
               <>
@@ -174,6 +216,25 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
               <div className="flex-1 overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">{children}</div>
             </>
           )}
+          {/* 手机上左边那张纸盖满整个抽屉（R-196），顶上「‹ 返回 R-x」回去 */}
+          <AsideStackedContext value>
+            <AnimatePresence initial={false}>
+              {aside && (
+                <motion.div
+                  key="aside"
+                  data-aside=""
+                  initial={{ x: '100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '100%' }}
+                  transition={{ duration: 0.26, ease: [0.2, 0.8, 0.2, 1] }}
+                  className="absolute inset-0 z-10 flex flex-col overflow-hidden rounded-t-3xl bg-surface"
+                >
+                  <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-line-strong" />
+                  {aside}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </AsideStackedContext>
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>

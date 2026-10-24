@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Lock, Milestone, MoreHorizontal, Pencil, Plus, Send, Trash2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Plan, PlanReq, Requirement, Session, Stage } from '../api/client'
 import { usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { cx, loadPref, relTime, savePref, useMedia, useNow } from '../lib/util'
+import { cx, loadPref, relTime, savePref, useNow } from '../lib/util'
 import { type FileRef } from '../ui/attach'
 import { Button, Card, Empty, Textarea, Tip } from '../ui/base'
 import { Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
@@ -13,10 +13,11 @@ import { displayState, StatusDot } from '../ui/marks'
 import { useActions, useBusy, type PlanBody } from './actions'
 import { targetGroup, targetItems, targetLabel } from './assign'
 import { sessionTitle } from './SessionCard'
-import { useOpenPlan, useOpenReq } from './nav'
-import { ReqView } from './reqDrawer'
+import { PeekContext, useGoBack, useOpenPlan, useOpenReq } from './nav'
+import { PeekScope, RefPeek, usePeek } from './peek'
+import { BackButton, ReqView } from './reqDrawer'
 import { Md } from '../ui/markdown'
-import { Linkify, ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
+import { ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 import { BlockList, ScoreCount } from '../ui/blocks'
 import { done, schedule, Seal, Verdict } from './verdict'
 
@@ -201,13 +202,11 @@ export function PlansView({ project, showClosed, onNew }: { project?: string; sh
 
 // PlanBadge：需求上的“P-1 · 阶段 2”，点开计划。
 export function PlanBadge({ r, className }: { r: Requirement; className?: string }) {
-  const open = useOpenPlan()
   if (!r.plan_code || !r.stage_seq) return null
   const locked = r.stage_status === 'locked'
   return (
     <RefChip
       code={r.plan_code}
-      onOpen={open}
       className={className}
       hint={locked ? t.plan.lockedHint(r.stage_seq - 1) : t.plan.stageName(r.stage_seq, r.stage_title ?? '')}
       suffix={
@@ -222,7 +221,7 @@ export function PlanBadge({ r, className }: { r: Requirement; className?: string
 
 // ---------- 计划详情 ----------
 
-// PlanReqRow：阶段里的一条需求。宽屏时点开在左侧并排的抽屉里看（onPick），窄屏就地展开。
+// PlanReqRow：阶段里的一条需求。在抽屉里点开在左边那张纸里看（onPick，R-196），否则就地展开。
 function PlanReqRow({ r, locked, picked, onPick }: { r: PlanReq; locked: boolean; picked?: boolean; onPick?: () => void }) {
   const [open, setOpen] = useState(false)
   const inline = open && !onPick
@@ -442,7 +441,10 @@ const bodyOf = (x: Plan, patch: Partial<PlanBody> = {}): PlanBody => ({ title: x
 
 // PlanBody：计划正文——标题、目标、负责会话、各阶段；底部固定判断：待批准 → 批准 / 退回，待阶段验收 → 通过 / 退回，
 // 自己建的草稿 → 开始。计划抽屉与审批抽屉（R-177）共用；top 是抽屉顶栏。
-export function PlanBody({ x, top, sel, onPick }: { x: Plan; top: ReactNode; sel?: string | null; onPick?: (code: string) => void }) {
+export function PlanBody({ x, top, sel, onPick: pick }: { x: Plan; top: ReactNode; sel?: string | null; onPick?: (code: string) => void }) {
+  // 在抽屉里（审批抽屉、左边那张纸）点需求同样在左边那张纸里看（R-196）；都没有时就地展开
+  const peekRef = useContext(PeekContext)
+  const onPick = pick ?? peekRef ?? undefined
   const sessions = useSessions()
   const { updatePlan, startPlan } = useActions()
   const [busy, wrap] = useBusy()
@@ -513,11 +515,11 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
   const { deletePlan } = useActions()
   const confirm = useConfirm()
   const [editing, setEditing] = useState(false)
-  const [sel, setSel] = useState<string | null>(null) // 宽屏：左侧并排打开的需求
-  const roomy = useMedia('(min-width: 1140px)')
   const x = (plans.data ?? []).find((p) => p.code === code)
-  useEffect(() => setSel(null), [code])
-  const shown = roomy && sel && x?.stages.some((st) => st.requirements.some((r) => r.code === sel)) ? sel : null
+  // 选中的需求 / 点开的引用在左边再展开一张纸（R-196，和需求、审批、会话抽屉同一张纸）
+  const peek = usePeek(code, code)
+  const goBack = useGoBack()
+  const shown = peek.stack.length === 1 ? peek.stack[0] : null
 
   const menu: MenuItem[] = x
     ? [
@@ -537,35 +539,20 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
         },
       ]
     : []
-  const aside = shown ? (
-    <ReqView
-      key={shown}
-      refId={shown}
-      top={
-        <div className="flex shrink-0 items-center gap-2 px-4 pt-3 sm:px-5">
-          <RefChip code={shown} link={false} />
-          <span className="text-xs text-fg-3">
-            <Linkify text={t.plan.inPlan(x!.code)} />
-          </span>
-          <span className="flex-1" />
-          <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={() => setSel(null)}>
-            <X className="size-4" />
-          </Button>
-        </div>
-      }
-    />
-  ) : undefined
+  const aside = peek.stack.length && code ? <RefPeek peek={peek} from={`plan:${code}`} mainLabel={code} /> : undefined
 
   return (
     <>
-      <Panel open={!!code && !editing} onClose={onClose} wide bare title={x?.title ?? t.plan.title} aside={aside}>
+      <PeekScope peek={peek}>
+      <Panel open={!!code && !editing} onClose={onClose} wide bare title={x?.title ?? t.plan.title} aside={aside} onAsideClose={peek.close}>
         {x ? (
           <PlanBody
             x={x}
             sel={shown}
-            onPick={roomy ? (c) => setSel(sel === c ? null : c) : undefined}
+            onPick={peek.open}
             top={
               <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
+                {goBack && <BackButton back={goBack} />}
                 <RefChip code={x.code} status={x.status} link={false} />
                 <PlanChip x={x} />
                 <span className="flex-1" />
@@ -587,6 +574,7 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
           <div className="p-6 text-sm text-fg-3">{plans.isPending ? '' : t.plan.empty}</div>
         )}
       </Panel>
+      </PeekScope>
       <PlanEditor open={editing} onClose={() => setEditing(false)} plan={x} />
     </>
   )

@@ -442,7 +442,6 @@ export const zh = {
     givePick: '选一条需求交给它开工',
     giveNew: '新建',
     unlink: '取消关联',
-    reqBeside: '会话里的需求',
     noReqs: '未关联需求',
     decisions: '决策记录',
     timeline: '活动记录',
@@ -945,7 +944,6 @@ export const zh = {
     shelvedNote: (seq: number, n: number) => `阶段 ${seq} 有 ${n} 条已搁置，${VERB.plan.pass}后不会开工`,
     passTogether: (codes: string) => `还没单独验收的 ${codes} 会一起${ACC.pass}`,
     pausedHint: `已${ACC.pass}阶段里有需求被重开，修好并验收后才能继续`,
-    inPlan: (code: string) => `计划 ${code} 里的需求`,
     start: '开始计划',
     startHint: '第一阶段的需求会交给负责会话',
     started: (code: string) => `${code} 已开始`,
@@ -1111,6 +1109,17 @@ export const zh = {
     noEvidence: 'Agent 没有附证据',
     voidedRow: (reason: string) => `已作废 · ${reason}`,
     voidedBy: (who: string, at: string) => `${who ? who + ' ' : ''}于 ${at} 作废，原文如下`,
+  },
+
+  // 引用在左边再展开一张纸（R-196）
+  peek: {
+    label: '引用 · 只读预览',
+    openHere: '在这里打开',
+    openHereTip: '把这个抽屉切到这一条，顶上可以返回',
+    back: (code: string) => `返回 ${code}`,
+    backPlain: '返回',
+    pending: '还在等你答：点「在这里打开」去作答',
+    missing: '找不到这一条，可能已经删掉了',
   },
 
   // 谁做的（R-195）：身份胶囊 + 会话标题；老数据没记录会话的单独写明

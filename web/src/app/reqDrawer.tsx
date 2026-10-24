@@ -14,7 +14,8 @@ import { Collapse } from '../ui/motion'
 import { Menu, Panel, useConfirm } from '../ui/overlay'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
-import { useOpenSession } from './nav'
+import { useGoBack, useOpenSession } from './nav'
+import { PeekScope, RefPeek, usePeek } from './peek'
 import { Who } from './who'
 import { EditableMd, EditableText, priorities, ReleaseBadge, StatusMenu, toFields, useSetStatus } from './requirements'
 import { sortDrafts } from './pool'
@@ -40,7 +41,8 @@ type Dir = 'next' | 'prev' | 'pass'
 
 // ---------- 主体 ----------
 
-export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactNode; onAdvance?: (code: string) => void }) {
+// peek：左边那张只读预览纸（R-196）——不带底部的留言 / 验收。
+export function ReqView({ refId, top, onAdvance, peek }: { refId: string; top?: ReactNode; onAdvance?: (code: string) => void; peek?: boolean }) {
   const q = useRequirement(refId)
   const decisions = useDecisions()
   const r = q.data
@@ -110,10 +112,11 @@ export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactN
             onPointerDown={() => (touched.current = true)}
             onKeyDown={() => (touched.current = true)}
             data-req-scroll=""
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-surface px-4 py-4 sm:px-5"
+            className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain bg-surface px-4 py-4 sm:px-5', peek && 'pb-[max(1rem,env(safe-area-inset-bottom))]')}
           >
             <ReqTimeline r={r} decisions={related} />
           </div>
+          {!peek && (
           <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
             <Composer
               key={r.code}
@@ -125,6 +128,7 @@ export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactN
               onIncoming={() => setIncoming([])}
             />
           </footer>
+          )}
         </>
       )}
     </div>
@@ -399,6 +403,8 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const [anchor, setAnchor] = useState<{ project: string; review: boolean; drafts?: boolean } | null>(null)
   const cur = all.find((x) => x.code === refId)
   const detail = useRequirement(refId).data
+  const peek = usePeek(refId, refId)
+  const goBack = useGoBack()
 
   // 从外部打开（不是抽屉内切换）时，确定这次要连续处理的范围：同一项目的待验收，或同一项目未关闭的需求。
   useEffect(() => {
@@ -485,7 +491,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const created = detail?.code === cur?.code ? detail?.status_changes?.find((c) => c.via === 'create') : undefined
   const top = (
     <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
-      {queue.length > 1 && (
+      {goBack ? <BackButton back={goBack} /> : queue.length > 1 && (
         <>
           <Tip content={prev ? `${prev.code} ${prev.title}` : undefined}>
             <button className={navBtn} disabled={!prev} aria-label={t.reqs.prev} onClick={() => prev && go(prev.code, 'prev')}>
@@ -572,11 +578,14 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   )
 
   return (
+    <PeekScope peek={peek}>
     <Panel
       open={!!refId}
       onClose={onClose}
       wide="approval"
       bare
+      aside={peek.stack.length && refId ? <RefPeek peek={peek} from={`r:${refId}`} mainLabel={refId} /> : undefined}
+      onAsideClose={peek.close}
       title={cur ? `${cur.code} ${cur.title}` : t.reqs.title}
       onSwipe={(d) => {
         if (d === 'left' && next) go(next.code, 'next')
@@ -602,6 +611,17 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
         </AnimatePresence>
       </div>
     </Panel>
+    </PeekScope>
+  )
+}
+
+// BackButton：「在这里打开」之后，新抽屉顶上回到原来那个（R-196）。
+export function BackButton({ back }: { back: NonNullable<ReturnType<typeof useGoBack>> }) {
+  return (
+    <button onClick={back.go} className="mr-1 inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-sunken py-1 pr-2.5 pl-1.5 text-[13px] font-medium text-fg-2 transition hover:bg-hover hover:text-fg active:scale-[0.97] pointer-coarse:py-1.5">
+      <ChevronLeft className="size-4" />
+      {back.code ? t.peek.back(back.code) : t.peek.backPlain}
+    </button>
   )
 }
 

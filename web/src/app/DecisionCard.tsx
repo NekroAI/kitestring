@@ -506,3 +506,56 @@ export function DecisionRow({ d }: { d: Decision }) {
     </div>
   )
 }
+
+// DecisionPeek：引用里点开的决策（R-196，左边那张只读纸）——谁问的、问题、背景、选项（推荐 / 你选的）、答复、后果链。
+export function DecisionPeek({ d }: { d: Decision }) {
+  const now = useNow()
+  const opts = d.options ?? []
+  const rec = recIndex(opts, d.recommendation || '')
+  // 你选的：批准类按答复开头认（choices 在批准类里另有用途），选项类用 choices，没有时同样按答复开头认
+  const ans = (d.answer || '').trim()
+  const byAns = opts.findIndex((o) => !!o.trim() && ans.startsWith(o.trim()))
+  const picked = new Set(!d.approval && d.choices?.length ? d.choices : byAns >= 0 ? [byAns] : [])
+  const tone = d.status === 'delivered' ? 'run' : d.status === 'answered' ? 'reply' : d.status === 'pending' ? 'wait' : 'neutral'
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-fg-3">
+        <Badge tone={tone}>{t.decision.status[d.status]}</Badge>
+        {d.requirement_code && <RefChip code={d.requirement_code} title={d.requirement_title} label="title" />}
+        {d.plan_code && <RefChip code={d.plan_code} />}
+        <span className="ml-auto tabular">{relTime(d.answered_at || d.created_at, now)}</span>
+      </div>
+      <h3 className="font-display text-[17px] leading-snug font-semibold text-fg">
+        <Linkify text={d.short_title || d.question} />
+      </h3>
+      {d.short_title && (
+        <p className="text-sm leading-relaxed text-fg-2">
+          <Linkify text={d.question} />
+        </p>
+      )}
+      {d.context && <Context text={d.context} />}
+      <BlockList blocks={d.blocks} />
+      {opts.length > 0 && (
+        <ol className="space-y-1.5">
+          {opts.map((o, i) => (
+            <li key={i} className={cx('flex items-start gap-2 rounded-lg border px-3 py-2 text-sm leading-relaxed', picked.has(i) ? 'border-accent/50 bg-accent-soft/50 text-fg' : 'border-line bg-surface text-fg-2')}>
+              <span className="mt-px shrink-0 font-mono text-xs text-fg-3 tabular">{i + 1}</span>
+              <span className="min-w-0 flex-1 break-words">
+                <Linkify text={o} />
+              </span>
+              {i === rec && <Badge tone="neutral">{t.decision.recommended}</Badge>}
+            </li>
+          ))}
+        </ol>
+      )}
+      {d.recommendation && rec < 0 && (
+        <p className="text-sm leading-relaxed text-fg-2">
+          <span className="mr-1.5 text-fg-3">{t.decision.recommendation}</span>
+          <Linkify text={d.recommendation} />
+        </p>
+      )}
+      {d.proxy_by ? <ProxyNote d={d} /> : d.answer ? <AnswerBlock d={d} /> : d.status === 'pending' && <p className="text-[13px] text-fg-3">{t.peek.pending}</p>}
+      {d.kind === 'decision' && <DecisionChain code={d.code} />}
+    </div>
+  )
+}

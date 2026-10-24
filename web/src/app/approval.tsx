@@ -16,12 +16,13 @@ import { useKsEvent } from './command'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import { ProxyNote, OverrideBox } from './grant'
 import { useWorkbench } from './inbox'
-import { useOpenSession } from './nav'
+import { useGoBack, useOpenSession } from './nav'
+import { PeekScope, RefPeek, usePeek } from './peek'
 import { AdviceNote } from './morning'
 import { useOutbox } from './outbox'
 import { PlanBody } from './plans'
 import { ReplyBox } from './replyBox'
-import { ReqView } from './reqDrawer'
+import { BackButton, ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
 import { isStatusReq, StatusReqNote } from './statusReq'
 import { reducedMotion, SEAL_MS, usePendingMap } from './verdict'
@@ -127,6 +128,9 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   }, [asks])
 
   const cur = askKey ? find(askKey) : undefined
+  // 引用在左边再展开一张纸（R-196）
+  const peek = usePeek(cur?.code, askKey)
+  const goBack = useGoBack()
   const inQueue = !!askKey && order.includes(askKey) && cur?.kind !== 'proxy'
   const idx = askKey ? order.indexOf(askKey) : -1
   const prev = inQueue ? order.slice(0, idx).reverse().find((k) => live.has(k)) : undefined
@@ -200,7 +204,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   }
   const top = (
     <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
-      {inQueue && (
+      {goBack ? <BackButton back={goBack} /> : inQueue && (
         <>
           <Tip content={label(prev)}>
             <button className={navBtn} disabled={!prev} aria-label={t.ask.prev} onClick={() => prev && go(prev, 'prev')}>
@@ -230,11 +234,14 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   )
 
   return (
+    <PeekScope peek={peek}>
     <Panel
       open={!!askKey}
       onClose={onClose}
       wide="approval"
       bare
+      aside={peek.stack.length && askKey ? <RefPeek peek={peek} from={`a:${askKey}`} mainLabel={cur?.code} /> : undefined}
+      onAsideClose={peek.close}
       title={cur ? `${askKindLabel(cur)} ${cur.title}` : t.ask.queue}
       onSwipe={(d) => {
         if (d === 'left' && next) go(next, 'next')
@@ -260,6 +267,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
         </AnimatePresence>
       </div>
     </Panel>
+    </PeekScope>
   )
 }
 
