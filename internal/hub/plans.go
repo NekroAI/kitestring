@@ -359,6 +359,7 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store
 				return x, err
 			}
 			h.refreshDelivered(ctx, done)
+			h.commitHint(ctx, done, "") // 阶段验收把待验收的需求一并完成，同样提示主调度提交（R-192）
 		}
 	}
 	if err := h.store.SetStageStatus(ctx, st.ID, store.StagePassed, ""); err != nil {

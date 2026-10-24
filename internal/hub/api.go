@@ -333,6 +333,8 @@ type projectIn struct {
 		Hidden *bool `json:"hidden,omitempty"`
 		// AgentRelease：允许 主调度 / 主助理 把草稿放行为待开始（R-166）；不传表示不修改
 		AgentRelease *bool `json:"agent_release,omitempty"`
+		// CommitOnAccept：验收通过后提示 主调度 提交属于该需求的改动（不推送）（R-192）；不传表示不修改
+		CommitOnAccept *bool `json:"commit_on_accept,omitempty"`
 	}
 }
 
@@ -603,7 +605,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			auto, hidden, release := cur.AutoDispatch, cur.Hidden, cur.AgentRelease
+			auto, hidden, release, commit := cur.AutoDispatch, cur.Hidden, cur.AgentRelease, cur.CommitOnAccept
+			if in.Body.CommitOnAccept != nil {
+				commit = *in.Body.CommitOnAccept
+			}
 			if in.Body.AgentRelease != nil {
 				release = *in.Body.AgentRelease
 			}
@@ -613,7 +618,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.Hidden != nil {
 				hidden = *in.Body.Hidden
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release})
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit})
 			if err != nil {
 				return nil, apiErr(err)
 			}
