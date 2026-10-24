@@ -116,7 +116,7 @@ func TestTellPM(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.allowRelease("claude:pm")
-	woke(t, parkWait(t, e, c, "claude:pm"), "放行开关") // 用户打开放行开关，PM 默认订阅 settings（R-171），先收掉
+	drainQuiet(t, parkWait(t, e, c, "claude:pm"), "PM（改设置只告知）", "pm", "放行开关") // 用户打开放行开关，PM 默认订阅 settings（R-171），只告知（R-227），先收掉
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "claude:dev"}, nil); err != nil {
 		t.Fatal(err)
 	}

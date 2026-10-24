@@ -139,13 +139,19 @@ func (h *Hub) registerHandoffAgent(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-state-note", Method: http.MethodGet, Path: "/api/agent/sessions/{key}/state-note", Tags: []string{"agent"},
 		Summary: "会话在纸鸢里的关键状态（关联的需求、待答决策、在跑的子任务），压缩上下文后随身份提示词补注入（R-224）"},
-		func(ctx context.Context, in *keyPath) (*messageOut, error) {
-			text, err := h.stateNote(ctx, in.Key)
-			if err != nil {
-				return nil, apiErr(err)
+		func(ctx context.Context, in *struct {
+			Key    string `path:"key"`
+			Source string `query:"source" doc:"SessionStart 的来源：compact（压缩后，补关键状态和子任务模型策略）、resume（恢复，只补子任务模型策略，R-228）；默认 compact"`
+		}) (*messageOut, error) {
+			text := ""
+			if in.Source != "resume" {
+				var err error
+				if text, err = h.stateNote(ctx, in.Key); err != nil {
+					return nil, apiErr(err)
+				}
 			}
 			out := &messageOut{}
-			out.Body.Message = text
+			out.Body.Message = text + h.policyNote(ctx, in.Key)
 			return out, nil
 		})
 }
@@ -311,4 +317,24 @@ func oneLineClip(s string, n int) string {
 		return string(r[:n]) + "…"
 	}
 	return s
+}
+
+// policyNote：会话所在项目的子任务模型策略（R-228），写给主调度、主助理、开发；其它身份、没有项目时为空。
+func (h *Hub) policyNote(ctx context.Context, key string) string {
+	x, err := h.store.GetSession(ctx, key)
+	if err != nil {
+		return ""
+	}
+	return h.projectPolicyNote(ctx, x.ProjectID, x.Role)
+}
+
+// projectPolicyNote：项目 projectID 的子任务模型策略对 role 的提示；项目取不到时按默认（均衡）。
+func (h *Hub) projectPolicyNote(ctx context.Context, projectID, role string) string {
+	policy := ""
+	if projectID != "" {
+		if p, err := h.store.GetProject(ctx, projectID); err == nil {
+			policy = p.ModelPolicy
+		}
+	}
+	return roles.PolicyNote(role, policy)
 }

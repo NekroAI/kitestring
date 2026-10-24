@@ -153,6 +153,7 @@ func runTeam(args []string) error {
 	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
 	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）")
 	reply := fs.String("reply", "", "tell：回复收到的团队消息（填它的编号 D-x），回复会送回发消息的一方")
+	fyi := fs.Bool("fyi", false, "tell：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、派活、回复），立刻叫醒。部署 / 重启、进展通报用 --fyi")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -204,6 +205,9 @@ func runTeam(args []string) error {
 			if v != "" {
 				body[k] = v
 			}
+		}
+		if *fyi {
+			body["fyi"] = true
 		}
 		return agentCall("POST", "/agent/team/tell", body)
 	}

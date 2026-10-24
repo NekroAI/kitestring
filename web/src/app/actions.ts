@@ -97,7 +97,7 @@ export function useActions() {
 
     deleteDevice: (id: string) => run(() => unwrap(api.DELETE('/api/devices/{id}', { params: { path: { id } } })), ['devices', 'sessions']),
 
-    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean; agent_release?: boolean; commit_on_accept?: boolean }) =>
+    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean; agent_release?: boolean; commit_on_accept?: boolean; model_policy?: 'economy' | 'balanced' | 'quality' }) =>
       run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
     mergeProject: (id: string, into: string) =>
       run(() => unwrap(api.POST('/api/projects/{id}/merge', { params: { path: { id } }, body: { into } })), ['projects', 'sessions', 'requirements', 'decisions', 'plans']),

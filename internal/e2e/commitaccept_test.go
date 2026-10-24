@@ -74,7 +74,7 @@ func TestCommitOnAccept(t *testing.T) {
 	pmW := parkWait(t, e, c, "claude:pm")
 	n := tellCount(e, "claude:pm")
 	review(r1.Code, "accept", "")
-	text := woke(t, pmW, r1.Code, "从待验收改为已完成")
+	text := drainQuiet(t, pmW, "PM（状态变化只告知）", "pm", r1.Code, "从待验收改为已完成")
 	if strings.Contains(text, "提交") {
 		t.Fatalf("关闭时不应有提交提示：%s", text)
 	}
@@ -86,7 +86,7 @@ func TestCommitOnAccept(t *testing.T) {
 	// 2. 打开：改设置通知 PM（settings 订阅）；验收通过 PM 只收到一条合成消息
 	pmW = parkWait(t, e, c, "claude:pm")
 	setCommit(true)
-	woke(t, pmW, "验收通过后自动提交", "关 → 开")
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "验收通过后自动提交", "关 → 开")
 	if !getProject().CommitOnAccept {
 		t.Fatal("开关应已打开")
 	}
@@ -104,7 +104,7 @@ func TestCommitOnAccept(t *testing.T) {
 	r3 := newReview("导出 PDF")
 	pmW = parkWait(t, e, c, "claude:pm")
 	review(r3.Code, "revise", "页边距不对")
-	text = woke(t, pmW, r3.Code, "页边距不对")
+	text = woke(t, pmW, r3.Code, "页边距不对") // 退回意见要 PM 跟进，照常叫醒；状态变化那条只告知，随它一并附上
 	if strings.Contains(text, "按项目设置提交") {
 		t.Fatalf("退回不应有提交提示：%s", text)
 	}
@@ -112,11 +112,11 @@ func TestCommitOnAccept(t *testing.T) {
 	// 4. 再关闭：回到只有状态通知
 	pmW = parkWait(t, e, c, "claude:pm")
 	setCommit(false)
-	woke(t, pmW, "验收通过后自动提交", "开 → 关")
+	drainQuiet(t, pmW, "PM（改设置只告知）", "pm", "验收通过后自动提交", "开 → 关")
 	r4 := newReview("导出 JSON")
 	pmW = parkWait(t, e, c, "claude:pm")
 	review(r4.Code, "accept", "")
-	text = woke(t, pmW, r4.Code, "从待验收改为已完成")
+	text = drainQuiet(t, pmW, "PM（状态变化只告知）", "pm", r4.Code, "从待验收改为已完成")
 	if strings.Contains(text, "提交") {
 		t.Fatalf("重新关闭后不应有提交提示：%s", text)
 	}

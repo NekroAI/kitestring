@@ -7,7 +7,7 @@ import type { Requirement, Session } from '../api/client'
 import { useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { copyText, cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
-import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input } from '../ui/base'
+import { Button, Card, CardSkeleton, Checkbox, Empty, Field, Input, Segmented } from '../ui/base'
 import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { displayState, presence, presenceDot } from '../ui/marks'
 import { Item, List } from '../ui/motion'
@@ -414,6 +414,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const [hidden, setHidden] = useState(!!p.hidden)
   const [release, setRelease] = useState(!!projects.data?.projects.find((x) => x.id === p.id)?.agent_release)
   const [commitOnAccept, setCommitOnAccept] = useState(!!projects.data?.projects.find((x) => x.id === p.id)?.commit_on_accept)
+  const [policy, setPolicy] = useState(projects.data?.projects.find((x) => x.id === p.id)?.model_policy || 'balanced')
   const { mergeProject } = useActions()
   const confirm = useConfirm()
   const navigate = useNavigate()
@@ -434,7 +435,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality' })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -463,6 +464,11 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
         <Checkbox checked={commitOnAccept} onChange={setCommitOnAccept} hint={t.projects.commitOnAcceptHint}>
           {t.projects.commitOnAccept}
         </Checkbox>
+        <div>
+          <span className="mb-1.5 block text-[13px] font-medium text-fg-2">{t.projects.modelPolicy}</span>
+          <Segmented value={policy} onChange={setPolicy} options={Object.entries(t.projects.modelPolicyOptions).map(([value, label]) => ({ value, label }))} />
+          <span className="mt-1.5 block text-xs leading-relaxed text-fg-3">{t.projects.modelPolicyHints[policy]}</span>
+        </div>
         <Checkbox checked={hidden} onChange={setHidden} hint={t.projects.hideHint}>
           {t.projects.hide}
         </Checkbox>

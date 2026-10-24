@@ -589,33 +589,20 @@ func runWait(args []string) error {
 	if v := q.Get("on"); v != "" && v != protocol.OnNone && v != protocol.OnDefault {
 		fmt.Fprintf(os.Stderr, "[Kitestring] 另外订阅了本项目的事件：%s；发生时也会唤醒你。\n", v)
 	}
-	// daemon 重启（例如升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒。
+	// daemon 重启（例如部署升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒（R-227）。
 	ctx := signalContext()
 	limit := daemon.MaxWait
 	if *timeout > 0 {
 		limit = min(*timeout, daemon.MaxWait)
 	}
-	deadline := time.Now().Add(limit)
-	var res daemon.WaitResult
-	for {
-		left := time.Until(deadline)
-		if left <= 0 {
-			res.Reason = "timeout"
-			break
-		}
+	res := waitLoop(ctx, time.Now().Add(limit), 3*time.Second, func(left time.Duration) (daemon.WaitResult, error) {
 		if *timeout > 0 {
 			q.Set("timeout", left.Round(time.Second).String())
 		}
-		err := client.New(left+time.Minute).Do(ctx, "GET", "/wait?"+q.Encode(), nil, &res)
-		if err == nil {
-			break
-		}
-		if ctx.Err() != nil {
-			res.Reason = "canceled"
-			break
-		}
-		time.Sleep(3 * time.Second)
-	}
+		var r daemon.WaitResult
+		err := client.New(left+time.Minute).Do(ctx, "GET", "/wait?"+q.Encode(), nil, &r)
+		return r, err
+	})
 	waited := res.Timeout
 	if d, err := time.ParseDuration(waited); err == nil {
 		waited = humanDuration(d)
@@ -646,6 +633,30 @@ func runWait(args []string) error {
 		}
 	}
 	return nil
+}
+
+// waitLoop 反复调用 call 挂起等待，直到拿到一个真正的结果或到截止时间（R-227）。
+// 连接断了（daemon 重启、升级，call 返回错误），或 daemon 收尾时回了 canceled 而本进程并没有被取消，都当作断线：
+// 隔 retry 再连，不把 Agent 唤醒。只有本进程被取消（Ctrl-C）才返回 canceled。
+func waitLoop(ctx context.Context, deadline time.Time, retry time.Duration, call func(left time.Duration) (daemon.WaitResult, error)) daemon.WaitResult {
+	for {
+		left := time.Until(deadline)
+		if left <= 0 {
+			return daemon.WaitResult{Reason: "timeout"}
+		}
+		res, err := call(left)
+		if ctx.Err() != nil {
+			return daemon.WaitResult{Reason: "canceled"}
+		}
+		if err == nil && res.Reason != "canceled" {
+			return res
+		}
+		select {
+		case <-ctx.Done():
+			return daemon.WaitResult{Reason: "canceled"}
+		case <-time.After(min(retry, max(time.Until(deadline), 0))):
+		}
+	}
 }
 
 // humanDuration：30m0s → 30 分钟，1h30m0s → 1 小时 30 分钟。

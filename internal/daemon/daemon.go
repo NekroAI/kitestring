@@ -703,9 +703,24 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			d.writeItem(&b, dec)
 		}
 	}
-	if len(tells) > 0 {
+	// 团队消息分两档（R-227）：要动手的和只告知的分开写，只告知的是攒着没叫醒你、这次一起附上的
+	var tellAct, tellFYI []protocol.Decision
+	for _, dec := range tells {
+		if dec.Quiet {
+			tellFYI = append(tellFYI, dec)
+		} else {
+			tellAct = append(tellAct, dec)
+		}
+	}
+	if len(tellAct) > 0 {
 		b.WriteString("[Kitestring] 团队消息（来自本项目的其他会话，不是用户发的；按内容跟进，不必回复用户）：\n")
-		for _, dec := range tells {
+		for _, dec := range tellAct {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(tellFYI) > 0 {
+		b.WriteString("[Kitestring] 团队消息 · 只告知（攒着没有叫醒你，这次一并附上；不必动手，需要时自己看）：\n")
+		for _, dec := range tellFYI {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -750,18 +765,19 @@ func (d *Daemon) rolePrompt(ev protocol.Event) string {
 	body := d.customPrompts[role]
 	d.mu.Unlock()
 	p := roles.Compose(role, body)
-	if p != "" && ev.Source == "compact" {
-		// 压缩后另附会话在纸鸢里的关键状态（R-224）：关联的需求、待答决策、在跑的子任务，补摘要漏掉的
-		p += d.stateNote(key)
+	if p != "" {
+		// 压缩后另附会话在纸鸢里的关键状态（R-224）：关联的需求、待答决策、在跑的子任务，补摘要漏掉的；
+		// 恢复和压缩都附项目的子任务模型策略（R-228），改了策略后新开的、恢复的会话拿到的是最新的
+		p += d.stateNote(key, ev.Source)
 	}
 	return p
 }
 
 // stateNote 向 Hub 取会话的关键状态（R-224）；取不到时返回空，不耽误 hook。
-func (d *Daemon) stateNote(key string) string {
+func (d *Daemon) stateNote(key, source string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/sessions/"+url.PathEscape(key)+"/state-note", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/sessions/"+url.PathEscape(key)+"/state-note?source="+url.QueryEscape(source), nil)
 	if err != nil {
 		return ""
 	}

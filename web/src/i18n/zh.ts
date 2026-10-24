@@ -900,6 +900,13 @@ export const zh = {
     get commitOnAcceptHint() {
       return rt`你验收通过一条需求后，纸鸢给负责的${'pm'}送一条消息，由它只提交属于这条需求的改动（中文说明、带需求编号）；纸鸢自己不动仓库，也从不推送，推送永远要你明确要求。被退回的需求不提交`
     },
+    modelPolicy: '子任务模型策略',
+    modelPolicyOptions: { economy: '经济', balanced: '均衡', quality: '质量优先' } as Record<string, string>,
+    modelPolicyHints: {
+      economy: '尽量用便宜的小模型；只有新机制、跨模块或返工过的活才用最强的',
+      balanced: '机械活用便宜的，设计取舍和复杂实现用最强的',
+      quality: '实现和审查都用最强的；只有纯搜索、读文件才用便宜的',
+    } as Record<string, string>,
     autoDispatchHint: '你确认为待开始的需求，会在关联的会话一轮做完或待命时整批送过去（一次最多 10 条）；关掉后需要你手动交给会话',
     title: '项目',
     openCount: (n: number) => (n ? `${n} 条未完成` : '没有未完成需求'),

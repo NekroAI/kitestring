@@ -252,7 +252,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			}
 			h.decisionsChanged(ctx, d)
 			if x, err := h.store.GetSession(ctx, d.ProxyBy); err == nil && x.State != store.StateEnded && x.DoneAt == nil {
-				if _, err := h.tell(ctx, x.Key, d.ProjectID, d.RequirementID, fmt.Sprintf("你代答的 %s「%s」被用户推翻了：你答的是「%s」，用户改为「%s」。更正已送给提问方。", d.Code, brief(d.Question, 40), brief(d.ProxyAnswer, 40), brief(d.Answer, 60))); err != nil {
+				if _, err := h.tellQuiet(ctx, x.Key, d.ProjectID, d.RequirementID, fmt.Sprintf("你代答的 %s「%s」被用户推翻了：你答的是「%s」，用户改为「%s」。更正已送给提问方。", d.Code, brief(d.Question, 40), brief(d.ProxyAnswer, 40), brief(d.Answer, 60))); err != nil {
 					h.log.Warn("通知参谋代答被推翻失败", "err", err)
 				}
 			}
@@ -262,7 +262,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 
 // tellGrant 给被授权的主助理 会话送一句说明（走团队消息，不进你的收件箱）。
 func (h *Hub) tellGrant(ctx context.Context, g store.Grant, text string) {
-	if _, err := h.tell(ctx, g.SessionKey, g.ProjectID, "", text); err != nil {
+	if _, err := h.tellQuiet(ctx, g.SessionKey, g.ProjectID, "", text); err != nil { // 只告知（R-227）
 		h.log.Warn("通知参谋授权变化失败", "err", err)
 	}
 }

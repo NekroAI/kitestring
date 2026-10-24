@@ -124,7 +124,7 @@ func TestAideRole(t *testing.T) {
 	}
 
 	// 5. 唯一性：a2 接任主助理 → a1 卸任、被唤醒收到通知；a1 名下的授权窗口失效
-	woke(t, parkWait(t, e, c, "claude:a1"), "授权窗口") // 先收掉放行开关、开窗口的消息
+	drainQuiet(t, parkWait(t, e, c, "claude:a1"), "主助理（授权窗口变化只告知）", "a1", "授权窗口") // 先收掉放行开关、开窗口的消息（只告知，不叫醒，R-227）
 	aW = parkWait(t, e, c, "claude:a1")
 	out = mustRole("claude:a2", "参谋")
 	if out.Role != "aide" || len(out.Demoted) != 1 || out.Demoted[0] != "claude:a1" {

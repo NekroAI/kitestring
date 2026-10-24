@@ -347,6 +347,8 @@ type projectIn struct {
 		AgentRelease *bool `json:"agent_release,omitempty"`
 		// CommitOnAccept：验收通过后提示 主调度 提交属于该需求的改动（不推送）（R-192）；不传表示不修改
 		CommitOnAccept *bool `json:"commit_on_accept,omitempty"`
+		// ModelPolicy：子任务模型策略（R-228）：economy（经济）/ balanced（均衡，默认）/ quality（质量优先）；不传表示不修改
+		ModelPolicy *string `json:"model_policy,omitempty" enum:"economy,balanced,quality" doc:"子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先"`
 	}
 }
 
@@ -629,6 +631,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.CommitOnAccept != nil {
 				commit = *in.Body.CommitOnAccept
 			}
+			policy := cur.ModelPolicy
+			if in.Body.ModelPolicy != nil {
+				policy = *in.Body.ModelPolicy
+			}
 			if in.Body.AgentRelease != nil {
 				release = *in.Body.AgentRelease
 			}
@@ -638,7 +644,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.Hidden != nil {
 				hidden = *in.Body.Hidden
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit})
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy})
 			if err != nil {
 				return nil, apiErr(err)
 			}
