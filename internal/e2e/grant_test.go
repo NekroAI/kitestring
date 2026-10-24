@@ -58,7 +58,7 @@ func TestProxyAnswerGrant(t *testing.T) {
 	}
 	answer := func(ref, key, ans, reason, risk string) (store.Decision, error) {
 		var d store.Decision
-		err := c.Do(ctx, "POST", "/agent/decisions/"+ref+"/answer", map[string]any{"session_key": key, "answer": ans, "reason": reason, "risk": risk}, &d)
+		err := c.Do(ctx, "POST", "/agent/decisions/"+ref+"/answer", map[string]any{"session_key": key, "answer": ans, "reason": reason, "risk": risk, "hard_check": "none"}, &d)
 		return d, err
 	}
 	mustFail := func(err error, want, what string) {

@@ -113,7 +113,7 @@ func TestAideRole(t *testing.T) {
 	}
 	var g store.Grant
 	e.call("POST", "/api/grants", map[string]any{"project_id": r.ProjectID, "session_key": "claude:a1", "max_risk": "low", "expires_at": time.Now().Add(time.Hour).Format(time.RFC3339Nano)}, &g)
-	err = c.Do(ctx, "POST", "/agent/decisions/"+d.Code+"/answer", map[string]any{"session_key": "claude:adv", "answer": "倒序", "reason": "和看板一致", "risk": "low"}, nil)
+	err = c.Do(ctx, "POST", "/agent/decisions/"+d.Code+"/answer", map[string]any{"session_key": "claude:adv", "answer": "倒序", "reason": "和看板一致", "risk": "low", "hard_check": "none"}, nil)
 	mustFail(err, "代答决策是主助理的职责", "顾问代答")
 	// 主助理能放行、能写小结
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "ready", "session_key": "claude:a1", "reason": "范围清楚"}, nil); err != nil {
@@ -141,12 +141,12 @@ func TestAideRole(t *testing.T) {
 	if len(gs.Grants) == 0 || gs.Grants[0].Code != g.Code || gs.Grants[0].Status != store.GrantRevoked {
 		t.Fatalf("主助理卸任后它名下的窗口应失效：%+v", gs.Grants)
 	}
-	err = c.Do(ctx, "POST", "/agent/decisions/"+d.Code+"/answer", map[string]any{"session_key": "claude:a2", "answer": "倒序", "reason": "和看板一致", "risk": "low"}, nil)
+	err = c.Do(ctx, "POST", "/agent/decisions/"+d.Code+"/answer", map[string]any{"session_key": "claude:a2", "answer": "倒序", "reason": "和看板一致", "risk": "low", "hard_check": "none"}, nil)
 	mustFail(err, "没有开授权窗口", "新主助理没开窗口时代答")
 
 	// 6. 没有主助理：代答不可用（只有主助理能代答），顾问照样不能放行，事情留给用户
 	mustRole("claude:a2", "none")
-	err = c.Do(ctx, "POST", "/agent/decisions/"+d.Code+"/answer", map[string]any{"session_key": "claude:adv", "answer": "倒序", "reason": "和看板一致", "risk": "low"}, nil)
+	err = c.Do(ctx, "POST", "/agent/decisions/"+d.Code+"/answer", map[string]any{"session_key": "claude:adv", "answer": "倒序", "reason": "和看板一致", "risk": "low", "hard_check": "none"}, nil)
 	mustFail(err, "主助理的职责", "没有主助理时顾问代答")
 	var r2 store.Requirement
 	if err := c.Do(ctx, "POST", "/agent/requirements", map[string]any{"title": "积分规则", "session_key": "claude:adv"}, &r2); err != nil {

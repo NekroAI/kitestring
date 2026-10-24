@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/agent/away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查看用户是否暂时离开，以及离开时段报告（R-210） */
+        get: operations["agent-get-away"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/away/escalate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 主助理把拿不准、要用户尽快看的决策推给用户（R-210） */
+        post: operations["agent-escalate-away"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/brief": {
         parameters: {
             query?: never;
@@ -617,6 +651,58 @@ export interface paths {
             cookie?: never;
         };
         get: operations["auth-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 暂时离开的状态：离开多久、主助理处理几件、推送几条（R-210） */
+        get: operations["get-away"];
+        put?: never;
+        /** 暂时离开：起点就是现在；同时给各项目的主助理开授权窗口（R-210） */
+        post: operations["start-away"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/away/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 结束离开：撤销这次离开开的授权窗口，返回最终时段报告（R-210） */
+        post: operations["end-away"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/away/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 离开时段报告：替你定了什么、放行了什么、交付了什么、还在等你的、要你先看的、你在各设备上处理了什么（R-210） */
+        get: operations["get-away-report"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1715,6 +1801,8 @@ export interface components {
             answer?: string;
             /** @description 要拍板的点：逐点选第几个（从 0 开始） */
             choices?: number[] | null;
+            /** @description 硬规则核对（必填，R-210）：none = 核对过，不属于硬规则；填 product / design / semantics / permission / gate / irreversible / acceptance 中的一类表示属于它，会被拒绝 */
+            hard_check?: string;
             /** @description 为什么这样答、为什么不必等用户（必填） */
             reason: string;
             /** @description 你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档 */
@@ -1763,6 +1851,13 @@ export interface components {
             session_key?: string;
             stages: components["schemas"]["StageIn"][] | null;
             title: string;
+        };
+        "Agent-escalate-awayRequest": {
+            /** @description 决策编号（D-x） */
+            decision: string;
+            /** @description 一句话：为什么要用户尽快看（必填） */
+            reason?: string;
+            session_key?: string;
         };
         "Agent-link-sessionRequest": {
             requirement: string;
@@ -1885,6 +1980,11 @@ export interface components {
             replaced_by?: string;
             session_key?: string;
         };
+        AgentAwayOutBody: {
+            /** @description 最近一次离开的时段报告；从没离开过时为空 */
+            report?: components["schemas"]["AwayReport"];
+            status: components["schemas"]["AwayStatus"];
+        };
         AgentDecisionInBody: {
             /** @description 请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言 */
             approval?: boolean;
@@ -1893,6 +1993,11 @@ export interface components {
             context?: string;
             /** @description 来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x） */
             from_decision?: string;
+            /**
+             * @description 硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收
+             * @enum {string}
+             */
+            hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             /** @description 问题附带的图（例如待批准的方案图）的附件 ID */
             images?: string[] | null;
             /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
@@ -1984,6 +2089,203 @@ export interface components {
             /** @description 登记过 passkey 的网页来源，登录页据此显示 passkey 登录（R-7） */
             passkey_origins: string[] | null;
             version: string;
+        };
+        Away: {
+            /**
+             * Format: date-time
+             * @description 「能处理的都处理完」从何时开始一直成立
+             */
+            calm_since?: string;
+            /** @description 离开编号（A-x） */
+            code: string;
+            /**
+             * Format: date-time
+             * @description 你点「结束离开」的时刻；空 = 还在离开中
+             */
+            ended_at?: string;
+            /**
+             * Format: int64
+             * @description 预估离开多久（分钟）；0 = 不确定
+             */
+            expect_minutes: number;
+            /** @description 这次离开期间连推送类也先攒着（拿不准的仍推） */
+            hold_push: boolean;
+            id: string;
+            /**
+             * @description 主助理可代答到哪一档：none 不代答（只写建议）/ low / medium
+             * @enum {string}
+             */
+            scope: "none" | "low" | "medium";
+            /**
+             * Format: date-time
+             * @description 最近一次生成阶段性报告的时间
+             */
+            settled_at?: string;
+            /**
+             * Format: date-time
+             * @description 点「暂时离开」的时刻，时段报告从这里算起
+             */
+            started_at: string;
+        };
+        AwayCounts: {
+            /**
+             * Format: int64
+             * @description 主助理写的验收建议
+             */
+            advised: number;
+            /**
+             * Format: int64
+             * @description 交付（交了证据、现在待验收 / 已完成）的需求
+             */
+            delivered: number;
+            /**
+             * Format: int64
+             * @description 勿扰时先攒着的
+             */
+            held: number;
+            /**
+             * Format: int64
+             * @description 合并进报告、没推的
+             */
+            merged: number;
+            /**
+             * Format: int64
+             * @description 不在离开时原本会推几条
+             */
+            normal: number;
+            /**
+             * Format: int64
+             * @description 主助理代答的决策
+             */
+            proxied: number;
+            /**
+             * Format: int64
+             * @description 推送了几条
+             */
+            pushed: number;
+            /**
+             * Format: int64
+             * @description 主调度 / 主助理放行的草稿
+             */
+            released: number;
+            /**
+             * Format: int64
+             * @description 不推的（主助理可代答、会话空闲）
+             */
+            skipped: number;
+            /**
+             * Format: int64
+             * @description 你在各设备上处理的
+             */
+            user: number;
+            /**
+             * Format: int64
+             * @description 还在等你的
+             */
+            waiting: number;
+        };
+        AwayEvent: {
+            /** Format: date-time */
+            at: string;
+            body?: string;
+            /** @description 你处理时用的设备，如 iPhone、Mac */
+            device?: string;
+            /** @description 通知事件（decision_raised、requirement_review…）或你的操作（answer、review、plan_start…） */
+            event: string;
+            /** @description 不在离开时这条会不会推送 */
+            normal: boolean;
+            project_id?: string;
+            /** @description 为什么归到这一档 */
+            reason?: string;
+            /** @description 关联编号：D-x / R-x / P-x */
+            ref?: string;
+            /**
+             * @description push 推了 / hold 勿扰先攒着 / merge 合并进报告 / skip 不推 / user 你在某台设备上处理了 / settled 阶段性报告
+             * @enum {string}
+             */
+            tier: "push" | "hold" | "merge" | "skip" | "user" | "settled";
+            title: string;
+        };
+        AwayItem: {
+            /** @description 要你先看 */
+            first: boolean;
+            /**
+             * @description 待决策 / 待批准计划 / 待验收 / 受阻
+             * @enum {string}
+             */
+            kind: "decision" | "plan" | "review" | "blocked";
+            project_name: string;
+            /** @description 离开期间推送过 */
+            pushed: boolean;
+            /** @description 为什么要你先看，或主助理的建议 */
+            reason?: string;
+            ref: string;
+            title: string;
+        };
+        AwayReport: {
+            away: components["schemas"]["Away"];
+            counts: components["schemas"]["AwayCounts"];
+            /** @description 离开已结束：这是最终报告 */
+            final: boolean;
+            /** @description 这次离开开的授权窗口 */
+            grants: components["schemas"]["Grant"][] | null;
+            /** @description 勿扰时先攒着、没推的 */
+            held: components["schemas"]["AwayEvent"][] | null;
+            /**
+             * Format: int64
+             * @description 离开了多久（分钟）
+             */
+            minutes: number;
+            /** @description 已超过预估时间（只做标记，不推送） */
+            over_estimate: boolean;
+            /** @description 各项目：替你定了什么（proxied 代答）、放行了什么（releases）、交付了什么（done）、团队消息、主助理总述 */
+            projects: components["schemas"]["MorningReport"][] | null;
+            /** @description 推送了的 */
+            pushes: components["schemas"]["AwayEvent"][] | null;
+            /** @description 阶段性报告（能处理的都处理完了）的时间点 */
+            settled: components["schemas"]["AwayEvent"][] | null;
+            /**
+             * Format: date-time
+             * @description 结束时刻；离开中为现在
+             */
+            until: string;
+            /** @description 还在等你的；first = 要你先看的，排在前面 */
+            waiting: components["schemas"]["AwayItem"][] | null;
+            /** @description 你在各设备上处理了什么（device 是设备） */
+            yours: components["schemas"]["AwayEvent"][] | null;
+        };
+        AwayStatus: {
+            /** @description 进行中的离开；不在离开时为空 */
+            away?: components["schemas"]["Away"];
+            /** @description 还有生效中的授权窗口；最长 24 小时，到期后离开保持、主助理不再代答 */
+            grant_active: boolean;
+            /** @description 这次离开开的授权窗口（含已到期的） */
+            grants: components["schemas"]["Grant"][] | null;
+            /**
+             * Format: int64
+             * @description 主助理已处理几件（代答 + 放行 + 验收建议）
+             */
+            handled: number;
+            /** @description 不在离开时：最近一次已结束的离开（看它的报告用） */
+            last?: components["schemas"]["Away"];
+            /**
+             * Format: int64
+             * @description 已离开多久（分钟）
+             */
+            minutes: number;
+            notices?: string[] | null;
+            /** @description 已超过预估时间（只做标记，不推送） */
+            over_estimate: boolean;
+            /**
+             * Format: int64
+             * @description 推送了几条
+             */
+            pushed: number;
+            /**
+             * Format: int64
+             * @description 你在各设备上处理了几件
+             */
+            yours: number;
         };
         BarkConfig: {
             key: string;
@@ -2183,6 +2485,8 @@ export interface components {
             from_decision?: string;
             /** @description 团队消息（R-191）：发消息的会话当时的身份 */
             from_role?: string;
+            /** @enum {string} */
+            hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -2284,6 +2588,8 @@ export interface components {
             from_decision?: string;
             /** @description 团队消息（R-191）：发消息的会话当时的身份 */
             from_role?: string;
+            /** @enum {string} */
+            hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -3901,6 +4207,21 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        "Start-awayRequest": {
+            /**
+             * Format: int64
+             * @description 预估离开多久（分钟）：30 / 120 / 480，0 = 不确定。只用来标「已超过预估」
+             * @enum {integer}
+             */
+            expect_minutes: 30 | 120 | 480 | 0;
+            /** @description 这次离开期间连推送类也先攒着（拿不准的仍推） */
+            hold_push?: boolean;
+            /**
+             * @description 主助理可以替你答到哪一档：none 不代答（只写建议）/ low 低风险 / medium 中风险
+             * @enum {string}
+             */
+            scope: "none" | "low" | "medium";
+        };
         StatusChange: {
             /**
              * @description 操作者：你 / Agent 会话 / 系统
@@ -4105,6 +4426,71 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "agent-get-away": {
+        parameters: {
+            query?: {
+                /** @description 离开编号（A-x）；不填为最近一次 */
+                ref?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAwayOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-escalate-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-escalate-awayRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MorningSetOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-set-brief": {
         parameters: {
             query?: never;
@@ -5396,6 +5782,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "start-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Start-awayRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "end-away": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-away-report": {
+        parameters: {
+            query?: {
+                /** @description 离开编号（A-x）；不填为最近一次 */
+                ref?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AwayReport"];
                 };
             };
             /** @description Error */

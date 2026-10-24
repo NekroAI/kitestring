@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -116,13 +117,23 @@ func runBrief(args []string) error {
 //
 //	ks away <总述>                          写总述（传空字符串清除）
 //	ks away advise <R-x> <pass|return|clear> <理由>   给待验收的需求写验收建议
+//	ks away status | report [A-x]               暂时离开的状态 / 时段报告（R-210）
+//	ks away escalate <D-x> --reason 理由         主助理把拿不准的待决策推给用户（R-210）
 func runMorning(args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "status", "report":
+			return runAwayReport(args)
+		case "escalate":
+			return runEscalate(args[1:])
+		}
+	}
 	fs := flag.NewFlagSet("morning", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
-	usage := fmt.Errorf("用法：ks away <总述：一段话，先结论，提到需求写编号>（传空字符串清除）\n      ks away advise <R-x> <pass|return|clear> <理由>")
+	usage := fmt.Errorf("用法：ks away <总述：一段话，先结论，提到需求写编号>（传空字符串清除）\n      ks away advise <R-x> <pass|return|clear> <理由>\n      ks away status | ks away report [A-x]\n      ks away escalate <D-x> --reason 理由")
 	if fs.NArg() < 1 {
 		return usage
 	}
@@ -212,4 +223,52 @@ func runTeam(args []string) error {
 		return agentCall("POST", "/agent/team/tell", body)
 	}
 	return agentCall("GET", "/agent/team?"+url.Values{"session_key": {key}}.Encode(), nil)
+}
+
+// runAwayReport：ks away status —— 用户是否暂时离开、离开多久、主助理处理几件、推送几条；
+// ks away report [A-x] —— 离开时段报告（默认最近一次）：替用户定了什么、放行了什么、交付了什么、还在等用户的、用户在各设备上处理了什么（R-210）。
+func runAwayReport(args []string) error {
+	path := "/agent/away"
+	if args[0] == "report" && len(args) > 1 {
+		path += "?ref=" + url.QueryEscape(args[1])
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var out struct {
+		Status json.RawMessage `json:"status"`
+		Report json.RawMessage `json:"report"`
+	}
+	if err := client.New(20*time.Second).Do(ctx, "GET", path, nil, &out); err != nil {
+		return err
+	}
+	raw := out.Status
+	if args[0] == "report" {
+		if len(out.Report) == 0 || string(out.Report) == "null" {
+			return fmt.Errorf("用户还没有点过「暂时离开」，没有时段报告")
+		}
+		raw = out.Report
+	}
+	var v any
+	_ = json.Unmarshal(raw, &v)
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
+	return nil
+}
+
+// runEscalate：ks away escalate D-x --reason 理由——主助理把拿不准、要用户尽快看的待决策推给用户（R-210）。
+func runEscalate(args []string) error {
+	fs := flag.NewFlagSet("away escalate", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	reason := fs.String("reason", "", "一句话：为什么要用户尽快看（必填）")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() < 1 {
+		return fmt.Errorf("用法：ks away escalate <D-x> --reason 理由")
+	}
+	key := currentSession(*session)
+	if key == "" {
+		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+	}
+	return agentCall("POST", "/agent/away/escalate", map[string]any{"session_key": key, "decision": fs.Arg(0), "reason": *reason})
 }

@@ -467,3 +467,40 @@ CREATE TABLE IF NOT EXISTS handoffs (
 );
 CREATE INDEX IF NOT EXISTS handoffs_project_role ON handoffs(project_id, role);
 CREATE INDEX IF NOT EXISTS handoffs_from ON handoffs(from_session);
+
+-- 暂时离开（R-210）：你点「暂时离开」时记一行，起点就是这一刻；只能由你点「结束离开」结束（ended_at）。
+-- expect_minutes 是预估离开多久（0 = 不确定），只用来标「已超过预估」；scope 是给主助理的授权范围（none 不代答 / low / medium），
+-- 开离开时按它给各项目的主助理开授权窗口（grants.away_id 指回这里）；hold_push = 这次离开期间连推送类也先攒着（拿不准的仍推）。
+-- calm_since：最近一次「能处理的都处理完」开始成立的时间；settled_at：最近一次生成阶段性报告的时间；
+CREATE TABLE IF NOT EXISTS aways (
+	id             TEXT PRIMARY KEY,
+	seq            INTEGER NOT NULL UNIQUE, -- A-<seq>
+	started_at     TEXT NOT NULL,
+	expect_minutes INTEGER NOT NULL DEFAULT 0,
+	scope          TEXT NOT NULL DEFAULT 'none',
+	hold_push      INTEGER NOT NULL DEFAULT 0,
+	ended_at       TEXT NOT NULL DEFAULT '',
+	calm_since     TEXT NOT NULL DEFAULT '',
+	settled_at     TEXT NOT NULL DEFAULT '',
+	worked         INTEGER NOT NULL DEFAULT 0 -- 上次阶段性报告之后有没有发生过事（会话在跑、有推送 / 处理）
+);
+
+-- 离开期间发生的事（R-210），给时段报告用：
+-- tier = push 推了 / hold 勿扰先攒着 / merge 合并进报告 / skip 不推（已可代答、会话空闲）/ user 你在某台设备上处理了 / settled 阶段性报告；
+-- event 是通知事件或你的操作，ref 是关联编号（D-x / R-x / P-x），device 是你处理时用的设备（如 iPhone）；
+-- normal = 不在离开时这条会不会推
+CREATE TABLE IF NOT EXISTS away_events (
+	id         TEXT PRIMARY KEY,
+	away_id    TEXT NOT NULL REFERENCES aways(id) ON DELETE CASCADE,
+	at         TEXT NOT NULL,
+	tier       TEXT NOT NULL,
+	event      TEXT NOT NULL DEFAULT '',
+	project_id TEXT NOT NULL DEFAULT '',
+	ref        TEXT NOT NULL DEFAULT '',
+	title      TEXT NOT NULL DEFAULT '',
+	body       TEXT NOT NULL DEFAULT '',
+	reason     TEXT NOT NULL DEFAULT '',
+	device     TEXT NOT NULL DEFAULT '',
+	normal     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS away_events_away ON away_events(away_id, at);

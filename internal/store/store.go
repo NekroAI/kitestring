@@ -159,6 +159,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"sessions", "launcher", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "verdict", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "rec_option", "INTEGER NOT NULL DEFAULT -1"},
+	// 暂时离开（R-210）：决策上标的硬规则类别；授权窗口属于哪次离开
+	{"decisions", "hard", "TEXT NOT NULL DEFAULT ''"},
+	{"grants", "away_id", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

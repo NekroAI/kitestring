@@ -191,6 +191,7 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 		return
 	}
 	text := fmt.Sprintf("用户把 %s「%s」从%s改为%s。", after.Code, brief(after.Title, 40), reqStatusZh[before.Status], reqStatusZh[after.Status])
+	h.awayUser(ctx, "status", after.ProjectID, after.Code, after.Title, userStatusZh(before.Status, after.Status)) // 离开期间你在哪台设备上处理的（R-210）
 	told := slices.Clone(skip)
 	// 验收通过且项目开了「验收通过后自动提交」（R-192）：给负责的主调度送一条合成消息（状态变化 + 提交提示），不再另送 status 通知。
 	if to := h.commitHint(ctx, after, text); to != "" {

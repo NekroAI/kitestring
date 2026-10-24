@@ -432,15 +432,16 @@ func runAnswer(args []string) error {
 	reason := fs.String("reason", "", "为什么这样答、为什么不必等用户（必填）")
 	risk := fs.String("risk", "", "你自己的风险判断：low / medium / high（必填），取它和提问方标的中更高的一档")
 	verdict := fs.String("verdict", "", "批准类决策必填：approved 批准 / rejected 拒绝")
+	hardCheck := fs.String("hard-check", "", "硬规则核对（必填）：none = 不属于 product / design / semantics / permission / gate / irreversible / acceptance 任何一类；属于其中一类就不要代答")
 	var choices intList
 	fs.Var(&choices, "choice", "有要拍板的点时逐点选第几个（从 1 开始），按点的顺序重复")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("用法：ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low|medium|high [--choice 1 --choice 2]（只有被授权的 Adv 在用户的授权窗口内能用）")
+		return fmt.Errorf("用法：ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low|medium|high --hard-check none [--choice 1 --choice 2]（只有被授权的 Adv 在用户的授权窗口内能用）")
 	}
-	body := map[string]any{"session_key": cliSession(*session), "answer": *answer, "reason": *reason, "risk": *risk}
+	body := map[string]any{"session_key": cliSession(*session), "answer": *answer, "reason": *reason, "risk": *risk, "hard_check": *hardCheck}
 	if *verdict != "" {
 		body["verdict"] = *verdict
 	}
@@ -463,7 +464,7 @@ func runDecision(args []string) error {
 		return runAnswer(args[1:])
 	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--from D-x [--overturns]] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
@@ -473,6 +474,7 @@ func runDecision(args []string) error {
 	recOpt := fs.Int("recommend-option", 0, "推荐的是第几个 --option（从 1 开始）；不填时只有 --recommend 与某个选项文字完全相同才标推荐")
 	req := fs.String("req", "", "关联需求")
 	risk := fs.String("risk", "", "风险档 low / medium / high，不填按 high；产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high")
+	hard := fs.String("hard", "", "硬规则类别（属于其中一类就标上，标了主助理永不代答、风险档按 high）：product 产品方向 / design 设计选型 / semantics 语义或接口变更 / permission 权限变更 / gate 门禁或评测 / irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）/ acceptance 验收")
 	fromDec := fs.String("from", "", "来源决策（D-x）：接着哪条决策往下问，或要推翻哪条")
 	overturns := fs.Bool("overturns", false, "这条要推翻 --from 那条决策的结论")
 	var opts, optImgs stringList
@@ -492,6 +494,9 @@ func runDecision(args []string) error {
 		return fmt.Errorf("--question 不能为空")
 	}
 	body := map[string]any{"question": *question, "context": *ctxText, "recommendation": *rec, "requirement": *req, "risk": *risk, "from_decision": *fromDec, "session_key": cliSession(*session)}
+	if *hard != "" {
+		body["hard"] = *hard
+	}
 	if *overturns {
 		body["overturns"] = true
 	}

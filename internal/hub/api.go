@@ -35,6 +35,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerRelease(webAPI)
 	h.registerGrantWeb(webAPI)
 	h.registerMorningWeb(webAPI)
+	h.registerAwayWeb(webAPI)
 	h.registerReviewerWeb(webAPI)
 	h.registerPlans(webAPI)
 	h.registerNeedWeb(webAPI)
@@ -52,6 +53,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentTell(agentAPI)
 	h.registerAgentGrant(agentAPI)
 	h.registerAgentMorning(agentAPI)
+	h.registerAgentAway(agentAPI)
 	h.registerAgentWaitCheck(agentAPI)
 	h.registerSessionReply(webAPI)
 	h.registerStatusWeb(webAPI)
@@ -109,6 +111,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerRelease(api)
 	h.registerGrantWeb(api)
 	h.registerMorningWeb(api)
+	h.registerAwayWeb(api)
 	h.registerReviewerWeb(api)
 	h.registerPlans(api)
 	h.registerNeedWeb(api)
@@ -126,6 +129,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentTell(api)
 	h.registerAgentGrant(api)
 	h.registerAgentMorning(api)
+	h.registerAgentAway(api)
 	h.registerAgentWaitCheck(api)
 	h.registerSessionReply(api)
 	h.registerStatusWeb(api)
@@ -881,6 +885,8 @@ func (h *Hub) registerWeb(api huma.API) {
 				if err != nil {
 					return nil, apiErr(err)
 				}
+				// 离开期间你在哪台设备上答的（R-210）
+				h.awayUser(ctx, "answer", d.ProjectID, d.Code, d.Question, brief(approvalText(d), 80))
 				h.onRequestAnswered(ctx, d)  // 批准开 Dev 会话 → 推送接入语（R-169）
 				h.applyStatusRequest(ctx, d) // 批准改状态申请 → 纸鸢改状态（R-188）
 				out.Body.Decisions = append(out.Body.Decisions, d)
@@ -1153,6 +1159,7 @@ type agentDecisionIn struct {
 		FromDecision      string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
 		Overturns         bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
 		Risk              string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
+		Hard              string   `json:"hard,omitempty" enum:"product,design,semantics,permission,gate,irreversible,acceptance" doc:"硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收"`
 	}
 }
 
@@ -1386,7 +1393,10 @@ func (h *Hub) registerAgent(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-raise-decision", Method: http.MethodPost, Path: "/api/agent/decisions", Tags: tag},
 		func(ctx context.Context, in *agentDecisionIn) (*decisionRaisedOut, error) {
 			b := in.Body
-			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation, Risk: b.Risk, Overturns: b.Overturns}
+			d := store.Decision{SessionKey: b.SessionKey, Question: b.Question, Context: b.Context, Options: b.Options, Recommendation: b.Recommendation, Risk: b.Risk, Overturns: b.Overturns, Hard: b.Hard}
+			if d.Hard != "" {
+				d.Risk = store.RiskHigh // 标了硬规则类别：风险档按 high（R-210）
+			}
 			from, err := h.fromDecision(ctx, b.FromDecision)
 			if err != nil {
 				return nil, err
@@ -1459,10 +1469,8 @@ func (h *Hub) registerAgent(api huma.API) {
 			h.broker.publish("decisions", "sessions", "requirements")
 			go h.aiOnDecision(d)
 			h.onDecisionRaised(ctx, d) // 订阅了 decision 的会话（R-164）
-			// 授权窗口开着、参谋可以代答的决策先不推送（不吵醒你，R-163）；仍留在收件箱里
-			if !h.proxyQuiet(ctx, d) {
-				h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
-			}
+			// 授权窗口开着、参谋可以代答的决策先不推送（不吵醒你，R-163）；仍留在收件箱里。离开期间按硬规则 / 拿不准分级（R-210）
+			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d), h.decisionPush(ctx, d))
 			out := &decisionRaisedOut{}
 			out.Body.Decision = d
 			out.Body.BlockWarnings = warns

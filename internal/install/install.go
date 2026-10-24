@@ -26,7 +26,7 @@ var ClaudeEvents = []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "P
 var CodexEvents = []string{"SessionStart", "SessionEnd", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop", "Interrupt", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"}
 
 // MCPTools 是 ks mcp 提供的工具，Codex 需要逐个配置免审批。
-var MCPTools = []string{"req_list", "req_get", "req_create", "req_update_status", "evidence_attach", "decision_raise", "decision_withdraw", "decision_answer", "away_set", "morning_set", "session_link_req", "handoff_write"}
+var MCPTools = []string{"req_list", "req_get", "req_create", "req_update_status", "evidence_attach", "decision_raise", "decision_withdraw", "decision_answer", "away_set", "away_escalate", "morning_set", "session_link_req", "handoff_write"}
 
 const (
 	mcpName     = "kitestring"

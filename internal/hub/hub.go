@@ -193,6 +193,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	h.resumeRequestExpiry(ctx)
 	go h.laneMaintenance(ctx)
 	go h.reviewWatch(ctx) // 交给评审 30 分钟没动静的，照常弹给用户（R-237）
+	go h.awayLoop(ctx) // 暂时离开：每分钟判断一次能处理的是否都处理完（R-210）
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
@@ -523,8 +524,21 @@ func (h *Hub) notifySession(x store.Session, event, title, body string) {
 	}, "/?s="+url.QueryEscape(x.Key))
 }
 
-// sendNotify 异步发送通知。projectID 为空或项目未归属工作空间时使用默认渠道。
-func (h *Hub) sendNotify(projectID string, m notify.Message, path string) {
+// sendNotify 发送通知：离开期间先按推送分级过滤（R-210，见 away.go），不在离开时照旧发送。
+// meta 可指定分级、关联编号与原因；不给时按事件类型取默认分级。
+func (h *Hub) sendNotify(projectID string, m notify.Message, path string, meta ...pushMeta) {
+	var pm pushMeta
+	if len(meta) > 0 {
+		pm = meta[0]
+	}
+	if !h.awayGate(projectID, m, path, pm) {
+		return
+	}
+	h.deliverNotify(projectID, m, path)
+}
+
+// deliverNotify 异步发送通知。projectID 为空或项目未归属工作空间时使用默认渠道。
+func (h *Hub) deliverNotify(projectID string, m notify.Message, path string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()

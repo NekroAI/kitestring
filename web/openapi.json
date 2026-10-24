@@ -221,6 +221,10 @@
               "null"
             ]
           },
+          "hard_check": {
+            "description": "硬规则核对（必填，R-210）：none = 核对过，不属于硬规则；填 product / design / semantics / permission / gate / irreversible / acceptance 中的一类表示属于它，会被拒绝",
+            "type": "string"
+          },
           "reason": {
             "description": "为什么这样答、为什么不必等用户（必填）",
             "type": "string"
@@ -379,6 +383,27 @@
         "required": [
           "title",
           "stages"
+        ],
+        "type": "object"
+      },
+      "Agent-escalate-awayRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "description": "决策编号（D-x）",
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "description": "一句话：为什么要用户尽快看（必填）",
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
         ],
         "type": "object"
       },
@@ -724,6 +749,22 @@
         },
         "type": "object"
       },
+      "AgentAwayOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/AwayReport",
+            "description": "最近一次离开的时段报告；从没离开过时为空"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AwayStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "AgentDecisionInBody": {
         "additionalProperties": false,
         "properties": {
@@ -744,6 +785,19 @@
           },
           "from_decision": {
             "description": "来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）",
+            "type": "string"
+          },
+          "hard": {
+            "description": "硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收",
+            "enum": [
+              "product",
+              "design",
+              "semantics",
+              "permission",
+              "gate",
+              "irreversible",
+              "acceptance"
+            ],
             "type": "string"
           },
           "images": {
@@ -1056,6 +1110,427 @@
           "logged_in",
           "version",
           "passkey_origins"
+        ],
+        "type": "object"
+      },
+      "Away": {
+        "additionalProperties": false,
+        "properties": {
+          "calm_since": {
+            "description": "「能处理的都处理完」从何时开始一直成立",
+            "format": "date-time",
+            "type": "string"
+          },
+          "code": {
+            "description": "离开编号（A-x）",
+            "type": "string"
+          },
+          "ended_at": {
+            "description": "你点「结束离开」的时刻；空 = 还在离开中",
+            "format": "date-time",
+            "type": "string"
+          },
+          "expect_minutes": {
+            "description": "预估离开多久（分钟）；0 = 不确定",
+            "format": "int64",
+            "type": "integer"
+          },
+          "hold_push": {
+            "description": "这次离开期间连推送类也先攒着（拿不准的仍推）",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "description": "主助理可代答到哪一档：none 不代答（只写建议）/ low / medium",
+            "enum": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "type": "string"
+          },
+          "settled_at": {
+            "description": "最近一次生成阶段性报告的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "started_at": {
+            "description": "点「暂时离开」的时刻，时段报告从这里算起",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "started_at",
+          "expect_minutes",
+          "scope",
+          "hold_push"
+        ],
+        "type": "object"
+      },
+      "AwayCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "advised": {
+            "description": "主助理写的验收建议",
+            "format": "int64",
+            "type": "integer"
+          },
+          "delivered": {
+            "description": "交付（交了证据、现在待验收 / 已完成）的需求",
+            "format": "int64",
+            "type": "integer"
+          },
+          "held": {
+            "description": "勿扰时先攒着的",
+            "format": "int64",
+            "type": "integer"
+          },
+          "merged": {
+            "description": "合并进报告、没推的",
+            "format": "int64",
+            "type": "integer"
+          },
+          "normal": {
+            "description": "不在离开时原本会推几条",
+            "format": "int64",
+            "type": "integer"
+          },
+          "proxied": {
+            "description": "主助理代答的决策",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pushed": {
+            "description": "推送了几条",
+            "format": "int64",
+            "type": "integer"
+          },
+          "released": {
+            "description": "主调度 / 主助理放行的草稿",
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "不推的（主助理可代答、会话空闲）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "user": {
+            "description": "你在各设备上处理的",
+            "format": "int64",
+            "type": "integer"
+          },
+          "waiting": {
+            "description": "还在等你的",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "proxied",
+          "released",
+          "advised",
+          "delivered",
+          "user",
+          "pushed",
+          "held",
+          "merged",
+          "skipped",
+          "normal",
+          "waiting"
+        ],
+        "type": "object"
+      },
+      "AwayEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "device": {
+            "description": "你处理时用的设备，如 iPhone、Mac",
+            "type": "string"
+          },
+          "event": {
+            "description": "通知事件（decision_raised、requirement_review…）或你的操作（answer、review、plan_start…）",
+            "type": "string"
+          },
+          "normal": {
+            "description": "不在离开时这条会不会推送",
+            "type": "boolean"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "为什么归到这一档",
+            "type": "string"
+          },
+          "ref": {
+            "description": "关联编号：D-x / R-x / P-x",
+            "type": "string"
+          },
+          "tier": {
+            "description": "push 推了 / hold 勿扰先攒着 / merge 合并进报告 / skip 不推 / user 你在某台设备上处理了 / settled 阶段性报告",
+            "enum": [
+              "push",
+              "hold",
+              "merge",
+              "skip",
+              "user",
+              "settled"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "tier",
+          "event",
+          "title",
+          "normal"
+        ],
+        "type": "object"
+      },
+      "AwayItem": {
+        "additionalProperties": false,
+        "properties": {
+          "first": {
+            "description": "要你先看",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "待决策 / 待批准计划 / 待验收 / 受阻",
+            "enum": [
+              "decision",
+              "plan",
+              "review",
+              "blocked"
+            ],
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "pushed": {
+            "description": "离开期间推送过",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "为什么要你先看，或主助理的建议",
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "title",
+          "project_name",
+          "first",
+          "pushed"
+        ],
+        "type": "object"
+      },
+      "AwayReport": {
+        "additionalProperties": false,
+        "properties": {
+          "away": {
+            "$ref": "#/components/schemas/Away"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/AwayCounts"
+          },
+          "final": {
+            "description": "离开已结束：这是最终报告",
+            "type": "boolean"
+          },
+          "grants": {
+            "description": "这次离开开的授权窗口",
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "held": {
+            "description": "勿扰时先攒着、没推的",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "minutes": {
+            "description": "离开了多久（分钟）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "over_estimate": {
+            "description": "已超过预估时间（只做标记，不推送）",
+            "type": "boolean"
+          },
+          "projects": {
+            "description": "各项目：替你定了什么（proxied 代答）、放行了什么（releases）、交付了什么（done）、团队消息、主助理总述",
+            "items": {
+              "$ref": "#/components/schemas/MorningReport"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "pushes": {
+            "description": "推送了的",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "settled": {
+            "description": "阶段性报告（能处理的都处理完了）的时间点",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "until": {
+            "description": "结束时刻；离开中为现在",
+            "format": "date-time",
+            "type": "string"
+          },
+          "waiting": {
+            "description": "还在等你的；first = 要你先看的，排在前面",
+            "items": {
+              "$ref": "#/components/schemas/AwayItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "yours": {
+            "description": "你在各设备上处理了什么（device 是设备）",
+            "items": {
+              "$ref": "#/components/schemas/AwayEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "away",
+          "until",
+          "minutes",
+          "over_estimate",
+          "final",
+          "grants",
+          "counts",
+          "projects",
+          "waiting",
+          "yours",
+          "pushes",
+          "held",
+          "settled"
+        ],
+        "type": "object"
+      },
+      "AwayStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "away": {
+            "$ref": "#/components/schemas/Away",
+            "description": "进行中的离开；不在离开时为空"
+          },
+          "grant_active": {
+            "description": "还有生效中的授权窗口；最长 24 小时，到期后离开保持、主助理不再代答",
+            "type": "boolean"
+          },
+          "grants": {
+            "description": "这次离开开的授权窗口（含已到期的）",
+            "items": {
+              "$ref": "#/components/schemas/Grant"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "handled": {
+            "description": "主助理已处理几件（代答 + 放行 + 验收建议）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last": {
+            "$ref": "#/components/schemas/Away",
+            "description": "不在离开时：最近一次已结束的离开（看它的报告用）"
+          },
+          "minutes": {
+            "description": "已离开多久（分钟）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "over_estimate": {
+            "description": "已超过预估时间（只做标记，不推送）",
+            "type": "boolean"
+          },
+          "pushed": {
+            "description": "推送了几条",
+            "format": "int64",
+            "type": "integer"
+          },
+          "yours": {
+            "description": "你在各设备上处理了几件",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "minutes",
+          "over_estimate",
+          "handled",
+          "yours",
+          "pushed",
+          "grants",
+          "grant_active"
         ],
         "type": "object"
       },
@@ -1638,6 +2113,18 @@
             "description": "团队消息（R-191）：发消息的会话当时的身份",
             "type": "string"
           },
+          "hard": {
+            "enum": [
+              "product",
+              "design",
+              "semantics",
+              "permission",
+              "gate",
+              "irreversible",
+              "acceptance"
+            ],
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -2000,6 +2487,18 @@
           },
           "from_role": {
             "description": "团队消息（R-191）：发消息的会话当时的身份",
+            "type": "string"
+          },
+          "hard": {
+            "enum": [
+              "product",
+              "design",
+              "semantics",
+              "permission",
+              "gate",
+              "irreversible",
+              "acceptance"
+            ],
             "type": "string"
           },
           "id": {
@@ -7339,6 +7838,40 @@
         ],
         "type": "object"
       },
+      "Start-awayRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expect_minutes": {
+            "description": "预估离开多久（分钟）：30 / 120 / 480，0 = 不确定。只用来标「已超过预估」",
+            "enum": [
+              30,
+              120,
+              480,
+              0
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "hold_push": {
+            "description": "这次离开期间连推送类也先攒着（拿不准的仍推）",
+            "type": "boolean"
+          },
+          "scope": {
+            "description": "主助理可以替你答到哪一档：none 不代答（只写建议）/ low 低风险 / medium 中风险",
+            "enum": [
+              "none",
+              "low",
+              "medium"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "expect_minutes",
+          "scope"
+        ],
+        "type": "object"
+      },
       "StatusChange": {
         "additionalProperties": false,
         "properties": {
@@ -7959,6 +8492,90 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/away": {
+      "get": {
+        "operationId": "agent-get-away",
+        "parameters": [
+          {
+            "description": "离开编号（A-x）；不填为最近一次",
+            "explode": false,
+            "in": "query",
+            "name": "ref",
+            "schema": {
+              "description": "离开编号（A-x）；不填为最近一次",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAwayOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "查看用户是否暂时离开，以及离开时段报告（R-210）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/away/escalate": {
+      "post": {
+        "operationId": "agent-escalate-away",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-escalate-awayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MorningSetOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "主助理把拿不准、要用户尽快看的决策推给用户（R-210）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/brief": {
       "post": {
         "operationId": "agent-set-brief",
@@ -9765,6 +10382,150 @@
         },
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/away": {
+      "get": {
+        "operationId": "get-away",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "暂时离开的状态：离开多久、主助理处理几件、推送几条（R-210）",
+        "tags": [
+          "away"
+        ]
+      },
+      "post": {
+        "operationId": "start-away",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Start-awayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "暂时离开：起点就是现在；同时给各项目的主助理开授权窗口（R-210）",
+        "tags": [
+          "away"
+        ]
+      }
+    },
+    "/api/away/end": {
+      "post": {
+        "operationId": "end-away",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "结束离开：撤销这次离开开的授权窗口，返回最终时段报告（R-210）",
+        "tags": [
+          "away"
+        ]
+      }
+    },
+    "/api/away/report": {
+      "get": {
+        "operationId": "get-away-report",
+        "parameters": [
+          {
+            "description": "离开编号（A-x）；不填为最近一次",
+            "explode": false,
+            "in": "query",
+            "name": "ref",
+            "schema": {
+              "description": "离开编号（A-x）；不填为最近一次",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AwayReport"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "离开时段报告：替你定了什么、放行了什么、交付了什么、还在等你的、要你先看的、你在各设备上处理了什么（R-210）",
+        "tags": [
+          "away"
         ]
       }
     },

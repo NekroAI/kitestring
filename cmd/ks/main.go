@@ -63,6 +63,9 @@ agent 调用：
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
   away advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上
+  away status            用户是否暂时离开：离开多久、主助理处理几件、推送几条
+  away report [A-x]      离开时段报告（默认最近一次）：替用户定了什么、放行、交付、还在等用户的、用户在各设备上处理了什么
+  away escalate <D-x> --reason 理由   Adv 把拿不准、要用户尽快看的待决策推给用户
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结（只写跨需求的效果和遗留问题）
   decision raise ...     提出决策（一次只问一件事）
   decision withdraw <D-x> [--reason 原因] [--replaced-by D-y]   撤回自己提的、用户还没答复的决策（--replaced-by 的目标须仍待答，已关闭 / 回环会被拒）

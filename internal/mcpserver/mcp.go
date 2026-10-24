@@ -209,15 +209,17 @@ type decisionIn struct {
 	FromDecision      string           `json:"from_decision,omitempty" jsonschema:"来源决策（如 D-142）：这条是接着哪条决策往下问的，或要推翻哪条决策的结论；决策详情里会连成后果链"`
 	Overturns         bool             `json:"overturns,omitempty" jsonschema:"为 true 表示这条要推翻 from_decision 那条的结论（例如用户之前选了 B，现在要改回 A）；接着往下问时不填"`
 	Risk              string           `json:"risk,omitempty" jsonschema:"风险档：low / medium / high，不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high。用户开了授权窗口时，low / medium 的决策可能由主助理代答（用户可推翻，推翻时会送来更正）"`
+	Hard              string           `json:"hard,omitempty" jsonschema:"硬规则类别（可选）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向（做不做、做成什么样、给谁用）；design 设计选型（界面 / 交互取哪套）；semantics 语义 / 接口变更（字段含义、对外接口、数据格式）；permission 权限变更；gate 门禁 / 评测（测试、评测、审批规则的口径）；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收"`
 }
 
 type decisionAnswerIn struct {
-	Decision string `json:"decision" jsonschema:"要代答的决策编号，如 D-135"`
-	Answer   string `json:"answer,omitempty" jsonschema:"答复；决策有要拍板的点（points）时是附言，可空"`
-	Choices  []int  `json:"choices,omitempty" jsonschema:"决策有要拍板的点时，逐点选第几个选项（从 1 开始）"`
-	Reason   string `json:"reason" jsonschema:"为什么这样答、为什么不必等用户（必填，显示在用户的代答记录里）"`
-	Risk     string `json:"risk" jsonschema:"你自己的风险判断：low / medium / high（必填）。取它和提问方标的中更高的一档，超出用户授权的范围就会被拒"`
-	Verdict  string `json:"verdict,omitempty" jsonschema:"批准类决策（选项是批准 / 拒绝）必填：approved 批准 / rejected 拒绝，记成字段，放行检查只认它"`
+	Decision  string `json:"decision" jsonschema:"要代答的决策编号，如 D-135"`
+	Answer    string `json:"answer,omitempty" jsonschema:"答复；决策有要拍板的点（points）时是附言，可空"`
+	Choices   []int  `json:"choices,omitempty" jsonschema:"决策有要拍板的点时，逐点选第几个选项（从 1 开始）"`
+	Reason    string `json:"reason" jsonschema:"为什么这样答、为什么不必等用户（必填，显示在用户的代答记录里）"`
+	Risk      string `json:"risk" jsonschema:"你自己的风险判断：low / medium / high（必填）。取它和提问方标的中更高的一档，超出用户授权的范围就会被拒"`
+	Verdict   string `json:"verdict,omitempty" jsonschema:"批准类决策（选项是批准 / 拒绝）必填：approved 批准 / rejected 拒绝，记成字段，放行检查只认它"`
+	HardCheck string `json:"hard_check" jsonschema:"硬规则核对（必填）：none = 核对过，不属于 product 产品方向 / design 设计选型 / semantics 语义或接口变更 / permission 权限变更 / gate 门禁或评测 / irreversible 不可逆或对外操作 / acceptance 验收 中任何一类；属于其中一类就不要代答，留给用户"`
 }
 
 type planReqIn struct {
@@ -484,7 +486,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别拍板时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。" + writing.DecisionTableGuide + "要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "risk": in.Risk, "from_decision": in.FromDecision, "session_key": t.sessionKey(ctx, req)}
+			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "risk": in.Risk, "hard": in.Hard, "from_decision": in.FromDecision, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			if in.Overturns {
 				body["overturns"] = true
@@ -550,9 +552,9 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "decision_answer", Description: "主助理（Aide，也叫参谋）用：用户开了授权窗口时，在到期前代用户答复本项目范围内的决策。必须写 reason 和你自己的风险判断 risk（取它和提问方标的中更高的一档，超出窗口范围就拒绝）。硬规则永不代答：批准方案 / 计划、设计选型（带效果图）、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收，以及你自己提的决策；拿不准的留给用户。代答会留痕，用户可推翻，推翻时更正送回提问方。没有窗口、窗口已到期 / 撤销、或你不是被授权的 Adv 时会被拒绝。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_answer", Description: "主助理（Aide，也叫参谋）用：用户开了授权窗口时，在到期前代用户答复本项目范围内的决策。必须写 reason、你自己的风险判断 risk（取它和提问方标的中更高的一档，超出窗口范围就拒绝）和硬规则核对 hard_check（none = 不属于任何硬规则类别）。硬规则永不代答，接口会拒绝：批准方案 / 计划、设计选型（带效果图或标了 design）、产品方向、语义 / 接口 / 权限变更、门禁 / 评测、不可逆或对外操作、验收，以及你自己提的决策；问题或选项里提到产品方向、语义、接口、权限、门禁、评测、不可逆、删除、发布、推送到远端、花钱等的也不能代答（算拿不准）。拿不准的留给用户，要用户尽快看的用 away_escalate 推给用户。代答会留痕，用户可推翻，推翻时更正送回提问方。没有窗口、窗口已到期 / 撤销、或你不是被授权的 Adv 时会被拒绝。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionAnswerIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"session_key": t.sessionKey(ctx, req), "answer": in.Answer, "reason": in.Reason, "risk": in.Risk}
+			body := map[string]any{"session_key": t.sessionKey(ctx, req), "answer": in.Answer, "reason": in.Reason, "risk": in.Risk, "hard_check": in.HardCheck}
 			if in.Verdict != "" {
 				body["verdict"] = in.Verdict
 			}

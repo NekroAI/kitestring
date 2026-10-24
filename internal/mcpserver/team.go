@@ -171,6 +171,20 @@ func (t *tools) registerTeam(s *mcp.Server) {
 		return text(out.Message), nil, nil
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: "away_set", Description: "主助理（Aide）用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
+	mcp.AddTool(s, &mcp.Tool{Name: "away_escalate", Description: "主助理（Aide）用：用户暂时离开时，把你拿不准、要用户尽快看的待决策推给用户（离开期间推送是分级过滤的，你能代答、已写建议的不推；拿不准的用它推）。要写一句理由。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in escalateIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/away/escalate", map[string]any{"session_key": key, "decision": in.Decision, "reason": in.Reason}, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
 	// morning_set 是 away_set 的旧名，保留给已在用的会话。
 	mcp.AddTool(s, &mcp.Tool{Name: "morning_set", Description: "（旧名，等同 away_set）" + "主助理（Aide）用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
 	recommend := func(ctx context.Context, req *mcp.CallToolRequest, path string, body map[string]any) (*mcp.CallToolResult, any, error) {
@@ -243,4 +257,9 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(out.Message), nil, nil
 		})
+}
+
+type escalateIn struct {
+	Decision string `json:"decision" jsonschema:"待决策编号，如 D-183"`
+	Reason   string `json:"reason" jsonschema:"一句话：为什么要用户尽快看（必填）"`
 }
