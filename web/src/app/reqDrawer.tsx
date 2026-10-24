@@ -85,7 +85,7 @@ export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactN
               const el = e.currentTarget
               stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
             }}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-bg/40 px-4 py-5 sm:px-5"
+            className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain bg-bg/40 px-4 py-5 sm:px-5', reviewing && '[container-type:size]')}
           >
             {reviewing ? <AcceptView r={r} decisions={related} /> : <ReqTimeline r={r} decisions={related} />}
           </div>
