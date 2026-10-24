@@ -296,10 +296,10 @@ function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: 
       <span className="kite-tug size-2 shrink-0 rotate-45 rounded-[1.5px] bg-reply" />
       <span className="truncate">{t.reqs.lineAsk(pending)}</span>
     </button>
-  ) : (
+  ) : own && !reviewing ? null : ( // 顶部 OwnLine 已经写了谁在负责，这里不再重复（R-138）
     <span className="flex min-w-0 items-center gap-2 text-xs text-fg-3">
       <ReqGlyph status={r.status} />
-      <span className="truncate">{reviewing ? t.reqs.reviewBanner : (own?.short ?? t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
+      <span className="truncate">{reviewing ? t.reqs.reviewBanner : (t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
     </span>
   )
   const reviewer = r.status !== 'shelved' && <ReviewerButton code={r.code} projectId={r.project_id} projectName={r.project_name} />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { Bot, ChevronDown, LockOpen, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, X, Zap } from 'lucide-react'
+import { ChevronDown, LockOpen, Palette, Plus, Send, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
 import { Md } from '../ui/markdown'
@@ -8,20 +8,14 @@ import { useProjects, useSessions } from '../api/queries'
 import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from './assign'
 import { t } from '../i18n'
 import { cx, loadPref, savePref, useDesktop, usePref } from '../lib/util'
-import { Badge, Button, Card, Switch, Textarea, Tip } from '../ui/base'
+import { Badge, Button, Switch, Textarea, Tip } from '../ui/base'
 import { FullSheet, Menu, Panel, useAskReason, type MenuItem } from '../ui/overlay'
 import { done, schedule, useReqVerdict } from './verdict'
-import { displayState, presence, PriorityDot, PriorityTag, RoleTag, StatusDot } from '../ui/marks'
+import { displayState, presence, PriorityDot, RoleTag, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
-import { sessionTitle } from './SessionCard'
-import { DesignBadge } from './design'
-import { PlanBadge } from './plans'
-import { OwnBadge, useOwnership } from './ownership'
-import { Ctx } from '../ui/contextMenu'
-import { useReqMenu } from './menus'
-import { ProjGlyph, RefChip, ReqGlyph, statusCls, TurnSeal } from '../ui/refmark'
+import { ProjGlyph, ReqGlyph, statusCls } from '../ui/refmark'
 
 export const boardStatuses = ['draft', 'ready', 'in_progress', 'blocked', 'review'] as const
 export const closedStatuses = ['done', 'shelved'] as const
@@ -121,7 +115,6 @@ export function StatusMenu({ r, size = 'sm' }: { r: Requirement; size?: 'sm' | '
   )
 }
 
-// ReqCard：看板卡片。
 // ReleaseBadge：PM / Adv 放行的需求（R-166），待开始 / 进行中 / 阻塞时在卡片上标出放行人，悬停看理由
 export function ReleaseBadge({ r, className }: { r: Requirement; className?: string }) {
   if (!r.release || (r.status !== 'ready' && r.status !== 'in_progress' && r.status !== 'blocked')) return null
@@ -134,73 +127,6 @@ export function ReleaseBadge({ r, className }: { r: Requirement; className?: str
         </Badge>
       </span>
     </Tip>
-  )
-}
-
-export function ReqCard({ r, draggable, onDragStart }: { r: Requirement; draggable?: boolean; onDragStart?: (e: React.DragEvent) => void }) {
-  const open = useOpenReq()
-  const setStatus = useSetStatus()
-  const menu = useReqMenu()
-  const own = useOwnership()(r)
-  const actor = t.nextActor[r.next_actor]
-  return (
-    <Ctx items={menu(r)} className="h-full rounded-xl">
-    <Card
-      role="button"
-      tabIndex={0}
-      data-nav-item=""
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onClick={() => open(r.code)}
-      onKeyDown={(e) => e.key === 'Enter' && open(r.code)}
-      className={cx('group flex h-full cursor-pointer flex-col p-3.5 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', r.status === 'review' && 'border-reply/40 ring-1 ring-reply/30', draggable && 'active:cursor-grabbing')}
-    >
-      <div className="flex items-center gap-2 text-xs text-fg-3">
-        <PriorityTag p={r.priority} />
-        <RefChip code={r.code} status={r.status} link={false} />
-        {r.project_name && <span className="truncate">{r.project_name}</span>}
-        <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
-          <Menu
-            trigger={
-              <button className="rounded-md p-0.5 text-fg-3 opacity-0 transition group-hover:opacity-100 hover:bg-hover hover:text-fg focus:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100" aria-label={t.common.more}>
-                <MoreHorizontal className="size-4" />
-              </button>
-            }
-            items={statusItems(r, setStatus)}
-          />
-        </span>
-      </div>
-      <div className="mt-1.5 line-clamp-3 text-sm leading-snug font-medium text-fg">{r.title}</div>
-      {/* 徽章贴着卡片底边：同一排卡片高度一致、徽章对齐（R-77） */}
-      <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-2.5">
-        <PlanBadge r={r} />
-        <DesignBadge r={r} />
-        <ReleaseBadge r={r} />
-        {r.pending_decisions > 0 && (
-          <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
-            <span>
-              <Badge tone="wait" icon={<MessageCircleQuestion className="size-3" />}>
-                {r.pending_decisions}
-              </Badge>
-            </span>
-          </Tip>
-        )}
-        {own ? (
-          // 谁在做、到哪一步合成一个徽章，会话名跟在后面，放不下就截断（R-77）
-          own.tone !== 'locked' && <OwnBadge own={own} who={own.session ? sessionTitle(own.session) : undefined} className="max-w-full min-w-0" />
-        ) : actor && r.status !== 'done' && r.status !== 'shelved' && (
-          r.next_actor === 'user' ? <TurnSeal /> : <Badge tone="outline" icon={<Bot className="size-3" />}>{actor}</Badge>
-        )}
-        {r.sessions.length > 0 && !own?.session && (
-          <Tip content={t.reqs.sessionsTip(r.sessions.length)}>
-            <span className="inline-flex min-w-0 items-center gap-1 text-xs text-fg-3 tabular">
-              <Monitor className="size-3.5 shrink-0" />
-              {r.sessions.length}
-            </span>
-          </Tip>
-        )}
-      </div>
-    </Card></Ctx>
   )
 }
 

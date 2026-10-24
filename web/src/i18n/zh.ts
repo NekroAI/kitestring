@@ -558,7 +558,6 @@ export const zh = {
     dropHere: '放到这里',
     viewList: '列表',
     viewBoard: '看板',
-    sessionsTip: (x: number) => `${x} 个会话在做`,
     decisionsTip: (x: number) => `${x} 个待决策`,
   },
 
