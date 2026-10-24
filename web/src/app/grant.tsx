@@ -12,7 +12,7 @@ import { Linkify, RefChip } from '../ui/refmark'
 import { useActions } from './actions'
 import { sessionTitle } from './SessionCard'
 
-// 参谋授权窗口（R-163）：你不在时授权一个 Adv 会话，在到期前代你答复范围内的决策；代答留痕、可推翻。
+// 主助理授权窗口（R-163、R-190）：你不在时授权本项目的主助理，在到期前代你答复范围内的决策；代答留痕、可推翻。
 // 顶部横幅显示生效中的窗口（至几点、已代答几条、撤销）；授权面板里开窗口、看代答记录与授权记录。
 
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -72,7 +72,7 @@ function OpenForm({ projectId }: { projectId: string }) {
   const now = useNow()
   const sessions = useSessions()
   const { openGrant } = useActions()
-  const advs = (sessions.data?.sessions ?? []).filter((s) => s.project_id === projectId && s.role === 'advisor' && s.state !== 'ended' && s.state !== 'lost' && !s.done_at)
+  const advs = (sessions.data?.sessions ?? []).filter((s) => s.project_id === projectId && s.role === 'aide' && s.state !== 'ended' && s.state !== 'lost' && !s.done_at)
   const [key, setKey] = useState('')
   const [until, setUntil] = useState(() => localInput(new Date(Date.now() + 8 * 3600_000))) // 默认 8 小时后，可改
   const [risk, setRisk] = useState<'low' | 'medium'>('low')
@@ -88,7 +88,7 @@ function OpenForm({ projectId }: { projectId: string }) {
           width="min-w-[280px]"
           trigger={
             <Button className="w-full justify-start gap-2">
-              <RoleTag role="advisor" />
+              <RoleTag role="aide" />
               <span className="min-w-0 truncate">{pick ? sessionTitle(pick) : t.grant.pickAdv}</span>
             </Button>
           }
@@ -183,7 +183,7 @@ export function ProxyNote({ d, withOverride = true }: { d: Decision; withOverrid
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-fg-2">
-        <RoleTag role="advisor" />
+        <RoleTag role="aide" />
         <span>{t.grant.proxied}</span>
         {d.proxy_risk && <Badge tone="neutral">{t.grant.risk[d.proxy_risk]}</Badge>}
         {d.proxy_at && <span className="text-fg-3 tabular">{absTime(d.proxy_at)}</span>}
@@ -237,6 +237,10 @@ export function GrantPanel({ projectId, open, onClose }: { projectId: string; op
   const list = grants.data?.grants ?? []
   const active = list.find((g) => isActive(g, now))
   const project = projects.data?.projects.find((p) => p.id === projectId)
+  const sessions = useSessions()
+  // 身份调整（R-190）：最近一个窗口授权给的会话现在不是主助理（老的顾问窗口、卸任的主助理）——已失效，提示给主助理重新开
+  const last = list[0]
+  const stale = !active && last?.status === 'revoked' && (sessions.data?.sessions ?? []).find((x) => x.key === last.session_key)?.role !== 'aide'
   return (
     <Panel open={open} onClose={onClose} title={t.grant.title} subtitle={project?.name}>
       <div className="space-y-6">
@@ -246,7 +250,7 @@ export function GrantPanel({ projectId, open, onClose }: { projectId: string; op
             <ShieldCheck className="size-4 shrink-0 text-accent" />
             <span className="font-medium text-fg">{t.grant.banner(clock(active.expires_at))}</span>
             <span className="flex min-w-0 items-center gap-1.5 text-fg-2">
-              <RoleTag role="advisor" />
+              <RoleTag role="aide" />
               <span className="truncate">{name(active.session_key)}</span>
             </span>
             <span className="text-fg-2">{t.grant.scopeShort[active.max_risk]}</span>
@@ -255,7 +259,12 @@ export function GrantPanel({ projectId, open, onClose }: { projectId: string; op
             </Button>
           </div>
         ) : (
-          projectId && <OpenForm projectId={projectId} />
+          projectId && (
+            <div className="space-y-3">
+              {stale && <p className="rounded-xl border border-wait/40 bg-wait/10 px-3.5 py-2.5 text-sm leading-relaxed text-fg-2">{t.grant.staleGrant(last.code)}</p>}
+              <OpenForm projectId={projectId} />
+            </div>
+          )
         )}
 
         <section>

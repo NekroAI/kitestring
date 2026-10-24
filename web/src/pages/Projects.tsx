@@ -160,12 +160,21 @@ function Section({ title, right, children }: { title: string; right?: ReactNode;
 // Team：这个项目有没有 PM、几个开发在线（R-84）。没有任何身份会话时不显示；Dev 离线不当异常（R-169）。
 export function Team({ sessions }: { sessions: Session[] }) {
   const pm = sessions.filter((s) => s.role === 'pm').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
+  const aide = sessions.filter((s) => s.role === 'aide' && s.state !== 'ended').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
   const devs = sessions.filter((s) => s.role === 'dev' && s.state !== 'ended')
   const online = devs.filter((s) => presence(s) !== 'offline').length
-  if (!pm && !devs.length) return null
+  if (!pm && !devs.length && !aide) return null
   const pp = pm ? presence(pm) : 'offline'
+  const ap = aide ? presence(aide) || 'offline' : 'offline'
   return (
     <span className="flex shrink-0 items-center gap-3 text-xs text-fg-3">
+      {/* 主助理（R-190）：有才显示，和主调度一样每项目一个 */}
+      {aide && (
+        <span className="flex items-center gap-1.5">
+          <span className={cx('size-1.5 rounded-full', presenceDot[ap])} />
+          {t.projects.aide(t.presence[ap])}
+        </span>
+      )}
       <span className="flex items-center gap-1.5">
         <span className={cx('size-1.5 rounded-full', presenceDot[pp])} />
         {pm ? t.projects.pm(t.presence[pp]) : t.projects.noPm}

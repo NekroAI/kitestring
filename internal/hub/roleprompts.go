@@ -76,7 +76,7 @@ func (h *Hub) broadcastRolePrompts(ctx context.Context) {
 
 // RolePromptView 是设置页上一个身份的提示词状态。
 type RolePromptView struct {
-	Role     string `json:"role" doc:"pm / dev / advisor / reviewer"`
+	Role     string `json:"role" doc:"aide / advisor / reviewer / pm / dev"`
 	Label    string `json:"label" doc:"显示名（英文简写：Aide / Adv / Rev / PM / Dev）"`
 	Default  string `json:"default" doc:"当前版本内置的默认模板正文"`
 	Body     string `json:"body" doc:"正在使用的正文：改写过的是改写版，否则等于默认模板"`
@@ -105,7 +105,7 @@ func (h *Hub) registerRolePromptsWeb(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "set-role-prompt", Method: http.MethodPut, Path: "/api/role-prompts/{role}", Tags: []string{"settings"}, Summary: "改写某个身份的提示词（只有网页能改，R-98）"},
 		func(ctx context.Context, in *struct {
-			Role string `path:"role" enum:"pm,dev,advisor,reviewer"`
+			Role string `path:"role" enum:"aide,advisor,reviewer,pm,dev"`
 			Body struct {
 				Body string `json:"body" doc:"提示词正文（不含固定的身份抬头）；与默认模板一致时等同于恢复默认"`
 			}
@@ -129,7 +129,7 @@ func (h *Hub) registerRolePromptsWeb(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "reset-role-prompt", Method: http.MethodDelete, Path: "/api/role-prompts/{role}", Tags: []string{"settings"}, Summary: "恢复某个身份的默认提示词（R-98）"},
 		func(ctx context.Context, in *struct {
-			Role string `path:"role" enum:"pm,dev,advisor,reviewer"`
+			Role string `path:"role" enum:"aide,advisor,reviewer,pm,dev"`
 		}) (*struct{ Body RolePromptView }, error) {
 			return h.restoreRolePrompt(ctx, in.Role)
 		})

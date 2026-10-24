@@ -68,7 +68,7 @@ type Session struct {
 	ContextTokens    int              `json:"context_tokens"`                       // 最近一轮结束时的上下文 token 数（R-60）
 	ContextMax       int              `json:"context_max"`                          // 上下文窗口；不知道时为 0
 	Background       bool             `json:"background"`                           // 桌面应用自己在后台发起的任务（如 Codex 的项目建议），不是你的对话：不进工作台与各种计数、不参与派活（R-179）
-	Role             string           `json:"role" enum:",pm,dev,advisor,reviewer"` // 会话身份（R-82）：pm 开发 dev 顾问 advisor 审查员 reviewer，空为无身份
+	Role             string           `json:"role" enum:",aide,advisor,reviewer,pm,dev"` // 会话身份（R-82、R-190）：主助理 aide、顾问 advisor、评审 reviewer、主调度 pm、开发 dev，空为无身份
 	RecentTools      []ToolAct        `json:"recent_tools"`                         // 最近几次工具调用，旧 → 新（工作台滚动展示）
 	Ticks            []time.Time      `json:"ticks"`                                // 主会话近 10 分钟的工具调用时刻，旧 → 新，最多 maxSessionTicks 个（工作台时间线，R-170）
 	Tasks            []BgTask         `json:"tasks"`                                // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前

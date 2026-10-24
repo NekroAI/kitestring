@@ -48,7 +48,7 @@ type morningRelease struct {
 	RequirementCode  string    `json:"requirement_code"`
 	RequirementTitle string    `json:"requirement_title"`
 	By               string    `json:"by"`
-	Role             string    `json:"role" doc:"放行时的身份：pm / advisor"`
+	Role             string    `json:"role" doc:"放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor）"`
 	Reason           string    `json:"reason"`
 	Withdrawn        bool      `json:"withdrawn" doc:"已被你撤回"`
 	At               time.Time `json:"at"`

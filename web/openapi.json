@@ -3482,7 +3482,7 @@
             "type": "string"
           },
           "role": {
-            "description": "放行时的身份：pm / advisor",
+            "description": "放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor）",
             "type": "string"
           },
           "withdrawn": {
@@ -4524,7 +4524,7 @@
             "type": "string"
           },
           "role": {
-            "description": "放行时的身份：pm / advisor",
+            "description": "放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor）",
             "type": "string"
           }
         },
@@ -5195,7 +5195,7 @@
             "type": "boolean"
           },
           "role": {
-            "description": "pm / dev / advisor / reviewer",
+            "description": "aide / advisor / reviewer / pm / dev",
             "type": "string"
           }
         },
@@ -5337,10 +5337,11 @@
           "role": {
             "enum": [
               "",
-              "pm",
-              "dev",
+              "aide",
               "advisor",
-              "reviewer"
+              "reviewer",
+              "pm",
+              "dev"
             ],
             "type": "string"
           },
@@ -5864,7 +5865,7 @@
             "type": "string"
           },
           "role": {
-            "description": "会话当时的身份：pm / dev / advisor / reviewer",
+            "description": "会话当时的身份：aide / advisor / reviewer / pm / dev",
             "type": "string"
           },
           "session": {
@@ -10292,10 +10293,11 @@
             "required": true,
             "schema": {
               "enum": [
-                "pm",
-                "dev",
+                "aide",
                 "advisor",
-                "reviewer"
+                "reviewer",
+                "pm",
+                "dev"
               ],
               "type": "string"
             }
@@ -10337,10 +10339,11 @@
             "required": true,
             "schema": {
               "enum": [
-                "pm",
-                "dev",
+                "aide",
                 "advisor",
-                "reviewer"
+                "reviewer",
+                "pm",
+                "dev"
               ],
               "type": "string"
             }

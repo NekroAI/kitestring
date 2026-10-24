@@ -26,14 +26,14 @@ export function useOwnership() {
   const owner = (r: Requirement) =>
     r.sessions
       .map((k) => byKey.get(k))
-      .filter((s) => live(s) && s!.role !== 'advisor' && s!.role !== 'reviewer') // 退回意见也不送顾问 / 审查员（R-167）
+      .filter((s) => live(s) && s!.role !== 'advisor' && s!.role !== 'reviewer' && s!.role !== 'aide') // 退回意见也不送主助理 / 顾问 / 评审（R-167、R-190）
       // PM 只管派活：需求同时关联了开发等其他会话时，看板显示真正在做的那个（R-86）
       .sort((a, b) => Number(a!.role === 'pm') - Number(b!.role === 'pm') || b!.last_active_at.localeCompare(a!.last_active_at))[0]
   // 排队归属：和后端 queueOwner 一致，跳过顾问 / 审查员（R-150）
   const queueOwner = (r: Requirement) =>
     r.sessions
       .map((k) => byKey.get(k))
-      .filter((s) => live(s) && s!.role !== 'advisor' && s!.role !== 'reviewer')
+      .filter((s) => live(s) && s!.role !== 'advisor' && s!.role !== 'reviewer' && s!.role !== 'aide')
       .sort((a, b) => b!.last_active_at.localeCompare(a!.last_active_at))[0]
   const autoOff = (pid?: string) => !!pid && projects.data?.projects.find((p) => p.id === pid)?.auto_dispatch === false
 
@@ -57,7 +57,7 @@ export function useOwnership() {
     // 没有关联会话的需求归项目的 PM（R-85），和后端排队规则一致
     const s = queueOwner(r) ?? (sessions.data?.sessions ?? []).find((x) => x.role === 'pm' && x.project_id === r.project_id && live(x))
     if (!s) {
-      const onlyAdvRev = r.sessions.map((k) => byKey.get(k)).some((x) => live(x) && (x!.role === 'advisor' || x!.role === 'reviewer'))
+      const onlyAdvRev = r.sessions.map((k) => byKey.get(k)).some((x) => live(x) && (x!.role === 'advisor' || x!.role === 'reviewer' || x!.role === 'aide'))
       return { tone: 'nobody', short: t.own.nobodyShort, text: onlyAdvRev ? t.own.nobodyNoPM : r.sessions.length ? t.own.nobodyGone : t.own.nobody, canAssign: true }
     }
     if (autoOff(r.project_id)) return { tone: 'off', short: t.own.offShort, text: t.own.off(sessionTitle(s)), session: s, canAssign: true }

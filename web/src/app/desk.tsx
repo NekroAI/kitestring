@@ -203,7 +203,7 @@ export function RecentRail({ now, className, limit = 14, fill }: { now: number; 
 const groupSessions = (g: ProjectGroup) => [...g.active, ...g.threads.map((th) => th.s).filter((x): x is Session => !!x)]
 
 export function TeamRail({ groups, className }: { groups: ProjectGroup[]; className?: string }) {
-  const rows = groups.filter((g) => groupSessions(g).some((s) => s.role === 'pm' || s.role === 'dev'))
+  const rows = groups.filter((g) => groupSessions(g).some((s) => s.role === 'pm' || s.role === 'dev' || s.role === 'aide'))
   if (!rows.length) return null
   return (
     <Panel title={t.desk.teamTitle} className={className}>
@@ -249,11 +249,11 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
   const b = briefs[0]
   const old = stale[0]
   const head = r
-    ? { role: 'advisor', who: find(r.note?.by ?? r.grant?.session_key), any: true, label: t.morning.title, text: r.note?.text ?? t.morning.noNote, at: r.note?.at ?? r.since, folded: false }
+    ? { role: 'aide', who: find(r.note?.by ?? r.grant?.session_key), any: true, label: t.morning.title, text: r.note?.text ?? t.morning.noNote, at: r.note?.at ?? r.since, folded: false }
     : b
       ? { role: 'pm', who: find(b.brief_by), any: false, label: briefs.length > 1 ? b.name : '', text: b.brief ?? '', at: b.brief_at, folded: false }
       : old
-        ? { role: 'advisor', who: find(old.note?.by ?? old.grant?.session_key), any: true, label: '', text: t.desk.awayEnded(relTime(awayEnd(old), now)), at: awayEnd(old), folded: true }
+        ? { role: 'aide', who: find(old.note?.by ?? old.grant?.session_key), any: true, label: '', text: t.desk.awayEnded(relTime(awayEnd(old), now)), at: awayEnd(old), folded: true }
         : null
   const more = fresh.length + briefs.length + (head?.folded ? 0 : stale.length) - (head && !head.folded ? 1 : 0)
   useEffect(() => {

@@ -11,6 +11,8 @@ import { t } from '../i18n'
 import { absTime, copyText, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
 import { usePenOnly } from '../ui/annotate'
+import { roleNameIn, useRoleLang, type RoleLang } from '../i18n/roles'
+import { RoleTag } from '../ui/marks'
 import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
@@ -708,8 +710,44 @@ function Appearance() {
           </button>
         ))}
       </div>
+      <RoleNamesGroup />
       <AnnotateGroup />
     </>
+  )
+}
+
+// 身份名（R-190）：显示中文（主助理 / 顾问 / 评审 / 主调度 / 开发）还是英文（Aide / Adv / Rev / PM / Dev），默认跟随界面语言；本机偏好。
+function RoleNamesGroup() {
+  const [lang, setLang] = useRoleLang()
+  const order = ['aide', 'advisor', 'reviewer', 'pm', 'dev']
+  return (
+    <Group title={t.roleNames.title}>
+      <Card className="overflow-hidden">
+        <Row className="flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-fg">{t.roleNames.label}</div>
+            <div className="mt-0.5 text-xs text-fg-3">{t.roleNames.hint}</div>
+          </div>
+          <Segmented<RoleLang>
+            value={lang}
+            onChange={setLang}
+            options={[
+              { value: 'auto', label: t.roleNames.auto },
+              { value: 'zh', label: t.roleNames.zh },
+              { value: 'en', label: t.roleNames.en },
+            ]}
+          />
+        </Row>
+        <Row>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" data-role-preview>
+            {order.map((r) => (
+              <RoleTag key={r} role={r} />
+            ))}
+            <span className="ml-1 text-xs text-fg-3">{t.roleNames.preview(order.map((r) => `${roleNameIn(r, 'zh')} ${roleNameIn(r, 'en')}`).join(' · '))}</span>
+          </div>
+        </Row>
+      </Card>
+    </Group>
   )
 }
 
