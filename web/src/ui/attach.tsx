@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, animate as animateValue, motion, useMotionValue, useMotionValueEvent, useTransform, type AnimationPlaybackControls } from 'motion/react'
 import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
 import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
 import { Annotator, shield, useAnnotateTarget } from './annotate'
-import { BoxLayer, BoxLegend, BoxToggle, shotTitle, type Box } from './shots'
+import { BoxLayer, shotTitle, type Box } from './shots'
+import { boxLabel, focusView, type Cite } from '../lib/proofs'
 import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
@@ -224,31 +225,61 @@ export function Thumbs({ files, size }: { files?: FileRef[] | null; size?: 'sm' 
   )
 }
 
-// Lightbox：看大图。同组图片排成一条胶片带（R-69）：手指 / 触控板拖多少，带子就跟着走多少；
+// ViewShot：看图时的一张图。证据截图另带改前（before，对比块）、这张图证明的验收点（cites：证据有验收清单时才有，
+// 空数组表示是补充图）和标注文字的写法（explicit：新写法原样显示，老证据去掉开头的编号）。其它地方的图就是普通附件。
+export type ViewShot = FileRef & { before?: FileRef | null; cites?: Cite[] | null; explicit?: boolean }
+
+// 看图（R-195）：全站只有这一种看图。上面是「图 i / n · 标题 · 改后 / 改前 · 标注 · 关闭」，
+// 有标注或对应验收点时右边多一栏「这张图证明」「标注」（手机上是底部列表），点哪条就放大到哪个框、其余变暗；
+// 下面是同组图片的胶片（手机上不显示，左右滑翻页）。空格切改前 / 改后，← → 翻图。没有标注、也不对应验收点的图不显示右栏，只能翻图和缩放。
+//
+// Lightbox：同组图片排成一条胶片带（R-69）：手指 / 触控板拖多少，带子就跟着走多少；
 // 松手按位移与速度决定翻页还是弹回，弹簧动画随时可被新的手势打断、从当前位置接着拖（像 macOS 的可中断动画）。
 // 一次手势最多走一页：触控板的惯性滚动到了一页的边界就直接落定，不会连翻。
-export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]; children: ReactNode }) {
+// focus：打开时直接放大到这张图的第几个框（验收点旁边的证据小图点进来时）。
+export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; group?: ViewShot[]; focus?: number | null; children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const stop = (e: SyntheticEvent) => e.stopPropagation()
   // 同组里能看的（图片、录屏）；不在组里就只看这一张
-  const list = group?.some((x) => x.id === f.id) ? group : [f]
+  const list: ViewShot[] = group?.some((x) => x.id === f.id) ? group : [f]
   const start = Math.max(0, list.findIndex((x) => x.id === f.id))
   const n = list.length
-  const at = (k: number) => list[(((start + k) % n) + n) % n]
+  const idxOf = (k: number) => (((start + k) % n) + n) % n
+  const at = (k: number) => list[idxOf(k)]
+  const [stage, setStage] = useState<HTMLDivElement | null>(null)
   const [W, setW] = useState(() => (typeof window === 'undefined' ? 1000 : window.innerWidth))
-  useEffect(() => {
-    const onResize = () => setW(window.innerWidth)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640)
+  useLayoutEffect(() => {
+    if (!stage) return
+    const measure = () => {
+      setW(stage.clientWidth || window.innerWidth)
+      setPhone(window.innerWidth < 640)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(stage)
+    return () => ro.disconnect()
+  }, [stage])
   const pos = useMotionValue(0) // 胶片带位置：第 k 页在 k * W
   const trackX = useTransform(pos, (v) => -v)
   const [k, setK] = useState(0)
-  useMotionValueEvent(pos, 'change', (v) => setK(Math.round(v / W)))
+  const kRef = useRef(0)
+  const [hideBoxes, setHideBoxes] = useState(false) // 标注开关：翻页时保持同一个
+  const [focus, setFocus] = useState<number | null>(null) // 当前页放大到的框
+  const [lit, setLit] = useState<number | null>(null) // 右栏点中的验收点（第几条清单项）
+  const [before, setBefore] = useState(false) // 对比图正在看改前
+  useMotionValueEvent(pos, 'change', (v) => {
+    const np = Math.round(v / W)
+    if (np === kRef.current) return
+    kRef.current = np
+    setK(np)
+    setFocus(null) // 翻到别的图：复原，回到改后
+    setLit(null)
+    setBefore(false)
+  })
   const anim = useRef<AnimationPlaybackControls | null>(null)
   const gesture = useRef<Gesture | null>(null)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
-  const [hideBoxes, setHideBoxes] = useState(false) // 改动框（R-183）：翻页时保持同一个开关
 
   const aim = useRef<number | null>(null) // 正在弹向的那一页：动画中途再翻页时从它往后数
   const snapTo = (page: number, velocity = 0) => {
@@ -341,10 +372,19 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
     }
     return true
   }
+  const cur = at(k)
+  const hasBefore = !!cur.before
   useEffect(() => {
     if (!open) return
-    // 看图时左右键归看图器：先于后面的需求抽屉（它也用左右键切换需求）拿到并拦下
+    // 看图时左右键、空格归看图器：先于后面的需求抽屉（它也用左右键切换需求）拿到并拦下
     const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable=true]')) return
+      if (e.key === ' ' && hasBefore) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        setBefore((v) => !v)
+        return
+      }
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
       e.stopImmediatePropagation()
       if (n > 1) go(e.key === 'ArrowRight' ? 1 : -1)
@@ -352,7 +392,7 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, n, W])
+  }, [open, n, W, hasBefore])
   // 预取前后两张，切换时不闪白
   useEffect(() => {
     if (!open || n < 2) return
@@ -360,9 +400,20 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, k])
 
-  const cur = at(k)
-  const nav: Nav | undefined = n > 1 ? { i: (((start + k) % n) + n) % n, n, go, begin, move, end, wheel } : undefined
+  const nav: Nav | undefined = n > 1 ? { i: idxOf(k), n, go, begin, move, end, wheel } : undefined
   const pages = n > 1 ? [k - 1, k, k + 1] : [0]
+  const boxes = cur.boxes ?? []
+  const cites = cur.cites
+  // 右栏：这张图有标注、或对应了验收点时才有；手机上变成底部列表
+  const side = !isVideo(cur.mime) && (boxes.length > 0 || !!cites?.length)
+  const sideW = side && !phone ? 300 : 0
+  const sideH = side && phone ? Math.round(Math.min(260, (typeof window === 'undefined' ? 800 : window.innerHeight) * 0.34)) : 0
+  const pickBox = (bi: number | null, ck: number | null = null) => {
+    setBefore(false)
+    setLit(ck)
+    setFocus((x) => (ck == null && x === bi ? null : bi))
+  }
+  const seg = 'rounded-md px-2.5 py-1 text-xs transition pointer-coarse:px-3 pointer-coarse:py-1.5'
   return (
     <Dialog.Root
       open={open}
@@ -370,7 +421,16 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
         if (o) {
           anim.current?.stop()
           pos.set(0)
+          kRef.current = 0
           setK(0)
+          setBefore(false)
+          setLit(null)
+          setFocus(focusAt ?? null)
+          if (focusAt != null) {
+            // 从验收点的小图点进来：右栏同时点亮它证明的那条验收点
+            const c = f.cites?.find((x) => x.bi === focusAt)
+            setLit(c ? c.k : null)
+          }
         }
         setOpen(o)
       }}
@@ -382,18 +442,123 @@ export function Lightbox({ f, group, children }: { f: FileRef; group?: FileRef[]
         {open && (
           <Dialog.Portal forceMount>
             <Dialog.Overlay asChild forceMount>
-              <motion.div className="fixed inset-0 z-[70] bg-black/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
+              <motion.div className="fixed inset-0 z-[70] bg-[#141210]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} />
             </Dialog.Overlay>
-            <Dialog.Content forceMount aria-describedby={undefined} data-ks-modal="" {...shield} className="fixed inset-0 z-[70] overflow-hidden outline-none">
+            <Dialog.Content forceMount aria-describedby={undefined} data-ks-modal="" data-viewer="" {...shield} className="fixed inset-0 z-[70] flex flex-col overflow-hidden text-white outline-none">
               <Dialog.Title className="sr-only">{shotTitle(cur)}</Dialog.Title>
-              <motion.div className="absolute inset-0" style={{ x: trackX }}>
-                {pages.map((j) => (
-                  <div key={j} className="absolute inset-0" style={{ transform: `translateX(${j * W}px)` }}>
-                    <Viewer f={at(j)} active={j === k} intro={j === 0} chromeHost={host} onClose={() => setOpen(false)} nav={nav} hideBoxes={hideBoxes} onToggleBoxes={() => setHideBoxes((v) => !v)} />
-                  </div>
-                ))}
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1.5 px-3 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 text-[13px] sm:flex-nowrap sm:px-4">
+                {nav && <span className="shrink-0 text-white/55 tabular">{t.proof.figure(nav.i + 1)} / {nav.n}</span>}
+                <span className="min-w-0 flex-1 truncate font-medium max-sm:order-last max-sm:line-clamp-2 max-sm:basis-full max-sm:whitespace-normal" title={shotTitle(cur)}>
+                  {shotTitle(cur)}
+                </span>
+                <span className="ml-auto flex shrink-0 items-center gap-2.5">
+                  {hasBefore && (
+                    <span className="inline-flex shrink-0 rounded-lg border border-white/25 bg-black/40 p-0.5" role="group" aria-label={t.viewer.toggleHint} title={t.viewer.toggleHint}>
+                      <button className={cx(seg, !before ? 'bg-white text-black' : 'text-white/80 hover:text-white')} aria-pressed={!before} onClick={() => setBefore(false)}>
+                        {t.viewer.after}
+                      </button>
+                      <button className={cx(seg, before ? 'bg-white text-black' : 'text-white/80 hover:text-white')} aria-pressed={before} onClick={() => setBefore(true)}>
+                        {t.viewer.before}
+                      </button>
+                    </span>
+                  )}
+                  {boxes.length > 0 && !before && (
+                    <button aria-pressed={!hideBoxes} onClick={() => setHideBoxes((v) => !v)} className={cx('shrink-0 rounded-lg border border-white/25 p-0.5', 'bg-black/40')}>
+                      <span className={cx(seg, 'block', !hideBoxes ? 'bg-white text-black' : 'text-white/80 hover:text-white')}>{t.viewer.boxes}</span>
+                    </button>
+                  )}
+                  <Dialog.Close asChild>
+                    <button aria-label={t.common.close} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/12 text-white transition hover:bg-white/25 active:scale-95">
+                      <X className="size-[18px]" />
+                    </button>
+                  </Dialog.Close>
+                </span>
               </motion.div>
-              <div ref={setHost} className="pointer-events-none absolute inset-0" />
+              <div ref={setStage} className="relative min-h-0 flex-1 overflow-hidden">
+                <motion.div className="absolute inset-0" style={{ x: trackX }}>
+                  {pages.map((j) => (
+                    <div key={j} className="absolute inset-0" style={{ transform: `translateX(${j * W}px)` }}>
+                      <Viewer
+                        f={at(j)}
+                        active={j === k}
+                        intro={j === 0}
+                        chromeHost={host}
+                        onClose={() => setOpen(false)}
+                        nav={nav}
+                        hideBoxes={hideBoxes}
+                        focus={j === k ? focus : null}
+                        before={j === k && before}
+                        onUnfocus={() => {
+                          setFocus(null)
+                          setLit(null)
+                        }}
+                        padRight={j === k ? sideW : at(j).boxes?.length || at(j).cites?.length ? sideW : 0}
+                        padBottom={j === k ? sideH : 0}
+                      />
+                    </div>
+                  ))}
+                </motion.div>
+                <div ref={setHost} className="pointer-events-none absolute inset-0" style={{ right: sideW, bottom: sideH }} />
+                {side && (
+                  <motion.aside
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className={cx(
+                      'absolute overflow-y-auto overscroll-contain bg-[#1b1916]/95 px-3 pb-4 text-[13px] text-white/90 [scrollbar-width:thin]',
+                      phone ? 'inset-x-0 bottom-0 border-t border-white/12 pb-[max(1rem,env(safe-area-inset-bottom))]' : 'top-0 right-0 bottom-0 border-l border-white/12',
+                    )}
+                    style={phone ? { height: sideH } : { width: sideW }}
+                  >
+                    {cites && (
+                      <>
+                        <h3 className="mt-3 mb-1.5 px-2 text-[11.5px] font-medium tracking-[0.05em] text-white/55">{t.viewer.proves}</h3>
+                        {cites.length ? (
+                          cites.map((c) => (
+                            <button key={c.k} onClick={() => pickBox(c.bi, c.k)} className={cx('flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left leading-normal transition', lit === c.k ? 'bg-white/14' : 'hover:bg-white/8')}>
+                              <span className={cx('mt-px shrink-0', c.result === 'fail' ? 'text-[#ec7a63]' : c.result === 'ask' ? 'text-[#e8b54a]' : 'text-[#72c7a0]')}>{c.result === 'fail' ? '✕' : c.result === 'ask' ? '?' : '✓'}</span>
+                              <span className="min-w-0 break-words">
+                                {c.n}. {c.text}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <p className="px-2 py-1 text-[12.5px] text-white/50">{t.viewer.proveNone}</p>
+                        )}
+                      </>
+                    )}
+                    {boxes.length > 0 && (
+                      <>
+                        <h3 className="mt-3 mb-1.5 px-2 text-[11.5px] font-medium tracking-[0.05em] text-white/55">
+                          {t.viewer.marks(boxes.length)}
+                          {before && t.viewer.marksBefore}
+                        </h3>
+                        {boxes.map((b, bi) => (
+                          <button key={bi} onClick={() => pickBox(bi)} className={cx('flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left leading-normal transition', focus === bi && lit == null ? 'bg-white/14' : 'hover:bg-white/8')}>
+                            <span className="mt-0.5 flex h-[18px] min-w-5 shrink-0 items-center justify-center rounded-[4px] bg-seal px-1 text-[11px] font-semibold text-seal-fg tabular">{bi + 1}</span>
+                            <span className="min-w-0 break-words">{boxLabel(b, !!cur.explicit) || shotTitle(cur)}</span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </motion.aside>
+                )}
+              </div>
+              {nav && !phone && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex shrink-0 gap-2 overflow-x-auto border-t border-white/12 px-3.5 py-2.5 [scrollbar-width:thin]">
+                  {list.map((x, i) => (
+                    <button
+                      key={x.id + i}
+                      aria-label={shotTitle(x)}
+                      onClick={() => i !== nav.i && go(i - nav.i)}
+                      className={cx('relative h-[58px] w-[92px] shrink-0 overflow-hidden rounded-[7px] border-2 bg-white/5 transition', i === nav.i ? 'border-white' : 'border-transparent opacity-70 hover:opacity-100')}
+                    >
+                      {isVideo(x.mime) ? <video src={`${fileUrl(x.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover object-left-top" /> : <img src={fileUrl(x.id)} alt="" loading="lazy" className="size-full object-cover object-left-top" />}
+                      <span className="absolute bottom-[3px] left-[3px] rounded-[4px] bg-black/60 px-1 text-[10.5px] leading-[15px] tabular">{t.proof.figure(i + 1)}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
             </Dialog.Content>
           </Dialog.Portal>
         )}
@@ -409,19 +574,49 @@ type Gesture = { from: number; page: number; acc: number; samples: { t: number; 
 const LOCK_MS = 800
 
 // Viewer：胶片带上的一页。滚轮上下滚（鼠标滚轮、触控板双指上下滑）与触控板捏合缩放，放大后拖动平移；
-// 触屏双指缩放、单指拖动、下滑关闭；单击任意处关闭（拖动、平移、捏合后松手不算）。
-// 左右滑（触屏左右拖、触控板双指左右滑）交给胶片带翻页。按钮、页码等只由当前页画在胶片带外面（chromeHost）。
+// 触屏双指缩放、单指拖动、下滑关闭；单击任意处关闭（拖动、平移、捏合后松手不算；放大到某个框时单击是复原）。
+// 左右滑（触屏左右拖、触控板双指左右滑）交给胶片带翻页。翻页按钮、缩放复原等只由当前页画在胶片带外面（chromeHost）。
+// focus：放大到第几个框（右栏点的、或从证据小图点进来的）；before：对比图看改前（不画框）。
+// padRight / padBottom：右栏（手机上是底部列表）占掉的宽 / 高，图在剩下的地方居中。
 // 清晰度：静止时图片不挂 transform；放大停下后直接按放大后的宽高排版，让浏览器按原图高质量重采样，
 // 只有手势和动画进行中才用 transform 跟手（R-121）。
 type Nav = { i: number; n: number; go: (d: number) => void; begin: () => void; move: (dx: number) => void; end: () => void; wheel: (dx: number, dy: number) => boolean }
 
-function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hideBoxes = false, onToggleBoxes }: { f: FileRef; onClose: () => void; nav?: Nav; active?: boolean; intro?: boolean; chromeHost?: HTMLElement | null; hideBoxes?: boolean; onToggleBoxes?: () => void }) {
+function Viewer({
+  f,
+  onClose,
+  nav,
+  active = true,
+  intro = true,
+  chromeHost,
+  hideBoxes = false,
+  focus = null,
+  before = false,
+  onUnfocus,
+  padRight = 0,
+  padBottom = 0,
+}: {
+  f: ViewShot
+  onClose: () => void
+  nav?: Nav
+  active?: boolean
+  intro?: boolean
+  chromeHost?: HTMLElement | null
+  hideBoxes?: boolean
+  focus?: number | null
+  before?: boolean
+  onUnfocus?: () => void
+  padRight?: number
+  padBottom?: number
+}) {
   const box = useRef<HTMLDivElement>(null)
+  const area = useRef<HTMLDivElement>(null)
   const [v, setV] = useState<View>({ s: 1, x: 0, y: 0 })
   const [smooth, setSmooth] = useState(false)
   const [live, setLive] = useState(false) // 手势 / 动画进行中：用 transform 跟手；停下后换成真实宽高
   const liveTimer = useRef(0)
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
+  const [room, setRoom] = useState<{ w: number; h: number }>({ w: 0, h: 0 }) // 放图的地方（去掉边距和右栏）
   const cur = useRef(v)
   cur.current = v
   const pts = useRef(new Map<number, { x: number; y: number }>())
@@ -432,8 +627,19 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hide
   const [annotating, setAnnotating] = useState(false)
   const onBackdrop = useRef(false) // 按下时是否在图片外（指针捕获后 click 的 target 不可靠）
   const video = isVideo(f.mime)
+  const src = before && f.before ? f.before : f
 
-  // 以屏幕点 (cx, cy)（相对视口中心）为锚点缩放到 ns。
+  useLayoutEffect(() => {
+    const el = area.current
+    if (!el) return
+    const measure = () => setRoom({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // 以屏幕点 (cx, cy)（相对放图区域中心）为锚点缩放到 ns。
   const zoomAt = (ns: number, cx: number, cy: number, base = cur.current): View => {
     const s = clamp(ns, 1, 8)
     if (s === 1) return { s: 1, x: 0, y: 0 }
@@ -441,7 +647,7 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hide
     return { s, x: cx - (cx - base.x) * k, y: cy - (cy - base.y) * k }
   }
   const rel = (x: number, y: number) => {
-    const r = box.current!.getBoundingClientRect()
+    const r = (area.current ?? box.current!).getBoundingClientRect()
     return { x: x - r.left - r.width / 2, y: y - r.top - r.height / 2 }
   }
   const wake = (ms = 160) => {
@@ -456,16 +662,32 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hide
   }
   // 动画：先在当前视图上切回 transform（几何不变），下一帧再改目标，过渡才有起点
   const animate = (nv: View) => {
-    wake(340)
+    wake(380)
     setSmooth(true)
     requestAnimationFrame(() => requestAnimationFrame(() => setV(nv)))
-    window.setTimeout(() => setSmooth(false), 320)
+    window.setTimeout(() => setSmooth(false), 360)
   }
   useEffect(() => () => window.clearTimeout(liveTimer.current), [])
   // 翻走的那一页复原，翻回来时不是放大的
   useEffect(() => {
     if (!active) setV({ s: 1, x: 0, y: 0 })
   }, [active])
+  // 适配缩放：图按原尺寸放进放图区域（不放大）
+  const fit = nat && room.w && room.h ? Math.min(1, room.w / nat.w, room.h / nat.h) : 0
+  // 放大到框：框占放图区域六成左右；取消时复原
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!active || video) return
+    const b = focus != null && !before ? f.boxes?.[focus] : null
+    if (b && nat && fit) {
+      focused.current = true
+      animate(focusView(b, { w: nat.w * fit, h: nat.h * fit }, room, nat.w))
+    } else if (focused.current) {
+      focused.current = false
+      animate({ s: 1, x: 0, y: 0 })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus, before, !!nat, fit, active])
 
   const navRef = useRef(nav)
   navRef.current = nav
@@ -565,17 +787,17 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hide
     }
   }
   const fade = v.s === 1 && v.y > 0 ? Math.max(0.3, 1 - v.y / 400) : 1
-  // 图片样式：静止且没放大时什么都不挂；放大停下后按放大后的宽高排版（不靠 scale 放大位图）；手势中用 transform 跟手
+  // 图片样式：知道原图尺寸后按适配缩放的宽高排版；放大停下后按放大后的宽高排版（不靠 scale 放大位图）；手势中用 transform 跟手
   const imgStyle = (): CSSProperties => {
     const rest = v.s === 1 && v.x === 0 && v.y === 0
-    if (rest && !smooth) return {}
-    const el = box.current
-    if (v.s > 1 && !live && !smooth && nat && el) {
-      const fit = Math.min(1, (el.clientWidth - 32) / nat.w, (el.clientHeight - 32) / nat.h)
+    const base: CSSProperties = nat && fit ? { width: nat.w * fit, height: nat.h * fit } : { maxWidth: room.w || undefined, maxHeight: room.h || undefined }
+    if (rest && !smooth) return base
+    if (v.s > 1 && !live && !smooth && nat && fit) {
       return { width: nat.w * fit * v.s, height: nat.h * fit * v.s, maxWidth: 'none', maxHeight: 'none', transform: `translate(${Math.round(v.x)}px, ${Math.round(v.y)}px)` }
     }
-    return { transform: rest ? 'none' : `translate(${v.x}px, ${v.y}px) scale(${v.s})`, transition: smooth ? 'transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none' }
+    return { ...base, transform: rest ? 'none' : `translate(${v.x}px, ${v.y}px) scale(${v.s})`, transition: smooth ? 'transform 0.34s cubic-bezier(0.2, 0.7, 0.2, 1)' : 'none' }
   }
+  const style = imgStyle()
 
   return (
     <>
@@ -585,82 +807,76 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hide
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        onClick={() => (onBackdrop.current || !video) && !moved.current && onClose()} // 录屏只在画面外单击才关，免得点控件时关掉
-        className={cx('absolute inset-0 flex items-center justify-center overflow-hidden p-4 select-none', !video && 'touch-none', v.s > 1 && 'cursor-grab active:cursor-grabbing')}
+        onClick={() => {
+          if (!(onBackdrop.current || !video) || moved.current) return // 录屏只在画面外单击才关，免得点控件时关掉
+          if (focus != null && onUnfocus) return onUnfocus() // 放大到某个框时：单击复原
+          onClose()
+        }}
+        className={cx('absolute inset-0 overflow-hidden select-none', !video && 'touch-none', v.s > 1 && 'cursor-grab active:cursor-grabbing')}
         style={{ opacity: fade }}
       >
-        <motion.div initial={intro ? { opacity: 0, scale: 0.94 } : false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }} className="pointer-events-none flex max-h-full max-w-full items-center justify-center">
-          {video ? (
-            <video src={fileUrl(f.id)} controls autoPlay playsInline className="pointer-events-auto max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg bg-black shadow-pop" />
-          ) : (
-            // 图和改动框包在同一个容器里一起缩放、平移（R-183）
-            <div className="pointer-events-auto relative shrink-0 rounded-lg shadow-pop" style={imgStyle()}>
-              <img
-                src={fileUrl(f.id)}
-                alt={shotTitle(f)}
-                draggable={false}
-                onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
-                className={cx('block rounded-lg object-contain', imgStyle().width ? 'size-full' : 'max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)]')}
-              />
-              <BoxLayer boxes={f.boxes} hidden={hideBoxes} />
-            </div>
-          )}
-        </motion.div>
+        <div ref={area} className="pointer-events-none absolute flex items-center justify-center" style={{ left: 16, top: 8, right: 16 + padRight, bottom: 16 + padBottom }}>
+          <motion.div initial={intro ? { opacity: 0, scale: 0.94 } : false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }} className="pointer-events-none flex items-center justify-center">
+            {video ? (
+              <video src={fileUrl(f.id)} controls autoPlay playsInline className="pointer-events-auto rounded-lg bg-black shadow-pop" style={{ maxWidth: room.w || undefined, maxHeight: room.h || undefined }} />
+            ) : (
+              // 图和改动框包在同一个容器里一起缩放、平移（R-183）
+              <div className="pointer-events-auto relative shrink-0 rounded-lg shadow-pop" style={style}>
+                <img
+                  key={src.id}
+                  src={fileUrl(src.id)}
+                  alt={shotTitle(f)}
+                  draggable={false}
+                  onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                  className={cx('block rounded-lg object-contain', style.width ? 'size-full' : '')}
+                  style={style.width ? undefined : { maxWidth: room.w || undefined, maxHeight: room.h || undefined }}
+                />
+                <BoxLayer boxes={f.boxes} hidden={hideBoxes || before} focus={focus} />
+              </div>
+            )}
+          </motion.div>
+        </div>
       </div>
-      {/* 按钮、页码、底栏只由当前页画在胶片带外面，翻页时不跟着带子跑 */}
+      {/* 翻页按钮与工具只由当前页画在胶片带外面，翻页时不跟着带子跑 */}
       {active &&
         chromeHost &&
         createPortal(
           <>
-      {nav && (
-        <>
-          <button aria-label={t.attach.prev} onClick={() => nav.go(-1)} className="pointer-events-auto absolute top-1/2 left-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
-            <ChevronLeft className="size-6" />
-          </button>
-          <button aria-label={t.attach.next} onClick={() => nav.go(1)} className="pointer-events-auto absolute top-1/2 right-3 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur transition hover:bg-black/70 active:scale-95 max-sm:hidden">
-            <ChevronRight className="size-6" />
-          </button>
-        </>
-      )}
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <span className="rounded-full bg-black/50 px-3 py-1 text-xs text-white tabular backdrop-blur" style={{ visibility: nav ? 'visible' : 'hidden' }}>
-          {nav ? t.attach.position(nav.i + 1, nav.n) : ''}
-        </span>
-        <Dialog.Close asChild>
-          <button aria-label={t.common.close} className="pointer-events-auto flex size-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 active:scale-95">
-            <X className="size-5" />
-          </button>
-        </Dialog.Close>
-      </motion.div>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end gap-2 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {/* 标题与改动框的标签（R-183）：没写标题的显示文件名 */}
-        {!video && (f.title || f.boxes?.length) ? (
-          <div className="pointer-events-auto order-first w-full max-w-xl rounded-lg bg-black/60 px-3 py-2 text-white backdrop-blur sm:w-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="text-sm font-medium break-words">{shotTitle(f)}</div>
-            <BoxLegend boxes={f.boxes} className="mt-1.5 text-white/85" />
-          </div>
-        ) : null}
-        <span className="flex items-center gap-2">
-          {!video && !!f.boxes?.length && onToggleBoxes && <BoxToggle hidden={hideBoxes} onToggle={onToggleBoxes} dark />}
-          {target && !video && (
-            <button onClick={() => setAnnotating(true)} className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-medium text-black backdrop-blur hover:bg-white">
-              <PenLine className="size-3.5" />
-              {t.annotate.attach}
-            </button>
-          )}
-          {v.s > 1 && (
-            <button onClick={() => animate({ s: 1, x: 0, y: 0 })} className="pointer-events-auto rounded-lg bg-black/55 px-3 py-1.5 text-xs text-white tabular backdrop-blur hover:bg-black/75">
-              {t.attach.zoomReset(Math.round(v.s * 100))}
-            </button>
-          )}
-        </span>
-      </motion.div>
+            {nav && (
+              <>
+                <button aria-label={t.attach.prev} onClick={() => nav.go(-1)} className="pointer-events-auto absolute top-1/2 left-3 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/75 active:scale-95 max-sm:hidden">
+                  <ChevronLeft className="size-5" />
+                </button>
+                <button aria-label={t.attach.next} onClick={() => nav.go(1)} className="pointer-events-auto absolute top-1/2 right-3 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/75 active:scale-95 max-sm:hidden">
+                  <ChevronRight className="size-5" />
+                </button>
+              </>
+            )}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-center gap-2 p-3">
+              {target && !video && (
+                <button onClick={() => setAnnotating(true)} className="pointer-events-auto flex items-center gap-1.5 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-medium text-black backdrop-blur hover:bg-white">
+                  <PenLine className="size-3.5" />
+                  {t.annotate.attach}
+                </button>
+              )}
+              {v.s > 1 && (
+                <button
+                  onClick={() => {
+                    if (focus != null && onUnfocus) onUnfocus()
+                    else animate({ s: 1, x: 0, y: 0 })
+                  }}
+                  className="pointer-events-auto rounded-lg bg-black/60 px-3 py-1.5 text-xs text-white tabular backdrop-blur hover:bg-black/80"
+                >
+                  {t.attach.zoomReset(Math.round(v.s * 100))}
+                </button>
+              )}
+            </motion.div>
           </>,
           chromeHost,
         )}
       {target && (
         <Annotator
-          src={fileUrl(f.id)}
+          src={fileUrl(src.id)}
           name={f.name}
           open={annotating}
           onClose={() => setAnnotating(false)}
@@ -675,7 +891,7 @@ function Viewer({ f, onClose, nav, active = true, intro = true, chromeHost, hide
 }
 
 // ZoomButton：放大查看某张图（用于方案对比卡等不想显示缩略图的地方）。
-export function ZoomButton({ f, className, group }: { f: FileRef; className?: string; group?: FileRef[] }) {
+export function ZoomButton({ f, className, group }: { f: ViewShot; className?: string; group?: ViewShot[] }) {
   return (
     <Lightbox f={f} group={group}>
       <button aria-label={t.attach.zoom} className={cx('flex size-8 items-center justify-center rounded-lg bg-black/45 text-white backdrop-blur transition hover:bg-black/65 active:scale-95 pointer-coarse:size-10', className)}>

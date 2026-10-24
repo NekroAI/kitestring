@@ -1,57 +1,75 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowRightLeft, CheckCheck, FileCheck2, GitCommitHorizontal, HelpCircle, LockOpen, MessageSquareText, PencilLine, ScanSearch, Send, Sparkles, Undo2 } from 'lucide-react'
+import { Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Requirement, StatusChange } from '../api/client'
+import { useMorning } from '../api/queries'
 import { t } from '../i18n'
+import { latestEvidence, roundsOf } from '../lib/proofs'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Tip } from '../ui/base'
 import { Thumbs } from '../ui/attach'
 import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
+import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionComposer } from './DecisionCard'
 import { useActions } from './actions'
 import { ProxyNote } from './grant'
-import { evidenceKind } from './review'
-import { EvidenceView, hasPayload, VoidedEvidence } from './evidence'
-import { useSessions } from '../api/queries'
-import { sessionTitle } from './SessionCard'
-import { Linkify, RefChip } from '../ui/refmark'
+import { EvidenceCard, EvidenceRow, VoidedEvidence } from './evidence'
 import { DecisionChain } from './chain'
 import { CommitTags, shortSha, useReqCommits } from './commits'
 import { isStatusReq, StatusArrow, statusTone } from './statusReq'
+import { Who } from './who'
 
-// 需求进展：一条竖向时间线，从上往下按时间排，最新在最下面（紧挨底部的输入区）。
-// 每次退回修改开启新的一轮，复杂需求反复几轮也能看清来龙去脉；留言不开新一轮。
+// 需求抽屉只有这一条时间线（R-195）：从上往下按时间排，每份证据只出现一次——本轮最新的一份展开，其余收成一行，点开就地展开。
+// 每条记录都写清是谁做的：身份胶囊 + 会话标题（动作当时的标题，悬停看现在的），点开是那个会话。
+// 每次退回修改开启新的一轮，复杂需求反复几轮也能看清来龙去脉；留言不开新一轮。主助理的验收建议贴着最新证据。
+// 打开抽屉时停在最新那份证据的开头（ReqView 按 data-latest 定位）。
 
 type Entry = { at: string; key: string; round: number; node: ReactNode }
 
-const tone = {
-  create: 'bg-sunken text-fg-3',
-  evidence: 'bg-run-soft text-run',
-  review: 'bg-wait-soft text-wait',
-  revise: 'bg-reply-soft text-reply',
-  note: 'bg-accent-soft text-accent',
-  decision: 'bg-accent-soft text-accent',
-  ask: 'bg-reply text-seal-fg',
-  done: 'bg-run text-seal-fg',
+const dot = {
+  base: 'bg-line-strong',
+  evidence: 'bg-run',
+  revise: 'bg-reply',
+  accent: 'bg-accent',
+  wait: 'bg-wait',
+  ask: 'bg-reply',
+  done: 'bg-run',
 }
 
-// Node：时间线上的一个节点。圆点在左侧竖线上，内容占满右侧。
-function Node({ icon, tone: cls, title, at, now, muted, children }: { icon: ReactNode; tone: string; title: ReactNode; at?: string; now: number; muted?: boolean; children?: ReactNode }) {
+// Node：时间线上的一个节点。左边是竖线上的小圆点；head 是一行「谁 做了什么 …… 时间」，下面放内容。
+function Node({ tone = dot.base, head, at, now, muted, children }: { tone?: string; head?: ReactNode; at?: string; now: number; muted?: boolean; children?: ReactNode }) {
   return (
-    <div className="relative flex gap-3">
-      <span className={cx('relative z-[1] mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ring-4 ring-surface [&_svg]:size-3.5', cls)}>{icon}</span>
-      <div className={cx('min-w-0 flex-1 pt-1', muted && 'opacity-55')}>
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px] font-medium text-fg-2">{title}</div>
-          {at && (
-            <Tip content={absTime(at)}>
-              <span className="shrink-0 text-xs text-fg-3 tabular">{relTime(at, now)}</span>
-            </Tip>
-          )}
-        </div>
-        {children && <div className="mt-1.5 space-y-2">{children}</div>}
+    <div className="relative pl-[22px]">
+      <span aria-hidden className={cx('absolute top-[3px] left-0 size-[15px] rounded-full border-2 border-surface', tone)} />
+      <div className={cx('min-w-0', muted && 'opacity-55')}>
+        {head && (
+          <div className="flex items-baseline gap-2 text-[12.5px] leading-normal text-fg-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">{head}</div>
+            {at && (
+              <Tip content={absTime(at)}>
+                <span className="shrink-0 tabular">{relTime(at, now)}</span>
+              </Tip>
+            )}
+          </div>
+        )}
+        {children && <div className={cx('space-y-2', head && 'mt-1.5')}>{children}</div>}
       </div>
+    </div>
+  )
+}
+
+// Bubble：你退回 / 留言、主助理的验收建议这类「说的话」，头部写谁、时间，下面是原话。
+function Bubble({ cls, head, at, now, children }: { cls: string; head: ReactNode; at: string; now: number; children?: ReactNode }) {
+  return (
+    <div className={cx('rounded-xl px-3 py-2 text-[13.5px] leading-relaxed break-words text-fg', cls)}>
+      <div className="mb-0.5 flex items-baseline gap-2 text-xs text-fg-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">{head}</div>
+        <Tip content={absTime(at)}>
+          <span className="shrink-0 tabular">{relTime(at, now)}</span>
+        </Tip>
+      </div>
+      {children}
     </div>
   )
 }
@@ -91,10 +109,6 @@ function StatusFlow({ c }: { c: StatusChange }) {
   )
 }
 
-function Quote({ children, cls }: { children: ReactNode; cls: string }) {
-  return <p className={cx('rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap text-fg', cls)}>{children}</p>
-}
-
 // EditDiff：修改记录（R-134）的改前改后。标题、优先级、类型这类短字段一行「改前 → 改后」；
 // 描述、验收标准默认收起，点开上下对照。行是 [字段, 中文名, 改前, 改后]。
 function EditDiff({ rows }: { rows: (string[] | null)[] }) {
@@ -112,11 +126,11 @@ function EditDiff({ rows }: { rows: (string[] | null)[] }) {
               <div className="mt-2 space-y-2">
                 <div>
                   <p className="mb-0.5 text-xs text-fg-3">{t.timeline.editBefore}</p>
-                  <p className="rounded-lg bg-danger-soft/50 px-2.5 py-1.5 leading-relaxed whitespace-pre-wrap break-words text-fg-2">{before || t.timeline.editEmpty}</p>
+                  <p className="rounded-lg bg-danger-soft/50 px-2.5 py-1.5 leading-relaxed break-words whitespace-pre-wrap text-fg-2">{before || t.timeline.editEmpty}</p>
                 </div>
                 <div>
                   <p className="mb-0.5 text-xs text-fg-3">{t.timeline.editAfter}</p>
-                  <p className="rounded-lg bg-run-soft/50 px-2.5 py-1.5 leading-relaxed whitespace-pre-wrap break-words text-fg">{after || t.timeline.editEmpty}</p>
+                  <p className="rounded-lg bg-run-soft/50 px-2.5 py-1.5 leading-relaxed break-words whitespace-pre-wrap text-fg">{after || t.timeline.editEmpty}</p>
                 </div>
               </div>
             </details>
@@ -135,24 +149,28 @@ function EditDiff({ rows }: { rows: (string[] | null)[] }) {
   )
 }
 
+const Act = ({ children }: { children: ReactNode }) => <span className="text-fg-2">{children}</span>
+
 export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decision[] }) {
   const now = useNow()
-  const sessions = useSessions()
+  const morning = useMorning()
   const { withdrawRelease } = useActions()
   const commitsQ = useReqCommits(r.code)
   const [withdrawing, setWithdrawing] = useState(false)
+  const [opened, setOpened] = useState<Set<string>>(() => new Set()) // 点开的旧证据
+  const toggle = (id: string) =>
+    setOpened((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
   const canWithdraw = !!r.release && (r.status === 'ready' || r.status === 'in_progress' || r.status === 'blocked')
-  const who = (key?: string | null) => {
-    const s = (sessions.data?.sessions ?? []).find((x) => x.key === key)
-    return s ? [sessionTitle(s), s.device_name].filter(Boolean).join(t.common.sep) : ''
-  }
   const mine = [...(r.feedback ?? [])].sort((a, b) => (a.answered_at ?? a.created_at).localeCompare(b.answered_at ?? b.created_at))
-  const revises = mine.filter((f) => f.kind === 'feedback')
-  const bounds = revises.map((f) => f.answered_at ?? f.created_at)
-  const roundOf = (at: string) => 1 + bounds.filter((b) => b <= at).length
-  const current = 1 + revises.length
+  const { revises, roundOf, current } = roundsOf(r)
+  const latest = latestEvidence(r)
   // 状态变更历史（R-153）。放行、退回修改的那次变化引用了对应记录（ref = D-x），并进那条记录的节点里显示；
-  // 新建时的初始状态并进「提出了这条需求」；其余每次变化单独一个节点。旧需求没有记录，照旧显示
+  // 新建时的初始状态并进「记下这条需求」；其余每次变化单独一个节点。旧需求没有记录，照旧显示
   const changes = r.status_changes ?? []
   const merged = new Map<string, StatusChange>()
   for (const c of changes) {
@@ -165,6 +183,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
     const c = merged.get(code)
     return c ? <StatusFlow c={c} /> : null
   }
+  const who = (c: StatusChange) => <Who actor={c.actor} session={c.session} role={c.role} title={c.session_title} className="max-w-[16em]" />
 
   const entries: Entry[] = [
     {
@@ -173,55 +192,62 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       round: 1,
       node: (
         <Node
-          icon={<Sparkles />}
-          tone={tone.create}
-          title={
+          now={now}
+          at={r.created_at}
+          head={
             <>
-              {r.created_by === 'agent' ? t.timeline.createdAgent : t.timeline.createdUser}
+              {created ? who(created) : <Who actor={r.created_by === 'user' ? 'user' : 'agent'} />}
+              <Act>{t.proof.created}</Act>
               {created && created.to !== 'draft' && <StatusFlow c={created} />}
             </>
           }
-          at={r.created_at}
-          now={now}
         />
       ),
     },
   ]
   for (const e of r.evidence ?? []) {
+    const round = roundOf(e.created_at)
+    const isLatest = e.id === latest
+    let body: ReactNode
+    if (e.voided && e.void_reason) body = <VoidedEvidence e={e} r={r} />
+    else if (isLatest) body = <EvidenceCard e={e} r={r} latest />
+    else if (opened.has(e.id)) body = <EvidenceCard e={e} r={r} onFold={() => toggle(e.id)} />
+    else body = <EvidenceRow e={e} onOpen={() => toggle(e.id)} voidedOnBack={e.voided} />
     entries.push({
       at: e.created_at,
       key: e.id,
-      round: roundOf(e.created_at),
+      round,
       node: (
-        <Node
-          icon={<FileCheck2 />}
-          tone={tone.evidence}
-          title={
-            <>
-              {t.timeline.evidence}
-              <Badge tone="run">{evidenceKind(e.kind)}</Badge>
-            </>
-          }
-          at={e.created_at}
-          now={now}
-          muted={e.voided}
-        >
-          {(() => {
-            const body = (
+        <div data-latest={isLatest ? '' : undefined}>
+          <Node tone={dot.evidence} now={now}>
+            {body}
+          </Node>
+        </div>
+      ),
+    })
+  }
+  // 主助理的验收建议：贴着最新证据（只有当前有效的那条，交了新证据后旧建议不再显示）
+  const advice = r.status === 'review' ? (morning.data?.advice ?? []).find((a) => a.requirement_code === r.code) : undefined
+  if (advice) {
+    entries.push({
+      at: advice.at,
+      key: 'advice',
+      round: current,
+      node: (
+        <Node tone={dot.accent} now={now}>
+          <Bubble
+            cls="bg-accent-soft"
+            at={advice.at}
+            now={now}
+            head={
               <>
-                {hasPayload(e) ? <EvidenceView e={e} acceptance={r.acceptance} /> : <Md text={e.summary} className="text-sm leading-relaxed text-fg" />}
-                {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
-                {!hasPayload(e) && !!e.files?.length && <Thumbs files={e.files} />}
+                <Who actor="agent" session={advice.by} role={advice.by_role || 'aide'} title={advice.by_title} className="max-w-[16em]" />
+                <span className={cx('font-semibold', advice.verdict === 'pass' ? 'text-run' : 'text-danger')}>{t.proof.advice(advice.verdict)}</span>
               </>
-            )
-            return e.voided && e.void_reason ? (
-              <VoidedEvidence e={e} by={who(e.voided_by)}>
-                {body}
-              </VoidedEvidence>
-            ) : (
-              body
-            )
-          })()}
+            }
+          >
+            <Linkify text={advice.reason} />
+          </Bubble>
         </Node>
       ),
     })
@@ -239,17 +265,16 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       round: roundOf(c.at),
       node: (
         <Node
-          icon={c.reverts ? <Undo2 /> : <GitCommitHorizontal />}
-          tone={c.reverts ? tone.revise : tone.create}
-          title={
+          tone={c.reverts ? dot.revise : dot.base}
+          now={now}
+          at={c.at}
+          head={
             <>
-              {c.reverts ? t.commits.revert : t.commits.commit}
+              <Act>{c.reverts ? t.commits.revert : t.commits.commit}</Act>
               <Badge mono>{shortSha(c.link)}</Badge>
-              {c.source && t.commits.source[c.source] && <span className="font-normal text-fg-3">{t.commits.source[c.source]}</span>}
+              {c.source && t.commits.source[c.source] && <span>{t.commits.source[c.source]}</span>}
             </>
           }
-          at={c.at}
-          now={now}
         >
           <p className={cx('text-sm break-words text-fg', c.reverted_by && 'text-fg-2 line-through decoration-fg-3/60')}>{c.summary}</p>
           {(c.reverts || c.reverted_by || c.ci) && (
@@ -271,18 +296,17 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       round: roundOf(e.created_at),
       node: (
         <Node
-          icon={<ScanSearch />}
-          tone={tone.review}
-          title={
+          tone={dot.wait}
+          now={now}
+          at={e.created_at}
+          muted={e.voided}
+          head={
             <>
-              {t.reviewer.review}
+              <Who actor="agent" session={e.session_key} role={e.role || 'reviewer'} title={e.session_title} className="max-w-[16em]" />
+              <Act>{t.reviewer.review}</Act>
               <Badge tone="wait">{t.reviewer.badge}</Badge>
-              <span className="truncate font-normal text-fg-3">{who(e.session_key)}</span>
             </>
           }
-          at={e.created_at}
-          now={now}
-          muted={e.voided}
         >
           <ReviewBody text={e.summary} />
           {!!e.files?.length && <Thumbs files={e.files} />}
@@ -299,17 +323,17 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
         round: roundOf(at),
         node: (
           <Node
-            icon={<ScanSearch />}
-            tone={tone.review}
-            title={
+            tone={dot.wait}
+            now={now}
+            at={at}
+            head={
               <>
-                {t.reviewer.timeline}
-                <span className="truncate font-normal text-fg-3">{who(f.session_key) || f.device_name}</span>
+                <Who actor="user" />
+                <Act>{t.proof.reviewTask}</Act>
+                <Who actor="agent" session={f.session_key} className="max-w-[16em]" />
                 <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
               </>
             }
-            at={at}
-            now={now}
           />
         ),
       })
@@ -317,7 +341,6 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
     }
     // 修改记录（R-134）：Agent 改了标题 / 描述 / 验收标准 / 优先级 / 类型，记下是谁、什么身份、改前改后
     if (f.kind === 'edit') {
-      const role = t.role[f.context ?? ''] || f.context || 'Agent'
       const rows = f.blocks?.find((b) => b.type === 'table')?.rows ?? []
       entries.push({
         at,
@@ -325,16 +348,14 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
         round: roundOf(at),
         node: (
           <Node
-            icon={<PencilLine />}
-            tone={tone.create}
-            title={
+            now={now}
+            at={at}
+            head={
               <>
-                {t.timeline.edit(role)}
-                <span className="truncate font-normal text-fg-3">{who(f.assigned_by)}</span>
+                <Who actor="agent" session={f.assigned_by} role={f.context} title={f.by_title} className="max-w-[16em]" />
+                <Act>{t.proof.edited}</Act>
               </>
             }
-            at={at}
-            now={now}
           >
             {!!f.answer && (
               <p className="text-sm text-fg-2">
@@ -347,34 +368,31 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       })
       continue
     }
-    // 放行（R-166）：PM / Adv 把草稿改为待开始，写明理由；当前有效的放行可以一键撤回（改回草稿）
+    // 放行（R-166）：PM / 主助理把草稿改为待开始，写明理由；当前有效的放行可以一键撤回（改回草稿）
     if (f.kind === 'release') {
       const withdrawn = !!f.close_reason
-      const role = t.role[f.context ?? ''] || f.context || 'Agent'
       entries.push({
         at,
         key: f.id,
         round: roundOf(at),
         node: (
           <Node
-            icon={<LockOpen />}
-            tone={tone.note}
-            title={
+            tone={dot.accent}
+            now={now}
+            at={at}
+            muted={withdrawn}
+            head={
               <>
-                {t.timeline.release(role)}
-                <span className="truncate font-normal text-fg-3">{who(f.assigned_by)}</span>
-                {flowOf(f.code)}
+                <Who actor="agent" session={f.assigned_by} role={f.context} title={f.by_title} className="max-w-[16em]" />
+                <Act>{t.proof.released}</Act>
                 {withdrawn && <Badge tone="neutral">{t.timeline.withdrawn}</Badge>}
               </>
             }
-            at={at}
-            now={now}
-            muted={withdrawn}
           >
-            <Quote cls="bg-accent-soft/60">
-              <span className="mr-1.5 text-fg-3">{t.timeline.releaseReason}</span>
+            <p className="text-[12.5px] leading-relaxed break-words text-fg-3">
+              <span className="mr-1">{t.timeline.releaseReason}：</span>
               <Linkify text={f.answer ?? ''} />
-            </Quote>
+            </p>
             {withdrawn && <p className="text-sm text-fg-2">{f.close_reason}</p>}
             {!withdrawn && canWithdraw && r.release?.code === f.code && (
               <div>
@@ -404,17 +422,17 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
         round: roundOf(at),
         node: (
           <Node
-            icon={<Send />}
-            tone={tone.note}
-            title={
+            tone={dot.accent}
+            now={now}
+            at={at}
+            head={
               <>
-                {f.assigned_by ? t.assign.timelinePm : t.assign.timeline}
-                <span className="truncate font-normal text-fg-3">{who(f.session_key) || f.device_name}</span>
+                {f.assigned_by ? <Who actor="agent" session={f.assigned_by} role="pm" title={f.by_title} className="max-w-[14em]" /> : <Who actor="user" />}
+                <Act>{t.proof.assigned}</Act>
+                <Who actor="agent" session={f.session_key} className="max-w-[14em]" />
                 <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
               </>
             }
-            at={at}
-            now={now}
           />
         ),
       })
@@ -426,35 +444,49 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       key: f.id,
       round: note ? roundOf(at) : roundOf(at) - 1, // 修改意见收尾它所在的那一轮
       node: (
-        <Node
-          icon={note ? <MessageSquareText /> : <Undo2 />}
-          tone={note ? tone.note : tone.revise}
-          title={
-            <>
-              {note ? t.timeline.note : t.timeline.revise}
-              {flowOf(f.code)}
-              <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
-            </>
-          }
-          at={at}
-          now={now}
-        >
-          {f.answer && <Quote cls={note ? 'bg-accent-soft/60' : 'bg-reply-soft/60'}>
-              <Linkify text={f.answer} />
-            </Quote>}
-          {!!f.answer_files?.length && <Thumbs files={f.answer_files} size="sm" />}
+        <Node tone={note ? dot.accent : dot.revise} now={now}>
+          <Bubble
+            cls={note ? 'bg-accent-soft/70' : 'bg-reply-soft'}
+            at={at}
+            now={now}
+            head={
+              <>
+                {f.assigned_by ? <Who actor="agent" session={f.assigned_by} title={f.by_title} className="max-w-[16em]" /> : <Who actor="user" />}
+                <span className={cx('font-semibold', note ? 'text-fg-2' : 'text-reply')}>{note ? t.proof.noted : t.proof.revised}</span>
+                {flowOf(f.code)}
+                <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
+              </>
+            }
+          >
+            {f.answer && <Linkify text={f.answer} />}
+            {!!f.answer_files?.length && (
+              <div className="mt-1.5">
+                <Thumbs files={f.answer_files} size="sm" />
+              </div>
+            )}
+          </Bubble>
         </Node>
       ),
     })
   }
   for (const d of decisions.filter((x) => x.kind === 'decision')) {
+    const asker = <Who actor="agent" session={d.origin_session || d.session_key} title={d.by_title} className="max-w-[16em]" />
     if (d.status === 'pending') {
       entries.push({
         at: '￿', // 等你回答的问题放在最后，紧挨着底部的输入区
         key: d.id,
         round: current,
         node: (
-          <Node icon={<HelpCircle />} tone={tone.ask} title={t.timeline.ask} now={now}>
+          <Node
+            tone={dot.ask}
+            now={now}
+            head={
+              <>
+                {asker}
+                <span className="font-semibold text-reply">{t.timeline.ask}</span>
+              </>
+            }
+          >
             <DecisionComposer d={d} embedded />
           </Node>
         ),
@@ -465,7 +497,6 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       // 改状态申请（R-188）：批准 / 拒绝 / 作废三种结局，批准的那次状态变化并在这里
       const ok = !d.voided && (d.answer ?? '').trim().startsWith('批准')
       const at = d.answered_at ?? d.created_at
-      const asker = t.role[(sessions.data?.sessions ?? []).find((x) => x.key === d.session_key)?.role ?? ''] || 'Agent'
       const note = d.voided ? '' : (d.answer ?? '').trim().replace(/^(批准|拒绝)[；;：:，,\s]*/, '')
       entries.push({
         at,
@@ -473,31 +504,31 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
         round: roundOf(at),
         node: (
           <Node
-            icon={d.voided ? <Undo2 /> : ok ? <CheckCheck /> : <ArrowRightLeft />}
-            tone={ok ? tone.evidence : tone.decision}
+            tone={ok ? dot.done : dot.accent}
+            now={now}
+            at={at}
             muted={d.voided}
-            title={
+            head={
               <>
-                {d.voided ? t.timeline.statusReq.voided : ok ? t.timeline.statusReq.approved : t.timeline.statusReq.rejected}
+                <Act>{d.voided ? t.timeline.statusReq.voided : ok ? t.timeline.statusReq.approved : t.timeline.statusReq.rejected}</Act>
                 {merged.get(d.code) ? <StatusFlow c={merged.get(d.code)!} /> : <StatusArrow from={d.request_from} to={d.request_to} />}
                 <RefChip code={d.code} status={d.status} link={false} />
               </>
             }
-            at={at}
-            now={now}
           >
             {d.context && (
-              <p className="text-sm leading-relaxed break-words text-fg-2">
-                <span className="mr-1.5 text-fg-3">{t.timeline.statusReq.why(asker)}</span>
+              <p className="flex flex-wrap items-baseline gap-x-1.5 text-sm leading-relaxed break-words text-fg-2">
+                {asker}
+                <span className="text-fg-3">{t.proof.reason}</span>
                 <Linkify text={d.context} />
               </p>
             )}
             {d.voided && <p className="text-sm text-fg-3">{t.timeline.statusReq.voidedWhy}</p>}
             {note && (
-              <Quote cls="bg-sunken/70">
+              <p className="rounded-xl bg-sunken/70 px-3 py-2 text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">
                 <span className="mr-1.5 text-fg-3">{t.timeline.statusReq.note}</span>
                 <Linkify text={note} />
-              </Quote>
+              </p>
             )}
           </Node>
         ),
@@ -510,18 +541,18 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       round: roundOf(d.created_at),
       node: (
         <Node
-          icon={<HelpCircle />}
-          tone={tone.decision}
-          title={
+          tone={dot.accent}
+          now={now}
+          at={d.answered_at ?? d.created_at}
+          muted={d.status === 'closed'}
+          head={
             <>
-              {t.timeline.decision}
+              {asker}
+              <Act>{t.timeline.decision}</Act>
               <RefChip code={d.code} status={d.status} link={false} />
               {d.status === 'closed' && <Badge tone="neutral">{t.timeline.withdrawn}</Badge>}
             </>
           }
-          at={d.answered_at ?? d.created_at}
-          now={now}
-          muted={d.status === 'closed'}
         >
           <p className="text-sm text-fg">
             <Linkify text={d.short_title || d.question} />
@@ -535,10 +566,10 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             <ProxyNote d={d} />
           ) : (
             d.answer && (
-              <Quote cls="bg-sunken/70">
+              <p className="rounded-xl bg-sunken/70 px-3 py-2 text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">
                 <span className="mr-1.5 text-fg-3">{t.timeline.answer}</span>
                 <Linkify text={d.answer} />
-              </Quote>
+              </p>
             )
           )}
           {d.answer_reason && !d.proxy_by && (
@@ -556,58 +587,65 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   }
   for (const c of changes) {
     if (c.via === 'create' || (c.ref && merged.get(c.ref) === c)) continue
+    // Agent 交完证据改为待验收：证据本身就说明了，不再单列一条（原型）
+    if (c.to === 'review' && c.actor === 'agent') continue
     const accept = c.to === 'done' && c.actor === 'user'
-    let actor: ReactNode
-    if (c.actor === 'user') actor = t.timeline.byUser
-    else if (c.actor === 'agent')
-      actor = (
-        <>
-          {t.role[c.role ?? ''] || 'Agent'}
-          {who(c.session) && <span className="truncate font-normal text-fg-3">{who(c.session)}</span>}
-        </>
-      )
-    else actor = t.timeline.bySystem
-    const via = t.timeline.via[c.via]
+    const start = c.via === 'link' && c.to === 'in_progress'
+    const via = start ? '' : t.timeline.via[c.via]
     entries.push({
       at: c.at,
       key: c.id,
       round: roundOf(c.at),
       node: (
         <Node
-          icon={accept ? <CheckCheck /> : <ArrowRightLeft />}
-          tone={accept ? tone.done : tone.create}
-          title={
-            <>
-              {accept ? t.timeline.done : actor}
-              {!accept && <span className="font-normal text-fg-3">{t.timeline.changed}</span>}
-              <StatusFlow c={c} />
-              {(via || c.ref) && (
-                <span className="inline-flex items-center gap-1 font-normal text-fg-3">
-                  {via}
-                  {c.ref && <RefChip code={c.ref} label="title" />}
-                </span>
-              )}
-            </>
-          }
-          at={c.at}
+          tone={accept ? dot.done : dot.base}
           now={now}
+          at={c.at}
+          head={
+            accept ? (
+              <span className="font-semibold text-run">{t.timeline.done}</span>
+            ) : (
+              <>
+                {who(c)}
+                {start ? (
+                  <Act>{t.proof.started}</Act>
+                ) : (
+                  <>
+                    <span>{t.proof.changed}</span>
+                    <StatusFlow c={c} />
+                    {(via || c.ref) && (
+                      <span className="inline-flex items-center gap-1">
+                        {via}
+                        {c.ref && <RefChip code={c.ref} label="title" />}
+                      </span>
+                    )}
+                  </>
+                )}
+              </>
+            )
+          }
         >
-          {c.to === 'shelved' && (c.reason_kind || c.reason) && (
+          {c.to === 'shelved' && (c.reason_kind || c.reason) ? (
             <p className="text-sm leading-relaxed break-words text-fg-2">
               <span className="mr-1.5 text-fg-3">{t.timeline.shelveWhy}</span>
               <Linkify text={t.reqs.shelve.why(t.reqs.shelve.kinds[c.reason_kind ?? ''] ?? '', c.reason ?? '')} />
             </p>
-          )}
+          ) : undefined}
         </Node>
       ),
     })
   }
   if (r.status === 'done' && !changes.some((c) => c.to === 'done')) {
-    entries.push({ at: r.updated_at, key: 'done', round: current, node: <Node icon={<CheckCheck />} tone={tone.done} title={t.timeline.done} at={r.updated_at} now={now} /> })
+    entries.push({
+      at: r.updated_at,
+      key: 'done',
+      round: current,
+      node: <Node tone={dot.done} now={now} at={r.updated_at} head={<span className="font-semibold text-run">{t.timeline.done}</span>} />,
+    })
   }
   entries.sort((a, b) => a.at.localeCompare(b.at))
 
-  // 竖线画在每项左侧（最后一项不画）；AnimatePresence 只认直接子元素，这里展开成一维列表。
+  // 竖线画在整列左侧，「第 n 轮」分隔线盖在上面；AnimatePresence 只认直接子元素，这里展开成一维列表。
   const showRounds = revises.length > 0
   const items: ReactNode[] = []
   let last = 0
@@ -615,24 +653,24 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
     if (showRounds && e.round !== last) {
       items.push(
         <Item key={'round' + e.round}>
-          <div className="flex items-center gap-2 pt-1 pb-4 text-xs text-fg-3">
+          <div className="relative z-[1] flex items-center gap-2.5 bg-surface py-3 text-xs text-fg-3">
             <span className="font-display text-[13px] text-fg-2">{t.timeline.round(e.round)}</span>
             {e.round === current && r.status !== 'done' && <Badge tone="accent">{t.timeline.current}</Badge>}
-            <span aria-hidden className="h-0 flex-1 border-t border-dashed border-line-strong/80" />
+            <span aria-hidden className="h-px flex-1 bg-line" />
           </div>
         </Item>,
       )
     }
     last = e.round
-    const end = i === entries.length - 1
     items.push(
       <Item key={e.key}>
-        <div className={cx('relative', !end && 'pb-5')}>
-          {!end && <span aria-hidden className="absolute top-8 bottom-0 left-[13px] w-px bg-line" />}
-          {e.node}
-        </div>
+        <div className={cx(i < entries.length - 1 && 'pb-3')}>{e.node}</div>
       </Item>,
     )
   })
-  return <List>{items}</List>
+  return (
+    <div className="relative before:absolute before:top-1.5 before:bottom-1.5 before:left-[6.5px] before:w-[1.5px] before:bg-line">
+      <List>{items}</List>
+    </div>
+  )
 }

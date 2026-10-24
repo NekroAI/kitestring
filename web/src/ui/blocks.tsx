@@ -3,7 +3,7 @@ import { Maximize2 } from 'lucide-react'
 import type { Block, BlockItem } from '../api/client'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { fileUrl, isVideo, Lightbox, ZoomButton, type FileRef } from './attach'
+import { fileUrl, isVideo, Lightbox, ZoomButton, type FileRef, type ViewShot } from './attach'
 import { BoxLayer, BoxLegend, BoxToggle, shotTitle } from './shots'
 import { Linkify } from './refmark'
 
@@ -148,10 +148,8 @@ function Media({ f, className, limit, hideBoxes, group }: { f: FileRef; classNam
 export function Compare({ before, after, title, limit, hideBoxes }: { before: FileRef; after: FileRef; title?: string; limit?: boolean; hideBoxes?: boolean }) {
   const [old, setOld] = useState(false)
   const tag = 'pointer-events-none absolute top-2 left-2 rounded-[5px] px-1.5 py-px text-[11px] font-semibold backdrop-blur-[2px]'
-  const pages: FileRef[] = [
-    { ...after, title: [t.blocks.after, title || after.title].filter(Boolean).join(' · ') },
-    { ...before, boxes: null, title: [t.blocks.before, title || before.title].filter(Boolean).join(' · ') },
-  ]
+  // 看大图：一张图，改后 / 改前在看图里切换（R-195）
+  const shot: ViewShot = { ...after, title: title || after.title, before: { ...before, boxes: null } }
   return (
     <div className="grid gap-1.5">
       <div className="group relative">
@@ -173,7 +171,7 @@ export function Compare({ before, after, title, limit, hideBoxes }: { before: Fi
             {old ? t.blocks.before : t.blocks.after}
           </span>
         </button>
-        <ZoomButton f={pages[old ? 1 : 0]} group={pages} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100" />
+        <ZoomButton f={shot} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100" />
       </div>
       <span className="text-center text-xs text-fg-3">{old ? t.blocks.toAfter : t.blocks.toBefore}</span>
     </div>

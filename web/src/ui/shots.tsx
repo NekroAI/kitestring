@@ -5,7 +5,7 @@ import { cx } from '../lib/util'
 // 截图的标题与改动框（R-183）：Agent 交证据时给每张图写一句话标题，并可以用矩形框标出这次改了哪里。
 // 框的坐标是图片原始尺寸的比例（0～1），叠在图上画，所以图怎么缩放都对得上；可一键隐藏看原图。旧证据没有标题和框，照常显示。
 
-export type Box = { x: number; y: number; w: number; h: number; label?: string | null }
+export type Box = { x: number; y: number; w: number; h: number; label?: string | null; criterion?: number | null }
 type Shot = { name: string; title?: string | null; boxes?: Box[] | null }
 
 // shotTitle：图的标题；没写时用文件名兜底。
@@ -16,31 +16,41 @@ const pct = (v: number) => `${Math.max(0, Math.min(1, v)) * 100}%`
 const numbered = (boxes: Box[]) => boxes.length > 1 || boxes.some((b) => b.label)
 
 // BoxLayer：画在图上的改动框。放在一个和图片同尺寸、position: relative 的容器里。
-export function BoxLayer({ boxes, hidden, small }: { boxes?: Box[] | null; hidden?: boolean; small?: boolean }) {
+// focus（看图里放大到某个框）：这个框加粗、四周压暗，其余的框变淡。
+export function BoxLayer({ boxes, hidden, small, focus }: { boxes?: Box[] | null; hidden?: boolean; small?: boolean; focus?: number | null }) {
   if (!boxes?.length) return null
   const num = numbered(boxes)
   return (
-    <span aria-hidden className={cx('pointer-events-none absolute inset-0 transition-opacity duration-200', hidden ? 'opacity-0' : 'opacity-100')}>
-      {boxes.map((b, i) => (
-        <span
-          key={i}
-          className={cx('absolute rounded-[3px] border-seal shadow-[0_0_0_1px_rgb(255_255_255/0.75),inset_0_0_0_1px_rgb(255_255_255/0.6)]', small ? 'border-[1.5px]' : 'border-2')}
-          style={{ left: pct(b.x), top: pct(b.y), width: pct(b.w), height: pct(b.h) }}
-        >
-          {num && (
-            <span
-              className={cx(
-                // 编号贴在框的左上角外侧，不挡框里的内容；框贴着图片顶边时放回框内
-                'absolute -left-[2px] flex items-center justify-center bg-seal font-semibold text-seal-fg tabular',
-                b.y < 0.04 ? '-top-px rounded-br-[4px]' : 'top-0 -translate-y-full rounded-t-[4px]',
-                small ? 'size-3.5 text-[9px]' : 'size-[18px] text-[11px]',
-              )}
-            >
-              {i + 1}
-            </span>
-          )}
-        </span>
-      ))}
+    <span aria-hidden className={cx('pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] transition-opacity duration-200', hidden ? 'opacity-0' : 'opacity-100')}>
+      {boxes.map((b, i) => {
+        const on = focus === i
+        const dim = focus != null && !on
+        return (
+          <span
+            key={i}
+            className={cx(
+              'absolute rounded-[3px] border-seal transition-[opacity,box-shadow] duration-300',
+              small ? 'border-[1.5px]' : on ? 'border-[3px]' : 'border-2',
+              on ? 'shadow-[0_0_0_9999px_rgb(0_0_0/0.5)]' : 'shadow-[0_0_0_1px_rgb(255_255_255/0.75),inset_0_0_0_1px_rgb(255_255_255/0.6)]',
+              dim && 'opacity-30',
+            )}
+            style={{ left: pct(b.x), top: pct(b.y), width: pct(b.w), height: pct(b.h) }}
+          >
+            {num && (
+              <span
+                className={cx(
+                  // 编号贴在框的左上角外侧，不挡框里的内容；框贴着图片顶边时放回框内
+                  'absolute -left-[2px] flex items-center justify-center bg-seal font-semibold text-seal-fg tabular',
+                  b.y < 0.04 ? '-top-px rounded-br-[4px]' : 'top-0 -translate-y-full rounded-t-[4px]',
+                  small ? 'size-3.5 text-[9px]' : 'size-[18px] text-[11px]',
+                )}
+              >
+                {i + 1}
+              </span>
+            )}
+          </span>
+        )
+      })}
     </span>
   )
 }
