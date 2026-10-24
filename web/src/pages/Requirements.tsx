@@ -167,18 +167,20 @@ function Board({ width, pool, items, shelved, active, onAll, onFocus, onConfirmE
   if (active) return <StatusGrid status={active} items={by(active)} width={width} onConfirmEach={onConfirmEach} />
 
   if (width >= WIDE) {
-    const narrow = width >= 1560 ? 176 : 156
-    const doneW = width >= 1560 ? 244 : 212
+    // 越宽越能用满：窄列随宽度放宽、能显示的条数增加，多出来的宽度全给草稿列（列数随之增加，需求块保持 ~230px 宽）
+    const narrow = width >= 2600 ? 248 : width >= 2000 ? 216 : width >= 1560 ? 176 : 156
+    const doneW = width >= 2600 ? 320 : width >= 2000 ? 280 : width >= 1560 ? 244 : 212
+    const limit = width >= 2600 ? 16 : width >= 2000 ? 12 : 8
     const cols = flowStatuses.length + (shelved ? 1 : 0)
     const draftW = width - narrow * cols - doneW - 12 * (cols + 1)
     return (
       <div className="flex items-start gap-3">
-        <DraftBlock items={by('draft')} cols={draftW >= 640 ? 4 : draftW >= 430 ? 3 : 2} onConfirmEach={onConfirmEach} className="flex-1" compact={draftW < 560} />
+        <DraftBlock items={by('draft')} cols={Math.max(2, Math.min(12, Math.floor((draftW - 12) / 230)))} onConfirmEach={onConfirmEach} className="flex-1" compact={draftW < 560} />
         {flowStatuses.map((s) => (
-          <NarrowCol key={s} status={s} items={by(s)} width={narrow} limit={8} onAll={() => onFocus(s)} />
+          <NarrowCol key={s} status={s} items={by(s)} width={narrow} limit={limit} onAll={() => onFocus(s)} />
         ))}
         <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={doneW} />
-        {shelved && <NarrowCol status="shelved" items={by('shelved')} limit={8} onAll={() => onAll('shelved')} width={narrow} />}
+        {shelved && <NarrowCol status="shelved" items={by('shelved')} limit={limit} onAll={() => onAll('shelved')} width={narrow} />}
       </div>
     )
   }
