@@ -162,10 +162,8 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment, reason str
 			w = &devs[0]
 		}
 		if w == nil {
-			if err := h.requestDevs(ctx, me.ProjectID, 1, fmt.Sprintf("%s「%s」等 Dev 接手", r.Code, r.Title)); err != nil {
-				h.log.Warn("提醒开开发会话失败", "err", err)
-			}
-			out.Body.Message = fmt.Sprintf("没有在线的 Dev，%s 未派出；已推送提醒用户开 Dev 会话。等不及可以自己用后台 subagent 做。", r.Code)
+			// 不再自动提醒用户开 Dev 会话（R-169）：默认交给一次性子代理，确实要并行再 dev_recommend
+			out.Body.Message = fmt.Sprintf("没有在线的 Dev，%s 未派出。默认交给后台一次性子代理做；确实适合并行、需要多轮沟通时，再用 dev_recommend 推荐开 Dev 会话，由用户限时批准。", r.Code)
 			return out, nil
 		}
 	} else {

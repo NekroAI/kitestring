@@ -80,6 +80,7 @@ function useSaveSettings() {
             notify_default: patch.notify_default ?? s.notify_default,
             upload_image_mb: patch.upload_image_mb ?? s.upload_image_mb,
             upload_video_mb: patch.upload_video_mb ?? s.upload_video_mb,
+            dev_request_minutes: patch.dev_request_minutes ?? s.dev_request_minutes,
           },
         }),
       )
@@ -914,6 +915,38 @@ function UploadLimits() {
   )
 }
 
+// 开 Dev 会话的批准时限（R-169）：PM 推荐开 Dev 会话后，到点没批按规则视为拒绝。
+function DevRequestLimit() {
+  const q = useSettings()
+  const save = useSaveSettings()
+  const [busy, wrap] = useBusy()
+  const [v, setV] = useState('')
+  useEffect(() => {
+    if (q.data) setV(String(q.data.dev_request_minutes))
+  }, [q.data])
+  const num = (x: string) => Math.min(1440, Math.max(1, Math.round(Number(x)) || 1))
+  const dirty = q.data && num(v) !== q.data.dev_request_minutes
+  const L = t.settings.account.devRequest
+  return (
+    <Card className="space-y-4 p-4 sm:p-5">
+      <div>
+        <div className="text-sm font-semibold text-fg">{L.title}</div>
+        <p className="mt-1 text-xs text-fg-3">{L.hint}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={L.minutes}>
+          <Input type="number" inputMode="numeric" min={1} max={1440} value={v} onChange={(e) => setV(e.target.value)} />
+        </Field>
+      </div>
+      <div className="flex justify-end">
+        <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => wrap(() => save({ dev_request_minutes: num(v) }))}>
+          {t.common.save}
+        </Button>
+      </div>
+    </Card>
+  )
+}
+
 function Account({ version }: { version: string }) {
   const q = useSettings()
   const save = useSaveSettings()
@@ -948,6 +981,7 @@ function Account({ version }: { version: string }) {
         </Field>
       </Card>
       <UploadLimits />
+      <DevRequestLimit />
       <Passkeys />
       <Card className="space-y-4 p-4 sm:p-5">
         <div className="text-sm font-semibold text-fg">{t.settings.account.password}</div>

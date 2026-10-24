@@ -186,7 +186,7 @@ func tellCount(e *env, key string) int {
 }
 
 // 开发上线通知 PM（R-116）：PM 挂着 ks wait 时，新开发 ks role dev，PM 几秒内被唤醒；
-// 同一次在线再挂 ks wait 不重复报；need_devs 提醒因开发够数被清除时一并告诉 PM；
+// 同一次在线再挂 ks wait 不重复报；你批准开开发会话后的接入语横幅因开发够数被清除时一并告诉 PM（R-169）；
 // 开发离线后重新上线、第一次挂上 ks wait 时再报一次。
 func TestDevOnlineTellsPM(t *testing.T) {
 	e := setup(t)
@@ -200,17 +200,23 @@ func TestDevOnlineTellsPM(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:pm", "role": "pm"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Do(ctx, "POST", "/agent/team/need", map[string]any{"session_key": "claude:pm", "count": 1, "reason": "R-1 等开发接手"}, nil); err != nil {
+	// PM 推荐开 1 个开发、你批准（R-169）→ 项目页出现接入语横幅；PM 先收到「批准」
+	var rec struct {
+		Decision store.Decision `json:"decision"`
+	}
+	if err := c.Do(ctx, "POST", "/agent/team/recommend", map[string]any{"session_key": "claude:pm", "count": 1, "reason": "R-1 要和用户多轮看效果"}, &rec); err != nil {
 		t.Fatal(err)
 	}
+	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": rec.Decision.Code, "answer": "批准"}}}, nil)
+	woke(t, parkWait(t, e, c, "claude:pm"), "批准")
 	before := pendingCount(e)
 
-	// PM 挂着 ks wait；开发声明身份 → PM 被唤醒：开发上线 + 提醒已清除
+	// PM 挂着 ks wait；开发声明身份 → PM 被唤醒：开发上线 + 横幅已撤下
 	done := parkWait(t, e, c, "claude:pm")
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:dev", "role": "dev"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	woke(t, done, "团队消息", "claude:dev", "已上线待命", "req_assign", "need_devs 要的 1 个，提醒已清除")
+	woke(t, done, "团队消息", "claude:dev", "已上线待命", "req_assign", "在线 Dev 已够用户批准的 1 个，接入语横幅已撤下")
 	if n := pendingCount(e); n != before {
 		t.Fatalf("上线通知不应进用户收件箱：%d → %d", before, n)
 	}

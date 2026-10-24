@@ -50,7 +50,8 @@ agent 调用：
   req review <R-x> <意见> [--image]   Rev 交审查意见（不改需求状态）
   commit list|link|ci ...   需求关联的提交与 CI（R-156）：标题末尾写（R-x）的提交自动关联；link 手动关联，ci 上报 CI 结果（只记录，不改仓库）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
-  team need <数量> --reason ...   PM 提醒用户开 Dev 会话
+  team recommend <数量> --reason ... [--work ...] [--duration ...]
+                                 PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
   team tell <文字> [--req R-x]   给本项目的 PM 留言（只送给 PM，不进用户收件箱；交验收时 PM 会自动收到通知）
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）

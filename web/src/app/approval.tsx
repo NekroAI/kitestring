@@ -11,7 +11,7 @@ import { Panel } from '../ui/overlay'
 import { RoleBadge } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
-import { buildAsks, type Ask } from './asks'
+import { buildAsks, decisionKind, type Ask } from './asks'
 import { useKsEvent } from './command'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import { ProxyNote, OverrideBox } from './grant'
@@ -26,7 +26,7 @@ import { Callout, sessionTitle } from './SessionCard'
 import { reducedMotion, SEAL_MS, usePendingMap } from './verdict'
 
 // 审批抽屉（R-177）：所有要你下判断的事只在这里处理——需求验收、阶段验收、计划批准、批准类 / 选项类决策、
-// （R-169 的请求预留）、转交、会话在等你、推翻代答。同一个外壳（需求抽屉的版式：顶栏 → 中部滚动 → 底部固定的判断），
+// Agent 的限时请求（R-169 推荐开 Dev 会话）、转交、会话在等你、推翻代答。同一个外壳（需求抽屉的版式：顶栏 → 中部滚动 → 底部固定的判断），
 // 按类型换中部内容；底部统一是 R-161 的 Verdict，用词按 R-176 的场景。
 // 从「要你处理」打开时按它的顺序排队：顶部 ‹ › 切换，← → / J K 同样切换；盖印后自动滑到下一件，处理完显示「都处理完了」。
 
@@ -84,7 +84,7 @@ function useAskSource() {
       if (x) return { ...old, plan: x }
       return old
     }
-    if ((p === 'd' || p === 'o') && d) return { key, kind: p === 'o' ? 'orphan' : d.approval ? 'approve' : 'decide', title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, d, projectId: d.project_id ?? '', projectName: d.project_name ?? '' }
+    if ((p === 'd' || p === 'o') && d) return { key, kind: p === 'o' ? 'orphan' : decisionKind(d), title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, d, projectId: d.project_id ?? '', projectName: d.project_name ?? '' }
     const x = (plans.data ?? []).find((v) => v.code === id)
     if ((p === 'p' || p === 'g') && x) return { key, kind: p === 'g' ? 'stage' : 'plan', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: x.current, projectId: x.project_id ?? '', projectName: x.project_name ?? '' }
     const s = (sessions.data?.sessions ?? []).find((v) => v.key === id)

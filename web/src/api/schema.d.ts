@@ -430,8 +430,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** PM 请用户开 Dev 会话（R-87） */
+        /** （兼容入口）PM 请用户开 Dev 会话：现在等同推荐开 Dev 会话，用户限时批准（R-87 → R-169） */
         post: operations["agent-need-devs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/team/recommend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** PM 推荐开独立 Dev 会话：用户限时批准，超时视为拒绝（R-169） */
+        post: operations["agent-recommend-devs"];
         delete?: never;
         options?: never;
         head?: never;
@@ -984,7 +1001,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** 撤销“需要 Dev 会话”的提醒（R-87） */
+        /** 撤掉“已批准开 Dev 会话”的接入语横幅（R-87 / R-169） */
         delete: operations["dismiss-need-devs"];
         options?: never;
         head?: never;
@@ -1568,13 +1585,33 @@ export interface components {
         "Agent-need-devsRequest": {
             /**
              * Format: int64
-             * @description 还需要几个 Dev 会话；0 表示撤销提醒
+             * @description 推荐开几个 Dev 会话；0 表示撤回在等批准的推荐、撤掉横幅
              */
             count: number;
-            /** @description 为什么需要：哪些需求在等、为什么不适合 subagent */
+            /** @description 为什么要开：为什么要并行、为什么一次性子代理不合适 */
             reason?: string;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
+        };
+        "Agent-recommend-devsRequest": {
+            /**
+             * Format: int64
+             * @description 推荐开几个 Dev 会话
+             */
+            count: number;
+            /** @description 预计用多久，例如「两小时」 */
+            duration?: string;
+            /**
+             * Format: int64
+             * @description 批准时限（分钟）；不填用设置里的（默认 30）
+             */
+            minutes?: number;
+            /** @description 为什么要开：为什么要并行、为什么一次性子代理不合适 */
+            reason: string;
+            /** @description 调用者（必须是本项目的 PM） */
+            session_key: string;
+            /** @description 开了做什么：哪些需求（写编号） */
+            work?: string;
         };
         "Agent-set-briefRequest": {
             /** @description 调用者（必须是本项目的 PM） */
@@ -1907,6 +1944,8 @@ export interface components {
             delivered_at?: string;
             delivered_turn?: string;
             device_name?: string;
+            /** Format: date-time */
+            expires_at?: string;
             from_decision?: string;
             id: string;
             /** @enum {string} */
@@ -1931,6 +1970,10 @@ export interface components {
             question: string;
             recommendation: string;
             replaced_by?: string;
+            /** Format: int64 */
+            request_count?: number;
+            /** @enum {string} */
+            request_kind?: "devs";
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
@@ -1941,6 +1984,7 @@ export interface components {
             short_title: string;
             status: string;
             summary?: string[] | null;
+            timed_out?: boolean;
         };
         DecisionChain: {
             code: string;
@@ -1977,6 +2021,8 @@ export interface components {
             delivered_at?: string;
             delivered_turn?: string;
             device_name?: string;
+            /** Format: date-time */
+            expires_at?: string;
             from_decision?: string;
             id: string;
             /** @enum {string} */
@@ -2001,6 +2047,10 @@ export interface components {
             question: string;
             recommendation: string;
             replaced_by?: string;
+            /** Format: int64 */
+            request_count?: number;
+            /** @enum {string} */
+            request_kind?: "devs";
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
@@ -2011,6 +2061,7 @@ export interface components {
             short_title: string;
             status: string;
             summary?: string[] | null;
+            timed_out?: boolean;
         };
         DecisionsOutBody: {
             decisions: components["schemas"]["Decision"][] | null;
@@ -2724,6 +2775,12 @@ export interface components {
             /** Format: date-time */
             to: string;
         };
+        RecommendOutBody: {
+            decision?: components["schemas"]["Decision"];
+            /** @description 同项目已有在等用户批准的推荐，没有新建 */
+            existing: boolean;
+            message: string;
+        };
         Release: {
             /** Format: date-time */
             at: string;
@@ -2979,6 +3036,11 @@ export interface components {
         };
         SettingsInBody: {
             ai: components["schemas"]["AIFeatures"];
+            /**
+             * Format: int64
+             * @description PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30
+             */
+            dev_request_minutes?: number;
             notify_default: components["schemas"]["NotifyConfig"];
             public_url: string;
             /** @description 留空表示不修改 */
@@ -2998,6 +3060,11 @@ export interface components {
         };
         SettingsView: {
             ai: components["schemas"]["AIFeatures"];
+            /**
+             * Format: int64
+             * @description PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝
+             */
+            dev_request_minutes: number;
             notify_default: components["schemas"]["NotifyConfig"];
             notify_events: string[] | null;
             public_url: string;
@@ -4133,7 +4200,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OkBodyBody"];
+                    "application/json": components["schemas"]["RecommendOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-recommend-devs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-recommend-devsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendOutBody"];
                 };
             };
             /** @description Error */

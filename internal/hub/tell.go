@@ -16,7 +16,7 @@ import (
 // 团队消息（R-135 / R-116）：会话之间的话只送给 Agent，不进你的收件箱。
 // 用决策的送达通道（kind = tell）：对方挂着 ks wait 时立刻被唤醒，否则下一轮开始时注入；送达一次就不再补发。
 // 三种来源：开发把需求设为待验收（送给派活的 PM，没有就送给项目 PM）；开发主动给 PM 留言（pm_notify / ks team tell）；
-// 开发上线待命、need_devs 提醒因开发够数被清除（送给项目 PM）。项目没有 PM 时安静跳过。
+// 开发上线待命、批准开 Dev 会话后的横幅因开发够数被清除（送给项目 PM）。项目没有 PM 时安静跳过。
 
 // livePM：key 是不是 projectID 里没结束的 PM 会话。
 func (h *Hub) livePM(ctx context.Context, key, projectID string) bool {
@@ -116,7 +116,7 @@ func sessionName(x store.Session) string {
 
 // devUp：开发在本项目上线时告诉项目 PM「开发 X 已上线待命，可以 req_assign」（R-116）：
 // 声明开发身份，或这次在线以来第一次挂上 ks wait（announce = true，每次在线只报一次，离线后重新计）；
-// 在线开发够数、need_devs 提醒被清除时也报（announce = false 时只在清除时送）。项目没有 PM 时不送。
+// 在线开发够数、用户批准开 Dev 会话后的接入语横幅被清除时也报（announce = false 时只在清除时送）。项目没有 PM 时不送。
 func (h *Hub) devUp(ctx context.Context, key string, announce bool) {
 	x, err := h.store.GetSession(ctx, key)
 	if err != nil || x.ProjectID == "" || x.Role != roles.Dev {
@@ -141,7 +141,7 @@ func (h *Hub) devUp(ctx context.Context, key string, announce bool) {
 	}
 	text := fmt.Sprintf("Dev %s 已上线待命，可以 req_assign 派活。", sessionName(x))
 	if cleared {
-		text += fmt.Sprintf("在线 Dev 已够 need_devs 要的 %d 个，提醒已清除。", need)
+		text += fmt.Sprintf("在线 Dev 已够用户批准的 %d 个，接入语横幅已撤下。", need)
 	}
 	if _, err := h.tell(ctx, pm, x.ProjectID, "", text); err != nil {
 		h.log.Warn("通知 PM 开发上线失败", "err", err)

@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/NekroAI/kitestring/internal/store"
@@ -37,6 +38,9 @@ func timeoutRejectText(what string) string {
 // approvalText：批准类决策（approval）送给 Agent 的答复。选「拒绝」的写成明确的拒绝，批准原样送达（与界面「批准」一致）。
 // 单点时网页发来的是选项文字加附言（「拒绝」「拒绝；附言」），多点时是 pointsAnswer 拼的「拒绝：附言」。
 func approvalText(d store.Decision) string {
+	if d.RequestKind != "" {
+		return requestText(d)
+	}
 	if !d.Approval {
 		return d.Answer
 	}
@@ -47,4 +51,50 @@ func approvalText(d store.Decision) string {
 	}
 	rest = strings.TrimLeft(rest, "；;：:，, \n")
 	return rejectedText("这个请求", rest)
+}
+
+// requestWhat：限时请求在文字里怎么称呼，例如「开 2 个 Dev 会话的推荐」。
+func requestWhat(d store.Decision) string {
+	if d.RequestKind == store.RequestDevs {
+		return fmt.Sprintf("开 %d 个 Dev 会话的推荐", max(d.RequestCount, 1))
+	}
+	return "这个请求"
+}
+
+// requestApproved：用户批准了限时请求（答复以「批准」开头）。
+func requestApproved(d store.Decision) bool {
+	return !d.TimedOut && strings.HasPrefix(strings.TrimSpace(d.Answer), "批准")
+}
+
+// requestText：限时请求（R-169）送给提问方的答复——批准 / 拒绝 / 超时视为拒绝三种写法分明。
+func requestText(d store.Decision) string {
+	what := requestWhat(d)
+	devs := d.RequestKind == store.RequestDevs
+	if d.TimedOut {
+		t := timeoutRejectText(what)
+		if devs {
+			t += "。不开 Dev 会话，继续用一次性子代理做。"
+		}
+		return t
+	}
+	a := strings.TrimSpace(d.Answer)
+	if rest, ok := strings.CutPrefix(a, "拒绝"); ok {
+		t := rejectedText(what, strings.TrimLeft(rest, "；;：:，, \n"))
+		if devs {
+			t += "。不开 Dev 会话，继续用一次性子代理做，不要再催用户开。"
+		}
+		return t
+	}
+	rest, ok := strings.CutPrefix(a, "批准")
+	if !ok {
+		return d.Answer
+	}
+	t := "批准（用户批准了" + what + "）"
+	if devs {
+		t += "。接入语已推送给用户；Dev 上线待命时你会收到通知，再用 req_assign 派活，在那之前照常用一次性子代理。"
+	}
+	if note := strings.TrimLeft(rest, "；;：:，, \n"); note != "" {
+		t += "附言：" + note
+	}
+	return t
 }

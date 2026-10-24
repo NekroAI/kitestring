@@ -126,7 +126,10 @@ func runMorning(args []string) error {
 func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
-	reason := fs.String("reason", "", "need：为什么需要 Dev 会话")
+	reason := fs.String("reason", "", "recommend / need：为什么要开 Dev 会话（为什么要并行、为什么子代理不合适）")
+	work := fs.String("work", "", "recommend：开了做什么（需求编号）")
+	duration := fs.String("duration", "", "recommend：预计用多久")
+	minutes := fs.Int("minutes", 0, "recommend：批准时限（分钟），默认用设置里的（30）")
 	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
@@ -135,11 +138,29 @@ func runTeam(args []string) error {
 	if key == "" {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
 	}
+	if fs.NArg() > 0 && fs.Arg(0) == "recommend" {
+		// ks team recommend <数量> --reason ... [--work ...] [--duration ...] [--minutes N]：推荐开 Dev 会话，用户限时批准（R-169）
+		n, err := strconv.Atoi(fs.Arg(1))
+		if fs.NArg() < 2 || err != nil || n < 1 || *reason == "" {
+			return fmt.Errorf("用法：ks team recommend <数量> --reason <为什么要开> [--work <做什么>] [--duration <预计多久>] [--minutes <批准时限>]")
+		}
+		body := map[string]any{"session_key": key, "count": n, "reason": *reason}
+		if *work != "" {
+			body["work"] = *work
+		}
+		if *duration != "" {
+			body["duration"] = *duration
+		}
+		if *minutes > 0 {
+			body["minutes"] = *minutes
+		}
+		return agentCall("POST", "/agent/team/recommend", body)
+	}
 	if fs.NArg() > 0 && fs.Arg(0) == "need" {
-		// ks team need <数量> --reason ...：提醒用户开开发会话（R-87）
+		// ks team need <数量> --reason ...：旧名，等同 recommend（R-87 → R-169）；数量 0 撤回推荐
 		n, err := strconv.Atoi(fs.Arg(1))
 		if fs.NArg() < 2 || err != nil || (n > 0 && *reason == "") {
-			return fmt.Errorf("用法：ks team need <数量> --reason <为什么需要>（数量填 0 撤销提醒）")
+			return fmt.Errorf("用法：ks team need <数量> --reason <为什么要开>（旧名，等同 ks team recommend；数量填 0 撤回推荐）")
 		}
 		return agentCall("POST", "/agent/team/need", map[string]any{"session_key": key, "count": n, "reason": *reason})
 	}

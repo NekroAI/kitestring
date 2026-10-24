@@ -312,10 +312,10 @@ export function useHandled(now: number, limit = 4): Handled[] {
       if (r.status === 'done') out.push({ at: r.updated_at, act: 'pass', scene: 'accept', text: r.title })
     }
     for (const d of decisions.data ?? []) {
-      if (d.kind !== 'decision' || !d.answered_at || (d.proxy_by && !d.overridden_at)) continue
+      if (d.kind !== 'decision' || !d.answered_at || d.timed_out || (d.proxy_by && !d.overridden_at)) continue // 超时视为拒绝的不是你做的判断（R-169）
       const opt0 = d.options?.[0]
       const act = d.approval ? (opt0 && d.answer?.startsWith(opt0) ? 'pass' : 'back') : 'answer'
-      out.push({ at: d.answered_at, act, scene: d.approval ? 'approval' : 'answer', text: d.short_title || d.question })
+      out.push({ at: d.answered_at, act, scene: d.request_kind ? 'request' : d.approval ? 'approval' : 'answer', text: d.short_title || d.question })
     }
     for (const x of plans.data ?? []) for (const st of x.stages) if (st.passed_at) out.push({ at: st.passed_at, act: 'pass', scene: 'accept', text: `${x.title} · ${t.ref.stage(st.seq)}` })
     return out

@@ -92,7 +92,16 @@ type Decision struct {
 	// 决策后果链（R-154）：FromDecision 是提问方声明的来源决策（D-x），Overturns 为真表示这条推翻了它的结论，否则是接着它往下问
 	FromDecision string `json:"from_decision,omitempty"`
 	Overturns    bool   `json:"overturns,omitempty"`
+	// Agent 的请求（R-169）：RequestKind 非空表示这是一条限时请求（目前只有 devs = PM 推荐开独立开发会话），
+	// 也是批准类（approval = true）；RequestCount 是要开几个；ExpiresAt 到点仍没作答按规则视为拒绝，TimedOut 记下这种结局。
+	RequestKind  string     `json:"request_kind,omitempty" enum:"devs"`
+	RequestCount int        `json:"request_count,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	TimedOut     bool       `json:"timed_out,omitempty"`
 }
+
+// RequestDevs：PM 推荐开独立开发会话（R-169）。
+const RequestDevs = "devs"
 
 func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 
@@ -100,7 +109,8 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	COALESCE(x.project_id, ''), COALESCE(p.name, ''), COALESCE(x.requirement_id, ''), COALESCE(r.seq, 0), COALESCE(r.title, ''),
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
-	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason
+	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
+	x.request_kind, x.request_count, x.expires_at, x.timed_out
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -113,11 +123,13 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var seq, rseq, pseq int
 	var options, optFiles, ctxFiles, created, files, bs, points, summary, choices string
 	var answered, delivered sql.NullString
-	var proxyAt, overAt string
+	var proxyAt, overAt, expires string
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
-		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason)
+		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut)
+	d.ExpiresAt = parseNullTS(sql.NullString{String: expires, Valid: expires != ""})
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
 	d.OverriddenAt = parseNullTS(sql.NullString{String: overAt, Valid: overAt != ""})
@@ -175,8 +187,12 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			optFiles = [][]FileRef{}
 		}
 		of, _ := json.Marshal(optFiles)
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns)
+		expires := ""
+		if d.ExpiresAt != nil {
+			expires = ts(*d.ExpiresAt)
+		}
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires)
 		return err
 	})
 	if err != nil {
@@ -247,6 +263,9 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 	if d.Status == DecClosed {
 		return d, fmt.Errorf("%s 已关闭", d.Code)
 	}
+	if d.TimedOut {
+		return d, fmt.Errorf("%s 已超时，按规则视为拒绝；需要的话请 Agent 重新提", d.Code)
+	}
 	if strings.TrimSpace(answer) == "" && len(files) == 0 {
 		return d, errors.New("答复不能为空")
 	}
@@ -259,6 +278,41 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 		return d, err
 	}
 	return s.GetDecision(ctx, d.ID)
+}
+
+// ExpireRequest：限时请求到点仍没作答，按规则视为拒绝（R-169）——写入 answer、标记 timed_out，进入“已决策待接收”送给提问方。
+// 已作答、已关闭、没到期的不动，返回 ok = false。
+func (s *Store) ExpireRequest(ctx context.Context, id, answer string) (Decision, bool, error) {
+	d0, err := s.GetDecision(ctx, id)
+	if err != nil {
+		return d0, false, err
+	}
+	if d0.RequestKind == "" || d0.ExpiresAt == nil || time.Now().Before(*d0.ExpiresAt) || d0.Status != DecPending {
+		return d0, false, nil
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, timed_out = 1, answered_at = ?, delivered_at = NULL, delivered_turn = ''
+		WHERE id = ? AND status = ?`, DecAnswered, answer, now(), d0.ID, DecPending)
+	if err != nil {
+		return Decision{}, false, err
+	}
+	k, _ := res.RowsAffected()
+	d, err := s.GetDecision(ctx, id)
+	return d, k > 0, err
+}
+
+// PendingRequests 列出还在等用户作答的限时请求（projectID 为空表示全部）。
+func (s *Store) PendingRequests(ctx context.Context, projectID, kind string) ([]Decision, error) {
+	q := decSelect + ` WHERE x.status = ? AND x.request_kind <> ''`
+	args := []any{DecPending}
+	if projectID != "" {
+		q += ` AND x.project_id = ?`
+		args = append(args, projectID)
+	}
+	if kind != "" {
+		q += ` AND x.request_kind = ?`
+		args = append(args, kind)
+	}
+	return s.queryDecs(ctx, q+` ORDER BY x.seq`, args...)
 }
 
 // MarkDelivered 标记决策已注入（幂等）。

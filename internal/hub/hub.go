@@ -36,6 +36,8 @@ type Settings struct {
 	AI            AIFeatures         `json:"ai"`
 	NotifyDefault store.NotifyConfig `json:"notify_default"`
 	Upload        UploadLimits       `json:"upload"`
+	// DevRequestMinutes：PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝（R-169）；0 = 默认 30
+	DevRequestMinutes int `json:"dev_request_minutes,omitempty"`
 }
 
 // UploadLimits 附件大小上限（MB），0 表示用默认值（R-72）。
@@ -154,6 +156,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	}
 	h.mu.Unlock()
 	h.resumeGrantExpiry(ctx)
+	h.resumeRequestExpiry(ctx)
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()

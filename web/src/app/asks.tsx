@@ -58,7 +58,7 @@ export function buildAsks(wb: WB): Ask[] {
     for (const d of th.decisions) {
       // 挂在待验收需求上的决策在验收视图里一起处理，不另列一条
       if (d.requirement_code && reviewing.has(d.requirement_code)) continue
-      push({ key: `d:${d.code}`, kind: d.approval ? 'approve' : 'decide', title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
+      push({ key: `d:${d.code}`, kind: decisionKind(d), title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     }
     for (const d of th.orphans) push({ key: `o:${d.code}`, kind: 'orphan', title: d.short_title || d.question, at: d.answered_at ?? d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     if (s && s.state !== 'ended') {
@@ -85,9 +85,22 @@ export function useAsks(wb: WB) {
 
 export { useOpenAsk } from './nav'
 
+// decisionKind：决策归哪一类——Agent 的限时请求（R-169 推荐开 Dev 会话）、批准类、选项类。
+export function decisionKind(d: Decision): AskKind {
+  if (d.request_kind) return 'request'
+  return d.approval ? 'approve' : 'decide'
+}
+
+// requestLeft：限时请求还剩多久到点（到点按规则视为拒绝）。
+export function requestLeft(d: Decision, now: number) {
+  if (!d.expires_at) return ''
+  const ms = new Date(d.expires_at).getTime() - now
+  return ms > 0 ? t.ask.request.left(Math.ceil(ms / 60000)) : t.ask.request.expiring
+}
+
 // decisionAsk：单条待决策的条目（会话面板等只列决策的地方用）。
 export function decisionAsk(d: Decision, s?: Session): Ask {
-  return { key: `d:${d.code}`, kind: d.approval ? 'approve' : 'decide', title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, s, d, projectId: d.project_id || '', projectName: d.project_name || '' }
+  return { key: `d:${d.code}`, kind: decisionKind(d), title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, s, d, projectId: d.project_id || '', projectName: d.project_name || '' }
 }
 
 // ---------- 条目 ----------
@@ -126,7 +139,7 @@ function ReviewLine({ code }: { code: string }) {
   )
 }
 
-function statusLine(a: Ask): React.ReactNode {
+function statusLine(a: Ask, now: number): React.ReactNode {
   const d = a.d
   switch (a.kind) {
     case 'review':
@@ -140,8 +153,9 @@ function statusLine(a: Ask): React.ReactNode {
       return firstLine(d.context) || t.ask.free
     }
     case 'approve':
-    case 'request':
       return firstLine(d?.context) || t.desk.approval
+    case 'request':
+      return d ? [t.ask.request.what(d.request_count ?? 1), requestLeft(d, now)].filter(Boolean).join(t.common.sep) : t.desk.approval
     case 'plan': {
       const n = a.plan!.stages.reduce((k, st) => k + st.requirements.length, 0)
       return t.ask.plan(a.plan!.stages.length, n)
@@ -244,7 +258,7 @@ export function AskItem({
         <span className="min-w-0 truncate text-[14px] font-semibold text-fg group-hover:text-accent">{a.title}</span>
       </span>
       <span className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5 text-fg-2">
-        <span className="min-w-0 flex-1 truncate">{statusLine(a)}</span>
+        <span className="min-w-0 flex-1 truncate">{statusLine(a, now)}</span>
         <Advice a={a} />
       </span>
     </button>

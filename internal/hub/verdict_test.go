@@ -62,3 +62,38 @@ func TestApprovalText(t *testing.T) {
 		t.Fatalf("带理由：%q", got)
 	}
 }
+
+// 限时请求（R-169）：批准 / 拒绝 / 超时视为拒绝三种答复文字分明，参谋代答的包装也照用。
+func TestRequestText(t *testing.T) {
+	base := store.Decision{Approval: true, RequestKind: store.RequestDevs, RequestCount: 2, Options: []string{"批准", "拒绝"}}
+	ok := base
+	ok.Answer = "批准；先做 R-3"
+	no := base
+	no.Answer = "拒绝；子代理够了"
+	late := base
+	late.TimedOut = true
+	late.Answer = timeoutRejectText(requestWhat(late))
+	for _, c := range []struct {
+		d          store.Decision
+		want, deny []string
+	}{
+		{ok, []string{"批准（用户批准了开 2 个 Dev 会话的推荐）", "附言：先做 R-3", "req_assign"}, []string{"拒绝", "超时"}},
+		{no, []string{"拒绝（用户明确拒绝了开 2 个 Dev 会话的推荐）", "子代理够了", "继续用一次性子代理"}, []string{"超时", "批准（"}},
+		{late, []string{"超时未批，按规则视为拒绝开 2 个 Dev 会话的推荐", "不是用户明确拒绝", "继续用一次性子代理"}, []string{"明确拒绝了", "批准（"}},
+	} {
+		got := proxyText(c.d)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("应包含 %q：%s", w, got)
+			}
+		}
+		for _, w := range c.deny {
+			if strings.Contains(got, w) {
+				t.Errorf("不应包含 %q：%s", w, got)
+			}
+		}
+		if requestApproved(c.d) != (c.d.Answer == ok.Answer) {
+			t.Errorf("requestApproved 判断错：%+v", c.d)
+		}
+	}
+}

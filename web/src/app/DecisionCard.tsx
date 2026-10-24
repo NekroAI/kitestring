@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ArrowRightLeft, Keyboard, PenLine, RotateCcw, Sparkles, X } from 'lucide-react'
+import { ArrowRightLeft, Keyboard, PenLine, RotateCcw, Sparkles, Timer, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
@@ -21,6 +21,7 @@ import { Md, plainText } from '../ui/markdown'
 import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionChain } from './chain'
 import { actWord, Seal, UndoBar, Verdict, verdictKey } from './verdict'
+import { requestLeft } from './asks'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
 function recIndex(options: string[], rec: string): number {
@@ -85,6 +86,25 @@ function Context({ text, expanded }: { text: string; expanded?: boolean }) {
 
 // DecisionComposer：待决策，像回复消息一样作答。
 // drawer：在审批抽屉里（R-177）——正文在抽屉中部滚动，附言与判断按钮固定在抽屉底部；打开时焦点放进来，⌘↵ / 数字键直接可用。
+// RequestNote：Agent 的限时请求（R-169，PM 推荐开 Dev 会话）——开几个、还剩多久；到点没批按规则视为不开。
+function RequestNote({ d, now }: { d: Decision; now: number }) {
+  const left = requestLeft(d, now)
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-wait/25 bg-wait-soft/60 px-3 py-2.5 text-sm">
+      <Timer className="mt-0.5 size-4 shrink-0 text-wait" />
+      <div className="min-w-0 flex-1 leading-relaxed">
+        <div className="font-medium text-fg">
+          {t.ask.request.what(d.request_count ?? 1)}
+          {left && <span className="ml-2 font-semibold text-wait tabular">{left}</span>}
+        </div>
+        <div className="text-[13px] text-fg-2">
+          {t.ask.request.rule}；{t.ask.request.joinAfter}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedded?: boolean; drawer?: boolean }) {
   const now = useNow()
   const { drafts, setDraft, queued, sealed, send, cancel } = useOutbox()
@@ -103,7 +123,7 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
   const multi = !!d.points?.length
   const approval = !!d.approval
   // 用词场景（R-176）：批准类决策「批准 / 拒绝」，选项类「回答」
-  const scene = approval ? 'approval' : 'answer'
+  const scene = d.request_kind ? 'request' : approval ? 'approval' : 'answer' // Agent 的限时请求（R-169）同样是「批准 / 拒绝」
   const picks = multi ? currentPicks(d, draft.picks) : []
   const picked = multi && picks.every((c) => c >= 0)
   const answer = multi ? (picked ? picksText(d, picks, draft.note) : '') : composeAnswer(draft, options)
@@ -171,6 +191,7 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
           <h3 className="font-display text-base leading-snug font-semibold text-fg sm:text-[17px]">{title}</h3>
           {d.short_title && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}
         </div>
+        {d.request_kind && <RequestNote d={d} now={now} />}
         {d.summary?.length ? (
           <PlanSummary lines={d.summary} full={d.context ? <Context text={d.context} expanded /> : undefined} />
         ) : (

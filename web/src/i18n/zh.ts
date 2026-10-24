@@ -136,7 +136,7 @@ export const zh = {
   } as Record<string, string>,
   roleTip: {
     pm: 'PM（项目经理）：接需求、分派、跟进验收；常驻在线',
-    dev: 'Dev（开发）：实现分派来的需求；常驻在线',
+    dev: 'Dev（开发）：你批准 PM 的推荐后才开，并行接 PM 派的活；常驻在线',
     advisor: 'Adv（顾问）：陪你讨论、记需求草稿，不派活',
     reviewer: 'Rev（审查员）：只做审查分析，审查意见挂在需求上',
   } as Record<string, string>,
@@ -280,6 +280,14 @@ export const zh = {
     terminal: '这一步要在终端里处理：回到它所在的终端窗口确认或回答。',
     open: '去审批',
     proxyTitle: '推翻参谋的代答',
+    // Agent 的限时请求（R-169）：PM 推荐开独立 Dev 会话，到点没批按规则视为拒绝
+    request: {
+      what: (n: number) => `开 ${n} 个 Dev 会话`,
+      left: (min: number) => (min >= 60 ? `还剩 ${Math.floor(min / 60)} 小时${min % 60 ? ` ${min % 60} 分` : ''}` : `还剩 ${min} 分钟`),
+      expiring: '即将到点',
+      rule: '到点没批按规则视为不开，PM 继续用一次性子代理',
+      joinAfter: '批准后推送接入语，项目页显示怎么开',
+    },
   },
 
   ref: {
@@ -676,11 +684,11 @@ export const zh = {
   projects: {
     pm: (state: string) => `PM ${state}`,
     noPm: '没有 PM',
-    needDevs: (n: number) => `PM 需要 ${n} 个 Dev 会话`,
+    needDevs: (n: number) => `你批准了开 ${n} 个 Dev 会话`,
     joinHint: '在项目目录打开 Claude Code（或 Codex），对它说：',
     needDismiss: '不需要了',
     joinPhrase: (name: string) => `连接到纸鸢，做「${name}」的 Dev（运行 ks role dev）`,
-    devs: (online: number, total: number) => (total ? `Dev ${online} / ${total} 在线` : '没有 Dev'),
+    devs: (online: number) => `Dev ${online} 在线`,
     autoDispatch: '会话空闲时自动送达待开始的需求',
     agentRelease: '允许 PM / Adv 放行草稿',
     agentReleaseHint: `PM 或 Adv 可以把做法明确的草稿改为待开始（派草稿也算），必须写理由，进展里记下谁放行、为什么，你可以一键撤回；验收${ACC.pass}仍只由你操作。Dev 不能放行`,
@@ -711,6 +719,7 @@ export const zh = {
     evStage: (code: string, n: number, title: string) => `你${ACC.pass}了 ${code} 阶段 ${n}：${title}`,
     evAnswer: (code: string, verb = VERB.answer.pass) => `你${verb}了 ${code}`,
     evProxy: (code: string) => `Adv 代答了 ${code}`,
+    evTimeout: (code: string) => `${code} 超时未批，按规则视为拒绝`,
     hide: '在项目列表里隐藏',
     hideHint: '误识别的目录、不想看到的项目可以隐藏；它的会话和需求照常显示，项目列表底部可以展开找回',
     hiddenCount: (n: number) => `已隐藏 ${n} 个`,
@@ -1253,6 +1262,11 @@ export const zh = {
         hint: '单个文件的上限，网页和 Agent 上传都按这里检查。调到 50 MB 以上时，Hub 前面的反向代理也要放得下（如 nginx / openresty 的 client_max_body_size）。',
         image: '图片（MB）',
         video: '录屏（MB）',
+      },
+      devRequest: {
+        title: '开 Dev 会话的批准时限',
+        hint: 'PM 默认用一次性子代理干活，需要并行时才推荐开 Dev 会话。推荐出现在「要你处理」里，不推送；到点没批按规则视为不开。',
+        minutes: '时限（分钟）',
       },
       password: '修改密码',
       oldPassword: '当前密码',

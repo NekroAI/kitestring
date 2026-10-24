@@ -157,7 +157,7 @@ function Section({ title, right, children }: { title: string; right?: ReactNode;
   )
 }
 
-// Team：这个项目有没有 PM、几个开发在线（R-84）。没有任何身份会话时不显示。
+// Team：这个项目有没有 PM、几个开发在线（R-84）。没有任何身份会话时不显示；Dev 离线不当异常（R-169）。
 export function Team({ sessions }: { sessions: Session[] }) {
   const pm = sessions.filter((s) => s.role === 'pm').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
   const devs = sessions.filter((s) => s.role === 'dev' && s.state !== 'ended')
@@ -170,22 +170,25 @@ export function Team({ sessions }: { sessions: Session[] }) {
         <span className={cx('size-1.5 rounded-full', presenceDot[pp])} />
         {pm ? t.projects.pm(t.presence[pp]) : t.projects.noPm}
       </span>
-      <span className="flex items-center gap-1.5">
-        <span className={cx('size-1.5 rounded-full', online ? presenceDot.standby : presenceDot.offline)} />
-        {t.projects.devs(online, devs.length)}
-      </span>
+      {/* 开发会话按需才开（R-169）：离线不算缺人，只在有在线的 Dev 时显示 */}
+      {online > 0 && (
+        <span className="flex items-center gap-1.5">
+          <span className={cx('size-1.5 rounded-full', presenceDot.standby)} />
+          {t.projects.devs(online)}
+        </span>
+      )}
     </span>
   )
 }
 
-// NeedDevs：PM 请你开开发会话（R-87）。开发上线够数后由 hub 自动清除。
+// NeedDevs：你批准了 PM 的推荐、要开开发会话（R-87 → R-169）：显示接入语。开发上线够数后由 hub 自动清除。
 function NeedDevs({ p, now }: { p: Stat; now: number }) {
   const act = useActions()
   if (!p.needDevs) return null
   const phrase = t.projects.joinPhrase(p.name)
   return (
-    <div className="mb-3 flex items-start gap-2.5 rounded-xl bg-wait-soft px-3.5 py-3">
-      <UserPlus className="mt-0.5 size-4 shrink-0 text-wait" />
+    <div className="mb-3 flex items-start gap-2.5 rounded-xl bg-accent-soft px-3.5 py-3">
+      <UserPlus className="mt-0.5 size-4 shrink-0 text-accent" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-fg">
           {t.projects.needDevs(p.needDevs)}

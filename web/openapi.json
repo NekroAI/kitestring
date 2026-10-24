@@ -374,14 +374,14 @@
         "additionalProperties": false,
         "properties": {
           "count": {
-            "description": "还需要几个 Dev 会话；0 表示撤销提醒",
+            "description": "推荐开几个 Dev 会话；0 表示撤回在等批准的推荐、撤掉横幅",
             "format": "int64",
             "maximum": 5,
             "minimum": 0,
             "type": "integer"
           },
           "reason": {
-            "description": "为什么需要：哪些需求在等、为什么不适合 subagent",
+            "description": "为什么要开：为什么要并行、为什么一次性子代理不合适",
             "type": "string"
           },
           "session_key": {
@@ -393,6 +393,48 @@
         "required": [
           "session_key",
           "count"
+        ],
+        "type": "object"
+      },
+      "Agent-recommend-devsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "推荐开几个 Dev 会话",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "duration": {
+            "description": "预计用多久，例如「两小时」",
+            "type": "string"
+          },
+          "minutes": {
+            "description": "批准时限（分钟）；不填用设置里的（默认 30）",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "description": "为什么要开：为什么要并行、为什么一次性子代理不合适",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "调用者（必须是本项目的 PM）",
+            "minLength": 1,
+            "type": "string"
+          },
+          "work": {
+            "description": "开了做什么：哪些需求（写编号）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "count",
+          "reason"
         ],
         "type": "object"
       },
@@ -1485,6 +1527,10 @@
           "device_name": {
             "type": "string"
           },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "from_decision": {
             "type": "string"
           },
@@ -1587,6 +1633,16 @@
           "replaced_by": {
             "type": "string"
           },
+          "request_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "request_kind": {
+            "enum": [
+              "devs"
+            ],
+            "type": "string"
+          },
           "requirement_code": {
             "type": "string"
           },
@@ -1624,6 +1680,9 @@
               "array",
               "null"
             ]
+          },
+          "timed_out": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1787,6 +1846,10 @@
           "device_name": {
             "type": "string"
           },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "from_decision": {
             "type": "string"
           },
@@ -1889,6 +1952,16 @@
           "replaced_by": {
             "type": "string"
           },
+          "request_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "request_kind": {
+            "enum": [
+              "devs"
+            ],
+            "type": "string"
+          },
           "requirement_code": {
             "type": "string"
           },
@@ -1926,6 +1999,9 @@
               "array",
               "null"
             ]
+          },
+          "timed_out": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4284,6 +4360,26 @@
         ],
         "type": "object"
       },
+      "RecommendOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "existing": {
+            "description": "同项目已有在等用户批准的推荐，没有新建",
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "existing",
+          "message"
+        ],
+        "type": "object"
+      },
       "Release": {
         "additionalProperties": false,
         "properties": {
@@ -5300,6 +5396,13 @@
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
+          "dev_request_minutes": {
+            "description": "PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": 0,
+            "type": "integer"
+          },
           "notify_default": {
             "$ref": "#/components/schemas/NotifyConfig"
           },
@@ -5346,6 +5449,11 @@
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
+          "dev_request_minutes": {
+            "description": "PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝",
+            "format": "int64",
+            "type": "integer"
+          },
           "notify_default": {
             "$ref": "#/components/schemas/NotifyConfig"
           },
@@ -5390,7 +5498,8 @@
           "notify_default",
           "notify_events",
           "upload_image_mb",
-          "upload_video_mb"
+          "upload_video_mb",
+          "dev_request_minutes"
         ],
         "type": "object"
       },
@@ -7333,7 +7442,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OkBodyBody"
+                  "$ref": "#/components/schemas/RecommendOutBody"
                 }
               }
             },
@@ -7350,7 +7459,48 @@
             "description": "Error"
           }
         },
-        "summary": "PM 请用户开 Dev 会话（R-87）",
+        "summary": "（兼容入口）PM 请用户开 Dev 会话：现在等同推荐开 Dev 会话，用户限时批准（R-87 → R-169）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/team/recommend": {
+      "post": {
+        "operationId": "agent-recommend-devs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-recommend-devsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PM 推荐开独立 Dev 会话：用户限时批准，超时视为拒绝（R-169）",
         "tags": [
           "agent"
         ]
@@ -9072,7 +9222,7 @@
             "description": "Error"
           }
         },
-        "summary": "撤销“需要 Dev 会话”的提醒（R-87）",
+        "summary": "撤掉“已批准开 Dev 会话”的接入语横幅（R-87 / R-169）",
         "tags": [
           "projects"
         ]
