@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { ApiError, type ReqFields, type Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { cx, relTime, useNow } from '../lib/util'
+import { cx, loadPref, relTime, savePref, useNow } from '../lib/util'
 import { Button, ErrorState, Skeleton, Textarea, Tip } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
@@ -57,6 +57,17 @@ export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; 
   // 本轮还没有证据（刚被退回、还没开工）时停在最新的记录。之后有新记录、且本来就在底部附近时跟上去。
   const reviewing = r?.status === 'review'
   const stick = useRef(true)
+  // 记下需求说明区和底部操作区的高度，下次加载时骨架照这个画（R-211）
+  const headBox = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!r) return
+    const id = window.setTimeout(() => {
+      const head = (headBox.current?.firstElementChild as HTMLElement | null)?.offsetHeight
+      const foot = (scroller.current?.nextElementSibling as HTMLElement | null)?.offsetHeight // 底部操作区
+      if (head) savePref('ks.skel.req', { head, foot: foot || loadPref<DrawerShape>('ks.skel.req', drawerFallback).foot })
+    }, 600)
+    return () => window.clearTimeout(id)
+  }, [r?.id, r?.status]) // eslint-disable-line react-hooks/exhaustive-deps
   const toLatest = (smooth = false) => {
     const el = scroller.current
     if (!el) return
@@ -95,13 +106,12 @@ export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; 
           <ErrorState error={q.error} onRetry={() => q.refetch()} />
         </div>
       ) : !r ? (
-        <div className="space-y-3 p-5">
-          <Skeleton className="h-8" />
-          <Skeleton className="h-24" />
-        </div>
+        <DrawerSkeleton peek={peek} />
       ) : (
         <>
-          <Brief r={r} compact={reviewing} />
+          <div ref={headBox} className="contents">
+            <Brief r={r} compact={reviewing} />
+          </div>
           <div
             ref={scroller}
             onScroll={(e) => {
@@ -133,6 +143,55 @@ export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; 
       )}
     </div>
     </AnnotateTarget.Provider>
+  )
+}
+
+// DrawerSkeleton：需求抽屉 / 审批抽屉加载中（R-211）——和真实布局同一副骨架：标题、状态胶囊一排、两行摘要，
+// 中间一张证据卡，底部留言框和操作按钮；说明区、底部区的高度取上次打开时记下的。
+type DrawerShape = { head: number; foot: number }
+const drawerFallback: DrawerShape = { head: 128, foot: 114 }
+export function DrawerSkeleton({ peek }: { peek?: boolean }) {
+  const [sh] = useState(() => loadPref<DrawerShape>('ks.skel.req', drawerFallback))
+  return (
+    <div aria-hidden className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 overflow-hidden border-b border-line px-4 pt-2 pb-3 sm:px-5" style={{ height: sh.head }}>
+        <Skeleton className="h-6 w-3/4" />
+        <div className="mt-3.5 flex items-center gap-2">
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-16" />
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="ml-auto h-6 w-12" />
+        </div>
+        <Skeleton className="mt-3.5 h-3.5 w-full" />
+        <Skeleton className="mt-2 h-3.5 w-2/3" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden bg-surface px-4 py-4 sm:px-5">
+        <div className="space-y-3 rounded-2xl px-4 py-4 ring-1 ring-line ring-inset">
+          <Skeleton className="h-3.5 w-1/3" />
+          <Skeleton className="h-5 w-3/5" />
+          <Skeleton className="h-3.5 w-1/4" />
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2 pt-2">
+              <Skeleton className="h-4 w-1/2" />
+              <Skeleton className="h-3.5 w-5/6" />
+            </div>
+          ))}
+        </div>
+      </div>
+      {!peek && (
+        <div className="flex shrink-0 flex-col justify-between gap-3 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5" style={{ height: sh.foot }}>
+          <Skeleton className="h-11 w-full rounded-xl" />
+          {sh.foot > 80 && (
+            <div className="flex items-center justify-end gap-2">
+              <Skeleton className="mr-auto h-3.5 w-28" />
+              <Skeleton className="h-9 w-20" />
+              <Skeleton className="h-9 w-20" />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -14,6 +14,7 @@ import { Collapse, Item, List as MotionList } from '../ui/motion'
 import { cx, relTime, useMedia, useNow, usePref } from '../lib/util'
 import { useTouchDrag } from '../ui/touchDrag'
 import { Button, Card, CardSkeleton, Empty, ErrorState, Input, PageHeader, Segmented, Switch, Tip } from '../ui/base'
+import { GhostSkeleton, useGhost } from '../ui/shape'
 import { PriorityTag } from '../ui/marks'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { allStatuses, NewReqModal, ReleaseBadge, StatusMenu, useSetStatus } from '../app/requirements'
@@ -302,6 +303,10 @@ export default function RequirementsPage() {
   const phone = width > 0 && width < PHONE
   // 桌面 / 平板的盘面占满视口剩余高度，各区域内滚动；手机维持整页纵向滚动
   const fillH = useFillHeight(rootEl, view === 'pool' && !phone && width > 0)
+  // 加载骨架按上次的版面画（R-211）：需求池和计数一起到齐前都算加载中，否则分布条、计数会在需求块出来后再插进来
+  const loading = q.isPending || (view !== 'plans' && pool.isPending) || !width
+  const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null)
+  const ghost = useGhost(`ks.skel.pool.${view}.${phone ? 'p' : 'd'}`, contentEl, !loading && !search)
   const newItem = () => (view === 'plans' ? setCreatingPlan(true) : setCreating(true))
 
   // V / 命令面板切换视图（R-127）
@@ -424,7 +429,7 @@ export default function RequirementsPage() {
       )}
     </div>
   )
-  const subtitle = q.isPending ? ' ' : view === 'plans' ? planSummary : projName ? t.pool.subtitleProject(projName) : t.pool.subtitle
+  const subtitle = q.isPending ? '\u00a0' : view === 'plans' ? planSummary : projName ? t.pool.subtitleProject(projName) : t.pool.subtitle
   // 分布条的计数同样按操作后的状态（同一信息只在一处表达，列头和分布条不能对不上）
   const p0 = pool.data
   const p = useMemo(() => {
@@ -540,8 +545,8 @@ export default function RequirementsPage() {
 
       {q.isError ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
-      ) : q.isPending || !width ? (
-        <CardSkeleton rows={2} />
+      ) : loading ? (
+        ghost ? <GhostSkeleton ghost={ghost} /> : <CardSkeleton rows={2} />
       ) : view === 'plans' ? (
         <PlansView project={project || undefined} showClosed={closedPlans} onNew={() => setCreatingPlan(true)} />
       ) : !all.length ? (
@@ -559,9 +564,9 @@ export default function RequirementsPage() {
           </Empty>
         </Card>
       ) : (
-        <>
+        <div ref={setContentEl} className={fillH ? 'flex min-h-0 flex-1 flex-col' : undefined}>
           {p && (
-            <div className={cx('space-y-3', phone ? 'mb-4' : 'mb-5')}>
+            <div data-skel-kids className={cx('space-y-3', phone ? 'mb-4' : 'mb-5')}>
               <DistBar counts={p.counts} statuses={allStatuses} active={phone ? null : active} onPick={pickSeg} thin={phone} />
               {phone ? (
                 <>
@@ -600,7 +605,7 @@ export default function RequirementsPage() {
               </PoolProvider>
             )
           )}
-        </>
+        </div>
       )}
 
       {phone && view !== 'plans' && (

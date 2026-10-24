@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { CheckCheck, ChevronLeft, ChevronRight, CircleCheck, PanelRight, X } from 'lucide-react'
 import type { Decision, Session } from '../api/client'
-import { useDecisions, usePlans, useSessions } from '../api/queries'
+import { useDecisions, useMorning, usePlans, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { Button, Tip } from '../ui/base'
+import { Button, Skeleton, Tip } from '../ui/base'
 import { Panel } from '../ui/overlay'
 import { Pager, PeekPage } from '../ui/gesture'
 import { RoleBadge } from '../ui/marks'
@@ -22,7 +22,7 @@ import { AdviceNote } from './morning'
 import { decKey } from './outbox'
 import { PlanBody } from './plans'
 import { ReplyBox } from './replyBox'
-import { BackButton, ReqView } from './reqDrawer'
+import { BackButton, DrawerSkeleton, ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
 import { isStatusReq, StatusReqNote } from './statusReq'
 import { useAdvance, usePendingMap } from './verdict'
@@ -92,7 +92,7 @@ function useAskSource() {
 
 export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onClose: () => void }) {
   const [, setParams] = useSearchParams()
-  const { asks, find } = useAskSource()
+  const { asks, find, loading } = useAskSource()
   const live = useMemo(() => new Set(asks.map((a) => a.key)), [asks])
   const [order, setOrder] = useState<string[]>([])
   const [dir, setDir] = useState<Dir>('next')
@@ -202,7 +202,18 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   }
   const top = (
     <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
-      {goBack ? <BackButton back={goBack} /> : inQueue && (
+      {goBack ? <BackButton back={goBack} /> : loading && !inQueue ? (
+        // 加载中先占住前后切换的位置（R-211）
+        <span aria-hidden className="flex items-center gap-1">
+          <span className={navBtn}>
+            <ChevronLeft className="size-[18px] opacity-30" />
+          </span>
+          <span className={navBtn}>
+            <ChevronRight className="size-[18px] opacity-30" />
+          </span>
+          <Skeleton className="ml-1 h-3 w-24" />
+        </span>
+      ) : inQueue && (
         <>
           <Tip content={label(prev)}>
             <button className={navBtn} disabled={!prev} aria-label={t.ask.prev} onClick={() => prev && go(prev, 'prev')}>
@@ -254,7 +265,19 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
           return a ? <PeekPage kind={a.code ? `${askKindLabel(a)} · ${a.code}` : askKindLabel(a)} title={a.title} /> : null
         }}
       >
-        {finished ? <AllDone top={top} onClose={onClose} /> : cur ? <AskBody a={cur} top={top} sealed={sealed} /> : <Gone top={top} />}
+        {/* 数据没到齐时先画骨架，不先闪一下「已经处理了」（R-211） */}
+        {finished ? (
+          <AllDone top={top} onClose={onClose} />
+        ) : cur ? (
+          <AskBody a={cur} top={top} sealed={sealed} />
+        ) : loading ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {top}
+            <DrawerSkeleton />
+          </div>
+        ) : (
+          <Gone top={top} />
+        )}
       </Pager>
     </Panel>
     </PeekScope>
@@ -265,6 +288,15 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
 function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }) {
   const decisions = useDecisions()
   const plans = usePlans()
+  const morning = useMorning()
+  // 验收建议挂在抽屉顶上，到齐前先画骨架，免得建议后到把整页往下推（R-211）
+  if (a.kind === 'review' && morning.isPending)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {top}
+        <DrawerSkeleton />
+      </div>
+    )
   if (a.kind === 'review')
     return (
       <ReqView

@@ -117,8 +117,8 @@ export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="rounded border border-line bg-surface-2 px-1 font-mono text-[10px] text-fg-3">{children}</kbd>
 }
 
-export function Skeleton({ className }: { className?: string }) {
-  return <div className={cx('animate-shimmer rounded-lg bg-[linear-gradient(90deg,var(--bg-sunken)_25%,var(--surface-hover)_50%,var(--bg-sunken)_75%)] bg-[length:200%_100%]', className)} />
+export function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <div style={style} className={cx('animate-shimmer rounded-lg bg-[linear-gradient(90deg,var(--bg-sunken)_25%,var(--surface-hover)_50%,var(--bg-sunken)_75%)] bg-[length:200%_100%]', className)} />
 }
 
 export function CardSkeleton({ rows = 3 }: { rows?: number }) {

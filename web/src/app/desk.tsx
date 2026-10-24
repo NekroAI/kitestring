@@ -5,8 +5,8 @@ import { useConnected, useDecisions, useMorning, usePlans, useProjects, useRequi
 import { buildAsks, type Ask } from './asks'
 import { t } from '../i18n'
 import type { Scene } from '../i18n/zh'
-import { cx, relTime } from '../lib/util'
-import { Tip } from '../ui/base'
+import { cx, loadPref, relTime, savePref } from '../lib/util'
+import { Skeleton, Tip } from '../ui/base'
 import { displayState, presence, RoleTag } from '../ui/marks'
 import { Linkify, PlanGlyph, shortTitle } from '../ui/refmark'
 import type { ProjectGroup, useWorkbench } from './inbox'
@@ -100,9 +100,10 @@ function StageDetail({ x }: { x: Plan }) {
 
 const toneText: Record<string, string> = { review: 'text-reply', approve: 'text-wait', paused: 'text-danger', active: 'text-accent' }
 
-function Panel({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+// fill：在栏里撑满剩余高度，加载骨架里也照这样画（R-211，ui/shape.tsx 的 data-fill）
+function Panel({ title, children, className, fill }: { title: string; children: React.ReactNode; className?: string; fill?: boolean }) {
   return (
-    <section className={cx('rounded-[14px] bg-surface px-3.5 py-3 shadow-card', className)}>
+    <section data-fill={fill ? '' : undefined} className={cx('rounded-[14px] bg-surface px-3.5 py-3 shadow-card', className)}>
       <h3 className="mb-2.5 font-display text-[13.5px] font-bold tracking-wide text-fg">{title}</h3>
       {children}
     </section>
@@ -138,9 +139,23 @@ export function PlansRail({ className }: { className?: string }) {
 }
 
 // PlanChips：右栏放不下时（手机、窄窗），计划排成一排可横滑的胶囊，点开计划。
+// 加载中按上次的个数先画胶囊骨架（R-211），这一排后出来会把下面三栏往下推。
 export function PlanChips({ className }: { className?: string }) {
   const list = usePlansInFlight()
+  const pending = usePlans().isPending
   const open = useOpenPlan()
+  const [last] = useState(() => loadPref('ks.skel.chips', 0))
+  useEffect(() => {
+    if (!pending) savePref('ks.skel.chips', list.length)
+  }, [pending, list.length])
+  if (pending)
+    return last ? (
+      <div aria-hidden className={cx('flex gap-2 overflow-hidden pb-0.5', className)}>
+        {Array.from({ length: Math.min(last, 4) }).map((_, i) => (
+          <Skeleton key={i} className="h-[26px] w-52 shrink-0 rounded-full" />
+        ))}
+      </div>
+    ) : null
   if (!list.length) return null
   return (
     <div className={cx('flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]', className)}>
@@ -179,7 +194,7 @@ export function RecentRail({ now, className, limit = 14, fill }: { now: number; 
   }, [box, fill])
   const recent = useRecent(undefined, fill && fit ? fit : limit)
   return (
-    <Panel title={t.desk.recentTitle} className={cx('flex min-h-0 flex-col', className)}>
+    <Panel title={t.desk.recentTitle} fill={fill} className={cx('flex min-h-0 flex-col', className)}>
       {recent.length ? (
         <ul ref={setBox} className="desk-scroll relative -mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           <span aria-hidden className="absolute top-2.5 bottom-2.5 left-[4px] w-px bg-line-strong" />
@@ -267,7 +282,8 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
       <button
         onClick={() => head && setOpen(!open)}
         aria-expanded={head ? open : undefined}
-        className={cx('relative flex min-h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl bg-surface px-3.5 py-2 text-left shadow-card', head && 'cursor-pointer hover:bg-hover/50')}
+        // 固定两行高（R-211）：简报有无、一行两行，顶栏和下面三栏都不跳
+        className={cx('relative flex h-[54px] w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl bg-surface px-3.5 py-2 text-left shadow-card', head && 'cursor-pointer hover:bg-hover/50')}
       >
         <Wind />
         {!connected && (
@@ -278,12 +294,12 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
         )}
         {head ? (
           <>
-            <RoleTag role={head.role} presence={head.who ? presence(head.who, head.any) || undefined : undefined} className="relative shrink-0 self-start bg-surface" />
+            <RoleTag role={head.role} presence={head.who ? presence(head.who, head.any) || undefined : undefined} className="relative shrink-0 bg-surface" />
             <span className={cx('relative min-w-0 flex-1 text-[13px] leading-[1.45]', head.folded ? 'truncate text-fg-3' : 'line-clamp-2 text-fg-2')}>
               {head.label && <b className="mr-1.5 font-semibold text-fg">{head.label}</b>}
               <Linkify text={head.text} />
             </span>
-            <span className="relative flex shrink-0 items-center gap-2 self-start pt-px text-[11.5px] text-fg-3">
+            <span className="relative flex shrink-0 items-center gap-2 text-[11.5px] text-fg-3">
               {more > 0 && <span>{t.desk.briefMore(more)}</span>}
               {!head.folded && <span className="tabular max-sm:hidden">{relTime(head.at, now)}</span>}
               <span className="inline-flex items-center gap-0.5 text-fg-2">
@@ -293,7 +309,7 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
             </span>
           </>
         ) : (
-          connected && <span className="relative min-w-0 truncate text-[12.5px] text-fg-3">{t.desk.noBrief}</span>
+          connected && !morning.isPending && !projects.isPending && <span className="relative min-w-0 truncate text-[12.5px] text-fg-3">{t.desk.noBrief}</span>
         )}
       </button>
       {open && head && (
@@ -331,7 +347,17 @@ export function useHandled(now: number, limit = 4): Handled[] {
       const act = d.approval ? (opt0 && d.answer?.startsWith(opt0) ? 'pass' : 'back') : 'answer'
       out.push({ at: d.answered_at, act, scene: d.request_kind ? 'request' : d.approval ? 'approval' : 'answer', text: d.short_title || d.question })
     }
-    for (const x of plans.data ?? []) for (const st of x.stages) if (st.passed_at) out.push({ at: st.passed_at, act: 'pass', scene: 'accept', text: `${x.title} · ${t.ref.stage(st.seq)}` })
+    // 阶段验收：你通过一个阶段时，后面需求早已逐条验收完的阶段会一并自动通过（D-60），计划随之完成——这是你的一次判断，
+    // 只记一条，写你验收的那个阶段（R-211：P-2 曾因此出现两条一样的「通过 会话身份与工人池」）
+    for (const x of plans.data ?? []) {
+      let last = 0
+      for (const st of x.stages.filter((v) => v.passed_at).sort((a, b) => a.seq - b.seq)) {
+        const at = Date.parse(st.passed_at!)
+        if (last && Math.abs(at - last) < 2000) continue
+        last = at
+        out.push({ at: st.passed_at!, act: 'pass', scene: 'accept', text: `${x.title} · ${t.ref.stage(st.seq)}` })
+      }
+    }
     return out
       .filter((x) => now - Date.parse(x.at) < handledTTL)
       .sort((a, b) => b.at.localeCompare(a.at))
