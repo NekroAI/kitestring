@@ -158,7 +158,7 @@ function ProxyRow({ d }: { d: Decision }) {
         )}
       </div>
       <p className="flex min-w-0 items-start gap-1.5 leading-relaxed text-fg-2">
-        <RoleTag role="advisor" className="mt-0.5" />
+        <RoleTag role="aide" className="mt-0.5" />
         <span className="min-w-0">
           <span className={cx('font-medium', done ? 'text-fg-3 line-through' : 'text-fg')}>{d.proxy_answer}</span>
           {d.proxy_risk && <span className="text-fg-3">{t.common.sep + t.grant.risk[d.proxy_risk]}</span>}
@@ -207,7 +207,7 @@ function MorningCard({ r, project, sessions, now }: { r: MorningReport; project?
   return (
     <section className="rounded-xl border border-line bg-surface shadow-xs">
       <button onClick={toggle} aria-expanded={open} className="flex w-full items-center gap-2.5 px-4 pt-3 pb-1 text-left">
-        <RoleTag role="advisor" presence={adv ? presence(adv, true) || undefined : undefined} />
+        <RoleTag role="aide" presence={adv ? presence(adv, true) || undefined : undefined} />
         <h3 className="shrink-0 text-sm font-semibold text-fg">{t.morning.title}</h3>
         <span className="min-w-0 truncate text-xs text-fg-3">
           {[project?.name ?? r.project_name, t.morning.since(relTime(r.since, now))].filter(Boolean).join(t.common.sep)}
@@ -288,7 +288,7 @@ export function AdviceNote({ code }: { code: string }) {
   if (!a) return null
   return (
     <p className="mt-1.5 flex min-w-0 items-start gap-1.5 text-[13px] leading-relaxed text-fg-2">
-      <RoleTag role="advisor" className="mt-0.5" />
+      <RoleTag role="aide" className="mt-0.5" />
       <span className="min-w-0">
         <span className={cx('font-medium', a.verdict === 'pass' ? 'text-run' : 'text-danger')}>{t.morning.verdict[a.verdict]}</span>
         {a.reason && (
@@ -309,7 +309,7 @@ export function HoldNote({ code }: { code: string }) {
   if (!h) return null
   return (
     <p className="flex min-w-0 items-start gap-1.5 text-[13px] leading-relaxed text-fg-2">
-      <RoleTag role="advisor" className="mt-0.5" />
+      <RoleTag role="aide" className="mt-0.5" />
       <span className="min-w-0">
         <span className="text-fg-3">{t.morning.held}</span>
         {h.reason}

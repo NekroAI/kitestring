@@ -433,7 +433,7 @@ function OwnerMenu({ owner, projectId, onPick, sessions, className }: { owner?: 
           <ChevronDown className="size-3 shrink-0 opacity-60" />
         </button>
       }
-      items={[{ label: t.plan.noOwner, checked: !owner, onSelect: () => onPick('') }, { type: 'separator' }, ...targetItems(sessions.filter((s) => s.role !== 'advisor' && s.role !== 'reviewer'), projectId, (s) => onPick(s.key), { checked: owner?.key })]}
+      items={[{ label: t.plan.noOwner, checked: !owner, onSelect: () => onPick('') }, { type: 'separator' }, ...targetItems(sessions.filter((s) => s.role !== 'advisor' && s.role !== 'reviewer' && s.role !== 'aide'), projectId, (s) => onPick(s.key), { checked: owner?.key })]}
     />
   )
 }

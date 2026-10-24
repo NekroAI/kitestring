@@ -479,7 +479,7 @@ export function DecisionRow({ d }: { d: Decision }) {
           <span className="block truncate text-sm text-fg">{d.short_title || d.question}</span>
           {d.answer && <span className="block truncate text-[13px] text-fg-3">{d.answer}</span>}
         </span>
-        {d.proxy_by && !d.overridden_at && <RoleTag role="advisor" />}
+        {d.proxy_by && !d.overridden_at && <RoleTag role="aide" />}
         <Tip content={when}>
           <span>
             <Badge tone={tone}>{t.decision.status[d.status]}</Badge>

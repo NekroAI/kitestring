@@ -201,7 +201,7 @@ function Advice({ a }: { a: Ask }) {
     if (!x) return null
     return (
       <span title={x.reason} className="inline-flex shrink-0 items-center gap-1">
-        <RoleTag role="advisor" />
+        <RoleTag role="aide" />
         <span className={cx('text-[11.5px] font-medium', x.verdict === 'pass' ? 'text-run' : 'text-danger')}>{t.morning.verdict[x.verdict]}</span>
       </span>
     )
@@ -211,7 +211,7 @@ function Advice({ a }: { a: Ask }) {
     if (!h) return null
     return (
       <span title={h.reason} className="inline-flex shrink-0 items-center gap-1">
-        <RoleTag role="advisor" />
+        <RoleTag role="aide" />
         <span className="text-[11.5px] text-fg-3">{t.ask.held}</span>
       </span>
     )

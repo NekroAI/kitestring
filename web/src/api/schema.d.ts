@@ -2544,7 +2544,7 @@ export interface components {
             reason: string;
             requirement_code: string;
             requirement_title: string;
-            /** @description 放行时的身份：pm / advisor */
+            /** @description 放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor） */
             role: string;
             /** @description 已被你撤回 */
             withdrawn: boolean;
@@ -2859,7 +2859,7 @@ export interface components {
             /** @description 放行记录的编号（D-x） */
             code: string;
             reason: string;
-            /** @description 放行时的身份：pm / advisor */
+            /** @description 放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor） */
             role: string;
         };
         "Reply-sessionRequest": {
@@ -3021,7 +3021,7 @@ export interface components {
             label: string;
             /** @description 改写之后默认模板又更新了（可对比默认模板，或恢复默认） */
             outdated: boolean;
-            /** @description pm / dev / advisor / reviewer */
+            /** @description aide / advisor / reviewer / pm / dev */
             role: string;
         };
         Session: {
@@ -3067,7 +3067,7 @@ export interface components {
             reply_ask?: string;
             requirements: components["schemas"]["RequirementRef"][] | null;
             /** @enum {string} */
-            role: "" | "pm" | "dev" | "advisor" | "reviewer";
+            role: "" | "aide" | "advisor" | "reviewer" | "pm" | "dev";
             session_id: string;
             /** Format: date-time */
             started_at: string;
@@ -3221,7 +3221,7 @@ export interface components {
             ref?: string;
             requirement_code?: string;
             requirement_id: string;
-            /** @description 会话当时的身份：pm / dev / advisor / reviewer */
+            /** @description 会话当时的身份：aide / advisor / reviewer / pm / dev */
             role?: string;
             /** @description 操作的会话键（Agent 操作时） */
             session?: string;
@@ -6274,7 +6274,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                role: "pm" | "dev" | "advisor" | "reviewer";
+                role: "aide" | "advisor" | "reviewer" | "pm" | "dev";
             };
             cookie?: never;
         };
@@ -6309,7 +6309,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                role: "pm" | "dev" | "advisor" | "reviewer";
+                role: "aide" | "advisor" | "reviewer" | "pm" | "dev";
             };
             cookie?: never;
         };

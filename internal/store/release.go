@@ -17,7 +17,7 @@ import (
 type Release struct {
 	Code   string    `json:"code" doc:"放行记录的编号（D-x）"`
 	By     string    `json:"by" doc:"放行的会话键"`
-	Role   string    `json:"role" doc:"放行时的身份：pm / advisor"`
+	Role   string    `json:"role" doc:"放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor）"`
 	Reason string    `json:"reason"`
 	At     time.Time `json:"at"`
 }

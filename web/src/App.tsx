@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router'
 import { useAuthStatus } from './api/queries'
 import { t } from './i18n'
+import { useRoleLang } from './i18n/roles'
 import { Shell } from './app/Shell'
 import { ErrorState } from './ui/base'
 import LoginPage from './pages/Login'
@@ -20,6 +21,7 @@ function Splash() {
 export default function App() {
   const auth = useAuthStatus()
   const loc = useLocation()
+  useRoleLang() // 身份名中英文切换（R-190）：订阅后整棵树跟着重画
 
   if (auth.isPending) return <Splash />
   if (auth.isError)

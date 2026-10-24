@@ -1,3 +1,5 @@
+import { both, roleNames, rt } from './roles.ts'
+
 // 界面文案（D20：先中文，集中在此处，预留多语言）。组件只通过 t.xxx 引用。
 //
 // 文案规范：
@@ -128,17 +130,24 @@ export const zh = {
     parked: '待命',
   } as Record<string, string>,
   stateSince: (label: string, dur: string, at: string) => `${label} ${dur}（自 ${at}）`,
-  role: {
-    pm: 'PM',
-    dev: 'Dev',
-    advisor: 'Adv',
-    reviewer: 'Rev',
-  } as Record<string, string>,
+  // 身份名（R-190）：中文 / 英文按设置切换，默认跟随界面语言
+  role: roleNames,
   roleTip: {
-    pm: 'PM（项目经理）：接需求、分派、跟进验收；常驻在线',
-    dev: 'Dev（开发）：你批准 PM 的推荐后才开，并行接 PM 派的活；常驻在线',
-    advisor: 'Adv（顾问）：陪你讨论、记需求草稿，不派活',
-    reviewer: 'Rev（审查员）：只做审查分析，审查意见挂在需求上',
+    get aide() {
+      return `${both('aide')}：替你判断，每项目一个、常驻——看证据写验收建议、授权窗口内代答、写离开期间小结、放行草稿`
+    },
+    get advisor() {
+      return `${both('advisor')}：只答问题、做设计（出方案、效果图、记草稿），可以有多个，不常驻`
+    },
+    get reviewer() {
+      return `${both('reviewer')}：只做审查，意见挂在需求上；任何工具（含 Codex）的会话都能担任`
+    },
+    get pm() {
+      return `${both('pm')}：替你干活，每项目一个、常驻——排期、派子任务、合并部署、写简报`
+    },
+    get dev() {
+      return rt`${both('dev')}：你批准${'pm'}的推荐后才开，并行接${'pm'}派的活；常驻在线`
+    },
   } as Record<string, string>,
   presence: { standby: '在线待命', working: '工作中', offline: '离线' } as Record<string, string>,
   permMode: {
@@ -235,7 +244,9 @@ export const zh = {
     noAsk: '暂时没有要你处理的事',
     noLanes: '还没有会话。在任意终端里打开 Claude Code 或 Codex，它会出现在这里。',
     handled: '刚处理',
-    noBrief: '还没有简报。PM 发简报、或顾问写了离开期间小结后，会出现在这里。',
+    get noBrief() {
+      return rt`还没有简报。${'pm'}发简报、或${'aide'}写了离开期间小结后，会出现在这里。`
+    },
     briefMore: (n: number) => `另有 ${n} 条`,
     offline: '已断线 · 画面已静止，正在重连',
     sumLine: (todo: number, run: number) => `${todo} 件要你处理 · ${run} 个在跑`,
@@ -277,13 +288,17 @@ export const zh = {
     openSession: '打开会话',
     terminal: '这一步要在终端里处理：回到它所在的终端窗口确认或回答。',
     open: '去审批',
-    proxyTitle: '推翻参谋的代答',
+    get proxyTitle() {
+      return rt`推翻${'aide'}的代答`
+    },
     // Agent 的限时请求（R-169）：PM 推荐开独立 Dev 会话，到点没批按规则视为拒绝
     request: {
-      what: (n: number) => `开 ${n} 个 Dev 会话`,
+      what: (n: number) => rt`开 ${String(n)} 个${'dev'}会话`,
       left: (min: number) => (min >= 60 ? `还剩 ${Math.floor(min / 60)} 小时${min % 60 ? ` ${min % 60} 分` : ''}` : `还剩 ${min} 分钟`),
       expiring: '即将到点',
-      rule: '到点没批按规则视为不开，PM 继续用一次性子代理',
+      get rule() {
+        return rt`到点没批按规则视为不开，${'pm'}继续用子任务`
+      },
       joinAfter: '批准后推送接入语，项目页显示怎么开',
     },
     // Agent 申请改需求状态（R-188）：请求类，批准 / 拒绝
@@ -373,12 +388,13 @@ export const zh = {
     turns: (x: number) => `第 ${x} 轮`,
     turnsTip: '你发出的消息轮数',
     toolsTip: (x: number) => `本轮调用了 ${x} 次工具`,
-    subagentsTip: (x: number) => `${x} 个子 Agent 在运行`,
+    subagentsTip: (x: number) => `${x} 个子任务在运行`,
     bgTasks: (x: number) => `后台 ${x} 个任务`,
     // 后台任务子泳道（R-162）
     tasks: '后台任务',
-    taskKind: { shell: '后台', agent: '子代理' } as Record<string, string>,
-    taskCounts: (shell: number, agent: number) => ['后台任务', shell && `后台 ${shell}`, agent && `子代理 ${agent}`].filter(Boolean).join(' · '),
+    // 子代理在界面上统一叫「子任务」，后台 shell 叫「shell」（R-190）
+    taskKind: { shell: 'shell', agent: '子任务' } as Record<string, string>,
+    taskCounts: (shell: number, agent: number) => ['后台任务', shell && `shell ${shell}`, agent && `子任务 ${agent}`].filter(Boolean).join(' · '),
     taskRunning: (d: string) => `已运行 ${d}`,
     tasksHint: '时间线是近 10 分钟，右边是现在；只记名称与时间，不看命令输出',
     tasksUnknown: '这类会话（Codex 经 app-server / 桌面 App 运行）无法识别后台任务',
@@ -451,8 +467,8 @@ export const zh = {
       PermissionRequest: '请求授权',
       Notification: '通知',
       Stop: '本轮结束',
-      SubagentStart: '启动子 Agent',
-      SubagentStop: '子 Agent 完成',
+      SubagentStart: '启动子任务',
+      SubagentStop: '子任务完成',
       PreCompact: '压缩上下文',
       PostCompact: '压缩完成',
       Interrupt: '被中断',
@@ -650,7 +666,9 @@ export const zh = {
     queue: {
       position: (i: number, n: number) => `草稿 ${i} / ${n}`,
       confirm: '确认，排期',
-      confirmTip: '改为待开始，会排给项目 PM 或交给的会话',
+      get confirmTip() {
+        return rt`改为待开始，会排给项目${'pm'}或交给的会话`
+      },
       shelve: '搁置',
       skip: '下一条',
       allDone: '草稿都处理完了',
@@ -696,16 +714,23 @@ export const zh = {
     deploy: '部署',
   } as Record<string, string>,
   projects: {
-    pm: (state: string) => `PM ${state}`,
-    noPm: '没有 PM',
-    needDevs: (n: number) => `你批准了开 ${n} 个 Dev 会话`,
+    pm: (state: string) => rt`${'pm'}${' ' + state}`,
+    aide: (state: string) => rt`${'aide'}${' ' + state}`,
+    get noPm() {
+      return rt`没有${'pm'}`
+    },
+    needDevs: (n: number) => rt`你批准了开 ${String(n)} 个${'dev'}会话`,
     joinHint: '在项目目录打开 Claude Code（或 Codex），对它说：',
     needDismiss: '不需要了',
-    joinPhrase: (name: string) => `连接到纸鸢，做「${name}」的 Dev（运行 ks role dev）`,
-    devs: (online: number) => `Dev ${online} 在线`,
+    joinPhrase: (name: string) => `连接到纸鸢，做「${name}」的开发（运行 ks role dev）`,
+    devs: (online: number) => rt`${'dev'} ${String(online)} 在线`,
     autoDispatch: '会话空闲时自动送达待开始的需求',
-    agentRelease: '允许 PM / Adv 放行草稿',
-    agentReleaseHint: `PM 或 Adv 可以把做法明确的草稿改为待开始（派草稿也算），必须写理由，进展里记下谁放行、为什么，你可以一键撤回；验收${ACC.pass}仍只由你操作。Dev 不能放行`,
+    get agentRelease() {
+      return rt`允许${'pm'} / ${'aide'}放行草稿`
+    },
+    get agentReleaseHint() {
+      return rt`${'pm'}或${'aide'}可以把做法明确的草稿改为待开始（派草稿也算），必须写理由，进展里记下谁放行、为什么，你可以一键撤回；验收${ACC.pass}仍只由你操作。${'dev'}、${'advisor'}不能放行`
+    },
     autoDispatchHint: '你确认为待开始的需求，会在关联的会话一轮做完或待命时整批送过去（一次最多 10 条）；关掉后需要你手动交给会话',
     title: '项目',
     openCount: (n: number) => (n ? `${n} 条未完成` : '没有未完成需求'),
@@ -732,7 +757,7 @@ export const zh = {
     evDone: (code: string) => `你${ACC.pass}了 ${code}`,
     evStage: (code: string, n: number, title: string) => `你${ACC.pass}了 ${code} 阶段 ${n}：${title}`,
     evAnswer: (code: string, verb = VERB.answer.pass) => `你${verb}了 ${code}`,
-    evProxy: (code: string) => `Adv 代答了 ${code}`,
+    evProxy: (code: string) => rt`${'aide'}代答了 ${code}`,
     evTimeout: (code: string) => `${code} 超时未批，按规则视为拒绝`,
     evVoided: (code: string) => `${code} 申请已作废：需求状态在批准前被改动`,
     hide: '在项目列表里隐藏',
@@ -753,6 +778,16 @@ export const zh = {
     makeHint: '标注为设计类：Agent 需要你拍板时会交方案图让你选',
     unmake: '改回普通需求',
     toggle: '设计需求',
+  },
+  // 身份名显示（R-190）
+  roleNames: {
+    title: '身份名',
+    label: '身份名用中文还是英文',
+    hint: '会话身份标、时间线、团队消息里的身份名；默认跟随界面语言，只在这台设备上生效',
+    auto: '跟随界面语言',
+    zh: '中文',
+    en: 'English',
+    preview: (all: string) => all,
   },
   annotate: {
     title: '圈画标注',
@@ -787,21 +822,33 @@ export const zh = {
     done: (code: string, who: string, g: 'now' | 'later' | 'stale') =>
       `${code} 已交给「${who}」，` + (g === 'now' ? '它在待命，马上开工' : g === 'later' ? '你下次给它发消息（或它进入待命）时送达' : '它已被收起，需要你回终端唤醒'),
     timeline: '你交给会话开工',
-    timelinePm: 'PM 派给会话开工',
+    get timelinePm() {
+      return rt`${'pm'}派给会话开工`
+    },
     menu: '交给会话',
     group: { now: '立即开工 · 待命中', later: '稍后送达 · 你下次给它发消息或它待命时', stale: '已收起 · 需要你回终端唤醒' },
     when: { now: '立即开工', later: '稍后送达', stale: '需你唤醒' },
   },
   reviewer: {
-    button: '交给 Rev',
-    title: '交给 Rev · 只审查，不改状态、不影响验收',
-    none: '本项目还没有 Rev 会话。开一个会话，对它说下面这句话：',
-    joinPhrase: (name: string) => `连接到纸鸢，做「${name}」的 Rev（运行 ks role reviewer）`,
+    get button() {
+      return rt`交给${'reviewer'}`
+    },
+    get title() {
+      return rt`交给${'reviewer'} · 只审查，不改状态、不影响验收`
+    },
+    get none() {
+      return rt`本项目还没有${'reviewer'}会话。开一个会话（Claude Code、Codex 都行），对它说下面这句话：`
+    },
+    joinPhrase: (name: string) => `连接到纸鸢，做「${name}」的评审（运行 ks role reviewer）`,
     copy: '复制这句话',
-    done: (code: string, who: string, now: boolean) => `${code} 已交给 Rev「${who}」，` + (now ? '它在待命，马上开始审查' : '它下次待命或你给它发消息时收到'),
-    timeline: '你交给 Rev',
+    done: (code: string, who: string, now: boolean) => rt`${code} 已交给${'reviewer'}「${who}」，` + (now ? '它在待命，马上开始审查' : '它下次待命或你给它发消息时收到'),
+    get timeline() {
+      return rt`你交给${'reviewer'}`
+    },
     review: '审查意见',
-    badge: 'Rev',
+    get badge() {
+      return rt`${'reviewer'}`
+    },
     hint: '审查意见只供参考：不改变需求状态，也不影响验收',
     more: '展开全部',
     less: '收起',
@@ -827,7 +874,9 @@ export const zh = {
     nobodyShort: '没人接手',
     nobody: '没人接手 · 还没交给任何会话',
     nobodyGone: '没人接手 · 关联的会话已结束或被收起',
-    nobodyNoPM: '没人接手 · 关联的是顾问 / 审查员，不自动排给它们；项目里还没有 PM，请交给开发或先指定 PM',
+    get nobodyNoPM() {
+      return rt`没人接手 · 关联的是${'aide'} / ${'advisor'} / ${'reviewer'}，不自动排给它们；项目里还没有${'pm'}，请交给${'dev'}或先指定${'pm'}`
+    },
     offShort: '待开始',
     off: (who: string) => `这个项目关掉了自动送达 · 需要你交给「${who}」或别的会话`,
   },
@@ -1193,7 +1242,9 @@ export const zh = {
         device_lost: '设备离线',
       } as Record<string, string>,
       evTip: {
-        decision_raised: 'Agent 有问题要你拍板，或 PM 请你开 Dev 会话',
+        get decision_raised() {
+          return rt`Agent 有问题要你拍板，或${'pm'}请你开${'dev'}会话`
+        },
         waiting_approval: '同一会话 1 分钟内只推一次',
         requirement_review: '需求做完，等你验收',
         waiting_reply: '每轮结束都会推送，比较频繁',
@@ -1294,8 +1345,12 @@ export const zh = {
         video: '录屏（MB）',
       },
       devRequest: {
-        title: '开 Dev 会话的批准时限',
-        hint: 'PM 默认用一次性子代理干活，需要并行时才推荐开 Dev 会话。推荐出现在「要你处理」里，不推送；到点没批按规则视为不开。',
+        get title() {
+          return rt`开${'dev'}会话的批准时限`
+        },
+        get hint() {
+          return rt`${'pm'}默认用子任务（一次性子代理）干活，需要并行时才推荐开${'dev'}会话。推荐出现在「要你处理」里，不推送；到点没批按规则视为不开。`
+        },
         minutes: '时限（分钟）',
       },
       password: '修改密码',
@@ -1308,24 +1363,43 @@ export const zh = {
   },
   // 参谋授权窗口（R-163）
   grant: {
-    title: '参谋授权',
-    open: '参谋授权',
-    intro: '你不在时，授权一个 Adv 会话在到期前代你答复范围内的决策。代答都会记下来，你随时可以推翻，更正会送回提问的会话。',
+    get title() {
+      return rt`${'aide'}授权`
+    },
+    get open() {
+      return rt`${'aide'}授权`
+    },
+    get intro() {
+      return rt`你不在时，授权本项目的${'aide'}在到期前代你答复范围内的决策。代答都会记下来，你随时可以推翻，更正会送回提问的会话。`
+    },
     who: '授权给',
-    pickAdv: '选一个 Adv 会话',
-    noAdv: '这个项目没有在线的 Adv 会话：先让一个会话运行 ks role advisor',
+    get pickAdv() {
+      return rt`选本项目的${'aide'}`
+    },
+    get noAdv() {
+      return rt`这个项目还没有${'aide'}：先对一个会话说「做主助理」（运行 ks role aide）。代答只由${'aide'}做，${'advisor'}不能代答`
+    },
+    staleGrant: (code: string) => rt`${code} 授权给的不是${'aide'}（身份调整后代答移到了${'aide'}），已失效；要继续代答，请给${'aide'}重新开`,
     until: '到期',
     presetHours: (h: number) => `${h} 小时`,
     scope: '范围',
     scopeLow: '只代答低风险',
     scopeMedium: '低、中风险',
-    hard: '永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收。提问方没标风险档的按高风险算；参谋判断的风险更高时按更高的算。',
-    quiet: '窗口开着时，参谋能代答的决策先不推送通知，仍留在你的收件箱里。',
+    get hard() {
+      return rt`永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收。提问方没标风险档的按高风险算；${'aide'}判断的风险更高时按更高的算。`
+    },
+    get quiet() {
+      return rt`窗口开着时，${'aide'}能代答的决策先不推送通知，仍留在你的收件箱里。`
+    },
     start: '开始授权',
-    started: '已开启参谋授权',
+    get started() {
+      return rt`已开启${'aide'}授权`
+    },
     revoke: '撤销',
-    revoked: '已撤销参谋授权',
-    banner: (until: string) => `参谋授权中 · 至 ${until}`,
+    get revoked() {
+      return rt`已撤销${'aide'}授权`
+    },
+    banner: (until: string) => rt`${'aide'}授权中 · 至 ${until}`,
     bannerProject: (p: string) => `「${p}」`,
     proxiedCount: (n: number) => (n ? `已代答 ${n} 条` : '还没有代答'),
     records: '代答记录',
@@ -1353,7 +1427,9 @@ export const zh = {
     since: (when: string) => `自 ${when}`,
     fold: '收起',
     unfold: '展开',
-    noNote: '参谋还没写总述；下面是纸鸢从记录里汇总的。',
+    get noNote() {
+      return rt`${'aide'}还没写总述；下面是纸鸢从记录里汇总的。`
+    },
     done: '完成了什么',
     doneEmpty: '这段时间没有新交验收的需求',
     doneShort: (n: number) => `完成 ${n} 条`,

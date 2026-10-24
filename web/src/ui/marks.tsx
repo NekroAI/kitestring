@@ -51,12 +51,12 @@ export function StatusPill({ state, since, now, compact, bg }: { state: string; 
   return show ? <Tip content={t.stateSince(label, duration(since, now), absTime(since))}>{pill}</Tip> : pill
 }
 
-// presence：常驻身份（PM / 开发）的在线状态（R-84）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；
+// presence：常驻身份（主调度 / 开发 / 主助理）的在线状态（R-84、R-190）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；
 // 结束了一轮却没挂上 ks wait、已结束或失联为离线。其它身份不需要常驻，返回空。
 type RoleSession = { role?: string; state: string; state_detail?: string; parked?: boolean; done_at?: string | null; last_active_at?: string }
 // anyRole：离开期间小结等需要给 Adv 也标在线点时传 true（R-165）
 export function presence(s: RoleSession, anyRole = false): '' | 'standby' | 'working' | 'offline' {
-  if (!anyRole && s.role !== 'pm' && s.role !== 'dev') return ''
+  if (!anyRole && s.role !== 'pm' && s.role !== 'dev' && s.role !== 'aide') return ''
   if (s.state === 'ended' || s.state === 'lost') return 'offline'
   if (s.parked || s.state === 'parked') return 'standby'
   const ds = displayState(s)
@@ -66,7 +66,7 @@ export function presence(s: RoleSession, anyRole = false): '' | 'standby' | 'wor
 
 export const presenceDot: Record<string, string> = { standby: 'bg-run', working: 'bg-accent', offline: 'bg-fg-3/50' }
 
-// RoleTag：会话身份标（R-124，D-117 方案 B）：描边胶囊写英文短名，PM / Dev 前面一个在线点
+// RoleTag：会话身份标（R-124，D-117 方案 B）：描边胶囊写身份名（中文 / 英文按设置，R-190），常驻身份前面一个在线点
 // （在线待命绿、工作中蓝、离线灰）。描边与阶段、状态这类实底标签一眼分开；离线不写出来，悬停再说。
 export function RoleTag({ role, presence, className }: { role: string; presence?: string; className?: string }) {
   if (!t.role[role]) return null

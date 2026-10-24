@@ -132,7 +132,7 @@ export function useAssign() {
     toast.success(t.assign.done(code, sessionTitle(s), targetGroup(s)))
     // 手动把计划里的需求交给别人：顺手问一句是否把计划的负责会话也改过去（R-99）；顾问 / 审查员不能当负责会话
     const plan = (plans.data ?? []).find((x) => (x.status === 'active' || x.status === 'draft') && x.stages.some((st) => st.requirements.some((r) => r.code === code)))
-    if (plan && plan.owner_session !== s.key && s.role !== 'advisor' && s.role !== 'reviewer') {
+    if (plan && plan.owner_session !== s.key && s.role !== 'advisor' && s.role !== 'reviewer' && s.role !== 'aide') {
       toast(t.plan.ownerFollow(plan.code, sessionTitle(s)), {
         duration: 12000,
         action: {
