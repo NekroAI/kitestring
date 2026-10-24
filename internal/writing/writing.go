@@ -70,14 +70,15 @@ func hint(tips []string) string {
 // BlocksGuide 是表达块（R-97）的用法，MCP 工具说明、ks 帮助和身份提示词共用。
 const BlocksGuide = "表达块由纸鸢统一渲染，不支持任意 HTML。每块是一个对象 {type, id?, title?, caption?, …}，图片字段填本机路径（会自动上传）。" +
 	"checklist 验收清单（验收证据必填）：items [{criterion: 第几条验收标准, text: 这条标准, result: pass|fail|ask, why: 一句依据, see: 关联块的 id}]；" +
-	"compare 前后对比（界面类需求默认用）：before、after 两张同尺寸截图；" +
-	"figure 截图 / 录屏：image，可被清单项的 see 引用；" +
+	"compare 前后对比（界面类需求默认用）：before、after 两张同尺寸截图，title 一句话标题，boxes 框出改后的图上改了哪里（网页默认显示改后加框，点一下切到改前）；" +
+	"figure 截图 / 录屏：image，title 一句话标题，boxes 框出改动的地方，可被清单项的 see 引用；" +
+	"boxes 是 [{x, y, w, h, label}]，坐标是图片原始尺寸的比例（0～1，左上角为原点；Playwright 用元素的 boundingBox 除以截图的 CSS 宽高），label 一句话说改了什么；越界或格式不对的框丢掉并提示。" +
 	"flow 流程 / 状态图：mermaid 源码（flowchart、stateDiagram、sequenceDiagram）；" +
 	"metrics 2～4 个指标：items [{label, value, unit?, note?, trend?: [数字]}]；" +
 	"scope 改动范围：items [{module, count, note?}]，按模块汇总，不列文件；" +
 	"options 选项（决策用）：items [{label, desc, recommended?, image?}]；" +
 	"table 小表格：columns（最多 6 列）、rows。" +
-	"能用块就不写长文：界面类给图或对比，流程类给流程图。写错的块不保存，返回里会说明原因，证据照常保存。"
+	"能用块就不写长文：界面类给图或对比，流程类给流程图。图按顺序全部显示：重点看的放前面，补充、测试一类的放后面。写错的块不保存，返回里会说明原因，证据照常保存。"
 
 // PayloadHint 检查结构化证据：结论字数、有没有清单。不超标时返回空串。
 func PayloadHint(verdict string, hasChecklist bool) string {

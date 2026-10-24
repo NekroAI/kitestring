@@ -126,10 +126,73 @@ func printBlockWarnings(out any) {
 	if len(ws) == 0 {
 		return
 	}
-	fmt.Println("有块没有保存（其余内容已保存）：")
+	fmt.Println("有块或改动框没有保存（其余内容已保存）：")
 	for _, w := range ws {
 		fmt.Println("- " + fmt.Sprint(w))
 	}
+}
+
+func printImageHints(out any) {
+	m, _ := out.(map[string]any)
+	ws, _ := m["image_hints"].([]any)
+	if len(ws) == 0 {
+		return
+	}
+	fmt.Println("附图提示（证据已保存）：")
+	for _, w := range ws {
+		fmt.Println("- " + fmt.Sprint(w))
+	}
+}
+
+// attachShots 处理 evidence 的附图（R-183）：--image 可以是路径，也可以是 {"path", "title", "boxes"} 的 JSON 对象；
+// --images 是这种对象的 JSON 数组或 JSON 文件路径。按给的顺序（先 --image 后 --images）上传后写进 body["images"]。
+func attachShots(body map[string]any, images []string, arg string) error {
+	var raw []any
+	for _, s := range images {
+		if t := strings.TrimSpace(s); strings.HasPrefix(t, "{") {
+			var v any
+			if err := json.Unmarshal([]byte(t), &v); err != nil {
+				return fmt.Errorf("--image 的 JSON 格式不对：%w", err)
+			}
+			raw = append(raw, v)
+			continue
+		}
+		raw = append(raw, s)
+	}
+	if arg = strings.TrimSpace(arg); arg != "" {
+		data := []byte(arg)
+		if !strings.HasPrefix(arg, "[") && !strings.HasPrefix(arg, "{") {
+			b, err := os.ReadFile(arg)
+			if err != nil {
+				return fmt.Errorf("--images 既不是 JSON 也读不到文件：%w", err)
+			}
+			data = b
+		}
+		var v any
+		if err := json.Unmarshal(data, &v); err != nil {
+			return fmt.Errorf("--images 的 JSON 格式不对：%w", err)
+		}
+		if l, ok := v.([]any); ok {
+			raw = append(raw, l...)
+		} else {
+			raw = append(raw, v)
+		}
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	err := blocks.LocalizeImages(raw, map[string]string{}, func(p string) (string, error) {
+		tmp := map[string]any{}
+		if err := attachFiles(tmp, []string{p}); err != nil {
+			return "", err
+		}
+		return tmp["files"].([]string)[0], nil
+	})
+	if err != nil {
+		return err
+	}
+	body["images"] = raw
+	return nil
 }
 
 func rawHasChecklist(raw []any) bool {
@@ -210,7 +273,8 @@ func runReq(args []string) error {
 	fs.Var(&todo, "todo", "evidence：要你做的（机器验证不了的事），可重复")
 	fs.Var(&aside, "aside", "evidence：顺带改动，可重复")
 	var images, videos stringList
-	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复")
+	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\"}]}（框用 0～1 的比例坐标）")
+	shotsArg := fs.String("images", "", "evidence：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
@@ -254,7 +318,7 @@ func runReq(args []string) error {
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key, "reason": *reason, "reason_kind": *reasonKind}))
 	case "evidence":
 		if fs.NArg() < 1 || fs.NArg() < 2 && *verdict == "" {
-			return fmt.Errorf("用法：ks req evidence <R-编号> [证据正文] [--verdict 一句结论] [--blocks 块.json] [--todo ...] [--details ...] [--aside ...] [--kind test] [--link ...] [--image 截图.png] [--video 录屏.webm]\n%s\n表达块：%s", evidenceGuide, writing.BlocksGuide)
+			return fmt.Errorf("用法：ks req evidence <R-编号> [证据正文] [--verdict 一句结论] [--blocks 块.json] [--todo ...] [--details ...] [--aside ...] [--kind test] [--link ...] [--image 截图.png 或 '{\"path\":…,\"title\":…,\"boxes\":[…]}'] [--images 附图.json] [--video 录屏.webm]\n%s\n表达块：%s", evidenceGuide, writing.BlocksGuide)
 		}
 		body := map[string]any{"kind": *kind, "summary": fs.Arg(1), "link": *link, "session_key": key, "verdict": *verdict, "details": *details}
 		if len(todo) > 0 {
@@ -263,7 +327,10 @@ func runReq(args []string) error {
 		if len(aside) > 0 {
 			body["aside"] = []string(aside)
 		}
-		if err := attachFiles(body, append(images, videos...)); err != nil {
+		if err := attachFiles(body, videos); err != nil {
+			return err
+		}
+		if err := attachShots(body, images, *shotsArg); err != nil {
 			return err
 		}
 		raw, err := attachBlocks(body, *blocksArg)
@@ -275,6 +342,7 @@ func runReq(args []string) error {
 			return err
 		}
 		printBlockWarnings(out)
+		printImageHints(out)
 		if fs.Arg(1) != "" {
 			printHint(writing.EvidenceHint(fs.Arg(1)))
 		}
@@ -432,7 +500,7 @@ func runDecision(args []string) error {
 
 // 写作规范（R-110），与 MCP 工具说明一致。
 const (
-	evidenceGuide = "证据写法：第一句是结论（40 字以内，写用户能看到的变化）；逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；无关的顺带改动单列或另记需求。交之前先自查截图里的文字有没有被截断、溢出或重叠。"
+	evidenceGuide = "证据写法：第一句是结论（40 字以内，写用户能看到的变化）；逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；无关的顺带改动单列或另记需求。截图每张写一句话标题、用 boxes 框出改动的地方（--image '{\"path\",\"title\",\"boxes\"}' 或 --images 附图.json），重点看的图放前面，补充、测试一类的放后面。交之前先自查截图里的文字有没有被截断、溢出或重叠。"
 	decisionGuide = "决策写法：问题一句话，每次只问一件事；一个方案里有几个点要分别拍板时用 --points 逐点给选项（标出推荐），不埋在说明里；说明按“结论 / 依据 / 细节”写，方案长时用 --summary 每条需求一行。"
 	stageGuide    = "小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据。"
 )

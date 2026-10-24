@@ -1562,6 +1562,8 @@ export interface components {
             details?: string;
             /** @description 截图等附图 ID（先上传到 /api/agent/files） */
             files?: string[] | null;
+            /** @description 带标题与改动框的附图（R-183），排在 files 后面，按给的顺序显示：[{id: 附件 ID, title: 一句话标题, boxes: [{x, y, w, h, label}]}]，框用图片原始尺寸的比例坐标（0～1）。写错的框丢掉并在 image_hints 里说明，证据照常保存 */
+            images?: unknown[] | null;
             /** @description 例：test、screenshot、commit、doc、manual */
             kind: string;
             link?: string;
@@ -1822,6 +1824,30 @@ export interface components {
             title?: string;
             /** @enum {string} */
             type: "checklist" | "compare" | "figure" | "flow" | "metrics" | "scope" | "options" | "table";
+        };
+        Box: {
+            /**
+             * Format: double
+             * @description 框高 / 图片高（0～1）
+             */
+            h: number;
+            /** @description 一句标签，如：这里改成标题优先 */
+            label?: string;
+            /**
+             * Format: double
+             * @description 框宽 / 图片宽（0～1）
+             */
+            w: number;
+            /**
+             * Format: double
+             * @description 左边到图片左边的距离 / 图片宽（0～1）
+             */
+            x: number;
+            /**
+             * Format: double
+             * @description 上边到图片顶部的距离 / 图片高（0～1）
+             */
+            y: number;
         };
         CIState: {
             /** Format: date-time */
@@ -2221,6 +2247,8 @@ export interface components {
             files: components["schemas"]["FileRef"][] | null;
             from_decision?: string;
             id: string;
+            /** @description 附图的提示（R-183）：没写标题、改动框写错被丢掉等；证据本身已保存 */
+            image_hints?: string[] | null;
             kind: string;
             next_actor: string;
             /** Format: date-time */
@@ -2248,18 +2276,26 @@ export interface components {
             updated_at: string;
         };
         File: {
+            /** @description 改动框：按图片原始尺寸的比例坐标（0～1） */
+            boxes?: components["schemas"]["Box"][] | null;
             id: string;
             mime: string;
             name: string;
             /** Format: int64 */
             size: number;
+            /** @description 一句话标题 */
+            title?: string;
         };
         FileRef: {
+            /** @description 改动框：按图片原始尺寸的比例坐标（0～1） */
+            boxes?: components["schemas"]["Box"][] | null;
             id: string;
             mime: string;
             name: string;
             /** Format: int64 */
             size: number;
+            /** @description 截图的一句话标题 */
+            title?: string;
         };
         "Get-pushResponse": {
             public_key: string;

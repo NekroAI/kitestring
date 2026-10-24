@@ -26,14 +26,23 @@ func (h *Hub) blockFile(ctx context.Context) blocks.Resolver {
 
 // mergeFiles 把块里引用的图并进证据附件（去重），旧界面、截图类证据的检查和 req_get 都能看到它们。
 func mergeFiles(files []store.FileRef, extra []blocks.File) []store.FileRef {
-	seen := map[string]bool{}
-	for _, f := range files {
-		seen[f.ID] = true
+	seen := map[string]int{}
+	for i, f := range files {
+		seen[f.ID] = i
 	}
 	for _, f := range extra {
-		if !seen[f.ID] {
-			seen[f.ID] = true
+		i, ok := seen[f.ID]
+		if !ok {
+			seen[f.ID] = len(files)
 			files = append(files, store.FileRef(f))
+			continue
+		}
+		// 同一张图先在 files 里没写标题、又在 images / 块里写了：补上标题和改动框（R-183）
+		if files[i].Title == "" {
+			files[i].Title = f.Title
+		}
+		if len(files[i].Boxes) == 0 {
+			files[i].Boxes = f.Boxes
 		}
 	}
 	return files

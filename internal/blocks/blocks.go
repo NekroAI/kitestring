@@ -58,6 +58,9 @@ type File struct {
 	Name string `json:"name"`
 	Mime string `json:"mime"`
 	Size int64  `json:"size"`
+	// Title / Boxes：截图的一句话标题与改动框（R-183），旧数据没有
+	Title string `json:"title,omitempty" doc:"一句话标题"`
+	Boxes []Box  `json:"boxes,omitempty" doc:"改动框：按图片原始尺寸的比例坐标（0～1）"`
 }
 
 // Item 是块里的一项，按块类型使用不同字段：
@@ -111,6 +114,9 @@ func (p *Payload) Empty() bool {
 
 // Checklist 返回第一个清单块（没有时为 nil）。
 func (p *Payload) Checklist() *Block { return FindChecklist(p.blockList()) }
+
+// BlockList 返回全部块（nil 时为空）。
+func (p *Payload) BlockList() []Block { return p.blockList() }
 
 func (p *Payload) blockList() []Block {
 	if p == nil {
@@ -287,6 +293,10 @@ func (p *parser) block(m map[string]any) (Block, bool) {
 			p.warn(at + "需要 before 和 after 两张图，没有保存")
 			return b, false
 		}
+		// 改动框画在改后的图上（默认显示改后 + 框，点一下切到改前）
+		b.After.Boxes = p.boxes(m["boxes"], at)
+		b.After.Title = shotTitle(b)
+		b.Before.Title = b.After.Title
 	case Figure:
 		v := m["image"]
 		if v == nil {
@@ -299,6 +309,8 @@ func (p *parser) block(m map[string]any) (Block, bool) {
 			p.warn(at + "需要 image（截图或录屏），没有保存")
 			return b, false
 		}
+		b.Image.Boxes = p.boxes(m["boxes"], at)
+		b.Image.Title = shotTitle(b)
 	case Flow:
 		b.Mermaid = strings.TrimSpace(firstStr(m, "mermaid", "source", "code"))
 		if b.Mermaid == "" {
@@ -413,6 +425,14 @@ func (p *parser) block(m map[string]any) (Block, bool) {
 		return b, false
 	}
 	return b, true
+}
+
+// shotTitle：图片自己的标题（看大图时显示），取块的 title，没有时取 caption。
+func shotTitle(b Block) string {
+	if b.Title != "" {
+		return b.Title
+	}
+	return clip(b.Caption, MaxTitle)
 }
 
 // file 解析一个图片引用：字符串（附件 ID）或 {id: ...}。
