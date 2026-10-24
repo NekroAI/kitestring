@@ -7,13 +7,14 @@ import { useAway, useAwayReport, useConnected, useMorning, useProjects, useRequi
 import { t } from '../i18n'
 import type { Zoom } from '../lib/lanedata'
 import { headlineOf } from '../lib/brief'
-import { cx, duration, relTime, usePref } from '../lib/util'
+import { cx, duration, relTime, useMedia, usePref } from '../lib/util'
 import { Button, Checkbox, Segmented } from '../ui/base'
 import { presence, RoleTag } from '../ui/marks'
-import { Modal } from '../ui/overlay'
+import { AsideStackedContext, Modal } from '../ui/overlay'
 import { Linkify, RefChip, useOpenRef } from '../ui/refmark'
 import { useActions } from './actions'
 import type { Ask } from './asks'
+import { PeekScope, RefPeek, usePeek } from './peek'
 import { TokBrief, Wind } from './lanes'
 import { useOpenAsk } from './nav'
 import { ProxyLine, ReleaseLine } from './morning'
@@ -214,10 +215,7 @@ function ItemRow({ x, now }: { x: Item; now: number }) {
 function Panel({ items, asks, reports, now, close, active }: { items: Item[]; asks: Ask[]; reports: MorningReport[]; now: number; close: () => void; active: boolean }) {
   const openAsk = useOpenAsk()
   const openRef = useOpenRef()
-  const openCode = (code: string) => {
-    close()
-    openRef(code)
-  }
+  const openCode = (code: string) => openRef(code)
   const projects = useProjects()
   const reqs = useRequirements()
   const away = useAway()
@@ -265,7 +263,7 @@ function Panel({ items, asks, reports, now, close, active }: { items: Item[]; as
             )),
             ...releases.map((x) => (
               <li key={x.code}>
-                <ReleaseLine x={x} onOpen={close} />
+                <ReleaseLine x={x} />
               </li>
             )),
           ]}
@@ -322,6 +320,8 @@ export function BriefStrip({ sessions, now, zoom, asks }: { sessions: Session[];
   const [seen, setSeen] = usePref<string>('ks.away.seen', '')
   const [open, setOpen] = useState(false)
   const [starting, setStarting] = useState(false)
+  const peek = usePeek(null, open)
+  const wide = useMedia('(min-width: 1280px)')
   const [idx, setIdx] = useState(0)
   const [paused, setPaused] = useState(false)
   const touchTimer = useRef<number | undefined>(undefined)
@@ -452,9 +452,19 @@ export function BriefStrip({ sessions, now, zoom, asks }: { sessions: Session[];
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={close} />
-          <div className="desk-scroll absolute inset-x-0 top-full z-40 mt-2 max-h-[70vh] overflow-y-auto rounded-2xl border border-line bg-bg p-3 shadow-pop">
-            <Panel items={items} asks={asks} reports={reports} now={now} close={close} active={!!away} />
-          </div>
+          <PeekScope peek={peek}>
+            {/* 点条目：报告面板不关，在它左边展开 R-196 的只读预览纸；放不下时盖在面板上 */}
+            {peek.stack.length > 0 && (
+              <AsideStackedContext value={!wide}>
+                <div className={cx('absolute top-full z-50 mt-2 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop', wide ? 'right-full mr-2 w-[460px]' : 'inset-x-0')}>
+                  <RefPeek peek={peek} from="brief" />
+                </div>
+              </AsideStackedContext>
+            )}
+            <div className="desk-scroll absolute inset-x-0 top-full z-40 mt-2 max-h-[70vh] overflow-y-auto rounded-2xl border border-line bg-bg p-3 shadow-pop">
+              <Panel items={items} asks={asks} reports={reports} now={now} close={close} active={!!away} />
+            </div>
+          </PeekScope>
         </>
       )}
       <AwayStart open={starting} onClose={() => setStarting(false)} />
