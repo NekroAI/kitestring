@@ -58,6 +58,10 @@ ks uninstall --claude-dir ~/.claude-x                      # 只移除这一个�
 
 哪些共用、哪些隔开：Hub、会话列表、需求和决策数据、角色提示词（由 Hub 注入）对所有目录都一样；用户级 `CLAUDE.md`、项目记忆、自定义子 Agent、skills 和登录凭证按配置目录隔开。`ks install --status` 会列出 `~/.claude` 里有、这个目录里缺的项。个人偏好想共用，请自己建软链接，例如 `ln -s ~/.claude/CLAUDE.md ~/.claude-x/CLAUDE.md`（纸鸢不会替你建）。
 
+## 会话交接
+
+压缩或换会话时可以交接：在网页会话上点「交接」，旧会话写下结构化交接；在项目目录运行 `ks takeover <身份>`（如 `ks takeover pm`，`--tool codex` 用 Codex 开，`--print` 只打印命令）启动接任会话。旧版 MCP 没有 `handoff_write` 时，旧会话可用 `ks handoff --doing … --next …` 写交接。流程详见 [roles.md](roles.md)。
+
 ## 升级
 
 重跑安装脚本，再重启常驻服务：macOS 再运行一次 `ks install`；Linux 运行 `systemctl --user restart kitestring-daemon`（Hub 所在机器再重启 `kitestring-hub`）。
