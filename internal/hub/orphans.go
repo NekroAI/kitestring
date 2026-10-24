@@ -29,6 +29,14 @@ func (h *Hub) setOrphans(deviceID string, list []protocol.OrphanProc) {
 	h.mu.Lock()
 	h.orphans[deviceID] = deviceOrphans{list: list, at: time.Now()}
 	h.mu.Unlock()
+	// 列表里已经没有的进程（退出了）：它的忽略自然失效（R-209）
+	live := make(map[string]bool, len(list))
+	for _, o := range list {
+		live[o.ID] = true
+	}
+	if err := h.store.EndProcIgnores(context.Background(), deviceID, live); err != nil {
+		h.log.Warn("清理已失效的忽略失败", "err", err)
+	}
 	h.broker.publish("orphans")
 }
 
@@ -53,18 +61,25 @@ type Orphan struct {
 	ProjectName  string `json:"project_name,omitempty"`
 	SessionTitle string `json:"session_title,omitempty"`
 	SessionEnded bool   `json:"session_ended"`
+	// IgnoredAt：你忽略了这个孤儿的时间（只在 ignored 列表里有）
+	IgnoredAt *time.Time `json:"ignored_at,omitempty"`
 }
 
 type orphansOut struct {
 	Body struct {
 		Orphans []Orphan         `json:"orphans"`
+		Ignored []Orphan         `json:"ignored" doc:"你忽略了的孤儿（还在跑；不在 orphans 里、不提醒）"`
 		Stops   []store.ProcStop `json:"stops" doc:"最近 24 小时的停止记录（新的在前）"`
 	}
 }
 
 func (h *Hub) listOrphans(ctx context.Context, _ *struct{}) (*orphansOut, error) {
 	out := &orphansOut{}
-	out.Body.Orphans = []Orphan{}
+	out.Body.Orphans, out.Body.Ignored = []Orphan{}, []Orphan{}
+	ignores, err := h.store.ActiveProcIgnores(ctx)
+	if err != nil {
+		return nil, apiErr(err)
+	}
 	devs, err := h.store.ListDevices(ctx)
 	if err != nil {
 		return nil, apiErr(err)
@@ -90,10 +105,17 @@ func (h *Hub) listOrphans(ctx context.Context, _ *struct{}) (*orphansOut, error)
 		for _, o := range set.list {
 			x := Orphan{OrphanProc: o, DeviceID: devID, DeviceName: dev.Name, DeviceOnline: online[devID], Local: host != "" && strings.EqualFold(dev.Hostname, host)}
 			h.enrichOrphan(ctx, &x)
+			if ig, ok := ignores[devID+"|"+o.ID]; ok && o.State == protocol.ProcOrphan {
+				at := ig.At
+				x.IgnoredAt = &at
+				out.Body.Ignored = append(out.Body.Ignored, x)
+				continue
+			}
 			out.Body.Orphans = append(out.Body.Orphans, x)
 		}
 	}
 	sortOrphans(out.Body.Orphans)
+	sortOrphans(out.Body.Ignored)
 	stops, err := h.store.ProcStopsSince(ctx, time.Now().Add(-24*time.Hour))
 	if err != nil {
 		return nil, apiErr(err)
@@ -207,7 +229,60 @@ func (h *Hub) stopOrphan(ctx context.Context, in *stopOrphanIn) (*stopOrphanOut,
 	return &stopOrphanOut{Body: rec}, nil
 }
 
+type ignoreOrphanIn struct {
+	Body struct {
+		DeviceID string `json:"device_id"`
+		ID       string `json:"id" doc:"根进程“进程号@启动时间”，取自列表"`
+		Undo     bool   `json:"undo,omitempty" doc:"true = 取消忽略"`
+	}
+}
+
+type ignoreOrphanOut struct {
+	Body store.ProcIgnore
+}
+
+// ignoreOrphan 忽略 / 取消忽略一个孤儿（R-209）：只对孤儿（会话已结束），已脱离的不行；按“进程号@启动时间”记，进程退出后失效。
+func (h *Hub) ignoreOrphan(ctx context.Context, in *ignoreOrphanIn) (*ignoreOrphanOut, error) {
+	b := in.Body
+	if b.Undo {
+		rec, err := h.store.UndoProcIgnore(ctx, b.DeviceID, b.ID, "user")
+		if err != nil {
+			return nil, apiErr(err)
+		}
+		h.log.Info("取消忽略后台进程", "device", rec.DeviceName, "pid", rec.Pid, "cmd", rec.Cmd)
+		h.broker.publish("orphans")
+		return &ignoreOrphanOut{Body: rec}, nil
+	}
+	h.mu.Lock()
+	var target *protocol.OrphanProc
+	for _, o := range h.orphans[b.DeviceID].list {
+		if o.ID == b.ID {
+			o := o
+			target = &o
+			break
+		}
+	}
+	h.mu.Unlock()
+	if target == nil {
+		return nil, huma.Error404NotFound("列表里没有这个进程（可能已经结束），刷新看看")
+	}
+	if target.State != protocol.ProcOrphan {
+		return nil, huma.Error400BadRequest("只能忽略孤儿（会话已结束）；会话还在的进程不能忽略")
+	}
+	dev, _ := h.store.GetDevice(ctx, b.DeviceID)
+	x := Orphan{OrphanProc: *target, DeviceID: b.DeviceID}
+	h.enrichOrphan(ctx, &x)
+	rec, err := h.store.AddProcIgnore(ctx, store.ProcIgnore{DeviceID: b.DeviceID, DeviceName: dev.Name, ProcID: target.ID, Pid: target.Pid, Cmd: target.Cmd, Project: x.ProjectName, SessionKey: target.SessionKey, By: "user"})
+	if err != nil {
+		return nil, apiErr(err)
+	}
+	h.log.Info("忽略后台进程", "device", dev.Name, "pid", target.Pid, "cmd", target.Cmd)
+	h.broker.publish("orphans")
+	return &ignoreOrphanOut{Body: rec}, nil
+}
+
 func (h *Hub) registerOrphansWeb(api huma.API) {
+	huma.Register(api, huma.Operation{OperationID: "ignore-orphan", Method: http.MethodPost, Path: "/api/orphans/ignore", Tags: []string{"sessions"}, Summary: "忽略 / 取消忽略一个孤儿进程：不再列出、不提醒；按进程号 + 启动时间记，进程退出后失效（R-209）"}, h.ignoreOrphan)
 	huma.Register(api, huma.Operation{OperationID: "list-orphans", Method: http.MethodGet, Path: "/api/orphans", Tags: []string{"sessions"}, Summary: "会话结束后还在跑（或已脱离 Agent）的后台进程，与最近的停止记录（R-209）"}, h.listOrphans)
 	huma.Register(api, huma.Operation{OperationID: "stop-orphan", Method: http.MethodPost, Path: "/api/orphans/stop", Tags: []string{"sessions"}, Summary: "停止一个孤儿 / 已脱离的后台进程：经 Hub 交给所在设备的 daemon 核对后发信号（R-209）"}, h.stopOrphan)
 }

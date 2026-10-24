@@ -288,6 +288,25 @@ CREATE TABLE IF NOT EXISTS proc_stops (
 );
 CREATE INDEX IF NOT EXISTS proc_stops_at ON proc_stops(at);
 
+-- 忽略孤儿进程（R-209）：只对孤儿；按设备 + “进程号@启动时间”认，进程号被复用后的新进程不受影响。
+-- 行本身就是留痕：谁、何时忽略（by / at），谁、何时取消（undone_by / undone_at）；进程退出后 ended_at 记下失效时间
+CREATE TABLE IF NOT EXISTS proc_ignores (
+	id          TEXT PRIMARY KEY,
+	device_id   TEXT NOT NULL,
+	device_name TEXT NOT NULL DEFAULT '',
+	proc_id     TEXT NOT NULL,
+	pid         INTEGER NOT NULL,
+	cmd         TEXT NOT NULL DEFAULT '',
+	project     TEXT NOT NULL DEFAULT '',
+	session_key TEXT NOT NULL DEFAULT '',
+	by          TEXT NOT NULL DEFAULT '',
+	at          TEXT NOT NULL,
+	undone_by   TEXT NOT NULL DEFAULT '',
+	undone_at   TEXT,
+	ended_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS proc_ignores_live ON proc_ignores(device_id, proc_id) WHERE undone_at IS NULL AND ended_at IS NULL;
+
 -- 提交（R-156）：daemon 读本地 git log 上报的、标题写了需求编号或是 revert 的提交，以及 Agent 手动关联 / 上报 CI 的提交。
 -- 纸鸢只记录与展示，不改仓库、不触发 CI。reqs 是关联的需求编号，写成 ",R-12,R-13,"；reverts 是它回滚的提交哈希；
 -- source：git 本地采集 / agent 手动。ci_*：CI 结果（只读，来自 Agent 上报或 GitHub 只读接口），ci_at 是最后一次查询或上报的时间

@@ -230,6 +230,14 @@ export const zh = {
     } as Record<string, string>,
     stopsTitle: '最近停止',
     byYou: '你',
+    ignore: '忽略',
+    ignoreAct: '忽略',
+    ignoreTip: '不发信号，只是不再提醒；按进程号 + 启动时间记，它重启后算新进程，会重新提醒',
+    ignored: (n: number) => `已忽略 ${n} 个`,
+    view: '查看',
+    hide: '收起',
+    ignoredAt: (rel: string) => `${rel}忽略`,
+    unignore: '取消忽略',
   },
   desk: {
     counts: (act: number, run: number, parked: number, reply: number, asks = 0) =>

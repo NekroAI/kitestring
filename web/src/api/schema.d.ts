@@ -839,6 +839,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/orphans/ignore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 忽略 / 取消忽略一个孤儿进程：不再列出、不提醒；按进程号 + 启动时间记，进程退出后失效（R-209） */
+        post: operations["ignore-orphan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/orphans/stop": {
         parameters: {
             query?: never;
@@ -2464,6 +2481,13 @@ export interface components {
             /** @description 参谋代答过的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
         };
+        IgnoreOrphanInBody: {
+            device_id: string;
+            /** @description 根进程“进程号@启动时间”，取自列表 */
+            id: string;
+            /** @description true = 取消忽略 */
+            undo?: boolean;
+        };
         Item: {
             /**
              * Format: int64
@@ -2701,6 +2725,8 @@ export interface components {
             device_name: string;
             device_online: boolean;
             id: string;
+            /** Format: date-time */
+            ignored_at?: string;
             /** @description 进程在 Hub 所在的这台机器上 */
             local: boolean;
             /** Format: int64 */
@@ -2722,6 +2748,8 @@ export interface components {
             state: "orphan" | "detached";
         };
         OrphansOutBody: {
+            /** @description 你忽略了的孤儿（还在跑；不在 orphans 里、不提醒） */
+            ignored: components["schemas"]["Orphan"][] | null;
             orphans: components["schemas"]["Orphan"][] | null;
             /** @description 最近 24 小时的停止记录（新的在前） */
             stops: components["schemas"]["ProcStop"][] | null;
@@ -2907,6 +2935,30 @@ export interface components {
              */
             since: string;
             status: string;
+        };
+        ProcIgnore: {
+            /** Format: date-time */
+            at: string;
+            /** @description 谁忽略的：user = 你（网页） */
+            by: string;
+            cmd: string;
+            device_id: string;
+            device_name: string;
+            /**
+             * Format: date-time
+             * @description 进程退出、记录失效的时间
+             */
+            ended_at?: string;
+            id: string;
+            /** Format: int64 */
+            pid: number;
+            /** @description 进程号@启动时间 */
+            proc_id: string;
+            project: string;
+            session_key: string;
+            /** Format: date-time */
+            undone_at?: string;
+            undone_by?: string;
         };
         ProcStop: {
             /** Format: date-time */
@@ -5284,6 +5336,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrphansOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "ignore-orphan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IgnoreOrphanInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcIgnore"];
                 };
             };
             /** @description Error */
