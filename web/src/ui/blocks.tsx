@@ -115,12 +115,21 @@ export function Checklist({
 
 // ---------- 截图与对比 ----------
 
-function Media({ f, className }: { f: FileRef; className?: string }) {
+function Media({ f, className, limit }: { f: FileRef; className?: string; limit?: boolean }) {
+  const box = useRef<HTMLSpanElement>(null)
+  const [cut, setCut] = useState(false) // 图被限高裁掉了一截（R-181）
+  const measure = () => {
+    const el = box.current
+    if (el) setCut(el.scrollHeight - el.clientHeight > 4)
+  }
   if (isVideo(f.mime)) return <video src={fileUrl(f.id)} controls playsInline preload="metadata" className={cx('block w-full rounded-[10px] border border-line bg-sunken', className)} />
   return (
     <Lightbox f={f}>
       <button type="button" aria-label={f.name} className="group relative block w-full cursor-zoom-in">
-        <img src={fileUrl(f.id)} alt={f.name} loading="lazy" className={cx('block h-auto w-full rounded-[10px] border border-line bg-sunken', className)} />
+        <span ref={box} className={cx('block', limit && 'relative max-h-[50dvh] overflow-hidden rounded-[10px]')}>
+          <img src={fileUrl(f.id)} alt={f.name} loading="lazy" onLoad={limit ? measure : undefined} className={cx('block h-auto w-full rounded-[10px] border border-line bg-sunken', className)} />
+        </span>
+        {limit && cut && <span aria-hidden className="pointer-events-none absolute inset-x-px bottom-px h-16 rounded-b-[10px] bg-gradient-to-t from-bg via-bg/70 to-transparent" />}
         <span className="absolute top-2 right-2 flex size-7 items-center justify-center rounded-lg bg-black/45 text-white opacity-0 backdrop-blur transition group-hover:opacity-100 pointer-coarse:opacity-100">
           <Maximize2 className="size-3.5" />
         </span>
@@ -349,14 +358,14 @@ function Cap({ children }: { children: ReactNode }) {
 }
 
 // BlockView：画一个块。figNo 是截图的编号；lit 时加高亮框（清单项点过来时）。
-export function BlockView({ block, figNo, lit, criteria, className }: { block: Block; figNo?: number; lit?: boolean; criteria?: Record<number, string>; className?: string }) {
+export function BlockView({ block, figNo, lit, criteria, className, limit }: { block: Block; figNo?: number; lit?: boolean; criteria?: Record<number, string>; className?: string; limit?: boolean }) {
   const b = block
   const typeName = b.type === 'flow' ? t.blocks.flow : b.type === 'metrics' ? t.blocks.metrics : b.type === 'scope' ? t.blocks.scope : b.type === 'options' ? t.blocks.options : b.type === 'table' ? t.blocks.table : b.type === 'checklist' ? t.blocks.checklist : ''
   const cap = b.type === 'figure' || b.type === 'compare' ? b.title : [typeName, b.title].filter(Boolean).join(' · ')
   let body: ReactNode = null
   switch (b.type) {
     case 'figure':
-      body = b.image && <Media f={b.image} />
+      body = b.image && <Media f={b.image} limit={limit} />
       break
     case 'compare':
       body = b.before && b.after && <Compare before={b.before} after={b.after} />

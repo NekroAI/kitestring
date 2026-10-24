@@ -115,9 +115,9 @@ export function EvidenceView({ e, acceptance }: { e: Evidence; acceptance?: stri
         </div>
   )
   const right = (side.length > 0 || extra.length > 0) && (
-    <div className="min-w-0 space-y-6 [grid-area:side]">
+    <div className="min-w-0 space-y-6 [grid-area:side] @min-[680px]:sticky @min-[680px]:top-5 @min-[680px]:max-h-[100cqh] @min-[680px]:self-start @min-[680px]:overflow-y-auto @min-[680px]:overscroll-contain @min-[680px]:pr-1 @min-[680px]:[scrollbar-width:thin]">
       {side.map((b) => (
-        <BlockView key={b.id} block={b} figNo={figs[b.id]} lit={lit?.id === b.id} criteria={criteria} className={shots.includes(b) ? '@max-[680px]:hidden' : undefined} />
+        <BlockView key={b.id} block={b} figNo={figs[b.id]} lit={lit?.id === b.id} criteria={criteria} limit className={shots.includes(b) ? '@max-[680px]:hidden' : undefined} />
       ))}
       {extra.length > 0 && (
         <div className="space-y-1.5">
@@ -203,7 +203,7 @@ export function LegacyEvidence({ e, big }: { e: Evidence; big?: boolean }) {
         </div>
         <div className="min-w-0 space-y-4 @max-[680px]:hidden">
           {imgs.map((f, k) => (
-            <BlockView key={f.id} block={{ id: f.id, type: 'figure', image: f }} figNo={k + 1} />
+            <BlockView key={f.id} block={{ id: f.id, type: 'figure', image: f }} figNo={k + 1} limit />
           ))}
         </div>
       </div>
