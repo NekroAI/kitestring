@@ -181,6 +181,7 @@ func onOff(b bool) string {
 }
 
 // onUserStatusChanged：用户在网页上把需求 before 改成了 after.Status。送给派活的 PM、关联的在线会话和订阅了 status 的会话；
+// 关联的主助理 / 顾问只是记下需求的（R-198）：订阅了 status 的由 broadcast 照常送，没订阅的只静默入队、不唤醒 ks wait；
 // skip 里是别的通知已经告诉过的会话（比如撤回放行时已经通知了在做的会话）。
 func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requirement, skip ...string) {
 	if before.Status == after.Status || after.ProjectID == "" {
@@ -205,6 +206,12 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 		}
 	}
 	msg := fmt.Sprintf("你关联的需求有变化（status · %s）：%s 只是告诉你，不是派给你的活；需要时自己看，不必回复。", waitOnZh[protocol.OnStatus], text)
+	statusSubs := map[string]bool{} // 会被下面 broadcast 送到 status 的会话
+	if subs, err := h.store.WaitSubscribers(ctx, after.ProjectID); err == nil {
+		for _, s := range subs {
+			statusSubs[s.Key] = slices.Contains(effectiveWaitOn(s.Role, s.WaitOn), protocol.OnStatus)
+		}
+	}
 	for _, k := range after.Sessions {
 		if slices.Contains(told, k) {
 			continue
@@ -213,7 +220,14 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 		if err != nil || x.State == store.StateEnded || x.State == store.StateLost || x.DoneAt != nil {
 			continue
 		}
-		if _, err := h.tell(ctx, k, after.ProjectID, after.ID, msg); err != nil {
+		send := h.tell
+		if recorderOnly(x.Role) { // R-198：主助理 / 顾问关联只因为是它记下的，不是执行方
+			if statusSubs[k] {
+				continue // 订阅了 status：下面的 broadcast 照常送、照常唤醒
+			}
+			send = h.tellQuiet // 没订阅：照旧入队，下次唤醒或下一轮时一并带上，但不唤醒 ks wait
+		}
+		if _, err := send(ctx, k, after.ProjectID, after.ID, msg); err != nil {
 			h.log.Warn("通知关联会话需求状态变化失败", "err", err, "to", k)
 			continue
 		}
@@ -221,6 +235,10 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 	}
 	h.broadcast(ctx, protocol.OnStatus, after.ProjectID, after.ID, text, told...)
 }
+
+// recorderOnly（R-198）：这种身份关联需求只因为需求是它记下的（记需求时自动关联），不负责做——主助理、顾问。
+// 用户改这类需求的状态时，没订阅 status 的它们不该被 ks wait 唤醒；执行方（主调度、开发、子任务等其它身份）照旧收到。
+func recorderOnly(role string) bool { return role == roles.Aide || role == roles.Advisor }
 
 // onUserPlanEvent：用户在网页上批准 / 退回计划、通过 / 退回阶段（R-171）。负责会话已经收到计划进展（planMsg），不重复送；
 // 订阅了 status 的其它会话收到一句说明。

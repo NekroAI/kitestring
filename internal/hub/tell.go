@@ -42,6 +42,25 @@ func (h *Hub) tell(ctx context.Context, to, projectID, reqID, text string) (stor
 	return d, nil
 }
 
+// quietTellQ 是静默团队消息的标题（R-198）：照旧入队，会话下一轮开始或 ks wait 因别的消息被唤醒时一并注入，但它本身不唤醒 ks wait。
+// 用标题区分，不加新列：下行时 pushDecisions 据此置 Quiet。
+const quietTellQ = "团队消息（不唤醒）"
+
+// tellQuiet 和 tell 一样送一条团队消息，但不唤醒挂着的 ks wait（R-198）。
+func (h *Hub) tellQuiet(ctx context.Context, to, projectID, reqID, text string) (store.Decision, error) {
+	if to == "" {
+		return store.Decision{}, nil
+	}
+	d, err := h.store.CreateDecision(ctx, store.Decision{
+		Kind: store.KindTell, SessionKey: to, ProjectID: projectID, RequirementID: reqID, Question: quietTellQ, Answer: text,
+	})
+	if err != nil {
+		return d, err
+	}
+	h.decisionsChanged(ctx, d)
+	return d, nil
+}
+
 // assigner 返回派这条需求的 PM（最近一次 PM 派活记录，且它仍是本项目没结束的 PM），没有时为项目 PM。
 func (h *Hub) assigner(ctx context.Context, r store.Requirement) string {
 	for _, d := range r.Feedback { // 时间倒序
