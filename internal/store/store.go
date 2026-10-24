@@ -144,6 +144,10 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "by_title", "TEXT NOT NULL DEFAULT ''"},
 	{"review_advice", "by_title", "TEXT NOT NULL DEFAULT ''"},
 	{"review_advice", "by_role", "TEXT NOT NULL DEFAULT ''"},
+	// 团队消息按身份寻址（R-191）：发消息时发送方的身份、发自哪个子任务（agent_id）、回复的是哪条团队消息（决策 ID）
+	{"decisions", "from_role", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "from_agent", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "reply_to", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。

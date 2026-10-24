@@ -77,6 +77,21 @@ func currentSession(flagVal string) string {
 	return cliSession("")
 }
 
+// currentTeller 识别 ks team tell 所在的对话和发消息的子任务（R-191）：按父进程找到会话，
+// 再取这个会话最近一条 ks team tell 命令是哪个子任务发的（主线程发的为空）。认不出时退回 currentSession。
+func currentTeller() (key, agent string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var res struct {
+		SessionKey string `json:"session_key"`
+		AgentID    string `json:"agent_id"`
+	}
+	if err := client.New(5*time.Second).Do(ctx, "GET", "/session?"+url.Values{"ppid": {strconv.Itoa(os.Getppid())}, "tell": {"1"}}.Encode(), nil, &res); err == nil && res.SessionKey != "" {
+		return res.SessionKey, res.AgentID
+	}
+	return cliSession(""), ""
+}
+
 // runBrief：ks brief <简报>——PM 写给用户的简报，显示在工作台顶部（R-113）；ks brief "" 清除。
 func runBrief(args []string) error {
 	fs := flag.NewFlagSet("brief", flag.ContinueOnError)
@@ -133,10 +148,18 @@ func runTeam(args []string) error {
 	duration := fs.String("duration", "", "recommend：预计用多久")
 	minutes := fs.Int("minutes", 0, "recommend：批准时限（分钟），默认用设置里的（30）")
 	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
+	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）")
+	reply := fs.String("reply", "", "tell：回复收到的团队消息（填它的编号 D-x），回复会送回发消息的一方")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
-	key := currentSession(*session)
+	tell := fs.NArg() > 0 && fs.Arg(0) == "tell"
+	key, agent := *session, ""
+	if tell && key == "" {
+		key, agent = currentTeller()
+	} else {
+		key = currentSession(key)
+	}
 	if key == "" {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
 	}
@@ -166,15 +189,18 @@ func runTeam(args []string) error {
 		}
 		return agentCall("POST", "/agent/team/need", map[string]any{"session_key": key, "count": n, "reason": *reason})
 	}
-	if fs.NArg() > 0 && fs.Arg(0) == "tell" {
-		// ks team tell <文字> [--req R-x]：给本项目的 PM 留言，只送给 PM、不进用户收件箱（R-135）
+	if tell {
+		// ks team tell <文字> [--to aide|pm|reviewer] [--reply D-x] [--req R-x]：按身份给本项目的团队成员发消息，
+		// 或回复收到的团队消息；只送给 Agent、不进用户收件箱（R-135 / R-191）
 		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
 		if text == "" {
-			return fmt.Errorf("用法：ks team tell <要告诉 PM 的话> [--req R-x]")
+			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer] [--req R-x]\n      ks team tell --reply D-x <回复>")
 		}
 		body := map[string]any{"session_key": key, "text": text}
-		if *req != "" {
-			body["requirement"] = *req
+		for k, v := range map[string]string{"requirement": *req, "to": *to, "reply_to": *reply, "agent_id": agent} {
+			if v != "" {
+				body[k] = v
+			}
 		}
 		return agentCall("POST", "/agent/team/tell", body)
 	}

@@ -119,8 +119,9 @@ type Decision struct {
 	Kind       string    `json:"kind,omitempty"`      // decision | feedback | note | assign | plan
 	ReqCode    string    `json:"req_code,omitempty"`  // 关联需求编号；kind=plan 时是计划编号（P-n）
 	ReqTitle   string    `json:"req_title,omitempty"`
-	Files      []File    `json:"files,omitempty"` // 答复 / 意见附图
-	Quiet      bool      `json:"quiet,omitempty"` // 不唤醒 ks wait（R-198）：照旧注入，下一轮开始或因别的消息唤醒时一并带上
+	Files      []File    `json:"files,omitempty"`     // 答复 / 意见附图
+	Quiet      bool      `json:"quiet,omitempty"`     // 不唤醒 ks wait（R-198）：照旧注入，下一轮开始或因别的消息唤醒时一并带上
+	Replyable  bool      `json:"replyable,omitempty"` // 会话发来的团队消息（R-191）：送达时写上怎么回复，回复自动送回发消息的一方
 }
 
 // File 是随决策下行的附件（图片或录屏）引用；daemon 下载到本地后在送达文字里给出路径。

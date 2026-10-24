@@ -498,7 +498,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 给本项目的 PM 留言（只送给 PM，不进用户收件箱，R-135） */
+        /**
+         * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。
+         */
         post: operations["agent-tell-pm"];
         delete?: never;
         options?: never;
@@ -1763,12 +1766,18 @@ export interface components {
             summary: string;
         };
         "Agent-tell-pmRequest": {
+            /** @description 发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上 */
+            agent_id?: string;
+            /** @description 回复收到的团队消息：填它的编号（D-x） */
+            reply_to?: string;
             /** @description 相关需求编号（如 R-12），可省略 */
             requirement?: string;
             /** @description 调用者 */
             session_key: string;
-            /** @description 要告诉 PM 的话 */
+            /** @description 要说的话 */
             text: string;
+            /** @description 收件身份：pm（默认）、aide、reviewer；也认中文名（主调度 / 主助理 / 评审）。回复时不填 */
+            to?: string;
         };
         "Agent-update-planRequest": {
             /** @description 不给表示不改目标 */
@@ -2096,7 +2105,11 @@ export interface components {
             device_name?: string;
             /** Format: date-time */
             expires_at?: string;
+            /** @description 团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空 */
+            from_agent?: string;
             from_decision?: string;
+            /** @description 团队消息（R-191）：发消息的会话当时的身份 */
+            from_role?: string;
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -2120,6 +2133,8 @@ export interface components {
             question: string;
             recommendation: string;
             replaced_by?: string;
+            /** @description 团队消息（R-191）：这条回复的团队消息 ID */
+            reply_to?: string;
             /** Format: int64 */
             request_count?: number;
             /** @description 改状态申请（R-188）：申请时需求的状态 */
@@ -2181,7 +2196,11 @@ export interface components {
             device_name?: string;
             /** Format: date-time */
             expires_at?: string;
+            /** @description 团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空 */
+            from_agent?: string;
             from_decision?: string;
+            /** @description 团队消息（R-191）：发消息的会话当时的身份 */
+            from_role?: string;
             id: string;
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
@@ -2205,6 +2224,8 @@ export interface components {
             question: string;
             recommendation: string;
             replaced_by?: string;
+            /** @description 团队消息（R-191）：这条回复的团队消息 ID */
+            reply_to?: string;
             /** Format: int64 */
             request_count?: number;
             /** @description 改状态申请（R-188）：申请时需求的状态 */
@@ -3583,9 +3604,13 @@ export interface components {
             project_name: string;
         };
         TellOutBody: {
+            /** @description 这条团队消息的编号（D-x） */
+            code?: string;
             delivered: boolean;
             message: string;
-            /** @description 收到的 PM 会话键 */
+            /** @description 收到的会话的身份：pm / aide / reviewer；回复时是提问方的身份（可能为空） */
+            role?: string;
+            /** @description 收到的会话键 */
             to?: string;
         };
         "Test-pushRequest": {

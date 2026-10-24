@@ -75,6 +75,22 @@ func (t *tools) sessionKey(ctx context.Context, req *mcp.CallToolRequest) string
 	return sessionKeyFromMeta(req)
 }
 
+// caller 和 sessionKey 一样识别会话，顺带返回发起调用的子任务 agent_id（主线程为空，R-191）。
+func (t *tools) caller(ctx context.Context, req *mcp.CallToolRequest) (key, agent string) {
+	if req.Params != nil && req.Params.Meta != nil {
+		if id, ok := req.Params.Meta["claudecode/toolUseId"].(string); ok && id != "" {
+			var out struct {
+				SessionKey string `json:"session_key"`
+				AgentID    string `json:"agent_id"`
+			}
+			if t.c.Do(ctx, "GET", "/session?tool_use_id="+url.QueryEscape(id), nil, &out) == nil && out.SessionKey != "" {
+				return out.SessionKey, out.AgentID
+			}
+		}
+	}
+	return sessionKeyFromMeta(req), ""
+}
+
 func sessionKeyFromMeta(req *mcp.CallToolRequest) string {
 	tool := ""
 	if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {

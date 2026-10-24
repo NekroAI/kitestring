@@ -86,21 +86,23 @@ type morningIn struct {
 }
 
 type tellIn struct {
-	Text        string `json:"text" jsonschema:"要告诉 PM 的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13）"`
+	Text        string `json:"text" jsonschema:"要说的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13；问取舍时写清选项和你倾向哪个）"`
+	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
+	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"回复收到的团队消息时填它的编号（D-x）：回复自动送回发消息的一方"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
 }
 
 func (t *tools) registerTeam(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的 PM 留言：进展、受阻、发现的问题、做完一批等要让 PM 知道的事。只送给 PM（它挂着 ks wait 时立刻收到），不进用户的收件箱；要用户拍板的事仍用 decision_raise。需求设为待验收时 PM 会自动收到通知，不必再发。项目没有 PM 时不会送出，也不报错。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的团队成员发消息（命令行 ks team tell）：按身份送给本项目现在的那个会话，不认会话名。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（挂着 ks wait 时立刻收到），不进用户的收件箱；要用户拍板的事仍用 decision_raise。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，也不报错。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
-			key := t.sessionKey(ctx, req)
+			key, agent := t.caller(ctx, req)
 			if key == "" {
 				return nil, nil, fmt.Errorf("无法识别当前会话")
 			}
 			var out struct {
 				Message string `json:"message"`
 			}
-			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement}
+			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "reply_to": in.ReplyTo, "agent_id": agent}
 			dropEmpty(body)
 			if err := t.c.Do(ctx, "POST", "/agent/team/tell", body, &out); err != nil {
 				return nil, nil, err

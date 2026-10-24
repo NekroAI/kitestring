@@ -53,7 +53,10 @@ agent 调用：
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
-  team tell <文字> [--req R-x]   给本项目的 PM 留言（只送给 PM，不进用户收件箱；交验收时 PM 会自动收到通知）
+  team tell <文字> [--to aide|pm|reviewer] [--req R-x]
+                                 按身份给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），
+                                 进度和受阻告诉主调度；没有主助理时退回给主调度；交验收时主调度会自动收到通知
+  team tell --reply D-x <回复>   回复收到的团队消息，自动送回发消息的一方（子任务发的送到它所属的会话）
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
   away advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上

@@ -708,3 +708,15 @@ func backfillLanesTx(ctx context.Context, tx *sql.Tx) error {
 	}
 	return nil
 }
+
+// AgentLabel 返回会话 key 下子任务 agent 的名字（SubagentStart 时记下的描述）；没有记录时为空（R-191）。
+func (s *Store) AgentLabel(ctx context.Context, key, agent string) string {
+	if key == "" || agent == "" {
+		return ""
+	}
+	a, err := getAgent(ctx, s.db, key, agent)
+	if err != nil {
+		return ""
+	}
+	return a.Label
+}

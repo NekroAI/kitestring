@@ -598,6 +598,14 @@
       "Agent-tell-pmRequest": {
         "additionalProperties": false,
         "properties": {
+          "agent_id": {
+            "description": "发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上",
+            "type": "string"
+          },
+          "reply_to": {
+            "description": "回复收到的团队消息：填它的编号（D-x）",
+            "type": "string"
+          },
           "requirement": {
             "description": "相关需求编号（如 R-12），可省略",
             "type": "string"
@@ -608,8 +616,12 @@
             "type": "string"
           },
           "text": {
-            "description": "要告诉 PM 的话",
+            "description": "要说的话",
             "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "description": "收件身份：pm（默认）、aide、reviewer；也认中文名（主调度 / 主助理 / 评审）。回复时不填",
             "type": "string"
           }
         },
@@ -1627,7 +1639,15 @@
             "format": "date-time",
             "type": "string"
           },
+          "from_agent": {
+            "description": "团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空",
+            "type": "string"
+          },
           "from_decision": {
+            "type": "string"
+          },
+          "from_role": {
+            "description": "团队消息（R-191）：发消息的会话当时的身份",
             "type": "string"
           },
           "id": {
@@ -1727,6 +1747,10 @@
             "type": "string"
           },
           "replaced_by": {
+            "type": "string"
+          },
+          "reply_to": {
+            "description": "团队消息（R-191）：这条回复的团队消息 ID",
             "type": "string"
           },
           "request_count": {
@@ -1963,7 +1987,15 @@
             "format": "date-time",
             "type": "string"
           },
+          "from_agent": {
+            "description": "团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空",
+            "type": "string"
+          },
           "from_decision": {
+            "type": "string"
+          },
+          "from_role": {
+            "description": "团队消息（R-191）：发消息的会话当时的身份",
             "type": "string"
           },
           "id": {
@@ -2063,6 +2095,10 @@
             "type": "string"
           },
           "replaced_by": {
+            "type": "string"
+          },
+          "reply_to": {
+            "description": "团队消息（R-191）：这条回复的团队消息 ID",
             "type": "string"
           },
           "request_count": {
@@ -6692,14 +6728,22 @@
       "TellOutBody": {
         "additionalProperties": false,
         "properties": {
+          "code": {
+            "description": "这条团队消息的编号（D-x）",
+            "type": "string"
+          },
           "delivered": {
             "type": "boolean"
           },
           "message": {
             "type": "string"
           },
+          "role": {
+            "description": "收到的会话的身份：pm / aide / reviewer；回复时是提问方的身份（可能为空）",
+            "type": "string"
+          },
           "to": {
-            "description": "收到的 PM 会话键",
+            "description": "收到的会话键",
             "type": "string"
           }
         },
@@ -8421,6 +8465,7 @@
     },
     "/api/agent/team/tell": {
       "post": {
+        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。",
         "operationId": "agent-tell-pm",
         "requestBody": {
           "content": {
@@ -8454,7 +8499,7 @@
             "description": "Error"
           }
         },
-        "summary": "给本项目的 PM 留言（只送给 PM，不进用户收件箱，R-135）",
+        "summary": "给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）",
         "tags": [
           "agent"
         ]
