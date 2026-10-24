@@ -19,7 +19,7 @@ import { BackButton, ReqView } from './reqDrawer'
 import { Md } from '../ui/markdown'
 import { ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 import { BlockList, ScoreCount } from '../ui/blocks'
-import { done, schedule, Seal, Verdict } from './verdict'
+import { done, PendingBar, schedule, Seal, usePending, Verdict } from './verdict'
 
 // 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
 // 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（批准 / 退回）和编辑。
@@ -447,13 +447,20 @@ export function PlanBody({ x, top, sel, onPick: pick }: { x: Plan; top: ReactNod
   const onPick = pick ?? peekRef ?? undefined
   const sessions = useSessions()
   const { updatePlan, startPlan } = useActions()
-  const [busy, wrap] = useBusy()
   const all = sessions.data?.sessions ?? []
   const owner = all.find((s) => s.key === x.owner_session)
   const approval = needsApproval(x)
   const gate = gateStage(x)
-  // 自己建的计划「开始」不是判断，照旧立即开始；Agent 拆的计划走 PlanVerdict（R-161）
-  const start = () => wrap(async () => (await startPlan(x.code)) && toast.success(t.plan.started(x.code)))
+  // 自己建的计划「开始」不是判断，但同样有 3 秒撤销期（R-201 / D-413），底部换成撤销条；Agent 拆的计划走 PlanVerdict（R-161）
+  const start = () =>
+    schedule(planKey(x), {
+      act: 'move',
+      label: t.verdict.startPlan,
+      subject: x.code,
+      beacon: { method: 'POST', url: `/api/plans/${x.code}/start`, body: { comment: '', files: [] } },
+      commit: () => done(startPlan(x.code), () => toast.success(t.plan.started(x.code))),
+    })
+  const starting = !!usePending(planKey(x))
   const foot = 'shrink-0 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]'
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -498,11 +505,15 @@ export function PlanBody({ x, top, sel, onPick: pick }: { x: Plan; top: ReactNod
         (x.status === 'draft' || x.status === 'shelved') && (
           <div className={cx(foot, 'space-y-2.5')}>
             <p className="text-xs text-fg-3">{t.plan.startHint}</p>
-            <div className="flex items-center justify-end gap-2">
-              <Button variant="primary" loading={busy} disabled={!planReqCount(x)} onClick={() => void start()} icon={<Send className="size-4" />}>
-                {t.plan.start}
-              </Button>
-            </div>
+            {starting ? (
+              <PendingBar k={planKey(x)} />
+            ) : (
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="primary" disabled={!planReqCount(x)} onClick={start} icon={<Send className="size-4" />}>
+                  {t.plan.start}
+                </Button>
+              </div>
+            )}
           </div>
         )
       )}

@@ -13,14 +13,14 @@ import { fileUrl, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
-import { composeAnswer, emptyDraft, useOutbox } from './outbox'
+import { composeAnswer, decKey, emptyDraft, useOutbox } from './outbox'
 import { currentPicks, picksText, PlanSummary, Points } from './points'
 import { useOpenReq, useOpenSession } from './nav'
 import { targetItems } from './assign'
 import { Md, plainText } from '../ui/markdown'
 import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionChain } from './chain'
-import { actWord, Seal, UndoBar, Verdict, verdictKey } from './verdict'
+import { PendingBar, Seal, usePending, Verdict, verdictKey } from './verdict'
 import { requestLeft } from './asks'
 import { isStatusReq, StatusReqNote } from './statusReq'
 
@@ -108,7 +108,7 @@ function RequestNote({ d, now }: { d: Decision; now: number }) {
 
 export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedded?: boolean; drawer?: boolean }) {
   const now = useNow()
-  const { drafts, setDraft, queued, sealed, send, cancel } = useOutbox()
+  const { drafts, setDraft, send } = useOutbox()
   const { closeDecision } = useActions()
   const confirm = useConfirm()
   const closeIt = async () => {
@@ -133,9 +133,8 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
     ? picked && (d.points ?? []).some((p, i) => (p.items ?? []).some((o) => o.recommended) && !p.items?.[picks[i]]?.recommended)
     : !!rec && !approval && ((typeof draft.choice === 'number' && ri >= 0 && draft.choice !== ri) || (draft.choice === 'other' && options.length > 0))
   const reason = deviates ? (draft.reason ?? '').trim() : ''
-  const [sendingAct, setSendingAct] = useState<'pass' | 'back' | 'answer'>('answer')
-  const sealedNow = sealed[d.code]
-  const sendingAt = queued[d.code] || (sealedNow ? 1 : 0)
+  // 撤销期 / 盖印中（R-201：和需求验收同一个调度器，键是 dec:D-8）
+  const sendingAt = !!usePending(decKey(d.code))
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const free = !multi && (options.length === 0 || draft.choice === 'other')
   const title = d.short_title || d.question
@@ -160,20 +159,16 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
   const busyUpload = () => (uploadsBusy() ? (toast(t.attach.wait), true) : false) // 附件没传完先不发
   const submit = () => {
     if (busyUpload()) return
-    if (approval && !multi) {
-      setSendingAct('pass')
-      return send([{ code: d.code, answer: composeAnswer({ ...draft, choice: 0 }, options), files }])
-    }
+    if (approval && !multi) return send([{ code: d.code, answer: composeAnswer({ ...draft, choice: 0 }, options), files, act: 'pass', scene }])
     if (!answer) return
-    setSendingAct(approval ? 'pass' : 'answer')
-    if (multi) send([{ code: d.code, answer: draft.note.trim(), files, choices: picks, reason: reason || undefined }])
-    else send([{ code: d.code, answer, files, reason: reason || undefined }])
+    const act = approval ? 'pass' : 'answer'
+    if (multi) send([{ code: d.code, answer: draft.note.trim(), files, choices: picks, reason: reason || undefined, act, scene }])
+    else send([{ code: d.code, answer, files, reason: reason || undefined, act, scene }])
   }
   const back = () => {
     if (busyUpload()) return
-    setSendingAct('back')
-    if (multi) send([{ code: d.code, answer: draft.note.trim(), files, reject: true }])
-    else send([{ code: d.code, answer: composeAnswer({ ...draft, choice: 1 }, options), files }])
+    if (multi) send([{ code: d.code, answer: draft.note.trim(), files, reject: true, act: 'back', scene }])
+    else send([{ code: d.code, answer: composeAnswer({ ...draft, choice: 1 }, options), files, act: 'back', scene }])
   }
   const onKey = (e: KeyboardEvent) => {
     if (sendingAt) return
@@ -329,7 +324,7 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
         )}
 
         {sendingAt ? (
-          <UndoBar until={sendingAt} done={!!sealedNow} text={(s) => (sealedNow ? t.verdict.sealed(actWord(sendingAct, '', scene)) : t.verdict.pending(actWord(sendingAct, '', scene), s))} onUndo={() => cancel(d.code)} />
+          <PendingBar k={decKey(d.code)} />
         ) : (
           <Verdict
             mode={approval ? 'verdict' : 'answer'}
@@ -406,7 +401,7 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
         {foot}
         </div>
       )}
-      <Seal show={!!sealedNow} act={sendingAct} scene={scene} />
+      <Seal k={decKey(d.code)} />
     </div>
     </AnnotateTarget.Provider>
   )

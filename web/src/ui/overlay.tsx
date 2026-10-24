@@ -112,6 +112,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
           <RDialog.Content
             aria-describedby={undefined}
             onOpenAutoFocus={(e) => e.preventDefault()}
+            {...keepForDock}
             onEscapeKeyDown={(e) => {
               if (aside && onAsideClose) {
                 e.preventDefault()
@@ -196,6 +197,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/30 dark:bg-black/50" />
         <Drawer.Content
           aria-describedby={undefined}
+          {...keepForDock}
           className={cx('fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-3xl border-t border-line bg-surface outline-none', bare ? 'h-[92dvh]' : 'max-h-[92dvh]')}
         >
           <div className="mx-auto mt-2.5 mb-1 h-1.5 w-10 shrink-0 rounded-full bg-line-strong" />
@@ -242,6 +244,9 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
 }
 
 // Modal：居中对话框（表单、确认）。移动端同样居中，宽度自适应。
+// 点顶部撤销浮动条（R-201）不算点到抽屉外面：撤回时抽屉不关
+const keepForDock = { onInteractOutside: (e: Event) => (e.target as HTMLElement | null)?.closest?.('[data-undo-dock]') && e.preventDefault() }
+
 export function Modal({ open, onClose, title, description, children, footer }: { open: boolean; onClose: () => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode }) {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>

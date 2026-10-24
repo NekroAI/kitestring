@@ -6,6 +6,7 @@ import { Toaster } from 'sonner'
 import { ApiError, setUnauthorizedHandler } from './api/client'
 import { qk } from './api/queries'
 import { OutboxProvider } from './app/outbox'
+import { UndoDock } from './app/verdict'
 import { initTheme } from './lib/theme'
 import { registerSW } from './lib/push'
 import { ConfirmProvider } from './ui/overlay'
@@ -62,6 +63,8 @@ createRoot(document.getElementById('root')!).render(
             <OutboxProvider>
               <App />
             </OutboxProvider>
+            {/* 撤销期的顶部浮动条：受影响的元素不在屏幕上时才出现（R-201） */}
+            <UndoDock />
           </ConfirmProvider>
         </TipProvider>
         <Toaster position="top-center" richColors closeButton toastOptions={{ className: 'font-sans' }} />

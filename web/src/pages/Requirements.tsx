@@ -19,6 +19,9 @@ import { Menu, type MenuItem } from '../ui/overlay'
 import { allStatuses, NewReqModal, ReleaseBadge, StatusMenu, useSetStatus } from '../app/requirements'
 import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark'
 import { nextView, useKsEvent } from '../app/command'
+import { Flights } from '../app/flight'
+import { PendingCover, usePendingMap } from '../app/verdict'
+import { shownStatus } from '../lib/pending'
 import {
   catColor,
   DistBar,
@@ -69,7 +72,9 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
   return (
     <div className={cx('rounded-xl transition-colors', expanded ? 'bg-surface shadow-card ring-1 ring-line' : 'hover:bg-hover/60')}>
       <Ctx items={menu(r)} className="rounded-xl">
-        <div role="button" tabIndex={0} data-nav-item="" onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+        <div role="button" tabIndex={0} data-nav-item="" onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} className="relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5">
+          {/* 撤销期（R-201）：这一行已显示新状态，右半边盖同一个撤销条 */}
+          <PendingCover k={r.code} className="left-auto w-[min(320px,60%)] bg-transparent" />
           <ChevronRight className={cx('size-4 shrink-0 text-fg-3 transition-transform', expanded && 'rotate-90')} />
           <span onClick={(e) => e.stopPropagation()}>
             <StatusMenu r={r} />
@@ -312,7 +317,18 @@ export default function RequirementsPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [phone])
 
-  const all = useMemo(() => q.data ?? [], [q.data])
+  const raw = useMemo(() => q.data ?? [], [q.data])
+  // 结果立刻到位（R-201）：撤销期里的需求按操作后的状态显示——进新列、计数跟着变；撤回或提交失败时回到原列（同一套换列动画，R-200）
+  const pend = usePendingMap()
+  const over = new Map<string, string>()
+  for (const r of raw) {
+    const s = shownStatus(r.status, pend.get(r.code))
+    if (s !== r.status) over.set(r.code, s)
+  }
+  const overKey = [...over].join()
+  const all = useMemo(() => (over.size ? raw.map((r) => (over.has(r.code) ? { ...r, status: over.get(r.code)! } : r)) : raw), [raw, overKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const shownMap = useMemo(() => new Map(all.map((r) => [r.code, r.status])), [all])
+  const overMap = useMemo(() => over, [overKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const projList = useMemo(() => projects.data?.projects ?? [], [projects.data])
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase()
@@ -337,8 +353,8 @@ export default function RequirementsPage() {
   }, [colorBy, filtered, projIds, projList, planCodes, plans.data])
 
   const drop = (code: string, status: string) => {
-    const r = all.find((x) => x.code === code)
-    if (r && r.status !== status) void setStatus(r, status)
+    const r = raw.find((x) => x.code === code)
+    if (r && shownMap.get(code) !== status) void setStatus(r, status)
   }
   const coarse = useMedia('(pointer: coarse)')
   const touch = useTouchDrag(drop)
@@ -405,7 +421,19 @@ export default function RequirementsPage() {
     </div>
   )
   const subtitle = q.isPending ? ' ' : view === 'plans' ? planSummary : projName ? t.pool.subtitleProject(projName) : t.pool.subtitle
-  const p = pool.data
+  // 分布条的计数同样按操作后的状态（同一信息只在一处表达，列头和分布条不能对不上）
+  const p0 = pool.data
+  const p = useMemo(() => {
+    if (!p0 || !overMap.size) return p0
+    const counts = { ...p0.counts }
+    for (const r of raw) {
+      const to = overMap.get(r.code)
+      if (!to || (project && r.project_id !== project)) continue
+      counts[r.status] = Math.max(0, (counts[r.status] ?? 0) - 1)
+      counts[to] = (counts[to] ?? 0) + 1
+    }
+    return { ...p0, counts }
+  }, [p0, overMap, raw, project])
 
   return (
     <div
@@ -556,6 +584,7 @@ export default function RequirementsPage() {
           ) : (
             p && (
               <PoolProvider value={{ colorOf, since, td, phone, drop }}>
+                <Flights shown={shownMap} over={overMap}>
                 {phone ? (
                   <PhoneBoard items={filtered} statuses={phoneStatuses} status={phoneStatus} setStatus={setMStatus} pool={p} />
                 ) : (
@@ -563,6 +592,7 @@ export default function RequirementsPage() {
                   <Board width={width} pool={p} items={filtered} shelved={shelved} active={active} onAll={showAll} onConfirmEach={confirmEach} />
                   </div>
                 )}
+                </Flights>
               </PoolProvider>
             )
           )}

@@ -19,18 +19,20 @@ import { useWorkbench } from './inbox'
 import { useGoBack, useOpenSession } from './nav'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { AdviceNote } from './morning'
-import { useOutbox } from './outbox'
+import { decKey } from './outbox'
 import { PlanBody } from './plans'
 import { ReplyBox } from './replyBox'
 import { BackButton, ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
 import { isStatusReq, StatusReqNote } from './statusReq'
-import { reducedMotion, SEAL_MS, usePendingMap } from './verdict'
+import { useAdvance, usePendingMap } from './verdict'
 
 // 审批抽屉（R-177）：所有要你下判断的事只在这里处理——需求验收、阶段验收、计划批准、批准类 / 选项类决策、
 // Agent 的限时请求（R-169 推荐开 Dev 会话）、转交、会话在等你、推翻代答。同一个外壳（需求抽屉的版式：顶栏 → 中部滚动 → 底部固定的判断），
 // 按类型换中部内容；底部统一是 R-161 的 Verdict，用词按 R-176 的场景。
-// 从「要你处理」打开时按它的顺序排队：顶部 ‹ › 切换，← → / J K 同样切换；盖印后自动滑到下一件，处理完显示「都处理完了」。
+// 从「要你处理」打开时按它的顺序排队：顶部 ‹ › 切换，← → / J K 同样切换；处理完显示「都处理完了」。
+// 撤销期不挡下一步（R-201，docs/principles.md 第 8 条）：点了通过 / 批准 / 回答，就地盖一下印、随即滑到下一件，不等 3 秒；
+// 撤回挪到顶部浮动条，点了回到那一件再撤销（verdict.tsx 的 useAdvance）。
 
 type Dir = 'next' | 'prev' | 'pass'
 
@@ -40,26 +42,22 @@ const slide = {
   exit: (d: Dir) => ({ x: d === 'prev' ? 96 : -56, opacity: 0, rotate: d === 'pass' ? 1.2 : 0 }),
 }
 
-// pendingKeyOf：这件事在撤销期 / 盖印中用的键（与 Verdict 的 pendingKey 一致）。
-function pendingKeyOf(a: Ask) {
+// pendingKeyOf：这件事在撤销期 / 盖印中用的键（与 Verdict 的 pendingKey、发件箱的 decKey 一致）。
+function pendingKeyOf(a: Ask | undefined) {
+  if (!a) return undefined
   if (a.kind === 'review') return a.code
   if (a.kind === 'plan') return `plan:${a.code}`
   if (a.kind === 'stage') return `stage:${a.code}:${a.stage}`
+  if (a.d && (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request')) return decKey(a.d.code)
   return undefined
 }
 
-// useSealed：这件事已经盖印（判断生效、不能撤销了），抽屉据此滑到下一件。
-function useSealed(a: Ask | undefined) {
+// useDecided：这件事已经下了判断（撤销期、盖印中或已提交）。
+function useDecided(a: Ask | undefined) {
   const pend = usePendingMap()
-  const { sealed } = useOutbox()
-  if (!a) return false
   const k = pendingKeyOf(a)
-  if (k) {
-    const e = pend.get(k)
-    return !!e && e.phase !== 'wait' && e.act !== 'move'
-  }
-  if (a.d && (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request')) return !!sealed[a.d.code]
-  return false
+  const e = k ? pend.get(k) : undefined
+  return !!e && e.act !== 'move'
 }
 
 // useAskSource：按键找到这件事（已不在队列里的也能找到：刚处理完、从链接打开、推翻代答）。
@@ -153,20 +151,25 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
     )
   }
   // 这一件处理完（盖印，或者在别处处理掉了）后滑到下一件；后面没有了就往前找，都没有就显示「都处理完了」
+  // 已经下了判断、还在撤销期里的事仍在「要你处理」里，不算下一件
+  const pendMap = usePendingMap()
+  const open = (k: string) => {
+    if (!live.has(k) || k === askKey) return false
+    const pk = pendingKeyOf(find(k))
+    return !pk || !pendMap.has(pk)
+  }
   const advance = () => {
-    const after = order.slice(idx + 1).find((k) => live.has(k) && k !== askKey) ?? order.slice(0, Math.max(0, idx)).reverse().find((k) => live.has(k) && k !== askKey)
+    const after = order.slice(idx + 1).find(open) ?? order.slice(0, Math.max(0, idx)).reverse().find(open)
     if (after) go(after, 'pass')
     else {
       setDir('pass')
       setFinished(true)
     }
   }
-  const sealed = useSealed(cur)
-  useEffect(() => {
-    if (!sealed || !inQueue) return
-    const id = window.setTimeout(advance, reducedMotion() ? 0 : SEAL_MS)
-    return () => window.clearTimeout(id)
-  }, [sealed, askKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const sealed = useDecided(cur)
+  // 下了判断就翻到下一件（盖一下印之后）；撤回时回到这一件
+  const here = askKey
+  useAdvance(pendingKeyOf(cur), inQueue && !finished, advance, () => here && go(here, 'prev'))
   const wasLive = useRef(false)
   const isLive = !!askKey && live.has(askKey)
   // 改状态申请在看的时候作废了（R-188）：停在这里显示「已作废」，不自动滑走
