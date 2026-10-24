@@ -51,7 +51,7 @@ func (h *Hub) proxyQuiet(ctx context.Context, d store.Decision) bool {
 	if d.ProjectID == "" {
 		return false
 	}
-	g, err := h.store.ActiveGrant(ctx, d.ProjectID)
+	g, err := h.proxyGrant(ctx, d.ProjectID)
 	if err != nil {
 		return false
 	}
@@ -73,7 +73,10 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 	if d.ProjectID == "" || d.ProjectID != x.ProjectID {
 		return x, "", huma.Error403Forbidden(d.Code + " 不属于你所在的项目，不能代答")
 	}
-	g, err := h.store.ActiveGrant(ctx, d.ProjectID)
+	if a, aerr := h.store.ActiveAway(ctx); aerr == nil && a.Scope == store.AwayScopeNone {
+		return x, "", huma.Error403Forbidden("用户正在离开，这次选的是「不代答」：决策都留给用户；待验收的需求照常写验收建议，要用户尽快看的用 ks away escalate 推给用户")
+	}
+	g, err := h.proxyGrant(ctx, d.ProjectID)
 	if err != nil {
 		return x, "", huma.Error403Forbidden("用户没有开授权窗口，或窗口已到期 / 已撤销：不能代答，等用户答复")
 	}
@@ -281,7 +284,7 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			g, err := h.store.ActiveGrant(ctx, x.ProjectID)
+			g, err := h.proxyGrant(ctx, x.ProjectID)
 			if err != nil {
 				out.Body.Notice = "本项目没有生效中的参谋授权窗口：决策都等用户答复"
 				return out, nil
