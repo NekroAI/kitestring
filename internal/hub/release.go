@@ -64,6 +64,19 @@ func (h *Hub) release(ctx context.Context, r store.Requirement, x store.Session,
 	return h.store.GetRequirement(ctx, nr.ID)
 }
 
+// withdrawNotifies：撤回放行时是否已经给需求的关联会话送了「先停下」（需求已有会话在做）。
+func withdrawNotifies(before store.Requirement) bool {
+	return before.Status == store.ReqInProgress || before.Status == store.ReqBlocked || before.Status == store.ReqReady && before.OfferedTo != ""
+}
+
+// withdrawTold：撤回放行已经通知过的会话，状态变化通知不重复送。
+func withdrawTold(before store.Requirement) []string {
+	if withdrawNotifies(before) {
+		return before.Sessions
+	}
+	return nil
+}
+
 // withdrawRelease：需求从非草稿改回草稿时调用。before 是改之前的需求；有没撤回的放行就记为撤回，
 // 需求已有会话在做（进行中 / 阻塞，或待开始但已交给某个会话）时，给那些会话送「已被撤回为草稿，先停下」。
 // actor 是改回草稿的会话，你在网页上操作时为空。
@@ -94,8 +107,7 @@ func (h *Hub) withdrawRelease(ctx context.Context, before store.Requirement, act
 		}
 		return
 	}
-	working := before.Status == store.ReqInProgress || before.Status == store.ReqBlocked || before.Status == store.ReqReady && before.OfferedTo != ""
-	if !working {
+	if !withdrawNotifies(before) {
 		return
 	}
 	msg := fmt.Sprintf("%s「%s」已被撤回为草稿（%s），先停下，不要继续做；等重新放行后再接着做，有疑问问 PM。", before.Code, brief(before.Title, 40), text)
@@ -139,6 +151,7 @@ func (h *Hub) registerRelease(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
+			h.onUserStatusChanged(ctx, before, r, withdrawTold(before)...) // 在做的会话已被撤回通知告诉过（R-171）
 			h.refreshDelivered(ctx, r)
 			h.broker.publish("requirements", "sessions", "decisions", "plans")
 			return &reqOut{Body: r}, nil

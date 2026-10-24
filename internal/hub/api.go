@@ -611,6 +611,11 @@ func (h *Hub) registerWeb(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
+			if now, err := h.store.GetProject(ctx, in.ID); err == nil {
+				for _, text := range projectSettingsChanges(cur, now) {
+					h.onSettingsChanged(ctx, in.ID, text) // 用户改项目设置，订阅了 settings 的 PM / Adv 被唤醒（R-171）
+				}
+			}
 			h.broker.publish("projects", "sessions", "requirements")
 			return ok(), nil
 		})
@@ -944,6 +949,11 @@ func (h *Hub) registerWeb(api huma.API) {
 			h.kick(ctx, r.ID)
 			if r.Status != cur.Status {
 				h.refreshDelivered(ctx, r)
+				var told []string
+				if r.Status == store.ReqDraft && cur.Release != nil {
+					told = withdrawTold(cur) // 撤回放行时已经告诉过在做的会话，不重复送
+				}
+				h.onUserStatusChanged(ctx, cur, r, told...) // 派活的 PM、关联会话和订阅者知道用户改了状态（R-171）
 			}
 			return &reqOut{Body: r}, nil
 		})

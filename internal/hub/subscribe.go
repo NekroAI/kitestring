@@ -12,7 +12,7 @@ import (
 )
 
 // 事件订阅（R-164）：ks wait --on decision,review,blocked,stage 订阅本项目别的会话发生的事；不给 --on 时沿用上次，
-// 从没给过时按身份默认（Adv：decision、review；PM：review、blocked；Dev 等其它身份不订阅，和以前一样不被打扰）。
+// 从没给过时按身份默认（Adv：decision、review、settings；PM：review、blocked、settings；Dev 等其它身份不订阅，和以前一样不被打扰）。
 // 发生时给在线的订阅者送一条团队消息（kind = tell，R-135 的通道）：挂着 ks wait 的立刻被唤醒，正在跑的下次挂上时收到；
 // 只是告诉，不是派活（R-150）；不进用户收件箱、不推送。事件是自己引起的不送；onReview 已经告诉过的 PM 不重复送。
 
@@ -20,9 +20,9 @@ import (
 func defaultWaitOn(role string) []string {
 	switch role {
 	case roles.Advisor:
-		return []string{protocol.OnDecision, protocol.OnReview}
+		return []string{protocol.OnDecision, protocol.OnReview, protocol.OnSettings}
 	case roles.PM:
-		return []string{protocol.OnReview, protocol.OnBlocked}
+		return []string{protocol.OnReview, protocol.OnBlocked, protocol.OnSettings}
 	}
 	return nil
 }
@@ -38,7 +38,7 @@ func effectiveWaitOn(role, stored string) []string {
 	return strings.Split(stored, ",")
 }
 
-var waitOnZh = map[string]string{protocol.OnDecision: "有人提决策", protocol.OnReview: "交验收", protocol.OnBlocked: "需求受阻", protocol.OnStage: "阶段交小结"}
+var waitOnZh = map[string]string{protocol.OnDecision: "有人提决策", protocol.OnReview: "交验收", protocol.OnBlocked: "需求受阻", protocol.OnStage: "阶段交小结", protocol.OnSettings: "用户改项目设置", protocol.OnStatus: "用户改需求状态"}
 
 // broadcast 把事件 kind 告诉项目里订阅了它的在线会话；skip 里的会话（引起事件的、已经通知过的）不送。
 func (h *Hub) broadcast(ctx context.Context, kind, projectID, reqID, text string, skip ...string) {
@@ -145,4 +145,72 @@ func (h *Hub) onStageSubmitted(ctx context.Context, x store.Plan, seq int, by st
 	}
 	text := fmt.Sprintf("%s交了计划 %s「%s」第 %d 阶段%s的阶段小结，等用户验收（plan_get 查看）。", h.actorName(ctx, by), x.Code, brief(x.Title, 30), seq, title)
 	h.broadcast(ctx, protocol.OnStage, x.ProjectID, "", text, by)
+}
+
+// 用户在网页上做的事（R-171）：R-164 的订阅只覆盖会话引起的事件，用户改设置 / 改需求状态也要让相关会话知道，不必再回终端手动叫醒。
+// 同样是团队消息：不进用户收件箱、不推送；已经被别的通知告诉过的会话不重复送。
+
+// onSettingsChanged：用户改了项目 p 的设置，text 写清楚改了什么。送给订阅了 settings 的在线会话（PM、Adv 默认订阅）；skip 里是已被告知的。
+func (h *Hub) onSettingsChanged(ctx context.Context, projectID, text string, skip ...string) {
+	h.broadcast(ctx, protocol.OnSettings, projectID, "", text, skip...)
+}
+
+// projectSettingsChanges 比较项目设置改前改后，逐条写出「用户打开了项目 X 的……」。
+func projectSettingsChanges(before, after store.Project) []string {
+	var out []string
+	flip := func(was, now bool, name string) {
+		if was != now {
+			act := "打开"
+			if !now {
+				act = "关闭"
+			}
+			out = append(out, fmt.Sprintf("用户%s了项目 %s 的%s（%s → %s）。", act, before.Name, name, onOff(was), onOff(now)))
+		}
+	}
+	flip(before.AgentRelease, after.AgentRelease, "「允许 PM / Adv 放行草稿」放行开关")
+	flip(before.AutoDispatch, after.AutoDispatch, "「自动派发」（会话空闲时自动送达排给它的待开始需求）")
+	return out
+}
+
+func onOff(b bool) string {
+	if b {
+		return "开"
+	}
+	return "关"
+}
+
+// onUserStatusChanged：用户在网页上把需求 before 改成了 after.Status。送给派活的 PM、关联的在线会话和订阅了 status 的会话；
+// skip 里是别的通知已经告诉过的会话（比如撤回放行时已经通知了在做的会话）。
+func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requirement, skip ...string) {
+	if before.Status == after.Status || after.ProjectID == "" {
+		return
+	}
+	text := fmt.Sprintf("用户把 %s「%s」从%s改为%s。", after.Code, brief(after.Title, 40), reqStatusZh[before.Status], reqStatusZh[after.Status])
+	told := slices.Clone(skip)
+	// 放行为待开始且项目自动派发开着：会话空闲时排给它的需求会整批送达，那就是通知，这里不再重复送；订阅了 status 的照常收到。
+	if after.Status == store.ReqReady {
+		if p, err := h.store.GetProject(ctx, after.ProjectID); err == nil && p.AutoDispatch {
+			h.broadcast(ctx, protocol.OnStatus, after.ProjectID, after.ID, text, told...)
+			return
+		}
+	}
+	if to := h.notifyAssigner(ctx, protocol.OnStatus, after, "", text); to != "" {
+		told = append(told, to)
+	}
+	msg := fmt.Sprintf("你关联的需求有变化（status · %s）：%s 只是告诉你，不是派给你的活；需要时自己看，不必回复。", waitOnZh[protocol.OnStatus], text)
+	for _, k := range after.Sessions {
+		if slices.Contains(told, k) {
+			continue
+		}
+		x, err := h.store.GetSession(ctx, k)
+		if err != nil || x.State == store.StateEnded || x.State == store.StateLost || x.DoneAt != nil {
+			continue
+		}
+		if _, err := h.tell(ctx, k, after.ProjectID, after.ID, msg); err != nil {
+			h.log.Warn("通知关联会话需求状态变化失败", "err", err, "to", k)
+			continue
+		}
+		told = append(told, k)
+	}
+	h.broadcast(ctx, protocol.OnStatus, after.ProjectID, after.ID, text, told...)
 }

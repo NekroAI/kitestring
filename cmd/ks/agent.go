@@ -460,7 +460,7 @@ func runWait(args []string) error {
 	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
 	timeout := fs.Duration("timeout", 0, "最长等待时间，如 30m、2h。不填：Claude Code 1 小时（最长 12h），Codex 30 分钟（也是上限）")
-	on := fs.String("on", "", "还要被哪些项目事件唤醒（R-164）：decision（有人提决策）、review（交验收）、blocked（需求受阻）、stage（阶段交小结），逗号分隔；none 不订阅，default 按身份默认（Adv：decision,review；PM：review,blocked；其它不订阅）。不填沿用上次")
+	on := fs.String("on", "", "还要被哪些项目事件唤醒（R-164）：decision（有人提决策）、review（交验收）、blocked（需求受阻）、stage（阶段交小结）、settings（用户在网页改了项目设置：放行开关、自动派发、参谋授权窗口）、status（用户在网页改了需求状态），逗号分隔；none 不订阅，default 按身份默认（Adv：decision,review,settings；PM：review,blocked,settings；其它不订阅）。不填沿用上次")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}

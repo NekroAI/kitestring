@@ -199,3 +199,130 @@ func TestAssignerNotifiedOnBlockedAndDecision(t *testing.T) {
 		t.Fatalf("用户收件箱只应多出两条决策：%d → %d", before, n)
 	}
 }
+
+// 用户在网页上做的事通知相关会话（R-171）：改放行开关、开 / 撤参谋授权窗口，PM 和 Adv（默认订阅 settings）被唤醒并看到改了什么，
+// 没订阅的会话不被打扰，值没变不重复送；被授权的 Adv 已有授权通知，不再多收一条；
+// 用户在网页改需求状态，派活的 PM 和关联的在线会话收到「从 x 改为 y」，订阅了 status 的也收到，各只一条；不进用户收件箱。
+func TestUserWebChangesNotify(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	c := client.New(30 * time.Second)
+	ctx := context.Background()
+	for _, sid := range []string{"pm", "adv", "dev", "plain"} {
+		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
+	}
+	e.waitFor("会话入库", func() bool { return e.session("claude:plain").ProjectID != "" })
+	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "advisor"}, {"claude:dev", "dev"}} {
+		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	woke(t, parkWait(t, e, c, "claude:pm"), "已上线待命")
+	project := e.session("claude:dev").ProjectID
+	var p store.Project
+	var plist struct {
+		Projects []store.Project `json:"projects"`
+	}
+	e.call("GET", "/api/projects", nil, &plist)
+	for _, x := range plist.Projects {
+		if x.ID == project {
+			p = x
+		}
+	}
+	setProject := func(fields map[string]any) {
+		t.Helper()
+		fields["name"], fields["doc_root"] = p.Name, p.DocRoot
+		e.call("PUT", "/api/projects/"+project, fields, nil)
+	}
+	before := pendingCount(e)
+
+	// 1. 开放行开关：PM、Adv 被唤醒，无身份会话和 Dev 不被打扰；值没变不重复送
+	pmW, advW, plainW := parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv"), parkWait(t, e, c, "claude:plain")
+	devTells := tellCount(e, "claude:dev")
+	setProject(map[string]any{"agent_release": true})
+	woke(t, pmW, "订阅的事件", "settings", "用户打开了项目", p.Name, "放行", "关 → 开")
+	woke(t, advW, "用户打开了项目", "放行")
+	asleep(t, plainW, "无身份会话")
+	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	pmTells, advTells := tellCount(e, "claude:pm"), tellCount(e, "claude:adv")
+	setProject(map[string]any{"agent_release": true})
+	asleep(t, pmW, "PM（放行开关没变）")
+	if tellCount(e, "claude:pm") != pmTells || tellCount(e, "claude:adv") != advTells {
+		t.Fatal("设置没变不应再送")
+	}
+
+	// 2. 关自动派发：只改了它，消息只写它
+	setProject(map[string]any{"agent_release": true, "auto_dispatch": false})
+	woke(t, pmW, "用户关闭了项目", "自动派发", "开 → 关")
+	woke(t, advW, "自动派发")
+
+	// 3. 开授权窗口：被授权的 Adv 只收授权通知一条，PM 收到设置变化；撤销同理
+	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	pmTells, advTells = tellCount(e, "claude:pm"), tellCount(e, "claude:adv")
+	var g store.Grant
+	e.call("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(time.Hour).Format(time.RFC3339Nano)}, &g)
+	woke(t, pmW, "settings", "用户开了参谋授权窗口", g.Code)
+	woke(t, advW, "用户开了参谋授权窗口", g.Code)
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:adv"); n != advTells+1 {
+		t.Fatalf("被授权的 Adv 只应收到一条授权通知：%d → %d", advTells, n)
+	}
+	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
+		t.Fatalf("PM 只应收到一条：%d → %d", pmTells, n)
+	}
+	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	advTells = tellCount(e, "claude:adv")
+	e.call("POST", "/api/grants/"+g.Code+"/revoke", nil, nil)
+	woke(t, pmW, "用户撤销了参谋授权窗口", g.Code)
+	woke(t, advW, "用户撤销了参谋授权窗口", g.Code)
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:adv"); n != advTells+1 {
+		t.Fatalf("撤销时被授权的 Adv 只应收到一条：%d → %d", advTells, n)
+	}
+
+	// 4. 网页改需求状态：派活的 PM 和关联的 Dev 各收一条；没订阅 status 的 Adv 不被打扰
+	var r store.Requirement
+	if err := c.Do(ctx, "POST", "/agent/requirements", map[string]any{"title": "导出 CSV", "session_key": "claude:dev"}, &r); err != nil {
+		t.Fatal(err)
+	}
+	var got store.Requirement
+	e.call("GET", "/api/requirements/"+r.Code, nil, &got)
+	if len(got.Sessions) == 0 {
+		t.Fatalf("开发应已关联这条需求：%+v", got.Sessions)
+	}
+	setStatus := func(st string) {
+		t.Helper()
+		e.call("PUT", "/api/requirements/"+r.Code, map[string]any{"title": r.Title, "status": st, "project_id": project}, nil)
+	}
+	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	pmTells, advTells, devTells = tellCount(e, "claude:pm"), tellCount(e, "claude:adv"), tellCount(e, "claude:dev")
+	setStatus("shelved")
+	woke(t, pmW, "这条需求是你派的", r.Code, "用户把", "从草稿改为已搁置")
+	asleep(t, advW, "Adv（没订阅 status）")
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
+		t.Fatalf("PM 只应收到一条：%d → %d", pmTells, n)
+	}
+	if n := tellCount(e, "claude:dev"); n != devTells+1 {
+		t.Fatalf("关联的 Dev 应收到一条：%d → %d", devTells, n)
+	}
+	if n := tellCount(e, "claude:adv"); n != advTells {
+		t.Fatalf("Adv 不应收到：%d → %d", advTells, n)
+	}
+
+	// 5. Adv 用 --on status 订阅后也收到；状态没变（只改了别的）不送
+	advW = parkWaitOn(t, e, c, "claude:adv", "status")
+	pmTells = tellCount(e, "claude:pm")
+	e.call("PUT", "/api/requirements/"+r.Code, map[string]any{"title": "导出 CSV（改名）", "status": "shelved", "project_id": project}, nil)
+	asleep(t, advW, "Adv（状态没变）")
+	setStatus("draft")
+	woke(t, advW, "订阅的事件", "status", r.Code, "从已搁置改为草稿")
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
+		t.Fatalf("PM 只应收到一条：%d → %d", pmTells, n)
+	}
+
+	if n := pendingCount(e); n != before {
+		t.Fatalf("这些通知不应进用户收件箱：%d → %d", before, n)
+	}
+}

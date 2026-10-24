@@ -193,6 +193,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			}
 			h.tellGrant(ctx, g, fmt.Sprintf("用户开了参谋授权窗口 %s：到 %s 前，你可以代用户答复本项目%s以内的决策（decision_answer / ks decision answer，必须写理由和你自己的风险判断，风险档取提问方与你判断中更高的一档）。硬规则永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收。拿不准的留给用户。",
 				g.Code, g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]))
+			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户开了参谋授权窗口 %s：授权给 %s，到 %s 前可代答%s以内的决策。", g.Code, h.actorName(ctx, g.SessionKey), g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]), g.SessionKey) // 被授权的 Adv 已由 tellGrant 告诉（R-171）
 			h.broker.publish("grants", "decisions")
 			return &grantOut{Body: g}, nil
 		})
@@ -208,6 +209,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				return nil, huma.Error400BadRequest(err.Error())
 			}
 			h.tellGrant(ctx, g, fmt.Sprintf("用户撤销了参谋授权窗口 %s：从现在起不能再代答决策。", g.Code))
+			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户撤销了参谋授权窗口 %s（授权给 %s），不能再代答决策。", g.Code, h.actorName(ctx, g.SessionKey)), g.SessionKey)
 			h.broker.publish("grants", "decisions")
 			return &grantOut{Body: g}, nil
 		})
