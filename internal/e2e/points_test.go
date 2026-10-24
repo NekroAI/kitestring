@@ -77,8 +77,19 @@ func TestDecisionPoints(t *testing.T) {
 	}
 	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": d2.Code, "answer": "方向不对", "reject": true}}}, nil)
 	e.waitFor("拒绝送达", func() bool { out = prompt("p2"); return strings.Contains(out, d2.Code) })
-	if !strings.Contains(out, "用户答复：拒绝：方向不对") {
+	if !strings.Contains(out, "用户答复：拒绝（用户明确拒绝了这个请求）。附言：方向不对") {
 		t.Fatalf("拒绝应注入：\n%s", out)
+	}
+
+	// 批准类单点决策（R-176）：网页发「拒绝；附言」，送给 Agent 时写明是用户明确拒绝，不是退回修改、不是超时
+	var d4 store.Decision
+	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"question": "开一个独立开发会话做这件事吗？", "approval": true, "session_key": key}, &d4); err != nil {
+		t.Fatal(err)
+	}
+	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": d4.Code, "answer": "拒绝；先在当前会话做"}}}, nil)
+	e.waitFor("单点拒绝送达", func() bool { out = prompt("p4"); return strings.Contains(out, d4.Code) })
+	if !strings.Contains(out, "用户答复：拒绝（用户明确拒绝了这个请求）。附言：先在当前会话做") || strings.Contains(out, "超时") {
+		t.Fatalf("单点拒绝应写明是用户拒绝：\n%s", out)
 	}
 
 	// 旧的单选决策：照常按文字作答（带 choices 也忽略）

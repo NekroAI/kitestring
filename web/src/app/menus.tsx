@@ -69,8 +69,8 @@ export function useReqMenu() {
     // 批准 / 退回（R-161）：和卡片上同一对词、同一图标；都先进撤销期（toast），退回先要意见
     ...(r.status === 'review'
       ? [
-          { label: t.verdict.pass, icon: <Check />, onSelect: () => void verdict.pass(r.code, { toast: true }) },
-          { label: t.verdict.back, icon: <Undo2 />, onSelect: () => void setStatus(r, 'in_progress') },
+          { label: t.verdict.pass('accept'), icon: <Check />, onSelect: () => void verdict.pass(r.code, { toast: true }) },
+          { label: t.verdict.back('accept'), icon: <Undo2 />, onSelect: () => void setStatus(r, 'in_progress') },
         ]
       : []),
     ...(r.status !== 'done' && r.status !== 'shelved'

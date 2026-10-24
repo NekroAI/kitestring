@@ -119,7 +119,9 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 }
 
 // proxyText 是送给提问方的答复：参谋代答时注明是代答；你推翻后写明更正、以你的为准。
+// 批准类决策选了「拒绝」时写明是用户明确拒绝（R-176）。
 func proxyText(d store.Decision) string {
+	d.Answer = approvalText(d)
 	if d.AnswerReason != "" && (d.ProxyBy == "" || d.OverriddenAt != nil) {
 		d.Answer += "\n用户的理由：" + d.AnswerReason // 用户亲手作答时附的一句话理由（R-157），随答复送给 Agent
 	}

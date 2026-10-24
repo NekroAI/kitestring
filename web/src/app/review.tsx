@@ -19,7 +19,7 @@ import { AdviceNote } from './morning'
 // evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
 export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
 
-// ReviewRow：一条待验收需求——看证据，然后在卡片底部 [附言][退回][批准]（R-161 统一的 Verdict）。
+// ReviewRow：一条待验收需求——看证据，然后在卡片底部 [附言][退回][通过]（R-161 统一的 Verdict，R-176 验收用「通过」）。
 // 通过、退回都先进撤销期，卡片底部换成撤销条；到时提交后这一行收起，最近动态里记一条。
 function ReviewRow({ r, hideTitle, advice }: { r: Requirement; hideTitle?: boolean; advice?: boolean }) {
   const now = useNow()
@@ -91,7 +91,7 @@ function ReviewRow({ r, hideTitle, advice }: { r: Requirement; hideTitle?: boole
       </div>
       <Seal k={r.code} />
       <div className="pt-3 sm:pl-10" onClick={stop}>
-        <Verdict note={comment} onNote={setComment} files={files} onFiles={setFiles} incoming={incoming} onIncoming={() => setIncoming([])} onPass={pass} onBack={back} pendingKey={r.code} />
+        <Verdict scene="accept" note={comment} onNote={setComment} files={files} onFiles={setFiles} incoming={incoming} onIncoming={() => setIncoming([])} onPass={pass} onBack={back} pendingKey={r.code} />
       </div>
     </div>
     </Ctx>

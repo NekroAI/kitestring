@@ -3,6 +3,7 @@ import { ChevronDown, WifiOff } from 'lucide-react'
 import type { Decision, Plan, Requirement, Session } from '../api/client'
 import { useConnected, useDecisions, useMorning, usePlans, useProjects, useRequirements } from '../api/queries'
 import { t } from '../i18n'
+import type { Scene } from '../i18n/zh'
 import { cx, relTime } from '../lib/util'
 import { Tip } from '../ui/base'
 import { displayState, presence, RoleTag } from '../ui/marks'
@@ -307,10 +308,10 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
 
 // ---------- 刚处理 ----------
 
-type Handled = { at: string; act: 'pass' | 'back' | 'answer'; text: string }
+type Handled = { at: string; act: 'pass' | 'back' | 'answer'; scene: Scene; text: string }
 const handledTTL = 24 * 3600e3
 
-// useHandled：你最近做过的判断（批准 / 退回 / 回答），左栏底部的「刚处理」。代答的不算。
+// useHandled：你最近做过的判断（通过 / 退回、批准 / 拒绝、回答，按场景取词），左栏底部的「刚处理」。代答的不算。
 export function useHandled(now: number, limit = 4): Handled[] {
   const reqs = useRequirements()
   const decisions = useDecisions()
@@ -318,16 +319,16 @@ export function useHandled(now: number, limit = 4): Handled[] {
   return useMemo(() => {
     const out: Handled[] = []
     for (const r of reqs.data ?? []) {
-      for (const f of r.feedback ?? []) if (f.kind === 'feedback' && f.answered_at) out.push({ at: f.answered_at, act: 'back', text: r.title })
-      if (r.status === 'done') out.push({ at: r.updated_at, act: 'pass', text: r.title })
+      for (const f of r.feedback ?? []) if (f.kind === 'feedback' && f.answered_at) out.push({ at: f.answered_at, act: 'back', scene: 'accept', text: r.title })
+      if (r.status === 'done') out.push({ at: r.updated_at, act: 'pass', scene: 'accept', text: r.title })
     }
     for (const d of decisions.data ?? []) {
       if (d.kind !== 'decision' || !d.answered_at || (d.proxy_by && !d.overridden_at)) continue
       const opt0 = d.options?.[0]
       const act = d.approval ? (opt0 && d.answer?.startsWith(opt0) ? 'pass' : 'back') : 'answer'
-      out.push({ at: d.answered_at, act, text: d.short_title || d.question })
+      out.push({ at: d.answered_at, act, scene: d.approval ? 'approval' : 'answer', text: d.short_title || d.question })
     }
-    for (const x of plans.data ?? []) for (const st of x.stages) if (st.passed_at) out.push({ at: st.passed_at, act: 'pass', text: `${x.title} · ${t.ref.stage(st.seq)}` })
+    for (const x of plans.data ?? []) for (const st of x.stages) if (st.passed_at) out.push({ at: st.passed_at, act: 'pass', scene: 'accept', text: `${x.title} · ${t.ref.stage(st.seq)}` })
     return out
       .filter((x) => now - Date.parse(x.at) < handledTTL)
       .sort((a, b) => b.at.localeCompare(a.at))
@@ -347,7 +348,7 @@ export function HandledLog({ now, className }: { now: number; className?: string
       <h5 className="text-[11.5px] font-semibold tracking-wider text-fg-3">{t.desk.handled}</h5>
       {list.map((x, i) => (
         <div key={i} className="flex min-w-0 items-baseline gap-2 text-[12.5px] text-fg-2">
-          <span className={cx('shrink-0 text-[11px]', actTone[x.act])}>{x.act === 'pass' ? t.verdict.pass : x.act === 'back' ? t.verdict.back : t.verdict.answer}</span>
+          <span className={cx('shrink-0 text-[11px]', actTone[x.act])}>{x.act === 'answer' ? t.verdict.pass('answer') : x.act === 'pass' ? t.verdict.pass(x.scene) : t.verdict.back(x.scene)}</span>
           <span className="min-w-0 flex-1 truncate">{x.text}</span>
           <span className="shrink-0 text-[11px] text-fg-3 tabular">{relTime(x.at, now)}</span>
         </div>

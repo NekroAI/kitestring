@@ -149,7 +149,7 @@ func TestPlanStagesAdvance(t *testing.T) {
 	}
 	w = waitOnce(key)
 	e.call("POST", "/api/plans/P-1/stages/1/revise", map[string]any{"comment": "接口缺分页"}, &x)
-	if text := recv(t, w, "退回阶段"); !strings.Contains(text, "用户退回了阶段 1「后端」：接口缺分页") {
+	if text := recv(t, w, "退回阶段"); !strings.Contains(text, "用户退回了阶段 1「后端」，要求修改：接口缺分页") {
 		t.Fatalf("退回意见应送达：%s", text)
 	}
 
@@ -215,7 +215,7 @@ func TestAgentPlanNeedsApproval(t *testing.T) {
 	var out string
 	e.waitFor("未批准附言送达", func() bool {
 		out = prompt("p1")
-		return strings.Contains(out, "用户没有批准这个计划") && strings.Contains(out, "附言：先别动幂等") && strings.Contains(out, "附图")
+		return strings.Contains(out, "用户退回了这个计划（已搁置，不会开工），要求修改：先别动幂等") && strings.Contains(out, "附图")
 	})
 
 	// 之后又批准：开始，阶段 1 交给它

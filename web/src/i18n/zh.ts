@@ -6,37 +6,51 @@
 // 3. 用词统一：会话、决策、需求、设备、Agent；答复“送达”，不说“注入”。
 // 4. 语气平实：不用“您”、不用感叹号、不写客套话；数字与单位之间留空格。
 
-// 动作用词（R-161，D-229）：对方案或成果下判断（计划、批准类决策、需求验收、阶段验收）统一用「批准 / 退回」，从选项里挑一个统一叫「回答」。
-// 只改这里，全站跟着变。撤销时长、印章开关见 app/verdict.tsx 的 UNDO_MS / SHOW_STAMP。
-const VERB = { pass: '批准', back: '退回', answer: '回答' }
+// 动作用词（R-176，D-268；修正 D-229 把所有判断统一成「批准 / 退回」的过度统一）：按场景分词。
+// Verdict 组件、撤销条、印章、快捷键提示都按场景从这里取词；只改这里，全站跟着变。撤销时长、印章开关见 app/verdict.tsx 的 UNDO_MS / SHOW_STAMP。
+// - accept   需求验收、阶段验收：通过 / 退回（退回 = 按意见改了再交）
+// - plan     计划开工：批准 / 退回（退回要写意见）
+// - approval 批准类决策：批准 / 拒绝
+// - request  Agent 的请求（R-169 推荐开独立开发会话，超时视为拒绝）：批准 / 拒绝
+// - answer   选项类决策：回答（没有否定动作）
+// - permit   会话等授权：允许 / 拒绝（网页上暂不提供，预留）
+// 送给 Agent 的答复里，拒绝 / 退回 / 超时视为拒绝分别写明（后端 internal/hub/verdict.go）。
+export type Scene = 'accept' | 'plan' | 'approval' | 'request' | 'answer' | 'permit'
+const VERB: Record<Scene, { pass: string; back: string }> = {
+  accept: { pass: '通过', back: '退回' },
+  plan: { pass: '批准', back: '退回' },
+  approval: { pass: '批准', back: '拒绝' },
+  request: { pass: '批准', back: '拒绝' },
+  answer: { pass: '回答', back: '' },
+  permit: { pass: '允许', back: '拒绝' },
+}
+const ACC = VERB.accept
 
 export const zh = {
-  // 统一的判断动作（R-161）：Verdict 组件、撤销条、退回意见框都只从这里取词
+  // 判断动作（R-161 / R-176）：Verdict 组件、撤销条、退回 / 拒绝意见框都只从这里取词，按场景（Scene）取
   verdict: {
-    pass: VERB.pass,
-    back: VERB.back,
-    answer: VERB.answer,
+    pass: (s: Scene) => VERB[s].pass,
+    back: (s: Scene) => VERB[s].back,
     undo: '撤销',
-    note: `附言（${VERB.back}时必填，可贴图）`,
+    note: (s: Scene) => `附言（${VERB[s].back}时必填，可贴图）`,
     noteOptional: '附言（可选，可贴图）',
-    needNote: `${VERB.back}要写下意见：哪里要改`,
-    // 撤销条：「3 秒后批准」「R-12 · 3 秒后退回」「R-12 · 3 秒后改为进行中」
+    needNote: (s: Scene) => (s === 'accept' || s === 'plan' ? `${VERB[s].back}要写下意见：哪里要改` : `${VERB[s].back}要写下理由`),
+    // 撤销条：「3 秒后通过」「R-12 · 3 秒后退回」「D-8 · 3 秒后拒绝」「R-12 · 3 秒后改为进行中」
     pending: (act: string, s: number) => `${s} 秒后${act}`,
     move: (status: string) => `改为${status}`,
     many: (n: number) => `${n} 条`,
     sealed: (act: string) => `已${act}`,
     stamp: (act: string) => `已${act}`,
-    passAll: (n: number) => `全部${VERB.pass}（${n}）`,
-    answerAll: (n: number) => `${VERB.answer} ${n} 条`,
+    passAll: (n: number) => `全部${ACC.pass}（${n}）`,
+    answerAll: (n: number) => `${VERB.answer.pass} ${n} 条`,
     // 没有输入框的入口（右键菜单、状态菜单、拖拽）退回时先要意见
-    askTitle: (code: string) => `${VERB.back} ${code}`,
+    askTitle: (code: string) => `${ACC.back} ${code}`,
     askDesc: '写下哪里要改，会一起送给 Agent；已有的验收证据会作废。',
     askPlaceholder: '哪里要改？',
-    keyPass: `${VERB.pass} · ⌘↵`,
-    keyAnswer: `${VERB.answer} · ⌘↵`,
-    keyBack: `${VERB.back} · ⌘⌫`,
-    stageNext: (next: number | null) => (next ? `${VERB.pass}后开始阶段 ${next}` : `${VERB.pass}后计划完成`),
-    planNext: `${VERB.pass}后第一阶段开工，附言会一起送达`,
+    keyPass: (s: Scene) => `${VERB[s].pass} · ⌘↵`,
+    keyBack: (s: Scene) => `${VERB[s].back} · ⌘⌫`,
+    stageNext: (next: number | null) => (next ? `${ACC.pass}后开始阶段 ${next}` : `${ACC.pass}后计划完成`),
+    planNext: `${VERB.plan.pass}后第一阶段开工，附言会一起送达`,
   },
   app: {
     name: '纸鸢',
@@ -632,7 +646,7 @@ export const zh = {
     devs: (online: number, total: number) => (total ? `Dev ${online} / ${total} 在线` : '没有 Dev'),
     autoDispatch: '会话空闲时自动送达待开始的需求',
     agentRelease: '允许 PM / Adv 放行草稿',
-    agentReleaseHint: `PM 或 Adv 可以把做法明确的草稿改为待开始（派草稿也算），必须写理由，进展里记下谁放行、为什么，你可以一键撤回；验收${VERB.pass}仍只由你操作。Dev 不能放行`,
+    agentReleaseHint: `PM 或 Adv 可以把做法明确的草稿改为待开始（派草稿也算），必须写理由，进展里记下谁放行、为什么，你可以一键撤回；验收${ACC.pass}仍只由你操作。Dev 不能放行`,
     autoDispatchHint: '你确认为待开始的需求，会在关联的会话一轮做完或待命时整批送过去（一次最多 10 条）；关掉后需要你手动交给会话',
     title: '项目',
     openCount: (n: number) => (n ? `${n} 条未完成` : '没有未完成需求'),
@@ -654,10 +668,10 @@ export const zh = {
     evEvidence: (code: string, title: string) => `${code} 交了证据：${title}`,
     evAssign: (code: string, title: string) => `你把 ${code} 交给会话开工：${title}`,
     evNote: (code: string, text: string) => `你给 ${code} 留言：${text}`,
-    evRevise: (code: string, text: string) => `你${VERB.back} ${code}：${text}`,
-    evDone: (code: string, title: string) => `你${VERB.pass}了 ${code}：${title}`,
-    evStage: (code: string, n: number, title: string) => `你${VERB.pass}了 ${code} 阶段 ${n}：${title}`,
-    evAnswer: (code: string, q: string) => `你${VERB.answer}了 ${code}：${q}`,
+    evRevise: (code: string, text: string) => `你${ACC.back} ${code}：${text}`,
+    evDone: (code: string, title: string) => `你${ACC.pass}了 ${code}：${title}`,
+    evStage: (code: string, n: number, title: string) => `你${ACC.pass}了 ${code} 阶段 ${n}：${title}`,
+    evAnswer: (code: string, q: string, verb = VERB.answer.pass) => `你${verb}了 ${code}：${q}`,
     evProxy: (code: string, q: string) => `Adv 代答了 ${code}：${q}`,
     hide: '在项目列表里隐藏',
     hideHint: '误识别的目录、不想看到的项目可以隐藏；它的会话和需求照常显示，项目列表底部可以展开找回',
@@ -733,7 +747,7 @@ export const zh = {
     draftShort: '待你确认',
     draft: '草稿 · 你确认（改为待开始）后才会排进会话的待办',
     lockedShort: '排在后面',
-    locked: (plan: string, n: number) => `排在计划 ${plan} 阶段 ${n} 之后，那一阶段${VERB.pass}后才开始`,
+    locked: (plan: string, n: number) => `排在计划 ${plan} 阶段 ${n} 之后，那一阶段${ACC.pass}后才开始`,
     planNotStarted: (plan: string) => `属于计划 ${plan}，计划开始（或你批准）后按阶段推进`,
     queuedShort: '排队中',
     queuedRunning: (who: string, n: number) => `排队中 · 「${who}」这一轮做完后一起送达（共 ${n} 条）`,
@@ -788,11 +802,11 @@ export const zh = {
     down: '下移',
     emptyStage: '这个阶段还没有需求',
     reqCount: (n: number) => `${n} 条需求`,
-    progress: (cur: number, total: number, n: number, done: number) => `阶段 ${cur} / ${total} · ${n} 条需求，${done} 条已${VERB.pass}`,
+    progress: (cur: number, total: number, n: number, done: number) => `阶段 ${cur} / ${total} · ${n} 条需求，${done} 条已${ACC.pass}`,
     progressDone: (total: number, n: number) => `${total} 个阶段 · ${n} 条需求，全部完成`,
     progressDraft: (total: number, n: number) => `${total} 个阶段 · ${n} 条需求`,
     by: (who: string) => `交给 ${who}`,
-    autoNext: `阶段${VERB.pass}后自动把下一阶段交给它`,
+    autoNext: `阶段${ACC.pass}后自动把下一阶段交给它`,
     state: {
       approve: '待你批准',
       draft: '未开始',
@@ -803,16 +817,16 @@ export const zh = {
       done: '已完成',
       shelved: '已搁置',
     },
-    stageState: { locked: '未解锁', active: '进行中', review: '待阶段验收', passed: `已${VERB.pass}` } as Record<string, string>,
-    lockedHint: (n: number) => `阶段 ${n} ${VERB.pass}后开始`,
-    passedAt: (when: string) => `已${VERB.pass} · ${when}`,
+    stageState: { locked: '未解锁', active: '进行中', review: '待阶段验收', passed: `已${ACC.pass}` } as Record<string, string>,
+    lockedHint: (n: number) => `阶段 ${n} ${ACC.pass}后开始`,
+    passedAt: (when: string) => `已${ACC.pass} · ${when}`,
     finishedHint: '需求都已做完，可以验收这一阶段',
     reviewHint: '需求都已做完，等你验收这一阶段',
     summary: '阶段小结（Agent 提交）',
     noSummary: 'Agent 还没交阶段小结，也可以直接验收',
-    shelvedNote: (seq: number, n: number) => `阶段 ${seq} 有 ${n} 条已搁置，${VERB.pass}后不会开工`,
-    passTogether: (codes: string) => `还没单独验收的 ${codes} 会一起${VERB.pass}`,
-    pausedHint: `已${VERB.pass}阶段里有需求被重开，修好并验收后才能继续`,
+    shelvedNote: (seq: number, n: number) => `阶段 ${seq} 有 ${n} 条已搁置，${VERB.plan.pass}后不会开工`,
+    passTogether: (codes: string) => `还没单独验收的 ${codes} 会一起${ACC.pass}`,
+    pausedHint: `已${ACC.pass}阶段里有需求被重开，修好并验收后才能继续`,
     inPlan: (code: string) => `计划 ${code} 里的需求`,
     start: '开始计划',
     startHint: '第一阶段的需求会交给负责会话',
@@ -850,7 +864,7 @@ export const zh = {
     createdAgent: 'Agent 提出了这条需求',
     createdUser: '你创建了这条需求',
     evidence: '交了证据',
-    revise: `你${VERB.back}了`,
+    revise: `你${ACC.back}了`,
     note: '你留言',
     ask: '在问你',
     decision: '决策',
@@ -869,7 +883,7 @@ export const zh = {
     releaseBadge: (who: string) => `${who} 放行`,
     releaseTip: (who: string, reason: string) => `由 ${who} 放行：${reason}`,
     replacedBy: '被取代：',
-    done: `你${VERB.pass}了`,
+    done: `你${ACC.pass}了`,
     byUser: '你',
     bySystem: '纸鸢',
     changed: '把状态改为',
@@ -924,8 +938,8 @@ export const zh = {
     foot: { move: '选择', open: '打开', close: '关闭', help: '全部快捷键' },
     newReq: '新建需求',
     newPlan: '新建计划',
-    passCur: (code: string) => `${VERB.pass} ${code}`,
-    reviseCur: (code: string) => `${VERB.back} ${code}（写意见）`,
+    passCur: (code: string) => `${ACC.pass} ${code}`,
+    reviseCur: (code: string) => `${ACC.back} ${code}（写意见）`,
     goto: (page: string) => `前往${page}`,
     view: (name: string) => `需求页切到「${name}」视图`,
     theme: (name: string) => `外观：${name}`,
@@ -955,12 +969,12 @@ export const zh = {
       open: '打开选中的一项',
       view: '需求页轮换盘面 / 列表 / 计划视图',
       switch: '上一条 / 下一条需求',
-      pass: `${VERB.pass}待验收的需求（撤销期内可撤销）`,
-      revise: `写${VERB.back}意见`,
-      'verdict-pass': `${VERB.pass} / ${VERB.answer}；留言框里是发送留言（附言框里也能用）`,
-      'verdict-back': `${VERB.back}（要先写意见，附言框里也能用）`,
+      pass: `${ACC.pass}待验收的需求（撤销期内可撤销）`,
+      revise: `写${ACC.back}意见`,
+      'verdict-pass': `当前卡片的肯定动作：${ACC.pass} / ${VERB.approval.pass} / ${VERB.answer.pass}；留言框里是发送留言（附言框里也能用）`,
+      'verdict-back': `当前卡片的否定动作：${ACC.back} / ${VERB.approval.back}（要先写意见，附言框里也能用）`,
     } as Record<string, string>,
-    notReview: `这条需求不在待验收，不能${VERB.pass}`,
+    notReview: `这条需求不在待验收，不能${ACC.pass}`,
   },
   review: {
     evidence: '证据',
@@ -1271,7 +1285,7 @@ export const zh = {
     withdrawDone: (code: string) => `已撤回 ${code} 的放行，改回草稿`,
     left: (pending: number, review: number) => `留给你 ${pending} 件 · 待验收 ${review} 条，见下方「要你处理」`,
     blocked: '受阻',
-    verdict: { pass: `建议${VERB.pass}`, return: `建议${VERB.back}` } as Record<string, string>,
+    verdict: { pass: `建议${ACC.pass}`, return: `建议${ACC.back}` } as Record<string, string>,
     held: '没代答：',
   },
 }

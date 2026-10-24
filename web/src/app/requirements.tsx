@@ -56,7 +56,7 @@ export function useSetStatus() {
     if (r.status === 'review' && status === 'done') return verdict.pass(r.code, { toast: true })
     const to = (patch: Partial<ReqFields> = {}) => toFields(r, { status: status as ReqFields['status'], ...patch })
     if (r.status === 'review') {
-      const a = await ask({ title: t.verdict.askTitle(r.code), description: t.verdict.askDesc, confirmText: t.verdict.back, placeholder: t.verdict.askPlaceholder, kinds: [], required: true, multiline: true })
+      const a = await ask({ title: t.verdict.askTitle(r.code), description: t.verdict.askDesc, confirmText: t.verdict.back('accept'), placeholder: t.verdict.askPlaceholder, kinds: [], required: true, multiline: true })
       if (!a) return false
       // 退回后需求回到进行中；拖到的是别的列（阻塞、待开始……）时再改过去
       return verdict.back(r.code, { comment: a.note, toast: true, after: status === 'in_progress' ? undefined : () => void updateReq(r.code, to()) })

@@ -242,7 +242,7 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
   )
 }
 
-// Composer：底部输入。待验收时是统一的 Verdict（R-161）：[附言（退回时必填）][退回][批准]，都先进撤销期，到点盖印；
+// Composer：底部输入。待验收时是统一的 Verdict（R-161）：[附言（退回时必填）][退回][通过]，都先进撤销期，到点盖印；
 // 连续验收时盖印后滑到下一条。其它状态——可以随时给 Agent 留言（只送达，不改需求状态）。
 function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: Requirement; onAdvance?: (code: string) => void; pending: number; onJump: () => void; incoming?: File[]; onIncoming?: () => void }) {
   const { note } = useActions()
@@ -285,7 +285,7 @@ function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: 
     if (!dirty) return box.current?.focus()
     verdict.back(r.code, { comment: text, files: ids, after: clear })
   }
-  // 快捷键 A / ⌘↵ 批准，R 只聚焦附言框（R-127），⌘⌫ 退回（没写意见时同样先聚焦附言框）
+  // 快捷键 A / ⌘↵ 通过，R 只聚焦附言框（R-127），⌘⌫ 退回（没写意见时同样先聚焦附言框）
   useKsEvent('ks:pass', (code) => code === r.code && reviewing && pass())
   useKsEvent('ks:revise', (code) => {
     if (code === r.code && reviewing) box.current?.focus()
@@ -308,6 +308,7 @@ function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: 
       <PendingBar k={r.code} />
     ) : (
       <Verdict
+        scene="accept"
         stack
         noteRef={box}
         note={text}

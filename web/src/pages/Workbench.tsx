@@ -25,7 +25,7 @@ import { useFillHeight } from '../app/pool'
 import { useOpenSession } from '../app/nav'
 
 // 工作台（R-170，D-228 原型；替换 R-147 的三档布局）：一屏驾驶舱，整页不滚动，各栏在区域内滚动。
-//   左「要你处理」（就地作答，R-161 统一的批准 / 退回 / 回答）+ 底部「刚处理」；
+//   左「要你处理」（就地作答，R-161 统一的判断动作，R-176 按场景取词：通过 / 退回、批准 / 拒绝、回答）+ 底部「刚处理」；
 //   中「会话」泳道（app/lanes.tsx），多个项目同时有活跃会话时按项目分组；
 //   右「风向」：进行中的计划、最近动态（一条竖线）、队伍固定在底部。
 // 按容器宽度排版（R-133）：宽 ≥ 1180 泳道带右侧动作列；960～1180 动作列收起、当前动作写在状态标下一行；
@@ -59,7 +59,7 @@ function SendAllBar() {
               onClick={() => {
                 // 批量回答（R-161）：每张卡上各有撤销条，另给一条 toast 一次撤销全部
                 send(ready)
-                undoToast(t.verdict.many(ready.length), t.verdict.answer, Date.now() + UNDO_MS, () => ready.forEach((x) => cancel(x.code)))
+                undoToast(t.verdict.many(ready.length), t.verdict.pass('answer'), Date.now() + UNDO_MS, () => ready.forEach((x) => cancel(x.code)))
               }}
             >
               {t.verdict.answerAll(ready.length)}

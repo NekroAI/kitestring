@@ -26,11 +26,18 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
     }
     for (const d of decisions.data ?? [])
       if ((!projectId || d.project_id === projectId) && d.kind === 'decision' && d.answered_at)
-        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: (d.proxy_by && !d.overridden_at ? t.projects.evProxy : t.projects.evAnswer)(d.code, d.short_title || d.question), dot: 'bg-wait' })
+        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: d.proxy_by && !d.overridden_at ? t.projects.evProxy(d.code, d.short_title || d.question) : t.projects.evAnswer(d.code, d.short_title || d.question, answerVerb(d)), dot: 'bg-wait' })
     // 阶段验收通过也记一条（R-161：判断完成后卡片收起、时间线记一条）
     for (const x of plans.data ?? [])
       if (!projectId || x.project_id === projectId)
         for (const st of x.stages) if (st.passed_at) out.push({ at: st.passed_at, code: x.code, text: t.projects.evStage(x.code, st.seq, st.title), dot: 'bg-run' })
     return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit)
   }, [list, projectId, limit, decisions.data, plans.data])
+}
+
+// answerVerb：最近动态里你对决策做了什么（R-176）——批准类决策写「批准 / 拒绝」，选项类写「回答」。
+function answerVerb(d: { approval?: boolean; options?: string[] | null; answer?: string }) {
+  if (!d.approval) return t.verdict.pass('answer')
+  const opt0 = d.options?.[0]
+  return opt0 && d.answer?.startsWith(opt0) ? t.verdict.pass('approval') : t.verdict.back('approval')
 }

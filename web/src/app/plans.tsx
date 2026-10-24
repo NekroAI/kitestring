@@ -262,13 +262,13 @@ function usePlanVerdict() {
   const post = (url: string, comment: string, files: string[]) => ({ method: 'POST' as const, url, body: { comment, files } })
   return {
     approve: (x: Plan, comment: string, files: string[], after?: () => void) =>
-      schedule(planKey(x), { act: 'pass', subject: x.code, beacon: post(`/api/plans/${x.code}/start`, comment, files), commit: () => done(startPlan(x.code, comment, files), after) }),
+      schedule(planKey(x), { act: 'pass', scene: 'plan', subject: x.code, beacon: post(`/api/plans/${x.code}/start`, comment, files), commit: () => done(startPlan(x.code, comment, files), after) }),
     reject: (x: Plan, comment: string, files: string[], after?: () => void) =>
-      schedule(planKey(x), { act: 'back', subject: x.code, beacon: post(`/api/plans/${x.code}/reject`, comment, files), commit: () => done(rejectPlan(x.code, comment, files), after) }),
+      schedule(planKey(x), { act: 'back', scene: 'plan', subject: x.code, beacon: post(`/api/plans/${x.code}/reject`, comment, files), commit: () => done(rejectPlan(x.code, comment, files), after) }),
     pass: (x: Plan, st: Stage, comment: string, files: string[], after?: () => void) =>
-      schedule(stageKey(x, st), { act: 'pass', subject: x.code, beacon: post(`/api/plans/${x.code}/stages/${st.seq}/pass`, comment, files), commit: () => done(passStage(x.code, st.seq, comment, files), after) }),
+      schedule(stageKey(x, st), { act: 'pass', scene: 'accept', subject: x.code, beacon: post(`/api/plans/${x.code}/stages/${st.seq}/pass`, comment, files), commit: () => done(passStage(x.code, st.seq, comment, files), after) }),
     back: (x: Plan, st: Stage, comment: string, files: string[], after?: () => void) =>
-      schedule(stageKey(x, st), { act: 'back', subject: x.code, beacon: post(`/api/plans/${x.code}/stages/${st.seq}/revise`, comment, files), commit: () => done(reviseStage(x.code, st.seq, comment, files), after) }),
+      schedule(stageKey(x, st), { act: 'back', scene: 'accept', subject: x.code, beacon: post(`/api/plans/${x.code}/stages/${st.seq}/revise`, comment, files), commit: () => done(reviseStage(x.code, st.seq, comment, files), after) }),
   }
 }
 
@@ -285,6 +285,7 @@ function PlanVerdict({ x, st, stack, extra, className }: { x: Plan; st?: Stage; 
   const c = comment.trim()
   return (
     <Verdict
+      scene={st ? 'accept' : 'plan'}
       stack={stack}
       extra={extra}
       className={className}
@@ -300,7 +301,7 @@ function PlanVerdict({ x, st, stack, extra, className }: { x: Plan; st?: Stage; 
   )
 }
 
-// Gate：当前阶段的闸门——阶段小结，然后统一的 [附言][退回][批准]。
+// Gate：当前阶段的闸门——阶段小结，然后统一的 [附言][退回][通过]。
 function Gate({ x, st }: { x: Plan; st: Stage }) {
   // 后面需求都已完成的阶段会一并自动通过（D-60），提示里写真正会开始的那一阶段
   const next = nextStageOf(x, st)

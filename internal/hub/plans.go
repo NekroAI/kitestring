@@ -283,7 +283,11 @@ func (h *Hub) rejectPlan(ctx context.Context, ref string, n note) (store.Plan, e
 	if err := h.store.SetPlanStatus(ctx, x.ID, store.PlanShelved); err != nil {
 		return x, err
 	}
-	h.planMsg(ctx, x, withComment("用户没有批准这个计划（已搁置）。如需调整，请按附言重新用 plan_create 提交。", n), n.files...)
+	msg := "用户退回了这个计划（已搁置，不会开工），没有写意见"
+	if !n.empty() {
+		msg = returnedText("这个计划（已搁置，不会开工）", n.text)
+	}
+	h.planMsg(ctx, x, msg+"\n按意见调整后重新用 plan_create 提交。", n.files...)
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -415,11 +419,7 @@ func (h *Hub) reviseStage(ctx context.Context, ref string, seq int, n note) (sto
 	if err := h.store.SetStageStatus(ctx, st.ID, store.StageActive, ""); err != nil {
 		return x, err
 	}
-	text := n.text
-	if text == "" {
-		text = "意见见附图"
-	}
-	h.planMsg(ctx, x, fmt.Sprintf("用户退回了%s：%s\n按意见修改后，重新用 stage_submit 交阶段小结。", stageName(st), text), n.files...)
+	h.planMsg(ctx, x, returnedText(stageName(st), n.text)+"\n按意见修改后，重新用 stage_submit 交阶段小结。", n.files...)
 	return h.planChanged(ctx, x.ID)
 }
 

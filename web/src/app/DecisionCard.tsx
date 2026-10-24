@@ -101,6 +101,8 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   // 多点决策（R-112）：逐点选择，默认选推荐；附言和附图照旧
   const multi = !!d.points?.length
   const approval = !!d.approval
+  // 用词场景（R-176）：批准类决策「批准 / 拒绝」，选项类「回答」
+  const scene = approval ? 'approval' : 'answer'
   const picks = multi ? currentPicks(d, draft.picks) : []
   const picked = multi && picks.every((c) => c >= 0)
   const answer = multi ? (picked ? picksText(d, picks, draft.note) : '') : composeAnswer(draft, options)
@@ -126,8 +128,8 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   }, [draft.choice, draft.noteOpen])
 
   const choose = (c: number | 'other') => setDraft(d.code, { choice: draft.choice === c ? null : c })
-  // 回答 / 批准 / 退回（R-161）：都先进撤销期（发件箱），卡片底部换成同一个撤销条。
-  // 批准类单点：通过 = 选项 0，退回 = 选项 1（发出去的答复文字仍是后端给的选项，Agent 侧不变）；退回必须附意见。
+  // 回答 / 批准 / 拒绝（R-161、R-176）：都先进撤销期（发件箱），卡片底部换成同一个撤销条。
+  // 批准类单点：批准 = 选项 0，拒绝 = 选项 1（发出去的答复是后端给的选项文字，后端送给 Agent 时写明是用户明确拒绝）；拒绝必须附意见。
   const files = draft.files?.map((f) => f.id)
   const busyUpload = () => (uploadsBusy() ? (toast(t.attach.wait), true) : false) // 附件没传完先不发
   const submit = () => {
@@ -311,10 +313,11 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
         )}
 
         {sendingAt ? (
-          <UndoBar until={sendingAt} done={!!sealedNow} text={(s) => (sealedNow ? t.verdict.sealed(actWord(sendingAct)) : t.verdict.pending(actWord(sendingAct), s))} onUndo={() => cancel(d.code)} />
+          <UndoBar until={sendingAt} done={!!sealedNow} text={(s) => (sealedNow ? t.verdict.sealed(actWord(sendingAct, '', scene)) : t.verdict.pending(actWord(sendingAct, '', scene), s))} onUndo={() => cancel(d.code)} />
         ) : (
           <Verdict
             mode={approval ? 'verdict' : 'answer'}
+            scene={scene}
             stack={free}
             noteRef={noteRef}
             note={draft.note}
@@ -352,7 +355,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           />
         )}
       </div>
-      <Seal show={!!sealedNow} act={sendingAct} />
+      <Seal show={!!sealedNow} act={sendingAct} scene={scene} />
     </div>
     </AnnotateTarget.Provider>
   )

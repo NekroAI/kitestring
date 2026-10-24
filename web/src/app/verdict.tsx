@@ -3,13 +3,16 @@ import { Check, CornerDownLeft, Undo2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { toast } from 'sonner'
 import { t } from '../i18n'
+import type { Scene } from '../i18n/zh'
 import { cx } from '../lib/util'
 import { Button, Textarea, Tip } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { useActions } from './actions'
 
-// 统一的判断动作（R-161）：批准 / 退回 / 回答 / 撤销在全站只有一种样式、一种节奏。
-// - Verdict：[附言（退回时必填）][退回][批准]，决策是 [附言][回答]；放在卡片底部右侧，各处同一顺序、颜色、图标。
+// 统一的判断动作（R-161）：肯定 / 否定 / 回答 / 撤销在全站只有一种样式、一种节奏。
+// - 用词按场景（R-176）：验收「通过 / 退回」、计划「批准 / 退回」、批准类决策和请求「批准 / 拒绝」、选项类决策「回答」；
+//   各入口把场景（Scene）传进来，按钮、撤销条、印章、快捷键提示都按场景取词（i18n/zh.ts 的 VERB），行为不随场景变。
+// - Verdict：[附言（否定时必填）][否定][肯定]，决策是 [附言][回答]；放在卡片底部右侧，各处同一顺序、颜色、图标。
 // - 节奏：点了先进撤销期（UNDO_MS），卡片里显示行内撤销条，菜单 / 拖拽 / 批量用 toast 显示同一个撤销条；
 //   到点后盖印（Seal：印章盖下 → 停顿 SEAL_MS）→ 提交 → 卡片高度收起、下方卡片上移（List / Item 的收起动画），最近动态记一条。
 // - 撤销期的状态放在模块里，离开页面（切走路由、标签页隐藏）照常计时、到点提交；页面真的关闭或刷新时用 keepalive 立即提交，不丢。
@@ -33,7 +36,7 @@ export type Phase = 'wait' | 'seal' | 'done'
 // Beacon：页面关闭时用来立即提交的请求（fetch keepalive，cookie 同源带上）。
 export type Beacon = { method: 'POST' | 'PUT'; url: string; body: unknown }
 
-type Entry = { until: number; act: Act; label: string; phase: Phase; timer: number; commit: () => Promise<boolean>; beacon?: Beacon; toastId?: string }
+type Entry = { until: number; act: Act; scene: Scene; label: string; phase: Phase; timer: number; commit: () => Promise<boolean>; beacon?: Beacon; toastId?: string }
 
 const pending = new Map<string, Entry>()
 const subs = new Set<() => void>()
@@ -59,11 +62,13 @@ export function usePending(key: string | undefined) {
   return key ? usePendingMap().get(key) : undefined
 }
 
-// actWord：撤销条里的动词——批准 / 退回 / 回答，改状态时是「改为进行中」。
-export const actWord = (act: Act, label = '') => (act === 'pass' ? t.verdict.pass : act === 'back' ? t.verdict.back : act === 'answer' ? t.verdict.answer : label)
+// actWord：撤销条、印章里的动词，按场景取——通过 / 批准 / 退回 / 拒绝 / 回答，改状态时是「改为进行中」。
+export const actWord = (act: Act, label = '', scene: Scene = 'accept') =>
+  act === 'pass' ? t.verdict.pass(scene) : act === 'back' ? t.verdict.back(scene) : act === 'answer' ? t.verdict.pass('answer') : label
 
 export type ScheduleOpts = {
   act: Act
+  scene?: Scene // 用词场景（R-176），不传按需求验收
   commit: () => Promise<boolean> // 返回是否成功；失败时卡片回到原样
   label?: string // act = move 时的动作文字（改为进行中）
   subject?: string // toast 里写在前面的对象（R-12）
@@ -76,8 +81,9 @@ export function schedule(key: string, o: ScheduleOpts) {
   if (pending.has(key)) return false
   const until = Date.now() + UNDO_MS
   const timer = window.setTimeout(() => void fire(key), UNDO_MS)
-  const e: Entry = { until, act: o.act, label: o.label ?? '', phase: 'wait', timer, commit: o.commit, beacon: o.beacon }
-  if (o.toast) e.toastId = undoToast(o.subject ?? key, actWord(o.act, o.label), until, () => undo(key))
+  const scene = o.scene ?? 'accept'
+  const e: Entry = { until, act: o.act, scene, label: o.label ?? '', phase: 'wait', timer, commit: o.commit, beacon: o.beacon }
+  if (o.toast) e.toastId = undoToast(o.subject ?? key, actWord(o.act, o.label, scene), until, () => undo(key))
   pending.set(key, e)
   emit()
   return true
@@ -119,11 +125,11 @@ export function undo(key: string) {
   emit()
 }
 
-// scheduleMany：批量操作（全部批准等）——每件各自进撤销期（卡片上各有撤销条），另给一条 toast 一次撤销全部。
-export function scheduleMany(items: { key: string; commit: () => Promise<boolean>; beacon?: Beacon }[], act: Act) {
+// scheduleMany：批量操作（全部通过等）——每件各自进撤销期（卡片上各有撤销条），另给一条 toast 一次撤销全部。
+export function scheduleMany(items: { key: string; commit: () => Promise<boolean>; beacon?: Beacon }[], act: Act, scene: Scene = 'accept') {
   const fresh = items.filter((x) => !pending.has(x.key))
-  fresh.forEach((x) => schedule(x.key, { act, commit: x.commit, beacon: x.beacon }))
-  if (fresh.length) undoToast(t.verdict.many(fresh.length), actWord(act), Date.now() + UNDO_MS, () => fresh.forEach((x) => undo(x.key)))
+  fresh.forEach((x) => schedule(x.key, { act, scene, commit: x.commit, beacon: x.beacon }))
+  if (fresh.length) undoToast(t.verdict.many(fresh.length), actWord(act, '', scene), Date.now() + UNDO_MS, () => fresh.forEach((x) => undo(x.key)))
 }
 
 // undoToast：没有卡片可挂撤销条时，用 toast 显示同一个撤销条（批量回答决策也用它）。
@@ -177,7 +183,7 @@ function useSeconds(until: number) {
   return Math.max(1, Math.ceil((until - Date.now()) / 1000))
 }
 
-// UndoBar：卡片里和 toast 里是同一个撤销条——中性的墨蓝底，左边写「3 秒后批准」，右边撤销，底边一条倒计时线。
+// UndoBar：卡片里和 toast 里是同一个撤销条——中性的墨蓝底，左边写「3 秒后通过」「3 秒后拒绝」，右边撤销，底边一条倒计时线。
 export function UndoBar({ until, text, onUndo, floating, done, className }: { until: number; text: (s: number) => ReactNode; onUndo: () => void; floating?: boolean; done?: boolean; className?: string }) {
   const s = useSeconds(until)
   const left = Math.max(0, until - Date.now())
@@ -201,19 +207,19 @@ export function UndoBar({ until, text, onUndo, floating, done, className }: { un
   )
 }
 
-// PendingBar：某件事在撤销期时，卡片里显示的撤销条；盖印后变成不能撤销的「已批准」。
+// PendingBar：某件事在撤销期时，卡片里显示的撤销条；盖印后变成不能撤销的「已通过」「已拒绝」。
 export function PendingBar({ k, className, prefix }: { k: string; className?: string; prefix?: string }) {
   const e = usePending(k)
   if (!e) return null
-  const word = actWord(e.act, e.label)
+  const word = actWord(e.act, e.label, e.scene)
   return <UndoBar until={e.until} done={e.phase !== 'wait'} text={(s) => (prefix ? `${prefix} · ` : '') + (e.phase === 'wait' ? t.verdict.pending(word, s) : t.verdict.sealed(word))} onUndo={() => undo(k)} className={className} />
 }
 
 // ---------- 印章 ----------
 
-// Seal：生效反馈（D-229）——到点后在卡片上盖一方印（批准朱红、回答墨蓝、退回淡墨且轻一些），停顿片刻后卡片收起。
-// 卡片需要 relative；k 取模块里的撤销状态，也可以直接给 show / act（决策发件箱）。减少动效时不盖印。
-export function Seal({ k, show, act, className }: { k?: string; show?: boolean; act?: Act; className?: string }) {
+// Seal：生效反馈（D-229）——到点后在卡片上盖一方印（肯定朱红、回答墨蓝、否定淡墨且轻一些），印文按场景（已通过 / 已批准 / 已拒绝…），停顿片刻后卡片收起。
+// 卡片需要 relative；k 取模块里的撤销状态，也可以直接给 show / act / scene（决策发件箱）。减少动效时不盖印。
+export function Seal({ k, show, act, scene, className }: { k?: string; show?: boolean; act?: Act; scene?: Scene; className?: string }) {
   const e = usePending(k)
   const on = SHOW_STAMP && !reducedMotion() && (show ?? (!!e && e.phase !== 'wait' && e.act !== 'move'))
   const a = act ?? e?.act ?? 'pass'
@@ -235,7 +241,7 @@ export function Seal({ k, show, act, className }: { k?: string; show?: boolean; 
             transition={{ type: 'spring', bounce: a === 'back' ? 0.15 : 0.38, duration: 0.42 }}
             className={cx('flex items-center justify-center rounded-xl border-[3px] bg-surface/80 font-display tracking-[0.2em] shadow-xs', a === 'back' ? 'h-14 w-28 text-lg' : 'h-20 w-32 text-2xl', tone)}
           >
-            {t.verdict.stamp(actWord(a))}
+            {t.verdict.stamp(actWord(a, '', scene ?? e?.scene))}
           </motion.span>
         </motion.div>
       )}
@@ -245,7 +251,7 @@ export function Seal({ k, show, act, className }: { k?: string; show?: boolean; 
 
 // ---------- 快捷键 ----------
 
-// verdictKey：⌘↵ 批准 / 回答，⌘⌫ 退回（附言框里也能用）；处理了返回 true。
+// verdictKey：⌘↵ 当前场景的肯定动作（通过 / 批准 / 回答），⌘⌫ 否定动作（退回 / 拒绝）；附言框里也能用；处理了返回 true。
 export function verdictKey(e: KeyboardEvent, h: { pass?: () => void; back?: () => void }) {
   if (e.nativeEvent.isComposing || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return false
   if (e.key === 'Enter' && h.pass) {
@@ -266,8 +272,10 @@ export function verdictKey(e: KeyboardEvent, h: { pass?: () => void; back?: () =
 // ---------- Verdict ----------
 
 export type VerdictProps = {
-  // verdict：批准 / 退回；answer：只有「回答」（决策选项先选后点）
+  // verdict：肯定 / 否定；answer：只有「回答」（决策选项先选后点）
   mode?: 'verdict' | 'answer'
+  // 用词场景（R-176）：accept 验收、plan 计划、approval 批准类决策、request 请求、permit 授权；不传时 verdict 按验收、answer 按回答
+  scene?: Scene
   note: string
   onNote: (v: string) => void
   files?: FileRef[]
@@ -293,6 +301,7 @@ export type VerdictProps = {
 
 export function Verdict(p: VerdictProps) {
   const mode = p.mode ?? 'verdict'
+  const scene: Scene = mode === 'answer' ? 'answer' : (p.scene ?? 'accept')
   const uploading = useUploading()
   const own = useRef<HTMLTextAreaElement>(null)
   const ref = p.noteRef ?? own
@@ -309,7 +318,7 @@ export function Verdict(p: VerdictProps) {
     if (off || p.canPass === false) return
     p.onPass()
   }
-  // 退回必须附意见：没写就先把焦点放到附言框，并提示要写什么
+  // 否定（退回 / 拒绝）必须附意见：没写就先把焦点放到附言框，并提示要写什么
   const back = () => {
     if (off || !p.onBack) return
     if (!hasNote) {
@@ -327,7 +336,7 @@ export function Verdict(p: VerdictProps) {
         ref={ref}
         minRows={p.minRows ?? 1}
         value={p.note}
-        placeholder={need ? t.verdict.needNote : (p.placeholder ?? (mode === 'answer' ? t.verdict.noteOptional : t.verdict.note))}
+        placeholder={need ? t.verdict.needNote(scene) : (p.placeholder ?? (mode === 'answer' ? t.verdict.noteOptional : t.verdict.note(scene)))}
         aria-invalid={need || undefined}
         onChange={(e) => p.onNote(e.target.value)}
         onKeyDown={(e) => verdictKey(e, { pass, back: mode === 'verdict' ? back : undefined })}
@@ -338,15 +347,15 @@ export function Verdict(p: VerdictProps) {
   const buttons = (
     <div className="flex shrink-0 items-center gap-2">
       {mode === 'verdict' && p.onBack && (
-        <Tip content={t.verdict.keyBack}>
+        <Tip content={t.verdict.keyBack(scene)}>
           <span>
             <Button size={size} className={btnCls} disabled={off} icon={<Undo2 className="size-4" />} onClick={back}>
-              {t.verdict.back}
+              {t.verdict.back(scene)}
             </Button>
           </span>
         </Tip>
       )}
-      <Tip content={mode === 'answer' ? t.verdict.keyAnswer : t.verdict.keyPass}>
+      <Tip content={t.verdict.keyPass(scene)}>
         <span>
           <Button
             size={size}
@@ -357,7 +366,7 @@ export function Verdict(p: VerdictProps) {
             icon={mode === 'answer' ? <CornerDownLeft className="size-4" /> : <Check className="size-4" />}
             onClick={pass}
           >
-            {mode === 'answer' ? t.verdict.answer : t.verdict.pass}
+            {t.verdict.pass(scene)}
           </Button>
         </span>
       </Tip>
@@ -394,7 +403,7 @@ export async function done(p: Promise<unknown>, after?: () => void): Promise<boo
   return ok
 }
 
-// useReqVerdict：需求的批准 / 退回，各处（工作台行、抽屉、右键菜单、状态菜单、拖拽、全部批准）共用。
+// useReqVerdict：需求验收的通过 / 退回，各处（工作台行、抽屉、右键菜单、状态菜单、拖拽、全部通过）共用。
 // 提交前都先进撤销期；到点盖印、卡片收起、最近动态记一条就是反馈，不另弹「已验收」提示。
 export function useReqVerdict() {
   const { review } = useActions()
@@ -402,11 +411,11 @@ export function useReqVerdict() {
   return {
     pass: (code: string, o: { comment?: string; files?: string[]; toast?: boolean; after?: () => void } = {}) => {
       const it = item(code, 'accept', o.comment, o.files)
-      return schedule(code, { act: 'pass', subject: code, toast: o.toast, beacon: reviewBeacon([it]), commit: () => done(review([it]), o.after) })
+      return schedule(code, { act: 'pass', scene: 'accept', subject: code, toast: o.toast, beacon: reviewBeacon([it]), commit: () => done(review([it]), o.after) })
     },
     back: (code: string, o: { comment: string; files?: string[]; toast?: boolean; after?: () => void }) => {
       const it = item(code, 'revise', o.comment, o.files)
-      return schedule(code, { act: 'back', subject: code, toast: o.toast, beacon: reviewBeacon([it]), commit: () => done(review([it]), o.after) })
+      return schedule(code, { act: 'back', scene: 'accept', subject: code, toast: o.toast, beacon: reviewBeacon([it]), commit: () => done(review([it]), o.after) })
     },
     passMany: (codes: string[]) =>
       scheduleMany(
@@ -415,6 +424,7 @@ export function useReqVerdict() {
           return { key: code, beacon: reviewBeacon([it]), commit: () => done(review([it])) }
         }),
         'pass',
+        'accept',
       ),
   }
 }
