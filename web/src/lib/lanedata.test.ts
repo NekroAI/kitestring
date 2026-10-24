@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentEnd, barHeight, gridTicks, inWindow, LaneStore, makeAxis, sharedMax, ZOOMS, zoomSpec, type LaneData } from './lanedata.ts'
+import { agentEnd, axisX, barHeight, cellX, gridTicks, laneAxis, inWindow, LaneStore, makeAxis, sharedMax, ZOOMS, zoomSpec, type LaneData } from './lanedata.ts'
 
 const NOW = Date.UTC(2026, 9, 24, 11, 30, 20) // 19:30:20 北京时间
 const nowMin = Math.floor(NOW / 60000)
@@ -103,5 +103,38 @@ test('性能：近 1 周档 60 条泳道各 168 格、近 1 天档各 144 格，
     sharedMax(all)
     const took = performance.now() - t0
     assert.ok(took < 50, `${z} 用了 ${took.toFixed(1)}ms`)
+  }
+})
+
+test('共享时间轴：主泳道、子任务行、已结束泳道宽度不同也用同一条轴（R-219）', () => {
+  // 各行按自己的宽度算的话，近 1 小时档的格数不同，同一竖线对应的时刻就不同
+  assert.notEqual(makeAxis('h1', 236, NOW).n, makeAxis('h1', 240, NOW).n)
+  for (const z of ZOOMS) {
+    const rows = [
+      { w: 0, sub: true }, // 还没量出宽度的行不参与
+      { w: 236, sub: false }, // 主泳道
+      { w: 240, sub: true }, // 子任务行（差几个像素）
+      { w: 180, sub: false },
+    ]
+    const ax = laneAxis(z, rows, NOW)
+    assert.deepEqual(ax, makeAxis(z, 236, NOW), `${z}：取第一条主泳道的宽度`)
+    assert.deepEqual(laneAxis(z, [...rows].reverse(), NOW), makeAxis(z, 180, NOW), `${z}：顺序不同只是参照的主泳道不同，轴本身只有一条`)
+    // 没有主泳道（只有子任务 / 已结束泳道）时取第一条有宽度的行
+    assert.deepEqual(laneAxis(z, [{ w: 0, sub: false }, { w: 300, sub: true }], NOW), makeAxis(z, 300, NOW))
+  }
+})
+
+test('同一分钟在所有行里的位置：同宽的行完全相同，不同宽的行占整条轴的同一比例', () => {
+  for (const z of ZOOMS) {
+    const ax = laneAxis(z, [{ w: 236, sub: false }], NOW)
+    const t = (ax.start + Math.floor(ax.n / 3) * ax.bucket) * 60000 + 30_000 // 某一格中间
+    const a = axisX(ax, 236, t)
+    assert.equal(axisX(ax, 236, t), a)
+    for (const w of [164, 236, 544, 2754]) assert.ok(Math.abs(axisX(ax, w, t) / w - a / 236) < 1e-9, `${z} 宽 ${w}`)
+    // 第 i 格的左边缘就是这一格起始分钟的位置
+    for (const i of [0, 1, Math.floor(ax.n / 2), ax.n - 1]) assert.ok(Math.abs(cellX(ax, 236, i) - axisX(ax, 236, (ax.start + i * ax.bucket) * 60000)) < 1e-9)
+    // 轴的两端：最左是 0，最右是 w
+    assert.equal(axisX(ax, 236, ax.start * 60000), 0)
+    assert.ok(Math.abs(axisX(ax, 236, ax.end * 60000) - 236) < 1e-9)
   }
 })

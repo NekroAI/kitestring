@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
-import { agentEnd, barHeight, coarse, gridTicks, inWindow, LONG_TOOL, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type SessionMeta, type Zoom } from '../lib/lanedata'
+import { agentEnd, axisX, barHeight, cellX, coarse, gridTicks, inWindow, LONG_TOOL, laneAxis, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type SessionMeta, type Zoom } from '../lib/lanedata'
 import { cx, duration, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { spring } from '../ui/gesture'
@@ -95,6 +95,7 @@ let loop = 0
 let offline = false
 let zoomNow: Zoom = 'h1'
 let laneWidth = 0 // 最近一次主泳道时间线的宽度（近 1 小时档的格数随宽度）
+let sharedAx: Axis | null = null // 所有泳道共用的时间轴（R-219）：只在 paintAll 里按一个宽度算一次
 let maxMain = 1
 let maxSub = 1
 
@@ -120,9 +121,10 @@ function compute(p: Painter, now: number) {
   const w = p.cv.clientWidth
   if (!w) return
   const sp = p.spec()
-  if (!sp.sub) laneWidth = w
-  p.ax = makeAxis(zoomNow, w, now)
+  // 用共享的轴；只有一条泳道单独补画（还没有共享轴）时才按自己的宽度算
+  p.ax = sharedAx && sharedAx.zoom === zoomNow ? sharedAx : makeAxis(zoomNow, w, now)
   p.calls = laneStore.calls(sp.k, sp.agents, p.ax)
+  p.cv.dataset.axis = `${p.ax.start}:${p.ax.n}:${p.ax.bucket}` // 这一行用的轴（测试核对所有行是同一条）
 }
 
 function paint(p: Painter, now: number, c: Colors) {
@@ -146,8 +148,7 @@ function paint(p: Painter, now: number, c: Colors) {
   g.clearRect(0, 0, w, h)
   const sp = p.spec()
   const fade = sp.faded ? 0.5 : 1
-  const total = ax.n * ax.bucket
-  const X = (t: number) => ((t / 60000 - ax.start) / total) * w
+  const X = (t: number) => axisX(ax, w, t)
   const bw = w / ax.n
   const mid = Math.round(h / 2) + 0.5
   const room = sp.sub ? mid - 3 : mid - 7
@@ -160,7 +161,7 @@ function paint(p: Painter, now: number, c: Colors) {
   if (p.hover >= 0 && p.hover < ax.n) {
     g.globalAlpha = 0.07
     g.fillStyle = c.fg
-    g.fillRect(p.hover * bw, 0, bw, h)
+    g.fillRect(cellX(ax, w, p.hover), 0, bw, h)
   }
   // 中线
   g.globalAlpha = (sp.sub ? 0.35 : 0.6) * fade
@@ -198,7 +199,7 @@ function paint(p: Painter, now: number, c: Colors) {
   g.fillStyle = offline || sp.sub ? c.idle : c.accent
   for (let i = 0; i < ax.n; i++) {
     const hh = barHeight(calls[i], max, room)
-    if (hh) g.fillRect(i * bw + pad / 2, mid - 1 - hh, Math.max(1, bw - pad), hh)
+    if (hh) g.fillRect(cellX(ax, w, i) + pad / 2, mid - 1 - hh, Math.max(1, bw - pad), hh)
   }
   g.globalAlpha = 1
 }
@@ -210,6 +211,10 @@ export function paintAll() {
   const now = serverNow()
   let mm = 1
   let ms = 1
+  // 共享的时间轴：按主泳道时间线列的宽度算一次，所有行（含子任务行、已结束泳道）都用它
+  const rows = [...painters].map((p) => ({ w: p.cv.clientWidth, sub: p.spec().sub }))
+  sharedAx = laneAxis(zoomNow, rows, now)
+  laneWidth = rows.find((r) => !r.sub && r.w > 0)?.w ?? laneWidth
   painters.forEach((p) => {
     compute(p, now)
     const sub = p.spec().sub
@@ -380,7 +385,8 @@ export function LaneAxis({ zoom, mode, now }: { zoom: Zoom; mode: LaneMode; now:
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const ax = makeAxis(zoom, w, now)
+  // 和泳道画布用同一条轴（laneAxis）：宽度取整，和画布的 clientWidth 一致
+  const ax = laneAxis(zoom, [{ w: Math.round(w), sub: false }], now)
   const total = ax.n * ax.bucket
   return (
     <div aria-hidden className={cx('sticky top-0 z-10 grid h-4 shrink-0 bg-bg text-[10.5px] leading-4 text-fg-3 tabular', cols[mode])}>

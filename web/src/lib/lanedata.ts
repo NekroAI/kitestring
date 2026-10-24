@@ -27,6 +27,18 @@ export function makeAxis(zoom: Zoom, width: number, nowMs: number): Axis {
   return { zoom, bucket: z.bucket, n, start: end - n * z.bucket, end }
 }
 
+// laneAxis：所有泳道共用的一条时间轴（R-219）。只按一个参照宽度算一次——主泳道时间线列的宽度（没有主泳道时取第一条），
+// 子任务行、已结束泳道、shell 行都用这同一条轴，同一竖线在每一行都是同一时刻；各行画布的宽度只决定把格子画多宽。
+export type AxisRow = { w: number; sub: boolean }
+export function laneAxis(zoom: Zoom, rows: AxisRow[], nowMs: number): Axis {
+  const ref = rows.find((r) => !r.sub && r.w > 0) ?? rows.find((r) => r.w > 0)
+  return makeAxis(zoom, ref?.w ?? 0, nowMs)
+}
+
+// axisX：时刻（毫秒）在宽 w 的一行里的横坐标；cellX 是第 i 格的左边缘。位置一律按「时刻占整条轴的比例」换算。
+export const axisX = (ax: Axis, w: number, tMs: number) => ((tMs / 60000 - ax.start) / (ax.n * ax.bucket)) * w
+export const cellX = (ax: Axis, w: number, i: number) => (i / ax.n) * w
+
 // gridTicks：轴上的刻度（Unix 分钟），按本地时间对齐（整 10 分钟 / 整点 / 3 小时 / 0 点）
 export function gridTicks(ax: Axis, tzOffsetMin = -new Date().getTimezoneOffset()): number[] {
   const g = zoomSpec[ax.zoom].grid
