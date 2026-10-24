@@ -67,6 +67,7 @@ type Session struct {
 	ToolsStale       string           `json:"tools_stale"`                          // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
 	ContextTokens    int              `json:"context_tokens"`                       // 最近一轮结束时的上下文 token 数（R-60）
 	ContextMax       int              `json:"context_max"`                          // 上下文窗口；不知道时为 0
+	Background       bool             `json:"background"`                           // 桌面应用自己在后台发起的任务（如 Codex 的项目建议），不是你的对话：不进工作台与各种计数、不参与派活（R-179）
 	Role             string           `json:"role" enum:",pm,dev,advisor,reviewer"` // 会话身份（R-82）：pm 开发 dev 顾问 advisor 审查员 reviewer，空为无身份
 	RecentTools      []ToolAct        `json:"recent_tools"`                         // 最近几次工具调用，旧 → 新（工作台滚动展示）
 	Ticks            []time.Time      `json:"ticks"`                                // 主会话近 10 分钟的工具调用时刻，旧 → 新，最多 maxSessionTicks 个（工作台时间线，R-170）
@@ -132,7 +133,7 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks,
+	s.title, s.digest_done, s.digest_ask, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
@@ -143,7 +144,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks,
+		&x.Title, &x.DigestDone, &x.DigestAsk, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background,
 		&started, &active, &ended)
 	x.Tasks = []BgTask{}
 	if tasks != "" && tasks != "[]" {
@@ -188,9 +189,10 @@ func (s *Store) GetSession(ctx context.Context, key string) (Session, error) {
 }
 
 // ListSessions 列出 activeWithin 内活跃过的会话，以及更早但仍有待决策的会话。
-func (s *Store) ListSessions(ctx context.Context, activeWithin time.Duration) ([]Session, error) {
-	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.last_active_at >= ? OR s.key IN (SELECT session_key FROM decisions WHERE status = 'pending')
-		ORDER BY s.last_active_at DESC`, ts(time.Now().Add(-activeWithin)))
+// background 为假时不含后台任务（工作台与各种计数用），为真时只列后台任务（⌘K 里找它们，R-179）。
+func (s *Store) ListSessions(ctx context.Context, activeWithin time.Duration, background bool) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.background = ? AND (s.last_active_at >= ? OR s.key IN (SELECT session_key FROM decisions WHERE status = 'pending'))
+		ORDER BY s.last_active_at DESC`, background, ts(time.Now().Add(-activeWithin)))
 	if err != nil {
 		return nil, err
 	}
@@ -341,18 +343,18 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 		tasks = string(b)
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, last_prompt, summary,
-			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, parked_until, tasks, started_at, last_active_at, ended_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, parked_until, tasks, background, started_at, last_active_at, ended_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, model = excluded.model,
 			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail,
 			last_prompt = excluded.last_prompt, summary = excluded.summary, state_since = excluded.state_since, turns = excluded.turns,
 			turn_tools = excluded.turn_tools, last_tool = excluded.last_tool, last_tool_at = excluded.last_tool_at, subagents = excluded.subagents,
 			perm_mode = excluded.perm_mode, compactions = excluded.compactions, worktree = excluded.worktree,
-			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked, parked_until = excluded.parked_until, tasks = excluded.tasks,
+			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked, parked_until = excluded.parked_until, tasks = excluded.tasks, background = excluded.background,
 			last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
 		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail,
 		x.LastPrompt, x.Summary, since, x.Turns, x.TurnTools, x.LastTool, toolAt, x.Subagents, x.PermMode, x.Compactions, x.Worktree,
-		x.Instance, x.PrevInstance, doneAt, x.Parked, parkedUntil, tasks, ts(x.StartedAt), ts(x.LastActiveAt), ended)
+		x.Instance, x.PrevInstance, doneAt, x.Parked, parkedUntil, tasks, x.Background, ts(x.StartedAt), ts(x.LastActiveAt), ended)
 	return err
 }
 
@@ -528,7 +530,7 @@ func (s *Store) RepairPrompts(ctx context.Context, clean func(string) (string, b
 
 // SessionsBetween 返回在 [from, to] 内有过事件的会话，供时段回顾使用。
 func (s *Store) SessionsBetween(ctx context.Context, from, to time.Time) ([]Session, error) {
-	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.key IN (SELECT DISTINCT session_key FROM events WHERE time >= ? AND time <= ?) ORDER BY s.last_active_at DESC`, ts(from), ts(to))
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.background = 0 AND s.key IN (SELECT DISTINCT session_key FROM events WHERE time >= ? AND time <= ?) ORDER BY s.last_active_at DESC`, ts(from), ts(to))
 	if err != nil {
 		return nil, err
 	}
@@ -756,4 +758,46 @@ func askingUser(detail string) bool {
 		}
 	}
 	return false
+}
+
+// BackfillBackground 给旧数据补后台任务标记（R-179）：看每个未标记会话的第一条用户提示词，
+// 命中 isBg 的标上。没有事件记录时退回用会话上存的最后消息。返回新标记的会话数。
+func (s *Store) BackfillBackground(ctx context.Context, isBg func(tool, prompt string) bool) (int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, tool, last_prompt FROM sessions WHERE background = 0 AND tool = 'codex'`)
+	if err != nil {
+		return 0, err
+	}
+	type item struct{ key, tool, last string }
+	var items []item
+	for rows.Next() {
+		var it item
+		if err := rows.Scan(&it.key, &it.tool, &it.last); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		items = append(items, it)
+	}
+	rows.Close()
+	n := 0
+	for _, it := range items {
+		first := it.last
+		var p string
+		err := s.db.QueryRowContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name = 'UserPromptSubmit' ORDER BY time LIMIT 1`, it.key).Scan(&p)
+		if err == nil {
+			var ev protocol.Event
+			if json.Unmarshal([]byte(p), &ev) == nil && ev.Prompt != "" {
+				first = ev.Prompt
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return n, err
+		}
+		if !isBg(it.tool, first) {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE sessions SET background = 1 WHERE key = ?`, it.key); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }

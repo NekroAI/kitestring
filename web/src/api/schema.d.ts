@@ -2954,6 +2954,7 @@ export interface components {
         };
         Session: {
             activity: number[] | null;
+            background: boolean;
             branch: string;
             client: string;
             /** Format: int64 */
@@ -6223,7 +6224,10 @@ export interface operations {
     };
     "list-sessions": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 为 true 时只列后台任务（桌面应用自己发起的，如 Codex 项目建议）；默认不含它们（R-179） */
+                background?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;

@@ -2,13 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Dialog as RDialog } from 'radix-ui'
 import { ArrowRight, Check, FilePlus2, FolderKanban, Keyboard, LayoutDashboard, LayoutGrid, List, ListTodo, Monitor, Moon, Search, Settings2, Sun, Undo2, X } from 'lucide-react'
-import { useDecisions, usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
+import { useDecisions, usePlans, useBackgroundSessions, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { helpGroups, isTyping, resolveKey, type KeyAction } from '../lib/keys'
 import { flatten, search, type DocKind, type SearchDoc } from '../lib/search'
 import { useTheme } from '../lib/theme'
 import { cx, loadPref, savePref, shortPath, useDesktop } from '../lib/util'
-import { Button } from '../ui/base'
+import { Button, Tip } from '../ui/base'
 import { FullSheet } from '../ui/overlay'
 import { RoleTag, StatusDot, displayState, presence } from '../ui/marks'
 import { PlanGlyph, ProjGlyph, RefChip, ReqStatus, TurnSeal, useOpenRef } from '../ui/refmark'
@@ -163,11 +163,12 @@ export function CommandProvider({ children }: { children: ReactNode }) {
 
 type Item = SearchDoc & { icon: ReactNode; meta?: ReactNode; keys?: string; run: () => void }
 
-function useItems(cur: { code: string; status: string } | undefined, onAction: (a: KeyAction | 'new-plan') => void, close: () => void) {
+function useItems(cur: { code: string; status: string } | undefined, onAction: (a: KeyAction | 'new-plan') => void, close: () => void, open: boolean) {
   const reqs = useRequirements().data
   const decs = useDecisions().data
   const plans = usePlans().data
   const sessions = useSessions().data?.sessions
+  const bgSessions = useBackgroundSessions(open).data // 后台任务只在面板打开时拉（R-179）
   const projects = useProjects().data?.projects
   const openReq = useOpenReq()
   const openPlan = useOpenPlan()
@@ -300,6 +301,29 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
         run: go(() => openSession(s.key)),
       })
     }
+    for (const s of bgSessions ?? []) {
+      const ds = displayState(s)
+      items.push({
+        id: `s:${s.key}`,
+        kind: 'session',
+        title: sessionTitle(s),
+        fields: [t.cmd.bgTask, s.project_name ?? '', shortPath(s.cwd), s.device_name, s.last_prompt],
+        icon: (
+          <span className="flex size-5 items-center justify-center">
+            <StatusDot state={ds} />
+          </span>
+        ),
+        meta: (
+          <>
+            <Tip content={t.cmd.bgTaskTip}>
+              <span className="rounded bg-sunken px-1.5 py-0.5 text-xs text-fg-3">{t.cmd.bgTask}</span>
+            </Tip>
+            <span className="max-w-48 truncate text-xs text-fg-3">{s.project_name || shortPath(s.cwd, 24)}</span>
+          </>
+        ),
+        run: go(() => openSession(s.key)),
+      })
+    }
     for (const p of projects ?? [])
       if (!p.hidden)
         items.push({
@@ -315,7 +339,7 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
           run: go(() => nav(`/projects/${p.id}`)),
         })
     return items
-  }, [cur, reqs, decs, plans, sessions, projects, pathname, onAction, close, openReq, openPlan, openSession, openRef, openAsk, nav, setTheme])
+  }, [cur, reqs, decs, plans, sessions, bgSessions, projects, pathname, onAction, close, openReq, openPlan, openSession, openRef, openAsk, nav, setTheme])
 }
 
 type Section = { key: string; label: string; items: Item[] }
@@ -371,7 +395,7 @@ function Palette({ open, onClose, onAction, cur }: { open: boolean; onClose: () 
 }
 
 function PaletteBody({ q, setQ, onClose, onAction, cur, desktop }: { q: string; setQ: (v: string) => void; onClose: () => void; onAction: (a: KeyAction | 'new-plan') => void; cur?: { code: string; status: string }; desktop: boolean }) {
-  const items = useItems(cur, onAction, onClose)
+  const items = useItems(cur, onAction, onClose, true) // 面板内容只在打开时挂载
   const [active, setActive] = useState(0)
   const list = useRef<HTMLDivElement>(null)
   const sections: Section[] = useMemo(() => {

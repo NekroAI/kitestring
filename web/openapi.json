@@ -5092,6 +5092,9 @@
               "null"
             ]
           },
+          "background": {
+            "type": "boolean"
+          },
           "branch": {
             "type": "string"
           },
@@ -5309,6 +5312,7 @@
           "tools_stale",
           "context_tokens",
           "context_max",
+          "background",
           "role",
           "recent_tools",
           "ticks",
@@ -10182,6 +10186,18 @@
     "/api/sessions": {
       "get": {
         "operationId": "list-sessions",
+        "parameters": [
+          {
+            "description": "为 true 时只列后台任务（桌面应用自己发起的，如 Codex 项目建议）；默认不含它们（R-179）",
+            "explode": false,
+            "in": "query",
+            "name": "background",
+            "schema": {
+              "description": "为 true 时只列后台任务（桌面应用自己发起的，如 Codex 项目建议）；默认不含它们（R-179）",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {

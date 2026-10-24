@@ -122,6 +122,7 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "request_count", "INTEGER NOT NULL DEFAULT 0"},
 	{"decisions", "expires_at", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "timed_out", "INTEGER NOT NULL DEFAULT 0"},
+	{"sessions", "background", "INTEGER NOT NULL DEFAULT 0"},
 }
 
 func migrate(db *sql.DB) error {

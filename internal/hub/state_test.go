@@ -189,3 +189,23 @@ func TestParkedWaitIsWaitingForYou(t *testing.T) {
 		t.Fatalf("收到答复后应继续运行：%+v", cur)
 	}
 }
+
+// R-179：只在第一条提示词时判定后台任务；已经在进行的对话后面再出现同样的文字不改标记。
+func TestBackgroundMarkedOnFirstPromptOnly(t *testing.T) {
+	t0 := time.Date(2026, 10, 24, 7, 25, 0, 0, time.UTC)
+	bg := "# Overview\n\nGenerate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex in this local project: /x"
+	ev := func(sid string, sec int, name, prompt string) protocol.Event {
+		return protocol.Event{Tool: "codex", SessionID: sid, Name: name, Prompt: prompt, Time: t0.Add(time.Duration(sec) * time.Second)}
+	}
+	a := applyEvent(nil, "dev", "", ev("a", 0, "SessionStart", ""))
+	a = applyEvent(&a, "dev", "", ev("a", 1, "UserPromptSubmit", bg))
+	if !a.Background {
+		t.Fatal("项目建议任务应标为后台任务")
+	}
+	b := applyEvent(nil, "dev", "", ev("b", 0, "SessionStart", ""))
+	b = applyEvent(&b, "dev", "", ev("b", 1, "UserPromptSubmit", "检查一下当前设备的空间占用情况"))
+	b = applyEvent(&b, "dev", "", ev("b", 2, "UserPromptSubmit", bg))
+	if b.Background {
+		t.Fatal("用户自己的对话后面再出现这段文字，不应标为后台任务")
+	}
+}

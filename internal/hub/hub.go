@@ -143,6 +143,11 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	} else if n > 0 {
 		h.log.Info("已修复会话最后消息", "count", n)
 	}
+	if n, err := h.store.BackfillBackground(ctx, protocol.IsBackgroundPrompt); err != nil {
+		h.log.Warn("补标后台任务失败", "err", err)
+	} else if n > 0 {
+		h.log.Info("已把 Codex 后台任务标为后台任务", "count", n)
+	}
 	// 启动时所有设备视为离线，但给与运行中断线相同的宽限期：daemon 很快重连时会话状态保持不变。
 	devs, err := h.store.ListDevices(ctx)
 	if err != nil {
@@ -270,7 +275,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	if prev != nil {
 		prevState = prev.State
 	}
-	if next.State != prevState && (next.State == store.StateWaitApproval || next.State == store.StateWaitReply) {
+	if !next.Background && next.State != prevState && (next.State == store.StateWaitApproval || next.State == store.StateWaitReply) {
 		full, err := h.store.GetSession(ctx, key)
 		if err != nil {
 			return err
@@ -282,6 +287,8 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		}
 	}
 	switch {
+	case next.Background:
+		// 后台任务不生成标题 / 摘要，不占模型额度（R-179）
 	case ev.Name == "UserPromptSubmit" && ev.Source != protocol.SourceAuto:
 		if next.DigestDone != "" || next.DigestAsk != "" {
 			_ = h.store.ClearDigest(ctx, key)

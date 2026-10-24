@@ -11,6 +11,7 @@ export const qk = {
   auth: ['auth'] as const,
   sessions: ['sessions'] as const,
   session: (key: string) => ['sessions', 'detail', key] as const,
+  bgSessions: ['sessions', 'background'] as const,
   requirements: ['requirements'] as const,
   requirement: (ref: string) => ['requirements', 'detail', ref] as const,
   plans: ['plans'] as const,
@@ -48,6 +49,12 @@ async function loadSessions(): Promise<RawSessions> {
   return { ...d, sessions: list }
 }
 function applySessionPatch(qc: QueryClient, rev: number, s: RawSession) {
+  if (s.background) {
+    // 后台任务（R-179）不进主列表，只让 ⌘K 里按需拉取的那份重新取
+    void qc.invalidateQueries({ queryKey: qk.bgSessions })
+    void qc.invalidateQueries({ queryKey: qk.session(s.key), exact: true })
+    return
+  }
   const cur = patches.get(s.key)
   if (cur && cur.rev >= rev) return // 同一会话只认更新的推送
   patches.set(s.key, { rev, session: s })
@@ -60,6 +67,16 @@ export function useSessions() {
     queryKey: qk.sessions,
     queryFn: loadSessions,
     select: (d) => ({ sessions: (d.sessions ?? []).map(normSession), devices: d.devices ?? [] }),
+  })
+}
+
+// 后台任务（桌面应用自己发起的，如 Codex 项目建议，R-179）：不在 useSessions 里，只在 ⌘K 里按需拉取。
+export function useBackgroundSessions(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.bgSessions,
+    queryFn: () => unwrap(api.GET('/api/sessions', { params: { query: { background: true } } })),
+    select: (d) => (d.sessions ?? []).map(normSession),
+    enabled,
   })
 }
 

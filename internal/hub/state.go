@@ -77,6 +77,9 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		if ev.Source == protocol.SourceAuto {
 			break // 后台任务通知等自动消息：继续运行，但不算你的一轮，也不覆盖你最后说的话
 		}
+		if x.Turns == 0 && protocol.IsBackgroundPrompt(x.Tool, ev.Prompt) {
+			x.Background = true // 第一条提示词是桌面应用自己的后台任务（R-179）
+		}
 		x.Turns++
 		x.TurnTools = 0
 		if x.Tool == protocol.ToolCodex {

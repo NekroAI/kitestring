@@ -47,3 +47,16 @@ func CleanPrompt(p string) (text string, auto bool) {
 	}
 	return strings.TrimSpace(p), false
 }
+
+// ambientPromptHead 是 Codex 桌面版「项目建议」后台任务第一条提示词的固定开头（R-179）。
+// client 都是 app-server，和用户自己开的对话分不开，只能靠提示词；统一压成单个空格再比对，不怕换行 / 缩进差异。
+const ambientPromptHead = "# Overview Generate 0 to 3 hyperpersonalized suggestions for what this user can do with Codex"
+
+// IsBackgroundPrompt 判断一条会话的第一条提示词是不是桌面应用自己在后台发起的任务
+// （目前只认 Codex 的「项目建议」）。用户自己的对话永远不会以这段固定文字开头。
+func IsBackgroundPrompt(tool, prompt string) bool {
+	if tool != ToolCodex {
+		return false
+	}
+	return strings.HasPrefix(strings.Join(strings.Fields(prompt), " "), ambientPromptHead)
+}

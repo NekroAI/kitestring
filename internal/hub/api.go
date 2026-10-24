@@ -493,11 +493,13 @@ func (h *Hub) registerWeb(api huma.API) {
 
 	// 实例墙
 	huma.Register(api, huma.Operation{OperationID: "list-sessions", Method: http.MethodGet, Path: "/api/sessions", Tags: tag("sessions")},
-		func(ctx context.Context, _ *empty) (*sessionsOut, error) {
+		func(ctx context.Context, in *struct {
+			Background bool `query:"background" doc:"为 true 时只列后台任务（桌面应用自己发起的，如 Codex 项目建议）；默认不含它们（R-179）"`
+		}) (*sessionsOut, error) {
 			out := &sessionsOut{}
 			out.Body.Rev = h.broker.Rev()
 			var err error
-			if out.Body.Sessions, err = h.store.ListSessions(ctx, recentWindow); err != nil {
+			if out.Body.Sessions, err = h.store.ListSessions(ctx, recentWindow, in.Background); err != nil {
 				return nil, err
 			}
 			out.Body.Devices, err = h.store.ListDevices(ctx)
