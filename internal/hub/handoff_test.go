@@ -43,3 +43,15 @@ func TestCompactTokens(t *testing.T) {
 		}
 	}
 }
+
+// 没有 handoff_write 工具（MCP 是旧版）时，交接通知写明改用 ks handoff 并附用法示例。
+func TestHandoffAskCLIFallback(t *testing.T) {
+	for _, role := range []string{"pm", "aide"} {
+		got := handoffAsk(role, "纸鸢", 0)
+		for _, want := range []string{"没有 handoff_write 工具", "ks handoff --doing", "--next"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s 的交接通知缺 %q：%s", role, want, got)
+			}
+		}
+	}
+}

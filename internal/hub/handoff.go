@@ -103,7 +103,7 @@ func handoffAsk(role, project string, agents int) string {
 		}
 		n++
 	}
-	fmt.Fprintf(&b, "%d）用 handoff_write 写结构化交接：doing 在做的（需求编号、做到哪）、waiting 等用户的（待答决策、待验收）、rules 用户定过的约定和规矩、next 下一步、notes 注意事项（坑、在跑的进程、别碰的东西）；", n)
+	fmt.Fprintf(&b, "%d）用 handoff_write 写结构化交接：doing 在做的（需求编号、做到哪）、waiting 等用户的（待答决策、待验收）、rules 用户定过的约定和规矩、next 下一步、notes 注意事项（坑、在跑的进程、别碰的东西）；没有 handoff_write 工具（MCP 是旧版）时改用命令 ks handoff，字段相同，例：ks handoff --doing \"R-12 做到联调\" --next \"交验收\" --notes \"别停 5199\"（也可 --file 交接.json 或 .md）；", n)
 	fmt.Fprintf(&b, "%d）写完照常待命。用户会在项目目录运行 %s 开新会话，新会话接任后你自动卸任，之后不用再挂 ks wait。", n+1, takeoverCmd(role))
 	return b.String()
 }
