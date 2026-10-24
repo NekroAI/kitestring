@@ -164,8 +164,11 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
       </div>
       <OwnLine r={r} />
       {!open && (
-        <button onClick={() => setOpen(true)} className={cx('mt-2 line-clamp-2 w-full text-left text-[13px] leading-relaxed text-fg-3 transition hover:text-fg-2', compact && 'max-sm:hidden')}>
-          <Linkify text={plainText(r.detail || r.acceptance) || t.reqs.briefEmpty} />
+        <button onClick={() => setOpen(true)} className={cx('mt-2 block w-full text-left text-[13px] leading-relaxed text-fg-3 transition hover:text-fg-2', compact && 'max-sm:hidden')}>
+          {/* 截断放在里面的块上：WebKit（iPad Safari）不让 button 变成 -webkit-box，line-clamp 直接加在 button 上会失效（R-182） */}
+          <span className="line-clamp-2">
+            <Linkify text={plainText(r.detail || r.acceptance) || t.reqs.briefEmpty} />
+          </span>
         </button>
       )}
       <Collapse show={open}>
@@ -205,8 +208,8 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
                   return (
                     <span key={k} className="group inline-flex max-w-full items-center gap-1.5 rounded-lg border border-line bg-surface py-1 pr-1 pl-2 text-[13px]">
                       {s ? <StatusDot state={s.state} /> : <span className="size-2 rounded-full bg-line-strong" />}
-                      <button onClick={() => s && openSession(k)} className="truncate text-fg-2 hover:text-fg">
-                        {s ? [s.title || s.project_name, s.device_name].filter(Boolean).join(t.common.sep) : t.reqs.sessionGone}
+                      <button onClick={() => s && openSession(k)} className="min-w-0 text-fg-2 hover:text-fg">
+                        <span className="block truncate">{s ? [s.title || s.project_name, s.device_name].filter(Boolean).join(t.common.sep) : t.reqs.sessionGone}</span>
                       </button>
                       <button onClick={() => void linkReq(r.code, k, true)} aria-label={t.session.unlink} className="rounded p-0.5 text-fg-3 hover:bg-hover hover:text-fg">
                         <X className="size-3" />
