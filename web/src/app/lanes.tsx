@@ -4,7 +4,7 @@ import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
 import { agentEnd, barHeight, coarse, gridTicks, inWindow, LONG_TOOL, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type SessionMeta, type Zoom } from '../lib/lanedata'
-import { cx, duration, relTime, shortDuration } from '../lib/util'
+import { cx, duration, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { Ctx } from '../ui/contextMenu'
 import { displayState, RoleBadge, RoleTag, ToolMark } from '../ui/marks'
@@ -517,11 +517,11 @@ function ActLine({ s }: { s: Session }) {
 }
 
 // LastAct：上次动作的时间（和是什么动作），待命 / 空闲泳道用。
-function LastAct({ s, now, className }: { s: Session; now: number; className?: string }) {
-  const at = s.last_tool_at || s.last_active_at
-  if (!at) return null
+// 时间已经在左边的状态标里（待命 / 没动多久），这里只写是什么动作，一行只留一个时间（R-214）。
+function LastAct({ s, className }: { s: Session; className?: string }) {
   const [name] = s.last_tool ? splitTool(s.last_tool) : ['']
-  return <div className={cx('truncate text-[11.5px] text-fg-3 tabular', className)}>{t.desk.lane.lastAct(relTime(at, now), name)}</div>
+  if (!name) return null
+  return <div className={cx('truncate text-[11.5px] text-fg-3', className)}>{t.desk.lane.lastAct(name)}</div>
 }
 
 // ---------- 泳道 ----------
@@ -598,11 +598,46 @@ function useSubRows(s: Session, zoom: Zoom, now: number) {
   return useMemo(() => subRows(s, zoom, now), [sig, s.tasks, s.state, zoom, minute])
 }
 
+// 时间的中文完整说法（R-214）：子任务行只写一个时间，写清它是什么时间。
+function agoText(at: number | string, now: number) {
+  const v = typeof at === 'string' ? Date.parse(at) : at
+  const s = Math.max(0, Math.round((now - v) / 1000))
+  const a = t.desk.tl.ago
+  if (s < 10) return a.now
+  if (s < 60) return a.sec(s)
+  const m = Math.floor(s / 60)
+  if (m < 60) return a.min(m)
+  const h = Math.floor(m / 60)
+  return h < 48 ? a.hour(h) : a.day(Math.floor(h / 24))
+}
+
+function spanText(from: string, now: number) {
+  const s = Math.max(0, Math.round((now - Date.parse(from)) / 1000))
+  const a = t.desk.tl.span
+  if (s < 60) return a.sec(s)
+  const m = Math.floor(s / 60)
+  if (m < 60) return a.min(m)
+  const h = Math.floor(m / 60)
+  return h < 24 ? a.hour(h) : a.day(Math.floor(h / 24))
+}
+
+// subTime：子任务行唯一的时间。结束了写「多久前结束」；在跑的写「最近动作 多久前」，还没有动作记录就写「已跑 多久」。
+// 窄屏（iPad 竖屏）上名字列太窄，在跑的只留「多久前」，完整说法放悬停提示里。
+function subTime(row: SubRow, now: number, short = false) {
+  if (row.kind === 'more') return ''
+  if (row.ended) return row.ended > 1e12 ? t.desk.tl.endedAt(agoText(row.ended, now)) : ''
+  if (row.kind === 'agg') return ''
+  if (row.task?.last_action_at) return short ? agoText(row.task.last_action_at, now) : t.desk.tl.lastAct(agoText(row.task.last_action_at, now))
+  return t.desk.tl.running(spanText(iso(row.start), now))
+}
+
 function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: number; mode: LaneMode; last: boolean }) {
   const task = row.task
   const ended = row.ended > 0
   const [tool, brief] = !ended && task?.last_action ? splitTool(task.last_action) : ['', '']
-  const dur = row.kind === 'agent' || row.kind === 'shell' ? shortDuration(iso(row.start), ended ? row.ended : now) : ''
+  const when = subTime(row, now)
+  const short = mode === 'narrow' && !ended && !!task?.last_action_at
+  const whenShort = short ? subTime(row, now, true) : when
   const kind = row.kind === 'shell' ? t.session.taskKind.shell : row.kind === 'agent' ? t.session.taskKind.agent : ''
   const spec = { k, agents: row.agents, sub: true, faded: ended }
   return (
@@ -617,7 +652,7 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
         <Tip truncated={!row.guess} content={row.guess ? `${t.session.taskUnnamed}${t.common.sep}${row.label}` : row.label}>
           <span className={cx('min-w-0 flex-1 truncate', (row.guess || row.kind === 'more') && 'italic opacity-80')}>{row.label}</span>
         </Tip>
-        {mode !== 'full' && (ended && row.kind === 'agent' ? <span className="shrink-0 text-[11px]">{t.desk.tl.ended}</span> : dur && <span className="shrink-0 text-[11px] tabular">{dur}</span>)}
+        {mode !== 'full' && when && (short ? <Tip content={when}><span className="shrink-0 text-[11px] tabular">{whenShort}</span></Tip> : <span className="shrink-0 text-[11px] tabular">{when}</span>)}
       </div>
       {mode !== 'phone' && (
         <div className="h-6 min-w-0">
@@ -625,11 +660,13 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
         </div>
       )}
       {mode === 'full' && (
-        <div className="flex h-full min-w-0 items-center justify-between gap-2.5 border-l border-line px-3.5 font-mono text-[11px]">
-          <span key={task?.last_action_at ?? ''} className={cx('min-w-0 truncate', !ended && 'desk-in')}>
-            {tool ? `▸ ${tool} ${brief}` : ended && row.kind !== 'more' ? <span className="font-sans">{t.desk.tl.endedAt(relTime(iso(row.ended), now))}</span> : ''}
-          </span>
-          {dur && <span className="shrink-0 font-sans tabular">{dur}</span>}
+        <div className="flex h-full min-w-0 items-center gap-2.5 border-l border-line px-4 font-mono text-[11px]">
+          {tool && (
+            <span key={task?.last_action_at ?? ''} className="desk-in min-w-0 truncate">
+              ▸ {tool} {brief}
+            </span>
+          )}
+          {when && <span className="shrink-0 font-sans tabular">{when}</span>}
         </div>
       )}
     </div>
@@ -697,7 +734,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, onHover 
     ) : (
       <div className="flex min-w-0 flex-col justify-center gap-1 border-l border-line px-4 py-2">
         <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? <Linkify text={youLine(s)} /> : words ? <Linkify text={words} /> : t.desk.lane.noWords}</p>
-        {quiet && <LastAct s={s} now={now} />}
+        {quiet && <LastAct s={s} />}
       </div>
     ))
 
@@ -771,7 +808,7 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
     ? { id: 'agg', kind: 'agg', label: t.desk.tl.subAgg(agents.length), guess: false, agents: agents.map((g) => g.a), ended: 1, start: Math.min(...agents.map((g) => g.start)) }
     : null
   const title = m.title || m.project_name || m.cwd.split('/').filter(Boolean).at(-1) || t.session.noProject
-  const when = m.ended_at ? t.desk.tl.endedAt(relTime(m.ended_at, now)) : t.desk.lane.quiet(duration(m.last_active_at, now))
+  const when = m.ended_at ? t.desk.tl.endedSession(agoText(m.ended_at, now)) : t.desk.lane.quiet(duration(m.last_active_at, now))
   const phone = mode === 'phone'
   return (
     <div style={phone ? undefined : { height: endedLaneHeight(sub ? 1 : 0) }} className={cx(!phone && 'flex shrink-0')}>

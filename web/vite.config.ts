@@ -32,7 +32,7 @@ export default defineConfig({
           if (!eager(id)) return undefined
           if (/react-dom|react-router|scheduler|\/react\//.test(id)) return 'react'
           if (/motion|framer/.test(id)) return 'motion'
-          if (/radix|vaul|sonner|lucide/.test(id)) return 'ui'
+          if (/radix|sonner|lucide/.test(id)) return 'ui'
           return 'vendor'
         },
       },
