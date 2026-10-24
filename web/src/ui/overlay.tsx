@@ -89,7 +89,8 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
     return (
       <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
         <RDialog.Portal>
-          <RDialog.Overlay className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] data-[state=closed]:animate-out data-[state=open]:animate-in dark:bg-black/40" />
+          {/* 全屏遮罩不用 backdrop-filter：带鱼屏上全屏模糊是一张很大的合成纹理，底下工作台一直重绘时 Chrome 偶尔丢掉这层及其上层一帧，抽屉和遮罩一起闪没（R-184）；用略深的底色代替 */}
+          <RDialog.Overlay className="fixed inset-0 z-40 bg-black/25 data-[state=closed]:animate-out data-[state=open]:animate-in dark:bg-black/45" />
           <RDialog.Content
             aria-describedby={undefined}
             onOpenAutoFocus={(e) => e.preventDefault()}
@@ -184,7 +185,7 @@ export function Modal({ open, onClose, title, description, children, footer }: {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <RDialog.Portal>
-        <RDialog.Overlay className="modal-fade fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" />
+        <RDialog.Overlay className="modal-fade fixed inset-0 z-50 bg-black/35 dark:bg-black/55" />
         <RDialog.Content
           aria-describedby={undefined}
           data-ks-modal=""
