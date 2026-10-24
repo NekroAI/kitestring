@@ -6,6 +6,7 @@ import { Check, X } from 'lucide-react'
 import { cx, useDesktop, useMedia } from '../lib/util'
 import { t } from '../i18n'
 import { Button, Input, Textarea } from './base'
+import { DraftLine, useDraft } from '../app/draft'
 
 // swipeToClose：触屏（如 iPad）在右侧面板上横向轻扫。onSwipe 返回 true 表示已处理（例如切换需求），否则向右扫关闭。
 function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => boolean) {
@@ -314,19 +315,22 @@ export const useConfirm = () => useContext(ConfirmCtx)
 // 点选一个类别、写一句话，默认都可以不填；required 时必须写（退回意见），multiline 时是多行输入（⌘↵ 提交）。
 // 返回 null 表示取消，否则返回选的类别与文字。
 
-export type ReasonOpts = { title: ReactNode; description?: ReactNode; confirmText: string; placeholder: string; kinds: { value: string; label: string }[]; required?: boolean; multiline?: boolean }
+// draft：草稿键（R-202，如 reason:R-12:back）——取消、点外面关掉后再打开还在；提交成功后由调用方 dropDraft
+export type ReasonOpts = { title: ReactNode; description?: ReactNode; confirmText: string; placeholder: string; kinds: { value: string; label: string }[]; required?: boolean; multiline?: boolean; draft?: string }
 export type ReasonResult = { kind: string; note: string }
 const ReasonCtx = createContext<(o: ReasonOpts) => Promise<ReasonResult | null>>(async () => null)
 export const useAskReason = () => useContext(ReasonCtx)
 
 function ReasonProvider({ children }: { children: ReactNode }) {
   const [opts, setOpts] = useState<ReasonOpts | null>(null)
-  const [kind, setKind] = useState('')
-  const [note, setNote] = useState('')
+  const dr = useDraft<{ kind: string; note: string }>(opts?.draft, { kind: '', note: '' })
+  const { kind, note } = dr.value
+  const setKind = (v: string) => dr.set({ kind: v })
+  const setNote = (v: string) => dr.set({ note: v })
+  const reset = dr.drop
   const resolver = useRef<(v: ReasonResult | null) => void>(undefined)
   const ask = useCallback((o: ReasonOpts) => {
-    setKind('')
-    setNote('')
+    reset() // 没有草稿键时（关着的时候）只清组件里的
     setOpts(o)
     return new Promise<ReasonResult | null>((res) => {
       resolver.current = res
@@ -393,6 +397,7 @@ function ReasonProvider({ children }: { children: ReactNode }) {
               autoFocus
             />
           )}
+          {opts?.draft && <DraftLine h={dr} className="-mt-2" />}
         </div>
       </Modal>
     </ReasonCtx.Provider>

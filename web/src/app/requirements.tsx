@@ -16,6 +16,8 @@ import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
 import { ProjGlyph, ReqGlyph, statusCls } from '../ui/refmark'
+import { DraftLine, dropDraft, useDraft } from './draft'
+import { hasContent } from '../lib/drafts'
 
 export const boardStatuses = ['draft', 'ready', 'in_progress', 'blocked', 'review'] as const
 export const closedStatuses = ['done', 'shelved'] as const
@@ -59,15 +61,25 @@ export function useSetStatus() {
     if (r.status === 'review' && status === 'done') return verdict.pass(r.code)
     const to = (patch: Partial<ReqFields> = {}) => toFields(r, { status: status as ReqFields['status'], ...patch })
     if (r.status === 'review') {
-      const a = await ask({ title: t.verdict.askTitle(r.code), description: t.verdict.askDesc, confirmText: t.verdict.back('accept'), placeholder: t.verdict.askPlaceholder, kinds: [], required: true, multiline: true })
+      const key = `reason:${r.code}:back`
+      const a = await ask({ title: t.verdict.askTitle(r.code), description: t.verdict.askDesc, confirmText: t.verdict.back('accept'), placeholder: t.verdict.askPlaceholder, kinds: [], required: true, multiline: true, draft: key })
       if (!a) return false
-      // 退回后需求回到进行中；拖到的是别的列（阻塞、待开始……）时再改过去
-      return verdict.back(r.code, { comment: a.note, to: status, after: status === 'in_progress' ? undefined : () => void updateReq(r.code, to()) })
+      // 退回后需求回到进行中；拖到的是别的列（阻塞、待开始……）时再改过去。送达后才清意见草稿（撤销期里撤回时还在）
+      return verdict.back(r.code, {
+        comment: a.note,
+        to: status,
+        after: () => {
+          dropDraft(key)
+          if (status !== 'in_progress') void updateReq(r.code, to())
+        },
+      })
     }
     // 搁置（R-157）：问一句原因，类别和一句话都可以不填；取消就不搁置
     let why: Partial<ReqFields> = {}
+    const shelveKey = `reason:${r.code}:shelve`
     if (status === 'shelved') {
       const a = await ask({
+        draft: shelveKey,
         title: t.reqs.shelve.title,
         description: t.reqs.shelve.desc,
         confirmText: t.reqs.shelve.confirm,
@@ -84,7 +96,7 @@ export function useSetStatus() {
       subject: r.code,
       to: status,
       beacon: { method: 'PUT', url: `/api/requirements/${encodeURIComponent(r.code)}`, body },
-      commit: () => done(updateReq(r.code, body)),
+      commit: () => done(updateReq(r.code, body), status === 'shelved' ? () => dropDraft(shelveKey) : undefined),
     })
   }
 }
@@ -149,58 +161,88 @@ export function ReleaseBadge({ r, className }: { r: Requirement; className?: str
   )
 }
 
+// useEditDraft：编辑已有内容的草稿（R-202）：draftKey 为空时不缓存。和原文一样就不算草稿；
+// 失焦保存后清掉；「清空」只清文字（撤销期里失焦不保存空内容），「恢复原文」回到编辑前。
+function useEditDraft(draftKey: string | undefined, value: string) {
+  const dr = useDraft<{ text: string }>(draftKey, { text: value }, (v) => v.text !== value)
+  return dr
+}
+
 // EditableText：点击即编辑，失焦保存。
-// wrap：单行内容但允许折行显示（如标题），回车保存而不是换行。
-export function EditableText({ value, onSave, placeholder, multiline, wrap, className }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; wrap?: boolean; className?: string }) {
-  const [v, setV] = useState(value)
-  useEffect(() => setV(value), [value])
-  const commit = () => v.trim() !== value.trim() && onSave(v.trim())
+// wrap：单行内容但允许折行显示（如标题），回车保存而不是换行。draftKey：编辑中的内容存草稿（edit:R-12:title）。
+export function EditableText({ value, onSave, placeholder, multiline, wrap, className, draftKey }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; wrap?: boolean; className?: string; draftKey?: string }) {
+  const dr = useEditDraft(draftKey, value)
+  const v = dr.value.text
+  const setV = (text: string) => dr.set({ text })
+  const commit = () => {
+    if (dr.clearing && !v.trim()) return // 刚点了清空：等撤销期走完，不把空内容存进去
+    if (v.trim() !== value.trim()) onSave(v.trim())
+    dr.drop()
+  }
   // 平时看起来就是普通文字，悬停出现边框，聚焦时变成输入框。
   const cls = cx(
     'block w-full min-w-0 rounded-lg border border-transparent bg-transparent px-3 text-[15px] text-fg transition-[border,background,box-shadow] placeholder:text-fg-3 hover:border-line focus:border-accent focus:bg-surface focus:ring-3 focus:ring-[var(--ring)] focus:outline-none sm:text-sm',
     className,
   )
+  const line = draftKey && <DraftLine h={dr} empty={{ text: '' }} revert className="px-3" />
   if (wrap)
     return (
-      <Textarea
-        value={v}
-        minRows={1}
-        placeholder={placeholder}
-        onChange={(e) => setV(e.target.value.replace(/\n/g, ' '))}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            ;(e.target as HTMLTextAreaElement).blur()
-          }
-        }}
-        unstyled
-        className={cx(cls, 'resize-none')}
-      />
+      <>
+        <Textarea
+          value={v}
+          minRows={1}
+          placeholder={placeholder}
+          onChange={(e) => setV(e.target.value.replace(/\n/g, ' '))}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              ;(e.target as HTMLTextAreaElement).blur()
+            }
+          }}
+          unstyled
+          className={cx(cls, 'resize-none')}
+        />
+        {line}
+      </>
     )
-  return multiline ? (
-    <Textarea value={v} minRows={2} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} unstyled className={cx(cls, 'resize-none py-2 leading-relaxed')} />
-  ) : (
-    <input value={v} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className={cx(cls, 'h-9')} />
+  return (
+    <>
+      {multiline ? (
+        <Textarea value={v} minRows={2} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} unstyled className={cx(cls, 'resize-none py-2 leading-relaxed')} />
+      ) : (
+        <input value={v} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className={cx(cls, 'h-9')} />
+      )}
+      {line}
+    </>
   )
 }
 
 
 // EditableMd：展示态按 Markdown 渲染（R-149），点击进入编辑变成原文输入框，失焦保存后回到渲染态。
-// 点链接、编号印记不进入编辑。
-export function EditableMd({ value, onSave, placeholder, className }: { value: string; onSave: (v: string) => void; placeholder: string; className?: string }) {
+// 点链接、编号印记不进入编辑。有没保存的草稿时（关抽屉、刷新前正在改）直接停在编辑态，内容是上次写到的。
+export function EditableMd({ value, onSave, placeholder, className, draftKey }: { value: string; onSave: (v: string) => void; placeholder: string; className?: string; draftKey?: string }) {
   const [editing, setEditing] = useState(false)
-  if (editing)
+  const dr = useEditDraft(draftKey, value)
+  if (editing || dr.dirty || dr.clearing)
     return (
-      <EditableMdInput
-        value={value}
-        placeholder={placeholder}
-        className={className}
-        onDone={(v) => {
-          setEditing(false)
-          if (v !== null) onSave(v)
-        }}
-      />
+      <div>
+        <EditableMdInput
+          v={dr.value.text}
+          onChange={(text) => dr.set({ text })}
+          focus={editing}
+          placeholder={placeholder}
+          className={className}
+          onDone={(save) => {
+            const v = dr.value.text
+            if (save && dr.clearing && !v.trim()) return setEditing(false)
+            setEditing(false)
+            if (save && v.trim() !== value.trim()) onSave(v.trim())
+            dr.drop()
+          }}
+        />
+        {draftKey && <DraftLine h={dr} empty={{ text: '' }} revert className="px-3" />}
+      </div>
     )
   return (
     <div
@@ -219,17 +261,17 @@ export function EditableMd({ value, onSave, placeholder, className }: { value: s
   )
 }
 
-function EditableMdInput({ value, onDone, placeholder, className }: { value: string; onDone: (v: string | null) => void; placeholder: string; className?: string }) {
-  const [v, setV] = useState(value)
+// onDone(true) 失焦保存，onDone(false) Esc 放弃
+function EditableMdInput({ v, onChange, onDone, focus, placeholder, className }: { v: string; onChange: (v: string) => void; onDone: (save: boolean) => void; focus: boolean; placeholder: string; className?: string }) {
   return (
     <Textarea
-      autoFocus
+      autoFocus={focus}
       value={v}
       minRows={3}
       placeholder={placeholder}
-      onChange={(e) => setV(e.target.value)}
-      onBlur={() => onDone(v.trim() !== value.trim() ? v.trim() : null)}
-      onKeyDown={(e) => e.key === 'Escape' && (setV(value), onDone(null))}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => onDone(true)}
+      onKeyDown={(e) => e.key === 'Escape' && onDone(false)}
       unstyled
       className={cx('block w-full min-w-0 resize-none rounded-lg border border-accent bg-surface px-3 py-2 text-[15px] leading-relaxed text-fg ring-3 ring-[var(--ring)] outline-none placeholder:text-fg-3 sm:text-sm', className)}
     />
@@ -238,6 +280,8 @@ function EditableMdInput({ value, onDone, placeholder, className }: { value: str
 
 // NewReqModal：新建需求抽屉（桌面右侧、手机底部）。上面写清楚要做什么，下面决定交给谁：
 // “仅新建”只建需求并关联选中的会话（随时可以开工）；“新建并交出”立刻把它交给会话开工。
+type NewReq = Omit<ReqFields, 'files'> & { refs: FileRef[] }
+
 export function NewReqModal({ open, onClose, defaultProject, defaultSession }: { open: boolean; onClose: () => void; defaultProject?: string; defaultSession?: string }) {
   const projects = useProjects()
   const sessions = useSessions()
@@ -249,23 +293,28 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
   const lastProject = () => defaultProject || loadPref<string>('ks.newreq.project', '') || undefined
   // 默认草稿（R-19）：“仅新建”不会被自动排进会话的待办；“新建并交出”时会改为待开始
   const blank = (): ReqFields => ({ title: '', status: 'draft', priority: 'P2', project_id: lastProject() })
+  const all0 = () => sessions.data?.sessions ?? []
   const lastUsed = loadPref<string>('ks.newreq.project', '')
-  const [f, setF] = useState<ReqFields>(blank)
-  const [files, setFiles] = useState<FileRef[]>([])
+  // 草稿（R-202）：newreq，关掉（含手机下拉、点外面）、刷新后再打开还在，建成功才清。
+  // 只有标题、描述、验收标准、贴图算内容；状态、优先级、项目跟着存，没内容时按当次打开的默认
+  const s0 = defaultSession ? all0().find((x) => x.key === defaultSession) : undefined
+  const [sticky, setSticky] = useState<Partial<ReqFields>>({}) // 连续新建：上一条的状态 / 优先级 / 项目 / 类型
+  const init: NewReq = { ...blank(), ...(s0?.project_id ? { project_id: s0.project_id } : {}), ...sticky, refs: [] }
+  const dr = useDraft<NewReq>('newreq', init, (v) => hasContent([v.title, v.detail, v.acceptance, v.refs]), open)
+  const { refs: files, ...f } = dr.value
+  const setF = (v: Omit<ReqFields, 'files'>) => dr.set(v)
+  const setFiles = (v: FileRef[]) => dr.set({ refs: v })
   const [more, setMore] = usePref('ks.newreq.more', false) // 连续新建：建完清空表单，抽屉不关
   // 交给哪个会话：默认同项目里待命或刚活跃过的会话；手动选过就以你的为准
   const [target, setTarget] = useState<string | null | undefined>(undefined)
   const all = sessions.data?.sessions ?? []
   const to = target === undefined ? defaultTarget(all, f.project_id) : all.find((s) => s.key === target)
+  // 从会话详情里新建：默认交给这个会话、用它所在的项目（R-50）
   useEffect(() => {
     if (open) {
-      // 从会话详情里新建：默认交给这个会话、用它所在的项目（R-50）
-      const s = defaultSession ? all.find((x) => x.key === defaultSession) : undefined
-      setF(s?.project_id ? { ...blank(), project_id: s.project_id } : blank())
       setTarget(defaultSession)
-      setFiles([])
+      setSticky({})
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultProject, defaultSession])
   const submit = (send: boolean) =>
     wrap(async () => {
@@ -279,10 +328,9 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
         // 建完直接打开这条需求时不再弹提示：它就在眼前，提示条反而盖住抽屉（R-72）
         if (more || defaultSession) toast.success(to ? t.reqs.createdLinked(r.code, targetLabel(to)) : t.reqs.created(r.code))
       }
-      if (more) {
-        setF({ ...blank(), project_id: f.project_id, status: f.status, priority: f.priority, kind: f.kind })
-        setFiles([])
-      } else {
+      dr.drop()
+      if (more) setSticky({ project_id: f.project_id, status: f.status, priority: f.priority, kind: f.kind })
+      else {
         onClose()
         if (!defaultSession) openReq(r.code) // 从会话详情新建时留在会话详情，新需求出现在它的需求里
       }
@@ -297,13 +345,16 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
               </button>
   )
   const titleInput = (
-    <input
-      autoFocus
-      value={f.title}
-      placeholder={t.reqs.titlePlaceholder}
-      onChange={(e) => setF({ ...f, title: e.target.value })}
-      className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3"
-    />
+    <div>
+      <input
+        autoFocus
+        value={f.title}
+        placeholder={t.reqs.titlePlaceholder}
+        onChange={(e) => setF({ ...f, title: e.target.value })}
+        className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3"
+      />
+      <DraftLine h={dr} />
+    </div>
   )
   const fields = (
     <>

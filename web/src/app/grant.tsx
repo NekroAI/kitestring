@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { DraftLine, useDraft } from './draft'
 import { ShieldCheck, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Grant } from '../api/client'
@@ -156,12 +157,15 @@ function OpenForm({ projectId }: { projectId: string }) {
 // startOpen / onClose：离开期间小结里由行内按钮打开，取消或送出后收回（R-165）。
 export function OverrideBox({ d, startOpen = false, onClose }: { d: Decision; startOpen?: boolean; onClose?: () => void }) {
   const { overrideDecision } = useActions()
-  const [open, setOpenRaw] = useState(startOpen)
+  // 草稿（R-202）：override:D-8；有没写完的更正时直接展开
+  const dr = useDraft<{ text: string }>(`override:${d.code}`, { text: '' })
+  const text = dr.value.text
+  const setText = (v: string) => dr.set({ text: v })
+  const [open, setOpenRaw] = useState(startOpen || dr.dirty)
   const setOpen = (v: boolean) => {
     setOpenRaw(v)
     if (!v) onClose?.()
   }
-  const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   if (!open)
     return (
@@ -174,7 +178,10 @@ export function OverrideBox({ d, startOpen = false, onClose }: { d: Decision; st
     )
   return (
     <div className="space-y-2">
-      <Textarea autoFocus minRows={2} value={text} placeholder={t.grant.overridePlaceholder} onChange={(e) => setText(e.target.value)} />
+      <div>
+        <Textarea autoFocus minRows={2} value={text} placeholder={t.grant.overridePlaceholder} onChange={(e) => setText(e.target.value)} />
+        <DraftLine h={dr} />
+      </div>
       <div className="flex justify-end gap-2">
         <Button size="sm" onClick={() => setOpen(false)}>
           {t.common.cancel}
@@ -188,7 +195,7 @@ export function OverrideBox({ d, startOpen = false, onClose }: { d: Decision; st
             if (await overrideDecision(d.code, text.trim())) {
               toast.success(t.grant.overrideDone)
               setOpen(false)
-              setText('')
+              dr.drop()
             }
             setBusy(false)
           }}

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useContext, useMemo, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Lock, Milestone, MoreHorizontal, Pencil, Plus, Send, Trash2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Plan, PlanReq, Requirement, Session, Stage } from '../api/client'
@@ -20,6 +20,7 @@ import { Md } from '../ui/markdown'
 import { ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 import { BlockList, ScoreCount } from '../ui/blocks'
 import { done, PendingBar, schedule, Seal, usePending, Verdict } from './verdict'
+import { DraftLine, useDraft } from './draft'
 
 // 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
 // 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（批准 / 退回）和编辑。
@@ -275,13 +276,11 @@ function usePlanVerdict() {
 // PlanVerdict：计划卡 / 计划详情里的判断行——待批准的计划，或待验收的当前阶段。
 function PlanVerdict({ x, st, stack, extra, className }: { x: Plan; st?: Stage; stack?: boolean; extra?: ReactNode; className?: string }) {
   const v = usePlanVerdict()
-  const [comment, setComment] = useState('')
-  const [files, setFiles] = useState<FileRef[]>([])
+  // 草稿（R-202）：plan:P-3 / stage:P-3:2，提交成功才清
+  const dr = useDraft<{ text: string; files: FileRef[] }>(st ? stageKey(x, st) : planKey(x), { text: '', files: [] })
+  const { text: comment, files } = dr.value
   const ids = files.map((f) => f.id)
-  const clear = () => {
-    setComment('')
-    setFiles([])
-  }
+  const clear = dr.drop
   const c = comment.trim()
   return (
     <Verdict
@@ -290,9 +289,10 @@ function PlanVerdict({ x, st, stack, extra, className }: { x: Plan; st?: Stage; 
       extra={extra}
       className={className}
       note={comment}
-      onNote={setComment}
+      onNote={(v) => dr.set({ text: v })}
       files={files}
-      onFiles={setFiles}
+      onFiles={(f) => dr.set({ files: f })}
+      draft={<DraftLine h={dr} />}
       pendingKey={st ? stageKey(x, st) : planKey(x)}
       canPass={st ? !x.paused : planReqCount(x) > 0}
       onPass={() => (st ? v.pass(x, st, c, ids, clear) : v.approve(x, c, ids, clear))}
@@ -596,8 +596,9 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
 type DraftReq = { key: string; ref?: string; title: string; status?: string }
 type DraftStage = { key: string; id?: string; title: string; status?: string; reqs: DraftReq[] }
 
+// 草稿里存着阶段的键，刷新后新加的不能和它重复
 let seqKey = 0
-const nk = () => `k${++seqKey}`
+const nk = () => `k${Date.now().toString(36)}${++seqKey}`
 
 function fromPlan(x?: Plan): DraftStage[] {
   if (!x) return [{ key: nk(), title: '', reqs: [] }]
@@ -706,6 +707,10 @@ function StageEditor({
   )
 }
 
+type PlanForm = { title: string; goal: string; project: string; owner: string; stages: DraftStage[] }
+// planSig：比较时不看阶段 / 需求的临时键
+const planSig = (v: PlanForm) => JSON.stringify([v.title.trim(), v.goal.trim(), v.project, v.owner, v.stages.map((st) => [st.title.trim(), st.reqs.map((r) => r.ref ?? r.title)])])
+
 export function PlanEditor({ open, onClose, plan, defaultProject }: { open: boolean; onClose: () => void; plan?: Plan; defaultProject?: string }) {
   const projects = useProjects()
   const sessions = useSessions()
@@ -713,20 +718,27 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
   const { createPlan, updatePlan } = useActions()
   const openPlan = useOpenPlan()
   const [busy, wrap] = useBusy()
-  const [title, setTitle] = useState('')
-  const [goal, setGoal] = useState('')
-  const [project, setProject] = useState<string | undefined>()
-  const [owner, setOwner] = useState('')
-  const [stages, setStages] = useState<DraftStage[]>(fromPlan())
-  useEffect(() => {
-    if (!open) return
-    setTitle(plan?.title ?? '')
-    setGoal(plan?.goal ?? '')
-    setProject(plan ? plan.project_id || undefined : defaultProject || loadPref<string>('ks.newreq.project', '') || undefined)
-    setOwner(plan?.owner_session ?? '')
-    setStages(fromPlan(plan))
+  // 草稿（R-202）：新建是 planedit:new，编辑是 planedit:P-3；关掉、刷新后再打开还在，保存成功才清。
+  // 编辑时和计划本身一样就不算草稿；底下「恢复原文」回到计划现在的样子
+  const base = useMemo<PlanForm>(
+    () => ({
+      title: plan?.title ?? '',
+      goal: plan?.goal ?? '',
+      project: plan ? plan.project_id || '' : defaultProject || loadPref<string>('ks.newreq.project', ''),
+      owner: plan?.owner_session ?? '',
+      stages: fromPlan(plan),
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, plan?.id])
+    [open, plan?.id],
+  )
+  const dr = useDraft<PlanForm>(`planedit:${plan?.code ?? 'new'}`, base, (v) => planSig(v) !== planSig(base), open)
+  const { title, goal, owner, stages } = dr.value
+  const project = dr.value.project || undefined
+  const setTitle = (v: string) => dr.set({ title: v })
+  const setGoal = (v: string) => dr.set({ goal: v })
+  const setProject = (v: string | undefined) => dr.set({ project: v ?? '' })
+  const setOwner = (v: string) => dr.set({ owner: v })
+  const setStages = (v: DraftStage[]) => dr.set({ stages: v })
 
   const all = sessions.data?.sessions ?? []
   const used = new Set(stages.flatMap((st) => st.reqs.map((r) => r.ref).filter(Boolean)))
@@ -758,6 +770,7 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
       if (plan) {
         if (await updatePlan(plan.code, body)) {
           toast.success(t.plan.saved(plan.code))
+          dr.drop()
           onClose()
         }
         return
@@ -766,6 +779,7 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
       if (!x) return
       if (project) savePref('ks.newreq.project', project)
       toast.success(start ? t.plan.started(x.code) : t.plan.created(x.code))
+      dr.drop()
       onClose()
       openPlan(x.code)
     })
@@ -785,7 +799,11 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">
           <input autoFocus={!plan} value={title} placeholder={t.plan.titlePlaceholder} onChange={(e) => setTitle(e.target.value)} className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3" />
-          <Textarea minRows={2} value={goal} placeholder={t.plan.goalPlaceholder} onChange={(e) => setGoal(e.target.value)} />
+          <div>
+            <Textarea minRows={2} value={goal} placeholder={t.plan.goalPlaceholder} onChange={(e) => setGoal(e.target.value)} />
+            {/* 编辑已有计划时「清空」没有意义，只给「恢复原文」 */}
+            <DraftLine h={dr} revert={!!plan} noClear={!!plan} />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Menu
               align="start"

@@ -10,6 +10,7 @@ import { gateStage, needsApproval } from './plans'
 import { awaitingReply } from './replyBox'
 import { sessionTitle, splitTool } from './SessionCard'
 import { isStatusReq, StatusReqLines } from './statusReq'
+import { DraftMark } from './draft'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
@@ -267,7 +268,11 @@ export function AskItem({
         <b className={cx('shrink-0 font-semibold tracking-wider', kindTone[a.kind])}>{sr ? t.ask.status.kind : t.ask.kind[a.kind]}</b>
         {s && <RoleBadge s={s} />}
         <span className="min-w-0 truncate">{showProject && a.projectName && s ? `${a.projectName}${t.common.sep}${who}` : who}</span>
-        <span className="ml-auto shrink-0 tabular">{relTime(a.at, now)}</span>
+        {/* 有没发出的草稿（R-202） */}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          <DraftMark owners={[a.code, s && (a.kind === 'reply' || a.kind === 'question' || a.kind === 'permit') ? `s:${s.key}` : undefined]} />
+          <span className="tabular">{relTime(a.at, now)}</span>
+        </span>
       </span>
       <span className="flex min-w-0 items-center gap-1.5 leading-5">
         {(sr ? sr.requirement_code : a.code) && <span className="shrink-0 font-mono text-[11.5px] text-fg-3">{sr ? sr.requirement_code : a.code}</span>}
