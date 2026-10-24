@@ -141,9 +141,9 @@ func (t *tools) registerTeam(s *mcp.Server) {
 		}
 		return text(out.Message), nil, nil
 	}
-	mcp.AddTool(s, &mcp.Tool{Name: "away_set", Description: "Adv 用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
-	// morning_set 是 away_set 的旧名，保留给已在用的参谋会话。
-	mcp.AddTool(s, &mcp.Tool{Name: "morning_set", Description: "（旧名，等同 away_set）" + "Adv 用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
+	mcp.AddTool(s, &mcp.Tool{Name: "away_set", Description: "主助理（Aide）用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
+	// morning_set 是 away_set 的旧名，保留给已在用的会话。
+	mcp.AddTool(s, &mcp.Tool{Name: "morning_set", Description: "（旧名，等同 away_set）" + "主助理（Aide）用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
 	recommend := func(ctx context.Context, req *mcp.CallToolRequest, path string, body map[string]any) (*mcp.CallToolResult, any, error) {
 		key := t.sessionKey(ctx, req)
 		if key == "" {
@@ -198,7 +198,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(b.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个 Dev 会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。Dev 在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。派的是草稿时等于顺带放行：必须写 reason，项目没打开「允许 PM / Adv 放行草稿」时会被拒绝。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个 Dev 会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。Dev 在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。派的是草稿时等于顺带放行：必须写 reason，项目没打开「允许主调度 / 主助理放行草稿」时会被拒绝。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in assignIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {

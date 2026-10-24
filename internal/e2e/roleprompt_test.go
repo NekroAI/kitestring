@@ -43,8 +43,8 @@ func TestRolePromptCustom(t *testing.T) {
 
 	var list []hub.RolePromptView
 	e.call("GET", "/api/role-prompts", nil, &list)
-	if len(list) != 4 || list[1].Role != "dev" || list[1].Custom || list[1].Body != roles.DefaultBody(roles.Dev) {
-		t.Fatalf("应列出 4 个身份、dev 未改写：%+v", list)
+	if len(list) != 5 || list[4].Role != "dev" || list[4].Custom || list[4].Body != roles.DefaultBody(roles.Dev) {
+		t.Fatalf("应列出 5 个身份、dev 未改写：%+v", list)
 	}
 
 	// 改写：ks role 与压缩补发都用新文案，抬头仍在
@@ -54,7 +54,7 @@ func TestRolePromptCustom(t *testing.T) {
 	if !v.Custom || v.Body != mine || v.Outdated {
 		t.Fatalf("改写后应为自定义：%+v", v)
 	}
-	if p := setRole(); !strings.Contains(p, mine) || !strings.Contains(p, "你的会话身份：Dev") || strings.Contains(p, strings.SplitN(roles.DefaultBody(roles.Dev), "\n", 2)[0]) {
+	if p := setRole(); !strings.Contains(p, mine) || !strings.Contains(p, "你的会话身份：开发（Dev）") || strings.Contains(p, strings.SplitN(roles.DefaultBody(roles.Dev), "\n", 2)[0]) {
 		t.Fatalf("ks role 应用改写版：%s", p)
 	}
 	e.waitFor("压缩补发用改写版", func() bool { return strings.Contains(compact(), mine) })
@@ -79,8 +79,8 @@ func TestRolePromptCustom(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.call("GET", "/api/role-prompts", nil, &list)
-	if !list[1].Custom || !list[1].Outdated || list[1].Default != roles.DefaultBody(roles.Dev) {
-		t.Fatalf("应提示默认模板已更新并带上默认模板：%+v", list[1])
+	if !list[4].Custom || !list[4].Outdated || list[4].Default != roles.DefaultBody(roles.Dev) {
+		t.Fatalf("应提示默认模板已更新并带上默认模板：%+v", list[4])
 	}
 	if list[0].Outdated {
 		t.Fatal("没改写的身份不应提示更新")
@@ -95,7 +95,7 @@ func TestRolePromptCustom(t *testing.T) {
 		t.Fatalf("恢复默认后 ks role 应是默认模板")
 	}
 	e.waitFor("压缩补发回到默认", func() bool {
-		return !strings.Contains(compact(), mine) && strings.Contains(compact(), "你的会话身份：Dev")
+		return !strings.Contains(compact(), mine) && strings.Contains(compact(), "你的会话身份：开发（Dev）")
 	})
 
 	// 改成与默认一致等同恢复默认

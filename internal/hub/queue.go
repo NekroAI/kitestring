@@ -48,7 +48,9 @@ func (h *Hub) queueOwner(ctx context.Context, r store.Requirement) string {
 }
 
 // queueRole 判断这个身份的会话能不能自动排到待开始的需求：PM、开发、无身份可以，顾问、审查员不行（R-150）。
-func queueRole(role string) bool { return role != roles.Advisor && role != roles.Reviewer }
+func queueRole(role string) bool {
+	return role != roles.Advisor && role != roles.Reviewer && role != roles.Aide
+}
 
 // projectPM 返回项目里没结束的 PM 会话，没有时为空。
 func (h *Hub) projectPM(ctx context.Context, projectID string) string {

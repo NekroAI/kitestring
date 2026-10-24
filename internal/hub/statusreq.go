@@ -16,7 +16,7 @@ import (
 // 出现在「要你处理」，点开在审批抽屉里批准 / 拒绝（R-176 请求类用词）。批准后由纸鸢直接改状态，时间线记成「用户批准了 Agent 的申请」
 // （status_changes.via = request，ref = 申请的 D-x）。批准前需求状态被任何人改动过，申请自动作废，结果送回申请方。
 // 申请不限时、不推送、不能代答（批准类本来就不能代答）；同一条需求只留一条在等的申请。
-// 项目开了「允许 PM / Adv 放行草稿」时，做法明确的草稿仍可由 PM / Adv 直接放行（R-166），不用申请。
+// 项目开了「允许 主调度 / 主助理 放行草稿」时，做法明确的草稿仍可由 主调度 / 主助理 直接放行（R-166），不用申请。
 
 // statusRequestAllowed：可以申请的状态变化。done / review / in_progress / blocked 不走申请（验收、开工有各自的路）。
 var statusRequestAllowed = map[string][]string{

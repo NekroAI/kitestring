@@ -665,8 +665,9 @@ func (s *Store) SetRole(ctx context.Context, key, role string) (demoted []string
 			}
 			return err
 		}
-		if role == "pm" && project.Valid && project.String != "" {
-			rows, err := t.QueryContext(ctx, `SELECT key FROM sessions WHERE project_id = ? AND role = 'pm' AND key <> ?`, project.String, key)
+		if (role == "pm" || role == "aide") && project.Valid && project.String != "" {
+			// 每个项目唯一的身份（主调度、主助理，R-82、R-190）：新会话接任，原来的降为无身份
+			rows, err := t.QueryContext(ctx, `SELECT key FROM sessions WHERE project_id = ? AND role = ? AND key <> ?`, project.String, role, key)
 			if err != nil {
 				return err
 			}
@@ -679,7 +680,7 @@ func (s *Store) SetRole(ctx context.Context, key, role string) (demoted []string
 				demoted = append(demoted, k)
 			}
 			rows.Close()
-			if _, err := t.ExecContext(ctx, `UPDATE sessions SET role = '' WHERE project_id = ? AND role = 'pm' AND key <> ?`, project.String, key); err != nil {
+			if _, err := t.ExecContext(ctx, `UPDATE sessions SET role = '' WHERE project_id = ? AND role = ? AND key <> ?`, project.String, role, key); err != nil {
 				return err
 			}
 		}
@@ -708,6 +709,24 @@ func (s *Store) RolesForDevice(ctx context.Context, deviceID string) (map[string
 }
 
 // RoleSessions 列出项目里有身份的会话（含已结束的），最近活跃的在前（R-86）。
+// SessionsWithRole 列出各项目里身份为 role、还没结束的会话（R-190 迁移提示用）。
+func (s *Store) SessionsWithRole(ctx context.Context, role string) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.role = ? AND s.project_id <> '' AND s.done_at = '' AND s.state NOT IN (?, ?) ORDER BY s.last_active_at DESC`, role, StateEnded, StateLost)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Session{}
+	for rows.Next() {
+		x, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) RoleSessions(ctx context.Context, projectID string) ([]Session, error) {
 	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.project_id = ? AND s.role <> '' ORDER BY s.last_active_at DESC`, projectID)
 	if err != nil {
@@ -732,10 +751,10 @@ func (s *Store) RoleSessions(ctx context.Context, projectID string) ([]Session, 
 	return out, s.fillSessionLinks(ctx, ptrs)
 }
 
-// Presence 是常驻身份（PM / 开发）的在线状态（R-84 / R-86）：挂着 ks wait 为待命；在跑、等授权、在问你为工作中；
+// Presence 是常驻身份（主调度 / 开发 / 主助理）的在线状态（R-84 / R-86）：挂着 ks wait 为待命；在跑、等授权、在问你为工作中；
 // 一轮结束却没挂 ks wait、已结束或失联为离线。其它身份返回空。
 func (x Session) Presence() string {
-	if x.Role != "pm" && x.Role != "dev" {
+	if x.Role != "pm" && x.Role != "dev" && x.Role != "aide" {
 		return ""
 	}
 	switch {

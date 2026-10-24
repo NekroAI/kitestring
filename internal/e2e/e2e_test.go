@@ -30,6 +30,7 @@ type env struct {
 	web    *http.Client
 	cancel context.CancelFunc
 	store  *store.Store // 直接读写库，用来模拟上线前的旧数据
+	hub    *hub.Hub
 }
 
 func setup(t *testing.T) *env {
@@ -53,7 +54,7 @@ func setup(t *testing.T) *env {
 	t.Cleanup(srv.Close)
 
 	jar, _ := cookiejar.New(nil)
-	e := &env{t: t, srv: srv, web: &http.Client{Jar: jar}, store: st}
+	e := &env{t: t, srv: srv, web: &http.Client{Jar: jar}, store: st, hub: h}
 	e.call("POST", "/api/auth/setup", map[string]any{"password": "password123"}, nil)
 
 	var dev struct {

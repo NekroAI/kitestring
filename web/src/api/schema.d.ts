@@ -147,7 +147,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Adv 写离开期间小结：总述与逐条验收建议（R-165） */
+        /** 主助理写离开期间小结：总述与逐条验收建议（R-165、R-190） */
         post: operations["agent-set-morning"];
         delete?: never;
         options?: never;
@@ -1236,7 +1236,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 撤回 PM / Adv 的放行：改回草稿，时间线标为已撤回（R-166） */
+        /** 撤回 主调度 / 主助理 的放行：改回草稿，时间线标为已撤回（R-166） */
         post: operations["withdraw-release"];
         delete?: never;
         options?: never;
@@ -1649,17 +1649,14 @@ export interface components {
         "Agent-set-morningRequest": {
             /** @description 逐条验收建议，每条覆盖该需求上一份 */
             advice?: components["schemas"]["AdviceIn"][] | null;
-            /** @description 调用者（必须是本项目的 Adv） */
+            /** @description 调用者（必须是本项目的主助理） */
             session_key: string;
             /** @description 总述：一段话，先结论；不传表示不改，空字符串表示清除 */
             text?: string;
         };
         "Agent-set-roleRequest": {
-            /**
-             * @description pm / dev / advisor / reviewer；空为清除身份
-             * @enum {string}
-             */
-            role: "" | "pm" | "dev" | "advisor" | "reviewer";
+            /** @description aide / advisor / reviewer / pm / dev，也认中文名、英文简写和别称（如 主调度、参谋、Aide）；空为清除身份 */
+            role: string;
             session_key: string;
         };
         "Agent-submit-reviewRequest": {
@@ -1971,7 +1968,7 @@ export interface components {
              */
             max_risk: "low" | "medium";
             project_id: string;
-            /** @description 被授权的 Adv 会话 */
+            /** @description 被授权的主助理会话 */
             session_key: string;
         };
         Decision: {
@@ -2570,7 +2567,7 @@ export interface components {
             project_name: string;
             /** @description ② 参谋代答的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
-            /** @description ② PM / Adv 放行的草稿（新的在前） */
+            /** @description ② 主调度 / 主助理 放行的草稿（新的在前） */
             releases: components["schemas"]["MorningRelease"][] | null;
             /**
              * Format: int64
@@ -3002,10 +2999,12 @@ export interface components {
             requirements: components["schemas"]["Requirement"][] | null;
         };
         RoleOutBody: {
-            /** @description 因本次接管 PM 被降为无身份的会话 */
+            /** @description 因本次接任主调度 / 主助理被降为无身份的会话 */
             demoted: string[] | null;
-            /** @description 身份中文名；无身份时为空 */
+            /** @description 身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空 */
             label: string;
+            /** @description 身份中文名（主助理 / 顾问 / 评审 / 主调度 / 开发）；无身份时为空 */
+            name: string;
             /** @description 身份提示词，ks role 直接打印给 Agent */
             prompt: string;
             role: string;
@@ -3018,7 +3017,7 @@ export interface components {
             custom: boolean;
             /** @description 当前版本内置的默认模板正文 */
             default: string;
-            /** @description 显示名（PM / Dev / Adv / Rev） */
+            /** @description 显示名（英文简写：Aide / Adv / Rev / PM / Dev） */
             label: string;
             /** @description 改写之后默认模板又更新了（可对比默认模板，或恢复默认） */
             outdated: boolean;

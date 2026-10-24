@@ -11,7 +11,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 放行（R-166）：项目开关默认关闭；打开后 PM / Adv 能把草稿改为待开始，Dev 不能；必须写理由；
+// 放行（R-166）：项目开关默认关闭；打开后 主调度 / 主助理 能把草稿改为待开始，Dev 不能；必须写理由；
 // 时间线记下放行人与理由；你可以撤回（有会话在做时通知它先停下）；PM 派草稿也算放行、同样要理由；done 仍只由你设置。
 func TestRelease(t *testing.T) {
 	e := setup(t)
@@ -22,7 +22,7 @@ func TestRelease(t *testing.T) {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
 	}
 	e.waitFor("会话入库", func() bool { return e.session("claude:dev").ProjectID != "" })
-	for k, r := range map[string]string{"claude:pm": "pm", "claude:adv": "advisor", "claude:dev": "dev"} {
+	for k, r := range map[string]string{"claude:pm": "pm", "claude:adv": "aide", "claude:dev": "dev"} {
 		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": k, "role": r}, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func TestRelease(t *testing.T) {
 
 	// 2. Dev 不能放行；不写理由被拒绝
 	_, err = status(r1.Code, "claude:dev", "ready", "我觉得可以")
-	mustFail(err, "只有 PM 或 Adv", "Dev 放行")
+	mustFail(err, "只有主调度（PM）或主助理（Aide）", "Dev 放行")
 	_, err = status(r1.Code, "claude:pm", "ready", "  ")
 	mustFail(err, "必须写一句理由", "不写理由")
 	if get(r1.Code).Status != store.ReqDraft {
@@ -120,9 +120,9 @@ func TestRelease(t *testing.T) {
 		}
 	}
 
-	// 4. Adv 能放行；只能从草稿放行，已搁置的不行
-	if got, err = status(r2.Code, "claude:adv", "ready", "讨论过，范围清楚"); err != nil || got.Release == nil || got.Release.Role != "advisor" {
-		t.Fatalf("Adv 应能放行：%v %+v", err, got.Release)
+	// 4. 主助理能放行；只能从草稿放行，已搁置的不行
+	if got, err = status(r2.Code, "claude:adv", "ready", "讨论过，范围清楚"); err != nil || got.Release == nil || got.Release.Role != "aide" {
+		t.Fatalf("主助理应能放行：%v %+v", err, got.Release)
 	}
 	if _, err = status(r3.Code, "claude:pm", "shelved", "不做了"); err != nil {
 		t.Fatal(err)
@@ -291,7 +291,7 @@ func TestLinkDraftRelease(t *testing.T) {
 	if got = linkBy("claude:dev", r4.Code); got.Status != store.ReqDraft || got.Release != nil || count(got.Requirement) != 0 {
 		t.Fatalf("Dev 关联草稿不应放行：%s %+v", got.Status, got.Release)
 	}
-	if len(got.Notices) == 0 || !strings.Contains(got.Notices[0], "这条还是草稿，请 PM 放行") {
+	if len(got.Notices) == 0 || !strings.Contains(got.Notices[0], "这条还是草稿，请主调度放行") {
 		t.Fatalf("Dev 关联草稿应提示请 PM 放行：%v", got.Notices)
 	}
 

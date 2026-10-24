@@ -503,7 +503,7 @@
             ]
           },
           "session_key": {
-            "description": "调用者（必须是本项目的 Adv）",
+            "description": "调用者（必须是本项目的主助理）",
             "minLength": 1,
             "type": "string"
           },
@@ -521,14 +521,7 @@
         "additionalProperties": false,
         "properties": {
           "role": {
-            "description": "pm / dev / advisor / reviewer；空为清除身份",
-            "enum": [
-              "",
-              "pm",
-              "dev",
-              "advisor",
-              "reviewer"
-            ],
+            "description": "aide / advisor / reviewer / pm / dev，也认中文名、英文简写和别称（如 主调度、参谋、Aide）；空为清除身份",
             "type": "string"
           },
           "session_key": {
@@ -1502,7 +1495,7 @@
             "type": "string"
           },
           "session_key": {
-            "description": "被授权的 Adv 会话",
+            "description": "被授权的主助理会话",
             "minLength": 1,
             "type": "string"
           }
@@ -3562,7 +3555,7 @@
             ]
           },
           "releases": {
-            "description": "② PM / Adv 放行的草稿（新的在前）",
+            "description": "② 主调度 / 主助理 放行的草稿（新的在前）",
             "items": {
               "$ref": "#/components/schemas/MorningRelease"
             },
@@ -5140,7 +5133,7 @@
         "additionalProperties": false,
         "properties": {
           "demoted": {
-            "description": "因本次接管 PM 被降为无身份的会话",
+            "description": "因本次接任主调度 / 主助理被降为无身份的会话",
             "items": {
               "type": "string"
             },
@@ -5150,7 +5143,11 @@
             ]
           },
           "label": {
-            "description": "身份中文名；无身份时为空",
+            "description": "身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空",
+            "type": "string"
+          },
+          "name": {
+            "description": "身份中文名（主助理 / 顾问 / 评审 / 主调度 / 开发）；无身份时为空",
             "type": "string"
           },
           "prompt": {
@@ -5168,6 +5165,7 @@
           "session_key",
           "role",
           "label",
+          "name",
           "prompt",
           "demoted"
         ],
@@ -5189,7 +5187,7 @@
             "type": "string"
           },
           "label": {
-            "description": "显示名（PM / Dev / Adv / Rev）",
+            "description": "显示名（英文简写：Aide / Adv / Rev / PM / Dev）",
             "type": "string"
           },
           "outdated": {
@@ -6683,7 +6681,7 @@
             "description": "Error"
           }
         },
-        "summary": "Adv 写离开期间小结：总述与逐条验收建议（R-165）",
+        "summary": "主助理写离开期间小结：总述与逐条验收建议（R-165、R-190）",
         "tags": [
           "agent"
         ]
@@ -10149,7 +10147,7 @@
             "description": "Error"
           }
         },
-        "summary": "撤回 PM / Adv 的放行：改回草稿，时间线标为已撤回（R-166）",
+        "summary": "撤回 主调度 / 主助理 的放行：改回草稿，时间线标为已撤回（R-166）",
         "tags": [
           "requirements"
         ]

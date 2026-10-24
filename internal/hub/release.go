@@ -12,12 +12,23 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 放行（R-166）：PM / Adv 可以把草稿改为待开始，让你不在时新需求也能排期。规则：
-// 只有项目设置打开「允许 PM / Adv 放行草稿」才行（默认关闭），Dev 不能放行；只能从草稿放行（已搁置的重新打开仍由你操作）；
-// 必须写一句理由，记成一条放行记录进时间线；你可以一键撤回（改回草稿），PM / Adv 自己改回草稿也算撤回。
+// 放行（R-166）：主调度 / 主助理 可以把草稿改为待开始，让你不在时新需求也能排期。规则：
+// 只有项目设置打开「允许 主调度 / 主助理 放行草稿」才行（默认关闭），Dev 不能放行；只能从草稿放行（已搁置的重新打开仍由你操作）；
+// 必须写一句理由，记成一条放行记录进时间线；你可以一键撤回（改回草稿），主调度 / 主助理 自己改回草稿也算撤回。
 // req_assign 派一条草稿等于顺带放行，同样受开关管、同样要理由。验收通过（done）仍只由你设置。
 
-const releaseOff = "这条还是草稿：用 req_request_status（ks req request R-x ready --reason …）申请用户批准，或请用户在项目设置里打开「允许 PM / Adv 放行草稿」"
+const releaseOff = "这条还是草稿：用 req_request_status（ks req request R-x ready --reason …）申请用户批准，或请用户在项目设置里打开「允许主调度 / 主助理放行草稿」"
+
+// canRelease：放行草稿只给主调度和主助理（R-166、R-190：顾问不再放行）。
+func canRelease(role string) bool { return role == roles.PM || role == roles.Aide }
+
+// notAide 是顾问等身份调用主助理职责时的拒绝说明（R-190）。
+func notAide(what, role string) string {
+	if role == roles.Advisor {
+		return what + "是主助理的职责：顾问只答问题、做设计。需要时请用户让本项目的主助理来做（ks role aide）；项目没有主助理时，这件事留给用户"
+	}
+	return "只有本项目的主助理（ks role aide）能" + what
+}
 
 // releaseCheck 检查 callerKey 能不能放行 r，返回调用者会话。
 func (h *Hub) releaseCheck(ctx context.Context, r store.Requirement, callerKey, reason string) (store.Session, error) {
@@ -28,8 +39,12 @@ func (h *Hub) releaseCheck(ctx context.Context, r store.Requirement, callerKey, 
 	if err != nil {
 		return x, apiErr(err)
 	}
-	if x.Role != roles.PM && x.Role != roles.Advisor {
-		return x, huma.Error403Forbidden("只有 PM 或 Adv 能把草稿放行为待开始；Dev 不能放行（避免自己记、自己放、自己做）。需要排期请告诉 PM（pm_notify），或用 req_request_status 申请用户批准；开始做待开始的需求时用 session_link_req，它会变为进行中")
+	if !canRelease(x.Role) {
+		why := "只有主调度（PM）或主助理（Aide）能把草稿放行为待开始；开发不能放行（避免自己记、自己放、自己做）"
+		if x.Role == roles.Advisor {
+			why = notAide("放行草稿", x.Role) + "（主调度也能放行）"
+		}
+		return x, huma.Error403Forbidden(why + "。需要排期请告诉主调度（pm_notify），或用 req_request_status 申请用户批准；开始做待开始的需求时用 session_link_req，它会变为进行中")
 	}
 	if r.ProjectID == "" || x.ProjectID != r.ProjectID {
 		return x, huma.Error400BadRequest(fmt.Sprintf("%s 不属于你所在的项目，不能放行", r.Code))
@@ -126,7 +141,7 @@ func (h *Hub) withdrawRelease(ctx context.Context, before store.Requirement, act
 }
 
 func (h *Hub) registerRelease(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "withdraw-release", Method: http.MethodPost, Path: "/api/requirements/{ref}/release/withdraw", Tags: []string{"requirements"}, Summary: "撤回 PM / Adv 的放行：改回草稿，时间线标为已撤回（R-166）"},
+	huma.Register(api, huma.Operation{OperationID: "withdraw-release", Method: http.MethodPost, Path: "/api/requirements/{ref}/release/withdraw", Tags: []string{"requirements"}, Summary: "撤回 主调度 / 主助理 的放行：改回草稿，时间线标为已撤回（R-166）"},
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body struct {

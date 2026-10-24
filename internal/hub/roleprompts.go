@@ -77,7 +77,7 @@ func (h *Hub) broadcastRolePrompts(ctx context.Context) {
 // RolePromptView 是设置页上一个身份的提示词状态。
 type RolePromptView struct {
 	Role     string `json:"role" doc:"pm / dev / advisor / reviewer"`
-	Label    string `json:"label" doc:"显示名（PM / Dev / Adv / Rev）"`
+	Label    string `json:"label" doc:"显示名（英文简写：Aide / Adv / Rev / PM / Dev）"`
 	Default  string `json:"default" doc:"当前版本内置的默认模板正文"`
 	Body     string `json:"body" doc:"正在使用的正文：改写过的是改写版，否则等于默认模板"`
 	Custom   bool   `json:"custom" doc:"是否已被改写"`

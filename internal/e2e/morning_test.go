@@ -44,7 +44,7 @@ type morningResp struct {
 	} `json:"holds"`
 }
 
-// 参谋小结（R-165）：没开窗口、没写总述时不出小结；只有 Adv 能写总述和验收建议；
+// 参谋小结（R-165）：没开窗口、没写总述时不出小结；只有主助理 能写总述和验收建议；
 // 开窗口后离开期间从窗口开启算起，汇总代答、放行、交了证据的需求、团队消息，③④ 只给计数；
 // 待验收卡上挂参谋建议（重新交证据后旧建议作废），决策卡上挂没代答的原因（硬规则 / 超出授权）。
 func TestMorningReport(t *testing.T) {
@@ -56,7 +56,7 @@ func TestMorningReport(t *testing.T) {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
 	}
 	e.waitFor("会话入库", func() bool { return e.session("claude:dev").ProjectID != "" })
-	for k, r := range map[string]string{"claude:pm": "pm", "claude:adv": "advisor", "claude:dev": "dev"} {
+	for k, r := range map[string]string{"claude:pm": "pm", "claude:adv": "aide", "claude:dev": "dev"} {
 		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": k, "role": r}, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -78,12 +78,12 @@ func TestMorningReport(t *testing.T) {
 		}
 	}
 
-	// 1. 没窗口、没总述：不出小结；只有 Adv 能写
+	// 1. 没窗口、没总述：不出小结；只有主助理 能写
 	if m := get(); len(m.Reports) != 0 {
 		t.Fatalf("没开窗口、没写总述时不应有小结：%+v", m.Reports)
 	}
-	mustFail(write("claude:dev", map[string]any{"text": "开发不该能写"}), "只有项目的 Adv", "Dev 写小结")
-	mustFail(write("claude:pm", map[string]any{"text": "PM 不该能写"}), "只有项目的 Adv", "PM 写小结")
+	mustFail(write("claude:dev", map[string]any{"text": "开发不该能写"}), "只有本项目的主助理", "Dev 写小结")
+	mustFail(write("claude:pm", map[string]any{"text": "PM 不该能写"}), "只有本项目的主助理", "PM 写小结")
 	mustFail(write("claude:adv", map[string]any{}), "什么都没写", "空写入")
 	if err := write("claude:adv", map[string]any{"text": "  昨晚的总述  "}); err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestMorningReport(t *testing.T) {
 	if len(rp.Proxied) != 1 || rp.Proxied[0].Code != d1.Code || rp.Proxied[0].ProxyReason != "和看板一致" {
 		t.Fatalf("② 应列出代答：%+v", rp.Proxied)
 	}
-	if len(rp.Releases) != 1 || rp.Releases[0].RequirementCode != r2.Code || rp.Releases[0].Role != "advisor" || rp.Releases[0].Reason != "做法明确" || rp.Releases[0].Withdrawn {
+	if len(rp.Releases) != 1 || rp.Releases[0].RequirementCode != r2.Code || rp.Releases[0].Role != "aide" || rp.Releases[0].Reason != "做法明确" || rp.Releases[0].Withdrawn {
 		t.Fatalf("② 应列出放行：%+v", rp.Releases)
 	}
 	if rp.Pending != 3 || rp.Review != 1 || len(rp.Blocked) != 1 || rp.Blocked[0] != r3.Code {
@@ -178,10 +178,10 @@ func TestMorningReport(t *testing.T) {
 		t.Fatalf("范围内、窗口还开着的决策参谋还可以代答，不该标没代答：%v", holds)
 	}
 
-	// 4. 验收建议：只给待验收的需求、必须写理由、只有 Adv
+	// 4. 验收建议：只给待验收的需求、必须写理由、只有主助理
 	mustFail(write("claude:adv", map[string]any{"advice": []map[string]any{{"requirement": r2.Code, "verdict": "pass", "reason": "好"}}}), "不是待验收", "给非待验收需求写建议")
 	mustFail(write("claude:adv", map[string]any{"advice": []map[string]any{{"requirement": r1.Code, "verdict": "pass"}}}), "要写理由", "不写理由")
-	mustFail(write("claude:dev", map[string]any{"advice": []map[string]any{{"requirement": r1.Code, "verdict": "pass", "reason": "好"}}}), "只有项目的 Adv", "Dev 写建议")
+	mustFail(write("claude:dev", map[string]any{"advice": []map[string]any{{"requirement": r1.Code, "verdict": "pass", "reason": "好"}}}), "只有本项目的主助理", "Dev 写建议")
 	if err := write("claude:adv", map[string]any{"text": "R-x 交了验收，代答 1 条", "advice": []map[string]any{{"requirement": r1.Code, "verdict": "pass", "reason": "3/3 达标"}}}); err != nil {
 		t.Fatal(err)
 	}

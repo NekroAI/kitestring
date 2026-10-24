@@ -71,6 +71,11 @@ func TestReadyFromAdvisorGoesToPM(t *testing.T) {
 		return r
 	}
 
+	// 顾问第一次挂 ks wait、项目还没有主助理：先收到一次身份调整提示（R-190），收掉再测排队
+	if res := <-wait("adv", "5s"); !strings.Contains(res.Text, "ks role aide") {
+		t.Fatalf("顾问常驻应先收到身份调整提示：%+v", res)
+	}
+
 	// 1. 没有 PM：顾问记下的需求改为待开始后不送给顾问，停在“没人接手”
 	advDone := park("adv", "3s")
 	a := create("adv", "顾问记下的导出 CSV")

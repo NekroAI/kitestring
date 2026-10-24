@@ -30,8 +30,8 @@ func (e *env) webTry(method, path string, in any) (int, string) {
 	return resp.StatusCode, string(raw)
 }
 
-// 参谋授权窗口（R-163）：你开窗口（到期时间 + 范围）后，被授权的 Adv 能代答范围内的决策；
-// 窗口外、到期后、撤销后、超出范围、硬规则、非 Adv、别的 Adv 都被拒；代答留痕；你推翻后更正送回提问方。
+// 参谋授权窗口（R-163）：你开窗口（到期时间 + 范围）后，被授权的 主助理 能代答范围内的决策；
+// 窗口外、到期后、撤销后、超出范围、硬规则、非 主助理、别的 主助理 都被拒；代答留痕；你推翻后更正送回提问方。
 func TestProxyAnswerGrant(t *testing.T) {
 	e := setup(t)
 	cwd, _ := os.Getwd()
@@ -41,7 +41,7 @@ func TestProxyAnswerGrant(t *testing.T) {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
 	}
 	e.waitFor("会话入库", func() bool { return e.session("claude:dev").ProjectID != "" })
-	for k, r := range map[string]string{"claude:pm": "pm", "claude:adv": "advisor", "claude:adv2": "advisor", "claude:dev": "dev"} {
+	for k, r := range map[string]string{"claude:pm": "pm", "claude:adv": "aide", "claude:adv2": "advisor", "claude:dev": "dev"} {
 		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": k, "role": r}, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -83,12 +83,12 @@ func TestProxyAnswerGrant(t *testing.T) {
 
 	d1 := raise("claude:dev", map[string]any{"question": "列表默认按创建时间倒序？", "risk": "low", "options": []string{"倒序", "正序"}})
 
-	// 1. 窗口外：没开窗口时 Adv 代答被拒
+	// 1. 窗口外：没开窗口时主助理代答被拒
 	_, err := answer(d1.Code, "claude:adv", "倒序", "和看板一致", "low")
 	mustFail(err, "没有开授权窗口", "没开窗口时代答")
 
-	// 2. 开窗口：只能授权 Adv 会话；到期时间要在将来、最长 24 小时
-	if code, body := e.webTry("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:dev", "max_risk": "low", "expires_at": time.Now().Add(time.Hour)}); code != 400 || !strings.Contains(body, "Adv") {
+	// 2. 开窗口：只能授权 主助理会话；到期时间要在将来、最长 24 小时
+	if code, body := e.webTry("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:dev", "max_risk": "low", "expires_at": time.Now().Add(time.Hour)}); code != 400 || !strings.Contains(body, "主助理") {
 		t.Fatalf("不能授权 Dev：%d %s", code, body)
 	}
 	if code, body := e.webTry("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(-time.Minute)}); code != 400 || !strings.Contains(body, "晚于现在") {
@@ -101,17 +101,20 @@ func TestProxyAnswerGrant(t *testing.T) {
 	if g.Status != store.GrantActive || g.SessionKey != "claude:adv" {
 		t.Fatalf("窗口应生效：%+v", g)
 	}
-	if code, body := e.webTry("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv2", "max_risk": "low", "expires_at": time.Now().Add(time.Hour)}); code != 400 || !strings.Contains(body, "先撤销") {
+	if code, body := e.webTry("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv2", "max_risk": "low", "expires_at": time.Now().Add(time.Hour)}); code != 400 || !strings.Contains(body, "只能授权本项目的主助理") {
+		t.Fatalf("不能授权顾问（R-190）：%d %s", code, body)
+	}
+	if code, body := e.webTry("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(time.Hour)}); code != 400 || !strings.Contains(body, "先撤销") {
 		t.Fatalf("同一项目同时只能有一个窗口：%d %s", code, body)
 	}
 
-	// 3. 非 Adv、别的 Adv 被拒；理由、风险判断必填
+	// 3. 非主助理、顾问 被拒；理由、风险判断必填
 	_, err = answer(d1.Code, "claude:pm", "倒序", "和看板一致", "low")
-	mustFail(err, "只有 Adv", "PM 代答")
+	mustFail(err, "只有本项目的主助理", "PM 代答")
 	_, err = answer(d1.Code, "claude:dev", "倒序", "和看板一致", "low")
-	mustFail(err, "只有 Adv", "Dev 代答")
+	mustFail(err, "只有本项目的主助理", "Dev 代答")
 	_, err = answer(d1.Code, "claude:adv2", "倒序", "和看板一致", "low")
-	mustFail(err, "另一个 Adv", "没被授权的 Adv 代答")
+	mustFail(err, "代答决策是主助理的职责", "顾问代答（R-190）")
 	_, err = answer(d1.Code, "claude:adv", "倒序", "", "low")
 	mustFail(err, "必须写理由", "不写理由")
 	_, err = answer(d1.Code, "claude:adv", "倒序", "和看板一致", "")

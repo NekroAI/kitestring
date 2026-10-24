@@ -18,9 +18,9 @@ import (
 // 离开期间小结（R-165）：你离开期间参谋做了什么、替你定了什么，工作台顶部集中呈现；你回来先看这里。
 //   - 「离开期间」：项目最近一个参谋授权窗口的开启时间到现在（窗口生效中，或结束不到 12 小时）；
 //     没有这样的窗口时，以参谋写总述的时间往前 12 小时；两者都没有就不出小结。
-//   - 参谋只写两样（away_set / ks away，旧名 morning_set / ks morning 仍可用；只有 Adv 能写）：一段总述，和逐条验收建议（写进对应需求）。
+//   - 参谋只写两样（away_set / ks away，旧名 morning_set / ks morning 仍可用；只有主助理能写）：一段总述，和逐条验收建议（写进对应需求）。
 //   - 其余由 hub 汇总：① 完成了什么（期间交了证据、现在待验收 / 已完成的需求，附提交）、团队消息；
-//     ② 替你定了什么（期间的 Adv 代答、PM / Adv 放行）；③④ 只给计数——未答决策与待验收本来就在「要你处理」里，不重复列。
+//     ② 替你定了什么（期间的 主助理代答、主调度 / 主助理 放行）；③④ 只给计数——未答决策与待验收本来就在「要你处理」里，不重复列。
 //   - 「要你处理」里的卡片挂两种标注：参谋的验收建议（advice）、参谋没代答的原因（holds）。
 
 const (
@@ -73,7 +73,7 @@ type MorningReport struct {
 	Tells       []morningTell      `json:"tells" doc:"期间的团队消息（新的在前，最多 8 条）"`
 	TellCount   int                `json:"tell_count"`
 	Proxied     []store.Decision   `json:"proxied" doc:"② 参谋代答的决策（新的在前）"`
-	Releases    []morningRelease   `json:"releases" doc:"② PM / Adv 放行的草稿（新的在前）"`
+	Releases    []morningRelease   `json:"releases" doc:"② 主调度 / 主助理 放行的草稿（新的在前）"`
 	Pending     int                `json:"pending" doc:"③ 留给你的：还没答的决策条数（在「要你处理」里）"`
 	Blocked     []string           `json:"blocked" doc:"③ 受阻的需求编号"`
 	Review      int                `json:"review" doc:"④ 待验收需求条数（在「要你处理」里）"`
@@ -278,10 +278,10 @@ func (h *Hub) registerMorningWeb(api huma.API) {
 }
 
 func (h *Hub) registerAgentMorning(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "agent-set-morning", Method: http.MethodPost, Path: "/api/agent/morning", Tags: []string{"agent"}, Summary: "Adv 写离开期间小结：总述与逐条验收建议（R-165）"},
+	huma.Register(api, huma.Operation{OperationID: "agent-set-morning", Method: http.MethodPost, Path: "/api/agent/morning", Tags: []string{"agent"}, Summary: "主助理写离开期间小结：总述与逐条验收建议（R-165、R-190）"},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				SessionKey string     `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 Adv）"`
+				SessionKey string     `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的主助理）"`
 				Text       *string    `json:"text,omitempty" doc:"总述：一段话，先结论；不传表示不改，空字符串表示清除"`
 				Advice     []adviceIn `json:"advice,omitempty" doc:"逐条验收建议，每条覆盖该需求上一份"`
 			}
@@ -290,8 +290,8 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			if me.Role != roles.Advisor || me.ProjectID == "" {
-				return nil, huma.Error403Forbidden("只有项目的 Adv（参谋）能写离开期间小结")
+			if me.Role != roles.Aide || me.ProjectID == "" {
+				return nil, huma.Error403Forbidden(notAide("写离开期间小结和验收建议", me.Role))
 			}
 			if in.Body.Text == nil && len(in.Body.Advice) == 0 {
 				return nil, huma.Error400BadRequest("什么都没写：传 text（总述）或 advice（验收建议）")
