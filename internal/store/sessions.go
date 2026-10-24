@@ -69,6 +69,7 @@ type Session struct {
 	ContextMax       int              `json:"context_max"`                          // 上下文窗口；不知道时为 0
 	Role             string           `json:"role" enum:",pm,dev,advisor,reviewer"` // 会话身份（R-82）：pm 开发 dev 顾问 advisor 审查员 reviewer，空为无身份
 	RecentTools      []ToolAct        `json:"recent_tools"`                         // 最近几次工具调用，旧 → 新（工作台滚动展示）
+	Ticks            []time.Time      `json:"ticks"`                                // 主会话近 10 分钟的工具调用时刻，旧 → 新，最多 maxSessionTicks 个（工作台时间线，R-170）
 	Tasks            []BgTask         `json:"tasks"`                                // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
@@ -157,6 +158,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	}
 	x.Activity = []int{}
 	x.RecentTools = []ToolAct{}
+	x.Ticks = []time.Time{}
 	x.OtherTerminal = x.PrevInstance != ""
 	if doneAt != "" {
 		t := parseTS(doneAt)
@@ -238,6 +240,9 @@ func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
 			if err := s.fillRecentTools(ctx, x); err != nil {
 				return err
 			}
+			if err := s.fillTicks(ctx, x); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -269,6 +274,41 @@ func (s *Store) fillRecentTools(ctx context.Context, x *Session) error {
 	x.RecentTools = acts
 	if x.RecentTools == nil {
 		x.RecentTools = []ToolAct{}
+	}
+	return rows.Err()
+}
+
+// 工作台时间线（R-170）：近 10 分钟、每次工具调用一个刻度；点数设上限，免得极密的会话把推送撑大。
+const (
+	tickWindow      = 10 * time.Minute
+	maxSessionTicks = 120
+)
+
+// fillTicks 取主会话近 10 分钟的工具调用时刻（子代理的记在子泳道上，不算在这里）。
+func (s *Store) fillTicks(ctx context.Context, x *Session) error {
+	from := time.Now().Add(-tickWindow)
+	if x.LastActiveAt.Before(from) {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT time FROM events WHERE session_key = ? AND name = 'PreToolUse' AND time >= ?
+		AND COALESCE(json_extract(payload, '$.agent_id'), '') = '' ORDER BY time DESC LIMIT ?`, x.Key, ts(from), maxSessionTicks)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var out []time.Time
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return err
+		}
+		out = append(out, parseTS(t))
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	if out != nil {
+		x.Ticks = out
 	}
 	return rows.Err()
 }

@@ -639,3 +639,82 @@ nav.fixed {
   animation-timing-function: linear;
   animation-fill-mode: forwards;
 }
+
+/* ---------- 工作台驾驶舱（R-170） ---------- */
+/* 指示灯：只在主会话发生动作时闪一下（不做常驻波纹）；只有「等你」会呼吸。减少动效时上面的全局规则会把它们都停掉。 */
+.desk-lamp {
+  position: relative;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--lamp, var(--idle));
+}
+.desk-lamp.spark::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid var(--lamp);
+  animation: desk-spark 0.7s ease-out 1 both;
+}
+@keyframes desk-spark {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(4.2);
+    opacity: 0;
+  }
+}
+.desk-lamp.you {
+  animation: desk-breathe 2.4s ease-in-out infinite;
+}
+@keyframes desk-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--reply) 28%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--reply) 28%, transparent);
+  }
+}
+/* 动作流新进的一行、待办新进的一张：只在出现时动一次 */
+.desk-in {
+  animation: desk-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes desk-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+.desk-drop {
+  animation: desk-drop 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes desk-drop {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+}
+/* 断线：整体静止变灰 */
+.desk-offline {
+  filter: grayscale(1);
+  opacity: 0.72;
+}
+.desk-offline *,
+.desk-offline *::before {
+  animation-play-state: paused !important;
+}
+/* 待办与它的会话互相点亮（纸鸢的线） */
+.desk-lit {
+  outline: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+.desk-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}

@@ -155,6 +155,10 @@ func TestBackgroundTasks(t *testing.T) {
 			t.Fatalf("子代理的工具调用不应进主会话的最近动作：%+v", s.RecentTools)
 		}
 	}
+	// 时间线刻度（R-170）：主会话自己的三次调用（两次 Bash、一次 Agent），子代理的 Read 不算
+	if len(s.Ticks) != 3 {
+		t.Fatalf("主会话时间线应有 3 个刻度（不含子代理）：%v", s.Ticks)
+	}
 	if strings.Contains(s.LastTool, "plans.tsx") {
 		t.Fatalf("子代理的工具调用不应改主会话的最近动作：%s", s.LastTool)
 	}

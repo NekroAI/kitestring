@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { api, unwrap, type Plan, type Requirement, type Schemas, type Session } from './client'
 
-const normSession = (x: Omit<Session, 'requirements' | 'activity'> & { requirements?: Session['requirements'] | null; activity?: number[] | null }): Session => ({ ...x, requirements: x.requirements ?? [], activity: x.activity ?? [] })
+const normSession = (x: Omit<Session, 'requirements' | 'activity'> & { requirements?: Session['requirements'] | null; activity?: number[] | null }): Session => ({ ...x, requirements: x.requirements ?? [], activity: x.activity ?? [], ticks: x.ticks ?? [] })
 const normReq = (x: Omit<Requirement, 'sessions'> & { sessions?: string[] | null }): Requirement => ({ ...x, sessions: x.sessions ?? [] })
 const normPlan = (x: Schemas['Plan']): Plan => ({ ...x, stages: (x.stages ?? []).map((st) => ({ ...st, requirements: st.requirements ?? [] })) })
 
@@ -188,6 +188,35 @@ function invalidateTopics(qc: QueryClient, topics: string[]) {
 // 服务端每 20 秒发一次心跳；超过这么久什么都没收到，就认定连接已经悄悄断了（手机切后台再回来常见）。
 const SILENT_MS = 50_000
 
+// 实时连接的状态与服务端时钟（R-170）：工作台断线时整体静止变灰；时间线按服务端时间画，
+// 本机时钟偏了也不会把刻度画到「现在」右边。偏差取自 hello / ping 里带的服务端时间。
+let liveOn = true
+let skew = 0
+const liveSubs = new Set<() => void>()
+const setLive = (on: boolean) => {
+  if (on === liveOn) return
+  liveOn = on
+  liveSubs.forEach((f) => f())
+}
+const syncClock = (data: string) => {
+  try {
+    const n = (JSON.parse(data) as { now?: number }).now
+    if (typeof n === 'number' && n > 0) skew = n - Date.now()
+  } catch {
+    /* 旧版 Hub 的心跳不带时间 */
+  }
+}
+// serverNow：按服务端时钟的「现在」（毫秒）
+export const serverNow = () => Date.now() + skew
+export const useConnected = () =>
+  useSyncExternalStore(
+    (f) => {
+      liveSubs.add(f)
+      return () => liveSubs.delete(f)
+    },
+    () => liveOn,
+  )
+
 // useLiveUpdates 订阅 /api/stream，收到 changed 事件时让对应查询失效；断线自动重连。
 // 浏览器在切后台、换网络后常常留着一条“看似打开、其实已断”的连接，不报错也不重连（R-65）：
 // 心跳超时、回到前台、网络恢复时都主动重连，并在重连后补拉全部数据。
@@ -228,10 +257,15 @@ export function useLiveUpdates(enabled: boolean) {
       if (stopped) return
       seen()
       es = new EventSource('/api/stream')
-      es.addEventListener('ping', seen)
-      es.addEventListener('hello', () => {
+      es.addEventListener('ping', (ev) => {
         seen()
+        syncClock((ev as MessageEvent<string>).data)
+      })
+      es.addEventListener('hello', (ev) => {
+        seen()
+        syncClock((ev as MessageEvent<string>).data)
         setConnected(true)
+        setLive(true)
         // 重连后补齐断线期间错过的变化。
         if (everConnected) void qc.invalidateQueries()
         everConnected = true
@@ -257,6 +291,7 @@ export function useLiveUpdates(enabled: boolean) {
       })
       es.onerror = () => {
         setConnected(false)
+        setLive(false)
         if (es && es.readyState === EventSource.CLOSED) {
           // 服务端拒绝（例如登录失效）时浏览器不会自动重连：检查登录状态后手动重连。
           es = null

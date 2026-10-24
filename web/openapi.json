@@ -5113,6 +5113,16 @@
               "null"
             ]
           },
+          "ticks": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "title": {
             "type": "string"
           },
@@ -5170,6 +5180,7 @@
           "context_max",
           "role",
           "recent_tools",
+          "ticks",
           "tasks",
           "requirements",
           "pending_decisions"

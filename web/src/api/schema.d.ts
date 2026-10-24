@@ -2937,6 +2937,7 @@ export interface components {
             subagents: number;
             summary: string;
             tasks: components["schemas"]["BgTask"][] | null;
+            ticks: string[] | null;
             title: string;
             tool: string;
             tools_stale: string;

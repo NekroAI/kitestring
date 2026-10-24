@@ -86,6 +86,9 @@ func (b *broker) publishSession(x store.Session) {
 	})
 }
 
+// clock：心跳里的服务端时间（毫秒时间戳）。
+func clock() string { return fmt.Sprintf(`{"now":%d}`, time.Now().UnixMilli()) }
+
 func (b *broker) serve(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
@@ -104,7 +107,8 @@ func (b *broker) serve(w http.ResponseWriter, r *http.Request) {
 		delete(b.subs, s)
 		b.mu.Unlock()
 	}()
-	fmt.Fprint(w, "retry: 3000\nevent: hello\ndata: {}\n\n")
+	// hello / ping 带上服务端时间，网页据此对齐时钟（工作台时间线按服务端时间画，R-170）
+	fmt.Fprintf(w, "retry: 3000\nevent: hello\ndata: %s\n\n", clock())
 	fl.Flush()
 	// 心跳用具名事件而不是注释：网页能看到它，据此发现“连接还开着、其实已经断了”的情况（R-65）
 	ping := time.NewTicker(20 * time.Second)
@@ -118,7 +122,7 @@ func (b *broker) serve(w http.ResponseWriter, r *http.Request) {
 			s.settle(w)
 			fl.Flush()
 		case <-ping.C:
-			fmt.Fprint(w, "event: ping\ndata: {}\n\n")
+			fmt.Fprintf(w, "event: ping\ndata: %s\n\n", clock())
 			s.settle(w)
 			fl.Flush()
 		}
