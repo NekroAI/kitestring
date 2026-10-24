@@ -112,6 +112,9 @@ func (h *Hub) expireRequest(ctx context.Context, id string) {
 	h.decisionsChanged(ctx, d)
 }
 
+// ResumeRequestExpiry 供测试模拟 Hub 启动时给限时请求重新排期。
+func (h *Hub) ResumeRequestExpiry(ctx context.Context) { h.resumeRequestExpiry(ctx) }
+
 // resumeRequestExpiry：Hub 启动时给还在等的限时请求重新排期（已过期的马上处理）。
 func (h *Hub) resumeRequestExpiry(ctx context.Context) {
 	list, err := h.store.PendingRequests(ctx, "", "")

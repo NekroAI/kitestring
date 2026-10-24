@@ -140,7 +140,7 @@ func (h *Hub) decisionPush(ctx context.Context, d store.Decision) pushMeta {
 	}
 	why := "主助理没有代答授权"
 	if d.ProjectID != "" {
-		if g, err := h.store.ActiveGrant(ctx, d.ProjectID); err == nil {
+		if g, err := h.proxyGrant(ctx, d.ProjectID); err == nil {
 			if _, r := holdReason(d, g, time.Now()); r != "" {
 				why = r
 			}
@@ -190,7 +190,38 @@ func deviceLabel(r *http.Request) string {
 	return ""
 }
 
-// awayGrant 返回这次离开给项目开的授权窗口（没有时取项目当前生效的窗口）。
+// clampGrantByAway 按离开时选的范围收窄窗口 g：实际上限取两者中较严的；scope = none 时返回 false（不代答）。
+// 旧窗口在离开期间只能被收窄，不能放宽；离开结束后不再收窄，旧窗口按原到期时间恢复。
+func clampGrantByAway(g store.Grant, scope string) (store.Grant, bool) {
+	switch scope {
+	case store.AwayScopeNone:
+		return g, false
+	case store.RiskLow, store.RiskMedium:
+		if store.RiskRank(scope) < store.RiskRank(g.MaxRisk) {
+			g.MaxRisk = scope
+		}
+	}
+	return g, true
+}
+
+// proxyGrant 是代答上限唯一的算处：返回项目当前能用来代答的窗口，MaxRisk 已按离开范围收窄。
+// 所有会写 proxy_by 的入口（decision_answer / ks decision answer）和判断「能不能代答」的地方（静默推送、保留原因、授权说明）都调它。
+// 离开中且 scope = none、或没有生效窗口时返回 store.ErrNotFound。
+func (h *Hub) proxyGrant(ctx context.Context, projectID string) (store.Grant, error) {
+	g, err := h.store.ActiveGrant(ctx, projectID)
+	if err != nil {
+		return g, err
+	}
+	if a, aerr := h.store.ActiveAway(ctx); aerr == nil {
+		var ok bool
+		if g, ok = clampGrantByAway(g, a.Scope); !ok {
+			return g, store.ErrNotFound
+		}
+	}
+	return g, nil
+}
+
+// awayGrant 返回这次离开给项目开的授权窗口（没有时取项目当前生效的窗口，按这次离开的范围收窄；scope = none 时没有）。
 func (h *Hub) awayGrant(ctx context.Context, a store.Away, projectID string) *store.Grant {
 	gs, err := h.store.AwayGrants(ctx, a.ID)
 	if err == nil {
@@ -201,7 +232,9 @@ func (h *Hub) awayGrant(ctx context.Context, a store.Away, projectID string) *st
 		}
 	}
 	if g, err := h.store.ActiveGrant(ctx, projectID); err == nil {
-		return &g
+		if g, ok := clampGrantByAway(g, a.Scope); ok {
+			return &g
+		}
 	}
 	return nil
 }
@@ -231,7 +264,14 @@ func (h *Hub) openAwayGrants(ctx context.Context, a store.Away) []string {
 			continue
 		}
 		if g, err := h.store.ActiveGrant(ctx, p.ID); err == nil {
-			notices = append(notices, fmt.Sprintf("%s 已有生效中的授权窗口 %s（至 %s），沿用", p.Name, g.Code, g.ExpiresAt.Local().Format("01-02 15:04")))
+			note := fmt.Sprintf("%s 已有生效中的授权窗口 %s（至 %s），沿用", p.Name, g.Code, g.ExpiresAt.Local().Format("01-02 15:04"))
+			if cg, _ := clampGrantByAway(g, a.Scope); cg.MaxRisk != g.MaxRisk {
+				note += fmt.Sprintf("；离开期间代答上限收窄到%s（离开结束后恢复为%s）", riskZh[cg.MaxRisk], riskZh[g.MaxRisk])
+				if _, err := h.tell(ctx, key, p.ID, "", fmt.Sprintf("用户暂时离开了（%s，预估%s）。离开期间你的代答上限收窄到%s（取离开范围与窗口 %s 中较严的）；离开结束后恢复。", a.Code, expect, riskZh[cg.MaxRisk], g.Code)); err != nil {
+					h.log.Warn("通知主助理代答上限收窄失败", "err", err)
+				}
+			}
+			notices = append(notices, note)
 			continue
 		}
 		intro := fmt.Sprintf("用户暂时离开了（%s，预估%s）。", a.Code, expect)
