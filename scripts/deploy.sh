@@ -13,6 +13,7 @@
 #   LAUNCHD_DAEMON    daemon 服务名，默认 ai.nekro.kitestring.daemon
 #   KS_LAUNCHCTL      launchctl 命令，默认 launchctl（试跑可换成空操作脚本）
 #   KS_EXPECT_COMMIT  部署后核对用的期望提交号，默认取构建目录的 HEAD（试跑造失败用）
+#   KS_KEEP_BACKUPS   $KS_HOME/backups 里 ks-* 和 hub-*.db 各保留最近几份，默认 10
 #   KS_VERIFY_TIMEOUT 部署后等待服务就绪的秒数，默认 30
 set -euo pipefail
 
@@ -21,7 +22,7 @@ TARGET=""
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
-    -h | --help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,17p' "$0"; exit 0 ;;
     -*) echo "未知参数：$a" >&2; exit 2 ;;
     *) TARGET="$a" ;;
   esac
@@ -35,6 +36,7 @@ LAUNCHD_HUB="${LAUNCHD_HUB:-ai.nekro.kitestring.hub}"
 LAUNCHD_DAEMON="${LAUNCHD_DAEMON:-ai.nekro.kitestring.daemon}"
 KS_LAUNCHCTL="${KS_LAUNCHCTL:-launchctl}"
 KS_VERIFY_TIMEOUT="${KS_VERIFY_TIMEOUT:-30}"
+KS_KEEP_BACKUPS="${KS_KEEP_BACKUPS:-10}"
 export KS_HOME
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -209,6 +211,24 @@ if [ -f "$KS_HOME/hub.db" ]; then
 else
   log "没有 $KS_HOME/hub.db，跳过数据库备份"
 fi
+
+# 备份保留策略：只清 $KS_HOME/backups，ks-* 和 hub-*.db 各保留最近 KS_KEEP_BACKUPS 份（文件名带时间，按名字排序）
+STEP="清理旧备份"
+prune_backups() {
+  local pattern="$1" f
+  [ -d "$BACKUP_DIR" ] || return 0
+  # shellcheck disable=SC2010
+  ls -1 "$BACKUP_DIR" | grep -E "$pattern" | sort -r | tail -n +"$((KS_KEEP_BACKUPS + 1))" | while IFS= read -r f; do
+    if [ "$DRY" = 1 ]; then
+      log "[dry-run] 删除旧备份 $BACKUP_DIR/$f"
+    else
+      rm -f "${BACKUP_DIR:?}/$f"
+      log "删除旧备份 $BACKUP_DIR/$f"
+    fi
+  done
+}
+prune_backups '^ks-[0-9]'
+prune_backups '^hub-[0-9].*\.db$'
 
 # 4. 替换并重启（macOS 直接覆盖正在运行的二进制会被 SIGKILL，所以先 rm 再 cp）
 STEP="替换 $KS_BIN"
