@@ -14,7 +14,7 @@ import (
 )
 
 // 改需求内容（R-134）：Agent 可以改标题、描述、验收标准、优先级、类型。规则：
-//   - 谁能改：关联了这条需求的会话（创建者建需求时自动关联）、同项目的 PM / Adv；其他会话（包括没关联的 Dev）拒绝；
+//   - 谁能改：关联了这条需求的会话（创建者建需求时自动关联）、同项目的 主调度 / 主助理；其他会话（包括没关联的 Dev）拒绝；
 //   - 已完成、已搁置的需求不能改；
 //   - 进行中 / 阻塞 / 待验收时改验收标准，要带 approval = 这条需求上一条用户已批准的批准类决策（Adv 不能代答批准类），
 //     免得 Agent 悄悄放宽验收标准；草稿 / 待开始可以直接改；
@@ -56,10 +56,10 @@ func (h *Hub) editCheck(ctx context.Context, r store.Requirement, callerKey stri
 	if slices.Contains(r.Sessions, x.Key) {
 		return x, nil
 	}
-	if (x.Role == roles.PM || x.Role == roles.Advisor) && r.ProjectID != "" && x.ProjectID == r.ProjectID {
+	if (x.Role == roles.PM || x.Role == roles.Aide || x.Role == roles.Advisor) && r.ProjectID != "" && x.ProjectID == r.ProjectID {
 		return x, nil
 	}
-	return x, huma.Error403Forbidden(fmt.Sprintf("只有关联了 %s 的会话（创建者、在做的会话）或项目 PM / Adv 能改它；你没有关联这条需求。要改请告诉 PM（pm_notify），或先 session_link_req 接手", r.Code))
+	return x, huma.Error403Forbidden(fmt.Sprintf("只有关联了 %s 的会话（创建者、在做的会话）或项目主调度 / 主助理 / 顾问能改它；你没有关联这条需求。要改请告诉主调度（pm_notify），或先 session_link_req 接手", r.Code))
 }
 
 // editApproved 检查 ref 是不是 r 上一条用户已批准的批准类决策。
@@ -80,7 +80,7 @@ func (h *Hub) editApproved(ctx context.Context, r store.Requirement, ref string)
 	case d.Status == store.DecPending:
 		return huma.Error403Forbidden(fmt.Sprintf("%s 用户还没答复，等用户批准后再改", d.Code))
 	case d.ProxyBy != "" && d.OverriddenAt == nil:
-		return huma.Error403Forbidden(fmt.Sprintf("%s 是 Adv 代答的，改验收标准要用户本人批准。%s", d.Code, editApprovalHint(r)))
+		return huma.Error403Forbidden(fmt.Sprintf("%s 是 主助理代答的，改验收标准要用户本人批准。%s", d.Code, editApprovalHint(r)))
 	case !strings.HasPrefix(strings.TrimSpace(d.Answer), "批准"):
 		return huma.Error403Forbidden(fmt.Sprintf("用户没有批准 %s（答复：%s），不能改验收标准", d.Code, brief(d.Answer, 60)))
 	}

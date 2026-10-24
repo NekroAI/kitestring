@@ -15,7 +15,6 @@ import (
 	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/protocol"
-	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 	"github.com/NekroAI/kitestring/internal/summary"
 	"github.com/NekroAI/kitestring/internal/version"
@@ -332,7 +331,7 @@ type projectIn struct {
 		AutoDispatch *bool `json:"auto_dispatch,omitempty"`
 		// Hidden：在项目列表里隐藏；不传表示不修改
 		Hidden *bool `json:"hidden,omitempty"`
-		// AgentRelease：允许 PM / Adv 把草稿放行为待开始（R-166）；不传表示不修改
+		// AgentRelease：允许 主调度 / 主助理 把草稿放行为待开始（R-166）；不传表示不修改
 		AgentRelease *bool `json:"agent_release,omitempty"`
 	}
 }
@@ -620,7 +619,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			}
 			if now, err := h.store.GetProject(ctx, in.ID); err == nil {
 				for _, text := range projectSettingsChanges(cur, now) {
-					h.onSettingsChanged(ctx, in.ID, text) // 用户改项目设置，订阅了 settings 的 PM / Adv 被唤醒（R-171）
+					h.onSettingsChanged(ctx, in.ID, text) // 用户改项目设置，订阅了 settings 的 主调度 / 主助理 被唤醒（R-171）
 				}
 			}
 			h.broker.publish("projects", "sessions", "requirements")
@@ -1223,7 +1222,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				ctx = store.WithActor(ctx, store.Actor{ReasonKind: in.Body.ReasonKind, Reason: in.Body.Reason})
 			}
 			if in.Body.Status == store.ReqReady {
-				// 放行（R-166）：只有 PM / Adv、项目开关打开、从草稿、写了理由才行；不关联放行的会话，需求照常归原会话或 PM
+				// 放行（R-166）：只有 主调度 / 主助理、项目开关打开、从草稿、写了理由才行；不关联放行的会话，需求照常归原会话或 PM
 				x, err := h.releaseCheck(ctx, before, in.Body.SessionKey, in.Body.Reason)
 				if err != nil {
 					return nil, err
@@ -1468,8 +1467,8 @@ func (h *Hub) registerAgent(api huma.API) {
 					return nil, apiErr(err)
 				}
 			case store.ReqDraft:
-				if x.Role != roles.PM && x.Role != roles.Advisor {
-					out.Body.Notices = append(out.Body.Notices, "已关联，但这条还是草稿，请 PM 放行，或用 req_request_status 申请用户批准")
+				if !canRelease(x.Role) {
+					out.Body.Notices = append(out.Body.Notices, "已关联，但这条还是草稿，请主调度放行，或用 req_request_status 申请用户批准")
 					break
 				}
 				p, perr := h.store.GetProject(ctx, r.ProjectID)

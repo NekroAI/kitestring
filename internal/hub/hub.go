@@ -164,6 +164,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 		}
 	}
 	h.mu.Unlock()
+	h.migrateAide(ctx) // 身份调整（R-190）：先清掉绑在非主助理上的窗口，再排到期通知
 	h.resumeGrantExpiry(ctx)
 	h.resumeRequestExpiry(ctx)
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
@@ -313,6 +314,9 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		case !online && wasOnline:
 			h.devDown(key)
 		}
+	}
+	if next.Role == roles.Advisor && ev.Name == protocol.EventWait {
+		h.aideHint(ctx, next, false) // 顾问常驻但项目没有主助理：提示一次（R-190）
 	}
 	// 一轮做完或挂起待命：把排给它的待开始需求整批送过去（R-66）
 	if (ev.Name == "Stop" || ev.Name == protocol.EventWait) && next.State != store.StateEnded {

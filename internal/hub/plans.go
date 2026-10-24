@@ -216,8 +216,8 @@ func (h *Hub) checkPlanOwner(ctx context.Context, key string) error {
 	if err != nil {
 		return nil
 	}
-	if s.Role == roles.Advisor || s.Role == roles.Reviewer {
-		return huma.Error400BadRequest("身份为" + roles.Label(s.Role) + "的会话不能当计划的负责会话，请选 PM、Dev 或无身份的会话")
+	if s.Role == roles.Advisor || s.Role == roles.Reviewer || s.Role == roles.Aide {
+		return huma.Error400BadRequest("身份为" + roles.Label(s.Role) + "的会话不能当计划的负责会话，请选主调度、开发或无身份的会话")
 	}
 	return nil
 }
@@ -635,7 +635,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 				if x, err := h.store.GetSession(ctx, b.SessionKey); err == nil {
 					project = x.ProjectID
 					// 顾问 / 审查员建的计划，负责会话改为本项目的 PM（没有就留空），避免推给自己（R-99）
-					if x.Role == roles.Advisor || x.Role == roles.Reviewer {
+					if x.Role == roles.Advisor || x.Role == roles.Reviewer || x.Role == roles.Aide {
 						owner = h.projectPM(ctx, project)
 					}
 				}

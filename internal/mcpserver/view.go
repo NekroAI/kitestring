@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/summary"
 )
 
@@ -99,20 +100,16 @@ func (r reqView) line() string {
 }
 
 func roleZh(role string) string {
-	switch role {
-	case "pm":
-		return "PM"
-	case "advisor":
-		return "Adv"
-	case "dev":
-		return "Dev"
-	case "":
+	if role == "" {
 		return "Agent"
+	}
+	if d := roles.Display(role); d != "" {
+		return d
 	}
 	return role
 }
 
-var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给 Rev"}
+var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给评审"}
 
 // String 是 req_get 的默认输出：要点按行，附图另以图片返回。
 func (r reqView) String() string {

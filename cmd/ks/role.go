@@ -14,7 +14,8 @@ import (
 	"github.com/NekroAI/kitestring/internal/roles"
 )
 
-// runRole：ks role <身份>——声明当前会话的身份（R-82）。成功后打印身份提示词，Agent 立即按它工作；
+// runRole：ks role <身份>——声明当前会话的身份（R-82、R-190）。标识、中文名、英文简写和别称都认：
+// ks role aide / 主助理 / 参谋、ks role pm / 主调度 / "接管 PM"；旧标识 pm / dev / advisor / reviewer 不变。成功后打印身份提示词，Agent 立即按它工作；
 // 会话恢复或压缩上下文后，daemon 会通过 hook 再补发一次。
 func runRole(args []string) error {
 	fs := flag.NewFlagSet("role", flag.ContinueOnError)
@@ -22,15 +23,16 @@ func runRole(args []string) error {
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("用法：ks role <%s|none>", strings.Join(roles.All, "|"))
+	if fs.NArg() < 1 {
+		return fmt.Errorf("用法：ks role <%s|none>（也认中文名和别称，如 主助理、参谋、主调度）", strings.Join(roles.All, "|"))
 	}
-	role := strings.ToLower(fs.Arg(0))
-	if role == "none" {
-		role = ""
-	}
-	if !roles.Valid(role) {
-		return fmt.Errorf("未知身份 %q：可选 %s，清除身份用 none", fs.Arg(0), strings.Join(roles.All, "、"))
+	role, ok := roles.Resolve(strings.Join(fs.Args(), " "))
+	if !ok {
+		var b strings.Builder
+		for _, r := range roles.All {
+			b.WriteString("\n  ks role " + r + "  " + roles.AliasLine(r))
+		}
+		return fmt.Errorf("未知身份 %q，可选（后面是也认的叫法）：%s\n清除身份用 none", strings.Join(fs.Args(), " "), b.String())
 	}
 	key := currentSession(*session)
 	if key == "" {
@@ -52,7 +54,7 @@ func runRole(args []string) error {
 		return nil
 	}
 	if len(out.Demoted) > 0 {
-		fmt.Printf("[Kitestring] 已接管 PM：原来的 PM 会话（%s）降为普通会话，并已收到通知。\n", strings.Join(out.Demoted, "、"))
+		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）降为普通会话，并已收到通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
 	}
 	fmt.Print(out.Prompt)
 	return nil
@@ -92,7 +94,7 @@ func runBrief(args []string) error {
 	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " ")})
 }
 
-// runMorning：Adv 写离开期间小结（R-165）；ks morning 是旧名，保留别名。
+// runMorning：主助理写离开期间小结（R-165）；ks morning 是旧名，保留别名。
 //
 //	ks away <总述>                          写总述（传空字符串清除）
 //	ks away advise <R-x> <pass|return|clear> <理由>   给待验收的需求写验收建议

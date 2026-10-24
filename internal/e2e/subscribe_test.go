@@ -50,7 +50,7 @@ func TestWaitSubscribe(t *testing.T) {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
 	}
 	e.waitFor("会话入库", func() bool { return e.session("claude:plain").Key != "" })
-	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "advisor"}, {"claude:dev", "dev"}} {
+	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "aide"}, {"claude:dev", "dev"}} {
 		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -213,7 +213,7 @@ func TestUserWebChangesNotify(t *testing.T) {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
 	}
 	e.waitFor("会话入库", func() bool { return e.session("claude:plain").ProjectID != "" })
-	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "advisor"}, {"claude:dev", "dev"}} {
+	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "aide"}, {"claude:dev", "dev"}} {
 		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -340,7 +340,7 @@ func TestUserReviewPlanGrantNotify(t *testing.T) {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
 	}
 	e.waitFor("会话入库", func() bool { return e.session("claude:dev").ProjectID != "" })
-	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "advisor"}, {"claude:dev", "dev"}} {
+	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "aide"}, {"claude:dev", "dev"}} {
 		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
 			t.Fatal(err)
 		}

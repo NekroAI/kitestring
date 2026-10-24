@@ -173,6 +173,13 @@ func (s *Store) ActiveGrant(ctx context.Context, projectID string) (Grant, error
 	return g, err
 }
 
+// HasTell 判断会话是否已经收到过标题为 question 的团队消息（一次性提示去重用，Hub 重启后仍有效）。
+func (s *Store) HasTell(ctx context.Context, key, question string) bool {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM decisions WHERE kind = ? AND session_key = ? AND question = ?`, KindTell, key, question).Scan(&n)
+	return err == nil && n > 0
+}
+
 // RevokeGrant 撤销窗口；已撤销或已到期的返回错误。
 func (s *Store) RevokeGrant(ctx context.Context, ref string) (Grant, error) {
 	g, err := s.GetGrant(ctx, ref)

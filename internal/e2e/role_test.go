@@ -43,7 +43,7 @@ func TestRoles(t *testing.T) {
 
 	// 压缩后补发身份提示词；普通的新一轮不重复注入
 	e.waitFor("daemon 收到身份", func() bool {
-		return strings.Contains(hook(t, "claude", map[string]any{"session_id": "pm-1", "cwd": cwd, "hook_event_name": "SessionStart", "source": "compact"}), "你的会话身份：PM")
+		return strings.Contains(hook(t, "claude", map[string]any{"session_id": "pm-1", "cwd": cwd, "hook_event_name": "SessionStart", "source": "compact"}), "你的会话身份：主调度（PM）")
 	})
 	if got := hook(t, "claude", map[string]any{"session_id": "pm-1", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "继续", "prompt_id": "p1"}); strings.Contains(got, "会话身份") {
 		t.Fatalf("普通一轮不应重复注入身份：%s", got)
@@ -65,7 +65,7 @@ func TestRoles(t *testing.T) {
 	}
 	select {
 	case res := <-done:
-		if res.Reason != "delivered" || !strings.Contains(res.Text, "PM 身份已由") {
+		if res.Reason != "delivered" || !strings.Contains(res.Text, "主调度（PM）身份已由") {
 			t.Fatalf("旧 PM 应收到降级通知：%+v", res)
 		}
 	case <-time.After(15 * time.Second):

@@ -13,13 +13,13 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 参谋授权窗口（R-163）：你不在时在网页上授权一个 Adv 会话，到期前代你答复决策。规则：
+// 参谋授权窗口（R-163）：你不在时在网页上授权主助理会话，到期前代你答复决策。规则：
 //   - 窗口按项目开，同一项目同时只有一个；有到期时间（最长 24 小时）和范围（最高风险档：low 或 medium）；随时可撤销，到期自动失效。
-//   - 只有被授权的那个 Adv 会话能代答，别的身份、别的会话一律拒绝；必须写理由，并给出自己的风险判断——
+//   - 只有被授权的那个主助理会话能代答，别的身份、别的会话一律拒绝；必须写理由，并给出自己的风险判断——
 //     风险档只升不降：取提问方标的和参谋判断中更高的一档，超出窗口范围就拒绝。提问方没标风险档按 high 算。
 //   - 硬规则永不代答：批准方案 / 计划（approval）、设计选型（选项或要拍板的点带效果图）、非决策类、已答复 / 已关闭、参谋自己提的；
 //     要拍板的点（points）整体判定，任何一点命中硬规则整条都不代答。验收、批准计划本来不走决策接口，代答碰不到。
-//   - 代答留痕在决策上（谁、理由、风险档、原文、时间），网页标「Adv 代答」；你可以推翻（重新作答），更正会送回提问方。
+//   - 代答留痕在决策上（谁、理由、风险档、原文、时间），网页标「主助理代答」；你可以推翻（重新作答），更正会送回提问方。
 //   - 窗口开着时，参谋可以代答的决策先不推送通知（不吵醒你），但仍留在收件箱里；参谋答了就移走。
 
 const grantMaxSpan = 24 * time.Hour
@@ -80,8 +80,8 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 	if err != nil {
 		return x, "", apiErr(err)
 	}
-	if x.Role != roles.Advisor {
-		return x, "", huma.Error403Forbidden("只有 Adv（参谋）能在用户的授权窗口内代答决策；其它身份不能代答，要用户拍板的事请等用户答复")
+	if x.Role != roles.Aide {
+		return x, "", huma.Error403Forbidden(notAide("代答决策", x.Role) + "；要用户拍板的事请等用户答复")
 	}
 	if d.ProjectID == "" || d.ProjectID != x.ProjectID {
 		return x, "", huma.Error403Forbidden(d.Code + " 不属于你所在的项目，不能代答")
@@ -91,7 +91,7 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 		return x, "", huma.Error403Forbidden("用户没有开授权窗口，或窗口已到期 / 已撤销：不能代答，等用户答复")
 	}
 	if g.SessionKey != caller {
-		return x, "", huma.Error403Forbidden("用户的授权窗口给的是另一个 Adv 会话，你不能代答")
+		return x, "", huma.Error403Forbidden("用户的授权窗口给的是另一个会话，你不能代答")
 	}
 	if why := proxyHard(d, caller); why != "" {
 		return x, "", huma.Error403Forbidden("硬规则，不能代答：" + why + "；留给用户")
@@ -131,7 +131,7 @@ func proxyText(d store.Decision) string {
 	if d.OverriddenAt != nil {
 		return fmt.Sprintf("更正：用户推翻了参谋的代答（原代答：%s），以此为准：%s", brief(d.ProxyAnswer, 80), d.Answer)
 	}
-	return fmt.Sprintf("（参谋代答）%s\n（用户开了授权窗口，由 Adv 代为答复；理由：%s。用户可能事后推翻，届时会送来更正）", d.Answer, brief(d.ProxyReason, 80))
+	return fmt.Sprintf("（参谋代答）%s\n（用户开了授权窗口，由主助理代为答复；理由：%s。用户可能事后推翻，届时会送来更正）", d.Answer, brief(d.ProxyReason, 80))
 }
 
 type grantsOut struct {
@@ -161,7 +161,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Body struct {
 				ProjectID  string    `json:"project_id" minLength:"1"`
-				SessionKey string    `json:"session_key" minLength:"1" doc:"被授权的 Adv 会话"`
+				SessionKey string    `json:"session_key" minLength:"1" doc:"被授权的主助理会话"`
 				ExpiresAt  time.Time `json:"expires_at" doc:"到期时间（最长 24 小时后）"`
 				MaxRisk    string    `json:"max_risk" enum:"low,medium" doc:"可代答的最高风险档"`
 			}
@@ -171,14 +171,14 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			if err != nil {
 				return nil, huma.Error400BadRequest("找不到这个会话")
 			}
-			if x.Role != roles.Advisor {
-				return nil, huma.Error400BadRequest("只能授权身份为 Adv 的会话")
+			if x.Role != roles.Aide {
+				return nil, huma.Error400BadRequest("只能授权本项目的主助理（ks role aide）；代答已从顾问移到主助理")
 			}
 			if x.ProjectID != b.ProjectID {
-				return nil, huma.Error400BadRequest("这个 Adv 会话不在该项目里")
+				return nil, huma.Error400BadRequest("这个主助理会话不在该项目里")
 			}
 			if x.State == store.StateEnded || x.State == store.StateLost || x.DoneAt != nil {
-				return nil, huma.Error400BadRequest("这个 Adv 会话已结束")
+				return nil, huma.Error400BadRequest("这个主助理会话已结束")
 			}
 			now := time.Now()
 			if !b.ExpiresAt.After(now) {
@@ -194,7 +194,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			h.tellGrant(ctx, g, fmt.Sprintf("用户开了参谋授权窗口 %s：到 %s 前，你可以代用户答复本项目%s以内的决策（decision_answer / ks decision answer，必须写理由和你自己的风险判断，风险档取提问方与你判断中更高的一档）。硬规则永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收。拿不准的留给用户。",
 				g.Code, g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]))
 			h.scheduleGrantExpiry(g)
-			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户开了参谋授权窗口 %s：授权给 %s，到 %s 前可代答%s以内的决策。", g.Code, h.actorName(ctx, g.SessionKey), g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]), g.SessionKey) // 被授权的 Adv 已由 tellGrant 告诉（R-171）
+			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户开了参谋授权窗口 %s：授权给 %s，到 %s 前可代答%s以内的决策。", g.Code, h.actorName(ctx, g.SessionKey), g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]), g.SessionKey) // 被授权的主助理已由 tellGrant 告诉（R-171）
 			h.broker.publish("grants", "decisions")
 			return &grantOut{Body: g}, nil
 		})
@@ -260,7 +260,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 		})
 }
 
-// tellGrant 给被授权的 Adv 会话送一句说明（走团队消息，不进你的收件箱）。
+// tellGrant 给被授权的主助理 会话送一句说明（走团队消息，不进你的收件箱）。
 func (h *Hub) tellGrant(ctx context.Context, g store.Grant, text string) {
 	if _, err := h.tell(ctx, g.SessionKey, g.ProjectID, "", text); err != nil {
 		h.log.Warn("通知参谋授权变化失败", "err", err)
@@ -338,7 +338,7 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 		})
 }
 
-// scheduleGrantExpiry：窗口到期时告诉被授权的 Adv 和订阅了 settings 的会话（PM 默认订阅）「授权窗口已到期」（R-171）。
+// scheduleGrantExpiry：窗口到期时告诉被授权的主助理 和订阅了 settings 的会话（PM 默认订阅）「授权窗口已到期」（R-171）。
 // 只在窗口到点仍是生效状态时才送（中途撤销过的撤销时已经通知）；Hub 重启后由 resumeGrantExpiry 重新排。
 func (h *Hub) scheduleGrantExpiry(g store.Grant) {
 	time.AfterFunc(time.Until(g.ExpiresAt)+200*time.Millisecond, func() {

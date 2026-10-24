@@ -16,13 +16,18 @@ import (
 	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/version"
 	"github.com/NekroAI/kitestring/internal/writing"
 )
 
-const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
-- 会话身份：用户说“接管 PM / 做开发（Dev）/ 当顾问（Adv）/ 当审查员（Rev）”之类的话时，运行 shell 命令 ks role pm|dev|advisor|reviewer，按它输出的身份提示词工作。
-- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿只有 PM / Adv 关联、且项目开了「允许 PM / Adv 放行草稿」才会记一次放行并变为进行中；Dev 等其他身份或没开时只关联、仍是草稿，要请 PM 或用户放行）。
+// instructions 是 MCP 说明；{{ROLES}} 换成各身份的职责与别称（R-190，来自 roles.Team）。
+var instructions = strings.Replace(instructionsTmpl, "{{ROLES}}", roles.Team(), 1)
+
+const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
+- 会话身份：用户让你担任某个身份时（如“接管 PM”“当参谋”“做主助理”“当顾问”“做开发”“当评审”），运行 shell 命令 ks role aide|advisor|reviewer|pm|dev（也认中文名和别称，如 ks role 参谋），按它输出的身份提示词工作。各身份的职责与别称：
+{{ROLES}}
+- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿只有主调度 / 主助理关联、且项目开了「允许主调度 / 主助理放行草稿」才会记一次放行并变为进行中；开发、顾问等其他身份或没开时只关联、仍是草稿，要请主调度或用户放行）。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
 - 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 决策后果链：按用户在某条决策里的答复新建需求时，req_create 带 from_decision（D-x）；接着某条决策往下问、或要推翻它的结论时，decision_raise 带 from_decision（推翻时再加 overturns = true）。
@@ -35,7 +40,7 @@ const instructions = `Kitestring 是用户的多 agent 驾驶舱，用户通过�
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认最长等 1 小时，可用 --timeout 调整，最长 12h；后台任务的超时要设得比它长），它结束时你会被唤醒。
   - Codex：没有“后台命令结束后唤醒”的机制，要在前台运行 ks wait（自动最多等 30 分钟，不用加 --timeout；shell 工具的超时设成 35 分钟以上）。命令还在运行时继续等它结束，不要中断、不要重复运行。超时时它会提示你收尾：照做，用一两句话说明进度和在等什么，然后结束本轮，不要再运行 ks wait 续等。前台等待期间这一轮一直开着，Codex 会定期查看命令输出，每次消耗少量额度（主要是缓存读取），所以最多 30 分钟。
-  - 订阅事件（--on）：Adv / PM 挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、参谋授权窗口）时是 settings，改需求状态时是 status（status 之外，派活的 PM 和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：Adv 订阅 decision,review,settings，PM 订阅 review,blocked,settings，Dev 等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是派活；不进用户收件箱、不推送。`
+  - 订阅事件（--on）：主助理 / 主调度挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、参谋授权窗口）时是 settings，改需求状态时是 status（status 之外，派活的主调度和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：主助理订阅 decision,review,settings，主调度订阅 review,blocked,settings，顾问、开发等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是派活；不进用户收件箱、不推送。`
 
 // Run 以 stdio 运行 MCP server。
 func Run(ctx context.Context) error {
@@ -124,7 +129,7 @@ type reqCreateIn struct {
 
 type reqStatusIn struct {
 	Ref    string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
-	Status string `json:"status" jsonschema:"新状态：draft in_progress blocked review shelved；ready（放行）只有 PM / Adv 在项目开了放行时能设，且必须写 reason（没开放行时用 req_request_status 申请用户批准）；done 只能由用户验收后设置"`
+	Status string `json:"status" jsonschema:"新状态：draft in_progress blocked review shelved；ready（放行）只有主调度 / 主助理在项目开了放行时能设，且必须写 reason（没开放行时用 req_request_status 申请用户批准）；done 只能由用户验收后设置"`
 	Reason string `json:"reason,omitempty" jsonschema:"设为 ready（放行草稿）时必填：一句理由，说明为什么做法明确、可以直接排期；设为 shelved（搁置）时必填：一句话说明为什么搁置；改回草稿（撤回放行）时可写原因"`
 	// ReasonKind 是搁置原因的类别（R-157）
 	ReasonKind string `json:"reason_kind,omitempty" jsonschema:"搁置时的原因类别：duplicate 重复 / changed 方向变了 / dropped 不做了 / other 其他（默认）"`
@@ -181,7 +186,7 @@ type decisionIn struct {
 	Summary        []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
 	FromDecision   string           `json:"from_decision,omitempty" jsonschema:"来源决策（如 D-142）：这条是接着哪条决策往下问的，或要推翻哪条决策的结论；决策详情里会连成后果链"`
 	Overturns      bool             `json:"overturns,omitempty" jsonschema:"为 true 表示这条要推翻 from_decision 那条的结论（例如用户之前选了 B，现在要改回 A）；接着往下问时不填"`
-	Risk           string           `json:"risk,omitempty" jsonschema:"风险档：low / medium / high，不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high。用户开了参谋授权窗口时，low / medium 的决策可能由 Adv 代答（用户可推翻，推翻时会送来更正）"`
+	Risk           string           `json:"risk,omitempty" jsonschema:"风险档：low / medium / high，不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high。用户开了授权窗口时，low / medium 的决策可能由主助理代答（用户可推翻，推翻时会送来更正）"`
 }
 
 type decisionAnswerIn struct {
@@ -325,7 +330,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。放行：PM / Adv 可以把草稿设为 ready（待开始），必须写 reason，时间线记下谁放行、为什么，用户可一键撤回；项目设置没打开「允许 PM / Adv 放行草稿」时会被拒绝，Dev 不能放行。搁置（shelved）必须写 reason（一句话说明为什么搁置，可用 reason_kind 标 duplicate / changed / dropped / other），状态历史和时间线会记下。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。放行：主调度 / 主助理可以把草稿设为 ready（待开始），必须写 reason，时间线记下谁放行、为什么，用户可一键撤回；项目设置没打开「允许主调度 / 主助理放行草稿」时会被拒绝，开发、顾问不能放行。搁置（shelved）必须写 reason（一句话说明为什么搁置，可用 reason_kind 标 duplicate / changed / dropped / other），状态历史和时间线会记下。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqStatusIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"status": in.Status, "session_key": t.sessionKey(ctx, req), "reason": in.Reason, "reason_kind": in.ReasonKind}
 			dropEmpty(body)
@@ -339,7 +344,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_request_status", Description: "申请改需求状态（R-188）：要用户确认某条需求时用它——把草稿改为待开始，或重新打开已搁置的需求（已搁置 → 待开始 / 草稿）。写一句 reason。申请出现在用户的「要你处理」，用户在审批抽屉里批准后由纸鸢直接改状态（不用你再改），时间线记成「用户批准了 Agent 的申请」；拒绝、或批准前状态已被改动而自动作废，结果都会送到你这里。不推送、不限时；同一条需求已有在等的申请时不重复建。不要再在对话里写「请在面板上把 R-x 设为待开始」。项目开了「允许 PM / Adv 放行草稿」时，PM / Adv 对做法明确的草稿仍可直接用 req_update_status 放行，不用申请。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_request_status", Description: "申请改需求状态（R-188）：要用户确认某条需求时用它——把草稿改为待开始，或重新打开已搁置的需求（已搁置 → 待开始 / 草稿）。写一句 reason。申请出现在用户的「要你处理」，用户在审批抽屉里批准后由纸鸢直接改状态（不用你再改），时间线记成「用户批准了 Agent 的申请」；拒绝、或批准前状态已被改动而自动作废，结果都会送到你这里。不推送、不限时；同一条需求已有在等的申请时不重复建。不要再在对话里写「请在面板上把 R-x 设为待开始」。项目开了「允许主调度 / 主助理放行草稿」时，PM / Adv 对做法明确的草稿仍可直接用 req_update_status 放行，不用申请。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqRequestStatusIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -353,7 +358,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.Message), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目 PM / Adv；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 阻塞 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目主调度 / 主助理 / 顾问；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 阻塞 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqEditIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"session_key": t.sessionKey(ctx, req), "reason": in.Reason, "approval": in.Approval}
 			dropEmpty(body)
@@ -499,7 +504,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "decision_answer", Description: "Adv（参谋）用：用户开了参谋授权窗口时，在到期前代用户答复本项目范围内的决策。必须写 reason 和你自己的风险判断 risk（取它和提问方标的中更高的一档，超出窗口范围就拒绝）。硬规则永不代答：批准方案 / 计划、设计选型（带效果图）、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收，以及你自己提的决策；拿不准的留给用户。代答会留痕，用户可推翻，推翻时更正送回提问方。没有窗口、窗口已到期 / 撤销、或你不是被授权的 Adv 时会被拒绝。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_answer", Description: "主助理（Aide，也叫参谋）用：用户开了授权窗口时，在到期前代用户答复本项目范围内的决策。必须写 reason 和你自己的风险判断 risk（取它和提问方标的中更高的一档，超出窗口范围就拒绝）。硬规则永不代答：批准方案 / 计划、设计选型（带效果图）、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收，以及你自己提的决策；拿不准的留给用户。代答会留痕，用户可推翻，推翻时更正送回提问方。没有窗口、窗口已到期 / 撤销、或你不是被授权的 Adv 时会被拒绝。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionAnswerIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"session_key": t.sessionKey(ctx, req), "answer": in.Answer, "reason": in.Reason, "risk": in.Risk}
 			if len(in.Choices) > 0 {
@@ -517,7 +522,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.Code + " 已代用户答复并送给提问方；用户能在代答记录里看到，可能推翻"), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。草稿：只有 PM / Adv 关联、且项目开了「允许 PM / Adv 放行草稿」时记一次放行（理由「开始做 R-x」，用户可撤回）再变为进行中；Dev 等其他身份关联草稿、或没开放行时只关联、仍是草稿，返回里会提示请 PM 或用户放行。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "session_link_req", Description: "开始做某条需求时调用：把当前会话关联到这条需求，待开始的需求会自动变为进行中，让用户在看板上看到你在做什么。草稿：只有主调度 / 主助理关联、且项目开了「允许主调度 / 主助理放行草稿」时记一次放行（理由「开始做 R-x」，用户可撤回）再变为进行中；Dev 等其他身份关联草稿、或没开放行时只关联、仍是草稿，返回里会提示请 PM 或用户放行。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in linkIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {

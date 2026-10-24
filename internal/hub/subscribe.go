@@ -12,14 +12,14 @@ import (
 )
 
 // 事件订阅（R-164）：ks wait --on decision,review,blocked,stage 订阅本项目别的会话发生的事；不给 --on 时沿用上次，
-// 从没给过时按身份默认（Adv：decision、review、settings；PM：review、blocked、settings；Dev 等其它身份不订阅，和以前一样不被打扰）。
+// 从没给过时按身份默认（主助理：decision、review、settings；主调度：review、blocked、settings；顾问（R-190 起）、开发等其它身份不订阅，和以前一样不被打扰）。
 // 发生时给在线的订阅者送一条团队消息（kind = tell，R-135 的通道）：挂着 ks wait 的立刻被唤醒，正在跑的下次挂上时收到；
 // 只是告诉，不是派活（R-150）；不进用户收件箱、不推送。事件是自己引起的不送；onReview 已经告诉过的 PM 不重复送。
 
 // defaultWaitOn 是各身份的默认订阅。
 func defaultWaitOn(role string) []string {
 	switch role {
-	case roles.Advisor:
+	case roles.Aide:
 		return []string{protocol.OnDecision, protocol.OnReview, protocol.OnSettings}
 	case roles.PM:
 		return []string{protocol.OnReview, protocol.OnBlocked, protocol.OnSettings}
@@ -108,7 +108,7 @@ func (h *Hub) onDecisionRaised(ctx context.Context, d store.Decision) {
 	}
 	text += "，等用户在 Kitestring 上拍板。"
 	if h.proxyQuiet(ctx, d) {
-		text += "用户开着参谋授权窗口，这条在范围内：被授权的 Adv 可以用 decision_answer 代答（写理由和自己的风险判断），拿不准就留给用户。"
+		text += "用户开着参谋授权窗口，这条在范围内：被授权的主助理可以用 decision_answer 代答（写理由和自己的风险判断），拿不准就留给用户。"
 	}
 	skip := []string{d.SessionKey}
 	if d.RequirementID != "" {
@@ -150,7 +150,7 @@ func (h *Hub) onStageSubmitted(ctx context.Context, x store.Plan, seq int, by st
 // 用户在网页上做的事（R-171）：R-164 的订阅只覆盖会话引起的事件，用户改设置 / 改需求状态也要让相关会话知道，不必再回终端手动叫醒。
 // 同样是团队消息：不进用户收件箱、不推送；已经被别的通知告诉过的会话不重复送。
 
-// onSettingsChanged：用户改了项目 p 的设置，text 写清楚改了什么。送给订阅了 settings 的在线会话（PM、Adv 默认订阅）；skip 里是已被告知的。
+// onSettingsChanged：用户改了项目 p 的设置，text 写清楚改了什么。送给订阅了 settings 的在线会话（主调度、主助理默认订阅）；skip 里是已被告知的。
 func (h *Hub) onSettingsChanged(ctx context.Context, projectID, text string, skip ...string) {
 	h.broadcast(ctx, protocol.OnSettings, projectID, "", text, skip...)
 }
@@ -167,7 +167,7 @@ func projectSettingsChanges(before, after store.Project) []string {
 			out = append(out, fmt.Sprintf("用户%s了项目 %s 的%s（%s → %s）。", act, before.Name, name, onOff(was), onOff(now)))
 		}
 	}
-	flip(before.AgentRelease, after.AgentRelease, "「允许 PM / Adv 放行草稿」放行开关")
+	flip(before.AgentRelease, after.AgentRelease, "「允许主调度 / 主助理放行草稿」放行开关")
 	flip(before.AutoDispatch, after.AutoDispatch, "「自动派发」（会话空闲时自动送达排给它的待开始需求）")
 	return out
 }

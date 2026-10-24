@@ -17,7 +17,7 @@ type reviewIn struct {
 }
 
 func (t *tools) registerReview(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "review_submit", Description: "Rev（审查员）用：把审查意见挂到需求上（用户在需求详情里看到，标明「Rev」）。不改需求状态、不拦截验收；只有身份为 Rev（ks role reviewer）的会话能交。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "review_submit", Description: "评审（Rev）用：把审查意见挂到需求上（用户在需求详情里看到，标明「评审」）。不改需求状态、不拦截验收；只有身份为评审（ks role reviewer）的会话能交，任意工具的会话都能担任评审。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reviewIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
