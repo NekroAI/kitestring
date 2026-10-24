@@ -111,6 +111,25 @@ var handover = map[string]string{
 	roles.Aide: "代答、放行、验收建议、离开期间小结由新主助理接手；你名下的授权窗口已失效。",
 }
 
+// pushInstances 把设备上未结束会话的终端实例下发给 daemon：daemon 重启后内存里的实例表是空的，
+// 重启期间（或之前）退出的进程靠它才能继续被盯住并补发结束（R-204）。
+func (h *Hub) pushInstances(ctx context.Context, deviceID string) {
+	h.mu.Lock()
+	c := h.conns[deviceID]
+	h.mu.Unlock()
+	if c == nil {
+		return
+	}
+	list, err := h.store.InstancesForDevice(ctx, deviceID)
+	if err != nil {
+		h.log.Warn("查询会话终端实例失败", "err", err)
+		return
+	}
+	if len(list) > 0 {
+		c.send(protocol.Envelope{Type: protocol.MsgSessions, Sessions: list})
+	}
+}
+
 // pushRoles 把设备上有身份的会话全集下发给 daemon。
 func (h *Hub) pushRoles(ctx context.Context, deviceID string) {
 	h.mu.Lock()

@@ -192,6 +192,9 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	case "Interrupt":
 		x.State, x.StateDetail = store.StateWaitReply, ""
 	case "SessionEnd":
+		if x.State == store.StateEnded && x.EndedAt != nil {
+			break // 已经结束过（daemon 按进程补发的结束可能重复），不覆盖结束时间
+		}
 		t := ev.Time
 		x.EndedAt = &t
 		x.State, x.StateDetail = store.StateEnded, ""

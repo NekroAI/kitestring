@@ -209,3 +209,13 @@ func TestBackgroundMarkedOnFirstPromptOnly(t *testing.T) {
 		t.Fatal("用户自己的对话后面再出现这段文字，不应标为后台任务")
 	}
 }
+
+// R-204：daemon 按进程补发的 SessionEnd 可能重复，不覆盖第一次的结束时间。
+func TestSessionEndTwiceKeepsFirstEndedAt(t *testing.T) {
+	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "SessionEnd", Time: t0})
+	next := applyEvent(&cur, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "SessionEnd", Reason: "process_gone", Time: t0.Add(time.Hour)})
+	if next.EndedAt == nil || !next.EndedAt.Equal(t0) {
+		t.Fatalf("结束时间被覆盖：%v", next.EndedAt)
+	}
+}

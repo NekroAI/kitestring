@@ -50,6 +50,7 @@ type Daemon struct {
 	sessions      map[string]*sessionInfo
 	toolUses      map[string]toolUse // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
 	toolCond      *sync.Cond         // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
+	seeded        map[string][]string // 终端实例 → Hub 记着的会话键（重启后据此继续盯进程，R-204）
 	instances     map[string]string  // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
 	latest        map[string]string  // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
 	staleWarn     map[string]bool    // 较早终端 → 是否已提醒过
@@ -88,7 +89,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState()}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState()}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -262,6 +263,8 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		d.decisions = e.Decisions
 		d.toolCond.Broadcast() // 唤醒挂起等待的 ks wait
 		d.mu.Unlock()
+	case protocol.MsgSessions:
+		d.seedInstances(e.Sessions)
 	case protocol.MsgRoles:
 		d.mu.Lock()
 		d.roles = e.Roles

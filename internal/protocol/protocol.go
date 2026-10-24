@@ -137,6 +137,7 @@ const (
 	MsgDecisions   = "decisions"    // hub → daemon：待注入决策全集（覆盖式）
 	MsgDelivered   = "delivered"    // daemon → hub：决策已注入
 	MsgConfig      = "config"       // hub → daemon：下发给设备的运行配置
+	MsgSessions    = "sessions"     // hub → daemon：本设备上未结束会话的终端实例（daemon 重启后据此继续盯进程，R-204）
 	MsgRoles       = "roles"        // hub → daemon：本设备上有身份的会话全集（覆盖式，R-82）
 	MsgRolePrompts = "role_prompts" // hub → daemon：用户改写过的身份提示词全集（覆盖式，R-98）
 )
@@ -157,8 +158,16 @@ type Envelope struct {
 	Delivered []Delivery        `json:"delivered,omitempty"`
 	Config    *DeviceConfig     `json:"config,omitempty"`
 	Roles     map[string]string `json:"roles,omitempty"` // 会话键 → 身份
+	Sessions  []SessionInstance `json:"sessions,omitempty"`
 	// RolePrompts：身份 → 用户改写后的提示词正文（只含改写过的；没有的身份用内置默认模板，R-98）。
 	RolePrompts map[string]string `json:"role_prompts,omitempty"`
+}
+
+// SessionInstance 是 Hub 记着的一个未结束会话的终端实例（进程号@启动时间）。
+type SessionInstance struct {
+	Key          string `json:"key"`
+	Instance     string `json:"instance,omitempty"`
+	PrevInstance string `json:"prev_instance,omitempty"`
 }
 
 // Hello 是 daemon 连接后上报的设备信息。

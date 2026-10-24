@@ -90,6 +90,7 @@ func (h *Hub) serveDeviceWS(w http.ResponseWriter, r *http.Request) {
 	}
 	h.pushDecisions(ctx, dev.ID)
 	h.pushRoles(ctx, dev.ID)
+	h.pushInstances(ctx, dev.ID)
 	h.pushRolePrompts(ctx, c)
 
 	for {
