@@ -525,13 +525,9 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
         <Button size="sm" disabled={cur.status !== 'draft' || acting} onClick={() => void draftAct('shelved')}>
           {t.pool.queue.shelve}
         </Button>
-        <Tip content={t.pool.queue.confirmTip}>
-          <span>
-            <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} disabled={cur.status !== 'draft'} loading={acting} onClick={() => void draftAct('ready')}>
-              {t.pool.queue.confirm}
-            </Button>
-          </span>
-        </Tip>
+        <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} disabled={cur.status !== 'draft'} loading={acting} onClick={() => void draftAct('ready')}>
+          {t.pool.queue.confirm}
+        </Button>
       </div>
     </div>
   )

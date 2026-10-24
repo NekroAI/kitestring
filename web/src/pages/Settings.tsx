@@ -274,15 +274,14 @@ function NotifyForm({ value, onChange }: { value: NotifyConfig; onChange: (v: No
           {allEvents.map((ev) => {
             const on = chosen.includes(ev)
             return (
-              <Tip key={ev} content={t.settings.notify.evTip[ev]}>
-                <button
-                  onClick={() => onChange({ ...value, events: on ? chosen.filter((x) => x !== ev) : [...chosen, ev] })}
-                  aria-pressed={on}
-                  className={cx('rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors', on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-fg-2 hover:border-line-strong')}
-                >
-                  {t.settings.notify.ev[ev]}
-                </button>
-              </Tip>
+              <button
+                key={ev}
+                onClick={() => onChange({ ...value, events: on ? chosen.filter((x) => x !== ev) : [...chosen, ev] })}
+                aria-pressed={on}
+                className={cx('rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors', on ? 'border-accent bg-accent-soft text-accent' : 'border-line text-fg-2 hover:border-line-strong')}
+              >
+                {t.settings.notify.ev[ev]}
+              </button>
             )
           })}
         </div>
@@ -634,7 +633,7 @@ function AI() {
                   <ChevronDown className={cx('size-3.5 text-fg-3 transition-transform', sample && 'rotate-180')} />
                 </button>
               ) : (
-                <Tip content={result.error}>
+                <Tip truncated content={result.error}>
                   <span className="mr-auto flex min-w-0 items-center gap-1.5 text-sm text-danger">
                     <XCircle className="size-4 shrink-0" />
                     <span className="truncate">{t.settings.ai.testFail}：{result.error}</span>

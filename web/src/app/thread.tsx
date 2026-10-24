@@ -2,10 +2,9 @@ import type { ReactNode } from 'react'
 import { MessageSquare, Monitor } from 'lucide-react'
 import type { Session } from '../api/client'
 import { cx, relTime } from '../lib/util'
-import { Tip } from '../ui/base'
 import { displayState, RoleBadge, StatusPill, ToolMark } from '../ui/marks'
 import { useOpenSession } from './nav'
-import { sessionExtras, sessionTitle, toolIcon } from './SessionCard'
+import { sessionTitle, toolIcon } from './SessionCard'
 import { Ticker } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
@@ -53,12 +52,10 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
         )}
       </div>
       {/* 一行档只放：标题、身份、最后一句话、设备、状态（R-147） */}
-      <Tip content={sessionExtras(s)}>
-        <span className="hidden shrink-0 items-center gap-1 text-xs text-fg-3 @lg:flex">
-          <Monitor className="size-3.5" />
-          {s.device_name}
-        </span>
-      </Tip>
+      <span className="hidden shrink-0 items-center gap-1 text-xs text-fg-3 @lg:flex">
+        <Monitor className="size-3.5" />
+        {s.device_name}
+      </span>
       <span className="shrink-0">{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} bg={bgCount(s)} />}</span>
     </button>
     </Ctx>

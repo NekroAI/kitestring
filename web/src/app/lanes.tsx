@@ -9,7 +9,7 @@ import { displayState, RoleBadge } from '../ui/marks'
 import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
-import { sessionExtras, sessionTitle, splitTool } from './SessionCard'
+import { sessionTitle, splitTool } from './SessionCard'
 import { liveTasks, type BgTask } from './tasks'
 import { reducedMotion } from './verdict'
 
@@ -357,7 +357,6 @@ function SubLane({ task, now, mode, last }: { task: BgTask; now: number; mode: L
   const label = task.label || task.agent_type || t.session.taskKind[task.kind]
   const [tool, brief] = task.last_action ? splitTool(task.last_action) : ['', '']
   const ticks = (task.ticks ?? []).map(Date.parse)
-  const tip = [t.session.taskKind[task.kind] + '：' + label, task.agent_type && task.label && task.agent_type, t.session.taskRunning(shortDuration(task.started_at, now))].filter(Boolean).join(t.common.sep)
   return (
     <div className={cx('grid h-6 items-center text-fg-3', cols[mode], mode === 'phone' && 'h-auto py-0.5')}>
       <div className="flex min-w-0 items-center gap-1.5 pr-3 pl-6 text-[11.5px]">
@@ -367,7 +366,7 @@ function SubLane({ task, now, mode, last }: { task: BgTask; now: number; mode: L
           <span className="absolute top-1/2 left-0 w-full border-t border-line-strong" />
         </span>
         <span className="w-9 shrink-0 text-[10.5px] opacity-80">{t.session.taskKind[task.kind]}</span>
-        <Tip content={tip}>
+        <Tip truncated content={label}>
           <span className="min-w-0 flex-1 truncate">{label}</span>
         </Tip>
         {mode !== 'full' && <span className="shrink-0 text-[11px] tabular">{shortDuration(task.started_at, now)}</span>}
@@ -419,7 +418,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
       </div>
       <div className="flex min-w-0 items-center gap-2">
         <StateTag s={s} tone={tone} now={now} />
-        <Tip content={sessionExtras(s)}>
+        <Tip truncated content={req ? `${req.code} ${req.title}` : live ? s.summary || s.last_prompt : ''}>
           <span className="min-w-0 truncate text-[12px] text-fg-2">
             {req ? (
               <>

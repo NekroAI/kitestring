@@ -271,7 +271,6 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
   const desktop = useDesktop()
   const proj = projects.data?.projects.find((p) => p.id === f.project_id)
   const chip = 'inline-flex max-w-[220px] items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-sm text-fg-2 transition hover:border-line-strong hover:text-fg active:scale-[0.97]'
-  // 手机上不挂轻点提示：一点就弹出的提示会盖住旁边的状态、优先级
   const designToggle = (
               <button aria-pressed={f.kind === 'design'} onClick={() => setF({ ...f, kind: f.kind === 'design' ? 'feature' : 'design' })} className={cx(chip, f.kind === 'design' && 'border-accent/50 bg-accent-soft text-accent hover:text-accent')}>
                 <Palette className="size-3.5" />
@@ -329,7 +328,7 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
               }
               items={[{ label: t.reqs.noProject, checked: !f.project_id, onSelect: () => setF({ ...f, project_id: undefined }) }, ...(projects.data?.projects ?? []).filter((p) => !p.hidden || p.id === f.project_id).sort((a, b) => Number(b.id === lastUsed) - Number(a.id === lastUsed)).map((p) => ({ label: p.name, hint: p.id === lastUsed ? [t.reqs.lastUsed, p.remote].filter(Boolean).join(t.common.sep) : p.remote, checked: p.id === f.project_id, onSelect: () => setF({ ...f, project_id: p.id }) }))]}
             />
-            {desktop ? <Tip content={t.design.makeHint}>{designToggle}</Tip> : designToggle}
+            {designToggle}
           </div>
 
           <section>

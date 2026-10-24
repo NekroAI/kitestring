@@ -315,8 +315,9 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
       {suffix && <span className="inline-flex items-center gap-0.5 font-sans font-medium text-fg-3">{suffix}</span>}
     </span>
   )
-  const tipped = tip ? <Tip content={tip}>{chip}</Tip> : chip
-  if (size === 'inline') return tipped
+  // 只有行内编号小标（只写编号或缩短的标题）悬停给全称；行 / 卡片形态旁边已经写着标题，不再弹（R-186）
+  if (size === 'inline') return tip ? <Tip content={tip}>{chip}</Tip> : chip
+  const tipped = chip
   const kind = refKind(code)
   const statusEl = showStatus && st && kind === 'req' ? <ReqStatus status={st} /> : null
   if (size === 'row')
