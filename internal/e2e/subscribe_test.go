@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -325,4 +326,158 @@ func TestUserWebChangesNotify(t *testing.T) {
 	if n := pendingCount(e); n != before {
 		t.Fatalf("这些通知不应进用户收件箱：%d → %d", before, n)
 	}
+}
+
+// 用户在网页上验收 / 退回、批准 / 退回计划、通过 / 退回阶段，以及参谋授权窗口到期也通知相关会话（R-171）：
+// 已经收到同一件事的会话不重复送——退回意见送给 PM 的，PM 不再多收一条状态通知；计划进展送给负责会话的，负责会话不再多收；
+// 订阅了 status 的 Adv 只补收没收到的；授权窗口到期，被授权的 Adv 和 PM 各收一条。
+func TestUserReviewPlanGrantNotify(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	c := client.New(30 * time.Second)
+	ctx := context.Background()
+	for _, sid := range []string{"pm", "adv", "dev"} {
+		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
+	}
+	e.waitFor("会话入库", func() bool { return e.session("claude:dev").ProjectID != "" })
+	for _, kr := range [][2]string{{"claude:pm", "pm"}, {"claude:adv", "advisor"}, {"claude:dev", "dev"}} {
+		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	woke(t, parkWait(t, e, c, "claude:pm"), "已上线待命")
+	project := e.session("claude:dev").ProjectID
+	before := pendingCount(e)
+
+	// 开发记一条需求并交验收；Adv 先收掉「已交验收」，并订阅 status
+	newReview := func(title string) store.Requirement {
+		t.Helper()
+		var r store.Requirement
+		if err := c.Do(ctx, "POST", "/agent/requirements", map[string]any{"title": title, "session_key": "claude:dev"}, &r); err != nil {
+			t.Fatal(err)
+		}
+		advW := parkWaitOn(t, e, c, "claude:adv", "decision,review,settings,status")
+		pmW := parkWait(t, e, c, "claude:pm")
+		if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review", "session_key": "claude:dev"}, nil); err != nil {
+			t.Fatal(err)
+		}
+		woke(t, advW, "已交验收", r.Code)
+		woke(t, pmW, "已交验收", r.Code)
+		return r
+	}
+	review := func(ref, verdict, comment string) {
+		t.Helper()
+		e.call("POST", "/api/reviews", map[string]any{"items": []map[string]any{{"ref": ref, "verdict": verdict, "comment": comment}}}, nil)
+	}
+
+	// 1. 无附言验收通过：派活的 PM、关联的 Dev 各收一条状态通知，订阅了 status 的 Adv 也收到
+	r1 := newReview("导出 CSV")
+	pmW, advW := parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	pmTells, devTells, advTells := tellCount(e, "claude:pm"), tellCount(e, "claude:dev"), tellCount(e, "claude:adv")
+	review(r1.Code, "accept", "")
+	woke(t, pmW, r1.Code, "从待验收改为已完成")
+	woke(t, advW, "订阅的事件", "status", r1.Code, "从待验收改为已完成")
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:pm"); n != pmTells+1 {
+		t.Fatalf("验收通过 PM 只应收到一条：%d → %d", pmTells, n)
+	}
+	if n := tellCount(e, "claude:dev"); n != devTells+1 {
+		t.Fatalf("验收通过关联的 Dev 应收到一条：%d → %d", devTells, n)
+	}
+	if n := tellCount(e, "claude:adv"); n != advTells+1 {
+		t.Fatalf("验收通过 Adv 只应收到一条：%d → %d", advTells, n)
+	}
+
+	// 2. 退回（带意见）：意见已送给 PM，PM 不再多收状态通知；Dev、Adv 各收一条
+	r2 := newReview("导出 Excel")
+	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	pmTells, devTells = tellCount(e, "claude:pm"), tellCount(e, "claude:dev")
+	review(r2.Code, "revise", "表头缺失")
+	woke(t, pmW, r2.Code, "表头缺失")
+	woke(t, advW, "订阅的事件", "status", r2.Code, "从待验收改为进行中")
+	time.Sleep(200 * time.Millisecond)
+	if n := tellCount(e, "claude:pm"); n != pmTells {
+		t.Fatalf("退回意见已送给 PM，不应再多一条状态通知：%d → %d", pmTells, n)
+	}
+	if n := tellCount(e, "claude:dev"); n != devTells+1 {
+		t.Fatalf("退回时关联的 Dev 应收到一条状态通知：%d → %d", devTells, n)
+	}
+
+	// 3. 计划：负责会话 Dev 收到的是计划进展，不再多收状态通知；Adv 收到批准 / 退回阶段 / 通过阶段 / 不批准
+	var a, b store.Requirement
+	e.call("POST", "/api/requirements", map[string]any{"title": "计划项甲", "project_id": project}, &a)
+	e.call("POST", "/api/requirements", map[string]any{"title": "计划项乙", "project_id": project}, &b)
+	var x, y store.Plan
+	e.call("POST", "/api/plans", map[string]any{"title": "导出计划", "project_id": project, "owner_session": "claude:dev",
+		"stages": []map[string]any{{"title": "后端", "requirements": []map[string]any{{"ref": a.Code}}}, {"title": "网页", "requirements": []map[string]any{{"ref": b.Code}}}}}, &x)
+	e.call("POST", "/api/plans", map[string]any{"title": "另一个计划", "project_id": project, "owner_session": "claude:dev",
+		"stages": []map[string]any{{"title": "只做一段", "requirements": []map[string]any{{"title": "丙"}}}}}, &y)
+	advW = parkWait(t, e, c, "claude:adv")
+	devTells = tellCount(e, "claude:dev")
+	e.call("POST", "/api/plans/"+x.Code+"/start", map[string]any{}, nil)
+	woke(t, advW, "status", "用户批准了计划", x.Code, "阶段 1")
+	advW = parkWait(t, e, c, "claude:adv")
+	e.call("POST", "/api/plans/"+x.Code+"/stages/1/revise", map[string]any{"comment": "接口缺分页"}, nil)
+	wokeUntil(t, e, c, "claude:adv", advW, "用户退回了计划", x.Code, "阶段 1")
+	e.call("PUT", "/api/requirements/"+a.Code, map[string]any{"title": a.Title, "status": "done", "project_id": project}, nil)
+	woke(t, parkWait(t, e, c, "claude:adv"), "status", a.Code, "已完成") // 单条改状态那条
+	advW = parkWait(t, e, c, "claude:adv")
+	e.call("POST", "/api/plans/"+x.Code+"/stages/1/pass", map[string]any{}, nil)
+	wokeUntil(t, e, c, "claude:adv", advW, "用户验收通过了计划", x.Code, "阶段 2「网页」已解锁")
+	advW = parkWait(t, e, c, "claude:adv")
+	e.call("POST", "/api/plans/"+y.Code+"/reject", map[string]any{"comment": "先别做"}, nil)
+	wokeUntil(t, e, c, "claude:adv", advW, "用户退回了计划", y.Code)
+	time.Sleep(200 * time.Millisecond)
+	// 负责会话收到的是计划进展 / 派活，不是状态通知；除单条改状态那一条外没有多出 tell
+	if n := tellCount(e, "claude:dev"); n > devTells+1 {
+		t.Fatalf("计划事件不应给负责会话多送状态通知：%d → %d", devTells, n)
+	}
+
+	// 4. 授权窗口到期：被授权的 Adv 和 PM 各收一条「已到期」
+	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	var g store.Grant
+	e.call("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(2 * time.Second).Format(time.RFC3339Nano)}, &g)
+	wokeUntil(t, e, c, "claude:pm", pmW, "用户开了参谋授权窗口", g.Code)
+	wokeUntil(t, e, c, "claude:adv", advW, "用户开了参谋授权窗口", g.Code)
+	pmW, advW = parkWait(t, e, c, "claude:pm"), parkWait(t, e, c, "claude:adv")
+	pmTells, advTells = tellCount(e, "claude:pm"), tellCount(e, "claude:adv")
+	wokeUntil(t, e, c, "claude:pm", pmW, g.Code, "授权窗口", "已到期")
+	wokeUntil(t, e, c, "claude:adv", advW, g.Code, "授权窗口", "已到期")
+	time.Sleep(300 * time.Millisecond)
+	if tellCount(e, "claude:pm") != pmTells+1 || tellCount(e, "claude:adv") != advTells+1 {
+		t.Fatal("到期通知每人只应一条")
+	}
+
+	// 5. 撤销过的窗口到点不再通知
+	pmW = parkWait(t, e, c, "claude:pm")
+	e.call("POST", "/api/grants", map[string]any{"project_id": project, "session_key": "claude:adv", "max_risk": "low", "expires_at": time.Now().Add(1500 * time.Millisecond).Format(time.RFC3339Nano)}, &g)
+	wokeUntil(t, e, c, "claude:pm", pmW, "用户开了参谋授权窗口", g.Code)
+	pmW = parkWait(t, e, c, "claude:pm")
+	e.call("POST", "/api/grants/"+g.Code+"/revoke", nil, nil)
+	wokeUntil(t, e, c, "claude:pm", pmW, "用户撤销了参谋授权窗口", g.Code)
+	pmW = parkWait(t, e, c, "claude:pm")
+	asleep(t, pmW, "PM（窗口已撤销，到点不再通知）")
+	time.Sleep(1500 * time.Millisecond)
+	asleep(t, pmW, "PM（窗口已撤销，到点不再通知）")
+
+	if n := pendingCount(e); n != before {
+		t.Fatalf("这些通知不应进用户收件箱：%d → %d", before, n)
+	}
+}
+
+// wokeUntil：等待中的会话可能先收到前面事件的残留消息（同一批团队消息合并送达），再重新挂起直到收到含 want 的那条。
+func wokeUntil(t *testing.T, e *env, c *client.Client, key string, done chan daemon.WaitResult, want ...string) {
+	t.Helper()
+	for i := 0; i < 4; i++ {
+		res := <-done
+		ok := true
+		for _, w := range want {
+			ok = ok && strings.Contains(res.Text, w)
+		}
+		if ok {
+			return
+		}
+		done = parkWait(t, e, c, key)
+	}
+	t.Fatalf("没有等到含 %v 的消息", want)
 }

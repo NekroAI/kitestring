@@ -193,6 +193,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			}
 			h.tellGrant(ctx, g, fmt.Sprintf("用户开了参谋授权窗口 %s：到 %s 前，你可以代用户答复本项目%s以内的决策（decision_answer / ks decision answer，必须写理由和你自己的风险判断，风险档取提问方与你判断中更高的一档）。硬规则永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收。拿不准的留给用户。",
 				g.Code, g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]))
+			h.scheduleGrantExpiry(g)
 			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户开了参谋授权窗口 %s：授权给 %s，到 %s 前可代答%s以内的决策。", g.Code, h.actorName(ctx, g.SessionKey), g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]), g.SessionKey) // 被授权的 Adv 已由 tellGrant 告诉（R-171）
 			h.broker.publish("grants", "decisions")
 			return &grantOut{Body: g}, nil
@@ -335,4 +336,31 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 			h.broker.publish("grants")
 			return &decisionOut{Body: d}, nil
 		})
+}
+
+// scheduleGrantExpiry：窗口到期时告诉被授权的 Adv 和订阅了 settings 的会话（PM 默认订阅）「授权窗口已到期」（R-171）。
+// 只在窗口到点仍是生效状态时才送（中途撤销过的撤销时已经通知）；Hub 重启后由 resumeGrantExpiry 重新排。
+func (h *Hub) scheduleGrantExpiry(g store.Grant) {
+	time.AfterFunc(time.Until(g.ExpiresAt)+200*time.Millisecond, func() {
+		ctx := context.Background()
+		cur, err := h.store.GetGrant(ctx, g.ID)
+		if err != nil || cur.Status != store.GrantExpired {
+			return
+		}
+		h.tellGrant(ctx, cur, fmt.Sprintf("参谋授权窗口 %s 已到期：从现在起不能再代答决策。", cur.Code))
+		h.onSettingsChanged(ctx, cur.ProjectID, fmt.Sprintf("参谋授权窗口 %s（授权给 %s）已到期，不能再代答决策。", cur.Code, h.actorName(ctx, cur.SessionKey)), cur.SessionKey)
+	})
+}
+
+// resumeGrantExpiry：Hub 启动时给还在生效的窗口重新排到期通知。
+func (h *Hub) resumeGrantExpiry(ctx context.Context) {
+	list, err := h.store.ListGrants(ctx, "", 50)
+	if err != nil {
+		return
+	}
+	for _, g := range list {
+		if g.Status == store.GrantActive {
+			h.scheduleGrantExpiry(g)
+		}
+	}
 }

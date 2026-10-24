@@ -194,8 +194,10 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 			return
 		}
 	}
-	if to := h.notifyAssigner(ctx, protocol.OnStatus, after, "", text); to != "" {
-		told = append(told, to)
+	if a := h.assigner(ctx, after); a != "" && !slices.Contains(told, a) {
+		if to := h.notifyAssigner(ctx, protocol.OnStatus, after, "", text); to != "" {
+			told = append(told, to)
+		}
 	}
 	msg := fmt.Sprintf("你关联的需求有变化（status · %s）：%s 只是告诉你，不是派给你的活；需要时自己看，不必回复。", waitOnZh[protocol.OnStatus], text)
 	for _, k := range after.Sessions {
@@ -213,4 +215,10 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 		told = append(told, k)
 	}
 	h.broadcast(ctx, protocol.OnStatus, after.ProjectID, after.ID, text, told...)
+}
+
+// onUserPlanEvent：用户在网页上批准 / 退回计划、通过 / 退回阶段（R-171）。负责会话已经收到计划进展（planMsg），不重复送；
+// 订阅了 status 的其它会话收到一句说明。
+func (h *Hub) onUserPlanEvent(ctx context.Context, x store.Plan, text string) {
+	h.broadcast(ctx, protocol.OnStatus, x.ProjectID, "", text, x.OwnerSession)
 }

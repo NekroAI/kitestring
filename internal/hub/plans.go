@@ -271,6 +271,7 @@ func (h *Hub) startPlan(ctx context.Context, ref string, n note) (store.Plan, er
 	if err := h.unlockStage(ctx, x, st); err != nil {
 		return x, err
 	}
+	h.onUserPlanEvent(ctx, x, fmt.Sprintf("用户批准了计划 %s「%s」，%s已解锁。", x.Code, brief(x.Title, 30), stageName(st)))
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -290,6 +291,7 @@ func (h *Hub) rejectPlan(ctx context.Context, ref string, n note) (store.Plan, e
 		return x, err
 	}
 	h.planMsg(ctx, x, returnedText("这个计划", n.text)+"；改完后可重新提交\n用 plan_update（命令行 ks plan update "+x.Code+" --file plan.json）修改并重新提交这个计划，不要另建新计划。", n.files...)
+	h.onUserPlanEvent(ctx, x, fmt.Sprintf("用户退回了计划 %s「%s」（回到草稿，要求修改）。", x.Code, brief(x.Title, 30)))
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -381,12 +383,14 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store
 			return x, err
 		}
 		h.planMsg(ctx, x, withComment(msg+"计划全部完成。", n), n.files...)
+		h.onUserPlanEvent(ctx, x, fmt.Sprintf("用户验收通过了计划 %s「%s」的%s，计划全部完成。", x.Code, brief(x.Title, 30), stageName(st)))
 		return h.planChanged(ctx, x.ID)
 	}
 	h.planMsg(ctx, x, withComment(fmt.Sprintf("%s现在进入%s，其中的需求已交给你。%s", msg, stageName(next), stageHowTo), n), n.files...)
 	if err := h.unlockStage(ctx, x, next); err != nil {
 		return x, err
 	}
+	h.onUserPlanEvent(ctx, x, fmt.Sprintf("用户验收通过了计划 %s「%s」的%s，%s已解锁。", x.Code, brief(x.Title, 30), stageName(st), stageName(next)))
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -422,6 +426,7 @@ func (h *Hub) reviseStage(ctx context.Context, ref string, seq int, n note) (sto
 		return x, err
 	}
 	h.planMsg(ctx, x, returnedText(stageName(st), n.text)+"\n按意见修改后，重新用 stage_submit 交阶段小结。", n.files...)
+	h.onUserPlanEvent(ctx, x, fmt.Sprintf("用户退回了计划 %s「%s」的%s（阶段回到进行中）。", x.Code, brief(x.Title, 30), stageName(st)))
 	return h.planChanged(ctx, x.ID)
 }
 

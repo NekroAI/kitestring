@@ -66,11 +66,17 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 	out.Body.Requirements = []store.Requirement{}
 	out.Body.Feedback = []store.Decision{}
 	devices := map[string]bool{}
+	type changed struct {
+		before, after store.Requirement
+		told          []string
+	}
+	var changes []changed
 	for _, it := range items {
 		r, err := h.store.GetRequirement(ctx, it.Ref)
 		if err != nil {
 			return nil, apiErr(err)
 		}
+		was, told := r, []string(nil)
 		switch it.Verdict {
 		case "accept":
 			if r, err = h.store.SetRequirementStatus(store.WithActor(ctx, store.Actor{Via: "accept"}), r.ID, store.ReqDone); err != nil {
@@ -100,6 +106,7 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 					return nil, apiErr(err)
 				}
 				out.Body.Feedback = append(out.Body.Feedback, d)
+				told = append(told, d.SessionKey)
 				if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 					devices[x.DeviceID] = true
 				}
@@ -129,6 +136,7 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 				_ = h.store.LinkLastStatusChange(ctx, r.ID, d.Code) // 状态变化与这条修改意见互相引用（R-153）
 			}
 			out.Body.Feedback = append(out.Body.Feedback, d)
+			told = append(told, d.SessionKey)
 			if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 				devices[x.DeviceID] = true
 			}
@@ -136,9 +144,13 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 			return nil, huma.Error400BadRequest("verdict 只能是 accept 或 revise")
 		}
 		out.Body.Requirements = append(out.Body.Requirements, r)
+		changes = append(changes, changed{was, r, told})
 	}
 	for id := range devices {
 		h.pushDecisions(ctx, id)
+	}
+	for _, c := range changes {
+		h.onUserStatusChanged(ctx, c.before, c.after, c.told...) // 验收通过 / 退回也是用户改状态；收到验收意见的会话不重复送（R-171）
 	}
 	h.broker.publish("requirements", "decisions", "sessions", "plans")
 	return out, nil

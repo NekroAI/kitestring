@@ -153,6 +153,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 		}
 	}
 	h.mu.Unlock()
+	h.resumeGrantExpiry(ctx)
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
