@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -23,7 +24,8 @@ func openQueue(path string) (*queue, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL);
-		CREATE TABLE IF NOT EXISTS delivered (decision_id TEXT NOT NULL, session_key TEXT NOT NULL, time TEXT NOT NULL, PRIMARY KEY (decision_id, session_key));`)
+		CREATE TABLE IF NOT EXISTS delivered (decision_id TEXT NOT NULL, session_key TEXT NOT NULL, time TEXT NOT NULL, PRIMARY KEY (decision_id, session_key));
+		CREATE TABLE IF NOT EXISTS agent_calls (seq INTEGER PRIMARY KEY AUTOINCREMENT, session_key TEXT NOT NULL, typ TEXT NOT NULL, descr TEXT NOT NULL, at TEXT NOT NULL);`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -102,4 +104,40 @@ func (q *queue) wasDelivered(decisionID, sessionKey string) bool {
 // forgetDelivered 清除本机注入记录（Hub 重新置为待接收时，例如用户改答或手动重发）。
 func (q *queue) forgetDelivered(decisionID string) {
 	_, _ = q.db.Exec(`DELETE FROM delivered WHERE decision_id = ?`, decisionID)
+}
+
+// 待配对的子代理调用（R-203）：PreToolUse(Agent) 记下 description，等 SubagentStart 配对；落盘后 daemon 重启也不丢。
+type agentCallRow struct {
+	seq int64
+	agentCall
+}
+
+func (q *queue) agentCallsAdd(key string, c agentCall) {
+	_, _ = q.db.Exec(`INSERT INTO agent_calls(session_key, typ, descr, at) VALUES(?, ?, ?, ?)`, key, c.typ, c.desc, c.at.UTC().Format(time.RFC3339Nano))
+}
+
+func (q *queue) agentCallsLoad(key string) []agentCallRow {
+	rows, err := q.db.Query(`SELECT seq, typ, descr, at FROM agent_calls WHERE session_key = ? ORDER BY seq`, key)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []agentCallRow
+	for rows.Next() {
+		var r agentCallRow
+		var at string
+		if rows.Scan(&r.seq, &r.typ, &r.desc, &at) == nil {
+			r.at, _ = time.Parse(time.RFC3339Nano, at)
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (q *queue) agentCallDel(seq int64) {
+	_, _ = q.db.Exec(`DELETE FROM agent_calls WHERE seq = ?`, seq)
+}
+
+func (q *queue) agentCallsClear(key string) {
+	_, _ = q.db.Exec(`DELETE FROM agent_calls WHERE session_key = ?`, key)
 }
