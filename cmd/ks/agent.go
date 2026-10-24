@@ -266,15 +266,15 @@ func runReq(args []string) error {
 	comment := fs.String("comment", "", "assign：交代给开发的话")
 	reason := fs.String("reason", "", "request：申请理由（必填）；status ready / assign 草稿：放行理由（只有 PM / Adv 能放行）；status draft：撤回原因；status shelved：搁置原因（必填）；edit：为什么改")
 	reasonKind := fs.String("reason-kind", "", "status shelved：搁置原因类别 duplicate（重复）/ changed（方向变了）/ dropped（不做了）/ other（其他，默认）")
-	verdict := fs.String("verdict", "", "evidence：一句结论（40 字以内）")
-	details := fs.String("details", "", "evidence：实现细节（默认折叠）")
-	blocksArg := fs.String("blocks", "", "evidence：表达块，JSON 数组或 JSON 文件路径")
+	verdict := fs.String("verdict", "", "evidence / review：一句结论（40 字以内）")
+	details := fs.String("details", "", "evidence：实现细节（默认折叠）；review：怎么验的")
+	blocksArg := fs.String("blocks", "", "evidence / review：表达块，JSON 数组或 JSON 文件路径")
 	var todo, aside stringList
 	fs.Var(&todo, "todo", "evidence：要你做的（机器验证不了的事），可重复")
 	fs.Var(&aside, "aside", "evidence：顺带改动，可重复")
 	var images, videos stringList
-	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
-	shotsArg := fs.String("images", "", "evidence：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
+	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence / review 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
+	shotsArg := fs.String("images", "", "evidence / review：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
@@ -379,15 +379,25 @@ func runReq(args []string) error {
 		}
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/assign", compact(map[string]any{"session_key": currentSession(*session), "to": *to, "comment": *comment, "reason": *reason}))
 	case "review":
-		// 审查员交审查意见（R-88）：ks req review R-12 <意见> [--image 截图.png]；不改需求状态
-		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req review <R-编号> <审查意见> [--image 截图.png]（只有 Rev 会话能交）")
+		// 审查员交审查意见 / 验证结果（R-88、R-232）：ks req review R-12 [意见] [--verdict 结论] [--blocks 清单.json] [--image 截图.png 或 JSON]；
+		// 不改需求状态。review_submit 是旧版、没有 blocks / images 字段时（例如 Codex 上的旧 MCP）用它兜底
+		if fs.NArg() < 1 || fs.NArg() < 2 && *verdict == "" {
+			return fmt.Errorf("用法：ks req review <R-编号> [审查意见] [--verdict 一句结论] [--blocks 清单.json] [--details 怎么验的] [--image 截图.png 或 '{\"path\":…,\"title\":…,\"boxes\":[…]}'] [--images 附图.json]（只有 Rev 会话能交；验证结果用 checklist 逐条 pass / fail / ask）\n表达块：%s", writing.BlocksGuide)
 		}
-		body := map[string]any{"summary": fs.Arg(1), "session_key": currentSession(*session)}
-		if err := attachFiles(body, images); err != nil {
+		body := map[string]any{"summary": fs.Arg(1), "session_key": currentSession(*session), "verdict": *verdict, "details": *details}
+		if err := attachShots(body, images, *shotsArg); err != nil {
 			return err
 		}
-		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/reviews", compact(body))
+		if _, err := attachBlocks(body, *blocksArg); err != nil {
+			return err
+		}
+		out, err := agentCallOut("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/reviews", compact(body))
+		if err != nil {
+			return err
+		}
+		printBlockWarnings(out)
+		printImageHints(out)
+		return nil
 	case "link":
 		if fs.NArg() < 1 || key == "" {
 			return fmt.Errorf("用法：ks req link <R-编号> [--session tool:id]")

@@ -151,7 +151,7 @@ func (h *Hub) registerHandoffAgent(api huma.API) {
 				}
 			}
 			out := &messageOut{}
-			out.Body.Message = text + h.policyNote(ctx, in.Key)
+			out.Body.Message = text + h.roleNotes(ctx, in.Key)
 			return out, nil
 		})
 }
@@ -317,15 +317,6 @@ func oneLineClip(s string, n int) string {
 		return string(r[:n]) + "…"
 	}
 	return s
-}
-
-// policyNote：会话所在项目的子任务模型策略（R-228），写给主调度、主助理、开发；其它身份、没有项目时为空。
-func (h *Hub) policyNote(ctx context.Context, key string) string {
-	x, err := h.store.GetSession(ctx, key)
-	if err != nil {
-		return ""
-	}
-	return h.projectPolicyNote(ctx, x.ProjectID, x.Role)
 }
 
 // projectPolicyNote：项目 projectID 的子任务模型策略对 role 的提示；项目取不到时按默认（均衡）。

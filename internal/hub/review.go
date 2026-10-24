@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -241,6 +242,9 @@ func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment, by stri
 	}
 	if a := strings.TrimSpace(r.Acceptance); a != "" {
 		body = append(body, "验收标准："+a)
+	}
+	if v := strings.TrimSpace(h.verifyNote(ctx, r.ProjectID, x.Role)); v != "" && x.Role == roles.Dev {
+		body = append(body, strings.TrimPrefix(v, "[Kitestring] ")) // 验证分工（R-232）：此刻有没有在线评审
 	}
 	d, err := h.store.CreateDecision(ctx, store.Decision{
 		Kind: store.KindAssign, SessionKey: x.Key, ProjectID: r.ProjectID, RequirementID: r.ID,

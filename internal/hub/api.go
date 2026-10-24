@@ -1249,6 +1249,9 @@ func (h *Hub) registerAgent(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
+			if h.isReviewer(ctx, in.Body.SessionKey) {
+				return nil, huma.Error403Forbidden("评审只审查和验证，不改需求状态；验证结果用 review_submit（命令行 ks req review）交到需求上，状态由开发 / 主调度 / 用户改")
+			}
 			ctx = store.WithActor(ctx, store.Actor{Session: in.Body.SessionKey})
 			if in.Body.Status == store.ReqShelved {
 				ctx = store.WithActor(ctx, store.Actor{ReasonKind: in.Body.ReasonKind, Reason: in.Body.Reason})
@@ -1288,6 +1291,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			if r.Status != before.Status && (r.Status == store.ReqReview || r.Status == store.ReqBlocked) {
 				told := ""
 				if r.Status == store.ReqReview {
+					h.autoReview(ctx, r, in.Body.SessionKey)         // 本项目有在线评审就自动派验证任务（R-232）
 					told = h.onReview(ctx, r.ID, in.Body.SessionKey) // 告诉派活的 PM（R-135）
 				}
 				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
@@ -1295,7 +1299,13 @@ func (h *Hub) registerAgent(api huma.API) {
 				}
 			}
 			if r.Status == store.ReqReview {
-				h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
+					r = full
+				}
+				// 交给了评审的，等评审交意见（或 30 分钟到点）再推给用户（R-237）
+				if !r.Review.Holding() {
+					h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+				}
 			}
 			return &reqOut{Body: r}, nil
 		})
@@ -1346,6 +1356,9 @@ func (h *Hub) registerAgent(api huma.API) {
 				return nil, huma.Error400BadRequest("证据需要正文：summary，或 verdict（一句结论）加 blocks")
 			}
 			// 标成截图 / 录屏却没附文件，用户验收时会看不到任何东西：直接拒绝，让 agent 补上附件。
+			if h.isReviewer(ctx, b.SessionKey) {
+				return nil, huma.Error400BadRequest("评审的审查意见和验证结果用 review_submit（命令行 ks req review）交，不算验收证据；它同样支持 verdict、checklist 和截图")
+			}
 			switch strings.ToLower(b.Kind) {
 			case store.EvidenceReview:
 				// 审查意见走 review_submit（R-88）：只有审查员能交，且不算验收证据

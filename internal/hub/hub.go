@@ -192,6 +192,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	h.resumeGrantExpiry(ctx)
 	h.resumeRequestExpiry(ctx)
 	go h.laneMaintenance(ctx)
+	go h.reviewWatch(ctx) // 交给评审 30 分钟没动静的，照常弹给用户（R-237）
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()

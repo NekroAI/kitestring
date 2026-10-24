@@ -543,35 +543,6 @@
         ],
         "type": "object"
       },
-      "Agent-submit-reviewRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "files": {
-            "description": "附图 ID（先上传到 /api/agent/files）",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "session_key": {
-            "description": "提交意见的会话（身份必须是 reviewer）",
-            "type": "string"
-          },
-          "summary": {
-            "description": "审查意见（可用 Markdown）",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_key",
-          "summary"
-        ],
-        "type": "object"
-      },
       "Agent-submit-stageRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2739,6 +2710,9 @@
           "release": {
             "$ref": "#/components/schemas/Release"
           },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
           "reviews": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -3889,6 +3863,9 @@
           },
           "release": {
             "$ref": "#/components/schemas/Release"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
           },
           "reviews": {
             "items": {
@@ -5709,6 +5686,9 @@
           "release": {
             "$ref": "#/components/schemas/Release"
           },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
           "reviews": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -5975,6 +5955,9 @@
           "release": {
             "$ref": "#/components/schemas/Release"
           },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
           "reviews": {
             "items": {
               "$ref": "#/components/schemas/Evidence"
@@ -6071,6 +6054,57 @@
         ],
         "type": "object"
       },
+      "ReviewBody": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "description": "表达块（R-97）：验证结果放一个 checklist，逐条 pass / fail / ask 加一句依据；也可以附 figure / compare 截图。不合法的块丢掉并在 block_warnings 里说明，意见照常保存",
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "details": {
+            "description": "怎么验的（跑了哪些测试、演示环境怎么起的），默认折叠",
+            "type": "string"
+          },
+          "files": {
+            "description": "附图 ID（先上传到 /api/agent/files）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "images": {
+            "description": "带标题与框的截图（R-183）：[{id: 附件 ID, title: 一句话标题, boxes: [{x, y, w, h, label, criterion}]}]，框用图片原始尺寸的比例坐标（0～1）",
+            "items": {},
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "session_key": {
+            "description": "提交意见的会话（身份必须是 reviewer）",
+            "type": "string"
+          },
+          "summary": {
+            "description": "审查意见正文（可用 Markdown）；给了 verdict / blocks 时可省略，由 hub 拼出纯文本",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "一句结论（40 字以内）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
+        ],
+        "type": "object"
+      },
       "ReviewInBody": {
         "additionalProperties": false,
         "properties": {
@@ -6147,6 +6181,264 @@
         "required": [
           "requirements",
           "feedback"
+        ],
+        "type": "object"
+      },
+      "ReviewState": {
+        "additionalProperties": false,
+        "properties": {
+          "asked_at": {
+            "description": "交给评审的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "auto": {
+            "description": "交验收时纸鸢自动派给在线评审的（否则是手动交给评审）",
+            "type": "boolean"
+          },
+          "due_at": {
+            "description": "等到什么时候：过了照常弹给用户，标「评审未完成」",
+            "format": "date-time",
+            "type": "string"
+          },
+          "fail": {
+            "description": "done：不通过的条数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pass": {
+            "description": "done：验证清单通过的条数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "review_id": {
+            "description": "done：评审交的那条意见",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "在审的评审会话",
+            "type": "string"
+          },
+          "session_title": {
+            "description": "评审会话的标题",
+            "type": "string"
+          },
+          "state": {
+            "description": "reviewing 评审中（不进「要你处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见",
+            "enum": [
+              "reviewing",
+              "overdue",
+              "done"
+            ],
+            "type": "string"
+          },
+          "total": {
+            "description": "done：验证清单总条数（没交清单为 0）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "verdict": {
+            "description": "done：评审的一句结论（没有时取意见开头）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "session_key",
+          "pass",
+          "fail",
+          "total"
+        ],
+        "type": "object"
+      },
+      "ReviewSubmitOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance": {
+            "type": "string"
+          },
+          "block_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "doc_link": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "feedback": {
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "from_decision": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "image_hints": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "next_actor": {
+            "type": "string"
+          },
+          "offered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "offered_to": {
+            "type": "string"
+          },
+          "pending_decisions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "plan_code": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/Release"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ReviewState"
+          },
+          "review_id": {
+            "type": "string"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "stage_seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage_status": {
+            "type": "string"
+          },
+          "stage_title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_changes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "id",
+          "code",
+          "title",
+          "detail",
+          "status",
+          "priority",
+          "kind",
+          "source",
+          "acceptance",
+          "doc_link",
+          "files",
+          "created_by",
+          "next_actor",
+          "pending_decisions",
+          "sessions",
+          "created_at",
+          "updated_at"
         ],
         "type": "object"
       },
@@ -8609,7 +8901,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Agent-submit-reviewRequest"
+                "$ref": "#/components/schemas/ReviewBody"
               }
             }
           },
@@ -8620,7 +8912,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Requirement"
+                  "$ref": "#/components/schemas/ReviewSubmitOutBody"
                 }
               }
             },
@@ -8637,7 +8929,7 @@
             "description": "Error"
           }
         },
-        "summary": "Rev 交审查意见（R-88）：不改需求状态，不拦截验收",
+        "summary": "Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；交给评审的待验收需求这时进用户的验收卡，有不通过的通知主调度",
         "tags": [
           "agent"
         ]

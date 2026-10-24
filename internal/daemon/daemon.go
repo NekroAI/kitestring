@@ -692,7 +692,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		}
 	}
 	if len(reviewTasks) > 0 {
-		b.WriteString("[Kitestring] 用户请你审查以下需求（审查任务）：只做审查分析，不要改代码、不要改需求状态、不要 session_link_req；用 req_get 读需求和证据，审查完用 review_submit（命令行 ks req review）把审查意见交到需求上：\n")
+		b.WriteString("[Kitestring] 以下需求交给你审查和验证（审查任务，用户手动交的或交验收时纸鸢自动派的）：不要改代码、不要改需求状态、不要 session_link_req；用 req_get 读需求和证据，做完用 review_submit（命令行 ks req review）把结论交到需求上：\n")
 		for _, dec := range reviewTasks {
 			d.writeItem(&b, dec)
 		}

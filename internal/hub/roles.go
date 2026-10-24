@@ -45,7 +45,7 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.policyNote(ctx, in.Body.SessionKey)+handoff, demoted
+			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.roleNotes(ctx, in.Body.SessionKey)+handoff, demoted
 			out.Body.Handoff = handoff != ""
 			if out.Body.Demoted == nil {
 				out.Body.Demoted = []string{}

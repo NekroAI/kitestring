@@ -124,9 +124,12 @@ func reviewNote(r store.Requirement, by string) string {
 			fmt.Fprintf(&b, "；达标 %d/%d", pass, total)
 		}
 		b.WriteString("。")
+		if w := reviewWaitNote(r); w != "" {
+			return b.String() + w + "不必回复；需要细节用 req_get。"
+		}
 		return b.String() + "等用户验收，不必回复；需要细节用 req_get。"
 	}
-	return b.String() + "（没有附证据）。等用户验收；需要细节用 req_get。"
+	return b.String() + "（没有附证据）。" + reviewWaitNote(r) + "等用户验收；需要细节用 req_get。"
 }
 
 // onReview：需求刚进入待验收，告诉派活的 PM。PM 自己交的不送。返回送到的 PM（没送时为空）。
