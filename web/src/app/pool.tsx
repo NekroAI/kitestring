@@ -4,7 +4,7 @@ import { Check, ChevronDown, ChevronRight, ListChecks } from 'lucide-react'
 import type { Requirement, Schemas } from '../api/client'
 import { useDecisions, useRequirement } from '../api/queries'
 import { t } from '../i18n'
-import { cx, useMedia } from '../lib/util'
+import { cx, useMedia, useNow } from '../lib/util'
 import { Button, Tip } from '../ui/base'
 import { Ctx, type CtxItem } from '../ui/contextMenu'
 import { RoleTag } from '../ui/marks'
@@ -345,14 +345,27 @@ function useStatusMenu() {
   ]
 }
 
-// Tile：需求块。编号、标记（设计 / 计划）、两行标题；左侧 3px 色条按着色取值；草稿已放 ≥1 天在右上角写「n 天」。
+function ageText(iso: string, now: number) {
+  const m = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000))
+  if (m < 1) return t.pool.ageNow
+  if (m < 60) return t.pool.ageM(m)
+  if (m < 1440) return t.pool.ageH(Math.floor(m / 60))
+  return t.pool.ageD(Math.floor(m / 1440))
+}
+const createdAt = (iso: string) => {
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// Tile：需求块。编号、标记（设计 / 计划）、两行标题；左侧 3px 色条按着色取值；右上角常驻写从创建算起放了多久（3d 前 / 5h 前 / 20m 前 / 刚刚），悬停看创建时间。
 export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
   const c = usePoolCtx()
   const open = useOpenReq()
   const menu = useReqMenu()
   const statusMenu = useStatusMenu()
   const coarse = useMedia('(pointer: coarse)')
-  const days = r.status === 'draft' ? (c.since.get(r.code)?.days ?? 0) : 0
+  const now = useNow()
   const drag = !c.phone && c.td ? c.td.source(r.code, <Ghost r={r} />) : null
   const body = (
     <div
@@ -377,11 +390,9 @@ export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
         <RefChip code={r.code} title="" status={r.status} link={false} />
         {r.kind === 'design' && <span className="shrink-0 rounded bg-accent-soft px-1 text-[11px] leading-4 font-medium text-accent">{t.design.label}</span>}
         {r.plan_code && <span className="shrink-0 rounded bg-sunken px-1 font-mono text-[11px] leading-4 font-semibold text-fg-2">{r.plan_code}</span>}
-        {days >= 1 && (
-          <span className="ml-auto shrink-0 text-[11px] text-fg-3 tabular" aria-label={t.pool.daysTip(days)}>
-            {t.pool.days(days)}
-          </span>
-        )}
+        <span className="ml-auto shrink-0 text-[11px] whitespace-nowrap text-fg-3 tabular" title={t.pool.ageTip(createdAt(r.created_at))}>
+          {ageText(r.created_at, now)}
+        </span>
       </div>
       <div className={cx('mt-1 text-[13px] leading-[1.35] font-medium text-fg', c.phone ? 'line-clamp-3' : 'line-clamp-2')}>{r.title}</div>
     </div>
@@ -463,14 +474,14 @@ export function NarrowCol({ status, items, className, width }: { status: string;
 }
 
 // DraftBlock：草稿整块，按 P0～P3 分层，层内多列网格；列头写「等你确认才会排期」和「逐条确认」入口。
-export function DraftBlock({ items, cols, onConfirmEach, className, compact }: { items: Requirement[]; cols: number; onConfirmEach: () => void; className?: string; compact?: boolean }) {
+export function DraftBlock({ items, cols, onConfirmEach, className }: { items: Requirement[]; cols: number; onConfirmEach: () => void; className?: string; compact?: boolean }) {
   const { over, props } = useDrop('draft')
   return (
     <section {...props} className={cx('flex max-h-full min-h-0 min-w-0 flex-col p-2.5', zone(over), className)}>
       <ColHead
         status="draft"
         n={items.length}
-        extra={compact ? t.pool.draftHintShort : t.pool.draftHint}
+        extra={t.pool.draftHintShort}
         right={
           items.length > 0 && (
             <Button size="sm" icon={<ListChecks className="size-3.5" />} onClick={onConfirmEach}>
