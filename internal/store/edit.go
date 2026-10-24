@@ -36,7 +36,10 @@ func (s *Store) CreateEdit(ctx context.Context, r Requirement, by, role, note st
 		n := now()
 		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, '[]', ?, ?, ?)`,
 			id, seq, nullStr(by), nullStr(by), nullStr(r.ProjectID), r.ID, r.Title, role, blocks.Encode(table), KindEdit, DecClosed, note, n, n, by)
-		return err
+		if err != nil {
+			return err
+		}
+		return snapDecision(ctx, t, id, by)
 	})
 	if err != nil {
 		return Decision{}, err

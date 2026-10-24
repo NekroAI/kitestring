@@ -135,6 +135,14 @@
             "description": "写建议的 Adv 会话",
             "type": "string"
           },
+          "by_role": {
+            "description": "写建议时会话的身份快照（R-195）",
+            "type": "string"
+          },
+          "by_title": {
+            "description": "写建议时会话的标题快照（R-195）",
+            "type": "string"
+          },
           "project_id": {
             "type": "string"
           },
@@ -1205,6 +1213,11 @@
       "Box": {
         "additionalProperties": false,
         "properties": {
+          "criterion": {
+            "description": "可选：这个框对应第几条验收点（从 1 开始），网页会把它裁成小图放在那条验收点旁边",
+            "format": "int64",
+            "type": "integer"
+          },
           "h": {
             "description": "框高 / 图片高（0～1）",
             "format": "double",
@@ -1564,6 +1577,10 @@
               "null"
             ]
           },
+          "by_title": {
+            "description": "写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话",
+            "type": "string"
+          },
           "choices": {
             "items": {
               "format": "int64",
@@ -1895,6 +1912,10 @@
               "array",
               "null"
             ]
+          },
+          "by_title": {
+            "description": "写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话",
+            "type": "string"
           },
           "choices": {
             "items": {
@@ -2518,7 +2539,15 @@
           "requirement_id": {
             "type": "string"
           },
+          "role": {
+            "description": "交证据时会话的身份快照（R-195）",
+            "type": "string"
+          },
           "session_key": {
+            "type": "string"
+          },
+          "session_title": {
+            "description": "交证据时会话的标题快照（R-195）",
             "type": "string"
           },
           "summary": {
@@ -5915,6 +5944,10 @@
           },
           "session": {
             "description": "操作的会话键（Agent 操作时）",
+            "type": "string"
+          },
+          "session_title": {
+            "description": "操作时会话的标题快照（R-195）；旧记录没有",
             "type": "string"
           },
           "to": {

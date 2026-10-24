@@ -1,6 +1,7 @@
 package blocks
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,4 +118,41 @@ func TestLocalizeImages(t *testing.T) {
 	if err := LocalizeImages([]any{map[string]any{"path": filepath.Join(dir, "nope.png")}}, map[string]string{}, nil); err == nil {
 		t.Fatal("本机文件不存在应报错")
 	}
+}
+
+// 框对应的验收点（R-195）：criterion 可选，也接受 point / for 和字符串数字；不是合理编号的忽略并提示，框照常保存；老写法没有这个字段。
+func TestBoxCriterion(t *testing.T) {
+	raw := decode(t, `[
+	 {"x":0.1,"y":0.1,"w":0.2,"h":0.2,"label":"1 简报条变浅","criterion":1},
+	 {"x":0.1,"y":0.1,"w":0.2,"h":0.2,"point":"3"},
+	 {"x":0.1,"y":0.1,"w":0.2,"h":0.2,"for":2.0},
+	 {"x":0.1,"y":0.1,"w":0.2,"h":0.2,"criterion":-1},
+	 {"x":0.1,"y":0.1,"w":0.2,"h":0.2,"criterion":120},
+	 {"x":0.1,"y":0.1,"w":0.2,"h":0.2,"label":"2 老写法"}
+	]`)
+	bs, warns := ParseBoxes(raw, "图")
+	if len(bs) != 6 {
+		t.Fatalf("6 个框都应保存：%+v", bs)
+	}
+	want := []int{1, 3, 2, 0, 0, 0}
+	for i, b := range bs {
+		if b.Criterion != want[i] {
+			t.Fatalf("第 %d 个框的验收点应是 %d：%+v", i+1, want[i], b)
+		}
+	}
+	if len(warns) != 2 || !strings.Contains(warns[0], "criterion") {
+		t.Fatalf("不合理的编号应提示 2 条：%v", warns)
+	}
+	if out := string(mustJSON(t, bs[5])); strings.Contains(out, "criterion") {
+		t.Fatalf("没写验收点的框不输出 criterion：%s", out)
+	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

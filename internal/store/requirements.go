@@ -94,7 +94,10 @@ type Evidence struct {
 	VoidedBy   string     `json:"voided_by,omitempty" doc:"作废的会话键"`
 	VoidedRole string     `json:"voided_role,omitempty" doc:"作废时该会话的身份"`
 	VoidedAt   *time.Time `json:"voided_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	// 交证据时会话的标题与身份快照（R-195）；旧证据没有
+	SessionTitle string    `json:"session_title,omitempty" doc:"交证据时会话的标题快照（R-195）"`
+	Role         string    `json:"role,omitempty" doc:"交证据时会话的身份快照（R-195）"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 func reqCode(seq int) string { return "R-" + strconv.Itoa(seq) }
@@ -426,8 +429,9 @@ func (s *Store) UnlinkSession(ctx context.Context, reqID, sessionKey string) err
 func (s *Store) AddEvidence(ctx context.Context, e Evidence) (Evidence, error) {
 	e.ID = protocol.NewID()
 	e.CreatedAt = time.Now()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, files, payload, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, filesJSON(e.Files), blocks.Encode(e.Payload), ts(e.CreatedAt))
+	e.SessionTitle, e.Role = sessionSnap(ctx, s.db, e.SessionKey)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, files, payload, session_title, role, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, filesJSON(e.Files), blocks.Encode(e.Payload), e.SessionTitle, e.Role, ts(e.CreatedAt))
 	return e, err
 }
 
@@ -462,12 +466,12 @@ func (s *Store) listEvidence(ctx context.Context, reqID, cond string) ([]Evidenc
 	return out, rows.Err()
 }
 
-const evidenceCols = `id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, payload, voided, void_reason, voided_by, voided_role, voided_at, created_at`
+const evidenceCols = `id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, payload, voided, void_reason, voided_by, voided_role, voided_at, session_title, role, created_at`
 
 func scanEvidence(row interface{ Scan(...any) error }) (Evidence, error) {
 	var e Evidence
 	var created, files, payload, voidedAt string
-	if err := row.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &payload, &e.Voided, &e.VoidReason, &e.VoidedBy, &e.VoidedRole, &voidedAt, &created); err != nil {
+	if err := row.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &payload, &e.Voided, &e.VoidReason, &e.VoidedBy, &e.VoidedRole, &voidedAt, &e.SessionTitle, &e.Role, &created); err != nil {
 		return e, err
 	}
 	e.Payload = blocks.Decode[blocks.Payload](payload)

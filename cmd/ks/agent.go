@@ -273,7 +273,7 @@ func runReq(args []string) error {
 	fs.Var(&todo, "todo", "evidence：要你做的（机器验证不了的事），可重复")
 	fs.Var(&aside, "aside", "evidence：顺带改动，可重复")
 	var images, videos stringList
-	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\"}]}（框用 0～1 的比例坐标）")
+	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
 	shotsArg := fs.String("images", "", "evidence：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
 	if err := parseAnywhere(fs, args); err != nil {
@@ -513,7 +513,7 @@ func runDecision(args []string) error {
 
 // 写作规范（R-110），与 MCP 工具说明一致。
 const (
-	evidenceGuide = "证据写法：第一句是结论（40 字以内，写用户能看到的变化）；逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；无关的顺带改动单列或另记需求。截图每张写一句话标题、用 boxes 框出改动的地方（--image '{\"path\",\"title\",\"boxes\"}' 或 --images 附图.json），重点看的图放前面，补充、测试一类的放后面。交之前先自查截图里的文字有没有被截断、溢出或重叠。交错的证据用 ks req evidence void <证据 id> --reason 理由 作废后重交，不要堆着。" + writing.UIEvidenceGuide
+	evidenceGuide = "证据写法：第一句是结论（40 字以内，写用户能看到的变化）；逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；无关的顺带改动单列或另记需求。截图每张写一句话标题、用 boxes 框出改动的地方（框里写 criterion 标明证明第几条验收点，网页会裁成小图放在那条旁边；--image '{\"path\",\"title\",\"boxes\"}' 或 --images 附图.json），重点看的图放前面，补充、测试一类的放后面。交之前先自查截图里的文字有没有被截断、溢出或重叠。交错的证据用 ks req evidence void <证据 id> --reason 理由 作废后重交，不要堆着。" + writing.UIEvidenceGuide
 	decisionGuide = "决策写法：问题一句话，每次只问一件事；一个方案里有几个点要分别拍板时用 --points 逐点给选项（标出推荐），不埋在说明里；说明按“结论 / 依据 / 细节”写，方案长时用 --summary 每条需求一行。" + writing.DecisionTableGuide
 	stageGuide    = "小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据。"
 )

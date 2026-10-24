@@ -1545,6 +1545,10 @@ export interface components {
             at: string;
             /** @description 写建议的 Adv 会话 */
             by: string;
+            /** @description 写建议时会话的身份快照（R-195） */
+            by_role?: string;
+            /** @description 写建议时会话的标题快照（R-195） */
+            by_title?: string;
             project_id: string;
             reason: string;
             requirement_code: string;
@@ -1872,6 +1876,11 @@ export interface components {
         };
         Box: {
             /**
+             * Format: int64
+             * @description 可选：这个框对应第几条验收点（从 1 开始），网页会把它裁成小图放在那条验收点旁边
+             */
+            criterion?: number;
+            /**
              * Format: double
              * @description 框高 / 图片高（0～1）
              */
@@ -2004,6 +2013,8 @@ export interface components {
             approval: boolean;
             assigned_by?: string;
             blocks?: components["schemas"]["Block"][] | null;
+            /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话 */
+            by_title?: string;
             choices?: number[] | null;
             close_reason?: string;
             code: string;
@@ -2087,6 +2098,8 @@ export interface components {
             /** @description 没有保存的块及原因；决策本身已提出 */
             block_warnings?: string[] | null;
             blocks?: components["schemas"]["Block"][] | null;
+            /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话 */
+            by_title?: string;
             choices?: number[] | null;
             close_reason?: string;
             code: string;
@@ -2285,7 +2298,11 @@ export interface components {
             link: string;
             payload?: components["schemas"]["Payload"];
             requirement_id: string;
+            /** @description 交证据时会话的身份快照（R-195） */
+            role?: string;
             session_key?: string;
+            /** @description 交证据时会话的标题快照（R-195） */
+            session_title?: string;
             summary: string;
             /** @description 作废理由（Agent 主动作废时必填；验收退回时批量作废的为空） */
             void_reason?: string;
@@ -3260,6 +3277,8 @@ export interface components {
             role?: string;
             /** @description 操作的会话键（Agent 操作时） */
             session?: string;
+            /** @description 操作时会话的标题快照（R-195）；旧记录没有 */
+            session_title?: string;
             to: string;
             /** @description 经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 / request 用户批准了 Agent 的改状态申请（ref 是申请的 D-x，R-188） */
             via: string;

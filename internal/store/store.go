@@ -133,6 +133,24 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"evidence", "voided_by", "TEXT NOT NULL DEFAULT ''"},
 	{"evidence", "voided_role", "TEXT NOT NULL DEFAULT ''"},
 	{"evidence", "voided_at", "TEXT NOT NULL DEFAULT ''"},
+	// 会话标题快照（R-195）：动作发生时把会话当时的标题记下来，时间线显示当时的标题；旧数据为空
+	{"status_changes", "session_title", "TEXT NOT NULL DEFAULT ''"},
+	{"evidence", "session_title", "TEXT NOT NULL DEFAULT ''"},
+	{"evidence", "role", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "by_title", "TEXT NOT NULL DEFAULT ''"},
+	{"review_advice", "by_title", "TEXT NOT NULL DEFAULT ''"},
+	{"review_advice", "by_role", "TEXT NOT NULL DEFAULT ''"},
+}
+
+// sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。
+func sessionSnap(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, key string) (title, role string) {
+	if key == "" {
+		return "", ""
+	}
+	_ = q.QueryRowContext(ctx, `SELECT title, role FROM sessions WHERE key = ?`, key).Scan(&title, &role)
+	return title, role
 }
 
 func migrate(db *sql.DB) error {
