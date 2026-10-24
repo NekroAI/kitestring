@@ -782,6 +782,7 @@ export const zh = {
     reviewHint: '需求都已做完，等你验收这一阶段',
     summary: '阶段小结（Agent 提交）',
     noSummary: 'Agent 还没交阶段小结，也可以直接验收',
+    shelvedNote: (seq: number, n: number) => `阶段 ${seq} 有 ${n} 条已搁置，${VERB.pass}后不会开工`,
     passTogether: (codes: string) => `还没单独验收的 ${codes} 会一起${VERB.pass}`,
     pausedHint: `已${VERB.pass}阶段里有需求被重开，修好并验收后才能继续`,
     inPlan: (code: string) => `计划 ${code} 里的需求`,

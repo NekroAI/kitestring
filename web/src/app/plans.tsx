@@ -24,8 +24,12 @@ import { done, schedule, Seal, Verdict } from './verdict'
 // 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（批准 / 退回）和编辑。
 
 const finishedReq = (r: PlanReq) => r.status === 'review' || r.status === 'done'
-export const stageFinished = (st: Stage) => st.requirements.length > 0 && st.requirements.every(finishedReq)
-const planReqCount = (x: Plan) => x.stages.reduce((n, st) => n + st.requirements.length, 0)
+const shelvedReq = (r: PlanReq) => r.status === 'shelved'
+// 已搁置的需求不计入阶段完成与计划进度（R-175）
+export const stageFinished = (st: Stage) => st.requirements.length > 0 && st.requirements.every((r) => finishedReq(r) || shelvedReq(r))
+const planReqCount = (x: Plan) => x.stages.reduce((n, st) => n + st.requirements.filter((r) => !shelvedReq(r)).length, 0)
+// 批准前要提醒的：每个阶段里已搁置的条数
+const shelvedByStage = (x: Plan) => x.stages.map((st) => ({ seq: st.seq, n: st.requirements.filter(shelvedReq).length })).filter((s) => s.n > 0)
 const planDoneCount = (x: Plan) => x.stages.reduce((n, st) => n + st.requirements.filter((r) => r.status === 'done').length, 0)
 const currentStage = (x: Plan) => x.stages.find((st) => st.seq === x.current)
 
@@ -63,7 +67,7 @@ export function StageRail({ x, className }: { x: Plan; className?: string }) {
     <div className={cx('flex gap-1', className)}>
       {x.stages.map((st) => {
         const cur = x.status === 'active' && st.seq === x.current
-        const n = st.requirements.length
+        const n = st.requirements.filter((r) => !shelvedReq(r)).length
         const pct = n ? (st.requirements.filter(finishedReq).length / n) * 100 : 0
         return (
           <i
@@ -516,7 +520,21 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
             </div>
             {approval ? (
               <div className="shrink-0 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
-                <PlanVerdict key={x.code} x={x} stack extra={<p className="text-xs text-fg-3">{t.verdict.planNext}</p>} />
+                <PlanVerdict
+                  key={x.code}
+                  x={x}
+                  stack
+                  extra={
+                    <div className="space-y-0.5 text-xs text-fg-3">
+                      {shelvedByStage(x).map((s) => (
+                        <p key={s.seq} className="text-wait">
+                          {t.plan.shelvedNote(s.seq, s.n)}
+                        </p>
+                      ))}
+                      <p>{t.verdict.planNext}</p>
+                    </div>
+                  }
+                />
               </div>
             ) : (
               (x.status === 'draft' || x.status === 'shelved') && (

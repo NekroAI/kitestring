@@ -317,7 +317,7 @@ func (s *Store) fillStages(ctx context.Context, x *Plan) error {
 			continue
 		}
 		for _, r := range st.Requirements {
-			if r.Status != ReqDone {
+			if r.Status != ReqDone && r.Status != ReqShelved {
 				x.Paused = true
 			}
 		}

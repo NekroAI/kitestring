@@ -199,10 +199,13 @@ func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment, by stri
 	if err != nil {
 		return store.Decision{}, apiErr(err)
 	}
+	if r.Status == store.ReqShelved { // 搁置的需求不会被自动拉回待开始，重新打开只能由用户明确操作（R-166 / R-175）
+		return store.Decision{}, huma.Error400BadRequest(r.Code + " 已搁置，先重新打开再交出")
+	}
 	if err := h.store.LinkSession(ctx, r.ID, x.Key); err != nil {
 		return store.Decision{}, apiErr(err)
 	}
-	if r.Status == store.ReqDraft || r.Status == store.ReqDone || r.Status == store.ReqShelved {
+	if r.Status == store.ReqDraft || r.Status == store.ReqDone {
 		actx := store.WithActor(ctx, store.Actor{Via: "assign"})
 		if by != "" {
 			actx = store.WithActor(ctx, store.Actor{Kind: store.ActorAgent, Session: by, Via: "assign"}) // PM 派活

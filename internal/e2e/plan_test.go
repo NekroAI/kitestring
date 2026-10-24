@@ -252,3 +252,89 @@ func TestPlanAutoPassFinishedStages(t *testing.T) {
 		t.Fatalf("计划应完成：%s", x.Status)
 	}
 }
+
+// 已搁置的需求在计划里保持搁置（R-175）：批准 / 阶段解锁不改状态、不送达；
+// 阶段完成判定、通过后推进、暂停判定都忽略它；手动交出已搁置的需求被拒绝。
+func TestPlanKeepsShelved(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	hook(t, "claude", map[string]any{"session_id": "pl-s", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "待命", "prompt_id": "p0"})
+	c := client.New(10 * time.Second)
+	key := "claude:pl-s"
+	var x store.Plan
+	e.call("POST", "/api/plans", map[string]any{"title": "含搁置", "owner_session": key, "stages": []map[string]any{
+		{"title": "一", "requirements": []map[string]any{{"title": "搁置甲"}, {"title": "乙"}, {"title": "丙"}}},
+		{"title": "二", "requirements": []map[string]any{{"title": "搁置丁"}, {"title": "戊"}}},
+	}}, &x)
+	a, b, cc := x.Stages[0].Requirements[0].Code, x.Stages[0].Requirements[1].Code, x.Stages[0].Requirements[2].Code
+	d, ee := x.Stages[1].Requirements[0].Code, x.Stages[1].Requirements[1].Code
+	e.call("PUT", "/api/requirements/"+a, map[string]any{"title": "搁置甲", "status": "shelved"}, nil)
+	e.call("PUT", "/api/requirements/"+d, map[string]any{"title": "搁置丁", "status": "shelved"}, nil)
+	get := func(code string) store.Requirement {
+		var r store.Requirement
+		e.call("GET", "/api/requirements/"+code, nil, &r)
+		return r
+	}
+
+	w := waitOnce(key)
+	e.waitFor("登记挂起", func() bool { return e.session(key).Parked })
+	e.call("POST", "/api/plans/"+x.Code+"/start", map[string]any{}, &x)
+	text := recv(t, w, "计划开始")
+	if strings.Contains(text, "搁置甲") || !strings.Contains(text, "乙") || !strings.Contains(text, "丙") {
+		t.Fatalf("开始后只应送达未搁置的需求：%s", text)
+	}
+	if r := get(a); r.Status != store.ReqShelved || len(r.Sessions) != 0 || r.OfferedTo != "" {
+		t.Fatalf("已搁置的需求应保持搁置、没有交给会话：%s %v %q", r.Status, r.Sessions, r.OfferedTo)
+	}
+	if r := get(b); r.Status != store.ReqReady || len(r.Sessions) != 1 {
+		t.Fatalf("未搁置的需求应交给负责会话：%s %v", r.Status, r.Sessions)
+	}
+	// 手动交出已搁置的需求要先重新打开
+	if code, body := e.try("POST", "/api/requirements/"+a+"/assign", map[string]any{"session_key": key}); code != 400 || !strings.Contains(body, "已搁置") {
+		t.Fatalf("交出已搁置的需求应被拒绝：%d %s", code, body)
+	}
+	if r := get(a); r.Status != store.ReqShelved {
+		t.Fatalf("被拒绝后仍应是已搁置：%s", r.Status)
+	}
+
+	// 阶段里只剩搁置的和待验收的：可以交小结
+	if err := c.Do(context.Background(), "POST", "/agent/plans/"+x.Code+"/stages/1/submit", map[string]any{"summary": "x"}, nil); err == nil || !strings.Contains(err.Error(), b) || strings.Contains(err.Error(), a) {
+		t.Fatalf("没做完时只应提示未搁置的需求：%v", err)
+	}
+	for _, code := range []string{b, cc} {
+		if err := c.Do(context.Background(), "POST", "/agent/requirements/"+code+"/status", map[string]any{"status": "review", "session_key": key}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := c.Do(context.Background(), "POST", "/agent/plans/"+x.Code+"/stages/1/submit", map[string]any{"summary": "做完了"}, nil); err != nil {
+		t.Fatalf("只剩搁置和待验收时应能交小结：%v", err)
+	}
+	// 通过阶段 1：搁置的保持搁置，阶段 2 解锁时搁置的丁不送达，戊交出
+	e.call("POST", "/api/plans/"+x.Code+"/stages/1/pass", map[string]any{}, &x)
+	if x.Current != 2 || x.Stages[1].Status != store.StageActive || x.Paused {
+		t.Fatalf("阶段 1 通过后应进入阶段 2 且不暂停：current=%d %s paused=%v", x.Current, x.Stages[1].Status, x.Paused)
+	}
+	if r := get(a); r.Status != store.ReqShelved {
+		t.Fatalf("通过阶段后已搁置的应保持搁置：%s", r.Status)
+	}
+	if r := get(d); r.Status != store.ReqShelved || len(r.Sessions) != 0 || r.OfferedTo != "" {
+		t.Fatalf("阶段 2 解锁不应拉回已搁置的需求：%s %v %q", r.Status, r.Sessions, r.OfferedTo)
+	}
+	if r := get(ee); r.Status != store.ReqReady || len(r.Sessions) != 1 {
+		t.Fatalf("阶段 2 的未搁置需求应交出：%s %v", r.Status, r.Sessions)
+	}
+	// 最后一个阶段也只剩搁置 + 待验收：通过后计划完成
+	if err := c.Do(context.Background(), "POST", "/agent/requirements/"+ee+"/status", map[string]any{"status": "review", "session_key": key}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Do(context.Background(), "POST", "/agent/plans/"+x.Code+"/stages/2/submit", map[string]any{"summary": "做完了"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.call("POST", "/api/plans/"+x.Code+"/stages/2/pass", map[string]any{}, &x)
+	if x.Status != store.PlanDone {
+		t.Fatalf("计划应完成：%s", x.Status)
+	}
+	if r := get(d); r.Status != store.ReqShelved {
+		t.Fatalf("计划完成后仍应是已搁置：%s", r.Status)
+	}
+}

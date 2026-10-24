@@ -162,7 +162,7 @@ func (h *Hub) planMsg(ctx context.Context, x store.Plan, text string, files ...s
 
 func stageName(st store.Stage) string { return fmt.Sprintf("阶段 %d「%s」", st.Seq, st.Title) }
 
-// unlockStage 让阶段进入进行中：其中没做完的需求交给负责会话（关联、待开始并送达）；
+// unlockStage 让阶段进入进行中：其中没做完的需求（不含已搁置，R-175）交给负责会话（关联、待开始并送达）；
 // 没有负责会话时只把草稿改为待开始，等你手动交出。
 func (h *Hub) unlockStage(ctx context.Context, x store.Plan, st store.Stage) error {
 	ctx = store.WithActor(ctx, store.Actor{Kind: store.ActorSystem, Via: "plan", Ref: x.Code}) // 阶段解锁是纸鸢自动做的（R-153）
@@ -170,8 +170,8 @@ func (h *Hub) unlockStage(ctx context.Context, x store.Plan, st store.Stage) err
 		return err
 	}
 	for _, r := range st.Requirements {
-		if r.Status == store.ReqDone {
-			continue
+		if r.Status == store.ReqDone || r.Status == store.ReqShelved {
+			continue // 已完成、已搁置的保持原状：搁置只能由用户明确重新打开（R-175）
 		}
 		if x.OwnerSession != "" && !h.handledElsewhere(ctx, r.ID, x.OwnerSession) {
 			if _, err := h.assignQuiet(ctx, r.ID, x.OwnerSession, fmt.Sprintf("属于计划 %s「%s」%s。", x.Code, x.Title, stageName(st)), ""); err == nil {
@@ -225,7 +225,7 @@ func (h *Hub) checkPlanOwner(ctx context.Context, key string) error {
 func unfinished(st store.Stage) []string {
 	var out []string
 	for _, r := range st.Requirements {
-		if !r.Finished() {
+		if r.Status != store.ReqShelved && !r.Finished() { // 已搁置的不计入阶段完成（R-175）
 			out = append(out, r.Code)
 		}
 	}
@@ -384,14 +384,19 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store
 	return h.planChanged(ctx, x.ID)
 }
 
-// allDone：阶段里有需求、且全部已完成。
+// allDone：阶段里有（未搁置的）需求、且全部已完成。
 func allDone(st store.Stage) bool {
+	n := 0
 	for _, r := range st.Requirements {
+		if r.Status == store.ReqShelved {
+			continue // 已搁置的不计（R-175）
+		}
 		if r.Status != store.ReqDone {
 			return false
 		}
+		n++
 	}
-	return len(st.Requirements) > 0
+	return n > 0
 }
 
 // reviseStage：退回整个阶段，附意见；阶段回到进行中。
