@@ -714,11 +714,6 @@ nav.fixed {
 .desk-offline *::before {
   animation-play-state: paused !important;
 }
-/* 待办与它的会话互相点亮（纸鸢的线） */
-.desk-lit {
-  outline: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
-}
 .desk-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;

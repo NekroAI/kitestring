@@ -530,7 +530,7 @@ const ACT_W = 84
 
 // SwipeRow：列表条目左滑露出快捷操作（D-491：「通过 / 退回」，再点一下才执行）。只接触屏；
 // 过 G.rowOpen 或左甩松手停在打开，右滑或点条目本身收起；同一时间只开一行。
-export function SwipeRow({ actions, disabled, children, className }: { actions: RowAction[]; disabled?: boolean; children: ReactNode; className?: string }) {
+export function SwipeRow({ actions, disabled, children, className, spotKey }: { actions: RowAction[]; disabled?: boolean; children: ReactNode; className?: string; spotKey?: string }) {
   const [el, setEl] = useState<HTMLDivElement | null>(null)
   const x = useMotionValue(0)
   const reveal = useTransform(x, (v) => Math.max(0, -v))
@@ -578,7 +578,7 @@ export function SwipeRow({ actions, disabled, children, className }: { actions: 
     },
   })
   return (
-    <div ref={setEl} className={cx('relative rounded-[14px]', clip && 'overflow-hidden', className)}>
+    <div ref={setEl} data-spot-key={spotKey} className={cx('relative rounded-[14px] transition-[opacity,filter] duration-200', clip && 'overflow-hidden', className)}>
       <motion.div className="absolute inset-y-0 right-0 flex overflow-hidden" style={{ width: reveal }} aria-hidden={!opened}>
         {actions.map((a, i) => (
           <button

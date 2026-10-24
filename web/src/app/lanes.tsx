@@ -689,9 +689,9 @@ export function laneHeight(tone: Tone, tasks: number, mode: LaneMode) {
   return base + (tasks ? tasks * 24 + 6 : 0)
 }
 
-export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; lit?: boolean; still?: boolean; onHover?: (k: string | null) => void }
+export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; still?: boolean }
 
-export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, still, onHover }: LaneProps) {
+export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: LaneProps) {
   useFeedTicks(s)
   const open = useOpenSession()
   const menu = useSessionMenu()
@@ -756,14 +756,12 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, still, o
           data-lane={s.key}
           onClick={() => open(s.key)}
           onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key)}
-          onMouseEnter={onHover && (() => onHover(s.key))}
-          onMouseLeave={onHover && (() => onHover(null))}
+          data-spot-key={s.key}
           className={cx(
-            'grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] text-left transition-[background,box-shadow] duration-200',
+            'grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] text-left transition-[background,box-shadow,opacity,filter] duration-200',
             'grid-rows-[minmax(0,1fr)_auto]',
             quiet ? 'bg-surface/55 ring-1 ring-line ring-inset hover:bg-surface' : 'bg-surface shadow-card hover:bg-hover/40',
             tone === 'you' && 'ring-1 ring-reply/30 ring-inset',
-            lit && 'desk-lit',
           )}
         >
           <div className={cx('grid min-h-0 min-w-0', cols[mode])}>
@@ -828,9 +826,10 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
         tabIndex={0}
         data-lane={m.k}
         data-ended-lane
+        data-spot-key={m.k}
         onClick={() => open(m.k)}
         onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(m.k)}
-        className={cx('grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] bg-surface/40 text-left ring-1 ring-line ring-inset transition-colors hover:bg-surface', sub ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-1')}
+        className={cx('grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] bg-surface/40 text-left ring-1 ring-line ring-inset transition-[background-color,opacity,filter] duration-200 hover:bg-surface', sub ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-1')}
       >
         <div className={cx('grid min-h-0 min-w-0', cols[mode])}>
           <div className="flex min-w-0 flex-col justify-center gap-0.5 px-3.5 py-1.5 opacity-80">

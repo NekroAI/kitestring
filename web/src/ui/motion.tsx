@@ -44,7 +44,7 @@ export function Collapse({ show, children, className, fluid, still }: { show: bo
 // 项之间的间距由 Item 的 space 提供（不要在外层用 space-y / gap，否则收起到最后会跳一下）。
 export function List({ children, space = 0, className }: { children: ReactNode; space?: number; className?: string }) {
   return (
-    <div data-skel-flat className={className} style={space ? { marginBottom: -space } : undefined}>
+    <div data-skel-flat className={cx('min-w-0', className)} style={space ? { marginBottom: -space } : undefined}>
       <AnimatePresence initial={false}>{children}</AnimatePresence>
     </div>
   )

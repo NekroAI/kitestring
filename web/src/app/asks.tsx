@@ -284,9 +284,9 @@ export function AskItem(props: Parameters<typeof AskCard>[0] & { swipe?: boolean
   const actions = useAskActions(props.a)
   const key = swipeKey(props.a)
   const pend = usePending(key)
-  if (!swipe || !actions.length) return <AskCard {...rest} />
+  if (!swipe || !actions.length) return <AskCard {...rest} spotKey={props.a.s?.key ?? ''} />
   return (
-    <SwipeRow actions={actions} disabled={!!pend} className="shrink-0">
+    <SwipeRow actions={actions} disabled={!!pend} className="shrink-0" spotKey={props.a.s?.key ?? ''}>
       <AskCard {...rest} />
       {key && <PendingCover k={key} />}
     </SwipeRow>
@@ -298,19 +298,17 @@ function AskCard({
   now,
   onOpen,
   active,
-  lit,
   showProject,
-  onHover,
   className,
+  spotKey,
 }: {
   a: Ask
   now: number
   onOpen: (key: string) => void
   active?: boolean
-  lit?: boolean
   showProject?: boolean
-  onHover?: (k: string | null) => void
   className?: string
+  spotKey?: string
 }) {
   const s = a.s
   const who = s ? sessionTitle(s) : a.projectName || t.thread.noSession
@@ -322,14 +320,12 @@ function AskCard({
       data-nav-item=""
       data-ask={a.key}
       onClick={() => onOpen(a.key)}
-      onMouseEnter={onHover && s ? () => onHover(s.key) : undefined}
-      onMouseLeave={onHover ? () => onHover(null) : undefined}
+      data-spot-key={spotKey}
       className={cx(
-        'group grid w-full shrink-0 content-center gap-y-0.5 overflow-hidden rounded-[14px] border bg-surface px-3.5 text-left shadow-card transition-[border,box-shadow,background] duration-150 hover:border-line-strong hover:shadow-pop',
+        'group grid w-full shrink-0 content-center gap-y-0.5 overflow-hidden rounded-[14px] border bg-surface px-3.5 text-left shadow-card transition-[border,box-shadow,background,opacity,filter] duration-200 hover:border-line-strong hover:shadow-pop',
         sr ? 'h-[106px] grid-rows-4' : 'h-[86px] grid-rows-3',
         a.counted ? 'border-reply/25' : 'border-line',
         active && 'border-accent/60 ring-2 ring-accent/25',
-        lit && 'desk-lit',
         className,
       )}
     >

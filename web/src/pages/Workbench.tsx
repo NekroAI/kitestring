@@ -23,6 +23,7 @@ import { serverNow, usePlans } from '../api/queries'
 import { useFillHeight } from '../app/pool'
 import { OrphanProcs } from '../app/orphans'
 import { Collapse, Item, List, useSettled } from '../ui/motion'
+import { SpotStyle, useSpotlight } from '../app/spotlight'
 
 // 工作台（R-170，D-228 原型；R-170 返工按真实运行截图改）：一屏驾驶舱，整页不滚动，各栏在区域内滚动。
 //   左「要你处理」：只放固定高度的条目（R-177），点开右侧的审批抽屉处理，底部「刚处理」；没有待办时放「一切正常」概况，栏宽不变（R-211）。
@@ -230,11 +231,11 @@ export default function WorkbenchPage() {
   const openAsk = useOpenAsk()
   const [params] = useSearchParams()
   const openKey = params.get('a')
+  const openSession = params.get('s')
   const [showOlder, setShowOlder] = usePref('ks.home.ended', false)
   const [tab, setTab] = usePref<Tab>('ks.home.tab', 'ask')
   const [q, setQ] = useState('')
   const [recap, setRecap] = useState(false)
-  const [hover, setHover] = useState<{ k: string; from: 'ask' | 'lane' } | null>(null)
   const k = q.trim().toLowerCase()
   const recapOn = !!settings.data?.ai?.recap
   const [zoomPref, setZoom] = usePref<Zoom>('ks.home.zoom', 'h1')
@@ -317,6 +318,9 @@ export default function WorkbenchPage() {
   // 首次加载（骨架换成内容）这段时间里的出现不算进场，不播动画；之后各栏的增、删、换位置才用弹簧过渡（R-216）
   const still = !useSettled(!wb.loading && laneReady)
 
+  // 聚光（R-215）：悬停 / Tab 聚焦卡片或泳道时，其余淡出；触屏点开审批抽屉 / 会话抽屉期间保持这组关联
+  const { spot, handlers: spotHandlers } = useSpotlight((openKey ? asks.find((a) => a.key === openKey)?.s?.key : openSession) ?? null)
+
   // 各栏的骨架按上次加载完的样子画（R-211）；搜索过滤时的样子不记
   const lay = phone ? 'p' : mode
   const [askBox, setAskBox] = useState<HTMLDivElement | null>(null)
@@ -365,8 +369,6 @@ export default function WorkbenchPage() {
                   onOpen={openAsk}
                   active={openKey === a.key}
                   showProject={multiAsk}
-                  lit={!!a.s && hover?.from === 'lane' && hover.k === a.s.key}
-                  onHover={(key) => setHover(key ? { k: key, from: 'ask' } : null)}
                 />
               </Item>
             ))}
@@ -404,7 +406,7 @@ export default function WorkbenchPage() {
       ),
       ...g.rows.map((r) => (
         <Item key={r.s.key} space={8} layout fluid still={still}>
-          <Lane s={r.s} tone={r.tone} now={now} mode={mode} zoom={zoom} still={still} lit={hover?.from === 'ask' && hover.k === r.s.key} onHover={(key) => setHover(key ? { k: key, from: 'lane' } : null)} />
+          <Lane s={r.s} tone={r.tone} now={now} mode={mode} zoom={zoom} still={still} />
         </Item>
       )),
       ...g.done.map((m) => (
@@ -525,7 +527,8 @@ export default function WorkbenchPage() {
   )
 
   return (
-    <div ref={setEl} style={fillH ? { height: fillH } : undefined} className="min-w-0">
+    <div ref={setEl} style={fillH ? { height: fillH } : undefined} className="min-w-0" {...spotHandlers}>
+      <SpotStyle spot={spot} />
       <div style={{ height: fillH }} className={cx('flex min-w-0 flex-col', phone ? 'gap-3' : 'gap-3.5')}>
         {/* 顶栏：标题与件数 · 简报位（背后的风，最多两行）；不放状态图例（R-187） */}
         <div className={cx('grid min-w-0 items-start gap-x-4 gap-y-2.5', phone ? 'grid-cols-1' : 'grid-cols-[auto_minmax(0,1fr)]')}>
