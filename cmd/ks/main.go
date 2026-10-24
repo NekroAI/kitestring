@@ -45,7 +45,7 @@ const usage = `纸鸢 Kitestring —— 多设备、多 agent 的个人驾驶舱
 agent 调用：
   hook <claude|codex> <event>   由 agent 的 hook 调用
   mcp                    stdio MCP server
-  req list|get|create|status|evidence ...   需求操作（与 MCP 同能力）
+  req list|get|create|status|evidence ...   需求操作（与 MCP 同能力；evidence void <证据 id> --reason 作废交错的证据）
   req request <R-x> <ready|draft> --reason ...   申请改需求状态（草稿 → 待开始、重新打开已搁置的），用户在审批抽屉里批准后纸鸢直接改
   req assign <R-x> --to <会话|auto>   PM 把需求交给开发
   req review <R-x> <意见> [--image]   Rev 交审查意见（不改需求状态）

@@ -12,7 +12,7 @@ import { DecisionComposer } from './DecisionCard'
 import { useActions } from './actions'
 import { ProxyNote } from './grant'
 import { evidenceKind } from './review'
-import { EvidenceView, hasPayload } from './evidence'
+import { EvidenceView, hasPayload, VoidedEvidence } from './evidence'
 import { useSessions } from '../api/queries'
 import { sessionTitle } from './SessionCard'
 import { Linkify, RefChip } from '../ui/refmark'
@@ -206,13 +206,22 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           now={now}
           muted={e.voided}
         >
-          {hasPayload(e) ? (
-            <EvidenceView e={e} acceptance={r.acceptance} />
-          ) : (
-            <Md text={e.summary} className="text-sm leading-relaxed text-fg" />
-          )}
-          {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
-          {!hasPayload(e) && !!e.files?.length && <Thumbs files={e.files} />}
+          {(() => {
+            const body = (
+              <>
+                {hasPayload(e) ? <EvidenceView e={e} acceptance={r.acceptance} /> : <Md text={e.summary} className="text-sm leading-relaxed text-fg" />}
+                {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
+                {!hasPayload(e) && !!e.files?.length && <Thumbs files={e.files} />}
+              </>
+            )
+            return e.voided && e.void_reason ? (
+              <VoidedEvidence e={e} by={who(e.voided_by)}>
+                {body}
+              </VoidedEvidence>
+            ) : (
+              body
+            )
+          })()}
         </Node>
       ),
     })

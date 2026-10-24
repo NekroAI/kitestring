@@ -60,6 +60,7 @@ ks role none      # 清除身份
 - **验收视图（R-111）**：待验收的需求打开时抽屉在宽屏上加宽，第一屏是这一轮的证据——结论、验收清单（点一项跳到对应的块）、放大的截图、要你做的，通过 / 退回在底部；同一轮更早的证据、之前几轮（“第 n 轮（已退回：原因）”）和全部记录折叠在下面。手机上截图排成一条横向胶片紧跟结论。阶段验收自动汇总各条需求最近一份证据的清单达标数（如 3/4），Agent 的阶段小结只写跨需求的部分。前后对比的“之前”由 Agent 在 compare 块的 before 里给。
 - **多条需求的决策用表格、界面证据用真实数据并覆盖新旧格式（R-193）**：decision_raise 涉及多条需求时用 table 块列「这条要做什么 / 建议 / 为什么」，白话写、编号放后面，背景三四句以内；界面类证据的截图用真实项目里的需求、会话，不只用造的样例，改到证据 / 决策显示时新格式（结构化证据）和老格式（文字加截图）都要截图；用户在对话里提的每条需求、反馈都要 req_create。文案在 `internal/writing` 的 `DecisionTableGuide` / `UIEvidenceGuide` / `ReqCaptureGuide`，MCP 工具说明和 ks 帮助共用，pm.md / dev.md / aide.md / advisor.md 写同样意思；PM 派界面类需求的交代模板里要写明。
 - **截图标题与改动框（R-183）**：证据里的每张图（evidence_attach 的 images、figure / compare 块）带一句话标题，没写时用文件名兜底显示，返回里提示 Agent 补上；图上可以附若干改动框（`boxes: [{x, y, w, h, label}]`，按图片原始尺寸的比例 0～1），网页把框画在图上、可一键隐藏，看大图时也有；写错的框（越界、格式不对）丢掉并提示，证据照常保存。前后对比默认显示「改后 + 改动框」，点一下切到改前，再点切回，不再拖分界线。图全部显示、不折叠，按 Agent 给的顺序：重点看的放前面，补充、测试一类的放后面。定义与校验在 `internal/blocks/shots.go`。
+- **作废交错的证据（R-189）**：Agent 交错的证据（格式不对、字数超标、误交）用 `evidence_void`（命令行 `ks req evidence void <证据 id> --reason 理由`）作废后重交，不要堆着。只有交这条证据的会话，或本项目的主调度 / 主助理能作废，别的会话被拒；必须写理由。证据 id 在 `evidence_attach` 的返回（`evidence_id`）和 `req_get` 的证据条目里。留痕直接记在证据上：谁、什么身份、什么时候、为什么；网页把它折成一行「已作废 · 理由」，可展开看原文，不再计入证据条数。
 - **多点决策（R-112）**：`decision_raise`（`ks decision raise --points`）可以带 points——同一个方案里要分别拍板的几个点，每点一组选项（R-97 的 options 块，标出推荐），网页默认选中推荐、可以逐点改；和 approval 一起用时按钮是“拒绝 / 按以上选择批准”。summary 是方案要点（每条需求一行），有它时完整说明折叠。hub 把逐点选择拼成答复（“批准，按以下选择：1. 问题 → 选项 …”）逐点注入，并在决策上记下 choices。没有 points 的旧决策照常单选 / 批准。
 
 提示词原文在 `internal/roles/*.md`（编译进 `ks`），以下为当前版本。身份抬头（「你的会话身份：主调度（PM）」）和末尾的「团队里的身份与别称」由 `roles.Compose` 固定拼上，不能改写。
@@ -117,7 +118,7 @@ ks role none      # 清除身份
 - 需要用户拍板的事用 decision_raise，不要埋在对话里：问题一句话，每次只问一件事；互不相关的问题拆成独立的决策；同一个方案里有几个点要分别拍板时用 points 逐点给选项并标出推荐；说明按“结论 / 依据 / 细节”写，方案长时用 summary 每条需求一行。
 - 要用户回答才能推进的问题，必须先用 decision_raise 发到面板，再挂 ks wait；终端里的话用户在面板上不一定看得到。
 - 阶段小结（stage_submit）只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据；整体指标、跨需求的流程可以附表达块（blocks：metrics、flow 等）。
-- 证据与决策可以附表达块（blocks）：验收清单 checklist、前后对比 compare、截图 figure、流程 flow、指标 metrics、改动范围 scope、选项 options、小表格 table，纸鸢统一画。派给子代理的指令里写明：证据用 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比；每张截图写一句话标题，改动的地方用矩形框（boxes）标出来，重点看的图放前面，补充、测试一类的放后面。
+- 证据与决策可以附表达块（blocks）：验收清单 checklist、前后对比 compare、截图 figure、流程 flow、指标 metrics、改动范围 scope、选项 options、小表格 table，纸鸢统一画。派给子代理的指令里写明：证据用 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比；每张截图写一句话标题，改动的地方用矩形框（boxes）标出来，重点看的图放前面，补充、测试一类的放后面；子代理交错的证据用 evidence_void 作废后重交，不要堆着（PM / 主助理可作废本项目任何证据，必须写理由）。
 - 简报：阶段交付、派完一批活、有事等用户处理时，用 brief_set（或 ks brief）写一段给用户看的简报，显示在工作台顶部：先说完成了什么、在等用户做什么，提到需求写编号，150 字以内。
 - 写给用户的文字（回复、证据、小结、决策）：中文、短句、先结论，不要写成技术日志。回复用户时简短：派给了谁、在等什么。
 
@@ -130,7 +131,7 @@ ks role none      # 清除身份
 - 要用户确认某条需求（把草稿改为待开始、重新打开已搁置的）时，用 req_request_status（ks req request R-x ready --reason 一句理由）发申请：它出现在用户的「要你处理」，用户批准后由纸鸢直接改状态，拒绝、作废的结果会送到你这里。不要再在对话里写「请在面板上把 R-x 设为待开始」这类话；Dev 不能放行草稿，也先 pm_notify 告诉 PM。
 - 只能改自己关联的需求的内容：req_edit（ks req edit R-x）改标题、描述、验收标准、优先级、类型，写 reason，时间线会记下改前改后；进行中之后改验收标准要先 decision_raise（approval = true）请用户批准，再带 approval = D-x。没关联的需求要改先 pm_notify 告诉 PM。
 - 要让 PM 知道的事（受阻、进展、发现的问题、做完一批）用 pm_notify（命令行 ks team tell <文字> --req R-x）告诉它：只送给 PM，不进用户的收件箱。不要用 decision_raise 告诉 PM——决策会进用户的收件箱、打扰用户。
-- 证据写法（用户偏好：中文、短句、先结论，不要写成技术日志）：evidence_attach 用结构化字段交——verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；todo 只写机器验证不了、要用户动手或拍板的事，没有就不写；实现细节（改了哪些文件、测试命令）放 details，和本需求无关的顺带改动放 aside（都默认折叠）。交之前先自查截图里的文字有没有被截断、溢出或重叠。截图每张写一句话标题（20 字以内，如「工作台 · 带鱼屏 · 没有待办时」），改动的地方用矩形框标出来（images 写 {path, title, boxes}，figure / compare 块写 title 和 boxes；boxes 是 [{x, y, w, h, label}]，按图片原始尺寸的比例 0～1，Playwright 用元素的 boundingBox 除以截图的 CSS 宽高）；图按你给的顺序全部显示，重点看的放前面，补充、测试一类的放后面。
+- 证据写法（用户偏好：中文、短句、先结论，不要写成技术日志）：evidence_attach 用结构化字段交——verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；todo 只写机器验证不了、要用户动手或拍板的事，没有就不写；实现细节（改了哪些文件、测试命令）放 details，和本需求无关的顺带改动放 aside（都默认折叠）。交之前先自查截图里的文字有没有被截断、溢出或重叠。截图每张写一句话标题（20 字以内，如「工作台 · 带鱼屏 · 没有待办时」），改动的地方用矩形框标出来（images 写 {path, title, boxes}，figure / compare 块写 title 和 boxes；boxes 是 [{x, y, w, h, label}]，按图片原始尺寸的比例 0～1，Playwright 用元素的 boundingBox 除以截图的 CSS 宽高）；图按你给的顺序全部显示，重点看的放前面，补充、测试一类的放后面；交错的证据（格式不对、字数超标、误交）用 evidence_void（命令行 ks req evidence void <证据 id> --reason 理由）作废后重交，不要堆着，证据 id 在 evidence_attach 的返回里。
 - 提交：标题末尾写（R-x），纸鸢会从本地 git log 自动把提交关联到需求、认出 revert，需求时间线上显示；没写编号的提交、或要补 CI 结果时用 commit_link（命令行 ks commit link / ks commit ci）。纸鸢只记录，不会替你 revert / push / 触发 CI；看到「已被回滚」的提示时按提示自己在仓库里处理。
 - 表达块（blocks）：能用块就不写长文。界面类给 figure 截图，改了界面默认给 compare 前后对比（before 用改之前同一页面、同一窗口尺寸的截图，after 用改之后的）；讲触发顺序、状态变化给 flow（mermaid）；测试结果、耗时、额度给 metrics（2～4 个数）；改动面给 scope（按模块汇总，不列文件）；参数或方案对比给 table；决策里的选项用 options。证据、阶段小结、决策都能附。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 只做交给你的需求，发现必须做的新事项用 req_create 记成草稿，不要顺手扩大范围；不要给别的会话派活。

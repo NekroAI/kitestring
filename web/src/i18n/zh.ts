@@ -1108,6 +1108,8 @@ export const zh = {
     evidence: '证据',
     history: '退回意见',
     noEvidence: 'Agent 没有附证据',
+    voidedRow: (reason: string) => `已作废 · ${reason}`,
+    voidedBy: (who: string, at: string) => `${who ? who + ' ' : ''}于 ${at} 作废，原文如下`,
   },
 
   accept: {

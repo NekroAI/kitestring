@@ -676,6 +676,24 @@
         ],
         "type": "object"
       },
+      "Agent-void-evidenceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "作废理由，一句话（必填）",
+            "type": "string"
+          },
+          "session_key": {
+            "description": "调用者会话",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "reason"
+        ],
+        "type": "object"
+      },
       "Agent-wait-checkRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2506,8 +2524,24 @@
           "summary": {
             "type": "string"
           },
+          "void_reason": {
+            "description": "作废理由（Agent 主动作废时必填；验收退回时批量作废的为空）",
+            "type": "string"
+          },
           "voided": {
             "type": "boolean"
+          },
+          "voided_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "voided_by": {
+            "description": "作废的会话键",
+            "type": "string"
+          },
+          "voided_role": {
+            "description": "作废时该会话的身份",
+            "type": "string"
           }
         },
         "required": [
@@ -2562,6 +2596,10 @@
               "array",
               "null"
             ]
+          },
+          "evidence_id": {
+            "description": "这次交的证据编号（R-189），要作废它时用（evidence_void / ks req evidence void）",
+            "type": "string"
           },
           "feedback": {
             "items": {
@@ -6608,6 +6646,59 @@
           }
         },
         "summary": "Agent 撤回自己提的、还没答复的决策（R-136）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/evidence/{id}/void": {
+      "post": {
+        "operationId": "agent-void-evidence",
+        "parameters": [
+          {
+            "description": "证据编号（evidence_attach 返回的 evidence_id，或需求里证据的 id）",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "证据编号（evidence_attach 返回的 evidence_id，或需求里证据的 id）",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-void-evidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Requirement"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "作废一条证据（R-189）：交这条证据的会话，或本项目的 PM / 主助理；必须写理由",
         "tags": [
           "agent"
         ]
