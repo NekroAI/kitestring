@@ -42,6 +42,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("数据库迁移失败：%w", err)
 	}
+	if err := backfillLanes(db); err != nil { // 泳道时间线（R-205）：旧库从事件记录补出历史分钟
+		db.Close()
+		return nil, fmt.Errorf("补录泳道时间线失败：%w", err)
+	}
 	return &Store{db: db}, nil
 }
 

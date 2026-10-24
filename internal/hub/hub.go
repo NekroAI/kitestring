@@ -83,6 +83,7 @@ type Hub struct {
 	dirtyTmr *time.Timer
 	orphans  map[string]deviceOrphans            // deviceID → daemon 上报的孤儿 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
 	stops    map[string]chan protocol.StopResult // 停止请求 → 等 daemon 回结果
+	lanes    *laneState                          // 泳道时间线（R-205）
 }
 
 // New 创建 Hub。
@@ -99,6 +100,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		dirty:    map[string]bool{},
 		orphans:  map[string]deviceOrphans{},
 		stops:    map[string]chan protocol.StopResult{},
+		lanes:    newLaneState(),
 	}
 	if st != nil {
 		st.OnRequestVoided = h.onStatusRequestVoided // 改状态申请因状态被改动而作废，送回申请方（R-188）
@@ -171,6 +173,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	h.migrateAide(ctx) // 身份调整（R-190）：先清掉绑在非主助理上的窗口，再排到期通知
 	h.resumeGrantExpiry(ctx)
 	h.resumeRequestExpiry(ctx)
+	go h.laneMaintenance(ctx)
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
@@ -215,6 +218,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		return err
 	}
 	key := protocol.SessionKey(ev.Tool, ev.SessionID)
+	h.laneEvent(ctx, key, ev) // 泳道时间线（R-205）：只更新这一分钟
 	var prev *store.Session
 	if cur, err := h.store.GetSession(ctx, key); err == nil {
 		prev = &cur

@@ -1,0 +1,107 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { agentEnd, barHeight, gridTicks, inWindow, LaneStore, makeAxis, sharedMax, ZOOMS, zoomSpec, type LaneData } from './lanedata.ts'
+
+const NOW = Date.UTC(2026, 9, 24, 11, 30, 20) // 19:30:20 北京时间
+const nowMin = Math.floor(NOW / 60000)
+const data = (rows: LaneData['rows'], step = 1, extra: Partial<LaneData> = {}): LaneData => ({ now: NOW, step, from: nowMin - 600, to: nowMin + 1, rows, spans: [], agents: [], ...extra })
+
+test('分度值：每档的格子大小、格数，最右一格是现在', () => {
+  const h1 = makeAxis('h1', 600, NOW)
+  assert.equal(h1.n, 50) // 600px / 12
+  assert.equal(h1.end, nowMin + 1)
+  assert.equal(makeAxis('h1', 100, NOW).n, 15)
+  assert.equal(makeAxis('h1', 5000, NOW).n, 60)
+  for (const z of ZOOMS) {
+    const ax = makeAxis(z, 700, NOW)
+    assert.ok(ax.n >= 15 && ax.n <= 170, `${z} ${ax.n} 格`)
+    assert.equal(ax.end - ax.start, ax.n * ax.bucket)
+    assert.ok(ax.end > nowMin && ax.end - ax.bucket <= nowMin)
+    assert.equal(ax.start % zoomSpec[z].bucket, 0)
+  }
+})
+
+test('轴上的刻度按本地时间对齐：10 分钟 / 1 小时 / 3 小时 / 0 点', () => {
+  const tz = 480
+  const at = (m: number) => new Date((m + tz) * 60000).toISOString().slice(11, 16)
+  assert.deepEqual(gridTicks(makeAxis('h1', 720, NOW), tz).map(at), ['18:40', '18:50', '19:00', '19:10', '19:20', '19:30'])
+  assert.ok(gridTicks(makeAxis('h6', 720, NOW), tz).map(at).every((x) => x.endsWith(':00')))
+  assert.ok(gridTicks(makeAxis('d1', 720, NOW), tz).map(at).every((x) => Number(x.slice(0, 2)) % 3 === 0 && x.endsWith(':00')))
+  const w = gridTicks(makeAxis('w1', 720, NOW), tz)
+  assert.equal(w.length, 7)
+  assert.ok(w.map(at).every((x) => x === '00:00'))
+})
+
+test('合并：拉取和推送谁先到都一样，次数只增不减，已有的分钟不被旧数据改小', () => {
+  const k = 'claude:s1'
+  const a = new LaneStore()
+  a.merge(data([{ k, a: '', m: [nowMin - 3, nowMin], c: [4, 2] }]))
+  a.push({ m: [{ k, a: '', m: nowMin, c: 3, hc: 9 }], s: [], g: [] })
+  const b = new LaneStore()
+  b.push({ m: [{ k, a: '', m: nowMin, c: 3, hc: 9 }], s: [], g: [] })
+  b.merge(data([{ k, a: '', m: [nowMin - 3, nowMin], c: [4, 2] }])) // 在途的旧拉取结果晚到
+  const ax = makeAxis('h1', 720, NOW)
+  assert.deepEqual(a.calls(k, [''], ax), b.calls(k, [''], ax))
+  assert.equal(a.calls(k, [''], ax).at(-1), 3)
+  assert.equal(a.calls(k, [''], ax).at(-4), 4)
+})
+
+test('换档只是合并格子：近 6 小时 5 分钟一格，近 1 周用小时级', () => {
+  const k = 'claude:s1'
+  const st = new LaneStore()
+  const ms = Array.from({ length: 30 }, (_, i) => nowMin - i)
+  st.merge(data([{ k, a: '', m: ms, c: ms.map(() => 1) }, { k, a: 'x', m: [nowMin], c: [5] }]))
+  st.merge(data([{ k, a: '', m: [Math.floor(nowMin / 60) * 60 - 120], c: [40] }], 60))
+  const h6 = makeAxis('h6', 720, NOW)
+  const c6 = st.calls(k, [''], h6)
+  assert.equal(c6.reduce((x, y) => x + y, 0), 30)
+  assert.equal(c6.at(-1), (nowMin % 5) + 1) // 当前这一格
+  assert.equal(st.calls(k, ['', 'x'], h6).reduce((x, y) => x + y, 0), 35) // 子任务合成一行
+  const w1 = makeAxis('w1', 720, NOW)
+  assert.equal(st.calls(k, [''], w1).at(-3), 40)
+})
+
+test('子任务结束后留到滑出窗口；没收到结束、30 分钟没动作的算已结束', () => {
+  const ax = makeAxis('h1', 720, NOW) // 60 分钟
+  const g = { k: 'c', a: 'x', label: '', type: '', start: NOW - 50 * 60000, end: NOW - 40 * 60000 }
+  assert.ok(inWindow(g, 0, ax, NOW))
+  assert.ok(!inWindow({ ...g, start: NOW - 90 * 60000, end: NOW - 70 * 60000 }, 0, ax, NOW))
+  const open = { ...g, end: undefined }
+  assert.equal(agentEnd(open, NOW - 5 * 60000, NOW), 0) // 还在跑
+  assert.equal(agentEnd(open, NOW - 35 * 60000, NOW), NOW - 35 * 60000)
+})
+
+test('共用上限、平方根缩放、有动作至少 2px', () => {
+  assert.equal(sharedMax([[1, 4], [16, 0]]), 16)
+  assert.equal(barHeight(16, 16, 40), 40)
+  assert.equal(barHeight(4, 16, 40), 20)
+  assert.equal(barHeight(1, 1000, 40), 2)
+  assert.equal(barHeight(0, 16, 40), 0)
+})
+
+test('性能：近 1 周档 60 条泳道各 168 格、近 1 天档各 144 格，换档算格子远低于 200ms', () => {
+  const st = new LaneStore()
+  const rows = []
+  const hours = []
+  for (let s = 0; s < 30; s++)
+    for (const a of ['', 'x']) {
+      const m: number[] = []
+      const c: number[] = []
+      for (let i = 0; i < 24 * 60; i++) if ((i * 7 + s) % 10 < 4) (m.push(nowMin - i), c.push(1 + (i % 4)))
+      rows.push({ k: `claude:s${s}`, a, m, c })
+      const hm: number[] = []
+      for (let i = 0; i < 168; i++) hm.push(Math.floor(nowMin / 60) * 60 - i * 60)
+      hours.push({ k: `claude:s${s}`, a, m: hm, c: hm.map((_, i) => i % 30) })
+    }
+  st.merge(data(rows))
+  st.merge(data(hours, 60))
+  for (const z of ['w1', 'd1', 'h6', 'h1'] as const) {
+    const t0 = performance.now()
+    const ax = makeAxis(z, 720, NOW)
+    const all = []
+    for (let s = 0; s < 30; s++) all.push(st.calls(`claude:s${s}`, [''], ax), st.calls(`claude:s${s}`, ['x'], ax))
+    sharedMax(all)
+    const took = performance.now() - t0
+    assert.ok(took < 50, `${z} 用了 ${took.toFixed(1)}ms`)
+  }
+})

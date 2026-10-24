@@ -788,6 +788,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lanes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205） */
+        get: operations["get-lanes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/morning": {
         parameters: {
             query?: never;
@@ -2539,6 +2556,100 @@ export interface components {
             ref: string;
             /** @description 批准类的多点决策：拒绝（此时不要求逐点选择） */
             reject?: boolean;
+        };
+        LaneAgent: {
+            a: string;
+            /**
+             * Format: int64
+             * @description 结束（SubagentStop 或会话结束），Unix 毫秒；没结束为空
+             */
+            end?: number;
+            k: string;
+            label: string;
+            /**
+             * Format: int64
+             * @description Unix 毫秒
+             */
+            start: number;
+            type: string;
+        };
+        LaneData: {
+            agents: components["schemas"]["LaneAgent"][] | null;
+            /**
+             * Format: int64
+             * @description 范围起点，Unix 分钟（含）
+             */
+            from: number;
+            /**
+             * Format: int64
+             * @description 服务端当前时间，Unix 毫秒
+             */
+            now: number;
+            rows: components["schemas"]["LaneRow"][] | null;
+            sessions: components["schemas"]["LaneSession"][] | null;
+            spans: components["schemas"]["LaneSpan"][] | null;
+            /**
+             * Format: int64
+             * @description 格子大小（分钟）：1 每分钟，60 每小时
+             */
+            step: number;
+            /**
+             * Format: int64
+             * @description 范围终点，Unix 分钟（不含）
+             */
+            to: number;
+        };
+        LaneRow: {
+            /** @description 子任务的 agent_id；主会话为空 */
+            a: string;
+            /** @description 与 m 对应的调用次数 */
+            c: number[] | null;
+            /** @description 会话键 */
+            k: string;
+            /** @description 格子起点，Unix 分钟（秒 / 60），升序；按小时取时为整点 */
+            m: number[] | null;
+        };
+        LaneSession: {
+            background: boolean;
+            cwd: string;
+            /** Format: date-time */
+            ended_at?: string;
+            k: string;
+            /** Format: date-time */
+            last_active_at: string;
+            project_id: string;
+            project_name: string;
+            role: string;
+            title: string;
+            tool: string;
+        };
+        LaneSpan: {
+            a: string;
+            /**
+             * Format: int64
+             * @description 结束，Unix 毫秒；还没结束时为空
+             */
+            end?: number;
+            k: string;
+            /**
+             * @description tool 长命令（超过 20 秒）；wait 用 ks wait 待命
+             * @enum {string}
+             */
+            kind: "tool" | "wait";
+            /** @description 长命令的动作简述 */
+            label: string;
+            /** @description tool_use_id 或 KsWait 事件 id */
+            ref: string;
+            /**
+             * Format: int64
+             * @description 开始，Unix 毫秒
+             */
+            start: number;
+            /**
+             * Format: int64
+             * @description 待命最长等到什么时候（没结束时最多画到这里）
+             */
+            until?: number;
         };
         LastReply: {
             /** Format: date-time */
@@ -5242,6 +5353,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Grant"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-lanes": {
+        parameters: {
+            query?: {
+                /** @description 范围起点，Unix 毫秒；不填为一小时前。最早 30 天前 */
+                from?: number;
+                /** @description 范围终点，Unix 毫秒；不填为现在 */
+                to?: number;
+                /** @description 格子大小（分钟）：1 每分钟（近 1 小时 / 6 小时 / 1 天档），60 每小时（近 1 周档） */
+                step?: 1 | 60;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LaneData"];
                 };
             };
             /** @description Error */

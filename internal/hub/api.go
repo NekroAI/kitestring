@@ -61,6 +61,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerChainWeb(webAPI)
 	h.registerChainAgent(agentAPI)
 	h.registerCommitsWeb(webAPI)
+	h.registerLanesWeb(webAPI)
 	h.registerCommitsAgent(agentAPI)
 	h.registerOrphansWeb(webAPI)
 
@@ -132,6 +133,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerChainWeb(api)
 	h.registerChainAgent(api)
 	h.registerCommitsWeb(api)
+	h.registerLanesWeb(api)
 	h.registerCommitsAgent(api)
 	h.registerOrphansWeb(api)
 	return api.OpenAPI()

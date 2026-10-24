@@ -1,12 +1,15 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
+import { agentEnd, barHeight, coarse, gridTicks, inWindow, LONG_TOOL, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type SessionMeta, type Zoom } from '../lib/lanedata'
 import { cx, duration, relTime, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { Ctx } from '../ui/contextMenu'
-import { displayState, RoleBadge, ToolMark } from '../ui/marks'
+import { displayState, RoleBadge, RoleTag, ToolMark } from '../ui/marks'
 import { Linkify } from '../ui/refmark'
+import { laneStore, onLaneData, useLaneSnap } from './laneFeed'
 import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
@@ -15,17 +18,18 @@ import { liveTasks, taskName, type BgTask } from './tasks'
 import { reducedMotion } from './verdict'
 
 // 工作台的会话泳道（R-170，D-228 原型）：每个会话一条——左边工具图标（Claude / Codex，R-187）、标题、身份（D-177 描边胶囊 + 在线点）、
-// 状态标（灯与状态字合一，带已运行时长）；中间近 10 分钟的时间线（每次工具调用一个刻度，右边是现在）；
+// 状态标（灯与状态字合一，带已运行时长）；中间是时间线（R-205：4 档分度值，每格调用次数柱 + 长命令细带 + 待命虚线，右边是现在）；
 // 右边当前动作。泳道按内容给高度（在跑的高、等你适中、待命 / 空闲带最后一句话和上次动作），后台任务按 R-162 作为子泳道挂在会话下面。
 // 动效只在有动作时出现：灯在主会话调用工具时闪一下，动作流新进一行时滑入一次；只有「等你」的灯会呼吸。
 // 时间线不画闪光点、不画常驻波纹；标签页隐藏时停画，断线时静止变灰，减少动效时每 5 秒才重画一帧。
 
-export const WINDOW = 10 * 60 * 1000
-const MAX_TICKS = 200 // 每条时间线最多画这么多个点（事件点数上限）
+const WINDOW = 10 * 60 * 1000
+const MAX_TICKS = 200
 
-// ---------- 刻度数据 ----------
+// ---------- 灯与风 ----------
 
-// 主会话的工具调用时刻：Hub 给近 10 分钟打底（ticks），之后随实时推送的 last_tool_at 追加。
+// 主会话的工具调用时刻：只给状态灯闪一下、顶部的风起伏用（时间线本身画每分钟汇总，见下面的画布）。
+// Hub 给近 10 分钟打底（ticks），之后随实时推送的 last_tool_at 追加。
 const tickStore = new Map<string, number[]>()
 const tickSubs = new Set<() => void>()
 let lastTickAt = 0 // 全部会话里最近一次工具调用（驱动顶部的风）
@@ -76,25 +80,50 @@ export function onTicks(f: () => void) {
   return () => tickSubs.delete(f)
 }
 
-// ---------- 时间线画布 ----------
+// ---------- 时间线画布（R-205） ----------
+// 每条泳道一张 canvas：中线以上是每格的调用次数（所有主泳道共用一个上限、子泳道共用一个上限，平方根缩放，有动作至少 2px）；
+// 中线上的实心细带是长命令（工具开始到结束超过 20 秒），虚线是 ks wait 待命；悬停显示这一格的数字。
+// 中线以下留给以后的 token 用量（R-206）。数据来自 laneFeed（每分钟汇总，历史只增不改）。
 
 export type Tone = 'run' | 'bg' | 'you' | 'park' | 'idle' | 'sub'
-type Painter = { cv: HTMLCanvasElement; ticks: () => number[]; tone: () => Tone }
+type PaintSpec = { k: string; agents: string[]; sub: boolean; faded: boolean }
+type Painter = { cv: HTMLCanvasElement; spec: () => PaintSpec; hover: number; ax?: Axis; calls?: number[] }
 const painters = new Set<Painter>()
 let loop = 0
 let offline = false
+let zoomNow: Zoom = 'h1'
+let laneWidth = 0 // 最近一次主泳道时间线的宽度（近 1 小时档的格数随宽度）
+let maxMain = 1
+let maxSub = 1
+
+// setLaneZoom：切换分度值（所有泳道一起切），立刻重画。
+export function setLaneZoom(z: Zoom) {
+  if (zoomNow === z) return
+  zoomNow = z
+  paintAll()
+}
 
 function colors() {
   const css = getComputedStyle(document.documentElement)
   const v = (k: string) => css.getPropertyValue(k).trim()
-  return { run: v('--run'), you: v('--reply'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong') }
+  return { run: v('--run'), accent: v('--accent'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong'), line: v('--line'), fg: v('--fg') }
 }
+type Colors = ReturnType<typeof colors>
 
 export function pixelRatio(_cv: HTMLCanvasElement) {
   return window.devicePixelRatio || 1
 }
 
-function paint(p: Painter, now: number, c: ReturnType<typeof colors>) {
+function compute(p: Painter, now: number) {
+  const w = p.cv.clientWidth
+  if (!w) return
+  const sp = p.spec()
+  if (!sp.sub) laneWidth = w
+  p.ax = makeAxis(zoomNow, w, now)
+  p.calls = laneStore.calls(sp.k, sp.agents, p.ax)
+}
+
+function paint(p: Painter, now: number, c: Colors) {
   const { cv } = p
   const dpr = pixelRatio(cv)
   const w = cv.clientWidth
@@ -107,57 +136,92 @@ function paint(p: Painter, now: number, c: ReturnType<typeof colors>) {
   }
   const g = cv.getContext('2d')
   if (!g) return
+  if (!p.ax || p.ax.zoom !== zoomNow) compute(p, now)
+  const ax = p.ax
+  const calls = p.calls
+  if (!ax || !calls) return
   g.setTransform(dpr, 0, 0, dpr, 0, 0)
   g.clearRect(0, 0, w, h)
-  const tone = p.tone()
-  const sub = tone === 'sub'
-  const live = tone === 'run' || tone === 'bg'
-  const col = offline || sub || tone === 'idle' ? c.idle : tone === 'you' ? c.you : tone === 'park' ? c.park : c.run
-  const y = Math.round(h / 2) + 0.5
-  // 分钟刻度
-  if (!sub) {
-    g.globalAlpha = 0.5
-    g.fillStyle = c.grid
-    for (let m = 1; m < 10; m++) g.fillRect(Math.round(w - (m / 10) * w), y - 3, 1, 6)
+  const sp = p.spec()
+  const fade = sp.faded ? 0.5 : 1
+  const total = ax.n * ax.bucket
+  const X = (t: number) => ((t / 60000 - ax.start) / total) * w
+  const bw = w / ax.n
+  const mid = Math.round(h / 2) + 0.5
+  const room = sp.sub ? mid - 3 : mid - 7
+  // 轴上的刻度（10 分钟 / 1 小时 / 3 小时 / 1 天）
+  if (!sp.sub) {
+    g.globalAlpha = 0.6 * fade
+    g.fillStyle = c.line
+    for (const m of gridTicks(ax)) g.fillRect(Math.round(X(m * 60000)), 3, 1, h - 6)
   }
-  // 基线
-  g.globalAlpha = sub ? 0.3 : live ? 0.35 : 0.45
-  g.strokeStyle = col
-  g.lineWidth = 1
-  g.setLineDash(tone === 'idle' ? [3, 4] : [])
-  g.beginPath()
-  g.moveTo(0, y)
-  g.lineTo(w, y)
-  g.stroke()
-  g.setLineDash([])
-  // 事件：在跑的会话画竖条（高低错落），其它画小圆点，子泳道画灰色细刻度
-  g.fillStyle = col
-  for (const at of p.ticks()) {
-    const age = now - at
-    if (age < 0 || age > WINDOW) continue
-    const x = w - (age / WINDOW) * w
-    g.globalAlpha = Math.max(0.2, 1 - age / WINDOW)
-    if (sub) g.fillRect(x - 0.5, y - 3.5, 1, 7)
-    else if (live) {
-      const amp = Math.min(h * 0.34, 5 + ((at / 97) % 9))
-      g.fillRect(x - 1, y - amp, 2, amp * 2)
-    } else {
+  if (p.hover >= 0 && p.hover < ax.n) {
+    g.globalAlpha = 0.07
+    g.fillStyle = c.fg
+    g.fillRect(p.hover * bw, 0, bw, h)
+  }
+  // 中线
+  g.globalAlpha = (sp.sub ? 0.35 : 0.6) * fade
+  g.fillStyle = c.grid
+  g.fillRect(0, mid - 0.5, w, 1)
+  // 待命虚线、长命令细带
+  for (const s of laneStore.spansOf(sp.k, sp.agents, ax, now)) {
+    const open = s.end == null
+    if (s.kind === 'tool' && open && now - s.start < LONG_TOOL) continue
+    const x0 = Math.max(0, X(s.start))
+    const x1 = Math.min(w, X(spanEnd(s, now)))
+    if (x1 <= x0 && x0 >= w) continue
+    if (s.kind === 'wait') {
+      g.globalAlpha = 0.9 * fade
+      g.strokeStyle = offline ? c.idle : c.accent
+      g.lineWidth = 1.5
+      g.setLineDash([4, 3])
       g.beginPath()
-      g.arc(x, y, 2, 0, Math.PI * 2)
+      g.moveTo(x0, mid)
+      g.lineTo(Math.max(x0 + 2, x1), mid)
+      g.stroke()
+      g.setLineDash([])
+    } else {
+      g.globalAlpha = (open ? 0.9 : 0.7) * fade
+      g.fillStyle = offline ? c.idle : c.run
+      g.beginPath()
+      g.roundRect(x0, mid - 2, Math.max(3, x1 - x0), 4, 2)
       g.fill()
     }
+  }
+  // 调用次数柱
+  const max = sp.sub ? maxSub : maxMain
+  const pad = Math.max(0.5, Math.min(3, bw * 0.18))
+  g.globalAlpha = (sp.sub ? 0.7 : 0.85) * fade
+  g.fillStyle = offline || sp.sub ? c.idle : c.accent
+  for (let i = 0; i < ax.n; i++) {
+    const hh = barHeight(calls[i], max, room)
+    if (hh) g.fillRect(i * bw + pad / 2, mid - 1 - hh, Math.max(1, bw - pad), hh)
   }
   g.globalAlpha = 1
 }
 
+// paintAll：先算出每条泳道这一档的格子，求共用上限，再统一画。
 export function paintAll() {
   if (typeof document === 'undefined' || document.hidden || !painters.size) return
   const c = colors()
   const now = serverNow()
+  let mm = 1
+  let ms = 1
+  painters.forEach((p) => {
+    compute(p, now)
+    const sub = p.spec().sub
+    for (const v of p.calls ?? []) {
+      if (sub) ms = Math.max(ms, v)
+      else mm = Math.max(mm, v)
+    }
+  })
+  maxMain = mm
+  maxSub = ms
   painters.forEach((p) => paint(p, now, c))
 }
 
-// 时间在流逝：刻度每半秒向左挪一点（10 分钟 / 画布宽度，约每秒 2px）。断线时画最后一帧灰色后停住；减少动效时 5 秒一帧。
+// 时间在流逝：每秒重画一次（还在跑的长命令往右长，最右一格满了换下一格）。断线时画最后一帧灰色后停住；减少动效时 5 秒一帧。
 function schedule() {
   window.clearTimeout(loop)
   if (!painters.size || offline) return
@@ -166,7 +230,7 @@ function schedule() {
       paintAll()
       schedule()
     },
-    reducedMotion() ? 5000 : 500,
+    reducedMotion() ? 5000 : 1000,
   )
 }
 if (typeof document !== 'undefined')
@@ -184,37 +248,155 @@ export function setOffline(v: boolean) {
   schedule()
 }
 
-function Timeline({ ticks, tone, className }: { ticks: () => number[]; tone: Tone; className?: string }) {
+const clock = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', weekday: 'short' })
+const mday = (t: number) => `${new Date(t).getMonth() + 1}/${new Date(t).getDate()}` // 轴上一天只有几十像素：只写月 / 日
+const iso = (t: number) => new Date(t).toISOString()
+
+// cellText：悬停那一格的数字：时间范围、调用次数、碰到的长命令和待命。
+function cellText(p: Painter, i: number, now: number): string[] {
+  const ax = p.ax
+  if (!ax || !p.calls || i < 0 || i >= ax.n) return []
+  const t0 = (ax.start + i * ax.bucket) * 60000
+  const t1 = t0 + ax.bucket * 60000
+  const range = `${ax.zoom === 'w1' ? day(t0) + ' ' : ''}${clock(t0)}–${clock(Math.min(t1, now))}`
+  const out = [`${range} · ${t.desk.tl.calls(p.calls[i])}`]
+  const sp = p.spec()
+  const hit = laneStore.spansOf(sp.k, sp.agents, ax, now).filter((s) => s.start < t1 && spanEnd(s, now) >= t0 && !(s.kind === 'tool' && s.end == null && now - s.start < LONG_TOOL))
+  const tools = hit.filter((s) => s.kind === 'tool')
+  for (const s of tools.slice(0, 2)) out.push(s.end == null ? t.desk.tl.longRunning(s.label, duration(iso(s.start), now)) : t.desk.tl.long(s.label, duration(iso(s.start), s.end)))
+  if (tools.length > 2) out.push(t.desk.tl.moreLong(tools.length - 2))
+  if (hit.some((s) => s.kind === 'wait')) out.push(t.desk.tl.wait)
+  return out
+}
+
+function Timeline({ spec, className }: { spec: PaintSpec; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
-  const toneRef = useRef(tone)
-  toneRef.current = tone
-  const ticksRef = useRef(ticks)
-  ticksRef.current = ticks
+  const pref = useRef<Painter | null>(null)
+  const specRef = useRef(spec)
+  specRef.current = spec
+  const [tip, setTip] = useState<{ x: number; y: number; lines: string[] } | null>(null)
   useLayoutEffect(() => {
     const cv = ref.current
     if (!cv) return
-    const p: Painter = { cv, ticks: () => ticksRef.current(), tone: () => toneRef.current }
+    const p: Painter = { cv, spec: () => specRef.current, hover: -1 }
+    pref.current = p
     painters.add(p)
-    const ro = new ResizeObserver(() => paint(p, serverNow(), colors()))
+    const ro = new ResizeObserver(() => paintAll())
     ro.observe(cv)
-    paint(p, serverNow(), colors())
+    paintAll()
     schedule()
     return () => {
       painters.delete(p)
       ro.disconnect()
     }
   }, [])
-  // 状态变了（例如在跑 → 等你）立刻换色，不等下一帧
+  // 换了要画的行（子任务合并、结束变淡）立刻重画，不等下一帧
+  const sig = `${spec.k}|${spec.agents.join(',')}|${spec.sub}|${spec.faded}`
   useEffect(() => {
     if (ref.current) paintAll()
-  }, [tone])
-  return <canvas ref={ref} aria-hidden className={cx('block h-full w-full', className)} />
+  }, [sig])
+  const move = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const p = pref.current
+    if (!p?.ax) return
+    const r = e.currentTarget.getBoundingClientRect()
+    const i = Math.floor(((e.clientX - r.left) / r.width) * p.ax.n)
+    if (i !== p.hover) {
+      p.hover = i
+      paint(p, serverNow(), colors())
+    }
+    setTip({ x: e.clientX, y: r.top, lines: cellText(p, i, serverNow()) })
+  }
+  const leave = () => {
+    const p = pref.current
+    if (p) {
+      p.hover = -1
+      paint(p, serverNow(), colors())
+    }
+    setTip(null)
+  }
+  return (
+    <>
+      <canvas ref={ref} aria-hidden onPointerMove={move} onPointerLeave={leave} className={cx('block h-full w-full', className)} />
+      {tip &&
+        tip.lines.length > 0 &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-[90] max-w-[320px] -translate-y-full rounded-lg bg-fg px-2.5 py-1.5 text-xs leading-relaxed text-bg shadow-pop tabular"
+            style={{ left: Math.min(tip.x + 10, window.innerWidth - 330), top: tip.y - 6 }}
+          >
+            {tip.lines.map((l, i) => (
+              <div key={i} className={cx(i > 0 && 'opacity-80')}>
+                {l}
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  )
 }
 
-// 新的刻度进来时重画（不用等下一帧），时间线和灯同时动；切换明暗主题时换色。
+// 新数据进来（实时推送、拉取完成）时重画；切换明暗主题时换色。
 if (typeof window !== 'undefined') {
-  onTicks(() => window.requestAnimationFrame(paintAll))
+  onLaneData(() => window.requestAnimationFrame(paintAll))
   new MutationObserver(() => window.requestAnimationFrame(paintAll)).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+}
+
+// ---------- 分度值与时间轴 ----------
+
+// ZoomSwitch：「会话」标题右边的分度值切换（R-205），所有泳道一起切。
+export function ZoomSwitch({ zoom, onChange, short }: { zoom: Zoom; onChange: (z: Zoom) => void; short?: boolean }) {
+  return (
+    <Tip content={t.desk.zoomTip(t.desk.tl.bucket(zoomSpec[zoom].bucket))}>
+      <div role="radiogroup" aria-label={t.desk.zoomTip(t.desk.tl.bucket(zoomSpec[zoom].bucket))} className="inline-flex shrink-0 overflow-hidden rounded-lg ring-1 ring-line-strong ring-inset">
+        {ZOOMS.map((z) => (
+          <button
+            key={z}
+            role="radio"
+            aria-checked={z === zoom}
+            data-zoom={z}
+            onClick={() => onChange(z)}
+            className={cx('px-2 py-[3px] text-[12px] leading-4 whitespace-nowrap transition-colors', z === zoom ? 'bg-fg text-bg' : 'text-fg-2 hover:bg-hover')}
+          >
+            {(short ? t.desk.zoomShort : t.desk.zoom)[z]}
+          </button>
+        ))}
+      </div>
+    </Tip>
+  )
+}
+
+// LaneAxis：泳道上方的一行时间刻度，和泳道的时间线列对齐。
+export function LaneAxis({ zoom, mode, now }: { zoom: Zoom; mode: LaneMode; now: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const ax = makeAxis(zoom, w, now)
+  const total = ax.n * ax.bucket
+  return (
+    <div aria-hidden className={cx('sticky top-0 z-10 grid h-4 shrink-0 bg-bg text-[10.5px] leading-4 text-fg-3 tabular', cols[mode])}>
+      <div />
+      <div ref={ref} className="relative min-w-0 overflow-hidden">
+        {w > 0 &&
+          gridTicks(ax).map((m) => {
+            const left = ((m - ax.start) / total) * 100
+            if ((left / 100) * w < 18 || (1 - left / 100) * w < 18) return null // 贴边的刻度字会被切掉，不写
+            return (
+              <span key={m} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${left}%` }}>
+                {zoom === 'w1' ? mday(m * 60000) : clock(m * 60000)}
+              </span>
+            )
+          })}
+      </div>
+    </div>
+  )
 }
 
 // ---------- 状态 ----------
@@ -355,33 +537,99 @@ const cols: Record<LaneMode, string> = {
   phone: 'grid-cols-1',
 }
 
-function SubLane({ task, now, mode, last }: { task: BgTask; now: number; mode: LaneMode; last: boolean }) {
-  const { text: label, guess } = taskName(task)
-  const [tool, brief] = task.last_action ? splitTool(task.last_action) : ['', '']
-  const ticks = (task.ticks ?? []).map(Date.parse)
+// ---------- 子泳道 ----------
+
+// 子任务按每分钟汇总画（R-205）：结束后不立刻删，变淡、标「已结束」，留到滑出窗口；近 1 / 6 小时每个会话最多列 6 个
+// （在跑的优先），多的合成一行「还有 n 个」；近 1 天 / 1 周合成一行「子任务（共 n 个）」。后台 shell 照旧只列在跑的（R-162）。
+type SubRow = { id: string; kind: 'agent' | 'shell' | 'agg' | 'more'; label: string; guess: boolean; agents: string[]; ended: number; start: number; task?: BgTask }
+
+const SUB_MAX = 6
+
+function agentName(g: Agent, task?: BgTask): { text: string; guess: boolean } {
+  if (g.label) return { text: g.label, guess: false }
+  if (task) return taskName(task)
+  if (g.type) return { text: g.type, guess: true }
+  return { text: t.session.taskUnnamed, guess: true }
+}
+
+function subRows(s: Session, zoom: Zoom, now: number): SubRow[] {
+  const ax = makeAxis(zoom, laneWidth || 720, now)
+  const tasks = liveTasks(s)
+  const live = new Map(tasks.filter((x) => x.kind === 'agent').map((x) => [x.id, x]))
+  const seen = new Set<string>()
+  const list: { g: Agent; last: number; task?: BgTask }[] = []
+  for (const g of laneStore.agentsOf(s.key)) {
+    seen.add(g.a)
+    list.push({ g, last: laneStore.lastActive(s.key, g.a), task: live.get(g.a) })
+  }
+  // 时间线数据还没到（刚打开）时，先按会话里在跑的子代理列出来
+  for (const x of live.values())
+    if (!seen.has(x.id)) list.push({ g: { k: s.key, a: x.id, label: x.label, type: x.agent_type ?? '', start: Date.parse(x.started_at) }, last: x.last_action_at ? Date.parse(x.last_action_at) : 0, task: x })
+  const vis = list
+    .filter((x) => inWindow(x.g, x.last, ax, now))
+    .map((x) => ({ ...x, end: x.task && x.g.end == null ? 0 : agentEnd(x.g, x.last, now) }))
+  const rows: SubRow[] = []
+  if (coarse(zoom)) {
+    if (vis.length)
+      rows.push({ id: 'agg', kind: 'agg', label: t.desk.tl.subAgg(vis.length), guess: false, agents: vis.map((x) => x.g.a), ended: vis.every((x) => x.end) ? Math.max(...vis.map((x) => x.end)) : 0, start: Math.min(...vis.map((x) => x.g.start)) })
+  } else {
+    const pick = [...vis].sort((a, b) => Number(!!a.end) - Number(!!b.end) || (b.end || now) - (a.end || now)).slice(0, SUB_MAX)
+    pick.sort((a, b) => a.g.start - b.g.start)
+    for (const x of pick) {
+      const nm = agentName(x.g, x.task)
+      rows.push({ id: x.g.a, kind: 'agent', label: nm.text, guess: nm.guess, agents: [x.g.a], ended: x.end, start: x.g.start, task: x.task })
+    }
+    const rest = vis.filter((x) => !pick.includes(x))
+    if (rest.length) rows.push({ id: 'more', kind: 'more', label: t.desk.tl.subMore(rest.length), guess: false, agents: rest.map((x) => x.g.a), ended: 1, start: Math.min(...rest.map((x) => x.g.start)) })
+  }
+  for (const x of tasks) if (x.kind === 'shell') rows.push({ id: x.id, kind: 'shell', label: taskName(x).text, guess: false, agents: [], ended: 0, start: Date.parse(x.started_at), task: x })
+  return rows
+}
+
+// useSubRows：子泳道只在名单、结束状态变了时才重算（时间线数据每 300ms 可能推一次），时间每过一分钟也重算一次。
+function useSubRows(s: Session, zoom: Zoom, now: number) {
+  const sig = useLaneSnap(() =>
+    subRows(s, zoom, serverNow())
+      .map((r) => `${r.id}:${r.ended ? 1 : 0}:${r.label}`)
+      .join('|'),
+  )
+  const minute = Math.floor(now / 60000)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => subRows(s, zoom, now), [sig, s.tasks, s.state, zoom, minute])
+}
+
+function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: number; mode: LaneMode; last: boolean }) {
+  const task = row.task
+  const ended = row.ended > 0
+  const [tool, brief] = !ended && task?.last_action ? splitTool(task.last_action) : ['', '']
+  const dur = row.kind === 'agent' || row.kind === 'shell' ? shortDuration(iso(row.start), ended ? row.ended : now) : ''
+  const kind = row.kind === 'shell' ? t.session.taskKind.shell : row.kind === 'agent' ? t.session.taskKind.agent : ''
+  const spec = { k, agents: row.agents, sub: true, faded: ended }
   return (
     <div className={cx('grid h-6 items-center text-fg-3', cols[mode], mode === 'phone' && 'h-auto py-0.5')}>
-      <div className="flex min-w-0 items-center gap-1.5 pr-3 pl-6 text-[11.5px]">
+      <div className={cx('flex min-w-0 items-center gap-1.5 pr-3 pl-6 text-[11.5px]', ended && 'opacity-70')}>
         {/* 树状缩进：竖线接上一行，横线指向这一行 */}
         <span aria-hidden className="relative h-6 w-2.5 shrink-0">
           <span className={cx('absolute top-0 left-0 border-l border-line-strong', last ? 'h-1/2' : 'h-full')} />
           <span className="absolute top-1/2 left-0 w-full border-t border-line-strong" />
         </span>
-        <span className="w-9 shrink-0 text-[10.5px] opacity-80">{t.session.taskKind[task.kind]}</span>
-        <Tip truncated={!guess} content={guess ? `${t.session.taskUnnamed}${t.common.sep}${label}` : label}>
-          <span className={cx('min-w-0 flex-1 truncate', guess && 'italic opacity-80')}>{label}</span>
+        {kind && <span className="w-9 shrink-0 text-[10.5px] opacity-80">{kind}</span>}
+        <Tip truncated={!row.guess} content={row.guess ? `${t.session.taskUnnamed}${t.common.sep}${row.label}` : row.label}>
+          <span className={cx('min-w-0 flex-1 truncate', (row.guess || row.kind === 'more') && 'italic opacity-80')}>{row.label}</span>
         </Tip>
-        {mode !== 'full' && <span className="shrink-0 text-[11px] tabular">{shortDuration(task.started_at, now)}</span>}
+        {mode !== 'full' && (ended && row.kind === 'agent' ? <span className="shrink-0 text-[11px]">{t.desk.tl.ended}</span> : dur && <span className="shrink-0 text-[11px] tabular">{dur}</span>)}
       </div>
       {mode !== 'phone' && (
-        <div className="h-6 min-w-0 opacity-70">
-          <Timeline ticks={() => ticks} tone="sub" />
+        <div className="h-6 min-w-0">
+          <Timeline spec={spec} />
         </div>
       )}
       {mode === 'full' && (
         <div className="flex h-full min-w-0 items-center justify-between gap-2.5 border-l border-line px-3.5 font-mono text-[11px]">
-          <span key={task.last_action_at ?? ''} className="desk-in min-w-0 truncate">{tool && `▸ ${tool} ${brief}`}</span>
-          <span className="shrink-0 font-sans tabular">{shortDuration(task.started_at, now)}</span>
+          <span key={task?.last_action_at ?? ''} className={cx('min-w-0 truncate', !ended && 'desk-in')}>
+            {tool ? `▸ ${tool} ${brief}` : ended && row.kind !== 'more' ? <span className="font-sans">{t.desk.tl.endedAt(relTime(iso(row.ended), now))}</span> : ''}
+          </span>
+          {dur && <span className="shrink-0 font-sans tabular">{dur}</span>}
         </div>
       )}
     </div>
@@ -396,17 +644,17 @@ export function laneHeight(tone: Tone, tasks: number, mode: LaneMode) {
   return base + (tasks ? tasks * 24 + 6 : 0)
 }
 
-export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; lit?: boolean; onHover?: (k: string | null) => void }
+export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; lit?: boolean; onHover?: (k: string | null) => void }
 
-export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: LaneProps) {
+export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, onHover }: LaneProps) {
   useFeedTicks(s)
   const open = useOpenSession()
   const menu = useSessionMenu()
   const live = tone === 'run' || tone === 'bg'
   const quiet = tone === 'park' || tone === 'idle'
-  const tasks = live || tone === 'you' ? liveTasks(s) : []
+  const tasks = useSubRows(s, zoom, now)
   const req = workReq(s)
-  const ticks = () => tickStore.get(s.key) ?? []
+  const spec = { k: s.key, agents: [''], sub: false, faded: false }
   const phone = mode === 'phone'
   const style = phone ? undefined : { height: laneHeight(tone, tasks.length, mode) }
   const words = quiet ? lastWords(s) : ''
@@ -476,12 +724,12 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
             {id}
             {!phone ? (
               <div className="relative min-h-0 min-w-0">
-                <Timeline ticks={ticks} tone={tone} className="absolute inset-0" />
+                <Timeline spec={spec} className="absolute inset-0" />
               </div>
             ) : (
               live && (
                 <div className="relative mx-3.5 mb-2 h-10">
-                  <Timeline ticks={ticks} tone={tone} className="absolute inset-0" />
+                  <Timeline spec={spec} className="absolute inset-0" />
                 </div>
               )
             )}
@@ -492,12 +740,72 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
           {tasks.length > 0 && (
             <div className="pb-1.5">
               {tasks.map((x, i) => (
-                <SubLane key={x.id} task={x} now={now} mode={mode} last={i === tasks.length - 1} />
+                <SubLane key={x.id} row={x} k={s.key} now={now} mode={mode} last={i === tasks.length - 1} />
               ))}
             </div>
           )}
         </div>
       </Ctx>
+    </div>
+  )
+})
+
+// ---------- 已结束的会话（长档位） ----------
+
+// EndedLane：近 1 天 / 1 周档里，这段时间里干过活、已经结束（或早已没动静）的会话也画一条泳道（R-205）：
+// 固定高度、变淡，左边标题 + 身份 + 「已结束 · 多久前」，中间时间线，右边这一档的调用总数；子任务合成一行。
+export const ENDED_LANE_H = 56
+
+export function endedLaneHeight(subs: number) {
+  return ENDED_LANE_H + (subs ? subs * 24 + 6 : 0)
+}
+
+export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: SessionMeta; now: number; mode: LaneMode; zoom: Zoom }) {
+  const open = useOpenSession()
+  const ver = useLaneSnap(() => laneStore.version)
+  const ax = makeAxis(zoom, laneWidth || 720, now)
+  const agents = laneStore.agentsOf(m.k).filter((g) => inWindow(g, laneStore.lastActive(m.k, g.a), ax, now))
+  const sum = laneStore.calls(m.k, [''], ax).reduce((a, b) => a + b, 0) + (agents.length ? laneStore.calls(m.k, agents.map((g) => g.a), ax).reduce((a, b) => a + b, 0) : 0)
+  void ver
+  const sub: SubRow | null = agents.length
+    ? { id: 'agg', kind: 'agg', label: t.desk.tl.subAgg(agents.length), guess: false, agents: agents.map((g) => g.a), ended: 1, start: Math.min(...agents.map((g) => g.start)) }
+    : null
+  const title = m.title || m.project_name || m.cwd.split('/').filter(Boolean).at(-1) || t.session.noProject
+  const when = m.ended_at ? t.desk.tl.endedAt(relTime(m.ended_at, now)) : t.desk.lane.quiet(duration(m.last_active_at, now))
+  const phone = mode === 'phone'
+  return (
+    <div style={phone ? undefined : { height: endedLaneHeight(sub ? 1 : 0) }} className={cx(!phone && 'flex shrink-0')}>
+      <div
+        role="button"
+        tabIndex={0}
+        data-lane={m.k}
+        data-ended-lane
+        onClick={() => open(m.k)}
+        onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(m.k)}
+        className={cx('grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] bg-surface/40 text-left ring-1 ring-line ring-inset transition-colors hover:bg-surface', sub ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-1')}
+      >
+        <div className={cx('grid min-h-0 min-w-0', cols[mode])}>
+          <div className="flex min-w-0 flex-col justify-center gap-0.5 px-3.5 py-1.5 opacity-80">
+            <div className="flex min-w-0 items-center gap-2">
+              <ToolMark tool={m.tool} size="sm" />
+              <span className="truncate text-[13.5px] font-semibold text-fg-2">{title}</span>
+              {m.role && <RoleTag role={m.role} presence="offline" />}
+            </div>
+            <div className="truncate text-[11.5px] text-fg-3">{when}</div>
+          </div>
+          {!phone && (
+            <div className="relative min-h-0 min-w-0">
+              <Timeline spec={{ k: m.k, agents: [''], sub: false, faded: true }} className="absolute inset-0" />
+            </div>
+          )}
+          {mode === 'full' && <div className="flex min-w-0 items-center border-l border-line px-4 text-[12px] text-fg-3 tabular">{t.desk.tl.sum(t.desk.zoom[zoom], sum)}</div>}
+        </div>
+        {sub && (
+          <div className="pb-1.5">
+            <SubLane row={sub} k={m.k} now={now} mode={mode} last />
+          </div>
+        )}
+      </div>
     </div>
   )
 })

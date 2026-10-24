@@ -195,8 +195,12 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   orphans: [['orphans']],
 }
 
+// laneSink：泳道时间线（R-205）的实时推送与断线后补拉，由 app/laneFeed 接上。
+export const laneSink: { push: (p: unknown) => void; resync: () => void } = { push: () => {}, resync: () => {} }
+
 function invalidateTopics(qc: QueryClient, topics: string[]) {
   for (const topic of topics) {
+    if (topic === 'lanes') laneSink.resync() // 推送丢过（慢客户端），泳道时间线补拉一次
     for (const key of topicKeys[topic] ?? []) {
       void qc.invalidateQueries({ queryKey: key })
     }
@@ -285,7 +289,10 @@ export function useLiveUpdates(enabled: boolean) {
         setConnected(true)
         setLive(true)
         // 重连后补齐断线期间错过的变化。
-        if (everConnected) void qc.invalidateQueries()
+        if (everConnected) {
+          void qc.invalidateQueries()
+          laneSink.resync()
+        }
         everConnected = true
       })
       es.addEventListener('session', (ev) => {
@@ -295,6 +302,14 @@ export function useLiveUpdates(enabled: boolean) {
           applySessionPatch(qc, p.rev, p.session)
         } catch {
           void qc.invalidateQueries({ queryKey: qk.sessions })
+        }
+      })
+      es.addEventListener('lane', (ev) => {
+        seen()
+        try {
+          laneSink.push(JSON.parse((ev as MessageEvent<string>).data))
+        } catch {
+          laneSink.resync()
         }
       })
       es.addEventListener('changed', (ev) => {

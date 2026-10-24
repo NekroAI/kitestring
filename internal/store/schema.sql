@@ -326,3 +326,50 @@ CREATE TABLE IF NOT EXISTS commits (
 	created_at   TEXT NOT NULL,
 	PRIMARY KEY (project_id, sha)
 );
+
+-- 工作台泳道时间线（R-205）：每个会话、每个子任务每分钟的工具调用次数（PreToolUse）。
+-- agent_id 为空是主会话那条。新事件只把它所在那一分钟加一，算过的分钟不再重算（daemon 断线重放的迟到事件补进它真实的那一分钟）。
+-- minute 是 Unix 分钟（秒 / 60）。保留 30 天；lane_hours 同时按小时累计（近 1 周档直接读它），30 天前的只剩小时级。
+-- 以后的 token 用量（R-206）等按分钟的指标在这两张表上加列。
+CREATE TABLE IF NOT EXISTS lane_minutes (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL,
+	calls       INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_minutes_minute ON lane_minutes(minute);
+CREATE TABLE IF NOT EXISTS lane_hours (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL, -- 整点的 Unix 分钟
+	calls       INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_hours_minute ON lane_hours(minute);
+
+-- 时间线上的时段（R-205）：kind = tool 长命令（工具开始到结束超过 20 秒），wait 用 ks wait 待命。
+-- ref 是 tool_use_id 或 KsWait 事件的 id；end_ms 为空表示还没结束（待命最长画到 until_ms）。时间都是 Unix 毫秒。保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_spans (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	kind        TEXT NOT NULL,
+	ref         TEXT NOT NULL,
+	label       TEXT NOT NULL DEFAULT '',
+	start_ms    INTEGER NOT NULL,
+	end_ms      INTEGER,
+	until_ms    INTEGER,
+	PRIMARY KEY (session_key, kind, ref)
+);
+CREATE INDEX IF NOT EXISTS lane_spans_start ON lane_spans(start_ms);
+
+-- 子任务（R-205）：每个子代理一行，结束后也留着（时间线上留到滑出窗口），保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_agents (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL,
+	label       TEXT NOT NULL DEFAULT '',
+	agent_type  TEXT NOT NULL DEFAULT '',
+	started_ms  INTEGER NOT NULL,
+	ended_ms    INTEGER,
+	PRIMARY KEY (session_key, agent_id)
+);

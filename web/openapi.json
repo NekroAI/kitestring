@@ -3142,6 +3142,255 @@
         ],
         "type": "object"
       },
+      "LaneAgent": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "end": {
+            "description": "结束（SubagentStop 或会话结束），Unix 毫秒；没结束为空",
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "start": {
+            "description": "Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "label",
+          "type",
+          "start"
+        ],
+        "type": "object"
+      },
+      "LaneData": {
+        "additionalProperties": false,
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/LaneAgent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "from": {
+            "description": "范围起点，Unix 分钟（含）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "now": {
+            "description": "服务端当前时间，Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LaneRow"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/LaneSession"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/LaneSpan"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "step": {
+            "description": "格子大小（分钟）：1 每分钟，60 每小时",
+            "format": "int64",
+            "type": "integer"
+          },
+          "to": {
+            "description": "范围终点，Unix 分钟（不含）",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "now",
+          "step",
+          "from",
+          "to",
+          "rows",
+          "spans",
+          "agents",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "LaneRow": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "description": "子任务的 agent_id；主会话为空",
+            "type": "string"
+          },
+          "c": {
+            "description": "与 m 对应的调用次数",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "k": {
+            "description": "会话键",
+            "type": "string"
+          },
+          "m": {
+            "description": "格子起点，Unix 分钟（秒 / 60），升序；按小时取时为整点",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "m",
+          "c"
+        ],
+        "type": "object"
+      },
+      "LaneSession": {
+        "additionalProperties": false,
+        "properties": {
+          "background": {
+            "type": "boolean"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "k": {
+            "type": "string"
+          },
+          "last_active_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "k",
+          "title",
+          "role",
+          "tool",
+          "project_id",
+          "project_name",
+          "cwd",
+          "background",
+          "last_active_at"
+        ],
+        "type": "object"
+      },
+      "LaneSpan": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "end": {
+            "description": "结束，Unix 毫秒；还没结束时为空",
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "tool 长命令（超过 20 秒）；wait 用 ks wait 待命",
+            "enum": [
+              "tool",
+              "wait"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "description": "长命令的动作简述",
+            "type": "string"
+          },
+          "ref": {
+            "description": "tool_use_id 或 KsWait 事件 id",
+            "type": "string"
+          },
+          "start": {
+            "description": "开始，Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "until": {
+            "description": "待命最长等到什么时候（没结束时最多画到这里）",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "kind",
+          "ref",
+          "label",
+          "start"
+        ],
+        "type": "object"
+      },
       "LastReply": {
         "additionalProperties": false,
         "properties": {
@@ -9036,6 +9285,77 @@
         "summary": "撤销参谋授权窗口（R-163）",
         "tags": [
           "grants"
+        ]
+      }
+    },
+    "/api/lanes": {
+      "get": {
+        "operationId": "get-lanes",
+        "parameters": [
+          {
+            "description": "范围起点，Unix 毫秒；不填为一小时前。最早 30 天前",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "范围起点，Unix 毫秒；不填为一小时前。最早 30 天前",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "范围终点，Unix 毫秒；不填为现在",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "范围终点，Unix 毫秒；不填为现在",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "格子大小（分钟）：1 每分钟（近 1 小时 / 6 小时 / 1 天档），60 每小时（近 1 周档）",
+            "explode": false,
+            "in": "query",
+            "name": "step",
+            "schema": {
+              "default": 1,
+              "description": "格子大小（分钟）：1 每分钟（近 1 小时 / 6 小时 / 1 天档），60 每小时（近 1 周档）",
+              "enum": [
+                1,
+                60
+              ],
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaneData"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）",
+        "tags": [
+          "sessions"
         ]
       }
     },

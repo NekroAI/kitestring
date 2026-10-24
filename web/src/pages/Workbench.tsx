@@ -14,7 +14,10 @@ import { sessionTitle } from '../app/SessionCard'
 import { SessionRow } from '../app/thread'
 import { AskItem, useAsks, useOpenAsk, type Ask } from '../app/asks'
 import { BriefStrip, HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
-import { Lane, laneTone, setOffline, type LaneMode, type Tone } from '../app/lanes'
+import { EndedLane, Lane, LaneAxis, laneTone, setLaneZoom, setOffline, ZoomSwitch, type LaneMode, type Tone } from '../app/lanes'
+import { ensureZoom, laneStore, prefetchLanes, useLaneSnap } from '../app/laneFeed'
+import { coarse, makeAxis, ZOOMS, type SessionMeta, type Zoom } from '../lib/lanedata'
+import { serverNow } from '../api/queries'
 import { useFillHeight } from '../app/pool'
 import { OrphanProcs } from '../app/orphans'
 
@@ -33,12 +36,25 @@ const projectHref = (key: string) => (key && !key.startsWith('cwd:') && key !== 
 // ---------- 数据 ----------
 
 type LaneRow = { s: Session; pk: string; name: string; tone: Tone }
+type Group = { pk: string; name: string; rows: LaneRow[]; done: SessionMeta[] }
 
 const toneRank: Record<Tone, number> = { you: 0, run: 1, bg: 2, park: 3, idle: 4, sub: 9 }
 const endedTTL = 24 * 3600e3 // 泳道下面自动列出这么久之内结束的会话
 const endedMax = 6
+const endedLaneMax = 6 // 长档位里每组最多画几条已结束的泳道（R-205）
 
-function useDesk(wb: ReturnType<typeof useWorkbench>, asks: Ask[], k: string, now: number) {
+// activeEnded：近 1 天 / 1 周档里这段时间干过活的会话（键，逗号分隔），其中不在跑的画成「已结束」泳道（R-205）
+function activeEnded(zoom: Zoom) {
+  if (!coarse(zoom)) return ''
+  const ax = makeAxis(zoom, 720, serverNow())
+  const out: string[] = []
+  for (const m of laneStore.sessions.values()) if (!m.background && laneStore.active(m.k, ax)) out.push(m.k)
+  return out.sort().join(',')
+}
+
+const matchMeta = (m: SessionMeta, k: string) => !k || [m.title, m.project_name, m.cwd].some((v) => v?.toLowerCase().includes(k))
+
+function useDesk(wb: ReturnType<typeof useWorkbench>, asks: Ask[], k: string, now: number, doneSig: string) {
   const minute = Math.floor(now / 60000)
   return useMemo(() => {
     const lanes: LaneRow[] = []
@@ -58,19 +74,35 @@ function useDesk(wb: ReturnType<typeof useWorkbench>, asks: Ask[], k: string, no
     }
     // 泳道按状态排：等你 → 在跑 → 后台 → 待命 → 空闲；同状态 PM 在前，再按最近活跃
     lanes.sort((a, b) => toneRank[a.tone] - toneRank[b.tone] || Number(b.s.role === 'pm') - Number(a.s.role === 'pm') || b.s.last_active_at.localeCompare(a.s.last_active_at))
-    ended.sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))
-    const cut = minute * 60000 - endedTTL
-    const recent = ended.filter((s) => Date.parse(s.last_active_at) > cut).slice(0, endedMax)
     // 多个项目同时有活跃会话时按项目分组（顾问意见）：组按最急的泳道排，组内仍按状态排
-    const groups = new Map<string, { pk: string; name: string; rows: LaneRow[] }>()
+    const groups = new Map<string, Group>()
     for (const r of lanes) {
       let g = groups.get(r.pk)
-      if (!g) groups.set(r.pk, (g = { pk: r.pk, name: r.name, rows: [] }))
+      if (!g) groups.set(r.pk, (g = { pk: r.pk, name: r.name, rows: [], done: [] }))
       if (!g.name && r.name) g.name = r.name
       g.rows.push(r)
     }
-    return { lanes, ended, recent, older: ended.length - recent.length, groups: [...groups.values()] }
-  }, [wb.projects, asks, k, minute])
+    // 长档位：这段时间干过活、已不在跑的会话也画成泳道，排在组里活跃泳道后面，每组最多 6 条；其余照旧在下面的「最近结束」里
+    const shown = new Set<string>()
+    const live = new Set(lanes.map((r) => r.s.key))
+    const metas = doneSig
+      .split(',')
+      .map((x) => laneStore.sessions.get(x))
+      .filter((m): m is SessionMeta => !!m && !live.has(m.k) && matchMeta(m, k))
+      .sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))
+    for (const m of metas) {
+      const pk = m.project_id || 'none'
+      let g = groups.get(pk)
+      if (!g) groups.set(pk, (g = { pk, name: m.project_name, rows: [], done: [] }))
+      if (g.done.length >= endedLaneMax) continue
+      g.done.push(m)
+      shown.add(m.k)
+    }
+    const rest = ended.filter((s) => !shown.has(s.key)).sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))
+    const cut = minute * 60000 - endedTTL
+    const recent = rest.filter((s) => Date.parse(s.last_active_at) > cut).slice(0, endedMax)
+    return { lanes, ended: rest, recent, older: rest.length - recent.length, groups: [...groups.values()], doneLanes: shown.size }
+  }, [wb.projects, asks, k, minute, doneSig])
 }
 
 // ---------- 宽度与缩放 ----------
@@ -178,7 +210,10 @@ export default function WorkbenchPage() {
   const [hover, setHover] = useState<{ k: string; from: 'ask' | 'lane' } | null>(null)
   const k = q.trim().toLowerCase()
   const recapOn = !!settings.data?.ai?.recap
-  const desk = useDesk(wb, asks, k, now)
+  const [zoomPref, setZoom] = usePref<Zoom>('ks.home.zoom', 'h1')
+  const zoom: Zoom = ZOOMS.includes(zoomPref) ? zoomPref : 'h1'
+  const doneSig = useLaneSnap(() => activeEnded(zoom))
+  const desk = useDesk(wb, asks, k, now, doneSig)
   const search = useRef<HTMLInputElement>(null)
   const [el, setEl, w] = useBox()
   const phone = w > 0 && w < 640
@@ -211,6 +246,20 @@ export default function WorkbenchPage() {
 
   // 断线：时间线停在最后一帧并变灰
   useEffect(() => setOffline(!connected), [connected])
+
+  // 分度值（R-205）：所有泳道一起切；先补这一档要的数据，空闲时把其它档预取好，之后换档不再等网络
+  useEffect(() => {
+    setLaneZoom(zoom)
+    void ensureZoom(zoom)
+      .catch(() => {})
+      .then(prefetchLanes)
+  }, [zoom])
+  const pickZoom = (z: Zoom) => {
+    performance.mark('lane-zoom')
+    setZoom(z)
+    // 换档到画完的耗时（R-205 验收：近 1 周档 < 200ms），可在性能面板 / 自动化里读 lane-zoom 这条测量
+    requestAnimationFrame(() => requestAnimationFrame(() => performance.measure('lane-zoom', 'lane-zoom')))
+  }
 
   // 「/」聚焦搜索
   useEffect(() => {
@@ -301,7 +350,10 @@ export default function WorkbenchPage() {
           </div>
         )}
         {g.rows.map((r) => (
-          <Lane key={r.s.key} s={r.s} tone={r.tone} now={now} mode={mode} lit={hover?.from === 'ask' && hover.k === r.s.key} onHover={(key) => setHover(key ? { k: key, from: 'lane' } : null)} />
+          <Lane key={r.s.key} s={r.s} tone={r.tone} now={now} mode={mode} zoom={zoom} lit={hover?.from === 'ask' && hover.k === r.s.key} onHover={(key) => setHover(key ? { k: key, from: 'lane' } : null)} />
+        ))}
+        {g.done.map((m) => (
+          <EndedLane key={m.k} m={m} now={now} mode={mode} zoom={zoom} />
         ))}
       </Fragment>
     )
@@ -322,6 +374,7 @@ export default function WorkbenchPage() {
   const lanePane = (
     <section className={cx('flex min-h-0 min-w-0 flex-col gap-2.5', phone && tab !== 'run' && 'hidden')}>
       <PaneHead title={phone ? '' : t.desk.paneLanes} n={wb.loading ? '' : mode === 'full' ? t.desk.laneSub(run, park, quiet) : t.desk.laneSubShort(run, desk.lanes.length)}>
+        <ZoomSwitch zoom={zoom} onChange={pickZoom} short={mode !== 'full'} />
         <span className="flex-1" />
         <div className={cx('relative shrink-0', mode === 'full' ? 'w-56' : 'w-36')}>
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-3" />
@@ -348,9 +401,10 @@ export default function WorkbenchPage() {
               {t.home.noDevicesSub}
             </Empty>
           </Card>
-        ) : desk.lanes.length ? (
+        ) : desk.lanes.length || desk.doneLanes ? (
           <>
             {run === 0 && !k && <NoRun sessions={wb.sessions} now={now} />}
+            {!phone && <LaneAxis zoom={zoom} mode={mode} now={now} />}
             {laneEls}
           </>
         ) : k ? (
