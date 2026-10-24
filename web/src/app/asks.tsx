@@ -57,7 +57,7 @@ export function buildAsks(wb: WB): Ask[] {
     const pname = (x?: { project_name?: string }) => x?.project_name || s?.project_name || ''
     for (const r of th.reviews) push({ key: `r:${r.code}`, kind: 'review', title: r.title, at: r.updated_at, counted: true, code: r.code, s, req: r, projectId: pid(r), projectName: pname(r) })
     for (const d of th.decisions) {
-      // 挂在待验收需求上的决策在验收视图里一起处理，不另列一条
+      // 挂在待验收需求上的决策在需求抽屉里一起处理，不另列一条
       if (d.requirement_code && reviewing.has(d.requirement_code)) continue
       push({ key: `d:${d.code}`, kind: decisionKind(d), title: askTitle(d), at: d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     }

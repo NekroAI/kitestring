@@ -18,14 +18,13 @@ import { useOpenSession } from './nav'
 import { EditableMd, EditableText, priorities, ReleaseBadge, StatusMenu, toFields, useSetStatus } from './requirements'
 import { sortDrafts } from './pool'
 import { ReqTimeline } from './reqTimeline'
-import { AcceptView } from './accept'
 import { AssignButton } from './assign'
 import { ReviewerButton } from './reviewer'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
 import { OwnLine, useOwnership } from './ownership'
 import { useKsEvent } from './command'
-import { PendingBar, reducedMotion, Seal, SEAL_MS, usePending, useReqVerdict, Verdict } from './verdict'
+import { PendingBar, Seal, usePending, useReqVerdict, Verdict } from './verdict'
 import { plainText } from '../ui/markdown'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 
@@ -50,16 +49,36 @@ export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactN
   const [incoming, setIncoming] = useState<File[]>([])
   const count = (r?.evidence?.length ?? 0) + (r?.reviews?.length ?? 0) + (r?.feedback?.length ?? 0) + related.length
 
-  // 待验收时第一屏是验收视图（R-111），从顶上看起；其它状态停在最新的记录，有新记录时如果本来就在底部附近就跟上去。
+  // 只有一条时间线（R-195）：打开时停在最新那份证据的开头（证据很长时，直接滚到底只能看到它的尾巴）；
+  // 本轮还没有证据（刚被退回、还没开工）时停在最新的记录。之后有新记录、且本来就在底部附近时跟上去。
   const reviewing = r?.status === 'review'
   const stick = useRef(true)
-  useLayoutEffect(() => {
+  const toLatest = (smooth = false) => {
     const el = scroller.current
-    if (el && r) el.scrollTop = reviewing ? 0 : el.scrollHeight
-  }, [r?.id, reviewing]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!el) return
+    const target = el.querySelector<HTMLElement>('[data-latest]')
+    const top = target ? target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 12 : el.scrollHeight
+    el.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+  }
+  // 决策、提交、验收建议是分头加载的，到齐前时间线还会变长：用户没动过滚动之前，每次变化都重新停到最新证据的开头
+  const touched = useRef(false)
+  const seen = useRef(0)
+  useLayoutEffect(() => {
+    if (!r) return
+    touched.current = false
+    seen.current = count
+    stick.current = false
+    toLatest()
+    const ids = [120, 400, 900, 1600].map((ms) => window.setTimeout(() => !touched.current && toLatest(), ms))
+    return () => ids.forEach((id) => window.clearTimeout(id))
+  }, [r?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const el = scroller.current
-    if (el && stick.current && !reviewing) window.setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 320)
+    const grew = count > seen.current
+    seen.current = count
+    if (!el || !grew) return
+    if (!touched.current) toLatest()
+    else if (stick.current) window.setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 320)
   }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -85,9 +104,14 @@ export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactN
               const el = e.currentTarget
               stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
             }}
-            className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain bg-bg/40 px-4 py-5 sm:px-5', reviewing && '[container-type:size]')}
+            onWheel={() => (touched.current = true)}
+            onTouchStart={() => (touched.current = true)}
+            onPointerDown={() => (touched.current = true)}
+            onKeyDown={() => (touched.current = true)}
+            data-req-scroll=""
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-surface px-4 py-4 sm:px-5"
           >
-            {reviewing ? <AcceptView r={r} decisions={related} /> : <ReqTimeline r={r} decisions={related} />}
+            <ReqTimeline r={r} decisions={related} />
           </div>
           <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
             <Composer
@@ -95,7 +119,7 @@ export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactN
               r={r}
               onAdvance={onAdvance}
               pending={related.filter((d) => d.status === 'pending').length}
-              onJump={() => scroller.current?.scrollTo({ top: reviewing ? 0 : scroller.current.scrollHeight, behavior: 'smooth' })}
+              onJump={() => (reviewing ? toLatest(true) : scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' }))}
               incoming={incoming}
               onIncoming={() => setIncoming([])}
             />
@@ -271,18 +295,13 @@ function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: 
       }
     })
   const ids = files.map((f) => f.id)
-  // 通过时也可以带附言（作为留言送达，需求仍是已完成）
+  // 通过时也可以带附言（作为留言送达，需求仍是已完成）。
+  // 连续验收时撤销期不挡下一步（docs/principles.md 第 8 条）：点了通过立刻翻到下一件，撤回挪到顶部浮动条（toast）
   const pass = () => {
     if (pend) return
-    verdict.pass(r.code, { comment: text, files: ids, after: clear })
+    const ok = verdict.pass(r.code, { comment: text, files: ids, after: clear, toast: !!onAdvance })
+    if (ok && onAdvance) onAdvance(r.code)
   }
-  // 连续验收：印章盖下、停顿片刻后滑到下一条（D-229 印章 + 收起连成一段）
-  const sealing = !!pend && pend.phase !== 'wait' && pend.act === 'pass'
-  useEffect(() => {
-    if (!sealing || !onAdvance) return
-    const id = window.setTimeout(() => onAdvance(r.code), reducedMotion() ? 0 : SEAL_MS)
-    return () => window.clearTimeout(id)
-  }, [sealing]) // eslint-disable-line react-hooks/exhaustive-deps
   const back = () => {
     if (pend) return
     if (!dirty) return box.current?.focus()

@@ -115,7 +115,7 @@ export function Panel({ open, onClose, title, subtitle, children, actions, wide,
               className={cx(
                 'flex flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop transition-[width] duration-300 ease-out',
                 // approval：审批抽屉（需求验收 / 决策 / 计划批准 / 会话等你……）不论内容类型同一个宽度，翻页不跳（R-178）；
-                // 够验收视图的左右两栏（容器 ≥ 680 才分栏，R-111）；左侧并排再开一层的抽屉（aside）仍用普通宽度，保证两层排得下
+                // 证据图库排得下三列（R-195）；左侧并排再开一层的抽屉（aside）仍用普通宽度，保证两层排得下
                 wide === 'approval' && !aside ? 'w-[min(860px,calc(100vw-1rem))]' : wide ? 'w-[min(640px,calc(100vw-1rem))]' : 'w-[min(520px,calc(100vw-1rem))]',
               )}
             >

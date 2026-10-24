@@ -1,110 +1,303 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
-import type { Block, Evidence, Payload } from '../api/client'
+import type { BlockItem, Evidence, Requirement } from '../api/client'
 import { t } from '../i18n'
-import { absTime, cx } from '../lib/util'
-import { fileUrl, Lightbox, Thumbs } from '../ui/attach'
-import { BlockView, Checklist, criteriaOf, figureNumbers, refLabeler, Score, shotFile } from '../ui/blocks'
-import { BoxLayer } from '../ui/shots'
+import { absTime, cx, relTime, useNow } from '../lib/util'
+import { checklistOf, citesOf, cropLayout, explicitMode, itemNo, otherFiles, proofsOf, shotsOf, splitLegacy, type Box, type Proof, type Shot } from '../lib/proofs'
+import { Badge, Tip } from '../ui/base'
+import { fileUrl, isVideo, Lightbox, Thumbs, type ViewShot } from '../ui/attach'
+import { criteriaOf, ResultIcon, Score } from '../ui/blocks'
+import { shotTitle } from '../ui/shots'
 import { Md } from '../ui/markdown'
 import { Linkify } from '../ui/refmark'
+import { evidenceKind } from './review'
+import { Who } from './who'
 
-// 结构化证据（R-97，原型 ③）：一句结论 → 验收清单（点一项跳到右边对应的块）→ 要你做的 → 折叠的细节；
-// 右边是截图、对比、流程、指标等表达块。窄处（抽屉、手机）上下堆叠。旧证据没有 payload，由调用方按纯文本显示。
+// 需求抽屉里的一份证据（R-195）。时间线上每份证据只出现一次：本轮最新的一份展开（EvidenceCard），其余收成一行（EvidenceRow），点开就地展开。
+// 展开后从上到下：谁交的 → 一句结论 → 验收清单（每条右边是从截图里裁出的「证据小图」，点这条展开大切片）→ 要你做的
+// → 截图图库（缩略图 + 标题，角上标「对比」「几处标注」；抽屉里不画框，框和前后对比都在看图里）→ 顺带改动、技术细节（折叠）。
+// 老格式证据（一段文字加几张截图）：第一句当结论，正文太长时收起；截图同样排成图库。
 
-const resultWord: Record<string, string> = { pass: '达标', fail: '未达标', ask: '要你看' }
+export const hasPayload = (e: Pick<Evidence, 'payload'>) => !!(e.payload && (e.payload.verdict || e.payload.blocks?.length || e.payload.todo?.length))
 
-// payloadText 与 hub 的 blocks.Payload.Text 一致：没写 summary 时 hub 用它拼正文。相同就不再折叠显示“原始证据全文”。
-function payloadText(p: Payload) {
-  const lines: string[] = []
-  if (p.verdict) lines.push(p.verdict)
-  const c = p.blocks?.find((b) => b.type === 'checklist')
-  for (const it of c?.items ?? []) {
-    let s = `- ${it.text || `验收标准 ${it.criterion}`}：${resultWord[it.result ?? 'ask']}`
-    if (it.why) s += '，' + it.why
-    lines.push(s)
+// useProof：一份证据的截图、清单、每条验收点的证明，以及给看图用的图组（带改前、这张图证明的验收点）。
+function useProof(e: Evidence, acceptance?: string) {
+  return useMemo(() => {
+    const shots = shotsOf(e)
+    const items = checklistOf(e)
+    const proofs = proofsOf(shots, items)
+    const explicit = explicitMode(shots)
+    const criteria = criteriaOf(acceptance)
+    const group: ViewShot[] = shots.map((s, si) => ({
+      ...s.file,
+      boxes: s.boxes,
+      before: s.before ?? null,
+      cites: items.length ? citesOf(si, items, proofs, criteria) : undefined,
+      explicit,
+    }))
+    return {
+      shots,
+      items,
+      proofs,
+      criteria,
+      group,
+      rest: otherFiles(e, shots),
+    }
+  }, [e, acceptance])
+}
+
+// ---------- 证据小图与切片 ----------
+
+// Crop：从截图里裁出一个框（box 为空时显示整张图的顶部）。outline：在切片上把框描出来。
+function Crop({ src, box, legible, outline, className }: { src: string; box: Box | null; legible?: boolean; outline?: boolean; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
+  const [view, setView] = useState({ w: 0, h: 0 })
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => setView({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const L = nat && view.w ? cropLayout(box, nat, view, legible) : null
+  return (
+    <span ref={ref} className={cx('relative block overflow-hidden bg-sunken', className)}>
+      <img
+        src={fileUrl(src)}
+        alt=""
+        loading="lazy"
+        draggable={false}
+        onLoad={(ev) =>
+          setNat({
+            w: ev.currentTarget.naturalWidth,
+            h: ev.currentTarget.naturalHeight,
+          })
+        }
+        className="pointer-events-none absolute max-w-none"
+        style={L ? { width: L.imgW, left: L.left, top: L.top } : { width: '100%', left: 0, top: 0 }}
+      />
+      {outline && L?.ol && (
+        <i
+          aria-hidden
+          className="pointer-events-none absolute rounded-[3px] border-2 border-seal shadow-[0_0_0_1px_rgb(255_255_255/0.7)]"
+          style={{
+            left: L.ol.left,
+            top: L.ol.top,
+            width: L.ol.w,
+            height: L.ol.h,
+          }}
+        />
+      )}
+    </span>
+  )
+}
+
+// ProofItem：验收清单的一条。右边是证明它的小图（宽处两张、窄处一张），点小图直接进看图放大到那个框；
+// 点这一条展开大切片（按看得清的比例，框太宽时从开头显示），再点收起。
+function ProofItem({ it, k, ps, shots, group, criteria }: { it: BlockItem; k: number; ps: Proof[]; shots: Shot[]; group: ViewShot[]; criteria: Record<number, string> }) {
+  const [open, setOpen] = useState(false)
+  const n = itemNo(it, k)
+  const text = it.text || criteria[n] || t.blocks.criterion(n)
+  const can = ps.length > 0
+  const boxOf = (q: Proof) => (q.bi == null ? null : shots[q.si].boxes[q.bi])
+  const label = (q: Proof) => {
+    const b = boxOf(q)
+    return b?.label?.trim() ? b.label : shotTitle(shots[q.si].file)
   }
-  for (const x of p.todo ?? []) lines.push('要你做的：' + x)
-  for (const x of p.aside ?? []) lines.push('顺带改动：' + x)
-  if (p.details) lines.push('实现细节：' + p.details)
-  return lines.join('\n')
+  return (
+    <li data-proof-item={n} className={cx('rounded-[10px] transition-colors', open ? 'bg-hover/70' : can && 'hover:bg-hover/60')}>
+      <div
+        role={can ? 'button' : undefined}
+        tabIndex={can ? 0 : undefined}
+        aria-expanded={can ? open : undefined}
+        onClick={() => can && setOpen((v) => !v)}
+        onKeyDown={(ev) => {
+          if (can && (ev.key === 'Enter' || ev.key === ' ')) {
+            ev.preventDefault()
+            setOpen((v) => !v)
+          }
+        }}
+        className={cx('flex items-start gap-2.5 rounded-[10px] px-2 py-2 outline-none focus-visible:ring-2 focus-visible:ring-accent/40', can && 'cursor-pointer')}
+      >
+        <ResultIcon result={it.result} className="mt-[3px]" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm leading-normal font-medium break-words text-fg">
+            {n}. <Linkify text={text} />
+          </span>
+          {it.why && (
+            <span className="mt-0.5 block text-[12.5px] leading-relaxed break-words text-fg-3">
+              <Linkify text={it.why} />
+            </span>
+          )}
+        </span>
+        {can && !open && (
+          <span className="flex shrink-0 gap-1.5">
+            {ps.slice(0, 2).map((q, i) => (
+              <Lightbox key={i} f={group[q.si]} group={group} focus={q.bi}>
+                <button
+                  type="button"
+                  title={label(q)}
+                  aria-label={t.proof.cropLabel(q.si + 1, q.bi == null ? null : q.bi + 1)}
+                  className={cx('relative block overflow-hidden rounded-lg border border-line-strong outline-2 outline-offset-1 outline-transparent transition hover:outline-accent', i > 0 && '@max-[520px]:hidden')}
+                >
+                  <Crop src={shots[q.si].file.id} box={boxOf(q)} className="h-[60px] w-24 @max-[520px]:h-10 @max-[520px]:w-[58px]" />
+                  <span className="absolute bottom-[3px] left-[3px] rounded-[4px] bg-black/60 px-1 text-[10.5px] leading-[15px] text-white tabular">{t.proof.cropLabel(q.si + 1, q.bi == null ? null : q.bi + 1)}</span>
+                </button>
+              </Lightbox>
+            ))}
+          </span>
+        )}
+        {can && <ChevronRight aria-hidden className={cx('mt-[3px] size-3.5 shrink-0 text-fg-3 transition-transform', open && 'rotate-90')} />}
+      </div>
+      {open && (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-2.5 px-2 pb-2.5 pl-8.5 @max-[520px]:grid-cols-1 @max-[520px]:pl-2">
+          {ps.map((q, i) => (
+            <Lightbox key={i} f={group[q.si]} group={group} focus={q.bi}>
+              <button type="button" className="group/slice block min-w-0 self-start text-left">
+                <span className="relative block overflow-hidden rounded-[10px] border border-line-strong outline-2 outline-offset-1 outline-transparent transition group-hover/slice:outline-accent">
+                  <Crop src={shots[q.si].file.id} box={boxOf(q)} legible outline className="h-[190px] @max-[520px]:h-[150px]" />
+                  <span className="absolute right-1.5 bottom-1.5 rounded-[5px] bg-black/60 px-1.5 text-[11px] leading-[18px] text-white">{t.proof.zoom}</span>
+                </span>
+                <span className="mt-1 block text-xs leading-snug break-words text-fg-3">
+                  <b className="font-medium text-fg-2">{t.proof.sliceLabel(q.si + 1, q.bi == null ? null : q.bi + 1)}</b> {label(q)}
+                </span>
+              </button>
+            </Lightbox>
+          ))}
+        </div>
+      )}
+    </li>
+  )
+}
+
+// ---------- 图库 ----------
+
+function Gallery({ shots, group }: { shots: Shot[]; group: ViewShot[] }) {
+  if (!shots.length) return null
+  return (
+    <section>
+      <div className="mb-1.5 text-xs tracking-[0.04em] text-fg-3">{t.proof.shots(shots.length)}</div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3 @max-[520px]:grid-cols-2 @max-[520px]:gap-2">
+        {shots.map((s, si) => (
+          <Lightbox key={s.id} f={group[si]} group={group}>
+            <button type="button" className="group/shot block min-w-0 self-start text-left" aria-label={shotTitle(s.file)}>
+              <span className="relative block aspect-[16/10] overflow-hidden rounded-[10px] border border-line bg-sunken outline-2 outline-offset-1 outline-transparent transition group-hover/shot:outline-accent">
+                {isVideo(s.file.mime) ? (
+                  <video src={`${fileUrl(s.file.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover object-left-top" />
+                ) : (
+                  <img src={fileUrl(s.file.id)} alt="" loading="lazy" className="size-full object-cover object-left-top" />
+                )}
+                <span className="absolute top-1.5 left-1.5 flex flex-wrap gap-1 text-[11px] leading-[17px] text-white">
+                  <span className="rounded-[5px] bg-black/60 px-1.5 tabular">{t.proof.figure(si + 1)}</span>
+                  {s.before && <span className="rounded-[5px] bg-black/60 px-1.5">{t.proof.compare}</span>}
+                  {s.boxes.length > 0 && <span className="rounded-[5px] bg-seal px-1.5 text-seal-fg">{t.proof.marks(s.boxes.length)}</span>}
+                </span>
+              </span>
+              <span className={cx('mt-1.5 line-clamp-2 leading-snug break-words', s.named ? 'text-[12.5px] text-fg-2' : 'font-mono text-[11.5px] text-fg-3')}>{shotTitle(s.file)}</span>
+            </button>
+          </Lightbox>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function Fold({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
-    <details className="group border-t border-line">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-0.5 py-2.5 text-sm text-fg-2 [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-3.5 shrink-0 text-fg-3 transition-transform group-open:rotate-90" />
+    <details className="group -mx-4 border-t border-line px-4">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 py-2.5 text-[12.5px] text-fg-3 transition hover:text-fg-2 [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" />
         {title}
       </summary>
-      <div className="space-y-1.5 pb-3 pl-5.5 text-sm text-fg-2">{children}</div>
+      <div className="space-y-1.5 pb-3 pl-5 text-[13px] leading-relaxed text-fg-2">{children}</div>
     </details>
   )
 }
 
-export const hasPayload = (e: Pick<Evidence, 'payload'>) => !!(e.payload && (e.payload.verdict || e.payload.blocks?.length || e.payload.todo?.length))
-
-export function EvidenceView({ e, acceptance }: { e: Evidence; acceptance?: string }) {
-  const p = e.payload ?? {}
-  const blocks: Block[] = p.blocks ?? []
-  const checklist = blocks.find((b) => b.type === 'checklist')
-  const side = blocks.filter((b) => b !== checklist)
-  const criteria = criteriaOf(acceptance)
-  const box = useRef<HTMLDivElement>(null)
-  const [lit, setLit] = useState<{ id: string; k: number } | null>(null)
-
-  const used = new Set(blocks.flatMap((b) => [b.image?.id, b.before?.id, b.after?.id, ...(b.items ?? []).map((i) => i.image?.id)]).filter(Boolean))
-  const extra = (e.files ?? []).filter((f) => !used.has(f.id))
-  // 附图（evidence_attach 的 images）也全部显示成截图，带标题和改动框，排在块后面、按 Agent 给的顺序（R-183）
-  const extraShots: Block[] = extra.filter((f) => f.mime.startsWith('image/')).map((f) => ({ id: 'file-' + f.id, type: 'figure', image: f }))
-  const rest = extra.filter((f) => !f.mime.startsWith('image/'))
-  const raw = e.summary && e.summary.trim() !== payloadText(p).trim() ? e.summary : ''
-
-  // 窄处（抽屉、手机）截图排成一条横向胶片，紧跟在结论下面，第一屏就能看到；宽处放在右栏。
-  // 对比块也放进胶片（显示改后 + 框），保持 Agent 给的顺序；对比块本身在下面照常显示，点图切改前
-  const shots = [...side.filter((b) => (b.type === 'figure' && b.image) || (b.type === 'compare' && b.after)), ...extraShots]
-  const all = [...blocks, ...extraShots]
-  const figs = figureNumbers(all)
-  const group = shots.map((b) => shotFile(b)!)
-
-  const see = (id: string, k: number) => {
-    if (lit?.k === k) return setLit(null)
-    setLit({ id, k })
-    // 同一个块在胶片和右栏各有一份，跳到当前看得见的那份
-    const el = [...(box.current?.querySelectorAll<HTMLElement>(`[data-block="${CSS.escape(id)}"]`) ?? [])].find((x) => x.getClientRects().length > 0)
-    el?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'nearest' })
-  }
-
-  const main = (
-    <div className="min-w-0 space-y-3 [grid-area:main]">
-      {checklist && (
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs tracking-[0.06em] text-fg-3">{checklist.title || t.blocks.checklist}</span>
-            <Score items={checklist.items ?? []} />
+// LegacyBody：老格式证据的正文。第一句当结论，其余正文太长时收起到几行，「展开全文」看完。
+function LegacyBody({ text }: { text: string }) {
+  const { first, rest } = splitLegacy(text)
+  const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [long, setLong] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 4)
+  }, [rest, open])
+  return (
+    <div>
+      <p className="font-display text-[17px] leading-normal font-semibold text-balance break-words text-fg @min-[521px]:text-[19px]">
+        <Linkify text={first} />
+      </p>
+      {rest && (
+        <>
+          <div ref={ref} className={cx('relative mt-1.5', !open && 'max-h-[9.5em] overflow-hidden', !open && long && '[mask-image:linear-gradient(#000_70%,transparent)]')}>
+            <Md text={rest} className="text-[13.5px] leading-relaxed text-fg-2" />
           </div>
-          <Checklist block={checklist} criteria={criteria} refLabel={refLabeler(blocks)} active={lit?.k ?? null} onSee={see} />
-        </div>
-      )}
-      {!!p.todo?.length && (
-        <div className="grid gap-1.5 rounded-[10px] bg-reply-soft px-3.5 py-3">
-          <b className="text-[13px] text-seal">{t.blocks.todo(p.todo.length)}</b>
-          {p.todo.map((x, k) => (
-            <span key={k} className="text-sm break-words text-fg">
-              <Linkify text={x} />
-            </span>
-          ))}
-        </div>
+          {long && (
+            <button type="button" onClick={() => setOpen((v) => !v)} className="mt-1 text-[12.5px] text-accent hover:underline">
+              {open ? t.proof.less : t.proof.more}
+            </button>
+          )}
+        </>
       )}
     </div>
   )
-  const folds = (p.details || !!p.aside?.length || raw) && (
-        <div className="min-w-0 [grid-area:folds]">
-          {p.details && (
-            <Fold title={t.blocks.details}>
-              <Md text={p.details} className="text-sm" />
-            </Fold>
+}
+
+// EvidenceBody：一份证据的内容（不含头部），展开的卡片和作废后点开看原文共用。
+export function EvidenceBody({ e, r }: { e: Evidence; r: Requirement }) {
+  const { shots, items, proofs, criteria, group, rest } = useProof(e, r.acceptance)
+  const p = e.payload ?? {}
+  return (
+    <div className="space-y-3">
+      {hasPayload(e) ? (
+        <>
+          {p.verdict && (
+            <p className="font-display text-[17px] leading-normal font-semibold text-balance break-words text-fg @min-[521px]:text-[19px]">
+              <Linkify text={p.verdict} />
+            </p>
           )}
+          {items.length > 0 && (
+            <section>
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs tracking-[0.04em] text-fg-3">
+                <span>{t.blocks.checklist}</span>
+                <Score items={items} />
+              </div>
+              <ul className="-mx-2 grid gap-0.5">
+                {items.map((it, k) => (
+                  <ProofItem key={k} it={it} k={k} ps={proofs[k]} shots={shots} group={group} criteria={criteria} />
+                ))}
+              </ul>
+            </section>
+          )}
+          {!!p.todo?.length && (
+            <div className="grid gap-1.5 rounded-[10px] bg-reply-soft px-3.5 py-3">
+              <b className="text-[13px] text-seal">{t.blocks.todo(p.todo.length)}</b>
+              {p.todo.map((x, k) => (
+                <span key={k} className="text-sm break-words text-fg">
+                  <Linkify text={x} />
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <LegacyBody text={e.summary} />
+      )}
+      <Gallery shots={shots} group={group} />
+      {rest.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="block text-xs tracking-[0.04em] text-fg-3">{t.blocks.attachments(rest.length)}</span>
+          <Thumbs files={rest} />
+        </div>
+      )}
+      {e.link && <p className="truncate font-mono text-xs text-fg-3">{e.link}</p>}
+      {(!!p.aside?.length || p.details) && (
+        <div className="pt-1">
           {!!p.aside?.length && (
             <Fold title={t.blocks.aside(p.aside.length)}>
               {p.aside.map((x, k) => (
@@ -114,135 +307,99 @@ export function EvidenceView({ e, acceptance }: { e: Evidence; acceptance?: stri
               ))}
             </Fold>
           )}
-          {raw && (
-            <Fold title={t.blocks.raw([...raw].length)}>
-              <Md text={raw} className="text-sm" />
+          {p.details && (
+            <Fold title={t.proof.tech}>
+              <Md text={p.details} className="text-[13px]" />
             </Fold>
           )}
         </div>
-  )
-  const right = (side.length > 0 || extra.length > 0) && (
-    <div className="min-w-0 space-y-6 [grid-area:side] @min-[680px]:sticky @min-[680px]:top-5 @min-[680px]:max-h-[100cqh] @min-[680px]:self-start @min-[680px]:overflow-y-auto @min-[680px]:overscroll-contain @min-[680px]:pr-1 @min-[680px]:[scrollbar-width:thin]">
-      {[...side, ...extraShots].map((b) => (
-        <BlockView key={b.id} block={b} figNo={figs[b.id]} lit={lit?.id === b.id} criteria={criteria} limit group={group} className={shots.includes(b) && b.type === 'figure' ? '@max-[680px]:hidden' : undefined} />
-      ))}
-      {rest.length > 0 && (
-        <div className="space-y-1.5">
-          <span className="block text-xs tracking-[0.06em] text-fg-3">{t.blocks.attachments(rest.length)}</span>
-          <Thumbs files={rest} />
-        </div>
       )}
     </div>
   )
+}
+
+const submitter = (e: Evidence) => <Who actor="agent" session={e.session_key} role={e.role} title={e.session_title} className="max-w-[16em]" />
+const hasFolds = (e: Evidence) => !!(e.payload?.details || e.payload?.aside?.length)
+
+// EvidenceCard：展开的一份证据。latest：本轮最新（默认展开、不能收起）；其余可以「收起」回一行。
+export function EvidenceCard({ e, r, latest, onFold }: { e: Evidence; r: Requirement; latest?: boolean; onFold?: () => void }) {
+  const now = useNow()
   return (
-    <div ref={box} className="@container space-y-3">
-      {p.verdict && (
-        <p className="font-display text-[17px] leading-normal font-semibold text-balance break-words text-fg @min-[680px]:text-[19px]">
-          <Linkify text={p.verdict} />
-        </p>
-      )}
-      {shots.length > 0 && <ShotStrip shots={shots} figs={figs} lit={lit?.id} />}
-      <div
-        className={cx(
-          "grid gap-4 [grid-template-areas:'main'_'side'_'folds']",
-          right && "@min-[680px]:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] @min-[680px]:grid-rows-[auto_1fr] @min-[680px]:gap-x-5 @min-[680px]:[grid-template-areas:'main_side'_'folds_side']",
+    <div data-evidence={e.id} className={cx('@container rounded-[14px] border bg-surface px-4 pt-3.5 shadow-[0_1px_2px_rgb(70_50_18/0.05)]', latest ? 'border-line-strong' : 'border-line', hasFolds(e) ? 'pb-0' : 'pb-3.5')}>
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3">
+        {submitter(e)}
+        <span>
+          {t.proof.submitted} · {evidenceKind(e.kind)}
+        </span>
+        {latest && <Badge tone="run">{t.proof.latest}</Badge>}
+        <Tip content={absTime(e.created_at)}>
+          <span className="tabular">{relTime(e.created_at, now)}</span>
+        </Tip>
+        {onFold && (
+          <button type="button" onClick={onFold} className="ml-auto rounded px-1 text-fg-3 transition hover:text-fg">
+            {t.proof.collapse}
+          </button>
         )}
-      >
-        {main}
-        {right}
-        {folds}
       </div>
+      <EvidenceBody e={e} r={r} />
     </div>
   )
 }
 
-// EvidenceGist：一行要点（验收卡、列表里用）：结论加达标小方块。
-export function EvidenceGist({ e }: { e: Evidence }) {
-  const p = e.payload ?? {}
-  const c = p.blocks?.find((b) => b.type === 'checklist')
-  return (
-    <span className="inline">
-      <Linkify text={p.verdict || e.summary} />
-      {c && <Score items={c.items ?? []} className="ml-2 align-[-1px]" />}
-    </span>
-  )
-}
+// gist：收起时的一行：结构化证据用结论，老格式用第一句。
+const gist = (e: Evidence) => e.payload?.verdict || splitLegacy(e.summary).first
 
-// LegacyEvidence：没有结构化内容的证据，照原文（Markdown）显示。big 时（验收视图）截图放大：宽处在右栏，窄处排成横向胶片。
-export function LegacyEvidence({ e, big }: { e: Evidence; big?: boolean }) {
-  const files = e.files ?? []
-  const imgs = files.filter((f) => f.mime.startsWith('image/'))
-  const rest = files.filter((f) => !imgs.includes(f))
-  // 旧格式证据（文字加截图）的图也带标题（没写时用文件名）和改动框（R-183）
-  const figures: Block[] = imgs.map((f) => ({ id: f.id, type: 'figure', image: f }))
-  const figs = figureNumbers(figures)
-  const group = figures.map((b) => shotFile(b)!)
-  if (!big || !imgs.length)
-    return (
-      <div className="space-y-2">
-        <Md text={e.summary} className="text-sm" />
-        <Thumbs files={files} />
-      </div>
-    )
+// EvidenceRow：收起的一份证据：谁 · 交了证据 · 较早 / 退回时已作废 · 结论 · 达标 · 几张图 · 时间，点开就地展开。
+// 窄处（手机）分两行，结论单独一行。
+export function EvidenceRow({ e, onOpen, voidedOnBack }: { e: Evidence; onOpen: () => void; voidedOnBack?: boolean }) {
+  const now = useNow()
+  const items = checklistOf(e)
+  const n = shotsOf(e).length
   return (
     <div className="@container">
-      <div className="grid gap-4 @min-[680px]:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] @min-[680px]:gap-x-5">
-        <ShotStrip shots={figures} figs={figs} />
-        <div className="min-w-0 space-y-2">
-          <Md text={e.summary} className="text-sm" />
-          <Thumbs files={rest} />
-        </div>
-        <div className="min-w-0 space-y-6 @max-[680px]:hidden @min-[680px]:sticky @min-[680px]:top-5 @min-[680px]:max-h-[100cqh] @min-[680px]:self-start @min-[680px]:overflow-y-auto @min-[680px]:overscroll-contain @min-[680px]:pr-1 @min-[680px]:[scrollbar-width:thin]">
-          {figures.map((b) => (
-            <BlockView key={b.id} block={b} figNo={figs[b.id]} limit group={group} />
-          ))}
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cx('flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-[10px] border border-line bg-surface-2 px-2.5 py-2 text-left text-[13px] text-fg-2 transition hover:border-line-strong', voidedOnBack && 'opacity-60')}
+      >
+        <span className="flex w-full min-w-0 items-center gap-2 text-xs @min-[560px]:contents">
+          {submitter(e)}
+          <span className="shrink-0 text-fg-3">{t.proof.submitted}</span>
+          <span className="shrink-0 rounded-[5px] bg-sunken px-1.5 text-[11px] leading-[17px] text-fg-3">{voidedOnBack ? t.proof.voidedOnBack : t.proof.earlier}</span>
+          <span className="ml-auto shrink-0 text-xs text-fg-3 tabular @min-[560px]:hidden">{relTime(e.created_at, now)}</span>
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          <Linkify text={gist(e)} />
+        </span>
+        {items.length > 0 && <Score items={items} className="shrink-0 text-xs" />}
+        {n > 0 && <span className="shrink-0 text-xs text-fg-3">{t.proof.shotCount(n)}</span>}
+        <span className="shrink-0 text-xs text-fg-3 tabular @max-[559px]:hidden">{relTime(e.created_at, now)}</span>
+        <ChevronRight aria-hidden className="size-3.5 shrink-0 text-fg-3" />
+      </button>
     </div>
   )
 }
 
-// ShotStrip：窄处（抽屉、手机）的截图胶片（R-111）：每张缩略图带编号和标题，改动框也画在缩略图上（R-183）。
-// 缩略图按原比例排到固定高度，太宽的从右边裁掉；框跟着图片原尺寸走，所以裁掉的部分只是看不到，不会错位。
-function ShotStrip({ shots, figs, lit }: { shots: Block[]; figs: Record<string, number>; lit?: string }) {
-  const group = shots.map((b) => shotFile(b)!)
+// VoidedEvidence：Agent 作废的证据（R-189）折成一行「已作废 · 理由」，点开看谁何时作废和原文。
+// 验收退回时批量作废的没有理由，不走这里（收成一行，标「退回时已作废」）。
+export function VoidedEvidence({ e, r }: { e: Evidence; r: Requirement }) {
+  const now = useNow()
   return (
-    <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 @min-[680px]:hidden">
-      {shots.map((b, i) => {
-        const f = group[i]
-        return (
-          <Lightbox key={b.id} f={f} group={group}>
-            <button type="button" data-block={b.id} aria-label={f.title ?? f.name} className="flex w-min min-w-40 shrink-0 snap-start flex-col gap-1 text-left">
-              <span className={cx('block max-w-[78cqw] overflow-hidden rounded-[10px] border bg-sunken outline-2 outline-offset-2 transition-[outline-color]', lit === b.id ? 'border-accent outline-accent' : 'border-line outline-transparent')}>
-                <span className="relative block w-max">
-                  <img src={fileUrl(f.id)} alt="" className="block h-28 w-auto max-w-none" />
-                  <BoxLayer boxes={f.boxes} small />
-                </span>
-              </span>
-              <span className="line-clamp-2 w-0 min-w-full text-xs leading-snug text-fg-2">
-                <span className="mr-1 text-fg-3 tabular">{figs[b.id] ? t.blocks.figure(figs[b.id]) : t.blocks.refLabel.compare}</span>
-                {f.title}
-              </span>
-            </button>
-          </Lightbox>
-        )
-      })}
-    </div>
-  )
-}
-
-// VoidedEvidence：Agent 作废的证据（R-189）折成一行「已作废 · 理由」，点开看原文。
-// 验收退回时批量作废的没有理由（void_reason 为空），不走这里，仍按原样显示。
-export function VoidedEvidence({ e, by, children }: { e: Evidence; by?: string; children: ReactNode }) {
-  return (
-    <details data-void-evidence className="group rounded-xl border border-line bg-sunken/60 px-3 py-2">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-fg-2 [&::-webkit-details-marker]:hidden">
+    <details data-void-evidence className="group @container rounded-[10px] border border-line bg-sunken/60 px-2.5 py-2">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-fg-2 [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 shrink-0 text-fg-3 transition-transform group-open:rotate-90" />
+        <span className="flex min-w-0 items-center gap-2 text-xs">{submitter(e)}</span>
         <span className="min-w-0 flex-1 truncate">{t.review.voidedRow(e.void_reason ?? '')}</span>
+        <span className="shrink-0 text-xs text-fg-3 tabular">{relTime(e.created_at, now)}</span>
       </summary>
       <div className="mt-2 space-y-2 opacity-80">
-        {e.voided_at && <p className="text-xs text-fg-3">{t.review.voidedBy(by ?? '', absTime(e.voided_at))}</p>}
-        {children}
+        {e.voided_at && (
+          <p className="flex flex-wrap items-center gap-1 text-xs text-fg-3">
+            {e.voided_by && <Who actor="agent" session={e.voided_by} role={e.voided_role} />}
+            {t.review.voidedBy('', absTime(e.voided_at))}
+          </p>
+        )}
+        <EvidenceBody e={e} r={r} />
       </div>
     </details>
   )
