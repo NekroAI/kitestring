@@ -11,7 +11,7 @@ import { ReqTimeline } from './reqTimeline'
 import { evidenceKind } from './review'
 
 // 验收视图（R-111，原型 ③）：待验收的需求打开时，第一屏只放这一轮的证据——结论、验收清单、放大的截图、要你做的；
-// 通过 / 退回在抽屉底部。同一轮里更早的证据、之前几轮（“第 1 轮（已退回：原因）”）和全部记录都折叠在下面。
+// 批准 / 退回在抽屉底部。同一轮里更早的证据、之前几轮（“第 1 轮（已退回：原因）”）和全部记录都折叠在下面。
 
 function Fold({ title, children, hint }: { title: ReactNode; hint?: ReactNode; children: ReactNode }) {
   return (

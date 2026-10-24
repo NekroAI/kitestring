@@ -8,7 +8,8 @@ import { defaultTarget, targetGroup, targetItems, targetLabel, useAssign } from 
 import { t } from '../i18n'
 import { cx, loadPref, savePref, useDesktop, usePref } from '../lib/util'
 import { Badge, Button, Card, Switch, Textarea, Tip } from '../ui/base'
-import { FullSheet, Menu, Panel, useAskReason, useConfirm, type MenuItem } from '../ui/overlay'
+import { FullSheet, Menu, Panel, useAskReason, type MenuItem } from '../ui/overlay'
+import { done, schedule, useReqVerdict } from './verdict'
 import { displayState, PriorityDot, PriorityTag, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { AttachZone, type FileRef } from '../ui/attach'
@@ -43,17 +44,22 @@ export function toFields(r: Requirement, patch: Partial<ReqFields> = {}): ReqFie
   }
 }
 
-// useSetStatus：修改状态；从“待验收”退回时先确认（会作废证据，D19）。
+// useSetStatus：修改状态（右键菜单、状态菜单、拖拽、逐条确认草稿共用）。R-161：一律先进撤销期，撤销条以 toast 出现，不再弹确认框——
+// 待验收 → 已完成就是通过；待验收 → 其它状态就是退回，先要一句意见（必填），送达后再落到目标状态（证据照旧作废，D19）。
+// 返回是否排上了（取消意见框 / 搁置框、已在撤销期里时是 false），逐条确认草稿时据此决定要不要前进（R-133）。
 export function useSetStatus() {
   const { updateReq } = useActions()
-  const confirm = useConfirm()
+  const verdict = useReqVerdict()
   const ask = useAskReason()
-  // 返回是否真的改了（取消确认、取消搁置、请求失败都是 false），逐条确认草稿时据此决定要不要前进（R-133）
   return async (r: Requirement, status: string): Promise<boolean> => {
     if (status === r.status) return false
-    if (r.status === 'review' && status !== 'done') {
-      const ok = await confirm({ title: t.reqs.reject, description: t.reqs.rejectConfirm, confirmText: t.reqs.reject, danger: true })
-      if (!ok) return false
+    if (r.status === 'review' && status === 'done') return verdict.pass(r.code, { toast: true })
+    const to = (patch: Partial<ReqFields> = {}) => toFields(r, { status: status as ReqFields['status'], ...patch })
+    if (r.status === 'review') {
+      const a = await ask({ title: t.verdict.askTitle(r.code), description: t.verdict.askDesc, confirmText: t.verdict.back, placeholder: t.verdict.askPlaceholder, kinds: [], required: true, multiline: true })
+      if (!a) return false
+      // 退回后需求回到进行中；拖到的是别的列（阻塞、待开始……）时再改过去
+      return verdict.back(r.code, { comment: a.note, toast: true, after: status === 'in_progress' ? undefined : () => void updateReq(r.code, to()) })
     }
     // 搁置（R-157）：问一句原因，类别和一句话都可以不填；取消就不搁置
     let why: Partial<ReqFields> = {}
@@ -68,13 +74,15 @@ export function useSetStatus() {
       if (!a) return false
       why = { shelve_kind: (a.kind || undefined) as ReqFields['shelve_kind'], shelve_reason: a.note || undefined }
     }
-    const res = await updateReq(r.code, toFields(r, { status: status as ReqFields['status'], ...why }))
-    if (res) {
-      if (status === 'done' && r.status === 'review') toast.success(t.reqs.accepted(r.code))
-      else if (r.status === 'review') toast(t.reqs.rejected(r.code))
-      else toast(t.reqs.moved(r.code, t.reqStatus[status]))
-    }
-    return !!res
+    const body = to(why)
+    return schedule(r.code, {
+      act: 'move',
+      label: t.verdict.move(t.reqStatus[status]),
+      subject: r.code,
+      toast: true,
+      beacon: { method: 'PUT', url: `/api/requirements/${encodeURIComponent(r.code)}`, body },
+      commit: () => done(updateReq(r.code, body)),
+    })
   }
 }
 

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Lock, Milestone, MoreHorizontal, Pencil, Plus, Send, Trash2, Undo2, X, Zap } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Lock, Milestone, MoreHorizontal, Pencil, Plus, Send, Trash2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Plan, PlanReq, Requirement, Session, Stage } from '../api/client'
 import { usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx, loadPref, relTime, savePref, useMedia, useNow } from '../lib/util'
-import { AttachZone, type FileRef } from '../ui/attach'
+import { type FileRef } from '../ui/attach'
 import { Button, Card, Empty, Textarea, Tip } from '../ui/base'
 import { Menu, Panel, useConfirm, type MenuItem } from '../ui/overlay'
 import { Collapse, Item, List } from '../ui/motion'
@@ -18,9 +18,10 @@ import { ReqView } from './reqDrawer'
 import { Md } from '../ui/markdown'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 import { BlockList, ScoreCount } from '../ui/blocks'
+import { done, schedule, Seal, Verdict } from './verdict'
 
 // 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
-// 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（通过 / 退回）和编辑。
+// 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（批准 / 退回）和编辑。
 
 const finishedReq = (r: PlanReq) => r.status === 'review' || r.status === 'done'
 export const stageFinished = (st: Stage) => st.requirements.length > 0 && st.requirements.every(finishedReq)
@@ -97,8 +98,11 @@ function progressText(x: Plan) {
 // ownerLabel：计划负责会话的称呼——有身份写身份（PM / Dev），没有身份才用会话标题；后面跟设备。
 const ownerLabel = (s: Session) => [s.role && t.role[s.role] ? t.role[s.role] : sessionTitle(s), s.device_name].filter(Boolean).join(t.common.sep)
 
-export function PlanCard({ x }: { x: Plan }) {
+// act：工作台「要你处理」里的计划卡，待批准 / 待阶段验收时卡片底部直接给 [附言][退回][批准]（R-161）。
+export function PlanCard({ x, act }: { x: Plan; act?: boolean }) {
   const open = useOpenPlan()
+  const gate = act ? gateStage(x) : undefined
+  const verdict = act && (needsApproval(x) || !!gate)
   const sessionOf = useSessionOf()
   const owner = sessionOf(x.owner_session)
   const state = planState(x)
@@ -109,7 +113,7 @@ export function PlanCard({ x }: { x: Plan }) {
       data-nav-item=""
       onClick={() => open(x.code)}
       onKeyDown={(e) => e.key === 'Enter' && open(x.code)}
-      className={cx('cursor-pointer p-4 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', state.needsYou && 'border-reply/35 ring-1 ring-reply/25', x.status === 'draft' && x.created_by === 'agent' && 'border-dashed')}
+      className={cx('relative cursor-pointer overflow-hidden p-4 transition-all duration-200 hover:-translate-y-px hover:shadow-pop', state.needsYou && 'border-reply/35 ring-1 ring-reply/25', x.status === 'draft' && x.created_by === 'agent' && 'border-dashed')}
     >
       <div className="flex items-center gap-2.5">
         <RefChip code={x.code} status={x.status} link={false} />
@@ -132,6 +136,12 @@ export function PlanCard({ x }: { x: Plan }) {
           </Tip>
         )}
       </div>
+      {verdict && (
+        <div className="mt-3" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          <PlanVerdict x={x} st={gate} />
+        </div>
+      )}
+      {verdict && <Seal k={gate ? stageKey(x, gate) : planKey(x)} />}
     </Card>
   )
 }
@@ -232,37 +242,70 @@ function PlanReqRow({ r, locked, picked, onPick }: { r: PlanReq; locked: boolean
   )
 }
 
-// Gate：当前阶段的闸门——阶段小结、附言、通过 / 退回。
-function Gate({ x, st }: { x: Plan; st: Stage }) {
-  const { passStage, reviseStage } = useActions()
-  const [busy, wrap] = useBusy()
+// 计划批准与阶段验收的判断（R-161）：和需求验收同一个 Verdict、同一套撤销期；key 是 plan:P-3 / stage:P-3:2。
+const planKey = (x: Plan) => `plan:${x.code}`
+const stageKey = (x: Plan, st: Stage) => `stage:${x.code}:${st.seq}`
+const nextStageOf = (x: Plan, st: Stage) => x.stages.find((s) => s.seq > st.seq && !(s.requirements.length > 0 && s.requirements.every((r) => r.status === 'done')))?.seq ?? null
+// gateStage：等你验收的那一阶段（没有就是 undefined）
+export const gateStage = (x: Plan) => {
+  const st = x.status === 'active' ? currentStage(x) : undefined
+  return st && (stageFinished(st) || st.status === 'review') ? st : undefined
+}
+const needsApproval = (x: Plan) => x.status === 'draft' && x.created_by === 'agent'
+
+function usePlanVerdict() {
+  const { passStage, reviseStage, startPlan, rejectPlan } = useActions()
+  const post = (url: string, comment: string, files: string[]) => ({ method: 'POST' as const, url, body: { comment, files } })
+  return {
+    approve: (x: Plan, comment: string, files: string[], after?: () => void) =>
+      schedule(planKey(x), { act: 'pass', subject: x.code, beacon: post(`/api/plans/${x.code}/start`, comment, files), commit: () => done(startPlan(x.code, comment, files), after) }),
+    reject: (x: Plan, comment: string, files: string[], after?: () => void) =>
+      schedule(planKey(x), { act: 'back', subject: x.code, beacon: post(`/api/plans/${x.code}/reject`, comment, files), commit: () => done(rejectPlan(x.code, comment, files), after) }),
+    pass: (x: Plan, st: Stage, comment: string, files: string[], after?: () => void) =>
+      schedule(stageKey(x, st), { act: 'pass', subject: x.code, beacon: post(`/api/plans/${x.code}/stages/${st.seq}/pass`, comment, files), commit: () => done(passStage(x.code, st.seq, comment, files), after) }),
+    back: (x: Plan, st: Stage, comment: string, files: string[], after?: () => void) =>
+      schedule(stageKey(x, st), { act: 'back', subject: x.code, beacon: post(`/api/plans/${x.code}/stages/${st.seq}/revise`, comment, files), commit: () => done(reviseStage(x.code, st.seq, comment, files), after) }),
+  }
+}
+
+// PlanVerdict：计划卡 / 计划详情里的判断行——待批准的计划，或待验收的当前阶段。
+function PlanVerdict({ x, st, stack, extra, className }: { x: Plan; st?: Stage; stack?: boolean; extra?: ReactNode; className?: string }) {
+  const v = usePlanVerdict()
   const [comment, setComment] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
-  const ids = () => files.map((f) => f.id)
-  // 后面需求都已完成的阶段会一并自动通过（D-60），按钮写真正会开始的那一阶段
-  const next = x.stages.find((s) => s.seq > st.seq && !(s.requirements.length > 0 && s.requirements.every((r) => r.status === 'done')))?.seq ?? null
+  const ids = files.map((f) => f.id)
+  const clear = () => {
+    setComment('')
+    setFiles([])
+  }
+  const c = comment.trim()
+  return (
+    <Verdict
+      stack={stack}
+      extra={extra}
+      className={className}
+      note={comment}
+      onNote={setComment}
+      files={files}
+      onFiles={setFiles}
+      pendingKey={st ? stageKey(x, st) : planKey(x)}
+      canPass={st ? !x.paused : planReqCount(x) > 0}
+      onPass={() => (st ? v.pass(x, st, c, ids, clear) : v.approve(x, c, ids, clear))}
+      onBack={() => (st ? v.back(x, st, c, ids, clear) : v.reject(x, c, ids, clear))}
+    />
+  )
+}
+
+// Gate：当前阶段的闸门——阶段小结，然后统一的 [附言][退回][批准]。
+function Gate({ x, st }: { x: Plan; st: Stage }) {
+  // 后面需求都已完成的阶段会一并自动通过（D-60），提示里写真正会开始的那一阶段
+  const next = nextStageOf(x, st)
   const together = st.requirements.filter((r) => r.status === 'review').map((r) => r.code)
   const ready = stageFinished(st)
   if (!ready && st.status !== 'review') return null
-  const pass = () =>
-    wrap(async () => {
-      if (await passStage(x.code, st.seq, comment.trim(), ids())) {
-        toast.success(t.plan.passed(x.code, st.seq))
-        setComment('')
-        setFiles([])
-      }
-    })
-  const revise = () =>
-    wrap(async () => {
-      if (!comment.trim() && !files.length) return void toast(t.plan.reviseNeedsComment)
-      if (await reviseStage(x.code, st.seq, comment.trim(), ids())) {
-        toast(t.plan.revised(x.code, st.seq))
-        setComment('')
-        setFiles([])
-      }
-    })
   return (
-    <div className="mt-3 rounded-2xl border border-reply/30 bg-gradient-to-b from-reply-soft to-reply-soft/40 p-3.5">
+    <div className="relative mt-3 overflow-hidden rounded-2xl border border-reply/30 bg-gradient-to-b from-reply-soft to-reply-soft/40 p-3.5">
+      <Seal k={stageKey(x, st)} />
       <StageScores st={st} />
       {st.summary ? (
         <>
@@ -273,20 +316,19 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
       ) : (
         <p className="text-[13px] text-fg-3">{t.plan.noSummary}</p>
       )}
-      <AttachZone value={files} onChange={setFiles} compact className="mt-3">
-        <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.comment} className="bg-surface pr-10" />
-      </AttachZone>
       {x.paused && <p className="mt-2 text-xs text-danger">{t.plan.pausedHint}</p>}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" loading={busy} disabled={x.paused} onClick={() => void pass()} icon={<Check className="size-4" />}>
-          <span className="max-sm:hidden">{t.plan.pass(next)}</span>
-          <span className="sm:hidden">{t.plan.passShort(next)}</span>
-        </Button>
-        <Button disabled={busy} onClick={() => void revise()} icon={<Undo2 className="size-4" />}>
-          {t.plan.revise}
-        </Button>
-      </div>
-      {together.length > 0 && <p className="mt-2 text-xs text-fg-3">{t.plan.passTogether(together.join('、'))}</p>}
+      <PlanVerdict
+        x={x}
+        st={st}
+        stack
+        className="mt-3"
+        extra={
+          <p className="text-xs text-fg-3">
+            {t.verdict.stageNext(next)}
+            {together.length > 0 && <span className="max-sm:block"> · {t.plan.passTogether(together.join('、'))}</span>}
+          </p>
+        }
+      />
     </div>
   )
 }
@@ -386,22 +428,16 @@ const bodyOf = (x: Plan, patch: Partial<PlanBody> = {}): PlanBody => ({ title: x
 export function PlanPanel({ code, onClose }: { code: string | null; onClose: () => void }) {
   const plans = usePlans()
   const sessions = useSessions()
-  const { updatePlan, deletePlan, startPlan, rejectPlan } = useActions()
+  const { updatePlan, deletePlan, startPlan } = useActions()
   const confirm = useConfirm()
   const [busy, wrap] = useBusy()
   const [editing, setEditing] = useState(false)
-  const [comment, setComment] = useState('')
-  const [files, setFiles] = useState<FileRef[]>([])
   const [sel, setSel] = useState<string | null>(null) // 宽屏：左侧并排打开的需求
   const roomy = useMedia('(min-width: 1140px)')
   const x = (plans.data ?? []).find((p) => p.code === code)
   const all = sessions.data?.sessions ?? []
   const owner = all.find((s) => s.key === x?.owner_session)
-  useEffect(() => {
-    setComment('')
-    setFiles([])
-    setSel(null)
-  }, [code])
+  useEffect(() => setSel(null), [code])
   const shown = roomy && sel && x?.stages.some((st) => st.requirements.some((r) => r.code === sel)) ? sel : null
 
   const menu: MenuItem[] = x
@@ -422,14 +458,9 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
         },
       ]
     : []
-  const approval = x?.status === 'draft' && x.created_by === 'agent'
-  const done = () => {
-    setComment('')
-    setFiles([])
-  }
-  const ids = files.map((f) => f.id)
-  const start = () => wrap(async () => x && (await startPlan(x.code, comment.trim(), ids)) && (toast.success(t.plan.started(x.code)), done()))
-  const reject = () => wrap(async () => x && (await rejectPlan(x.code, comment.trim(), ids)) && (toast(t.plan.rejected(x.code)), done()))
+  const approval = !!x && needsApproval(x)
+  // 自己建的计划「开始」不是判断，照旧立即开始；Agent 拆的计划走 PlanVerdict（R-161）
+  const start = () => wrap(async () => x && (await startPlan(x.code)) && toast.success(t.plan.started(x.code)))
   const aside = shown ? (
     <ReqView
       key={shown}
@@ -453,7 +484,8 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
     <>
       <Panel open={!!code && !editing} onClose={onClose} wide bare title={x?.title ?? t.plan.title} aside={aside}>
         {x ? (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {approval && <Seal k={planKey(x)} className="bg-transparent" />}
             <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
               <RefChip code={x.code} status={x.status} link={false} />
               <PlanChip x={x} />
@@ -482,25 +514,21 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
                 <StageBlock key={st.id} x={x} st={st} last={i === x.stages.length - 1} sel={shown} onPick={roomy ? (c) => setSel(sel === c ? null : c) : undefined} />
               ))}
             </div>
-            {(x.status === 'draft' || x.status === 'shelved') && (
-              <div className="shrink-0 space-y-2.5 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
-                <p className="text-xs text-fg-3">{approval ? t.plan.approveHint : t.plan.startHint}</p>
-                {approval && (
-                  <AttachZone value={files} onChange={setFiles} compact>
-                    <Textarea minRows={1} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t.plan.approveNote} className="pr-10" />
-                  </AttachZone>
-                )}
-                <div className="flex items-center justify-end gap-2">
-                  {approval && (
-                    <Button disabled={busy} onClick={() => void reject()}>
-                      {t.plan.reject}
-                    </Button>
-                  )}
-                  <Button variant="primary" loading={busy} disabled={!planReqCount(x)} onClick={() => void start()} icon={<Send className="size-4" />}>
-                    {approval ? t.plan.approve : t.plan.start}
-                  </Button>
-                </div>
+            {approval ? (
+              <div className="shrink-0 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+                <PlanVerdict key={x.code} x={x} stack extra={<p className="text-xs text-fg-3">{t.verdict.planNext}</p>} />
               </div>
+            ) : (
+              (x.status === 'draft' || x.status === 'shelved') && (
+                <div className="shrink-0 space-y-2.5 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+                  <p className="text-xs text-fg-3">{t.plan.startHint}</p>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button variant="primary" loading={busy} disabled={!planReqCount(x)} onClick={() => void start()} icon={<Send className="size-4" />}>
+                      {t.plan.start}
+                    </Button>
+                  </div>
+                </div>
+              )
             )}
           </div>
         ) : (

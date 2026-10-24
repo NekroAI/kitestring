@@ -1,4 +1,4 @@
-import { Palette, Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
+import { Palette, Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement, Session } from '../api/client'
 import { t } from '../i18n'
@@ -13,6 +13,7 @@ import { useOpenReq, useOpenSession } from './nav'
 import { allStatuses, priorities, toFields, useSetStatus } from './requirements'
 import { ReqGlyph } from '../ui/refmark'
 import { sessionTitle } from './SessionCard'
+import { useReqVerdict } from './verdict'
 
 const copy = async (text: string) => (await copyText(text)) && toast.success(t.common.copied)
 
@@ -59,12 +60,19 @@ export function useReqMenu() {
   const sessions = useSessions()
   const pick = useAssign()
   const setStatus = useSetStatus()
-  const { review, updateReq, deleteReq } = useActions()
+  const { updateReq, deleteReq } = useActions()
+  const verdict = useReqVerdict()
   const confirm = useConfirm()
   return (r: Requirement): CtxItem[] => [
     { type: 'label', label: `${r.code} ${r.title}` },
     { label: t.menu.openReq, icon: <PanelRight />, onSelect: () => openReq(r.code) },
-    ...(r.status === 'review' ? [{ label: t.review.pass, icon: <Check />, onSelect: async () => (await review([{ ref: r.code, verdict: 'accept' }])) && toast.success(t.review.passed(r.code)) }] : []),
+    // 批准 / 退回（R-161）：和卡片上同一对词、同一图标；都先进撤销期（toast），退回先要意见
+    ...(r.status === 'review'
+      ? [
+          { label: t.verdict.pass, icon: <Check />, onSelect: () => void verdict.pass(r.code, { toast: true }) },
+          { label: t.verdict.back, icon: <Undo2 />, onSelect: () => void setStatus(r, 'in_progress') },
+        ]
+      : []),
     ...(r.status !== 'done' && r.status !== 'shelved'
       ? [{ type: 'sub' as const, label: t.assign.menu, icon: <Send />, items: assignItems(sessions.data?.sessions ?? [], r.project_id, (s) => void pick(r.code, s)) }]
       : []),

@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, Undo2, X } from 'lucide-react'
+import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, type ReqFields, type Requirement } from '../api/client'
 import { useDecisions, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
-import { noKbd, cx, relTime, useNow } from '../lib/util'
+import { cx, relTime, useNow } from '../lib/util'
 import { Button, ErrorState, Skeleton, Textarea, Tip } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
@@ -24,8 +24,8 @@ import { ReviewerButton } from './reviewer'
 import { DesignBadge } from './design'
 import { PlanBadge } from './plans'
 import { OwnLine, useOwnership } from './ownership'
-import { useKsEvent, withKey } from './command'
-import { PassingRow, schedulePass, usePassing } from './pass'
+import { useKsEvent } from './command'
+import { PendingBar, reducedMotion, Seal, SEAL_MS, usePending, useReqVerdict, Verdict } from './verdict'
 import { plainText } from '../ui/markdown'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 
@@ -40,7 +40,7 @@ type Dir = 'next' | 'prev' | 'pass'
 
 // ---------- 主体 ----------
 
-export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNode; onPassed?: (code: string) => void }) {
+export function ReqView({ refId, top, onAdvance }: { refId: string; top?: ReactNode; onAdvance?: (code: string) => void }) {
   const q = useRequirement(refId)
   const decisions = useDecisions()
   const r = q.data
@@ -64,7 +64,8 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
 
   return (
     <AnnotateTarget.Provider value={(f) => setIncoming((x) => [...x, f])}>
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {r && <Seal k={r.code} className="bg-transparent" />}
       {top}
       {q.isError && q.error instanceof ApiError && q.error.status === 404 ? null : q.isError ? ( // 刚被删除：列表马上会收起这一条，不闪报错
         <div className="p-5">
@@ -92,7 +93,7 @@ export function ReqView({ refId, top, onPassed }: { refId: string; top?: ReactNo
             <Composer
               key={r.code}
               r={r}
-              onPassed={onPassed}
+              onAdvance={onAdvance}
               pending={related.filter((d) => d.status === 'pending').length}
               onJump={() => scroller.current?.scrollTo({ top: reviewing ? 0 : scroller.current.scrollHeight, behavior: 'smooth' })}
               incoming={incoming}
@@ -241,10 +242,11 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
   )
 }
 
-// Composer：底部输入。待验收时——没写意见“通过”是主操作，写了意见或贴了图就“退回修改”；
-// 其它状态——可以随时给 Agent 留言（只送达，不改需求状态）。
-function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: Requirement; onPassed?: (code: string) => void; pending: number; onJump: () => void; incoming?: File[]; onIncoming?: () => void }) {
-  const { review, note } = useActions()
+// Composer：底部输入。待验收时是统一的 Verdict（R-161）：[附言（退回时必填）][退回][批准]，都先进撤销期，到点盖印；
+// 连续验收时盖印后滑到下一条。其它状态——可以随时给 Agent 留言（只送达，不改需求状态）。
+function Composer({ r, onAdvance, pending, onJump, incoming, onIncoming }: { r: Requirement; onAdvance?: (code: string) => void; pending: number; onJump: () => void; incoming?: File[]; onIncoming?: () => void }) {
+  const { note } = useActions()
+  const verdict = useReqVerdict()
   const own = useOwnership()(r)
   const [busy, wrap] = useBusy()
   const uploading = useUploading()
@@ -253,18 +255,11 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
   const reviewing = r.status === 'review'
   const dirty = !!text.trim() || files.length > 0
   const box = useRef<HTMLTextAreaElement>(null)
-  const passingNow = usePassing().get(r.code)
+  const pend = usePending(r.code)
   const clear = () => {
     setText('')
     setFiles([])
   }
-  const revise = () =>
-    wrap(async () => {
-      if (await review([{ ref: r.code, verdict: 'revise', comment: text, files: files.map((f) => f.id) }])) {
-        toast(t.review.revised(r.code))
-        clear()
-      }
-    })
   const send = () =>
     wrap(async () => {
       if (await note(r.code, text, files.map((f) => f.id))) {
@@ -272,31 +267,30 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
         clear()
       }
     })
-  // 通过时也可以带意见（作为留言送达，需求仍是已完成）
-  const pass = () =>
-    wrap(async () => {
-      if (await review([{ ref: r.code, verdict: 'accept', comment: text, files: files.map((f) => f.id) }])) {
-        if (dirty) toast(t.review.passedWith(r.code))
-        clear()
-        if (onPassed) onPassed(r.code)
-        else toast.success(t.review.passed(r.code))
-      }
-    })
-  // 快捷键 A / 面板里的「通过」（R-127）：不立即生效，先进 5 秒撤销期（与工作台就地通过同一套）；
-  // 到时还停在这条需求上才接着走连续验收（盖章、滑到下一条），抽屉已关就只通过。
-  useKsEvent('ks:pass', (code) => {
-    if (code !== r.code || !reviewing) return
-    if (dirty) return toast(t.review.passBlocked)
-    schedulePass(r.code, async () => {
-      if (!(await review([{ ref: r.code, verdict: 'accept' }]))) return
-      if (onPassed && new URLSearchParams(window.location.search).get('r') === r.code) onPassed(r.code)
-      else toast.success(t.review.passed(r.code))
-    })
-  })
-  // 快捷键 R：只聚焦退回意见框，不直接退回
+  const ids = files.map((f) => f.id)
+  // 通过时也可以带附言（作为留言送达，需求仍是已完成）
+  const pass = () => {
+    if (pend) return
+    verdict.pass(r.code, { comment: text, files: ids, after: clear })
+  }
+  // 连续验收：印章盖下、停顿片刻后滑到下一条（D-229 印章 + 收起连成一段）
+  const sealing = !!pend && pend.phase !== 'wait' && pend.act === 'pass'
+  useEffect(() => {
+    if (!sealing || !onAdvance) return
+    const id = window.setTimeout(() => onAdvance(r.code), reducedMotion() ? 0 : SEAL_MS)
+    return () => window.clearTimeout(id)
+  }, [sealing]) // eslint-disable-line react-hooks/exhaustive-deps
+  const back = () => {
+    if (pend) return
+    if (!dirty) return box.current?.focus()
+    verdict.back(r.code, { comment: text, files: ids, after: clear })
+  }
+  // 快捷键 A / ⌘↵ 批准，R 只聚焦附言框（R-127），⌘⌫ 退回（没写意见时同样先聚焦附言框）
+  useKsEvent('ks:pass', (code) => code === r.code && reviewing && pass())
   useKsEvent('ks:revise', (code) => {
     if (code === r.code && reviewing) box.current?.focus()
   })
+  useKsEvent('ks:back', (code) => code === r.code && reviewing && back())
   const hint = pending ? (
     <button onClick={onJump} className="flex min-w-0 items-center gap-2 text-xs font-medium text-reply transition hover:opacity-80">
       <span className="kite-tug size-2 shrink-0 rotate-45 rounded-[1.5px] bg-reply" />
@@ -305,51 +299,53 @@ function Composer({ r, onPassed, pending, onJump, incoming, onIncoming }: { r: R
   ) : (
     <span className="flex min-w-0 items-center gap-2 text-xs text-fg-3">
       <ReqGlyph status={r.status} />
-      <span className="truncate">{reviewing ? noKbd(dirty ? t.review.hintRevise : t.review.hintPass) : (own?.short ?? t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
+      <span className="truncate">{reviewing ? t.reqs.reviewBanner : (own?.short ?? t.reqs.line[r.status] ?? t.reqStatus[r.status])}</span>
     </span>
   )
+  const reviewer = r.status !== 'shelved' && <ReviewerButton code={r.code} projectId={r.project_id} projectName={r.project_name} />
+  if (reviewing)
+    return pend ? (
+      <PendingBar k={r.code} />
+    ) : (
+      <Verdict
+        stack
+        noteRef={box}
+        note={text}
+        onNote={setText}
+        files={files}
+        onFiles={setFiles}
+        incoming={incoming}
+        onIncoming={onIncoming}
+        onPass={pass}
+        onBack={back}
+        size="md"
+        extra={
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 flex-1">{hint}</div>
+            {reviewer}
+          </div>
+        }
+      />
+    )
   return (
     <div
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
-          if (reviewing) void (dirty ? revise() : pass())
-          else if (dirty) void send()
+          if (dirty) void send()
         }
       }}
     >
-      {passingNow && <PassingRow code={r.code} until={passingNow.until} className="mb-2.5 flex items-center gap-3 rounded-xl bg-run-soft/60 px-3 py-2" />}
       <AttachZone value={files} onChange={setFiles} compact incoming={incoming} onIncoming={onIncoming}>
-        <Textarea ref={box} minRows={1} value={text} placeholder={reviewing ? t.review.composer : t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
+        <Textarea ref={box} minRows={1} value={text} placeholder={t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
       </AttachZone>
       <div className="mt-2.5 flex items-center gap-2">
         <div className="min-w-0 flex-1">{hint}</div>
-        {r.status !== 'shelved' && <ReviewerButton code={r.code} projectId={r.project_id} projectName={r.project_name} />}
-        {reviewing ? (
-          <>
-            <Tip content={dirty ? undefined : withKey(t.review.revise, 'R')}>
-              <span>
-                <Button variant={dirty ? 'primary' : 'ghost'} disabled={!dirty || busy || uploading} icon={<Undo2 className="size-4" />} onClick={revise}>
-                  {t.review.sendRevise}
-                </Button>
-              </span>
-            </Tip>
-            <Tip content={dirty ? t.review.passWithHint : withKey(t.review.pass, 'A')}>
-              <span>
-                <Button variant={dirty ? 'secondary' : 'primary'} disabled={busy || !!passingNow} loading={busy && !dirty} icon={<Check className="size-4" />} onClick={pass} className="min-w-24">
-                  {dirty ? t.review.passWith : t.review.pass}
-                </Button>
-              </span>
-            </Tip>
-          </>
-        ) : (
-          <>
-            {r.status !== 'done' && r.status !== 'shelved' && <AssignButton code={r.code} projectId={r.project_id} />}
-            <Button variant="primary" disabled={!dirty || uploading} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>
-              {t.reqs.noteSend}
-            </Button>
-          </>
-        )}
+        {reviewer}
+        {r.status !== 'done' && r.status !== 'shelved' && <AssignButton code={r.code} projectId={r.project_id} />}
+        <Button variant="primary" disabled={!dirty || uploading} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>
+          {t.reqs.noteSend}
+        </Button>
       </div>
     </div>
   )
@@ -374,7 +370,6 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const { deleteReq } = useActions()
   const confirm = useConfirm()
   const [dir, setDir] = useState<Dir>('next')
-  const [stamp, setStamp] = useState(false)
   const [finished, setFinished] = useState<string | null>(null) // 连续处理完时显示的一句话（某项目的待验收 / 草稿都处理完了）
   const internal = useRef(false)
   const [anchor, setAnchor] = useState<{ project: string; review: boolean; drafts?: boolean } | null>(null)
@@ -417,19 +412,15 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       { replace: true },
     )
   }
-  const onPassed = (code: string) => {
-    toast.success(t.review.passed(code))
+  // 连续验收：这一条盖印（Seal 在 ReqView 里）之后滑到下一条
+  const onAdvance = (code: string) => {
     const target = queue.filter((x) => x.code !== code && (!anchor?.review || x.status === 'review'))
     const after = target.find((x) => queue.indexOf(x) > idx) ?? target[target.length - 1]
-    setStamp(true)
-    window.setTimeout(() => {
-      setStamp(false)
-      if (after) go(after.code, 'pass')
-      else {
-        setDir('pass')
-        setFinished(t.reqs.allReviewed(cur?.project_name || t.reqs.noProject))
-      }
-    }, 520)
+    if (after) go(after.code, 'pass')
+    else {
+      setDir('pass')
+      setFinished(t.reqs.allReviewed(cur?.project_name || t.reqs.noProject))
+    }
   }
 
   // 逐条确认：确认（改为待开始）或搁置后滑到下一条草稿；没有了就显示「草稿都处理完了」
@@ -575,21 +566,8 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
             transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
             className="flex min-h-0 flex-1 flex-col bg-surface"
           >
-            {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} onPassed={anchor?.review ? onPassed : undefined} />}
+            {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} onAdvance={anchor?.review ? onAdvance : undefined} />}
           </motion.div>
-        </AnimatePresence>
-        <AnimatePresence>
-          {stamp && (
-            <motion.div
-              initial={{ opacity: 0, scale: 1.6, rotate: -14 }}
-              animate={{ opacity: 1, scale: 1, rotate: -10 }}
-              exit={{ opacity: 0 }}
-              transition={{ type: 'spring', bounce: 0.35, duration: 0.35 }}
-              className="pointer-events-none absolute top-1/3 left-1/2 z-10 -ml-16 flex h-20 w-32 items-center justify-center rounded-xl border-[3px] border-seal font-display text-2xl tracking-[0.2em] text-seal"
-            >
-              {t.reqs.stamp}
-            </motion.div>
-          )}
         </AnimatePresence>
       </div>
     </Panel>

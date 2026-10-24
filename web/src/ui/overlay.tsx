@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { Check, X } from 'lucide-react'
 import { cx, useDesktop } from '../lib/util'
 import { t } from '../i18n'
-import { Button, Input } from './base'
+import { Button, Input, Textarea } from './base'
 
 // swipeToClose：触屏（如 iPad）在右侧面板上横向轻扫。onSwipe 返回 true 表示已处理（例如切换需求），否则向右扫关闭。
 function swipeToClose(onClose: () => void, onSwipe?: (dir: 'left' | 'right') => boolean) {
@@ -242,10 +242,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 
 export const useConfirm = () => useContext(ConfirmCtx)
 
-// ---------- 可选原因框（R-157，例如搁置需求）----------
-// 点选一个类别、写一句话，都可以不填；返回 null 表示取消，否则返回选的类别与文字（可能都是空）。
+// ---------- 原因框（R-157，例如搁置需求；R-161 菜单 / 拖拽退回时的意见）----------
+// 点选一个类别、写一句话，默认都可以不填；required 时必须写（退回意见），multiline 时是多行输入（⌘↵ 提交）。
+// 返回 null 表示取消，否则返回选的类别与文字。
 
-export type ReasonOpts = { title: ReactNode; description?: ReactNode; confirmText: string; placeholder: string; kinds: { value: string; label: string }[] }
+export type ReasonOpts = { title: ReactNode; description?: ReactNode; confirmText: string; placeholder: string; kinds: { value: string; label: string }[]; required?: boolean; multiline?: boolean }
 export type ReasonResult = { kind: string; note: string }
 const ReasonCtx = createContext<(o: ReasonOpts) => Promise<ReasonResult | null>>(async () => null)
 export const useAskReason = () => useContext(ReasonCtx)
@@ -267,7 +268,8 @@ function ReasonProvider({ children }: { children: ReactNode }) {
     resolver.current?.(v)
     setOpts(null)
   }
-  const submit = () => done({ kind, note: note.trim() })
+  const blank = !!opts?.required && !note.trim()
+  const submit = () => !blank && done({ kind, note: note.trim() })
   return (
     <ReasonCtx.Provider value={ask}>
       {children}
@@ -279,15 +281,16 @@ function ReasonProvider({ children }: { children: ReactNode }) {
         footer={
           <>
             <Button onClick={() => done(null)}>{t.common.cancel}</Button>
-            <Button variant="primary" onClick={submit}>
+            <Button variant="primary" disabled={blank} onClick={submit}>
               {opts?.confirmText}
             </Button>
           </>
         }
       >
         <div className="space-y-3 pb-1">
+          {!!opts?.kinds.length && (
           <div className="flex flex-wrap gap-1.5" role="radiogroup">
-            {opts?.kinds.map((k) => (
+            {opts.kinds.map((k) => (
               <button
                 key={k.value}
                 role="radio"
@@ -302,14 +305,26 @@ function ReasonProvider({ children }: { children: ReactNode }) {
               </button>
             ))}
           </div>
-          <Input
-            value={note}
-            maxLength={200}
-            placeholder={opts?.placeholder}
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
-            autoFocus
-          />
+          )}
+          {opts?.multiline ? (
+            <Textarea
+              value={note}
+              minRows={3}
+              placeholder={opts.placeholder}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
+              autoFocus
+            />
+          ) : (
+            <Input
+              value={note}
+              maxLength={200}
+              placeholder={opts?.placeholder}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
+              autoFocus
+            />
+          )}
         </div>
       </Modal>
     </ReasonCtx.Provider>

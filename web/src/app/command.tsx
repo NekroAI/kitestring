@@ -19,7 +19,7 @@ import { sessionTitle } from './SessionCard'
 
 // 命令面板与全局快捷键（R-127）。⌘K / Ctrl+K 打开面板：搜需求、决策、计划、会话、项目，也能执行常用操作；
 // ? 打开快捷键表。单键只在焦点不在输入框、菜单里且没有对话框开着时生效（判定见 lib/keys.ts）。
-// 抽屉、页面通过 window 事件接动作：ks:req-step（上下一条）、ks:pass（通过，走 5 秒撤销）、ks:revise（聚焦退回意见）、ks:reqs-view（切视图）。
+// 抽屉、页面通过 window 事件接动作：ks:req-step（上下一条）、ks:pass（批准，走撤销期）、ks:revise（聚焦退回意见）、ks:back（⌘⌫ 退回）、ks:reqs-view（切视图）。
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 export const modKey = isMac ? '⌘' : 'Ctrl'
@@ -103,6 +103,8 @@ export function CommandProvider({ children }: { children: ReactNode }) {
           return emit('ks:pass', drawerReq)
         case 'revise':
           return emit('ks:revise', drawerReq)
+        case 'back':
+          return emit('ks:back', drawerReq)
         case 'view':
           return emit('ks:reqs-view', 'next')
       }
@@ -178,8 +180,8 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
     }
     const cmds: Item[] = []
     if (cur?.status === 'review') {
-      cmds.push({ id: 'c:pass', kind: 'cmd', title: t.cmd.passCur(cur.code), keywords: ['pass', 'accept', '验收'], icon: <Check />, keys: 'A', run: () => onAction('pass'), boost: 40 })
-      cmds.push({ id: 'c:revise', kind: 'cmd', title: t.cmd.reviseCur(cur.code), keywords: ['revise', 'reject', '打回'], icon: <Undo2 />, keys: 'R', run: () => onAction('revise'), boost: 40 })
+      cmds.push({ id: 'c:pass', kind: 'cmd', title: t.cmd.passCur(cur.code), keywords: ['pass', 'accept', 'approve', '验收', '批准', '通过'], icon: <Check />, keys: 'A', run: () => onAction('pass'), boost: 40 })
+      cmds.push({ id: 'c:revise', kind: 'cmd', title: t.cmd.reviseCur(cur.code), keywords: ['revise', 'reject', '打回', '退回'], icon: <Undo2 />, keys: 'R', run: () => onAction('revise'), boost: 40 })
     }
     cmds.push({ id: 'c:new-req', kind: 'cmd', title: t.cmd.newReq, keywords: ['new', 'create', '添加'], icon: <FilePlus2 />, keys: 'N', run: () => onAction('new-req') })
     cmds.push({ id: 'c:new-plan', kind: 'cmd', title: t.cmd.newPlan, keywords: ['new', 'plan', '添加'], icon: <PlanGlyph className="text-current" />, run: () => onAction('new-plan') })
@@ -364,7 +366,7 @@ function PaletteBody({ q, setQ, onClose, onAction, cur, desktop }: { q: string; 
   const list = useRef<HTMLDivElement>(null)
   const sections: Section[] = useMemo(() => {
     if (!q.trim()) {
-      // 空输入：先列操作（当前需求的通过 / 退回、新建、跳转），再列轮到你的需求与决策
+      // 空输入：先列操作（当前需求的批准 / 退回、新建、跳转），再列轮到你的需求与决策
       const cmds = items.filter((x) => x.kind === 'cmd' && (x.id === 'c:pass' || x.id === 'c:revise' || x.id.startsWith('c:new') || x.id.startsWith('c:go')))
       const turn = items
         .filter((x) => (x.kind === 'req' || x.kind === 'dec') && (x.boost ?? 0) >= 30)

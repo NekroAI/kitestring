@@ -162,7 +162,7 @@ export function ThreadCard({ th, now, projectName, sessions }: { th: Thread; now
       </div>
       {th.reviews.length > 0 && (
         <div className={cx('bg-surface-2/60 p-3 sm:p-4', (s || items) && 'border-t border-line')}>
-          <ReviewList items={th.reviews} undoable />
+          <ReviewList items={th.reviews} advice />
         </div>
       )}
     </Card>

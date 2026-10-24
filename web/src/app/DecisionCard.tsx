@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRightLeft, Check, CornerDownLeft, Keyboard, PenLine, Plus, RotateCcw, Sparkles, Undo2, X } from 'lucide-react'
+import { ArrowRightLeft, Keyboard, PenLine, RotateCcw, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Session } from '../api/client'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { Badge, Button, Card, Input, Textarea, Tip } from '../ui/base'
+import { Badge, Button, Card, Input, Tip } from '../ui/base'
 import { Menu, useConfirm } from '../ui/overlay'
 import { RoleTag, ToolMark } from '../ui/marks'
 import { ProxyNote } from './grant'
 import { HoldNote } from './morning'
-import { AttachZone, fileUrl, Thumbs, uploadsBusy, useUploading, ZoomButton } from '../ui/attach'
+import { fileUrl, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
@@ -21,6 +20,7 @@ import { targetItems } from './assign'
 import { Md, plainText } from '../ui/markdown'
 import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionChain } from './chain'
+import { actWord, Seal, UndoBar, Verdict, verdictKey } from './verdict'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
 function recIndex(options: string[], rec: string): number {
@@ -86,7 +86,7 @@ function Context({ text, expanded }: { text: string; expanded?: boolean }) {
 // DecisionComposer：待决策，像回复消息一样作答。
 export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: boolean }) {
   const now = useNow()
-  const { drafts, setDraft, queued, send, cancel } = useOutbox()
+  const { drafts, setDraft, queued, sealed, send, cancel } = useOutbox()
   const { closeDecision } = useActions()
   const confirm = useConfirm()
   const closeIt = async () => {
@@ -109,17 +109,16 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
     ? picked && (d.points ?? []).some((p, i) => (p.items ?? []).some((o) => o.recommended) && !p.items?.[picks[i]]?.recommended)
     : !!rec && !approval && ((typeof draft.choice === 'number' && ri >= 0 && draft.choice !== ri) || (draft.choice === 'other' && options.length > 0))
   const reason = deviates ? (draft.reason ?? '').trim() : ''
-  const [sendingText, setSendingText] = useState('')
-  const sendingAt = queued[d.code]
+  const [sendingAct, setSendingAct] = useState<'pass' | 'back' | 'answer'>('answer')
+  const sealedNow = sealed[d.code]
+  const sendingAt = queued[d.code] || (sealedNow ? 1 : 0)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const free = !multi && (options.length === 0 || draft.choice === 'other')
-  // 批准类：附言框常驻（批准和拒绝都可以附言）
-  const note = !free && (approval || draft.noteOpen || !!draft.note)
   const title = d.short_title || d.question
   // 方案对比：任一选项带效果图时，选项改为看图点选的卡片
   const visual = (d.option_files ?? []).some((f) => f?.length)
   const optImgs = (d.option_files ?? []).flatMap((fs) => fs?.slice(0, 1) ?? [])
-  // 在选项效果图上“标注并附上”：打开补充说明并把标注图附进答复
+  // 在选项效果图上“标注并附上”：把标注图附进答复（附言框常驻，R-161）
   const [incoming, setIncoming] = useState<File[]>([])
 
   useEffect(() => {
@@ -127,26 +126,31 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   }, [draft.choice, draft.noteOpen])
 
   const choose = (c: number | 'other') => setDraft(d.code, { choice: draft.choice === c ? null : c })
-  const uploading = useUploading()
+  // 回答 / 批准 / 退回（R-161）：都先进撤销期（发件箱），卡片底部换成同一个撤销条。
+  // 批准类单点：通过 = 选项 0，退回 = 选项 1（发出去的答复文字仍是后端给的选项，Agent 侧不变）；退回必须附意见。
+  const files = draft.files?.map((f) => f.id)
+  const busyUpload = () => (uploadsBusy() ? (toast(t.attach.wait), true) : false) // 附件没传完先不发
   const submit = () => {
-    if (uploadsBusy()) return void toast(t.attach.wait) // 附件没传完先不发
+    if (busyUpload()) return
+    if (approval && !multi) {
+      setSendingAct('pass')
+      return send([{ code: d.code, answer: composeAnswer({ ...draft, choice: 0 }, options), files }])
+    }
     if (!answer) return
-    setSendingText(answer)
-    if (multi) send([{ code: d.code, answer: draft.note.trim(), files: draft.files?.map((f) => f.id), choices: picks, reason: reason || undefined }])
-    else send([{ code: d.code, answer, files: draft.files?.map((f) => f.id), reason: reason || undefined }])
+    setSendingAct(approval ? 'pass' : 'answer')
+    if (multi) send([{ code: d.code, answer: draft.note.trim(), files, choices: picks, reason: reason || undefined }])
+    else send([{ code: d.code, answer, files, reason: reason || undefined }])
   }
-  const reject = () => {
-    if (uploadsBusy()) return void toast(t.attach.wait)
-    setSendingText([t.decision.reject, draft.note.trim()].filter(Boolean).join(' · '))
-    send([{ code: d.code, answer: draft.note.trim(), files: draft.files?.map((f) => f.id), reject: true }])
+  const back = () => {
+    if (busyUpload()) return
+    setSendingAct('back')
+    if (multi) send([{ code: d.code, answer: draft.note.trim(), files, reject: true }])
+    else send([{ code: d.code, answer: composeAnswer({ ...draft, choice: 1 }, options), files }])
   }
   const onKey = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault()
-      submit()
-      return
-    }
-    if ((e.target as HTMLElement).tagName === 'TEXTAREA' || multi) return
+    if (sendingAt) return
+    if (verdictKey(e, { pass: submit, back: approval ? () => (draft.note.trim() || draft.files?.length ? back() : noteRef.current?.focus()) : undefined })) return
+    if ((e.target as HTMLElement).tagName === 'TEXTAREA' || multi || approval) return
     const k = Number(e.key)
     if (k >= 1 && k <= options.length) choose(k - 1)
     else if (e.key === '0' && options.length) choose('other')
@@ -155,7 +159,6 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   return (
     <AnnotateTarget.Provider
       value={(f) => {
-        if (!free) setDraft(d.code, { noteOpen: true })
         setIncoming((x) => [...x, f])
       }}
     >
@@ -197,29 +200,6 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
         )}
 
         {multi && <Points d={d} picks={picks} onPick={(i, k) => setDraft(d.code, { picks: picks.map((c, j) => (j === i ? k : c)) })} />}
-
-        {approval && !multi && (
-          <div className="grid grid-cols-2 gap-2.5" role="radiogroup">
-            {[
-              { i: 0, label: t.decision.approve, icon: <Check className="size-5" />, on: 'border-run bg-run-soft text-run ring-2 ring-run/25' },
-              { i: 1, label: t.decision.reject, icon: <X className="size-5" />, on: 'border-danger bg-danger-soft text-danger ring-2 ring-danger/25' },
-            ].map((b) => (
-              <button
-                key={b.i}
-                role="radio"
-                aria-checked={draft.choice === b.i}
-                onClick={() => choose(b.i)}
-                className={cx(
-                  'flex h-14 items-center justify-center gap-2 rounded-xl border text-[15px] font-medium transition-[background,border,box-shadow,transform] active:scale-[0.98] pointer-coarse:h-16',
-                  draft.choice === b.i ? b.on : 'border-line bg-surface text-fg-2 hover:border-line-strong hover:bg-hover',
-                )}
-              >
-                {b.icon}
-                {b.label}
-              </button>
-            ))}
-          </div>
-        )}
 
         {options.length > 0 && visual && (
           <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2" role="radiogroup">
@@ -320,17 +300,7 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           </div>
         )}
 
-        <AnimatePresence initial={false}>
-          {(free || note) && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.16 }} className="overflow-hidden px-px pb-px">
-              <AttachZone value={draft.files ?? []} onChange={(files) => setDraft(d.code, { files })} compact incoming={incoming} onIncoming={() => setIncoming([])}>
-                <Textarea ref={noteRef} minRows={free ? 3 : 2} value={draft.note} placeholder={free ? t.decision.freePlaceholder : approval ? t.decision.approvalNote : t.decision.notePlaceholder} onChange={(e) => setDraft(d.code, { note: e.target.value })} className="pr-10" />
-              </AttachZone>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {deviates && (
+        {deviates && !sendingAt && (
           <Input
             value={draft.reason ?? ''}
             maxLength={200}
@@ -340,57 +310,51 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           />
         )}
 
-        <div className="flex items-center gap-1.5">
-          {!free && !note && (multi || typeof draft.choice === 'number') && (
-            <Button size="sm" variant="ghost" icon={<Plus className="size-3.5" />} onClick={() => setDraft(d.code, { noteOpen: true })}>
-              {t.decision.addNote}
-            </Button>
-          )}
-          {(draft.choice != null || draft.note || !!draft.files?.length || !!draft.picks || !!draft.reason) && (
-            <Tip content={t.decision.clearDrafts}>
-              <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [], picks: undefined, reason: undefined })}>
-                <X className="size-3.5" />
-              </Button>
-            </Tip>
-          )}
-          <Button size="sm" variant="ghost" className="text-fg-3 hover:text-danger" onClick={closeIt}>
-            {t.decision.closeIt}
-          </Button>
-          <span className="ml-auto" />
-          {options.length > 0 && !multi && (
-            <Tip content={t.decision.keyTip}>
-              <span className="hidden text-fg-3 lg:inline-flex" aria-label={t.decision.keyTip}>
-                <Keyboard className="size-4" />
-              </span>
-            </Tip>
-          )}
-          {multi && approval && (
-            <Button size="sm" variant="ghost" className="h-9" disabled={uploading} onClick={reject} icon={<X className="size-4" />}>
-              {t.decision.reject}
-            </Button>
-          )}
-          <Button variant="primary" size="sm" className="h-9 px-4" disabled={!answer || uploading} onClick={submit} icon={multi && approval ? <Check className="size-4" /> : <CornerDownLeft className="size-4" />}>
-            {multi ? (approval ? t.decision.approvePicks : t.decision.sendPicks) : t.decision.send}
-          </Button>
-        </div>
+        {sendingAt ? (
+          <UndoBar until={sendingAt} done={!!sealedNow} text={(s) => (sealedNow ? t.verdict.sealed(actWord(sendingAct)) : t.verdict.pending(actWord(sendingAct), s))} onUndo={() => cancel(d.code)} />
+        ) : (
+          <Verdict
+            mode={approval ? 'verdict' : 'answer'}
+            stack={free}
+            noteRef={noteRef}
+            note={draft.note}
+            onNote={(v) => setDraft(d.code, { note: v })}
+            files={draft.files ?? []}
+            onFiles={(f) => setDraft(d.code, { files: f })}
+            incoming={incoming}
+            onIncoming={() => setIncoming([])}
+            placeholder={free ? t.decision.freePlaceholder : undefined}
+            minRows={free ? 3 : 1}
+            canPass={approval && !multi ? true : !!answer}
+            onPass={submit}
+            onBack={approval ? back : undefined}
+            extra={
+              <div className={cx('flex items-center gap-1', !free && 'w-full sm:w-auto')}>
+                {(draft.choice != null || draft.note || !!draft.files?.length || !!draft.picks || !!draft.reason) && (
+                  <Tip content={t.decision.clearDrafts}>
+                    <Button size="icon-sm" variant="ghost" aria-label={t.decision.clearDrafts} onClick={() => setDraft(d.code, { choice: null, note: '', noteOpen: false, files: [], picks: undefined, reason: undefined })}>
+                      <X className="size-3.5" />
+                    </Button>
+                  </Tip>
+                )}
+                <Button size="sm" variant="ghost" className="text-fg-3 hover:text-danger" onClick={closeIt}>
+                  {t.decision.closeIt}
+                </Button>
+                {options.length > 0 && !multi && !approval && (
+                  <Tip content={t.decision.keyTip}>
+                    <span className="hidden text-fg-3 lg:inline-flex" aria-label={t.decision.keyTip}>
+                      <Keyboard className="size-4" />
+                    </span>
+                  </Tip>
+                )}
+              </div>
+            }
+          />
+        )}
       </div>
-
-      <AnimatePresence>{sendingAt && <SendingOverlay answer={sendingText || answer} at={sendingAt} onUndo={() => cancel(d.code)} />}</AnimatePresence>
+      <Seal show={!!sealedNow} act={sendingAct} />
     </div>
     </AnnotateTarget.Provider>
-  )
-}
-
-function SendingOverlay({ answer, at, onUndo }: { answer: string; at: number; onUndo: () => void }) {
-  return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2.5 bg-surface/92 px-6 text-center backdrop-blur-[2px]">
-      <div className="text-sm font-medium text-fg">{t.decision.sending}</div>
-      <div className="line-clamp-2 max-w-md text-[13px] text-fg-3">{answer}</div>
-      <Button size="sm" icon={<Undo2 className="size-3.5" />} onClick={onUndo}>
-        {t.common.undo}
-      </Button>
-      <motion.div className="absolute bottom-0 left-0 h-0.5 bg-accent" initial={{ width: '0%' }} animate={{ width: '100%' }} transition={{ duration: Math.max(0, at - Date.now()) / 1000, ease: 'linear' }} key={at} />
-    </motion.div>
   )
 }
 

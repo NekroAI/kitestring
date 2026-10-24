@@ -61,3 +61,15 @@ test('isTyping', () => {
   assert.equal(isTyping(el('DIV', '', true)), true)
   assert.equal(isTyping(el('BUTTON')), false)
 })
+
+test('⌘↵ 通过、⌘⌫ 退回：抽屉里待验收、焦点不在输入框时（R-161）', () => {
+  const rev = { ...base, drawer: true, reviewing: true }
+  assert.equal(resolveKey({ key: 'Enter', metaKey: true }, rev).action, 'pass')
+  assert.equal(resolveKey({ key: 'Enter', ctrlKey: true }, rev).action, 'pass')
+  assert.equal(resolveKey({ key: 'Backspace', metaKey: true }, rev).action, 'back')
+  // 输入框里由 Verdict 自己接；不在待验收、对话框开着时放行
+  assert.equal(resolveKey({ key: 'Enter', metaKey: true }, { ...rev, typing: true }).action, null)
+  assert.equal(resolveKey({ key: 'Backspace', metaKey: true }, { ...rev, blocked: true }).action, null)
+  assert.equal(resolveKey({ key: 'Enter', metaKey: true }, { ...base, drawer: true }).action, null)
+  assert.equal(resolveKey({ key: 'Backspace', metaKey: true }, base).action, null)
+})

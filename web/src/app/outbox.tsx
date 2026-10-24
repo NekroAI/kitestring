@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { toast } from 'sonner'
 import { t } from '../i18n'
 import { loadPref, savePref } from '../lib/util'
 import { useActions } from './actions'
+import { reducedMotion, SEAL_MS, sendBeacon, SHOW_STAMP, UNDO_MS } from './verdict'
 
 // 决策答复的草稿与发件箱。
 // - 草稿：每条决策的选择与文字，保存在本机，刷新不丢。
-// - 发件箱：点击发送后先等待几秒，期间可撤销；到时一次性提交。
+// - 发件箱：点了回答 / 批准 / 退回后先进撤销期（与全站同一时长 UNDO_MS，R-161），期间可撤销；到时一次性提交。
 
 import type { FileRef } from '../ui/attach'
 
@@ -14,7 +14,6 @@ import type { FileRef } from '../ui/attach'
 export type Draft = { choice: number | 'other' | null; note: string; noteOpen?: boolean; files?: FileRef[]; picks?: number[]; reason?: string }
 export const emptyDraft: Draft = { choice: null, note: '' }
 const DRAFTS_KEY = 'ks.drafts.v2'
-export const UNDO_MS = 1800
 
 // composeAnswer 把草稿合成为最终答复文本；返回空串表示还不能发送。
 export function composeAnswer(d: Draft | undefined, options: string[]): string {
@@ -31,11 +30,15 @@ export function composeAnswer(d: Draft | undefined, options: string[]): string {
 // SendItem：一条答复。多点决策时 answer 是附言，choices 是逐点的选择，reject 表示整体拒绝。
 type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string }
 
+type Payload = { answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string }
+const toBody = (due: [string, Payload][]) => due.map(([ref, v]) => ({ ref, answer: v.answer, files: v.files, choices: v.choices, reject: v.reject, reason: v.reason }))
+
 type Ctx = {
   drafts: Record<string, Draft>
   setDraft: (code: string, patch: Partial<Draft>) => void
   clearDrafts: (codes?: string[]) => void
   queued: Record<string, number> // code → 计划发送时间
+  sealed: Record<string, 'seal' | 'done'> // 到点后：盖印中 / 已提交等卡片收起（D-229）
   send: (items: SendItem[]) => void
   cancel: (code: string) => void
 }
@@ -46,7 +49,9 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
   const { answer } = useActions()
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => loadPref(DRAFTS_KEY, {}))
   const [queued, setQueued] = useState<Record<string, number>>({})
-  const pending = useRef(new Map<string, { answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; timer: number }>())
+  const pending = useRef(new Map<string, Payload & { timer: number }>())
+  const sealing = useRef(new Map<string, Payload>()) // 盖印中、还没发出的答复（页面关闭时也要发）
+  const [sealed, setSealed] = useState<Record<string, 'seal' | 'done'>>({})
 
   useEffect(() => savePref(DRAFTS_KEY, drafts), [drafts])
 
@@ -69,22 +74,35 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // 到点：先盖印、停顿片刻（与需求验收同一段生效动画），再一次性提交；成功后保持「已盖印」直到卡片收起。
   const flush = useCallback(async () => {
-    const due = [...pending.current.entries()]
+    const due: [string, Payload][] = [...pending.current.entries()].map(([c, v]) => [c, v])
     if (!due.length) return
+    pending.current.forEach((v) => window.clearTimeout(v.timer))
     pending.current.clear()
-    due.forEach(([, v]) => window.clearTimeout(v.timer))
     const codes = due.map(([c]) => c)
-    const res = await answer(due.map(([ref, v]) => ({ ref, answer: v.answer, files: v.files, choices: v.choices, reject: v.reject, reason: v.reason })))
+    const mark = (v?: 'seal' | 'done') =>
+      setSealed((cur) => {
+        const next = { ...cur }
+        codes.forEach((c) => (v ? (next[c] = v) : delete next[c]))
+        return next
+      })
+    due.forEach(([c, v]) => sealing.current.set(c, v))
+    mark('seal')
+    if (SHOW_STAMP && !reducedMotion()) await new Promise((r) => window.setTimeout(r, SEAL_MS))
+    if (codes.some((c) => !sealing.current.has(c))) return // 页面关闭时已经发出
+    codes.forEach((c) => sealing.current.delete(c))
+    const res = await answer(toBody(due))
     setQueued((cur) => {
       const next = { ...cur }
       codes.forEach((c) => delete next[c])
       return next
     })
-    if (res) {
-      clearDrafts(codes)
-      toast.success(codes.length === 1 ? t.decision.sent(codes[0]) : t.decision.sent(codes.join('、')), { description: t.decision.sentDesc })
-    }
+    // 完成反馈统一为印章 + 卡片收起 + 最近动态记一条（R-161 / D-229），不另弹「已答复」
+    if (!res) return mark()
+    clearDrafts(codes)
+    mark('done')
+    window.setTimeout(() => mark(), 2500)
   }, [answer, clearDrafts])
 
   const send = useCallback(
@@ -116,16 +134,21 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  // 离开页面前把排队中的答复立即发出，避免丢失。
+  // 标签页只是隐藏时照常计时、到点提交（撤销机会不丢）；页面真的关闭或刷新时用 keepalive 立即发出，避免丢失（R-161）。
   useEffect(() => {
     const onHide = () => {
-      if (document.visibilityState === 'hidden') void flush()
+      const due: [string, Payload][] = [...pending.current.entries(), ...sealing.current.entries()]
+      if (!due.length) return
+      pending.current.forEach((v) => window.clearTimeout(v.timer))
+      pending.current.clear()
+      sealing.current.clear()
+      sendBeacon({ method: 'POST', url: '/api/decisions/answers', body: { answers: toBody(due) } })
     }
-    document.addEventListener('visibilitychange', onHide)
-    return () => document.removeEventListener('visibilitychange', onHide)
-  }, [flush])
+    window.addEventListener('pagehide', onHide)
+    return () => window.removeEventListener('pagehide', onHide)
+  }, [])
 
-  return <OutboxCtx.Provider value={{ drafts, setDraft, clearDrafts, queued, send, cancel }}>{children}</OutboxCtx.Provider>
+  return <OutboxCtx.Provider value={{ drafts, setDraft, clearDrafts, queued, sealed, send, cancel }}>{children}</OutboxCtx.Provider>
 }
 
 export function useOutbox() {

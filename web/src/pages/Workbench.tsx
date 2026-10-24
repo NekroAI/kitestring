@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
-import { CheckCheck, ChevronRight, History, MonitorSmartphone, Search, SearchX, Send } from 'lucide-react'
+import { CheckCheck, ChevronRight, CornerDownLeft, History, MonitorSmartphone, Search, SearchX } from 'lucide-react'
 import type { Plan, Session } from '../api/client'
 import { useSettings } from '../api/queries'
 import { t } from '../i18n'
@@ -10,6 +10,7 @@ import { Button, Card, CardSkeleton, Empty, ErrorState, Input, Kbd, PageHeader, 
 import { displayState } from '../ui/marks'
 import { useWorkbench, type ProjectGroup, type Thread } from '../app/inbox'
 import { composeAnswer, useOutbox } from '../app/outbox'
+import { undoToast, UNDO_MS } from '../app/verdict'
 import { RecapPanel } from '../app/Recap'
 import { SessionCard, sessionTitle } from '../app/SessionCard'
 import { SessionRow, ThreadCard } from '../app/thread'
@@ -32,7 +33,7 @@ const match = (s: Session | undefined, k: string) => !k || (!!s && [sessionTitle
 
 function SendAllBar() {
   const wb = useWorkbench()
-  const { drafts, send, clearDrafts, queued } = useOutbox()
+  const { drafts, send, clearDrafts, queued, cancel } = useOutbox()
   const ready = wb.decisions
     .filter((d) => d.status === 'pending')
     .map((d) => ({ code: d.code, answer: composeAnswer(drafts[d.code], d.options ?? []), files: drafts[d.code]?.files?.map((f) => f.id) }))
@@ -46,8 +47,17 @@ function SendAllBar() {
             <Button size="sm" variant="ghost" onClick={() => clearDrafts(ready.map((x) => x.code))}>
               {t.decision.clearDrafts}
             </Button>
-            <Button size="sm" variant="primary" icon={<Send className="size-3.5" />} onClick={() => send(ready)}>
-              {t.decision.sendAll(ready.length)}
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<CornerDownLeft className="size-3.5" />}
+              onClick={() => {
+                // 批量回答（R-161）：每张卡上各有撤销条，另给一条 toast 一次撤销全部
+                send(ready)
+                undoToast(t.verdict.many(ready.length), t.verdict.answer, Date.now() + UNDO_MS, () => ready.forEach((x) => cancel(x.code)))
+              }}
+            >
+              {t.verdict.answerAll(ready.length)}
             </Button>
           </div>
         </motion.div>
@@ -280,7 +290,7 @@ export default function WorkbenchPage() {
         multi={multi}
         render={(x) => (
           <Moving key={x.key} id={x.th?.s?.key ?? x.key} flash={fresh.has(x.key)}>
-            {x.plan ? <PlanCard x={x.plan} /> : <ThreadCard th={x.th!} now={now} projectName={x.name} sessions={wb.sessions} />}
+            {x.plan ? <PlanCard x={x.plan} act /> : <ThreadCard th={x.th!} now={now} projectName={x.name} sessions={wb.sessions} />}
           </Moving>
         )}
       />

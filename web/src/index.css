@@ -611,3 +611,18 @@ nav.fixed {
 }
 .tier-flash { border-radius: 0.75rem; animation: ks-tier-flash 1.6s ease-out 1; }
 @media (prefers-reduced-motion: reduce) { .tier-flash { animation: none; } }
+
+/* 撤销条底边的倒计时线（R-161）：从满到空，时长与延迟由组件按剩余时间设置 */
+@keyframes ks-undo-shrink {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.ks-undo-line {
+  animation-name: ks-undo-shrink;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}

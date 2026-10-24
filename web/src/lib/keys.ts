@@ -1,6 +1,7 @@
 // 全局快捷键（R-127）：按键 → 动作的判定是纯函数，单测见 keys.test.ts。
-// 避开浏览器与系统已占用的组合：除 ⌘K / Ctrl+K（打开面板）与已有的 ⌘\（侧边栏）外都是不带修饰键的单键或 G 开头的两键序列；
+// 避开浏览器与系统已占用的组合：除 ⌘K / Ctrl+K（打开面板）、已有的 ⌘\（侧边栏）与判断动作的 ⌘↵ / ⌘⌫ 外都是不带修饰键的单键或 G 开头的两键序列；
 // 带 ⌘ / Ctrl / Alt 的其它组合一律放行给浏览器。输入框、可编辑区、菜单里只认 ⌘K，单键一律不拦。
+// ⌘↵ 通过、⌘⌫ 退回（R-161）：抽屉里待验收、焦点不在输入框时在这里判定；在附言框和卡片里由 Verdict 自己接。
 
 export type KeyAction =
   | 'palette'
@@ -14,6 +15,7 @@ export type KeyAction =
   | 'prev'
   | 'pass'
   | 'revise'
+  | 'back'
   | 'view'
 
 export type KeyEv = { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; isComposing?: boolean; repeat?: boolean }
@@ -37,6 +39,10 @@ export function resolveKey(e: KeyEv, c: KeyCtx): KeyResult {
   const mod = !!(e.metaKey || e.ctrlKey)
   // ⌘K / Ctrl+K：任何地方都能打开（带修饰键不会误触）
   if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') return { action: 'palette', pendingG: false }
+  if (mod && !e.altKey && !e.shiftKey && !c.typing && !c.blocked && c.drawer && c.reviewing) {
+    if (e.key === 'Enter') return { action: 'pass', pendingG: false }
+    if (e.key === 'Backspace') return { action: 'back', pendingG: false }
+  }
   if (mod || e.altKey) return none
   if (c.typing || c.blocked || e.repeat) return none
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
@@ -100,7 +106,8 @@ export const helpGroups: { id: 'global' | 'go' | 'list' | 'req'; rows: HelpRow[]
       { id: 'switch', keys: ['←', '→'] },
       { id: 'pass', keys: ['A'] },
       { id: 'revise', keys: ['R'] },
-      { id: 'submit', keys: ['mod', 'Enter'] },
+      { id: 'verdict-pass', keys: ['mod', 'Enter'] },
+      { id: 'verdict-back', keys: ['mod', '⌫'] },
     ],
   },
 ]

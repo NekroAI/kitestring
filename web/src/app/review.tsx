@@ -1,81 +1,60 @@
 import { useState } from 'react'
-import { Check, CheckCheck, ChevronRight, FileCheck2, PenLine } from 'lucide-react'
-import { toast } from 'sonner'
+import { CheckCheck, ChevronRight, FileCheck2 } from 'lucide-react'
 import type { Requirement } from '../api/client'
 import { useRequirement } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { Button, Textarea, Tip } from '../ui/base'
-import { AttachZone, Thumbs, useUploading, type FileRef } from '../ui/attach'
-import { Collapse, Item, List } from '../ui/motion'
+import { Button } from '../ui/base'
+import { Thumbs, type FileRef } from '../ui/attach'
+import { Item, List } from '../ui/motion'
 import { AnnotateTarget } from '../ui/annotate'
-import { useActions, useBusy } from './actions'
 import { useOpenReq } from './nav'
 import { useReqMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { Linkify, RefChip } from '../ui/refmark'
 import { EvidenceGist, hasPayload } from './evidence'
-import { PassingRow, schedulePass, usePassing } from './pass'
+import { Seal, usePendingMap, useReqVerdict, Verdict, verdictKey } from './verdict'
 import { AdviceNote } from './morning'
 
 // evidenceKind：证据类型的中文名（agent 上报的是 test、screenshot 等英文标识）。
 export const evidenceKind = (k: string) => t.evidenceKind[k.toLowerCase()] ?? k
 
-// ReviewRow：一条待验收需求——看证据，然后通过或提修改意见（可贴图）。
-// undoable：工作台上就地通过时先进入 5 秒撤销期（R-114）；需求详情里照旧立即通过。
-function ReviewRow({ r, onDone, hideTitle, undoable }: { r: Requirement; onDone?: () => void; hideTitle?: boolean; undoable?: boolean }) {
+// ReviewRow：一条待验收需求——看证据，然后在卡片底部 [附言][退回][批准]（R-161 统一的 Verdict）。
+// 通过、退回都先进撤销期，卡片底部换成撤销条；到时提交后这一行收起，最近动态里记一条。
+function ReviewRow({ r, hideTitle, advice }: { r: Requirement; hideTitle?: boolean; advice?: boolean }) {
   const now = useNow()
   const detail = useRequirement(r.code)
-  const { review } = useActions()
   const openReq = useOpenReq()
-  const [busy, wrap] = useBusy()
-  const uploading = useUploading()
-  const [editing, setEditing] = useState(false)
+  const verdict = useReqVerdict()
   const [comment, setComment] = useState('')
   const [files, setFiles] = useState<FileRef[]>([])
   const [incoming, setIncoming] = useState<File[]>([])
   const evidence = (detail.data?.evidence ?? []).filter((e) => !e.voided)
+  const ids = files.map((f) => f.id)
+  const pass = () => verdict.pass(r.code, { comment, files: ids })
+  const back = () => verdict.back(r.code, { comment, files: ids })
 
-  const passingNow = usePassing().get(r.code)
-  const commit = async () => {
-    if (await review([{ ref: r.code, verdict: 'accept' }])) {
-      toast.success(t.review.passed(r.code))
-      onDone?.()
-    }
-  }
-  const pass = () => (undoable ? schedulePass(r.code, commit) : wrap(commit))
-  const revise = () =>
-    wrap(async () => {
-      if (await review([{ ref: r.code, verdict: 'revise', comment, files: files.map((f) => f.id) }])) {
-        toast(t.review.revised(r.code))
-        onDone?.()
-      }
-    })
-
-  // 整行可点开需求详情（按钮、改意见区除外）；嵌在需求详情里时不需要。
+  // 整行可点开需求详情（附言、按钮区除外）；嵌在需求详情里时不需要。
   const clickable = !hideTitle
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
   const menu = useReqMenu()
-  if (passingNow) return <PassingRow code={r.code} until={passingNow.until} />
   return (
-    <AnnotateTarget.Provider
-      value={(f) => {
-        setEditing(true)
-        setIncoming((x) => [...x, f])
-      }}
-    >
+    <AnnotateTarget.Provider value={(f) => setIncoming((x) => [...x, f])}>
     <Ctx items={clickable ? menu(r) : []} className="rounded-xl">
     <div
       role={clickable ? 'link' : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? () => openReq(r.code) : undefined}
-      onKeyDown={clickable ? (e) => e.key === 'Enter' && e.target === e.currentTarget && openReq(r.code) : undefined}
+      onKeyDown={(e) => {
+        if (verdictKey(e, { pass, back: () => (comment.trim() || ids.length ? back() : undefined) })) return
+        if (clickable && e.key === 'Enter' && e.target === e.currentTarget) openReq(r.code)
+      }}
       className={cx(
-        'group/review rounded-xl border border-line bg-surface p-3 transition-[background,border,box-shadow,transform] duration-150 sm:p-3.5',
+        'group/review relative overflow-hidden rounded-xl border border-line bg-surface p-3 transition-[background,border,box-shadow,transform] duration-150 sm:p-3.5',
         clickable && 'cursor-pointer hover:border-line-strong hover:bg-hover/50 hover:shadow-xs active:scale-[0.995]',
       )}
     >
-      <div className="flex items-start gap-3 max-sm:flex-wrap">
+      <div className="flex items-start gap-3">
         <span className="mt-0.5 flex size-7 shrink-0 items-center max-sm:hidden justify-center rounded-lg bg-reply-soft text-reply">
           <FileCheck2 className="size-4" />
         </span>
@@ -89,7 +68,7 @@ function ReviewRow({ r, onDone, hideTitle, undoable }: { r: Requirement; onDone?
               <ChevronRight className="size-3.5 shrink-0 text-fg-3 transition-transform group-hover/review:translate-x-0.5 group-hover/review:text-accent" />
             </div>
           )}
-          {undoable && <AdviceNote code={r.code} />}
+          {advice && <AdviceNote code={r.code} />}
           {evidence.length ? (
             <ul className="mt-1.5 space-y-1.5">
               {evidence.slice(-3).map((e) => (
@@ -109,86 +88,38 @@ function ReviewRow({ r, onDone, hideTitle, undoable }: { r: Requirement; onDone?
             detail.data && <p className="mt-1 text-xs text-fg-3">{t.review.noEvidence}</p>
           )}
         </div>
-        {!editing && (
-          <div className="flex shrink-0 gap-1.5 max-sm:w-full max-sm:justify-end" onClick={stop} onKeyDown={stop}>
-            <Button size="sm" variant="ghost" icon={<PenLine className="size-3.5" />} disabled={busy} onClick={() => setEditing(true)}>
-              <span className="max-sm:hidden">{t.review.revise}</span>
-            </Button>
-            <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} loading={busy} onClick={pass}>
-              {t.review.pass}
-            </Button>
-          </div>
-        )}
       </div>
-      <Collapse show={editing}>
-        <div className="space-y-2 pt-3 sm:pl-10" onClick={stop} onKeyDown={stop}>
-          <AttachZone value={files} onChange={setFiles} compact incoming={incoming} onIncoming={() => setIncoming([])}>
-            <Textarea autoFocus minRows={3} value={comment} placeholder={t.review.revisePlaceholder} onChange={(e) => setComment(e.target.value)} className="pr-10" />
-          </AttachZone>
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-              {t.common.cancel}
-            </Button>
-            <Tip content={t.review.passWithHint}>
-              <span>
-                <Button
-                  size="sm"
-                  disabled={busy || (!comment.trim() && !files.length)}
-                  icon={<Check className="size-3.5" />}
-                  onClick={() =>
-                    wrap(async () => {
-                      if (await review([{ ref: r.code, verdict: 'accept', comment, files: files.map((f) => f.id) }])) {
-                        toast.success(t.review.passedWith(r.code))
-                        onDone?.()
-                      }
-                    })
-                  }
-                >
-                  {t.review.passWith}
-                </Button>
-              </span>
-            </Tip>
-            <Button size="sm" variant="primary" loading={busy} disabled={(!comment.trim() && !files.length) || uploading} onClick={revise}>
-              {t.review.sendRevise}
-            </Button>
-          </div>
-        </div>
-      </Collapse>
+      <Seal k={r.code} />
+      <div className="pt-3 sm:pl-10" onClick={stop}>
+        <Verdict note={comment} onNote={setComment} files={files} onFiles={setFiles} incoming={incoming} onIncoming={() => setIncoming([])} onPass={pass} onBack={back} pendingKey={r.code} />
+      </div>
     </div>
     </Ctx>
     </AnnotateTarget.Provider>
   )
 }
 
-// ReviewList：一组待验收需求；两条以上时可以全部通过。
-export function ReviewList({ items, className, scroll, undoable }: { items: Requirement[]; className?: string; scroll?: boolean; undoable?: boolean }) {
-  const { review } = useActions()
-  const [busy, wrap] = useBusy()
+// ReviewList：一组待验收需求；两条以上时可以全部通过（同样走撤销，toast 里一次撤销全部）。
+export function ReviewList({ items, className, scroll, advice }: { items: Requirement[]; className?: string; scroll?: boolean; advice?: boolean }) {
+  const verdict = useReqVerdict()
+  const pend = usePendingMap()
   if (!items.length) return null
+  const rest = items.filter((r) => !pend.has(r.code))
   return (
     <div className={cx('space-y-2', className)}>
       <div className={cx(scroll && 'max-h-[420px] overflow-y-auto overscroll-contain pr-1')}>
         <List space={8}>
           {items.map((r) => (
             <Item key={r.id} space={8}>
-              <ReviewRow r={r} undoable={undoable} />
+              <ReviewRow r={r} advice={advice} />
             </Item>
           ))}
         </List>
       </div>
-      {items.length > 1 && (
+      {rest.length > 1 && (
         <div className="flex justify-end pt-1">
-          <Button
-            size="sm"
-            icon={<CheckCheck className="size-3.5" />}
-            loading={busy}
-            onClick={() =>
-              wrap(async () => {
-                if (await review(items.map((r) => ({ ref: r.code, verdict: 'accept' as const })))) toast.success(t.review.passed(items.map((r) => r.code).join('、')))
-              })
-            }
-          >
-            {t.review.passAll(items.length)}
+          <Button size="sm" icon={<CheckCheck className="size-3.5" />} onClick={() => verdict.passMany(rest.map((r) => r.code))}>
+            {t.verdict.passAll(rest.length)}
           </Button>
         </div>
       )}
