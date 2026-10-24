@@ -162,12 +162,26 @@ export function PlanChips({ className }: { className?: string }) {
 const ringOf: Record<string, string> = { 'bg-run': 'ring-run', 'bg-accent': 'ring-accent', 'bg-reply': 'ring-reply', 'bg-wait': 'ring-wait' }
 
 // RecentRail：最近动态串成一条竖线，内容多时在卡片内部滚动。
-export function RecentRail({ now, className, limit = 14 }: { now: number; className?: string; limit?: number }) {
-  const recent = useRecent(undefined, limit)
+// fill：按列表区的可用高度算条数（R-187），把卡片填满；窗口 / 栏高变化时跟着重算。
+export function RecentRail({ now, className, limit = 14, fill }: { now: number; className?: string; limit?: number; fill?: boolean }) {
+  const [box, setBox] = useState<HTMLUListElement | null>(null)
+  const [fit, setFit] = useState(0)
+  useEffect(() => {
+    if (!box || !fill) return
+    const calc = () => {
+      const row = box.querySelector('li')?.getBoundingClientRect().height || 29
+      setFit(Math.max(4, Math.floor((box.clientHeight - 2) / row)))
+    }
+    const ro = new ResizeObserver(calc)
+    ro.observe(box)
+    calc()
+    return () => ro.disconnect()
+  }, [box, fill])
+  const recent = useRecent(undefined, fill && fit ? fit : limit)
   return (
     <Panel title={t.desk.recentTitle} className={cx('flex min-h-0 flex-col', className)}>
       {recent.length ? (
-        <ul className="desk-scroll relative -mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+        <ul ref={setBox} className="desk-scroll relative -mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           <span aria-hidden className="absolute top-2.5 bottom-2.5 left-[4px] w-px bg-line-strong" />
           {recent.map((e, i) => (
             <li key={i} className="relative grid grid-cols-[9px_minmax(0,1fr)_auto] items-baseline gap-2.5 py-[5px] text-[12.5px] text-fg-2">
