@@ -77,9 +77,10 @@ func TestWithdrawDecision(t *testing.T) {
 
 	// 网页关闭待决策，可注明被取代
 	third := raise("claude:b", "又一个？")
+	fourth := raise("claude:b", "替代它的？")
 	var closed store.Decision
-	e.call("POST", "/api/decisions/"+third.Code+"/close", map[string]any{"reason": "不用问了", "replaced_by": nw.Code}, &closed)
-	if closed.Status != store.DecClosed || closed.CloseReason != "不用问了" || closed.ReplacedBy != nw.Code {
+	e.call("POST", "/api/decisions/"+third.Code+"/close", map[string]any{"reason": "不用问了", "replaced_by": fourth.Code}, &closed)
+	if closed.Status != store.DecClosed || closed.CloseReason != "不用问了" || closed.ReplacedBy != fourth.Code {
 		t.Fatalf("网页关闭应写入原因与取代：%+v", closed)
 	}
 	var list struct {

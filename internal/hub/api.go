@@ -1439,7 +1439,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			Body struct {
 				SessionKey string `json:"session_key,omitempty"`
 				Reason     string `json:"reason,omitempty" doc:"撤回原因"`
-				ReplacedBy string `json:"replaced_by,omitempty" doc:"取代它的决策编号，如 D-142"`
+				ReplacedBy string `json:"replaced_by,omitempty" doc:"取代它的决策编号，如 D-142；必须仍待用户答复，已关闭 / 已撤回 / 已答复或会形成回环时拒绝"`
 			}
 		}) (*decisionOut, error) {
 			d, err := h.store.WithdrawDecision(ctx, in.Ref, in.Body.SessionKey, in.Body.Reason, in.Body.ReplacedBy)

@@ -446,27 +446,87 @@ func (s *Store) DecisionsBetween(ctx context.Context, from, to time.Time) ([]Dec
 }
 
 // CloseDecision 关闭决策，不再注入。reason 与 replacedBy（取代它的决策编号）可为空，写入后在时间线上显示（R-136）。
+// 写了 replacedBy 时，目标必须仍待用户答复、且不会形成回环；检查与关闭在同一事务里（R-168），
+// 防止两个会话同时互相撤回、两条都关闭而用户面板上什么都不剩。
 func (s *Store) CloseDecision(ctx context.Context, ref, reason, replacedBy string) (Decision, error) {
 	d, err := s.GetDecision(ctx, ref)
 	if err != nil {
 		return d, err
 	}
 	replacedBy = strings.TrimSpace(replacedBy)
-	if replacedBy != "" {
-		nd, err := s.GetDecision(ctx, replacedBy)
-		if err != nil {
-			return d, fmt.Errorf("取代它的决策不存在：%s", replacedBy)
+	err = s.tx(ctx, func(t *sql.Tx) error {
+		if replacedBy != "" {
+			code, err := checkReplacement(ctx, t, d, replacedBy)
+			if err != nil {
+				return err
+			}
+			replacedBy = code
 		}
-		if nd.ID == d.ID {
-			return d, errors.New("不能被自己取代")
-		}
-		replacedBy = nd.Code
-	}
-	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, close_reason = ?, replaced_by = ? WHERE id = ?`, DecClosed, strings.TrimSpace(reason), replacedBy, d.ID)
+		_, err := t.ExecContext(ctx, `UPDATE decisions SET status = ?, close_reason = ?, replaced_by = ? WHERE id = ?`, DecClosed, strings.TrimSpace(reason), replacedBy, d.ID)
+		return err
+	})
 	if err != nil {
 		return d, err
 	}
 	return s.GetDecision(ctx, d.ID)
+}
+
+// checkReplacement 在事务里校验 d 被 target 取代是否成立，返回 target 的规范编号。
+func checkReplacement(ctx context.Context, t *sql.Tx, d Decision, target string) (string, error) {
+	type row struct {
+		id, status, replacedBy string
+		seq                    int
+	}
+	load := func(ref string) (row, error) {
+		var r row
+		var q string
+		var arg any
+		if seq, ok := parseRef(ref, "D"); ok {
+			q, arg = `WHERE seq = ?`, seq
+		} else {
+			q, arg = `WHERE id = ?`, ref
+		}
+		err := t.QueryRowContext(ctx, `SELECT id, seq, status, replaced_by FROM decisions `+q, arg).Scan(&r.id, &r.seq, &r.status, &r.replacedBy)
+		return r, err
+	}
+	tg, err := load(target)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("取代它的决策 %s 不存在，请先确认编号；不确定就不要注明 replaced_by", target)
+	}
+	if err != nil {
+		return "", err
+	}
+	code := fmt.Sprintf("D-%d", tg.seq)
+	if tg.id == d.ID {
+		return "", errors.New("不能被自己取代")
+	}
+	// 回环：顺着 replaced_by 一路走，走回本决策就是环（含多跳）。
+	cur, seen := tg, map[string]bool{tg.id: true}
+	for cur.replacedBy != "" {
+		nx, err := load(cur.replacedBy)
+		if err != nil {
+			break
+		}
+		if nx.id == d.ID {
+			return "", fmt.Errorf("%s 已（直接或间接）被 %s 取代，再指向它会形成回环，请先确认；改指向仍待答的决策，或不注明取代", code, d.Code)
+		}
+		if seen[nx.id] {
+			break
+		}
+		seen[nx.id] = true
+		cur = nx
+	}
+	if tg.status != DecPending {
+		st := "已不在等用户答复"
+		switch tg.status {
+		case DecClosed:
+			st = "已关闭 / 已撤回"
+		case DecAnswered, DecDelivered:
+			st = "用户已答复"
+		}
+		return "", fmt.Errorf("取代它的决策 %s %s，不能再作为取代目标：被替换的那条已经不开着，用户面板上不会剩下问题。请先确认，改指向仍待答的决策，或不注明取代", code, st)
+	}
+	return code, nil
 }
 
 // WithdrawDecision 是 Agent 撤回自己提的、还没答复的决策（R-136）：只能撤回本会话提的 decision 类、
