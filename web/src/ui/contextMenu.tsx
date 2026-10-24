@@ -10,7 +10,7 @@ import { t } from '../i18n'
 // 菜单项和下拉菜单同一种样式；支持一层子菜单（例如“改状态”）。
 
 export type CtxItem =
-  | { type?: 'item'; label: ReactNode; icon?: ReactNode; onSelect: () => void; danger?: boolean; checked?: boolean; hint?: ReactNode; disabled?: boolean }
+  | { type?: 'item'; label: ReactNode; icon?: ReactNode; onSelect: () => void; danger?: boolean; checked?: boolean; hint?: ReactNode; trailing?: ReactNode; disabled?: boolean }
   | { type: 'sub'; label: ReactNode; icon?: ReactNode; items: CtxItem[] }
   | { type: 'separator' }
   | { type: 'label'; label: ReactNode }
@@ -48,6 +48,7 @@ function Items({ items }: { items: CtxItem[] }) {
               <span className="block truncate">{it.label}</span>
               {it.hint && <span className="block truncate text-xs text-fg-3">{it.hint}</span>}
             </span>
+            {it.trailing && <span className="flex shrink-0 items-center gap-1.5">{it.trailing}</span>}
             {it.checked && <Check className="size-4 shrink-0 text-accent" />}
           </ContextMenu.Item>
         ),
@@ -96,6 +97,7 @@ function Sheet({ items, open, onClose }: { items: CtxItem[]; open: boolean; onCl
                             <span className="block truncate">{x.label}</span>
                             {x.hint && <span className="block truncate text-xs text-fg-3">{x.hint}</span>}
                           </span>
+                          {x.trailing && <span className="flex shrink-0 items-center gap-1.5">{x.trailing}</span>}
                           {x.checked && <Check className="size-5 shrink-0 text-accent" />}
                         </button>
                       ) : x.type === 'label' ? (
@@ -114,6 +116,7 @@ function Sheet({ items, open, onClose }: { items: CtxItem[]; open: boolean; onCl
                   <span className="block truncate">{it.label}</span>
                   {it.hint && <span className="block truncate text-xs text-fg-3">{it.hint}</span>}
                 </span>
+                {it.trailing && <span className="flex shrink-0 items-center gap-1.5">{it.trailing}</span>}
                 {it.checked && <Check className="size-5 shrink-0 text-accent" />}
               </button>
             ),

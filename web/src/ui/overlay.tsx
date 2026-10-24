@@ -334,7 +334,7 @@ function ReasonProvider({ children }: { children: ReactNode }) {
 // ---------- 下拉菜单 ----------
 
 export type MenuItem =
-  | { type?: 'item'; label: ReactNode; icon?: ReactNode; onSelect: () => void; danger?: boolean; checked?: boolean; hint?: ReactNode; disabled?: boolean }
+  | { type?: 'item'; label: ReactNode; icon?: ReactNode; onSelect: () => void; danger?: boolean; checked?: boolean; hint?: ReactNode; trailing?: ReactNode; disabled?: boolean }
   | { type: 'separator' }
   | { type: 'label'; label: ReactNode }
 
@@ -371,6 +371,7 @@ export function Menu({ trigger, items, align = 'end', width }: { trigger: ReactN
                   <span className="block truncate">{it.label}</span>
                   {it.hint && <span className="block truncate text-xs text-fg-3">{it.hint}</span>}
                 </span>
+                {it.trailing && <span className="flex shrink-0 items-center gap-1.5">{it.trailing}</span>}
                 {it.checked && <Check className="size-4 shrink-0 text-accent" />}
               </DropdownMenu.Item>
             ),

@@ -100,13 +100,13 @@ export function targetItems(sessions: Session[], projectId: string | null | unde
     out.push({ type: 'label', label: t.assign.group[g] })
     for (const s of part)
       out.push({
-        // 状态跟在标题后面，第二行放项目 · 设备 · 上下文，窄菜单里也不会被截掉（R-60）
-        label: (
-          <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className="truncate">{sessionTitle(s)}</span>
-            {s.role && <RoleTag role={s.role} presence={presence(s) || undefined} className="self-center" />}
-            <span className="shrink-0 text-xs text-fg-3">{t.state[displayState(s)]}</span>
-          </span>
+        // 第一行只放标题；身份标和状态作为一组靠右、上下居中（R-173），标题过长只截断标题；第二行放项目 · 设备 · 上下文（R-60）
+        label: <span className="block truncate">{sessionTitle(s)}</span>,
+        trailing: (
+          <>
+            {s.role && <RoleTag role={s.role} presence={presence(s) || undefined} />}
+            <span className="text-xs text-fg-3">{t.state[displayState(s)]}</span>
+          </>
         ),
         hint: (
           <span className="flex min-w-0 items-center gap-1.5">
