@@ -65,6 +65,7 @@ type Daemon struct {
 	orph          orphanState            // 孤儿 / 已脱离的后台进程（R-209）
 	direct        chan protocol.Envelope // 不落盘、连着 Hub 时直接发的消息（孤儿列表、停止结果）
 	orphanKick    chan struct{}
+	usage         *usageScanner // token 用量（R-206）
 }
 
 type toolUse struct {
@@ -97,6 +98,10 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	}
 	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
 	d.toolCond = sync.NewCond(&d.mu)
+	if d.usage, err = openUsage(q.db); err != nil {
+		q.close()
+		return nil, fmt.Errorf("打开用量记录失败：%w", err)
+	}
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(hub)
@@ -137,6 +142,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.log.Info("daemon 已启动", "socket", sock, "hub", d.cfg.HubURL)
 	go d.watchInstances(ctx)
 	go d.watchTasks(ctx)
+	go d.watchUsage(ctx)
 
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -189,6 +195,7 @@ func (d *Daemon) session(ctx context.Context) error {
 	d.setConnected(true)
 	d.log.Info("已连接 Hub")
 	d.resendOrphans()
+	d.usage.reset()
 
 	readErr := make(chan error, 1)
 	acked := make(chan struct{}, 1)
@@ -257,6 +264,8 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		if err := d.q.ack(e.Ack); err != nil {
 			d.log.Warn("清理已确认消息失败", "err", err)
 		}
+	case protocol.MsgUsageAck:
+		d.usage.acked(e.Ack)
 	case protocol.MsgDecisions:
 		for _, dec := range e.Decisions {
 			for _, f := range dec.Files {
@@ -464,6 +473,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if tp := str(p, "transcript_path"); tp != "" {
 		info.transcript = tp
 	}
+	transcript := info.transcript
 	if ev.Cwd != "" {
 		info.cwd = ev.Cwd
 	}
@@ -482,6 +492,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)
 	}
 	d.noteTaskEvent(key, p, &ev)
+	if d.usage != nil {
+		d.usage.track(key, transcript)
+	}
 	return ev, true
 }
 

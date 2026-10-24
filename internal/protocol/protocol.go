@@ -145,6 +145,8 @@ const (
 	MsgOrphans     = "orphans"      // daemon → hub：本机会话结束后还在跑（或已脱离 Agent）的后台进程全集（覆盖式，R-209）
 	MsgStopProc    = "stop_proc"    // hub → daemon：停止其中一个（daemon 核对 pid + 启动时间后才发信号）
 	MsgStopResult  = "stop_result"  // daemon → hub：停止结果
+	MsgUsage       = "usage"        // daemon → hub：按分钟汇总的 token 用量与冷启动（只有数字，R-206）
+	MsgUsageAck    = "usage_ack"    // hub → daemon：已存下的用量批次（Ack 里是批次号）
 )
 
 // DeviceConfig 是 Hub 下发给 daemon 的运行配置。
@@ -169,6 +171,46 @@ type Envelope struct {
 	Orphans     []OrphanProc      `json:"orphans,omitempty"`
 	StopProc    *StopProc         `json:"stop_proc,omitempty"`
 	StopResult  *StopResult       `json:"stop_result,omitempty"`
+	// token 用量（R-206）：Batch 是批次号，Hub 存好后用 MsgUsageAck 回这个号
+	Batch string        `json:"batch,omitempty"`
+	Usage []UsageMinute `json:"usage,omitempty"`
+	Colds []ColdStart   `json:"colds,omitempty"`
+}
+
+// UsageMinute 是本机从对话记录里读出的、某会话（或子任务）某模型某一分钟的 token 用量累计值（绝对值，Hub 直接覆盖，重发不重复计）。
+// 只有会话键、子任务编号、模型名和数字，不带对话内容（R-206）。
+type UsageMinute struct {
+	Key      string `json:"k"`
+	Agent    string `json:"a,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Minute   int64  `json:"m"`    // Unix 分钟
+	Input    int64  `json:"in"`   // 没命中缓存的输入
+	CacheW   int64  `json:"cw"`   // 写缓存（含两个档位）
+	CacheW1h int64  `json:"cw1h"` // 其中写进 1 小时档的（其余是 5 分钟档）
+	CacheR   int64  `json:"cr"`   // 读缓存（只算命中率）
+	Output   int64  `json:"out"`  // 输出
+	Requests int    `json:"n"`    // 回复次数（去重后）
+}
+
+// 冷启动起因（R-206）。
+const (
+	ColdIdle    = "idle"    // 闲置超过缓存档位
+	ColdCompact = "compact" // 上下文压缩
+	ColdModel   = "model"   // 换了模型
+	ColdFirst   = "start"   // 这份记录的第一次回复
+	ColdOther   = "other"   // 看不出起因
+)
+
+// ColdStart 是一次缓存重建：单次回复写缓存（Codex 是未命中缓存的输入）超过阈值。
+type ColdStart struct {
+	Key       string `json:"k"`
+	Agent     string `json:"a,omitempty"`
+	Model     string `json:"model,omitempty"`
+	At        int64  `json:"at"`     // Unix 毫秒
+	Tokens    int64  `json:"tokens"` // 这次重算的 token 数
+	Cause     string `json:"cause" enum:"idle,compact,model,start,other"`
+	IdleMin   int    `json:"idle_min"` // 距上一次回复多少分钟（第一次回复为 0）
+	PrevModel string `json:"prev_model,omitempty"`
 }
 
 // 后台进程状态（R-209）。

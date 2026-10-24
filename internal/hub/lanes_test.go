@@ -96,3 +96,55 @@ func TestLanePushOnlyChangedMinute(t *testing.T) {
 		t.Fatalf("会话简要信息 = %+v", out.Body.Sessions)
 	}
 }
+
+// token 用量（R-206）：daemon 发来的一批存好后回批次号，并推给网页（只带数字）。
+func TestLaneUsageAckAndPush(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h := New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	oldDelay := lanePushDelay
+	lanePushDelay = 20 * time.Millisecond
+	defer func() { lanePushDelay = oldDelay }()
+	ctx := context.Background()
+	dev, err := st.CreateDevice(ctx, "d", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &sub{ch: make(chan string, 64)}
+	h.broker.subs[s] = struct{}{}
+	c := &deviceConn{dev: dev, out: make(chan protocol.Envelope, 4)}
+	m := time.Now().Unix() / 60
+	h.handleDeviceMsg(ctx, c, protocol.Envelope{Type: protocol.MsgUsage, Batch: "b1",
+		Usage: []protocol.UsageMinute{{Key: "claude:s1", Minute: m, Input: 3, CacheW: 20000, CacheR: 100, Output: 9, Requests: 1}},
+		Colds: []protocol.ColdStart{{Key: "claude:s1", At: m * 60000, Tokens: 20000, Cause: protocol.ColdFirst}}})
+	select {
+	case e := <-c.out:
+		if e.Type != protocol.MsgUsageAck || len(e.Ack) != 1 || e.Ack[0] != "b1" {
+			t.Fatalf("回执 = %+v", e)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("没有回执")
+	}
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case msg := <-s.ch:
+			if !strings.HasPrefix(msg, "event: lane\n") {
+				continue
+			}
+			var p LanePush
+			if err := json.Unmarshal([]byte(strings.TrimSpace(strings.TrimPrefix(msg, "event: lane\ndata: "))), &p); err != nil {
+				t.Fatal(err)
+			}
+			if len(p.Tokens) != 1 || p.Tokens[0].Tok.CW != 20000 || p.Tokens[0].Hour.CW != 20000 || len(p.Colds) != 1 {
+				t.Fatalf("推送 = %+v", p)
+			}
+			return
+		case <-deadline:
+			t.Fatal("没有推送")
+		}
+	}
+}

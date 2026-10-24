@@ -330,7 +330,7 @@ CREATE TABLE IF NOT EXISTS commits (
 -- 工作台泳道时间线（R-205）：每个会话、每个子任务每分钟的工具调用次数（PreToolUse）。
 -- agent_id 为空是主会话那条。新事件只把它所在那一分钟加一，算过的分钟不再重算（daemon 断线重放的迟到事件补进它真实的那一分钟）。
 -- minute 是 Unix 分钟（秒 / 60）。保留 30 天；lane_hours 同时按小时累计（近 1 周档直接读它），30 天前的只剩小时级。
--- 以后的 token 用量（R-206）等按分钟的指标在这两张表上加列。
+-- token 用量（R-206）按模型分行，放在旁表 lane_tokens / lane_token_hours。
 CREATE TABLE IF NOT EXISTS lane_minutes (
 	session_key TEXT NOT NULL,
 	agent_id    TEXT NOT NULL DEFAULT '',
@@ -373,3 +373,49 @@ CREATE TABLE IF NOT EXISTS lane_agents (
 	ended_ms    INTEGER,
 	PRIMARY KEY (session_key, agent_id)
 );
+
+-- token 用量（R-206）：各设备 daemon 从对话记录读出、按分钟汇总上传的数字（不含对话内容），每个会话 / 子任务、每个模型、每分钟一行。
+-- inp 没命中缓存的输入，cw 写缓存（cw1h 是其中 1 小时档的，其余 5 分钟档），cr 读缓存，out 输出，n 回复次数。新算 = inp + cw + out；命中率 = cr / (cr + inp + cw)。
+-- daemon 发的是累计值（绝对值），这里直接覆盖，重发不重复计；lane_token_hours 由同一小时的分钟重新求和。保留与压缩和 lane_minutes 一样。
+CREATE TABLE IF NOT EXISTS lane_tokens (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	model       TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL,
+	inp         INTEGER NOT NULL DEFAULT 0,
+	cw          INTEGER NOT NULL DEFAULT 0,
+	cw1h        INTEGER NOT NULL DEFAULT 0,
+	cr          INTEGER NOT NULL DEFAULT 0,
+	out         INTEGER NOT NULL DEFAULT 0,
+	n           INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute, model)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_tokens_minute ON lane_tokens(minute);
+CREATE TABLE IF NOT EXISTS lane_token_hours (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	model       TEXT NOT NULL DEFAULT '',
+	minute      INTEGER NOT NULL, -- 整点的 Unix 分钟
+	inp         INTEGER NOT NULL DEFAULT 0,
+	cw          INTEGER NOT NULL DEFAULT 0,
+	cw1h        INTEGER NOT NULL DEFAULT 0,
+	cr          INTEGER NOT NULL DEFAULT 0,
+	out         INTEGER NOT NULL DEFAULT 0,
+	n           INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, agent_id, minute, model)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS lane_token_hours_minute ON lane_token_hours(minute);
+
+-- 冷启动（R-206）：单次回复写缓存超过 1.5 万 token。cause：idle 闲置 / compact 上下文压缩 / model 换模型 / start 第一次回复 / other。保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_colds (
+	session_key TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	at_ms       INTEGER NOT NULL,
+	model       TEXT NOT NULL DEFAULT '',
+	tokens      INTEGER NOT NULL,
+	cause       TEXT NOT NULL,
+	idle_min    INTEGER NOT NULL DEFAULT 0,
+	prev_model  TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (session_key, agent_id, at_ms)
+);
+CREATE INDEX IF NOT EXISTS lane_colds_at ON lane_colds(at_ms);

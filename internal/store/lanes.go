@@ -30,7 +30,7 @@ const (
 )
 
 // LaneRow 是一个会话（agent 为空）或一个子任务在时间范围内有调用的格子（每分钟或每小时），按时间升序。
-// 以后的按分钟指标（token 用量，R-206）在这里加与 Calls 平行的数组。
+// token 用量（R-206）按模型分行，另在 LaneData.Tokens 里。
 type LaneRow struct {
 	Key     string  `json:"k" doc:"会话键"`
 	Agent   string  `json:"a" doc:"子任务的 agent_id；主会话为空"`
@@ -71,6 +71,9 @@ type LaneData struct {
 	Agents []LaneAgent `json:"agents"`
 	// Sessions：范围内有调用的会话的简要信息（长档位里早已结束、不在会话列表里的会话也要能画出标题）
 	Sessions []LaneSession `json:"sessions"`
+	// token 用量（R-206）：本机读得到对话记录的会话才有；没有的会话不画下半部分
+	Tokens []LaneTok  `json:"tok"`
+	Colds  []LaneCold `json:"colds" doc:"范围内的冷启动（缓存重建）"`
 }
 
 // LaneSession 是时间线上一个会话的简要信息。
@@ -312,6 +315,8 @@ type LaneWrite struct {
 	Minute *LaneMinute
 	Spans  []LaneSpan
 	Agents []LaneAgent
+	Tokens []LaneTokMinute // token 用量（R-206）
+	Colds  []LaneCold
 }
 
 // ApplyLane 把一条事件的影响写进汇总表。
@@ -483,6 +488,9 @@ func (s *Store) Lanes(ctx context.Context, from, to time.Time, hourly bool) (Lan
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
+	if out.Tokens, out.Colds, err = s.laneTokens(ctx, out.From, out.To, hourly); err != nil {
+		return out, err
+	}
 	fromMs, toMs := out.From*60000, out.To*60000
 	srows, err := s.db.QueryContext(ctx, `SELECT session_key, agent_id, kind, ref, label, start_ms, end_ms, until_ms FROM lane_spans
 		WHERE start_ms < ? AND (end_ms IS NULL OR end_ms >= ?) ORDER BY start_ms`, toMs, fromMs)
@@ -538,7 +546,8 @@ func (s *Store) Lanes(ctx context.Context, from, to time.Time, hourly bool) (Lan
 	}
 	qrows, err := s.db.QueryContext(ctx, `SELECT s.key, s.title, s.role, s.tool, COALESCE(s.project_id, ''), COALESCE(p.name, ''), s.cwd, s.background, s.last_active_at, s.ended_at
 		FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
-		WHERE s.key IN (SELECT DISTINCT session_key FROM lane_hours WHERE minute >= ? AND minute < ?)`, out.From/60*60, out.To)
+		WHERE s.key IN (SELECT session_key FROM lane_hours WHERE minute >= ? AND minute < ? UNION SELECT session_key FROM lane_token_hours WHERE minute >= ? AND minute < ?)`,
+		out.From/60*60, out.To, out.From/60*60, out.To)
 	if err != nil {
 		return out, err
 	}
@@ -567,7 +576,13 @@ func (s *Store) CompactLanes(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM lane_tokens WHERE minute < ?`, unixMinute(cut)); err != nil {
+		return int(n), err
+	}
 	c := ms(cut)
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM lane_colds WHERE at_ms < ?`, c); err != nil {
+		return int(n), err
+	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM lane_spans WHERE start_ms < ? AND (end_ms < ? OR (end_ms IS NULL AND COALESCE(until_ms, 0) < ?))`, c, c, c); err != nil {
 		return int(n), err
 	}

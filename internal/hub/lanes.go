@@ -25,18 +25,33 @@ type laneState struct {
 	mins   map[string]store.LaneMinute
 	spans  map[string]store.LaneSpan
 	agents map[string]store.LaneAgent
+	toks   map[string]store.LaneTokMinute
+	colds  []store.LaneCold
 	tmr    *time.Timer
 }
 
 func newLaneState() *laneState {
-	return &laneState{tracker: store.NewLaneTracker(), mins: map[string]store.LaneMinute{}, spans: map[string]store.LaneSpan{}, agents: map[string]store.LaneAgent{}}
+	return &laneState{tracker: store.NewLaneTracker(), mins: map[string]store.LaneMinute{}, spans: map[string]store.LaneSpan{}, agents: map[string]store.LaneAgent{}, toks: map[string]store.LaneTokMinute{}}
 }
 
-// LanePush 是一条实时推送：变了的格子、时段与子任务。
+// LanePush 是一条实时推送：变了的格子、时段与子任务，以及 token 用量的格子和新的冷启动（R-206）。
 type LanePush struct {
-	Minutes []store.LaneMinute `json:"m"`
-	Spans   []store.LaneSpan   `json:"s"`
-	Agents  []store.LaneAgent  `json:"g"`
+	Minutes []store.LaneMinute    `json:"m"`
+	Spans   []store.LaneSpan      `json:"s"`
+	Agents  []store.LaneAgent     `json:"g"`
+	Tokens  []store.LaneTokMinute `json:"t"`
+	Colds   []store.LaneCold      `json:"c"`
+}
+
+// laneUsage 存下 daemon 上传的一批 token 用量（只有数字），并推给网页。存好了返回真（daemon 据此不再重发）。
+func (h *Hub) laneUsage(ctx context.Context, us []protocol.UsageMinute, cs []protocol.ColdStart) bool {
+	mins, colds, err := h.store.ApplyUsage(ctx, us, cs, time.Now())
+	if err != nil {
+		h.log.Warn("记录 token 用量失败", "err", err)
+		return false
+	}
+	h.lanePush(store.LaneWrite{Tokens: mins, Colds: colds})
+	return true
 }
 
 var lanePushDelay = 300 * time.Millisecond
@@ -78,7 +93,7 @@ func (h *Hub) laneEvent(ctx context.Context, key string, ev protocol.Event) {
 
 // lanePush 把变化攒 300ms 再推；同一格只推最新值。
 func (h *Hub) lanePush(w store.LaneWrite) {
-	if w.Minute == nil && len(w.Spans) == 0 && len(w.Agents) == 0 {
+	if w.Minute == nil && len(w.Spans) == 0 && len(w.Agents) == 0 && len(w.Tokens) == 0 && len(w.Colds) == 0 {
 		return
 	}
 	l := h.lanes
@@ -93,12 +108,19 @@ func (h *Hub) lanePush(w store.LaneWrite) {
 	for _, a := range w.Agents {
 		l.agents[a.Key+"\x00"+a.Agent] = a
 	}
+	for _, t := range w.Tokens {
+		l.toks[fmt.Sprintf("%s\x00%s\x00%s\x00%d", t.Key, t.Agent, t.Model, t.Minute)] = t
+	}
+	l.colds = append(l.colds, w.Colds...)
 	if l.tmr != nil {
 		return
 	}
 	l.tmr = time.AfterFunc(lanePushDelay, func() {
 		l.qmu.Lock()
-		p := LanePush{Minutes: []store.LaneMinute{}, Spans: []store.LaneSpan{}, Agents: []store.LaneAgent{}}
+		p := LanePush{Minutes: []store.LaneMinute{}, Spans: []store.LaneSpan{}, Agents: []store.LaneAgent{}, Tokens: []store.LaneTokMinute{}, Colds: append([]store.LaneCold{}, l.colds...)}
+		for _, t := range l.toks {
+			p.Tokens = append(p.Tokens, t)
+		}
 		for _, m := range l.mins {
 			p.Minutes = append(p.Minutes, m)
 		}
@@ -109,6 +131,7 @@ func (h *Hub) lanePush(w store.LaneWrite) {
 			p.Agents = append(p.Agents, a)
 		}
 		l.mins, l.spans, l.agents = map[string]store.LaneMinute{}, map[string]store.LaneSpan{}, map[string]store.LaneAgent{}
+		l.toks, l.colds = map[string]store.LaneTokMinute{}, nil
 		l.tmr = nil
 		l.qmu.Unlock()
 		h.broker.publishLane(p)
@@ -184,5 +207,5 @@ func (h *Hub) getLanes(ctx context.Context, in *lanesIn) (*lanesOut, error) {
 
 func (h *Hub) registerLanesWeb(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "get-lanes", Method: http.MethodGet, Path: "/api/lanes", Tags: []string{"sessions"},
-		Summary: "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）"}, h.getLanes)
+		Summary: "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）"}, h.getLanes)
 }
