@@ -5,7 +5,7 @@ import { t } from '../i18n'
 import { passedWith } from './plans'
 
 // 最近动态：跨会话汇总交证据、退回、留言、派活、完成与决策答复。项目页与工作台右栏共用。
-export type RecentItem = { at: string; code: string; text: string; dot: string }
+export type RecentItem = { at: string; code: string; text: string; dot: string; stage?: boolean }
 
 export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): RecentItem[] {
   const all = useRequirements()
@@ -35,7 +35,7 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
           if (!st.passed_at) continue
           // 随前一个阶段自动通过的不算你通过的（R-211）
           const by = passedWith(x, st)
-          out.push({ at: st.passed_at, code: x.code, text: by ? t.projects.evStageWith(x.code, st.seq, st.title, by) : t.projects.evStage(x.code, st.seq, st.title), dot: 'bg-run' })
+          out.push({ at: st.passed_at, code: x.code, text: by ? t.projects.evStageWith(x.code, st.seq, st.title, by) : t.projects.evStage(x.code, st.seq, st.title), dot: 'bg-run', stage: true })
         }
     return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit)
   }, [list, projectId, limit, decisions.data, plans.data])

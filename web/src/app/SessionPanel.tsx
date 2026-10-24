@@ -15,6 +15,8 @@ import { DecisionRow } from './DecisionCard'
 import { useOpenAsk } from './nav'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { AskItem, decisionAsk } from './asks'
+import { decKey } from './outbox'
+import { usePendingMap } from './verdict'
 import { CtxRing, ctxLoad, useAssign } from './assign'
 import { canHandoff, CompactRow, HandoffCard, HandoffIcon, useRequestHandoff, type Handoff } from './compact'
 import { NewReqModal } from './requirements'
@@ -178,7 +180,9 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const shown = peek.stack.length === 1 ? peek.stack[0] : null
   const s: Session | undefined = q.data?.session
   const mine = (decisions.data ?? []).filter((d) => d.session_key === sessionKey)
-  const pending = mine.filter((d) => d.status === 'pending')
+  const pendMap = usePendingMap()
+  // 撤销期一结束就在本地离开（R-230）
+  const pending = mine.filter((d) => d.status === 'pending' && !(pendMap.get(decKey(d.code))?.phase && pendMap.get(decKey(d.code))?.phase !== 'wait'))
   // 能交给它开工的需求：没做完、没锁在计划后面阶段、不是它已经在做的；同项目、高优先级排前面
   const rank: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
   const givable = (reqs.data ?? [])

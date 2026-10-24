@@ -387,3 +387,31 @@ export function Linkify({ text, label, flow }: { text: string; label?: 'code' | 
   if (parts.length === 1) return <>{text}</>
   return <>{parts.map((p, i) => (i % 2 ? <RefText key={i} code={p} label={label} flow={flow} /> : p))}</>
 }
+
+// RefLine：一句动态。窄栏放不下时先截句尾（阶段名、留言），对象的印记收窄标题但不被整个吞掉（R-231：
+// 以前整句一起截断，印记放不下时整个对象变成一个省略号，只剩「你通过了 …」）。
+export function RefLine({ text, label }: { text: string; label?: 'code' | 'title' }) {
+  const parts = text.split(refPattern)
+  const last = parts.length - 1
+  return (
+    <span className="flex min-w-0 items-baseline gap-x-1 overflow-hidden whitespace-nowrap">
+      {parts.map((p, i) =>
+        i % 2 ? (
+          <span key={i} className={label === 'code' ? 'flex shrink-0' : 'flex min-w-0 shrink [&>.ref-chip]:min-w-0 [&>.ref-chip]:shrink'}>
+            <RefText code={p} label={label} />
+          </span>
+        ) : i === last && p.includes('：') ? (
+          // 句尾「阶段 2：标题」「：留言内容」——冒号前的（阶段几）一定看全，冒号后的才截
+          <span key={i} className="flex shrink-[3]">
+            {p.slice(0, p.indexOf('：')).trim() && <span className="shrink-0">{p.slice(0, p.indexOf('：')).trim()}</span>}
+            <span className="min-w-[2em] truncate">{p.slice(p.indexOf('：')).trim()}</span>
+          </span>
+        ) : p.trim() ? (
+          <span key={i} className="shrink-0">
+            {p.trim()}
+          </span>
+        ) : null,
+      )}
+    </span>
+  )
+}

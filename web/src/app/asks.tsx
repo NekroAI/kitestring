@@ -15,7 +15,7 @@ import { Check, Undo2 } from 'lucide-react'
 import { SwipeRow, type RowAction } from '../ui/gesture'
 import { useAskReason } from '../ui/overlay'
 import { composeAnswer, decKey, useOutbox } from './outbox'
-import { PendingCover, usePending, useReqVerdict } from './verdict'
+import { PendingCover, usePending, usePendingMap, useReqVerdict } from './verdict'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
@@ -89,6 +89,35 @@ export function buildAsks(wb: WB): Ask[] {
 
 export function useAsks(wb: WB) {
   return useMemo(() => buildAsks(wb), [wb])
+}
+
+// pendingKeyOf：这件事在撤销期 / 盖印中用的键（与 Verdict 的 pendingKey、发件箱的 decKey 一致）。
+export function pendingKeyOf(a: Ask | undefined) {
+  if (!a) return undefined
+  if (a.kind === 'review') return a.code
+  if (a.kind === 'plan') return `plan:${a.code}`
+  if (a.kind === 'stage') return `stage:${a.code}:${a.stage}`
+  if (a.d && (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request')) return decKey(a.d.code)
+  return undefined
+}
+
+// useLeft：撤销期一结束（进入盖印 / 已提交）这件事就在本地离开「要你处理」，不等服务端刷新（R-230，原则第 8 条）；
+// 撤销期里（wait）还在列表里，元素上盖着撤销条；提交失败时调度器放掉这件事，它自己回到列表（带进场动画）。
+// 只管列表和件数；审批抽屉的队列仍按完整的 asks 走（已下判断的事在抽屉里照常显示印章）。
+export function useLeft() {
+  const pend = usePendingMap()
+  return (a: Ask) => {
+    const k = pendingKeyOf(a)
+    const e = k ? pend.get(k) : undefined
+    return !!e && e.act !== 'move' && e.phase !== 'wait'
+  }
+}
+
+// useStaying：去掉已经离开的，结果按内容稳定（调度器的状态变了才换数组，别处的 useMemo 不会白算）。
+export function useStaying(all: Ask[]) {
+  const left = useLeft()
+  const gone = all.filter(left).map((a) => a.key).join('|')
+  return useMemo(() => (gone ? all.filter((a) => !gone.split('|').includes(a.key)) : all), [all, gone])
 }
 
 export { useOpenAsk } from './nav'

@@ -11,7 +11,7 @@ import { Pager } from '../ui/gesture'
 import { RoleBadge } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
-import { askKindLabel, askTitle, buildAsks, decisionKind, type Ask } from './asks'
+import { askKindLabel, askTitle, buildAsks, decisionKind, pendingKeyOf, type Ask } from './asks'
 import { useKsEvent } from './command'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import { ProxyNote, OverrideBox } from './grant'
@@ -19,7 +19,6 @@ import { useWorkbench } from './inbox'
 import { useGoBack, useOpenSession } from './nav'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { AdviceNote } from './morning'
-import { decKey } from './outbox'
 import { PlanBody } from './plans'
 import { ReplyBox } from './replyBox'
 import { BackButton, DrawerSkeleton, ReqView } from './reqDrawer'
@@ -36,16 +35,6 @@ import { useAdvance, usePendingMap } from './verdict'
 
 type Dir = 'next' | 'prev' | 'pass'
 
-
-// pendingKeyOf：这件事在撤销期 / 盖印中用的键（与 Verdict 的 pendingKey、发件箱的 decKey 一致）。
-function pendingKeyOf(a: Ask | undefined) {
-  if (!a) return undefined
-  if (a.kind === 'review') return a.code
-  if (a.kind === 'plan') return `plan:${a.code}`
-  if (a.kind === 'stage') return `stage:${a.code}:${a.stage}`
-  if (a.d && (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request')) return decKey(a.d.code)
-  return undefined
-}
 
 // useDecided：这件事已经下了判断（撤销期、盖印中或已提交）。
 function useDecided(a: Ask | undefined) {

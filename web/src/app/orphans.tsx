@@ -60,7 +60,12 @@ function OrphanBlock({ now, data }: { now: number; data: NonNullable<ReturnType<
   const [busy, setBusy] = useState<string | null>(null)
   const [showIgnored, setShowIgnored] = useState(false)
   const pend = usePendingMap()
-  const orphans = data.orphans
+  // 撤销期一结束（已提交或在提交）这个进程就在本地离开提醒块，不等重新取数（R-230）；提交失败时放回
+  const gone = (o: Orphan) => {
+    const e = pend.get(ignoreKey(o))
+    return !!e && e.phase !== 'wait'
+  }
+  const orphans = data.orphans.filter((o) => !gone(o))
   const ignored = data.ignored
   const recent = data.stops.filter((s) => now - new Date(s.at).getTime() < RECENT_MS).slice(0, 3)
   if (!orphans.length && !recent.length && !ignored.length) return null

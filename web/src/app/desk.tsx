@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDown, WifiOff } from 'lucide-react'
 import type { MorningReport, Plan, Session } from '../api/client'
 import { useConnected, useDecisions, useMorning, usePlans, useProjects, useRequirements } from '../api/queries'
-import { buildAsks, type Ask } from './asks'
+import { buildAsks, useStaying, type Ask } from './asks'
 import { t } from '../i18n'
 import type { Scene } from '../i18n/zh'
 import { cx, loadPref, relTime, savePref } from '../lib/util'
@@ -11,7 +11,7 @@ import { Skeleton, Tip } from '../ui/base'
 import { Item, List, useSettled } from '../ui/motion'
 import { spring } from '../ui/gesture'
 import { displayState, presence, RoleTag } from '../ui/marks'
-import { Linkify, PlanGlyph, shortTitle } from '../ui/refmark'
+import { Linkify, PlanGlyph, RefLine, shortTitle } from '../ui/refmark'
 import type { ProjectGroup, useWorkbench } from './inbox'
 import { useOpenPlan } from './nav'
 import { needsApproval, passedWith, planState, StageRail } from './plans'
@@ -20,6 +20,7 @@ import { MorningReports } from './morning'
 import { TokBrief, Wind } from './lanes'
 import type { Zoom } from '../lib/lanedata'
 import { Team } from '../pages/Projects'
+import { usePendingMap } from './verdict'
 
 // 工作台的周边部件（R-113 → R-147 → R-170）：顶部唯一的简报位（离开期间小结 / PM 简报，背后一条随活跃度起伏的风）、
 // 窄窗的计划胶囊、右栏「风向」（进行中的计划、最近动态串成一条竖线、队伍固定在底部）、左栏底部「刚处理」。
@@ -66,7 +67,8 @@ export const asking = (s: Session) => {
 // useTodo：计入件数的「要你处理」条目（R-177，app/asks.tsx）：一件事算一件——待验收需求连同挂在它上面的决策算一件，
 // 会话等授权、在问你各算一件；只是一轮做完在等你回复、没有正式问题的会话不算。
 export function useTodo(wb: WB): Ask[] {
-  return useMemo(() => buildAsks(wb).filter((a) => a.counted), [wb])
+  const all = useMemo(() => buildAsks(wb), [wb])
+  return useStaying(all).filter((a) => a.counted)
 }
 
 // ---------- 进行中的计划：右栏 + 手机胶囊 ----------
@@ -216,9 +218,7 @@ export function RecentRail({ now, className, limit = 14, fill }: { now: number; 
               >
                 <div className="relative grid grid-cols-[9px_minmax(0,1fr)_auto] items-baseline gap-2.5 py-[5px] text-[12.5px] text-fg-2">
                   <span className={cx('size-[9px] translate-y-px rounded-full bg-surface ring-2 ring-inset', ringOf[e.dot] ?? 'ring-line-strong')} />
-                  <span className="truncate">
-                    <Linkify text={e.text} />
-                  </span>
+                  <RefLine text={e.text} label={e.stage ? 'code' : 'title'} />
                   <span className="text-[11px] text-fg-3 tabular">{relTime(e.at, now)}</span>
                 </div>
               </motion.li>
@@ -357,6 +357,9 @@ export function useHandled(now: number, limit = 4): Handled[] {
   const reqs = useRequirements()
   const decisions = useDecisions()
   const plans = usePlans()
+  const pend = usePendingMap()
+  const local = [...pend.values()].filter((e) => e.act !== 'move' && e.phase !== 'wait')
+  const localSig = local.map((e) => e.key + e.at).join('|')
   return useMemo(() => {
     const out: Handled[] = []
     for (const r of reqs.data ?? []) {
@@ -372,13 +375,39 @@ export function useHandled(now: number, limit = 4): Handled[] {
     // 阶段验收：你通过一个阶段时，后面需求早已逐条验收完的阶段会一并自动通过（D-60），计划随之完成——这是你的一次判断，
     // 只记一条，写你验收的那个阶段（R-211：P-2 曾因此出现两条一样的「通过 会话身份与工人池」）
     for (const x of plans.data ?? []) for (const st of x.stages) if (st.passed_at && !passedWith(x, st)) out.push({ at: st.passed_at, act: 'pass', scene: 'accept', text: `${x.title} · ${t.ref.stage(st.seq)}` })
+    // 撤销期刚结束、服务端还没刷新到的判断：本地先记一条，「刚处理」和离开「要你处理」同一刻到位（R-230）；
+    // 服务端的记录到了就由它接手（同一句话同一个键，不闪）。提交失败时调度器放掉这件事，这一条随之消失。
+    for (const e of local) {
+      if (e.act === 'move' || e.phase === 'wait') continue
+      const text = (() => {
+        if (e.key.startsWith('dec:')) {
+          const d = decisions.data?.find((x) => x.code === e.key.slice(4))
+          return d && (d.short_title || d.question)
+        }
+        if (e.key.startsWith('plan:')) return plans.data?.find((x) => x.code === e.key.slice(5))?.title
+        if (e.key.startsWith('stage:')) {
+          const [, code, seq] = e.key.split(':')
+          const x = plans.data?.find((p) => p.code === code)
+          return x && `${x.title} · ${t.ref.stage(Number(seq))}`
+        }
+        return reqs.data?.find((x) => x.code === e.key)?.title
+      })()
+      out.push({ at: new Date(e.until).toISOString(), act: e.act, scene: e.scene, text: text || e.subject })
+    }
+    const seen = new Set<string>()
     return out
       .filter((x) => now - Date.parse(x.at) < handledTTL)
       .sort((a, b) => b.at.localeCompare(a.at))
+      .filter((x) => {
+        const k = `${x.act}|${x.text}`
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
       .slice(0, limit)
     // now 只用来过滤 24 小时，按分钟变化即可
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reqs.data, decisions.data, plans.data, limit, Math.floor(now / 60000)])
+  }, [reqs.data, decisions.data, plans.data, limit, Math.floor(now / 60000), localSig])
 }
 
 const actTone: Record<string, string> = { pass: 'text-run', answer: 'text-accent', back: 'text-seal' }
@@ -392,7 +421,7 @@ export function HandledLog({ now, className }: { now: number; className?: string
       <h5 className="text-[11.5px] font-semibold tracking-wider text-fg-3">{t.desk.handled}</h5>
       <List space={6}>
         {list.map((x) => (
-          <Item key={`${x.at}|${x.act}|${x.text}`} space={6} layout fluid still={still}>
+          <Item key={`${x.act}|${x.text}`} space={6} layout fluid still={still}>
             <div className="flex min-w-0 items-baseline gap-2 text-[12.5px] text-fg-2">
               <span className={cx('shrink-0 text-[11px]', actTone[x.act])}>{x.act === 'answer' ? t.verdict.pass('answer') : x.act === 'pass' ? t.verdict.pass(x.scene) : t.verdict.back(x.scene)}</span>
               <span className="min-w-0 flex-1 truncate">{x.text}</span>

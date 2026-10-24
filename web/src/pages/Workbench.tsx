@@ -14,7 +14,7 @@ import { useWorkbench } from '../app/inbox'
 import { RecapPanel } from '../app/Recap'
 import { sessionTitle } from '../app/SessionCard'
 import { SessionRow } from '../app/thread'
-import { AskItem, useAsks, useOpenAsk, type Ask } from '../app/asks'
+import { AskItem, useAsks, useOpenAsk, useStaying, type Ask } from '../app/asks'
 import { BriefStrip, HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
 import { EndedLane, Lane, LaneAxis, laneTone, setLaneZoom, setOffline, ZoomSwitch, type LaneMode, type Tone } from '../app/lanes'
 import { ensureZoom, laneStore, prefetchLanes, useLanePrices, useLaneSnap } from '../app/laneFeed'
@@ -226,7 +226,7 @@ export default function WorkbenchPage() {
   const wb = useWorkbench()
   const settings = useSettings()
   const connected = useConnected()
-  const asks = useAsks(wb)
+  const asks = useStaying(useAsks(wb)) // 撤销期一结束就在本地离开（R-230）
   const todo = asks.filter((a) => a.counted)
   const openAsk = useOpenAsk()
   const [params] = useSearchParams()

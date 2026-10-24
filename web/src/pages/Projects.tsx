@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { AnimatePresence } from 'motion/react'
 import { useNavigate, useParams } from 'react-router'
 import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, ShieldCheck, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
@@ -12,11 +13,11 @@ import { displayState, presence, presenceDot } from '../ui/marks'
 import { Item, List } from '../ui/motion'
 import { useActions } from '../app/actions'
 import { useOpenAsk, useOpenReq } from '../app/nav'
-import { AskItem, useAsks } from '../app/asks'
+import { AskItem, useAsks, useStaying } from '../app/asks'
 import { useWorkbench } from '../app/inbox'
 import { NewReqModal, statusCls } from '../app/requirements'
 import { SessionRow } from '../app/thread'
-import { Linkify, ReqGlyph } from '../ui/refmark'
+import { RefLine, ReqGlyph } from '../ui/refmark'
 import { useRecent } from '../app/recent'
 import { GrantPanel } from '../app/grant'
 
@@ -221,15 +222,19 @@ function NeedDevs({ p, now }: { p: Stat; now: number }) {
 
 // ProjectAsks：这个项目里要你处理的事——固定大小的条目，点开审批抽屉（R-177）。
 function ProjectAsks({ id, now }: { id: string; now: number }) {
-  const asks = useAsks(useWorkbench()).filter((a) => a.projectId === id)
+  const asks = useStaying(useAsks(useWorkbench())).filter((a) => a.projectId === id)
   const openAsk = useOpenAsk()
   if (!asks.length) return null
   return (
     <Section title={`${t.desk.paneAsk} · ${asks.filter((a) => a.counted).length}`}>
-      <div className="grid grid-cols-1 gap-2 @container sm:grid-cols-2">
-        {asks.map((a) => (
-          <AskItem key={a.key} a={a} now={now} onOpen={openAsk} />
-        ))}
+      <div className="grid grid-cols-1 gap-x-2 @container sm:grid-cols-2">
+        <AnimatePresence initial={false}>
+          {asks.map((a) => (
+            <Item key={a.key} space={8} fluid layout>
+              <AskItem a={a} now={now} onOpen={openAsk} />
+            </Item>
+          ))}
+        </AnimatePresence>
       </div>
     </Section>
   )
@@ -359,8 +364,8 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
           <Card className="divide-y divide-dashed divide-line px-4 py-1">
             {recent.map((e, i) => (
               <button key={i} onClick={() => e.code && openReq(e.code)} className="flex w-full items-center gap-3 py-2.5 text-left text-sm text-fg-2 hover:text-fg">
-                <span className="min-w-0 flex-1 truncate">
-                  <Linkify text={e.text} />
+                <span className="min-w-0 flex-1">
+                  <RefLine text={e.text} label={e.stage ? 'code' : 'title'} />
                 </span>
                 <span className="shrink-0 text-xs text-fg-3 tabular">{relTime(e.at, now)}</span>
               </button>

@@ -11,6 +11,7 @@ import { Menu, Panel } from '../ui/overlay'
 import { RoleTag } from '../ui/marks'
 import { Linkify, RefChip } from '../ui/refmark'
 import { useActions } from './actions'
+import { Item, List } from '../ui/motion'
 import { done, PendingBar, schedule, usePendingMap } from './verdict'
 import { sessionTitle } from './SessionCard'
 
@@ -29,6 +30,11 @@ function useRevokeGrant() {
   const pend = usePendingMap()
   return {
     pending: (code: string) => pend.has(grantKey(code)),
+    // 撤销期一结束授权条就在本地离开，不等重新取数（R-230）
+    gone: (code: string) => {
+      const e = pend.get(grantKey(code))
+      return !!e && e.phase !== 'wait'
+    },
     revoke: (code: string) =>
       schedule(grantKey(code), {
         act: 'move',
@@ -54,34 +60,38 @@ export function GrantBanner() {
   const grants = useGrants()
   const rg = useRevokeGrant()
   const [panel, setPanel] = useState<string | null>(null)
-  const active = (grants.data?.grants ?? []).filter((g) => isActive(g, now))
+  const active = (grants.data?.grants ?? []).filter((g) => isActive(g, now) && !rg.gone(g.code))
   return (
     <>
-      {active.map((g) => (
-        <div key={g.id} className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/30 bg-accent-soft/60 px-3.5 py-2.5 text-sm">
-          <ShieldCheck className="size-4 shrink-0 text-accent" />
-          <span className="font-medium text-fg">{t.grant.banner(clock(g.expires_at))}</span>
-          <span className="min-w-0 truncate text-fg-2">
-            {t.grant.bannerProject(g.project_name)}
-            {t.common.sep}
-            {t.grant.scopeShort[g.max_risk]}
-            {t.common.sep}
-            {t.grant.proxiedCount(g.proxied)}
-          </span>
-          <span className="ml-auto flex shrink-0 gap-2">
-            <Button size="sm" onClick={() => setPanel(g.project_id)}>
-              {t.grant.viewAll}
-            </Button>
-            {rg.pending(g.code) ? (
-              <PendingBar k={grantKey(g.code)} />
-            ) : (
-              <Button size="sm" onClick={() => rg.revoke(g.code)}>
-                {t.grant.revoke}
-              </Button>
-            )}
-          </span>
-        </div>
-      ))}
+      <List>
+        {active.map((g) => (
+          <Item key={g.id} space={16} fluid>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-accent/30 bg-accent-soft/60 px-3.5 py-2.5 text-sm">
+              <ShieldCheck className="size-4 shrink-0 text-accent" />
+              <span className="font-medium text-fg">{t.grant.banner(clock(g.expires_at))}</span>
+              <span className="min-w-0 truncate text-fg-2">
+                {t.grant.bannerProject(g.project_name)}
+                {t.common.sep}
+                {t.grant.scopeShort[g.max_risk]}
+                {t.common.sep}
+                {t.grant.proxiedCount(g.proxied)}
+              </span>
+              <span className="ml-auto flex shrink-0 gap-2">
+                <Button size="sm" onClick={() => setPanel(g.project_id)}>
+                  {t.grant.viewAll}
+                </Button>
+                {rg.pending(g.code) ? (
+                  <PendingBar k={grantKey(g.code)} />
+                ) : (
+                  <Button size="sm" onClick={() => rg.revoke(g.code)}>
+                    {t.grant.revoke}
+                  </Button>
+                )}
+              </span>
+            </div>
+          </Item>
+        ))}
+      </List>
       <GrantPanel projectId={panel ?? ''} open={!!panel} onClose={() => setPanel(null)} />
     </>
   )
