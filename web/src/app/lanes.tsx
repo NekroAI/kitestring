@@ -89,11 +89,8 @@ function colors() {
   return { run: v('--run'), you: v('--reply'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong') }
 }
 
-// pixelRatio：画布每个 CSS 像素对应几个设备像素——设备像素比 × 祖先的 CSS 缩放（工作台在超宽屏上整体放大，R-170）。
-export function pixelRatio(cv: HTMLCanvasElement) {
-  const dpr = window.devicePixelRatio || 1
-  const zoom = cv.clientWidth ? cv.getBoundingClientRect().width / cv.clientWidth : 1
-  return dpr * (zoom > 0.2 && zoom < 5 ? zoom : 1)
+export function pixelRatio(_cv: HTMLCanvasElement) {
+  return window.devicePixelRatio || 1
 }
 
 function paint(p: Painter, now: number, c: ReturnType<typeof colors>) {

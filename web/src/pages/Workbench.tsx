@@ -21,7 +21,7 @@ import { useFillHeight } from '../app/pool'
 //   左「要你处理」：只放固定高度的条目（R-177），点开右侧的审批抽屉处理，底部「刚处理」；没有待办时左栏收窄成「一切正常」概况。
 //   中「会话」泳道（app/lanes.tsx）：按内容给高度、不拉伸，下面接着最近结束的会话；多个项目同时有活跃会话时按项目分组；
 //   右「风向」：进行中的计划、最近动态（一条竖线）、队伍固定在底部。
-// 按容器宽度排版（R-133）；超宽屏上整页按宽度等比放大（字号与留白一起，CSS zoom），排版按放大后的宽度算。
+// 按容器宽度排版（R-133）；不做等比放大，字号与留白和其它页面同一比例；超宽屏多出来的宽度按内容分给各列。
 // 宽 ≥ 1180 三栏；960～1180 三栏但右栏窄；640～960 右栏收成顶部计划胶囊；更窄（手机）分「要你处理 / 在跑 / 风向」页签，整页纵向滚动。
 
 const match = (s: Session | undefined, k: string) => !k || (!!s && [sessionTitle(s), s.project_name, s.branch, s.cwd, s.last_prompt, s.summary, s.device_name, s.model].some((v) => v?.toLowerCase().includes(k)))
@@ -84,14 +84,6 @@ function useBox() {
     return () => ro.disconnect()
   }, [el])
   return [el, setEl, w] as const
-}
-
-// zoomOf：超宽屏上整页等比放大（R-170 返工：3348 宽的带鱼屏上字太小、留白太少）。按宽度约 1950 为 1 倍，最多 1.4 倍；
-// 同时不让放大后的高度少于约 860，矮屏不放大。
-function zoomOf(w: number, h: number | undefined) {
-  if (w < 1950) return 1
-  const z = Math.min(1.4, w / 1950, h ? Math.max(1, h / 860) : 1.4)
-  return Math.round(z * 100) / 100
 }
 
 // ---------- 版面 ----------
@@ -207,8 +199,7 @@ export default function WorkbenchPage() {
   const [el, setEl, w] = useBox()
   const phone = w > 0 && w < 640
   const fillH = useFillHeight(el, !phone && w > 0)
-  const z = phone ? 1 : zoomOf(w, fillH)
-  const W = w / z // 排版按放大后的宽度算
+  const W = w
   const rail = W >= 960
   const roomy = W >= 1800
   const hasAsks = asks.length > 0 || wb.loading
@@ -416,7 +407,7 @@ export default function WorkbenchPage() {
 
   return (
     <div ref={setEl} style={fillH ? { height: fillH } : undefined} className="min-w-0">
-      <div style={z !== 1 ? { zoom: z, height: fillH ? fillH / z : undefined } : { height: fillH }} className={cx('flex min-w-0 flex-col', phone ? 'gap-3' : 'gap-3.5')}>
+      <div style={{ height: fillH }} className={cx('flex min-w-0 flex-col', phone ? 'gap-3' : 'gap-3.5')}>
         {/* 顶栏：标题与件数 · 简报位（背后的风，最多两行） · 状态说明 */}
         <div className={cx('grid min-w-0 items-start gap-x-4 gap-y-2.5', phone ? 'grid-cols-1' : W >= 1400 ? 'grid-cols-[auto_minmax(0,1fr)_auto]' : 'grid-cols-[auto_minmax(0,1fr)]')}>
           <div className="flex min-w-0 items-baseline gap-3 pt-2">
