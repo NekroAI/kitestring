@@ -63,14 +63,6 @@ export function GrantBanner() {
   )
 }
 
-// 默认到期：明早 9 点（现在已过 9 点就是明天，凌晨 0～6 点就是今天）。
-function morning(now: number) {
-  const d = new Date(now)
-  if (d.getHours() >= 6) d.setDate(d.getDate() + 1)
-  d.setHours(9, 0, 0, 0)
-  return d
-}
-
 const localInput = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
@@ -82,11 +74,11 @@ function OpenForm({ projectId }: { projectId: string }) {
   const { openGrant } = useActions()
   const advs = (sessions.data?.sessions ?? []).filter((s) => s.project_id === projectId && s.role === 'advisor' && s.state !== 'ended' && s.state !== 'lost' && !s.done_at)
   const [key, setKey] = useState('')
-  const [until, setUntil] = useState(() => localInput(morning(Date.now())))
+  const [until, setUntil] = useState(() => localInput(new Date(Date.now() + 8 * 3600_000))) // 默认 8 小时后，可改
   const [risk, setRisk] = useState<'low' | 'medium'>('low')
   const [busy, setBusy] = useState(false)
   const pick = advs.find((s) => s.key === key) ?? advs[0]
-  const presets = [{ label: t.grant.presetMorning, at: morning(now) }, ...[2, 4, 8].map((h) => ({ label: t.grant.presetHours(h), at: new Date(now + h * 3600_000) }))]
+  const presets = [2, 4, 8, 12].map((h) => ({ label: t.grant.presetHours(h), at: new Date(now + h * 3600_000) }))
   if (!advs.length) return <p className="rounded-xl bg-sunken px-3.5 py-3 text-sm text-fg-2">{t.grant.noAdv}</p>
   return (
     <div className="space-y-4">
@@ -138,7 +130,7 @@ function OpenForm({ projectId }: { projectId: string }) {
 }
 
 // OverrideBox：推翻参谋的代答，写下你的答复作为更正送回提问方。
-// startOpen / onClose：参谋早报里由行内按钮打开，取消或送出后收回（R-165）。
+// startOpen / onClose：离开期间小结里由行内按钮打开，取消或送出后收回（R-165）。
 export function OverrideBox({ d, startOpen = false, onClose }: { d: Decision; startOpen?: boolean; onClose?: () => void }) {
   const { overrideDecision } = useActions()
   const [open, setOpenRaw] = useState(startOpen)

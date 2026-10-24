@@ -1372,7 +1372,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			h.broker.publish("decisions", "sessions", "requirements")
 			go h.aiOnDecision(d)
 			h.onDecisionRaised(ctx, d) // 订阅了 decision 的会话（R-164）
-			// 授权窗口开着、参谋可以代答的决策先不推送（夜里不吵醒你，R-163）；仍留在收件箱里
+			// 授权窗口开着、参谋可以代答的决策先不推送（不吵醒你，R-163）；仍留在收件箱里
 			if !h.proxyQuiet(ctx, d) {
 				h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d))
 			}

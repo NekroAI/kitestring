@@ -1188,12 +1188,11 @@ export const zh = {
   grant: {
     title: '参谋授权',
     open: '参谋授权',
-    intro: '你不在时（比如睡前），授权一个 Adv 会话在到期前代你答复范围内的决策。代答都会记下来，你随时可以推翻，更正会送回提问的会话。',
+    intro: '你不在时，授权一个 Adv 会话在到期前代你答复范围内的决策。代答都会记下来，你随时可以推翻，更正会送回提问的会话。',
     who: '授权给',
     pickAdv: '选一个 Adv 会话',
     noAdv: '这个项目没有在线的 Adv 会话：先让一个会话运行 ks role advisor',
     until: '到期',
-    presetMorning: '明早 9:00',
     presetHours: (h: number) => `${h} 小时`,
     scope: '范围',
     scopeLow: '只代答低风险',
@@ -1226,10 +1225,10 @@ export const zh = {
     overrideDone: '已推翻，更正已送出',
     viewAll: '代答记录',
   },
-  // 参谋早报（R-165）
+  // 离开期间小结（R-165）
   morning: {
-    title: '参谋早报',
-    since: (when: string) => `离开期间 · 自 ${when}`,
+    title: '离开期间小结',
+    since: (when: string) => `自 ${when}`,
     fold: '收起',
     unfold: '展开',
     noNote: '参谋还没写总述；下面是纸鸢从记录里汇总的。',
@@ -1243,7 +1242,7 @@ export const zh = {
     released: '放行为待开始',
     withdrawn: '你已撤回',
     withdraw: '撤回放行',
-    withdrawReason: '在参谋早报里撤回',
+    withdrawReason: '在离开期间小结里撤回',
     withdrawDone: (code: string) => `已撤回 ${code} 的放行，改回草稿`,
     left: (pending: number, review: number) => `留给你 ${pending} 件 · 待验收 ${review} 条，见下方「要你处理」`,
     blocked: '受阻',

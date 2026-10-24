@@ -54,7 +54,7 @@ export function StatusPill({ state, since, now, compact, bg }: { state: string; 
 // presence：常驻身份（PM / 开发）的在线状态（R-84）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；
 // 结束了一轮却没挂上 ks wait、已结束或失联为离线。其它身份不需要常驻，返回空。
 type RoleSession = { role?: string; state: string; state_detail?: string; parked?: boolean; done_at?: string | null; last_active_at?: string }
-// anyRole：参谋早报等需要给 Adv 也标在线点时传 true（R-165）
+// anyRole：离开期间小结等需要给 Adv 也标在线点时传 true（R-165）
 export function presence(s: RoleSession, anyRole = false): '' | 'standby' | 'working' | 'offline' {
   if (!anyRole && s.role !== 'pm' && s.role !== 'dev') return ''
   if (s.state === 'ended' || s.state === 'lost') return 'offline'

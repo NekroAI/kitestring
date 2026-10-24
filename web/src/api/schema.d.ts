@@ -147,7 +147,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Adv 写早报：总述与逐条验收建议（R-165） */
+        /** Adv 写离开期间小结：总述与逐条验收建议（R-165） */
         post: operations["agent-set-morning"];
         delete?: never;
         options?: never;
@@ -743,7 +743,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 参谋早报：离开期间参谋做了什么、替你定了什么（R-165） */
+        /** 离开期间小结：参谋做了什么、替你定了什么（R-165） */
         get: operations["get-morning"];
         put?: never;
         post?: never;

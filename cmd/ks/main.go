@@ -53,8 +53,8 @@ agent 调用：
   team need <数量> --reason ...   PM 提醒用户开 Dev 会话
   team tell <文字> [--req R-x]   给本项目的 PM 留言（只送给 PM，不进用户收件箱；交验收时 PM 会自动收到通知）
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
-  morning <总述>         Adv 写参谋早报的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总）
-  morning advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上
+  away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
+  away advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结（只写跨需求的效果和遗留问题）
   decision raise ...     提出决策（一次只问一件事）
   decision withdraw <D-x> [--reason 原因] [--replaced-by D-y]   撤回自己提的、用户还没答复的决策
@@ -109,7 +109,7 @@ func main() {
 		err = runRole(args)
 	case "brief":
 		err = runBrief(args)
-	case "morning":
+	case "away", "morning":
 		err = runMorning(args)
 	case "team":
 		err = runTeam(args)

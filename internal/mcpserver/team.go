@@ -113,27 +113,29 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text("简报已更新，用户在工作台顶部能看到。"), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "morning_set", Description: "Adv 用：写参谋早报——用户回来时工作台顶部先看到它。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"},
-		func(ctx context.Context, req *mcp.CallToolRequest, in morningIn) (*mcp.CallToolResult, any, error) {
-			key := t.sessionKey(ctx, req)
-			if key == "" {
-				return nil, nil, fmt.Errorf("无法识别当前会话")
-			}
-			body := map[string]any{"session_key": key}
-			if in.Text != nil {
-				body["text"] = *in.Text
-			}
-			if len(in.Advice) > 0 {
-				body["advice"] = in.Advice
-			}
-			var out struct {
-				Message string `json:"message"`
-			}
-			if err := t.c.Do(ctx, "POST", "/agent/morning", body, &out); err != nil {
-				return nil, nil, err
-			}
-			return text(out.Message), nil, nil
-		})
+	away := func(ctx context.Context, req *mcp.CallToolRequest, in morningIn) (*mcp.CallToolResult, any, error) {
+		key := t.sessionKey(ctx, req)
+		if key == "" {
+			return nil, nil, fmt.Errorf("无法识别当前会话")
+		}
+		body := map[string]any{"session_key": key}
+		if in.Text != nil {
+			body["text"] = *in.Text
+		}
+		if len(in.Advice) > 0 {
+			body["advice"] = in.Advice
+		}
+		var out struct {
+			Message string `json:"message"`
+		}
+		if err := t.c.Do(ctx, "POST", "/agent/morning", body, &out); err != nil {
+			return nil, nil, err
+		}
+		return text(out.Message), nil, nil
+	}
+	mcp.AddTool(s, &mcp.Tool{Name: "away_set", Description: "Adv 用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
+	// morning_set 是 away_set 的旧名，保留给已在用的参谋会话。
+	mcp.AddTool(s, &mcp.Tool{Name: "morning_set", Description: "（旧名，等同 away_set）" + "Adv 用：写离开期间小结——用户回来时工作台顶部先看到它（用户离开多久不固定，起点由纸鸢按授权窗口等记录算，不用你管）。你只写两样：一段总述（text）和待验收需求的逐条验收建议（advice：建议通过 / 建议退回 + 理由，显示在「要你处理」的验收卡上）。代答、放行、交了证据的需求、团队消息由纸鸢自动汇总，不用写。用户回来前更新一次总述；每条需求交验收后看过证据就写建议。"}, away)
 	mcp.AddTool(s, &mcp.Tool{Name: "need_devs", Description: "PM 用：需要 Dev 会话、但工人池里没有在线的 Dev 时，提醒用户开新的 Dev 会话。用户手机会收到推送，里面有原因和接入用的那句话；Dev 上线后提醒自动消失。req_assign 用 auto 找不到在线 Dev 时会自动提醒，不必重复调用。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in needIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)

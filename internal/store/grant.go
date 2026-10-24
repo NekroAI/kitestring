@@ -13,7 +13,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
-// 参谋授权窗口（R-163）：你睡前在网页上授权一个 Adv 会话，在到期前代你答复风险档不超过 MaxRisk 的决策。
+// 参谋授权窗口（R-163）：你离开前在网页上授权一个 Adv 会话，在到期前代你答复风险档不超过 MaxRisk 的决策。
 // 窗口开启、撤销都留在 grants 表里（不删除），到期按 ExpiresAt 判断；代答记在决策自己的 proxy_* 列上。
 
 // 风险档：提问方在 decision_raise 里标，参谋代答时再给出自己的判断，取两者中更高的一档（只升不降）。

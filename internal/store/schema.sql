@@ -220,7 +220,7 @@ CREATE TABLE IF NOT EXISTS grants (
 	revoked_at  TEXT NOT NULL DEFAULT ''
 );
 
--- 参谋早报（R-165）：Adv 写给你的总述（每个项目一份，覆盖写入）与逐条验收建议（每条需求一份，覆盖写入）。
+-- 离开期间小结（R-165）：Adv 写给你的总述（每个项目一份，覆盖写入）与逐条验收建议（每条需求一份，覆盖写入）。
 -- 其余内容（代答、放行、待验收、未答决策、受阻、团队消息）由 hub 从已有记录自动汇总，不另存
 CREATE TABLE IF NOT EXISTS morning_notes (
 	project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,

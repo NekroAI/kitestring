@@ -44,7 +44,7 @@ type morningResp struct {
 	} `json:"holds"`
 }
 
-// 参谋早报（R-165）：没开窗口、没写总述时不出早报；只有 Adv 能写总述和验收建议；
+// 参谋小结（R-165）：没开窗口、没写总述时不出小结；只有 Adv 能写总述和验收建议；
 // 开窗口后离开期间从窗口开启算起，汇总代答、放行、交了证据的需求、团队消息，③④ 只给计数；
 // 待验收卡上挂参谋建议（重新交证据后旧建议作废），决策卡上挂没代答的原因（硬规则 / 超出授权）。
 func TestMorningReport(t *testing.T) {
@@ -78,19 +78,19 @@ func TestMorningReport(t *testing.T) {
 		}
 	}
 
-	// 1. 没窗口、没总述：不出早报；只有 Adv 能写
+	// 1. 没窗口、没总述：不出小结；只有 Adv 能写
 	if m := get(); len(m.Reports) != 0 {
-		t.Fatalf("没开窗口、没写总述时不应有早报：%+v", m.Reports)
+		t.Fatalf("没开窗口、没写总述时不应有小结：%+v", m.Reports)
 	}
-	mustFail(write("claude:dev", map[string]any{"text": "开发不该能写"}), "只有项目的 Adv", "Dev 写早报")
-	mustFail(write("claude:pm", map[string]any{"text": "PM 不该能写"}), "只有项目的 Adv", "PM 写早报")
+	mustFail(write("claude:dev", map[string]any{"text": "开发不该能写"}), "只有项目的 Adv", "Dev 写小结")
+	mustFail(write("claude:pm", map[string]any{"text": "PM 不该能写"}), "只有项目的 Adv", "PM 写小结")
 	mustFail(write("claude:adv", map[string]any{}), "什么都没写", "空写入")
 	if err := write("claude:adv", map[string]any{"text": "  昨晚的总述  "}); err != nil {
 		t.Fatal(err)
 	}
 	m := get()
 	if len(m.Reports) != 1 || m.Reports[0].Note == nil || m.Reports[0].Note.Text != "昨晚的总述" || m.Reports[0].Grant != nil {
-		t.Fatalf("只写了总述时早报应出现、正文去掉首尾空白：%+v", m.Reports)
+		t.Fatalf("只写了总述时小结应出现、正文去掉首尾空白：%+v", m.Reports)
 	}
 	if d := time.Since(m.Reports[0].Since); d < 11*time.Hour || d > 13*time.Hour {
 		t.Fatalf("没开窗口时离开期间应从总述往前 12 小时算起：%v", d)
@@ -213,7 +213,7 @@ func TestMorningReport(t *testing.T) {
 		t.Fatalf("clear 应撤掉建议：%+v", m.Advice)
 	}
 
-	// 5. 推翻代答、撤回放行：早报里照样列着，并标出已推翻 / 已撤回
+	// 5. 推翻代答、撤回放行：小结里照样列着，并标出已推翻 / 已撤回
 	e.call("POST", "/api/decisions/"+d1.Code+"/override", map[string]any{"answer": "正序"}, nil)
 	e.call("POST", "/api/requirements/"+r2.Code+"/release/withdraw", map[string]any{}, nil)
 	rp = get().Reports[0]
@@ -224,11 +224,11 @@ func TestMorningReport(t *testing.T) {
 		t.Fatalf("撤回后放行应标已撤回：%+v", rp.Releases)
 	}
 
-	// 6. 撤销窗口：窗口结束不到 12 小时仍出早报；范围内没答的决策标「授权已结束」
+	// 6. 撤销窗口：窗口结束不到 12 小时仍出小结；范围内没答的决策标「授权已结束」
 	e.call("POST", "/api/grants/"+g.Code+"/revoke", map[string]any{}, nil)
 	m = get()
 	if len(m.Reports) != 1 {
-		t.Fatal("窗口刚结束，早报应还在")
+		t.Fatal("窗口刚结束，小结应还在")
 	}
 	ended := false
 	for _, h := range m.Holds {
@@ -237,7 +237,7 @@ func TestMorningReport(t *testing.T) {
 	if !ended {
 		t.Fatalf("窗口结束后范围内没答的决策应标授权已结束：%+v", m.Holds)
 	}
-	// 清除总述：早报照样由窗口撑着
+	// 清除总述：小结照样由窗口撑着
 	if err := write("claude:adv", map[string]any{"text": ""}); err != nil {
 		t.Fatal(err)
 	}

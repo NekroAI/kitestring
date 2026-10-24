@@ -10,8 +10,8 @@ import (
 	"github.com/NekroAI/kitestring/internal/blocks"
 )
 
-// 参谋早报（R-165）：Adv 只写两样——给你的一段总述（每个项目一份）和逐条验收建议（每条需求一份），都是覆盖写入；
-// 早报里其余内容由 hub 从已有记录汇总（代答、放行、交了证据的需求、团队消息），见 hub/morning.go。
+// 离开期间小结（R-165）：Adv 只写两样——给你的一段总述（每个项目一份）和逐条验收建议（每条需求一份），都是覆盖写入；
+// 小结里其余内容由 hub 从已有记录汇总（代答、放行、交了证据的需求、团队消息），见 hub/morning.go。
 
 // 验收建议。
 const (
@@ -19,7 +19,7 @@ const (
 	AdviceReturn = "return"
 )
 
-// MorningNote 是参谋写给你的早报总述。
+// MorningNote 是参谋写给你的小结总述。
 type MorningNote struct {
 	Text string    `json:"text"`
 	By   string    `json:"by" doc:"写总述的 Adv 会话"`
@@ -37,7 +37,7 @@ type Advice struct {
 	At              time.Time `json:"at"`
 }
 
-// SetMorning 写入 / 清除（text 为空）项目的早报总述。
+// SetMorning 写入 / 清除（text 为空）项目的小结总述。
 func (s *Store) SetMorning(ctx context.Context, projectID, text, by string) error {
 	if text == "" {
 		_, err := s.db.ExecContext(ctx, `DELETE FROM morning_notes WHERE project_id = ?`, projectID)
@@ -48,7 +48,7 @@ func (s *Store) SetMorning(ctx context.Context, projectID, text, by string) erro
 	return err
 }
 
-// GetMorning 读取项目的早报总述；没有时返回 ErrNotFound。
+// GetMorning 读取项目的小结总述；没有时返回 ErrNotFound。
 func (s *Store) GetMorning(ctx context.Context, projectID string) (MorningNote, error) {
 	var n MorningNote
 	var at string

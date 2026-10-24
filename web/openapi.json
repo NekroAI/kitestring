@@ -6368,7 +6368,7 @@
             "description": "Error"
           }
         },
-        "summary": "Adv 写早报：总述与逐条验收建议（R-165）",
+        "summary": "Adv 写离开期间小结：总述与逐条验收建议（R-165）",
         "tags": [
           "agent"
         ]
@@ -8163,7 +8163,7 @@
             "description": "Error"
           }
         },
-        "summary": "参谋早报：离开期间参谋做了什么、替你定了什么（R-165）",
+        "summary": "离开期间小结：参谋做了什么、替你定了什么（R-165）",
         "tags": [
           "morning"
         ]

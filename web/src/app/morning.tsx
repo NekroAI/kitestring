@@ -12,15 +12,15 @@ import { Linkify, RefChip } from '../ui/refmark'
 import { useActions } from './actions'
 import { OverrideBox } from './grant'
 
-// 参谋早报（R-165，D-179；版式按顾问意见）：你离开期间参谋做了什么、替你定了什么，占工作台顶部唯一的简报位。
-//   - 有早报的项目由早报占位，PM 简报收成卡里的一行「PM：……」；没有早报的项目照旧显示 PM 简报（见 desk.tsx Briefs）。
+// 离开期间小结（R-165，D-179；版式按顾问意见）：你离开期间参谋做了什么、替你定了什么，占工作台顶部唯一的简报位。
+//   - 有小结的项目由小结占位，PM 简报收成卡里的一行「PM：……」；没有小结的项目照旧显示 PM 简报（见 desk.tsx Briefs）。
 //   - 卡里只放：总述、① 完成了什么、② 替你定了什么（代答就地推翻、放行可撤回）；③ 留给你的 ④ 待验收只写一行计数，
 //     详情就在下方「要你处理」里，不重复列（同一信息只在一处）。参谋的验收建议、没代答的原因挂在「要你处理」对应的卡上。
-//   - 可收起成一行（记在本机）；新早报（总述更新或换了离开期间）来了重新展开。
+//   - 可收起成一行（记在本机）；新小结（总述更新或换了离开期间）来了重新展开。
 
 const briefTTL = 12 * 3600e3
 
-// stamp：一份早报的标识，变了就算新早报。
+// stamp：一份小结的标识，变了就算新小结。
 const stamp = (r: MorningReport) => `${r.since}|${r.note?.at ?? ''}`
 
 function useSessionByKey(sessions: Session[]) {
@@ -266,7 +266,7 @@ function MorningCard({ r, project, sessions, now }: { r: MorningReport; project?
   )
 }
 
-// MorningReports：工作台顶部的参谋早报（每个有早报的项目一张）；返回占了简报位的项目，PM 简报不再单独显示。
+// MorningReports：工作台顶部的离开期间小结（每个有小结的项目一张）；返回占了简报位的项目，PM 简报不再单独显示。
 export function MorningReports({ sessions, now }: { sessions: Session[]; now: number }) {
   const morning = useMorning()
   const projects = useProjects()
@@ -281,7 +281,7 @@ export function MorningReports({ sessions, now }: { sessions: Session[]; now: nu
   )
 }
 
-// useMorningProjects：有早报的项目（它们的 PM 简报收进早报卡里）。
+// useMorningProjects：有小结的项目（它们的 PM 简报收进小结卡里）。
 export function useMorningProjects() {
   const morning = useMorning()
   return new Set((morning.data?.reports ?? []).map((r) => r.project_id))

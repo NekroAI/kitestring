@@ -92,17 +92,17 @@ func runBrief(args []string) error {
 	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " ")})
 }
 
-// runMorning：Adv 写参谋早报（R-165）。
+// runMorning：Adv 写离开期间小结（R-165）；ks morning 是旧名，保留别名。
 //
-//	ks morning <总述>                          写总述（传空字符串清除）
-//	ks morning advise <R-x> <pass|return|clear> <理由>   给待验收的需求写验收建议
+//	ks away <总述>                          写总述（传空字符串清除）
+//	ks away advise <R-x> <pass|return|clear> <理由>   给待验收的需求写验收建议
 func runMorning(args []string) error {
 	fs := flag.NewFlagSet("morning", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
-	usage := fmt.Errorf("用法：ks morning <总述：一段话，先结论，提到需求写编号>（传空字符串清除）\n      ks morning advise <R-x> <pass|return|clear> <理由>")
+	usage := fmt.Errorf("用法：ks away <总述：一段话，先结论，提到需求写编号>（传空字符串清除）\n      ks away advise <R-x> <pass|return|clear> <理由>")
 	if fs.NArg() < 1 {
 		return usage
 	}

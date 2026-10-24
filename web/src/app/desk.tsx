@@ -21,7 +21,7 @@ const briefTTL = 12 * 3600e3 // 超过 12 小时没更新的简报不再显示
 
 // ---------- PM 简报：一行 ----------
 
-// skip：已由参谋早报占了简报位的项目（R-165），它们的 PM 简报收进早报卡里，这里不再单独显示。
+// skip：已由离开期间小结占了简报位的项目（R-165），它们的 PM 简报收进小结卡里，这里不再单独显示。
 export function Briefs({ sessions, now, skip }: { sessions: Session[]; now: number; skip?: Set<string> }) {
   const projects = useProjects()
   const list = (projects.data?.projects ?? []).filter((p) => p.brief && p.brief_at && now - Date.parse(p.brief_at) < briefTTL && !p.hidden && !skip?.has(p.id))

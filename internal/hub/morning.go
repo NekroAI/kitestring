@@ -15,16 +15,16 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 参谋早报（R-165）：你离开期间参谋做了什么、替你定了什么，工作台顶部集中呈现；你回来先看这里。
+// 离开期间小结（R-165）：你离开期间参谋做了什么、替你定了什么，工作台顶部集中呈现；你回来先看这里。
 //   - 「离开期间」：项目最近一个参谋授权窗口的开启时间到现在（窗口生效中，或结束不到 12 小时）；
-//     没有这样的窗口时，以参谋写总述的时间往前 12 小时；两者都没有就不出早报。
-//   - 参谋只写两样（morning_set / ks morning，只有 Adv 能写）：一段总述，和逐条验收建议（写进对应需求）。
+//     没有这样的窗口时，以参谋写总述的时间往前 12 小时；两者都没有就不出小结。
+//   - 参谋只写两样（away_set / ks away，旧名 morning_set / ks morning 仍可用；只有 Adv 能写）：一段总述，和逐条验收建议（写进对应需求）。
 //   - 其余由 hub 汇总：① 完成了什么（期间交了证据、现在待验收 / 已完成的需求，附提交）、团队消息；
 //     ② 替你定了什么（期间的 Adv 代答、PM / Adv 放行）；③④ 只给计数——未答决策与待验收本来就在「要你处理」里，不重复列。
 //   - 「要你处理」里的卡片挂两种标注：参谋的验收建议（advice）、参谋没代答的原因（holds）。
 
 const (
-	morningTTL     = 12 * time.Hour // 窗口结束 / 总述写下超过这么久，早报不再出现
+	morningTTL     = 12 * time.Hour // 窗口结束 / 总述写下超过这么久，小结不再出现
 	morningTextMax = 800
 	morningTells   = 8
 )
@@ -62,7 +62,7 @@ type morningTell struct {
 	At              time.Time `json:"at"`
 }
 
-// MorningReport 是一个项目的早报。
+// MorningReport 是一个项目的小结。
 type MorningReport struct {
 	ProjectID   string             `json:"project_id"`
 	ProjectName string             `json:"project_name"`
@@ -102,7 +102,7 @@ func grantEnd(g store.Grant) time.Time {
 	return g.ExpiresAt
 }
 
-// morningWindow 算项目的离开期间：返回起点、据以计算的窗口；ok = false 表示不出早报。
+// morningWindow 算项目的离开期间：返回起点、据以计算的窗口；ok = false 表示不出小结。
 func (h *Hub) morningWindow(ctx context.Context, projectID string, note *store.MorningNote, at time.Time) (time.Time, *store.Grant, bool) {
 	if gs, err := h.store.ListGrants(ctx, projectID, 1); err == nil && len(gs) > 0 {
 		g := gs[0]
@@ -251,7 +251,7 @@ type morningSetOut struct {
 }
 
 func (h *Hub) registerMorningWeb(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "get-morning", Method: http.MethodGet, Path: "/api/morning", Tags: []string{"morning"}, Summary: "参谋早报：离开期间参谋做了什么、替你定了什么（R-165）"},
+	huma.Register(api, huma.Operation{OperationID: "get-morning", Method: http.MethodGet, Path: "/api/morning", Tags: []string{"morning"}, Summary: "离开期间小结：参谋做了什么、替你定了什么（R-165）"},
 		func(ctx context.Context, in *struct {
 			ProjectID string `query:"project_id" doc:"只看这个项目；不填为全部（隐藏的项目除外）"`
 		}) (*morningOut, error) {
@@ -278,7 +278,7 @@ func (h *Hub) registerMorningWeb(api huma.API) {
 }
 
 func (h *Hub) registerAgentMorning(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "agent-set-morning", Method: http.MethodPost, Path: "/api/agent/morning", Tags: []string{"agent"}, Summary: "Adv 写早报：总述与逐条验收建议（R-165）"},
+	huma.Register(api, huma.Operation{OperationID: "agent-set-morning", Method: http.MethodPost, Path: "/api/agent/morning", Tags: []string{"agent"}, Summary: "Adv 写离开期间小结：总述与逐条验收建议（R-165）"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey string     `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 Adv）"`
@@ -291,7 +291,7 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 				return nil, apiErr(err)
 			}
 			if me.Role != roles.Advisor || me.ProjectID == "" {
-				return nil, huma.Error403Forbidden("只有项目的 Adv（参谋）能写早报")
+				return nil, huma.Error403Forbidden("只有项目的 Adv（参谋）能写离开期间小结")
 			}
 			if in.Body.Text == nil && len(in.Body.Advice) == 0 {
 				return nil, huma.Error400BadRequest("什么都没写：传 text（总述）或 advice（验收建议）")
@@ -348,7 +348,7 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 			}
 			h.broker.publish("morning")
 			out := &morningSetOut{}
-			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的参谋早报、「要你处理」的验收卡上能看到。"
+			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的离开期间小结、「要你处理」的验收卡上能看到。"
 			return out, nil
 		})
 }
