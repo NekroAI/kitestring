@@ -131,10 +131,11 @@ func waitOn(v string) string {
 	return out
 }
 
-// hasFreshLocked：该会话是否有还没送达的答复 / 修改意见 / 留言。调用方持有 d.mu。
+// hasFreshLocked：该会话是否有还没送达、会唤醒 ks wait 的答复 / 修改意见 / 留言。静默消息（Quiet，R-198）不算，
+// 它留到下一轮或别的消息唤醒时一并注入。调用方持有 d.mu。
 func (d *Daemon) hasFreshLocked(key string) bool {
 	for _, dec := range d.decisions {
-		if dec.SessionKey == key && !dec.Delivered && !d.q.wasDelivered(dec.ID, key) {
+		if dec.SessionKey == key && !dec.Delivered && !dec.Quiet && !d.q.wasDelivered(dec.ID, key) {
 			return true
 		}
 	}

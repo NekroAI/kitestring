@@ -375,7 +375,7 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 			continue
 		}
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: proxyText(d), Delivered: d.Status == store.DecDelivered,
-			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle}
+			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: d.Kind == store.KindTell && d.Question == quietTellQ}
 		if d.Kind == store.KindPlan {
 			pd.ReqCode, pd.ReqTitle = d.PlanCode, d.Question // 计划进展：编号与标题是计划的
 		}
