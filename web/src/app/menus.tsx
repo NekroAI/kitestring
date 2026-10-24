@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type { ReqFields, Requirement, Session } from '../api/client'
 import { t } from '../i18n'
 import { copyText } from '../lib/util'
+import { resumeCommand, resumeNeedsLogin } from '../lib/resume'
 import type { CtxItem } from '../ui/contextMenu'
 import { PriorityDot } from '../ui/marks'
 import { useConfirm } from '../ui/overlay'
@@ -17,8 +18,6 @@ import { canHandoff, HandoffIcon, useRequestHandoff } from './compact'
 
 const copy = async (text: string) => (await copyText(text)) && toast.success(t.common.copied)
 
-// resumeCommand：在终端里接着这个对话的命令。
-export const resumeCommand = (s: Session) => (s.tool === 'codex' ? `codex resume ${s.session_id}` : `claude --resume ${s.session_id}`)
 
 // useSessionMenu：会话的右键 / 长按菜单。
 export function useSessionMenu() {
@@ -51,6 +50,7 @@ export function useSessionMenu() {
       ...(canHandoff(s) ? [{ label: t.menu.handoff, hint: t.menu.handoffHint, icon: <HandoffIcon />, onSelect: () => void handoff(s) }] : []),
       { type: 'separator' },
       { label: t.menu.copyResume, hint: resumeCommand(s), icon: <Terminal />, onSelect: () => void copy(resumeCommand(s)) },
+      ...(resumeNeedsLogin(s) ? [{ type: 'label' as const, label: t.menu.resumeLoginHint }] : []),
       { label: t.menu.copySessionId, icon: <ClipboardCopy />, onSelect: () => void copy(s.session_id) },
     ]
   }

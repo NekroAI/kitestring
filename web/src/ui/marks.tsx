@@ -94,6 +94,16 @@ export function RoleBadge({ s }: { s: RoleSession }) {
   )
 }
 
+// ProfileBadge：非默认 Claude 配置目录的会话，在标题旁放一个小标签写显示名（R-240）；默认目录不显示。
+export function ProfileBadge({ s }: { s: { profile?: string; profile_dir?: string } }) {
+  if (!s.profile) return null
+  return (
+    <Tip content={s.profile_dir || s.profile}>
+      <span className="inline-flex h-[18px] max-w-[9rem] shrink-0 items-center truncate rounded-md border border-line bg-surface-2 px-1.5 font-mono text-[11px] text-fg-2">{s.profile}</span>
+    </Tip>
+  )
+}
+
 // ToolMark：Claude Code / Codex 的品牌标记，放在统一的柔和底板上。
 export function ToolMark({ tool, size = 'md' }: { tool: string; size?: 'sm' | 'md' | 'lg' }) {
   const box = size === 'sm' ? 'size-5 rounded-md' : size === 'lg' ? 'size-9 rounded-xl' : 'size-8 rounded-[10px]'

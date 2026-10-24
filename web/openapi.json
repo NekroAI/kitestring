@@ -2489,6 +2489,9 @@
           "last_reply": {
             "type": "string"
           },
+          "launcher": {
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
@@ -2499,6 +2502,12 @@
             "type": "string"
           },
           "permission_mode": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "profile_dir": {
             "type": "string"
           },
           "prompt": {
@@ -6663,6 +6672,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "launcher": {
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
@@ -6681,6 +6693,12 @@
             "type": "integer"
           },
           "permission_mode": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "profile_dir": {
             "type": "string"
           },
           "project_id": {

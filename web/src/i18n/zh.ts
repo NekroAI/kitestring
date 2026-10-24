@@ -1157,6 +1157,7 @@ export const zh = {
     undoDone: '取消已完成',
     reqs: (n: number) => `关联需求（${n}）`,
     copyResume: '复制恢复命令',
+    resumeLoginHint: '需要这个目录里已有登录凭证',
     copySessionId: '复制会话 ID',
     handoff: '交接给新会话…',
     handoffHint: '通知它写交接，复制接任命令',

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/NekroAI/kitestring/internal/profile"
 	"io"
 	"log/slog"
 	"net"
@@ -82,6 +83,8 @@ type sessionInfo struct {
 	model      string
 	transcript string // 对话记录文件；ks wait 开始时从这里读最新一段回复（R-117）
 	cwd        string // 最近一次事件的工作目录（记后台进程属于哪个项目，R-209）
+	profile    profile.Info
+	profileSet bool
 }
 
 // New 创建 daemon。
@@ -487,6 +490,13 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		info.cwd = ev.Cwd
 	}
 	ev.Client = info.client
+	if req.Tool == protocol.ToolClaude {
+		if !info.profileSet {
+			home, _ := os.UserHomeDir()
+			info.profile, info.profileSet = profile.Resolve(home, req.Env["CLAUDE_CONFIG_DIR"]), true
+		}
+		ev.Profile, ev.ProfileDir, ev.Launcher = info.profile.Name, info.profile.Dir, info.profile.Launcher
+	}
 	if ev.Model == "" {
 		ev.Model = info.model
 	}

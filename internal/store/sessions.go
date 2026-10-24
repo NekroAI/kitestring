@@ -33,6 +33,9 @@ type Session struct {
 	ProjectID   string     `json:"project_id,omitempty"`
 	ProjectName string     `json:"project_name,omitempty"`
 	Client      string     `json:"client"`
+	Profile     string     `json:"profile,omitempty"`     // Claude 配置显示名（R-240）；默认目录为空
+	ProfileDir  string     `json:"profile_dir,omitempty"` // CLAUDE_CONFIG_DIR 路径
+	Launcher    string     `json:"launcher,omitempty"`    // 用户配的启动命令，如 claude-x
 	Model       string     `json:"model"`
 	Cwd         string     `json:"cwd"`
 	Branch      string     `json:"branch"`
@@ -133,7 +136,7 @@ type RequirementRef struct {
 }
 
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
-	s.client, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.wait_kind, s.last_prompt, s.summary,
+	s.client, s.profile, s.profile_dir, s.launcher, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.wait_kind, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
 	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at,
 	s.started_at, s.last_active_at, s.ended_at
@@ -144,7 +147,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
-		&x.Client, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.WaitKind, &x.LastPrompt, &x.Summary,
+		&x.Client, &x.Profile, &x.ProfileDir, &x.Launcher, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.WaitKind, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
 		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired,
 		&started, &active, &ended)
@@ -348,17 +351,17 @@ func (s *Store) SaveSession(ctx context.Context, x Session) error {
 		b, _ := json.Marshal(x.Tasks)
 		tasks = string(b)
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, model, cwd, branch, dirty, state, state_detail, wait_kind, last_prompt, summary,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions(key, tool, session_id, device_id, project_id, client, profile, profile_dir, launcher, model, cwd, branch, dirty, state, state_detail, wait_kind, last_prompt, summary,
 			state_since, turns, turn_tools, last_tool, last_tool_at, subagents, perm_mode, compactions, worktree, instance, prev_instance, done_at, parked, parked_until, tasks, background, started_at, last_active_at, ended_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, model = excluded.model,
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET device_id = excluded.device_id, project_id = excluded.project_id, client = excluded.client, profile = excluded.profile, profile_dir = excluded.profile_dir, launcher = excluded.launcher, model = excluded.model,
 			cwd = excluded.cwd, branch = excluded.branch, dirty = excluded.dirty, state = excluded.state, state_detail = excluded.state_detail, wait_kind = excluded.wait_kind,
 			last_prompt = excluded.last_prompt, summary = excluded.summary, state_since = excluded.state_since, turns = excluded.turns,
 			turn_tools = excluded.turn_tools, last_tool = excluded.last_tool, last_tool_at = excluded.last_tool_at, subagents = excluded.subagents,
 			perm_mode = excluded.perm_mode, compactions = excluded.compactions, worktree = excluded.worktree,
 			instance = excluded.instance, prev_instance = excluded.prev_instance, done_at = excluded.done_at, parked = excluded.parked, parked_until = excluded.parked_until, tasks = excluded.tasks, background = excluded.background,
 			last_active_at = excluded.last_active_at, ended_at = excluded.ended_at`,
-		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail, x.WaitKind,
+		x.Key, x.Tool, x.SessionID, x.DeviceID, nullStr(x.ProjectID), x.Client, x.Profile, x.ProfileDir, x.Launcher, x.Model, x.Cwd, x.Branch, x.Dirty, x.State, x.StateDetail, x.WaitKind,
 		x.LastPrompt, x.Summary, since, x.Turns, x.TurnTools, x.LastTool, toolAt, x.Subagents, x.PermMode, x.Compactions, x.Worktree,
 		x.Instance, x.PrevInstance, doneAt, x.Parked, parkedUntil, tasks, x.Background, ts(x.StartedAt), ts(x.LastActiveAt), ended)
 	return err

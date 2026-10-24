@@ -9,7 +9,7 @@ import { cx, duration, shortDuration, wan } from '../lib/util'
 import { Tip } from '../ui/base'
 import { spring } from '../ui/gesture'
 import { Ctx } from '../ui/contextMenu'
-import { displayState, RoleBadge, RoleTag, ToolMark } from '../ui/marks'
+import { displayState, ProfileBadge, RoleBadge, RoleTag, ToolMark } from '../ui/marks'
 import { Linkify } from '../ui/refmark'
 import { laneStore, money, onLaneData, useLaneSnap } from './laneFeed'
 import { useToolFeed } from './liveFeed'
@@ -1002,6 +1002,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still, you }:
         <span className={cx('truncate font-semibold', quiet ? 'text-[14px] text-fg-2' : 'text-[15px] text-fg')}>{sessionTitle(s)}</span>
         <FailDot k={s.key} zoom={zoom} now={now} />
         <RoleBadge s={s} />
+        <ProfileBadge s={s} />
         <CtxBadge s={s} />
       </div>
       <div className="flex min-w-0 items-center gap-2">

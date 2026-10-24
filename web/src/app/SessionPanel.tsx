@@ -430,7 +430,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                 <div className="p-3.5">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 ">
               <Info label={t.session.device}>{s.device_name}</Info>
-              <Info label={t.session.client}>{[t.tool[s.tool], s.client].filter(Boolean).join(t.common.sep)}</Info>
+              <Info label={t.session.client}>{[t.tool[s.tool], s.profile, s.client].filter(Boolean).join(t.common.sep)}</Info>
               <Info label={t.session.model} mono>
                 {s.model}
               </Info>

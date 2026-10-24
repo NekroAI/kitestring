@@ -39,6 +39,9 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 	if ev.Client != "" {
 		x.Client = ev.Client
 	}
+	if ev.Profile != "" {
+		x.Profile, x.ProfileDir, x.Launcher = ev.Profile, ev.ProfileDir, ev.Launcher
+	}
 	if ev.Model != "" {
 		x.Model = ev.Model
 	}

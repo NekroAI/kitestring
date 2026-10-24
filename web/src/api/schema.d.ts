@@ -2449,10 +2449,13 @@ export interface components {
             id: string;
             instance?: string;
             last_reply?: string;
+            launcher?: string;
             model?: string;
             name: string;
             notification_type?: string;
             permission_mode?: string;
+            profile?: string;
+            profile_dir?: string;
             prompt?: string;
             reason?: string;
             reply?: string;
@@ -3700,6 +3703,7 @@ export interface components {
             last_tool: string;
             /** Format: date-time */
             last_tool_at?: string;
+            launcher?: string;
             model: string;
             other_terminal: boolean;
             parked: boolean;
@@ -3708,6 +3712,8 @@ export interface components {
             /** Format: int64 */
             pending_decisions: number;
             permission_mode: string;
+            profile?: string;
+            profile_dir?: string;
             project_id?: string;
             project_name?: string;
             recent_tools: components["schemas"]["ToolAct"][] | null;
