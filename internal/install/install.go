@@ -314,8 +314,8 @@ func configLabel(home, dir string) string {
 }
 
 // claudeTargets 算出这次要处理的 Claude 配置目录（默认目录排第一），并维护本机 claude-dirs.json。
-// 安装：默认目录 + 本机记录 + 命令行指定 + 当前 shell 的 CLAUDE_CONFIG_DIR，合并后写回记录。
-// 卸载：命令行指定了就只处理这些，否则处理全部；处理完从记录里去掉。
+// 命令行指定了目录：安装和卸载都只处理这些（安装时并入本机记录，卸载时从记录里去掉）。
+// 没指定：安装 = 默认目录 + 本机记录 + 当前 shell 的 CLAUDE_CONFIG_DIR；卸载 = 全部。
 func claudeTargets(o Options, home string, uninstall bool) ([]string, error) {
 	saved, err := profile.Load(home)
 	if err != nil {
@@ -336,7 +336,7 @@ func claudeTargets(o Options, home string, uninstall bool) ([]string, error) {
 		}
 	}
 	var targets []profile.Dir
-	if uninstall && len(explicit) > 0 {
+	if len(explicit) > 0 {
 		targets = explicit
 	} else {
 		targets = profile.Merge(profile.Merge(profile.Merge([]profile.Dir{{Path: profile.DefaultDir(home)}}, saved...), envDirs...), explicit...)

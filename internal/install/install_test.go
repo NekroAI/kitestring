@@ -53,6 +53,10 @@ func hookCount(t *testing.T, path string) int {
 func TestInstallMultipleDirs(t *testing.T) {
 	home := setup(t)
 	x := filepath.Join(home, ".claude-x")
+	o0, _ := opts()
+	if err := Run(o0, false); err != nil {
+		t.Fatal(err)
+	}
 	o, _ := opts(profile.Dir{Path: x, Launcher: "claude-x"})
 	if err := Run(o, false); err != nil {
 		t.Fatal(err)
@@ -106,6 +110,10 @@ func TestInstallPicksUpShellEnvDir(t *testing.T) {
 func TestUninstallOneThenAll(t *testing.T) {
 	home := setup(t)
 	x := filepath.Join(home, ".claude-x")
+	o0, _ := opts()
+	if err := Run(o0, false); err != nil {
+		t.Fatal(err)
+	}
 	o, _ := opts(profile.Dir{Path: x})
 	if err := Run(o, false); err != nil {
 		t.Fatal(err)
