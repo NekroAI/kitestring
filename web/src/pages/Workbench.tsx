@@ -15,7 +15,8 @@ import { RecapPanel } from '../app/Recap'
 import { sessionTitle } from '../app/SessionCard'
 import { SessionRow } from '../app/thread'
 import { AskItem, askLine, useAsks, useOpenAsk, useStaying, type Ask } from '../app/asks'
-import { BriefStrip, HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
+import { BriefStrip } from '../app/brief'
+import { HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
 import { EndedLane, Lane, LaneAxis, laneTone, setLaneZoom, setOffline, ZoomSwitch, type LaneMode, type Tone } from '../app/lanes'
 import { ensureZoom, laneStore, prefetchLanes, useLanePrices, useLaneSnap } from '../app/laneFeed'
 import { coarse, makeAxis, ZOOMS, type SessionMeta, type Zoom } from '../lib/lanedata'
@@ -545,7 +546,7 @@ export default function WorkbenchPage() {
               </Tip>
             )}
           </div>
-          <BriefStrip sessions={wb.sessions} now={now} zoom={zoom} />
+          <BriefStrip sessions={wb.sessions} now={now} zoom={zoom} asks={todo} />
           {!rail && <PlanChips className={cx(!phone && 'col-span-2')} />}
           {phone && (
             <div role="tablist" className="flex gap-1.5">

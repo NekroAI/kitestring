@@ -514,13 +514,27 @@
       "Agent-set-briefRequest": {
         "additionalProperties": false,
         "properties": {
+          "headline": {
+            "description": "一句话结论（建议 40 字以内）：常驻条上只显示它（R-212）；不写时网页取正文第一句",
+            "type": "string"
+          },
+          "look": {
+            "description": "要用户先看的几条（建议 3 条以内，每条一句，写编号）：展开后排在最前（R-212）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "session_key": {
             "description": "调用者（必须是本项目的 PM）",
             "minLength": 1,
             "type": "string"
           },
           "text": {
-            "description": "简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；空字符串表示清除",
+            "description": "简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；建议 200 字以内，超出照常保存并提示压缩；headline、look、text 都为空表示清除",
             "type": "string"
           }
         },
@@ -543,13 +557,27 @@
               "null"
             ]
           },
+          "headline": {
+            "description": "一句话结论（建议 40 字以内，R-212）：常驻条上只显示它；不传表示不改，空字符串清除",
+            "type": "string"
+          },
+          "look": {
+            "description": "要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改，传 [\"\"] 清空",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "session_key": {
             "description": "调用者（必须是本项目的主助理）",
             "minLength": 1,
             "type": "string"
           },
           "text": {
-            "description": "总述：一段话，先结论；不传表示不改，空字符串表示清除",
+            "description": "总述：一段话，先结论，建议 200 字以内，超出照常保存并提示压缩；不传表示不改",
             "type": "string"
           }
         },
@@ -1723,6 +1751,22 @@
           "y",
           "w",
           "h"
+        ],
+        "type": "object"
+      },
+      "BriefOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "hint": {
+            "description": "一句话结论 / 要先看的 / 正文超出建议长度时的提示（照常保存）",
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
         ],
         "type": "object"
       },
@@ -4661,6 +4705,20 @@
             "description": "写总述的 Adv 会话",
             "type": "string"
           },
+          "headline": {
+            "description": "一句话结论（建议 40 字以内，R-212）；老数据没有，网页取总述第一句",
+            "type": "string"
+          },
+          "look": {
+            "description": "要你先看的几条（建议 3 条以内，每条一句，R-212）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "text": {
             "type": "string"
           }
@@ -5855,6 +5913,18 @@
           },
           "brief_by": {
             "type": "string"
+          },
+          "brief_headline": {
+            "type": "string"
+          },
+          "brief_look": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "commit_on_accept": {
             "type": "boolean"
@@ -8594,7 +8664,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OkBodyBody"
+                  "$ref": "#/components/schemas/BriefOutBody"
                 }
               }
             },

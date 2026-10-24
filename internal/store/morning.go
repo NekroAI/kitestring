@@ -21,9 +21,11 @@ const (
 
 // MorningNote 是参谋写给你的小结总述。
 type MorningNote struct {
-	Text string    `json:"text"`
-	By   string    `json:"by" doc:"写总述的 Adv 会话"`
-	At   time.Time `json:"at"`
+	Headline string    `json:"headline,omitempty" doc:"一句话结论（建议 40 字以内，R-212）；老数据没有，网页取总述第一句"`
+	Look     []string  `json:"look,omitempty" doc:"要你先看的几条（建议 3 条以内，每条一句，R-212）"`
+	Text     string    `json:"text"`
+	By       string    `json:"by" doc:"写总述的 Adv 会话"`
+	At       time.Time `json:"at"`
 }
 
 // Advice 是参谋对一条待验收需求的建议。
@@ -39,24 +41,28 @@ type Advice struct {
 	At              time.Time `json:"at"`
 }
 
-// SetMorning 写入 / 清除（text 为空）项目的小结总述。
-func (s *Store) SetMorning(ctx context.Context, projectID, text, by string) error {
-	if text == "" {
+// SetMorning 写入 / 清除（一句话结论、要先看的、总述都为空）项目的小结总述。
+func (s *Store) SetMorning(ctx context.Context, projectID, text, by, headline string, look []string) error {
+	if text == "" && headline == "" && len(look) == 0 {
 		_, err := s.db.ExecContext(ctx, `DELETE FROM morning_notes WHERE project_id = ?`, projectID)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO morning_notes(project_id, text, by_session, at) VALUES(?, ?, ?, ?)
-		ON CONFLICT(project_id) DO UPDATE SET text = excluded.text, by_session = excluded.by_session, at = excluded.at`, projectID, text, by, now())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO morning_notes(project_id, text, by_session, at, headline, look) VALUES(?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_id) DO UPDATE SET text = excluded.text, by_session = excluded.by_session, at = excluded.at, headline = excluded.headline, look = excluded.look`,
+		projectID, text, by, now(), headline, blocks.Encode(look))
 	return err
 }
 
 // GetMorning 读取项目的小结总述；没有时返回 ErrNotFound。
 func (s *Store) GetMorning(ctx context.Context, projectID string) (MorningNote, error) {
 	var n MorningNote
-	var at string
-	err := s.db.QueryRowContext(ctx, `SELECT text, by_session, at FROM morning_notes WHERE project_id = ?`, projectID).Scan(&n.Text, &n.By, &at)
+	var at, look string
+	err := s.db.QueryRowContext(ctx, `SELECT text, by_session, at, headline, look FROM morning_notes WHERE project_id = ?`, projectID).Scan(&n.Text, &n.By, &at, &n.Headline, &look)
 	if errors.Is(err, sql.ErrNoRows) {
 		return n, ErrNotFound
+	}
+	if v := blocks.Decode[[]string](look); v != nil {
+		n.Look = *v
 	}
 	n.At = parseTS(at)
 	return n, err

@@ -100,17 +100,20 @@ func currentTeller() (key, agent string) {
 func runBrief(args []string) error {
 	fs := flag.NewFlagSet("brief", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	headline := fs.String("headline", "", "一句话结论（建议 40 字以内）：工作台常驻条上只显示它")
+	var look stringList
+	fs.Var(&look, "look", "要用户先看的一条（建议最多 3 条，可重复）")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("用法：ks brief <简报：一段话，先结论，提到需求写编号>（传空字符串清除）")
+		return fmt.Errorf("用法：ks brief [--headline 一句话结论] [--look 要先看的一条]... <简报：一段话（建议 200 字以内），先结论，提到需求写编号>（传空字符串清除）")
 	}
 	key := currentSession(*session)
 	if key == "" {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
 	}
-	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " ")})
+	return agentCall("POST", "/agent/brief", map[string]any{"session_key": key, "text": strings.Join(fs.Args(), " "), "headline": *headline, "look": []string(look)})
 }
 
 // runMorning：主助理写离开期间小结（R-165）；ks morning 是旧名，保留别名。
@@ -130,11 +133,14 @@ func runMorning(args []string) error {
 	}
 	fs := flag.NewFlagSet("morning", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	headline := fs.String("headline", "", "一句话结论（建议 40 字以内）：工作台常驻条上只显示它；不传则不改")
+	var look stringList
+	fs.Var(&look, "look", "要用户先看的一条（建议最多 3 条，可重复）；不传则不改")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
-	usage := fmt.Errorf("用法：ks away <总述：一段话，先结论，提到需求写编号>（传空字符串清除）\n      ks away advise <R-x> <pass|return|clear> <理由>\n      ks away status | ks away report [A-x]\n      ks away escalate <D-x> --reason 理由")
-	if fs.NArg() < 1 {
+	usage := fmt.Errorf("用法：ks away [--headline 一句话结论] [--look 要先看的一条]... <总述：一段话（建议 200 字以内），先结论，提到需求写编号>（传空字符串清除）\n      ks away advise <R-x> <pass|return|clear> <理由>\n      ks away status | ks away report [A-x]\n      ks away escalate <D-x> --reason 理由")
+	if fs.NArg() < 1 && *headline == "" && len(look) == 0 {
 		return usage
 	}
 	key := currentSession(*session)
@@ -142,7 +148,15 @@ func runMorning(args []string) error {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
 	}
 	body := map[string]any{"session_key": key}
-	if a := fs.Args(); a[0] == "advise" {
+	if *headline != "" {
+		body["headline"] = *headline
+	}
+	if len(look) > 0 {
+		body["look"] = []string(look)
+	}
+	if a := fs.Args(); len(a) == 0 {
+		// 只写一句话结论 / 要先看的，不改总述
+	} else if a[0] == "advise" {
 		if len(a) < 3 {
 			return usage
 		}

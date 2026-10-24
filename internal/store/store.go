@@ -159,6 +159,11 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"sessions", "launcher", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "verdict", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "rec_option", "INTEGER NOT NULL DEFAULT -1"},
+	// 顶部简报的一句话结论和要先看的几条（R-212）
+	{"morning_notes", "headline", "TEXT NOT NULL DEFAULT ''"},
+	{"morning_notes", "look", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "brief_headline", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "brief_look", "TEXT NOT NULL DEFAULT ''"},
 	// 暂时离开（R-210）：决策上标的硬规则类别；授权窗口属于哪次离开
 	{"decisions", "hard", "TEXT NOT NULL DEFAULT ''"},
 	{"grants", "away_id", "TEXT NOT NULL DEFAULT ''"},

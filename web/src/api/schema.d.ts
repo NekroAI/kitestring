@@ -1902,17 +1902,25 @@ export interface components {
             to: string;
         };
         "Agent-set-briefRequest": {
+            /** @description 一句话结论（建议 40 字以内）：常驻条上只显示它（R-212）；不写时网页取正文第一句 */
+            headline?: string;
+            /** @description 要用户先看的几条（建议 3 条以内，每条一句，写编号）：展开后排在最前（R-212） */
+            look?: string[] | null;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
-            /** @description 简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；空字符串表示清除 */
+            /** @description 简报正文：一段话，先说结论，提到需求 / 计划 / 决策时写编号；建议 200 字以内，超出照常保存并提示压缩；headline、look、text 都为空表示清除 */
             text: string;
         };
         "Agent-set-morningRequest": {
             /** @description 逐条验收建议，每条覆盖该需求上一份 */
             advice?: components["schemas"]["AdviceIn"][] | null;
+            /** @description 一句话结论（建议 40 字以内，R-212）：常驻条上只显示它；不传表示不改，空字符串清除 */
+            headline?: string;
+            /** @description 要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改，传 [""] 清空 */
+            look?: string[] | null;
             /** @description 调用者（必须是本项目的主助理） */
             session_key: string;
-            /** @description 总述：一段话，先结论；不传表示不改，空字符串表示清除 */
+            /** @description 总述：一段话，先结论，建议 200 字以内，超出照常保存并提示压缩；不传表示不改 */
             text?: string;
         };
         "Agent-set-roleRequest": {
@@ -2354,6 +2362,11 @@ export interface components {
              * @description 上边到图片顶部的距离 / 图片高（0～1）
              */
             y: number;
+        };
+        BriefOutBody: {
+            /** @description 一句话结论 / 要先看的 / 正文超出建议长度时的提示（照常保存） */
+            hint?: string;
+            ok: boolean;
         };
         CIState: {
             /** Format: date-time */
@@ -3278,6 +3291,10 @@ export interface components {
             at: string;
             /** @description 写总述的 Adv 会话 */
             by: string;
+            /** @description 一句话结论（建议 40 字以内，R-212）；老数据没有，网页取总述第一句 */
+            headline?: string;
+            /** @description 要你先看的几条（建议 3 条以内，每条一句，R-212） */
+            look?: string[] | null;
             text: string;
         };
         MorningOutBody: {
@@ -3639,6 +3656,8 @@ export interface components {
             /** Format: date-time */
             brief_at?: string;
             brief_by: string;
+            brief_headline?: string;
+            brief_look?: string[] | null;
             commit_on_accept: boolean;
             /** Format: date-time */
             created_at: string;
@@ -4510,7 +4529,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OkBodyBody"];
+                    "application/json": components["schemas"]["BriefOutBody"];
                 };
             };
             /** @description Error */

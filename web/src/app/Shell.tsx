@@ -9,7 +9,7 @@ import { Tip } from '../ui/base'
 import { useWorkbench } from './inbox'
 import { useTodo } from './desk'
 import { usePanelParams } from './nav'
-import { GrantBanner } from './grant'
+import { AwayBar } from './brief'
 import { planState, PlanPanel } from './plans'
 import { ApprovalPanel } from './approval'
 import { usePlans } from '../api/queries'
@@ -185,6 +185,7 @@ function MobileHeader({ connected }: { connected: boolean }) {
 
 export function Shell() {
   const { pathname } = useLocation()
+  const now = useNow()
   const connected = useLiveUpdates(true)
   useDraftSweep() // 对象关闭后自动清掉它的输入草稿（R-202）
   useCompactSync() // 上下文圆环 / 建议压缩用设置里的阈值（R-224、R-225）
@@ -222,7 +223,7 @@ export function Shell() {
       <main className={cx('pb-24 transition-[padding] duration-200 ease-out', pathname === '/' ? 'lg:pb-5' : 'lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
         {/* 工作台是一屏驾驶舱，用满任意宽度（R-170，去掉原来 1880px 的上限）、需求池盘面随屏幕一直放宽到 3600px（R-133，2K / 4K / 21:9 用满），其余页面保持 1360px 的阅读宽度 */}
         <div className={cx('mx-auto px-4 pt-5 sm:px-6 lg:px-10', pathname === '/' ? 'lg:pt-6' : 'lg:pt-9', pathname === '/' ? '' : pathname === '/requirements' ? 'max-w-[3600px]' : 'max-w-[1360px]')}>
-          <GrantBanner />
+          {pathname !== '/' && <AwayBar now={now} />}
           <Outlet />
         </div>
       </main>

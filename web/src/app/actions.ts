@@ -49,6 +49,10 @@ export function useActions() {
       run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
     openGrant: (body: { project_id: string; session_key: string; expires_at: string; max_risk: 'low' | 'medium' }) =>
       run(() => unwrap(api.POST('/api/grants', { body })), ['grants', 'decisions']),
+    // 暂时离开（R-210）
+    startAway: (body: { expect_minutes: 30 | 120 | 480 | 0; scope: 'none' | 'low' | 'medium'; hold_push?: boolean }) =>
+      run(() => unwrap(api.POST('/api/away', { body })), ['away', 'grants', 'decisions', 'morning']),
+    endAway: () => run(() => unwrap(api.POST('/api/away/end')), ['away', 'grants', 'decisions', 'morning']),
     revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions', 'morning']),
     overrideDecision: (ref: string, answer: string) =>
       send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions', 'morning']),

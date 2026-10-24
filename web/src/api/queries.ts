@@ -124,6 +124,23 @@ export function useMorning() {
   })
 }
 
+// 暂时离开（R-210）：离开中 / 最近一次离开，离开多久、主助理处理几件、推送几条。
+export function useAway() {
+  return useQuery({
+    queryKey: ['away'],
+    queryFn: () => unwrap(api.GET('/api/away')),
+  })
+}
+
+// 离开时段报告（R-210）：你在各设备上处理了什么等；enabled 为 false 时不取。
+export function useAwayReport(enabled: boolean) {
+  return useQuery({
+    queryKey: ['away', 'report'],
+    queryFn: () => unwrap(api.GET('/api/away/report', { params: { query: {} } })),
+    enabled,
+  })
+}
+
 export function useRequirements() {
   return useQuery({
     queryKey: qk.requirements,
@@ -210,6 +227,7 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   decisions: [['decisions'], ['grants'], ['morning']],
   grants: [['grants'], ['morning']],
   morning: [['morning']],
+  away: [['away'], ['morning'], ['grants']],
   requirements: [['requirements'], ['plans'], ['morning']],
   plans: [['plans']],
   devices: [['devices'], ['sessions']],

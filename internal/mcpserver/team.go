@@ -71,7 +71,9 @@ type recommendIn struct {
 }
 
 type briefIn struct {
-	Text string `json:"text" jsonschema:"简报：一段话（建议 150 字以内），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
+	Headline string   `json:"headline,omitempty" jsonschema:"一句话结论（建议 40 字以内）：工作台常驻条上只显示它，所以要自己读得通；不写时网页取简报第一句"`
+	Look     []string `json:"look,omitempty" jsonschema:"要用户先看的几条（建议 3 条以内，每条一句，写编号），展开后排在最前"`
+	Text     string   `json:"text" jsonschema:"简报：一段话（建议 200 字以内，超出照常保存并提示压缩），先结论——你离开期间完成了什么、现在在等你做什么、有什么风险；提到需求 / 计划 / 决策写编号（如 R-12），网页会画成印记。传空字符串清除"`
 }
 
 type handoffIn struct {
@@ -89,8 +91,10 @@ type morningAdviceIn struct {
 }
 
 type morningIn struct {
-	Text   *string           `json:"text,omitempty" jsonschema:"总述：一段话（建议 150 字以内），先结论——用户离开期间整体推进到哪、你替用户定了几件、有什么要用户先看的；提到需求 / 决策写编号。不传表示不改，传空字符串清除"`
-	Advice []morningAdviceIn `json:"advice,omitempty" jsonschema:"逐条验收建议，每条覆盖该需求上一份；只能写给待验收的需求"`
+	Headline *string           `json:"headline,omitempty" jsonschema:"一句话结论（建议 40 字以内）：工作台常驻条上只显示它，所以要自己读得通；不传表示不改，传空字符串清除"`
+	Look     []string          `json:"look,omitempty" jsonschema:"要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改"`
+	Text     *string           `json:"text,omitempty" jsonschema:"总述：一段话（建议 200 字以内，超出照常保存并提示压缩），先结论——用户离开期间整体推进到哪、你替用户定了几件、有什么要用户先看的；提到需求 / 决策写编号。不传表示不改，传空字符串清除"`
+	Advice   []morningAdviceIn `json:"advice,omitempty" jsonschema:"逐条验收建议，每条覆盖该需求上一份；只能写给待验收的需求"`
 }
 
 type tellIn struct {
@@ -142,13 +146,16 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			if key == "" {
 				return nil, nil, fmt.Errorf("无法识别当前会话")
 			}
-			if err := t.c.Do(ctx, "POST", "/agent/brief", map[string]any{"session_key": key, "text": in.Text}, nil); err != nil {
+			var out struct {
+				Hint string `json:"hint"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/brief", map[string]any{"session_key": key, "text": in.Text, "headline": in.Headline, "look": in.Look}, &out); err != nil {
 				return nil, nil, err
 			}
-			if in.Text == "" {
+			if in.Text == "" && in.Headline == "" && len(in.Look) == 0 {
 				return text("已清除简报。"), nil, nil
 			}
-			return text("简报已更新，用户在工作台顶部能看到。"), nil, nil
+			return text("简报已更新，用户在工作台顶部能看到。" + out.Hint), nil, nil
 		})
 	away := func(ctx context.Context, req *mcp.CallToolRequest, in morningIn) (*mcp.CallToolResult, any, error) {
 		key := t.sessionKey(ctx, req)
@@ -158,6 +165,12 @@ func (t *tools) registerTeam(s *mcp.Server) {
 		body := map[string]any{"session_key": key}
 		if in.Text != nil {
 			body["text"] = *in.Text
+		}
+		if in.Headline != nil {
+			body["headline"] = *in.Headline
+		}
+		if in.Look != nil {
+			body["look"] = in.Look
 		}
 		if len(in.Advice) > 0 {
 			body["advice"] = in.Advice

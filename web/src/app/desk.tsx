@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ChevronDown, WifiOff } from 'lucide-react'
-import type { MorningReport, Plan, Session } from '../api/client'
-import { useConnected, useDecisions, useMorning, usePlans, useProjects, useRequirements } from '../api/queries'
+import type { Plan, Session } from '../api/client'
+import { useDecisions, usePlans, useRequirements } from '../api/queries'
 import { buildAsks, useStaying, type Ask } from './asks'
 import { t } from '../i18n'
 import type { Scene } from '../i18n/zh'
@@ -10,15 +9,12 @@ import { cx, loadPref, relTime, savePref } from '../lib/util'
 import { Skeleton, Tip } from '../ui/base'
 import { Item, List, useSettled } from '../ui/motion'
 import { spring } from '../ui/gesture'
-import { displayState, presence, RoleTag } from '../ui/marks'
-import { Linkify, PlanGlyph, RefLine, shortTitle } from '../ui/refmark'
+import { displayState } from '../ui/marks'
+import { PlanGlyph, RefLine, shortTitle } from '../ui/refmark'
 import type { ProjectGroup, useWorkbench } from './inbox'
 import { useOpenPlan } from './nav'
 import { needsApproval, passedWith, planState, StageRail } from './plans'
 import { useRecent } from './recent'
-import { MorningReports } from './morning'
-import { TokBrief, Wind } from './lanes'
-import type { Zoom } from '../lib/lanedata'
 import { Team } from '../pages/Projects'
 import { usePendingMap } from './verdict'
 import { approvedOf } from '../lib/waiting'
@@ -28,34 +24,6 @@ import { approvedOf } from '../lib/waiting'
 // 会话泳道见 app/lanes.tsx，版面见 pages/Workbench.tsx。
 
 type WB = ReturnType<typeof useWorkbench>
-
-const briefTTL = 12 * 3600e3 // 超过 12 小时没更新的简报不再显示
-
-// ---------- PM 简报：一行 ----------
-
-// skip：已由离开期间小结占了简报位的项目（R-165），它们的 PM 简报收进小结卡里，这里不再单独显示。
-export function Briefs({ sessions, now, skip }: { sessions: Session[]; now: number; skip?: Set<string> }) {
-  const projects = useProjects()
-  const list = (projects.data?.projects ?? []).filter((p) => p.brief && p.brief_at && now - Date.parse(p.brief_at) < briefTTL && !p.hidden && !skip?.has(p.id))
-  if (!list.length) return null
-  return (
-    <div className="mb-4 space-y-2">
-      {list.map((p) => {
-        const pm = sessions.find((x) => x.key === p.brief_by)
-        return (
-          <section key={p.id} className="flex items-start gap-3 rounded-xl border border-line bg-surface px-4 py-2.5 shadow-xs">
-            <RoleTag role="pm" presence={pm ? presence(pm) || undefined : undefined} className="mt-0.5" />
-            <p className="min-w-0 flex-1 text-sm leading-relaxed text-fg max-sm:line-clamp-3">
-              {list.length > 1 && <span className="mr-1.5 text-fg-3">{p.name}</span>}
-              <Linkify text={p.brief} label="title" />
-            </p>
-            <span className="mt-0.5 shrink-0 text-xs text-fg-3 tabular max-sm:hidden">{relTime(p.brief_at, now)}</span>
-          </section>
-        )
-      })}
-    </div>
-  )
-}
 
 // ---------- 要你处理的事有几件（标题、侧栏角标同一口径） ----------
 
@@ -249,102 +217,6 @@ export function TeamRail({ groups, className }: { groups: ProjectGroup[]; classN
         ))}
       </div>
     </Panel>
-  )
-}
-
-// ---------- 简报位（R-165 / R-170） ----------
-
-// 离开结束（授权窗口到期 / 撤销；没有窗口时以总述写下的时间算）超过这么久，小结自动收起，PM 简报接回简报位（R-170 返工）。
-const awayFold = 2 * 3600e3
-function awayEnd(r: MorningReport): string | undefined {
-  const g = r.grant
-  if (g) return g.status === 'active' ? undefined : g.revoked_at && g.revoked_at < g.expires_at ? g.revoked_at : g.expires_at
-  return r.note?.at
-}
-
-// BriefStrip：顶部唯一的简报位。有离开期间小结时放小结（顾问），否则放 PM 简报；背后是这一档所有会话新算 token 的波形，
-// 右边写这一档的合计（R-206）。
-// 最多两行换行显示，点开看全文（小结卡、各项目的 PM 简报）；离开结束两小时后小结收起成一行，PM 简报接回简报位。断线时整体静止变灰并写明。
-export function BriefStrip({ sessions, now, zoom }: { sessions: Session[]; now: number; zoom: Zoom }) {
-  const morning = useMorning()
-  const projects = useProjects()
-  const connected = useConnected()
-  const [open, setOpen] = useState(false)
-  const reports = morning.data?.reports ?? []
-  const fresh = reports.filter((r) => {
-    const end = awayEnd(r)
-    return !end || now - Date.parse(end) < awayFold
-  })
-  const stale = reports.filter((r) => !fresh.includes(r))
-  const skip = new Set(fresh.map((r) => r.project_id))
-  const briefs = (projects.data?.projects ?? []).filter((p) => p.brief && p.brief_at && now - Date.parse(p.brief_at) < briefTTL && !p.hidden && !skip.has(p.id))
-  const find = (k?: string) => (k ? sessions.find((x) => x.key === k) : undefined)
-  const r = fresh[0]
-  const b = briefs[0]
-  const old = stale[0]
-  const head = r
-    ? { role: 'aide', who: find(r.note?.by ?? r.grant?.session_key), any: true, label: t.morning.title, text: r.note?.text ?? t.morning.noNote, at: r.note?.at ?? r.since, folded: false }
-    : b
-      ? { role: 'pm', who: find(b.brief_by), any: false, label: briefs.length > 1 ? b.name : '', text: b.brief ?? '', at: b.brief_at, folded: false }
-      : old
-        ? { role: 'aide', who: find(old.note?.by ?? old.grant?.session_key), any: true, label: '', text: t.desk.awayEnded(relTime(awayEnd(old), now)), at: awayEnd(old), folded: true }
-        : null
-  const more = fresh.length + briefs.length + (head?.folded ? 0 : stale.length) - (head && !head.folded ? 1 : 0)
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open])
-  return (
-    <div className="relative min-w-0">
-      <button
-        onClick={() => head && setOpen(!open)}
-        aria-expanded={head ? open : undefined}
-        // 固定两行高（R-211）：简报有无、一行两行，顶栏和下面三栏都不跳
-        className={cx('relative flex h-[54px] w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl bg-surface px-3.5 py-2 text-left shadow-card', head && 'cursor-pointer hover:bg-hover/50')}
-      >
-        <Wind />
-        {!connected && (
-          <span className="relative inline-flex shrink-0 items-center gap-1.5 self-center rounded-full bg-danger-soft px-2 py-0.5 text-[11.5px] font-medium text-danger">
-            <WifiOff className="size-3.5" />
-            {t.desk.offline}
-          </span>
-        )}
-        {head ? (
-          <>
-            <RoleTag role={head.role} presence={head.who ? presence(head.who, head.any) || undefined : undefined} className="relative shrink-0 bg-surface" />
-            <span className={cx('relative min-w-0 flex-1 text-[13px] leading-[1.45]', head.folded ? 'truncate text-fg-3' : 'line-clamp-2 text-fg-2')}>
-              {head.label && <b className="mr-1.5 font-semibold text-fg">{head.label}</b>}
-              <Linkify text={head.text} />
-            </span>
-            <span className="relative flex shrink-0 items-center gap-2 text-[11.5px] text-fg-3">
-              <TokBrief zoom={zoom} className="max-xl:hidden" />
-              {more > 0 && <span>{t.desk.briefMore(more)}</span>}
-              {!head.folded && <span className="tabular max-sm:hidden">{relTime(head.at, now)}</span>}
-              <span className="inline-flex items-center gap-0.5 text-fg-2">
-                <span className="max-md:hidden">{t.desk.briefOpen}</span>
-                <ChevronDown className={cx('size-4 transition-transform', open && 'rotate-180')} />
-              </span>
-            </span>
-          </>
-        ) : (
-          <>
-            {connected && !morning.isPending && !projects.isPending && <span className="relative min-w-0 flex-1 truncate text-[12.5px] text-fg-3">{t.desk.noBrief}</span>}
-            <TokBrief zoom={zoom} className="relative ml-auto shrink-0 text-[11.5px] text-fg-3 max-lg:hidden" />
-          </>
-        )}
-      </button>
-      {open && head && (
-        <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="desk-scroll absolute inset-x-0 top-full z-40 mt-2 max-h-[70vh] overflow-y-auto rounded-2xl border border-line bg-bg p-3 shadow-pop [&>div:last-child]:mb-0">
-            <MorningReports sessions={sessions} now={now} />
-            <Briefs sessions={sessions} now={now} skip={skip} />
-          </div>
-        </>
-      )}
-    </div>
   )
 }
 

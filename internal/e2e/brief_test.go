@@ -46,6 +46,20 @@ func TestBrief(t *testing.T) {
 	if p.Brief != "R-1 已交，等你验收。" || p.BriefBy != "claude:pm" || p.BriefAt == nil {
 		t.Fatalf("简报应写入并去掉首尾空白：%+v", p)
 	}
+	// 结构化字段（R-212）：超标照常保存并返回提示压缩；空行丢掉
+	long := "这是一句明显超过四十个字的结论，写得又长又啰嗦，常驻条一行肯定放不下，应该被提示压缩一下才对"
+	var out struct {
+		Hint string `json:"hint"`
+	}
+	if err := c.Do(ctx, "POST", "/agent/brief", map[string]any{"session_key": "claude:pm", "text": "正文", "headline": long, "look": []string{"R-1 验收", " ", "R-2", "R-3", "R-4"}}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if p := project(); p.BriefHeadline != long || len(p.BriefLook) != 4 {
+		t.Fatalf("超标的结论和要先看的应照常保存：%+v", p)
+	}
+	if out.Hint == "" {
+		t.Fatal("超标应返回压缩提示")
+	}
 	if err := c.Do(ctx, "POST", "/agent/brief", map[string]any{"session_key": "claude:pm", "text": ""}, nil); err != nil {
 		t.Fatal(err)
 	}

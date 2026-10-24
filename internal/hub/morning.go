@@ -26,7 +26,7 @@ import (
 
 const (
 	morningTTL     = 12 * time.Hour // 窗口结束 / 总述写下超过这么久，小结不再出现
-	morningTextMax = 800
+	morningTextMax = 2000           // 防滥用的硬上限；建议长度 200 字，超出照常保存并提示压缩（R-212）
 	morningTells   = 8
 )
 
@@ -296,7 +296,9 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey string     `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的主助理）"`
-				Text       *string    `json:"text,omitempty" doc:"总述：一段话，先结论；不传表示不改，空字符串表示清除"`
+				Text       *string    `json:"text,omitempty" doc:"总述：一段话，先结论，建议 200 字以内，超出照常保存并提示压缩；不传表示不改"`
+				Headline   *string    `json:"headline,omitempty" doc:"一句话结论（建议 40 字以内，R-212）：常驻条上只显示它；不传表示不改，空字符串清除"`
+				Look       []string   `json:"look,omitempty" doc:"要用户先看的几条（建议 3 条以内，每条一句，写编号）；不传表示不改，传 [\"\"] 清空"`
 				Advice     []adviceIn `json:"advice,omitempty" doc:"逐条验收建议，每条覆盖该需求上一份"`
 			}
 		}) (*morningSetOut, error) {
@@ -307,8 +309,8 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 			if me.Role != roles.Aide || me.ProjectID == "" {
 				return nil, huma.Error403Forbidden(notAide("写离开期间小结和验收建议", me.Role))
 			}
-			if in.Body.Text == nil && len(in.Body.Advice) == 0 {
-				return nil, huma.Error400BadRequest("什么都没写：传 text（总述）或 advice（验收建议）")
+			if in.Body.Text == nil && in.Body.Headline == nil && in.Body.Look == nil && len(in.Body.Advice) == 0 {
+				return nil, huma.Error400BadRequest("什么都没写：传 headline（一句话结论）、text（总述）或 advice（验收建议）")
 			}
 			// 先全部检查，再一起写入：一条不合格就整次拒绝
 			type item struct {
@@ -336,15 +338,28 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 				items = append(items, item{r, a})
 			}
 			var done []string
-			if in.Body.Text != nil {
-				text := strings.TrimSpace(*in.Body.Text)
-				if utf8.RuneCountInString(text) > morningTextMax {
-					text = string([]rune(text)[:morningTextMax])
+			var hint string
+			if in.Body.Text != nil || in.Body.Headline != nil || in.Body.Look != nil {
+				// 没传的字段保留上一份（R-212）
+				cur, _ := h.store.GetMorning(ctx, me.ProjectID)
+				text, headline, look := cur.Text, cur.Headline, cur.Look
+				if in.Body.Text != nil {
+					text = strings.TrimSpace(*in.Body.Text)
+					if utf8.RuneCountInString(text) > morningTextMax {
+						text = string([]rune(text)[:morningTextMax])
+					}
 				}
-				if err := h.store.SetMorning(ctx, me.ProjectID, text, me.Key); err != nil {
+				if in.Body.Headline != nil {
+					headline = strings.TrimSpace(*in.Body.Headline)
+				}
+				if in.Body.Look != nil {
+					look = cleanLook(in.Body.Look)
+				}
+				if err := h.store.SetMorning(ctx, me.ProjectID, text, me.Key, headline, look); err != nil {
 					return nil, err
 				}
-				if text == "" {
+				hint = shapeHints(headline, look, text, morningTextAdv)
+				if text == "" && headline == "" && len(look) == 0 {
 					done = append(done, "已清除总述")
 				} else {
 					done = append(done, "总述已更新")
@@ -362,7 +377,7 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 			}
 			h.broker.publish("morning")
 			out := &morningSetOut{}
-			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的离开期间小结、「要你处理」的验收卡上能看到。"
+			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的离开期间小结、「要你处理」的验收卡上能看到。" + hint
 			return out, nil
 		})
 }

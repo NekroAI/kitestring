@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { CheckCheck, ChevronLeft, ChevronRight, CircleCheck, PanelRight, X } from 'lucide-react'
 import type { Decision, Session } from '../api/client'
-import { useDecisions, useMorning, usePlans, usePrefetchReqs, useSessions } from '../api/queries'
+import { useAway, useDecisions, useMorning, usePlans, usePrefetchReqs, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Button, Skeleton, Tip } from '../ui/base'
@@ -157,6 +157,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
     }
   }
   const sealed = useDecided(cur)
+  const awayOn = !!useAway().data?.away // 离开中：这里的处理照常生效，记进时段报告（R-210）
   // 下了判断就翻到下一件（盖一下印之后）；撤回时回到这一件
   const here = askKey
   useAdvance(pendingKeyOf(cur), inQueue && !finished, advance, () => here && go(here, 'prev'))
@@ -238,6 +239,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
           </>
         )}
         <span className="ml-auto flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-fg-3">
+          {awayOn && <span className="truncate text-accent">{t.away.drawerNote}</span>}
           {a && (
             <>
               <b className="shrink-0 font-semibold tracking-wider text-fg-2">{askKindLabel(a)}</b>
