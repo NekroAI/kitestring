@@ -267,7 +267,7 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
             <RoleTag role={head.role} presence={head.who ? presence(head.who, head.any) || undefined : undefined} className="relative shrink-0 self-start bg-surface" />
             <span className={cx('relative min-w-0 flex-1 text-[13px] leading-[1.45]', head.folded ? 'truncate text-fg-3' : 'line-clamp-2 text-fg-2')}>
               {head.label && <b className="mr-1.5 font-semibold text-fg">{head.label}</b>}
-              {head.text}
+              <Linkify text={head.text} />
             </span>
             <span className="relative flex shrink-0 items-center gap-2 self-start pt-px text-[11.5px] text-fg-3">
               {more > 0 && <span>{t.desk.briefMore(more)}</span>}

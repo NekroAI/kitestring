@@ -269,7 +269,7 @@ export function GrantPanel({ projectId, open, onClose }: { projectId: string; op
                     <p className="min-w-0 flex-1 text-sm text-fg">
                       <Linkify text={d.short_title || d.question} />
                     </p>
-                    {d.requirement_code && <RefChip code={d.requirement_code} />}
+                    {d.requirement_code && <RefChip code={d.requirement_code} label="title" />}
                   </div>
                   <ProxyNote d={d} />
                 </div>

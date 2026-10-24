@@ -25,13 +25,36 @@ function rehypeRefs() {
   return (tree: HNode) => walk(tree)
 }
 
+// remarkBreaks：段落里的单个换行也换行（等同 remark-breaks），Agent 分行写的说明保持原样（R-151）。
+// 只拆 text 节点：代码块（code）、行内代码（inlineCode）不是 text，不受影响；列表、标题等结构照常。
+type MNode = { type: string; value?: string; children?: MNode[] }
+function remarkBreaks() {
+  const walk = (n: MNode) => {
+    if (!n.children) return
+    const out: MNode[] = []
+    for (const c of n.children) {
+      if (c.type !== 'text' || !c.value?.includes('\n')) {
+        walk(c)
+        out.push(c)
+        continue
+      }
+      c.value.split(/\r?\n/).forEach((p, i) => {
+        if (i) out.push({ type: 'break' })
+        if (p) out.push({ type: 'text', value: p })
+      })
+    }
+    n.children = out
+  }
+  return (tree: MNode) => walk(tree)
+}
+
 // Md：显示 Agent 写的 Markdown（R-109）。用 react-markdown 渲染成 React 元素，不用 innerHTML；
 // 原始 HTML 一律丢弃（skipHtml），链接走默认的安全地址过滤，图片不加载外链、只显示成链接。
 export function Md({ text, className }: { text: string; className?: string }) {
   return (
     <div className={cx('md', className)}>
       <Markdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         rehypePlugins={[rehypeRefs]}
         skipHtml
         components={{

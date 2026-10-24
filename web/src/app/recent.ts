@@ -15,18 +15,18 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
     const out: RecentItem[] = []
     for (const r of list ?? []) {
       if (projectId && r.project_id !== projectId) continue
-      for (const e of r.evidence ?? []) if (!e.voided) out.push({ at: e.created_at, code: r.code, text: t.projects.evEvidence(r.code, r.title), dot: 'bg-run' })
+      for (const e of r.evidence ?? []) if (!e.voided) out.push({ at: e.created_at, code: r.code, text: t.projects.evEvidence(r.code), dot: 'bg-run' })
       for (const f of r.feedback ?? []) {
         const at = f.answered_at ?? f.created_at
-        if (f.kind === 'assign') out.push({ at, code: r.code, text: t.projects.evAssign(r.code, r.title), dot: 'bg-accent' })
+        if (f.kind === 'assign') out.push({ at, code: r.code, text: t.projects.evAssign(r.code), dot: 'bg-accent' })
         else if (f.kind === 'note') out.push({ at, code: r.code, text: t.projects.evNote(r.code, f.answer ?? ''), dot: 'bg-accent' })
         else out.push({ at, code: r.code, text: t.projects.evRevise(r.code, f.answer ?? ''), dot: 'bg-reply' })
       }
-      if (r.status === 'done') out.push({ at: r.updated_at, code: r.code, text: t.projects.evDone(r.code, r.title), dot: 'bg-run' })
+      if (r.status === 'done') out.push({ at: r.updated_at, code: r.code, text: t.projects.evDone(r.code), dot: 'bg-run' })
     }
     for (const d of decisions.data ?? [])
       if ((!projectId || d.project_id === projectId) && d.kind === 'decision' && d.answered_at)
-        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: d.proxy_by && !d.overridden_at ? t.projects.evProxy(d.code, d.short_title || d.question) : t.projects.evAnswer(d.code, d.short_title || d.question, answerVerb(d)), dot: 'bg-wait' })
+        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: d.proxy_by && !d.overridden_at ? t.projects.evProxy(d.code) : t.projects.evAnswer(d.code, answerVerb(d)), dot: 'bg-wait' })
     // 阶段验收通过也记一条（R-161：判断完成后卡片收起、时间线记一条）
     for (const x of plans.data ?? [])
       if (!projectId || x.project_id === projectId)

@@ -8,6 +8,8 @@ import { Tip } from './base'
 
 // 印记（R-96）：形状只表示类型（需求 = 折角纸片、计划 = 一根线串起阶段、决策 = 菱形、会话 = 圆、项目 = 页签），
 // 颜色只表示状态；编号永远跟着形状出现。全站的需求 / 计划 / 决策编号都走 RefChip，别处不再手写编号样式。
+// 引用别的对象时（正文、Markdown、关联、时间线）印记显示「图标 + 短标题 + 小编号」（R-151，D-183 方案 A）；
+// 旁边已经写着完整标题的自身编号（列表行、抽屉头、⌘K、盘面卡片）和很窄的会话卡 ReqCount 仍只显示编号。
 
 // 需求状态 → 纸片颜色。草稿、待开始灰，进行中靛蓝，阻塞藤黄，待验收朱砂，已完成石绿，搁置灰。
 export const reqTone: Record<string, string> = {
@@ -248,11 +250,11 @@ type ChipProps = {
   link?: boolean // false：只展示，不可点
   onOpen?: (code: string) => void
   className?: string
-  label?: 'code' | 'title' // title：图标 + 短标题（简报等正文里，R-147 / D-171），编号放进悬停
+  label?: 'code' | 'title' // title：图标 + 短标题 + 缩小变淡的编号（引用别的对象时用，R-151）；code：图标 + 编号
 }
 
 // RefChip：一个对象，三种尺寸，同一套零件。
-// inline：印记 + 编号，放在句子、会话卡、通知里；row：再加标题、状态词、朱印；card：一张小卡。
+// inline：印记 + 编号（或短标题 + 小编号），放在句子、会话卡、通知里；row：再加标题、状态词、朱印；card：一张小卡。
 // shortTitle：引用里用的短标题：有「：」时取前半句，否则截到 12 个字。
 export function shortTitle(title: string) {
   const head = title.split(/[：:]/)[0].trim()
@@ -294,14 +296,22 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
       }}
       onBlur={() => setLit('')}
       className={cx(
-        'ref-chip inline-flex max-w-full shrink-0 items-center gap-1 rounded-md border border-line bg-surface-2 py-0 pr-1.5 pl-1 align-[-3px] font-mono text-[11px] leading-4 font-semibold whitespace-nowrap text-fg-2 transition-[background,border-color] outline-none',
+        'ref-chip inline-flex max-w-full shrink-0 items-center gap-1 rounded-md border border-line bg-surface-2 whitespace-nowrap text-fg-2 transition-[background,border-color] outline-none',
+        byTitle ? 'ref-title py-px pr-1.5 pl-1 align-[-0.3em] text-[0.93em] leading-[1.35]' : 'py-0 pr-1.5 pl-1 align-[-3px] font-mono text-[11px] leading-4 font-semibold',
         link && 'cursor-pointer hover:border-accent hover:bg-[var(--lit)] focus-visible:border-accent focus-visible:bg-[var(--lit)]',
         on && 'lit',
         size === 'inline' && className,
       )}
     >
       <RefGlyph code={code} status={st} />
-      {byTitle ? <span className="truncate font-sans font-medium text-fg">{shortTitle(name)}</span> : code}
+      {byTitle ? (
+        <>
+          <span className="min-w-0 truncate font-medium text-fg">{shortTitle(name)}</span>
+          <span className="shrink-0 font-mono text-[0.8em] text-fg-3">{code}</span>
+        </>
+      ) : (
+        code
+      )}
       {suffix && <span className="inline-flex items-center gap-0.5 font-sans font-medium text-fg-3">{suffix}</span>}
     </span>
   )
@@ -328,7 +338,7 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
       {name && <div className="text-sm font-semibold text-fg">{name}</div>}
       {(info?.planCode || info?.project) && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-fg-3">
-          {info?.planCode && <RefChip code={info.planCode} suffix={info.stage ? t.ref.stage(info.stage) : undefined} />}
+          {info?.planCode && <RefChip code={info.planCode} label="title" suffix={info.stage ? t.ref.stage(info.stage) : undefined} />}
           {info?.project && (
             <span className="inline-flex items-center gap-1">
               <ProjGlyph />
@@ -347,7 +357,8 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
 export const refPattern = /(?<![A-Za-z0-9_-])([RPD]-\d+)(?![A-Za-z0-9_-])/g
 
 // RefText：文本里认出的一个编号。索引里有这个对象才画成印记，否则原样输出（不误伤）。
-export function RefText({ code, label }: { code: string; label?: 'code' | 'title' }) {
+// 文本里的编号都是在引用别的对象，默认显示短标题（R-151）。
+export function RefText({ code, label = 'title' }: { code: string; label?: 'code' | 'title' }) {
   const info = useRefInfo(code)
   return info ? <RefChip code={code} className="mx-0.5" label={label} /> : <>{code}</>
 }

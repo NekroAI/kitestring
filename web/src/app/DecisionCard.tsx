@@ -49,12 +49,12 @@ function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boo
         </button>
       )}
       {d.requirement_code && (
-        <RefChip code={d.requirement_code} onOpen={openReq} />
+        <RefChip code={d.requirement_code} label="title" onOpen={openReq} />
       )}
       {d.from_decision && (
         <span className="inline-flex items-center gap-1">
           <span className={d.overturns ? 'text-danger' : ''}>{d.overturns ? t.chain.overturnsFrom : t.chain.follows}</span>
-          <RefChip code={d.from_decision} />
+          <RefChip code={d.from_decision} label="title" />
         </span>
       )}
       <span className="ml-auto tabular">{relTime(d.created_at, now)}</span>

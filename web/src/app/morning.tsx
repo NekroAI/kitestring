@@ -250,7 +250,7 @@ function MorningCard({ r, project, sessions, now }: { r: MorningReport; project?
             <span className="inline-flex flex-wrap items-center gap-1.5">
               <span className="text-fg-3">{t.morning.blocked}</span>
               {blocked.map((c) => (
-                <RefChip key={c} code={c} />
+                <RefChip key={c} code={c} label="title" />
               ))}
             </span>
           )}

@@ -538,7 +538,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
               {(via || c.ref) && (
                 <span className="inline-flex items-center gap-1 font-normal text-fg-3">
                   {via}
-                  {c.ref && <RefChip code={c.ref} />}
+                  {c.ref && <RefChip code={c.ref} label="title" />}
                 </span>
               )}
             </>
