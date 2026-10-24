@@ -17,6 +17,8 @@ type Box struct {
 	W     float64 `json:"w" doc:"框宽 / 图片宽（0～1）"`
 	H     float64 `json:"h" doc:"框高 / 图片高（0～1）"`
 	Label string  `json:"label,omitempty" doc:"一句标签，如：这里改成标题优先"`
+	// Criterion：这个框证明的是第几条验收点（从 1 开始，R-195）；网页把框裁成小图放在那条验收点旁边。可选，老证据没有
+	Criterion int `json:"criterion,omitempty" doc:"可选：这个框对应第几条验收点（从 1 开始），网页会把它裁成小图放在那条验收点旁边"`
 }
 
 const (
@@ -25,7 +27,19 @@ const (
 	MaxLabel = 40 // 改动框标签
 	MaxShots = 40 // evidence 的 images 一次最多几张
 	boxSlack = 0.01
+	// MaxCriterion：验收点编号的上限
+	MaxCriterion = 99
 )
+
+// criterionOf 读框对应的验收点编号：criterion，也接受 point / for；写成 "2" 或 2 都行。没写时为 0。
+func criterionOf(o map[string]any) int {
+	for _, k := range []string{"criterion", "point", "for"} {
+		if f, ok := float(o[k]); ok {
+			return int(f)
+		}
+	}
+	return 0
+}
 
 // parseBoxes 宽松解析一组框：[{x, y, w, h, label}]，也接受 [x, y, w, h, label?]、left / top / width / height。
 func (p *parser) boxes(v any, at string) []Box {
@@ -50,6 +64,7 @@ func (p *parser) boxes(v any, at string) []Box {
 		where := fmt.Sprintf("%s的第 %d 个改动框", at, i+1)
 		var vals [4]float64
 		var label string
+		var crit int
 		okAll := true
 		switch o := x.(type) {
 		case map[string]any:
@@ -65,6 +80,7 @@ func (p *parser) boxes(v any, at string) []Box {
 				okAll = okAll && got
 			}
 			label = firstStr(o, "label", "text", "note")
+			crit = criterionOf(o)
 		case []any:
 			if len(o) < 4 {
 				okAll = false
@@ -91,6 +107,11 @@ func (p *parser) boxes(v any, at string) []Box {
 			continue
 		}
 		b.Label = clip(strings.TrimSpace(label), MaxLabel)
+		if crit < 0 || crit > MaxCriterion {
+			p.warn(fmt.Sprintf("%s的 criterion（%d）要是验收点的编号（1～%d），已忽略", where, crit, MaxCriterion))
+			crit = 0
+		}
+		b.Criterion = crit
 		out = append(out, b)
 	}
 	return out

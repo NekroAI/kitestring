@@ -45,7 +45,10 @@ func (s *Store) CreateRelease(ctx context.Context, r Requirement, by, role, reas
 		n := now()
 		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, '[]', ?, ?, ?)`,
 			id, seq, nullStr(by), nullStr(by), nullStr(r.ProjectID), r.ID, r.Title, role, KindRelease, DecClosed, reason, n, n, by)
-		return err
+		if err != nil {
+			return err
+		}
+		return snapDecision(ctx, t, id, by)
 	})
 	if err != nil {
 		return Decision{}, err

@@ -103,6 +103,18 @@ type Decision struct {
 	RequestFrom  string     `json:"request_from,omitempty" doc:"改状态申请（R-188）：申请时需求的状态"`
 	RequestTo    string     `json:"request_to,omitempty" doc:"改状态申请（R-188）：申请改成的状态"`
 	Voided       bool       `json:"voided,omitempty" doc:"改状态申请（R-188）：批准前需求状态已被改动，申请自动作废"`
+	// ByTitle：写这条记录的会话当时的标题（R-195）——修改、放行、派活记 assigned_by 的，Agent 提的决策记提问会话的；旧记录为空
+	ByTitle string `json:"by_title,omitempty" doc:"写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话"`
+}
+
+// snapDecision 给刚写入的记录补上会话标题快照（R-195）。
+func snapDecision(ctx context.Context, t *sql.Tx, id, key string) error {
+	title, _ := sessionSnap(ctx, t, key)
+	if title == "" {
+		return nil
+	}
+	_, err := t.ExecContext(ctx, `UPDATE decisions SET by_title = ? WHERE id = ?`, title, id)
+	return err
 }
 
 // RequestDevs：PM 推荐开独立开发会话（R-169）。
@@ -121,7 +133,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
 	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
-	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided
+	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -139,7 +151,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
 		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
-		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided)
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle)
 	d.ExpiresAt = parseNullTS(sql.NullString{String: expires, Valid: expires != ""})
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
@@ -191,7 +203,10 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
 			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, '', '[]', '', ?, ?, ?, ?, ?, ?, ?)`,
 				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy)
-			return err
+			if err != nil {
+				return err
+			}
+			return snapDecision(ctx, t, id, d.AssignedBy)
 		}
 		optFiles := d.OptionFiles
 		if optFiles == nil {
@@ -204,7 +219,10 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		}
 		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo)
-		return err
+		if err != nil {
+			return err
+		}
+		return snapDecision(ctx, t, id, d.SessionKey)
 	})
 	if err != nil {
 		return d, err

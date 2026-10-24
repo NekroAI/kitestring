@@ -87,6 +87,7 @@ type StatusChange struct {
 	Ref             string    `json:"ref,omitempty" doc:"关联记录的编号：D-x 是这次放行、退回修改、撤回的那条放行；P-x 是计划"`
 	ReasonKind      string    `json:"reason_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他（R-157）；只有搁置的变化可能有，旧记录没有"`
 	Reason          string    `json:"reason,omitempty" doc:"搁置原因的一句话（R-157）"`
+	SessionTitle    string    `json:"session_title,omitempty" doc:"操作时会话的标题快照（R-195）；旧记录没有"`
 	At              time.Time `json:"at"`
 }
 
@@ -116,8 +117,13 @@ func recordStatus(ctx context.Context, t *sql.Tx, reqID, from, to string) error 
 	if a.Kind == "" {
 		a.Kind = ActorSystem
 	}
-	if a.Kind == ActorAgent && a.Session != "" && a.Role == "" {
-		_ = t.QueryRowContext(ctx, `SELECT role FROM sessions WHERE key = ?`, a.Session).Scan(&a.Role)
+	title := ""
+	if a.Kind == ActorAgent && a.Session != "" {
+		var role string
+		title, role = sessionSnap(ctx, t, a.Session)
+		if a.Role == "" {
+			a.Role = role
+		}
 	}
 	if a.Via == "" {
 		switch a.Kind {
@@ -133,8 +139,8 @@ func recordStatus(ctx context.Context, t *sql.Tx, reqID, from, to string) error 
 	if to == ReqShelved { // 理由只跟搁置走（R-157）
 		rk, rs = NormShelveReason(a.ReasonKind, a.Reason)
 	}
-	_, err := t.ExecContext(ctx, `INSERT INTO status_changes(id, requirement_id, from_status, to_status, actor, session_key, role, via, ref, reason_kind, reason, at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		protocol.NewID(), reqID, from, to, a.Kind, a.Session, a.Role, a.Via, a.Ref, rk, rs, now())
+	_, err := t.ExecContext(ctx, `INSERT INTO status_changes(id, requirement_id, from_status, to_status, actor, session_key, role, via, ref, reason_kind, reason, session_title, at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		protocol.NewID(), reqID, from, to, a.Kind, a.Session, a.Role, a.Via, a.Ref, rk, rs, title, now())
 	return err
 }
 
@@ -154,7 +160,7 @@ type StatusQuery struct {
 
 // ListStatusChanges 按时间正序列出状态变化。
 func (s *Store) ListStatusChanges(ctx context.Context, q StatusQuery) ([]StatusChange, error) {
-	sqlq := `SELECT c.id, c.requirement_id, r.seq, c.from_status, c.to_status, c.actor, c.session_key, c.role, c.via, c.ref, c.reason_kind, c.reason, c.at
+	sqlq := `SELECT c.id, c.requirement_id, r.seq, c.from_status, c.to_status, c.actor, c.session_key, c.role, c.via, c.ref, c.reason_kind, c.reason, c.session_title, c.at
 		FROM status_changes c JOIN requirements r ON r.id = c.requirement_id WHERE 1 = 1`
 	var args []any
 	if q.RequirementID != "" {
@@ -188,7 +194,7 @@ func (s *Store) ListStatusChanges(ctx context.Context, q StatusQuery) ([]StatusC
 		var c StatusChange
 		var seq int
 		var at string
-		if err := rows.Scan(&c.ID, &c.RequirementID, &seq, &c.From, &c.To, &c.Actor, &c.Session, &c.Role, &c.Via, &c.Ref, &c.ReasonKind, &c.Reason, &at); err != nil {
+		if err := rows.Scan(&c.ID, &c.RequirementID, &seq, &c.From, &c.To, &c.Actor, &c.Session, &c.Role, &c.Via, &c.Ref, &c.ReasonKind, &c.Reason, &c.SessionTitle, &at); err != nil {
 			return nil, err
 		}
 		c.RequirementCode = reqCode(seq)

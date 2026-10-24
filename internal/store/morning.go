@@ -34,6 +34,8 @@ type Advice struct {
 	Verdict         string    `json:"verdict" enum:"pass,return" doc:"建议通过 / 建议退回"`
 	Reason          string    `json:"reason"`
 	By              string    `json:"by" doc:"写建议的 Adv 会话"`
+	ByTitle         string    `json:"by_title,omitempty" doc:"写建议时会话的标题快照（R-195）"`
+	ByRole          string    `json:"by_role,omitempty" doc:"写建议时会话的身份快照（R-195）"`
 	At              time.Time `json:"at"`
 }
 
@@ -66,16 +68,17 @@ func (s *Store) SetAdvice(ctx context.Context, reqID, verdict, reason, by string
 		_, err := s.db.ExecContext(ctx, `DELETE FROM review_advice WHERE requirement_id = ?`, reqID)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO review_advice(requirement_id, verdict, reason, by_session, at) VALUES(?, ?, ?, ?, ?)
-		ON CONFLICT(requirement_id) DO UPDATE SET verdict = excluded.verdict, reason = excluded.reason, by_session = excluded.by_session, at = excluded.at`,
-		reqID, verdict, strings.TrimSpace(reason), by, now())
+	title, role := sessionSnap(ctx, s.db, by)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO review_advice(requirement_id, verdict, reason, by_session, by_title, by_role, at) VALUES(?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(requirement_id) DO UPDATE SET verdict = excluded.verdict, reason = excluded.reason, by_session = excluded.by_session, by_title = excluded.by_title, by_role = excluded.by_role, at = excluded.at`,
+		reqID, verdict, strings.TrimSpace(reason), by, title, role, now())
 	return err
 }
 
 // ReviewAdvice 列出待验收需求上的验收建议（只算现在还是待验收的需求；建议写在最近一次交证据之前的视为过时，不返回）。
 // projectID 为空表示全部。
 func (s *Store) ReviewAdvice(ctx context.Context, projectID string) ([]Advice, error) {
-	q := `SELECT a.requirement_id, r.seq, COALESCE(r.project_id, ''), a.verdict, a.reason, a.by_session, a.at FROM review_advice a
+	q := `SELECT a.requirement_id, r.seq, COALESCE(r.project_id, ''), a.verdict, a.reason, a.by_session, a.by_title, a.by_role, a.at FROM review_advice a
 		JOIN requirements r ON r.id = a.requirement_id
 		WHERE r.status = ? AND a.at >= COALESCE((SELECT MAX(e.created_at) FROM evidence e WHERE e.requirement_id = r.id AND e.kind <> ? AND e.voided = 0), '')`
 	args := []any{ReqReview, EvidenceReview}
@@ -93,7 +96,7 @@ func (s *Store) ReviewAdvice(ctx context.Context, projectID string) ([]Advice, e
 		var a Advice
 		var seq int
 		var at string
-		if err := rows.Scan(&a.RequirementID, &seq, &a.ProjectID, &a.Verdict, &a.Reason, &a.By, &at); err != nil {
+		if err := rows.Scan(&a.RequirementID, &seq, &a.ProjectID, &a.Verdict, &a.Reason, &a.By, &a.ByTitle, &a.ByRole, &at); err != nil {
 			return nil, err
 		}
 		a.RequirementCode, a.At = reqCode(seq), parseTS(at)

@@ -162,7 +162,7 @@ type evidenceIn struct {
 	Aside   []string         `json:"aside,omitempty" jsonschema:"和本需求无关的顺带改动，每条一句，默认折叠"`
 	Summary string           `json:"summary,omitempty" jsonschema:"证据正文（可用 Markdown）。给了 verdict 和 blocks 时可以不写，纸鸢会拼出纯文本；只写文字时按顺序写：1. 第一句是结论，40 字以内，写用户能看到的变化（例如：登录页支持“记住我”，重开浏览器不用再登录）；2. 逐条对照验收标准，每条写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图（如：图 1）；3. 你需要做的：只写机器验证不了、要用户动手或拍板的事，没有就不写；4. 风险或副作用（可选）；5. 实现细节放最后（改了哪些文件、测试命令）；和本需求无关的顺带改动单列，或另记需求。全文建议 600 字以内"`
 	Link    string           `json:"link,omitempty" jsonschema:"链接或文件路径"`
-	Images  []any            `json:"images,omitempty" jsonschema:"截图（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时按这里的顺序全部显示：重点看的放前面，补充、测试一类的放后面。每项写成 {path: 本机路径, title: 一句话标题（20 字以内，如：工作台 · 带鱼屏 · 没有待办时）, boxes: [{x, y, w, h, label: 一句标签}]}；boxes 用矩形框标出这次改动的地方，坐标是图片原始尺寸的比例（0～1，左上角为原点），网页画在图上、可一键隐藏。只写路径字符串也行，但网页只能用文件名当标题。已经放进 figure / compare 块的图不用再列"`
+	Images  []any            `json:"images,omitempty" jsonschema:"截图（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时按这里的顺序全部显示：重点看的放前面，补充、测试一类的放后面。每项写成 {path: 本机路径, title: 一句话标题（20 字以内，如：工作台 · 带鱼屏 · 没有待办时）, boxes: [{x, y, w, h, label: 一句标签, criterion: 对应第几条验收点（可选）}]}；boxes 用矩形框标出这次改动的地方，坐标是图片原始尺寸的比例（0～1，左上角为原点），看图时画在图上、可一键隐藏；写了 criterion 的框会裁成小图放在那条验收点旁边。只写路径字符串也行，但网页只能用文件名当标题。已经放进 figure / compare 块的图不用再列"`
 	Videos  []string         `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
 }
 
