@@ -58,6 +58,9 @@ func requestWhat(d store.Decision) string {
 	if d.RequestKind == store.RequestDevs {
 		return fmt.Sprintf("开 %d 个 Dev 会话的推荐", max(d.RequestCount, 1))
 	}
+	if d.RequestKind == store.RequestStatus {
+		return statusRequestWhat(d)
+	}
 	return "这个请求"
 }
 
@@ -68,6 +71,9 @@ func requestApproved(d store.Decision) bool {
 
 // requestText：限时请求（R-169）送给提问方的答复——批准 / 拒绝 / 超时视为拒绝三种写法分明。
 func requestText(d store.Decision) string {
+	if d.RequestKind == store.RequestStatus {
+		return statusRequestText(d)
+	}
 	what := requestWhat(d)
 	devs := d.RequestKind == store.RequestDevs
 	if d.TimedOut {

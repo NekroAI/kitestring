@@ -85,7 +85,7 @@ type Hub struct {
 
 // New 创建 Hub。
 func New(st *store.Store, log *slog.Logger) *Hub {
-	return &Hub{
+	h := &Hub{
 		store:    st,
 		log:      log,
 		broker:   newBroker(),
@@ -96,6 +96,10 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		kicks:    map[string]*time.Timer{},
 		dirty:    map[string]bool{},
 	}
+	if st != nil {
+		st.OnRequestVoided = h.onStatusRequestVoided // 改状态申请因状态被改动而作废，送回申请方（R-188）
+	}
+	return h
 }
 
 // Settings 读取配置。

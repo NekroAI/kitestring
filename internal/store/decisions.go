@@ -92,16 +92,27 @@ type Decision struct {
 	// 决策后果链（R-154）：FromDecision 是提问方声明的来源决策（D-x），Overturns 为真表示这条推翻了它的结论，否则是接着它往下问
 	FromDecision string `json:"from_decision,omitempty"`
 	Overturns    bool   `json:"overturns,omitempty"`
-	// Agent 的请求（R-169）：RequestKind 非空表示这是一条限时请求（目前只有 devs = PM 推荐开独立开发会话），
-	// 也是批准类（approval = true）；RequestCount 是要开几个；ExpiresAt 到点仍没作答按规则视为拒绝，TimedOut 记下这种结局。
-	RequestKind  string     `json:"request_kind,omitempty" enum:"devs"`
+	// Agent 的请求（R-169）：RequestKind 非空表示这是一条请求，也是批准类（approval = true）。
+	// devs = PM 推荐开独立开发会话：RequestCount 是要开几个；ExpiresAt 到点仍没作答按规则视为拒绝，TimedOut 记下这种结局。
+	// status = Agent 申请改需求状态（R-188）：RequestFrom 是申请时的状态，RequestTo 是目标状态；不限时。
+	// 批准前需求状态被改动过，申请自动作废：Voided 为真，答复送回申请方。
+	RequestKind  string     `json:"request_kind,omitempty" enum:"devs,status"`
 	RequestCount int        `json:"request_count,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	TimedOut     bool       `json:"timed_out,omitempty"`
+	RequestFrom  string     `json:"request_from,omitempty" doc:"改状态申请（R-188）：申请时需求的状态"`
+	RequestTo    string     `json:"request_to,omitempty" doc:"改状态申请（R-188）：申请改成的状态"`
+	Voided       bool       `json:"voided,omitempty" doc:"改状态申请（R-188）：批准前需求状态已被改动，申请自动作废"`
 }
 
 // RequestDevs：PM 推荐开独立开发会话（R-169）。
 const RequestDevs = "devs"
+
+// RequestStatus：Agent 申请改需求状态（R-188）。
+const RequestStatus = "status"
+
+// VoidAnswer 是作废的改状态申请写进 answer 的文字；送给申请方的完整说明由 hub 拼。
+const VoidAnswer = "已作废"
 
 func decCode(seq int) string { return "D-" + strconv.Itoa(seq) }
 
@@ -110,7 +121,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
 	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
-	x.request_kind, x.request_count, x.expires_at, x.timed_out
+	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -128,7 +139,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
 		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
-		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut)
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided)
 	d.ExpiresAt = parseNullTS(sql.NullString{String: expires, Valid: expires != ""})
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
@@ -191,8 +202,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		if d.ExpiresAt != nil {
 			expires = ts(*d.ExpiresAt)
 		}
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires)
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo)
 		return err
 	})
 	if err != nil {
@@ -298,6 +309,52 @@ func (s *Store) ExpireRequest(ctx context.Context, id, answer string) (Decision,
 	k, _ := res.RowsAffected()
 	d, err := s.GetDecision(ctx, id)
 	return d, k > 0, err
+}
+
+// PendingStatusRequest 返回需求上还在等用户批准的改状态申请（R-188）；没有时 ok = false。
+func (s *Store) PendingStatusRequest(ctx context.Context, reqID string) (Decision, bool, error) {
+	list, err := s.queryDecs(ctx, decSelect+` WHERE x.status = ? AND x.request_kind = ? AND x.requirement_id = ? ORDER BY x.seq LIMIT 1`, DecPending, RequestStatus, reqID)
+	if err != nil || len(list) == 0 {
+		return Decision{}, false, err
+	}
+	return list[0], true, nil
+}
+
+// voidStatusRequests 在事务里作废需求上还在等的改状态申请（需求状态被改动了，R-188），返回作废的决策 ID。
+// 作废 = 进入「已决策待接收」、标 request_voided，送回申请方。
+func voidStatusRequests(ctx context.Context, t *sql.Tx, reqID string) ([]string, error) {
+	rows, err := t.QueryContext(ctx, `SELECT id FROM decisions WHERE requirement_id = ? AND request_kind = ? AND status = ?`, reqID, RequestStatus, DecPending)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	n := now()
+	for _, id := range ids {
+		if _, err := t.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, request_voided = 1, answered_at = ?, delivered_at = NULL, delivered_turn = '' WHERE id = ? AND status = ?`,
+			DecAnswered, VoidAnswer, n, id, DecPending); err != nil {
+			return nil, err
+		}
+	}
+	return ids, nil
+}
+
+// VoidStatusRequest 作废一条还在等的改状态申请（用户批准时发现需求状态已变，R-188）。
+func (s *Store) VoidStatusRequest(ctx context.Context, id string) (Decision, error) {
+	_, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, request_voided = 1, answered_at = ?, delivered_at = NULL, delivered_turn = '' WHERE id = ? AND status = ? AND request_kind = ?`,
+		DecAnswered, VoidAnswer, now(), id, DecPending, RequestStatus)
+	if err != nil {
+		return Decision{}, err
+	}
+	return s.GetDecision(ctx, id)
 }
 
 // PendingRequests 列出还在等用户作答的限时请求（projectID 为空表示全部）。

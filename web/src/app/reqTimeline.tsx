@@ -18,6 +18,7 @@ import { sessionTitle } from './SessionCard'
 import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionChain } from './chain'
 import { CommitTags, shortSha, useReqCommits } from './commits'
+import { isStatusReq, StatusArrow, statusTone } from './statusReq'
 
 // 需求进展：一条竖向时间线，从上往下按时间排，最新在最下面（紧挨底部的输入区）。
 // 每次退回修改开启新的一轮，复杂需求反复几轮也能看清来龙去脉；留言不开新一轮。
@@ -80,15 +81,6 @@ function ReviewBody({ text }: { text: string }) {
 }
 
 // 状态变化（R-153）：「草稿 → 待开始」两枚小标签
-const statusTone: Record<string, 'neutral' | 'accent' | 'run' | 'wait' | 'danger'> = {
-  draft: 'neutral',
-  ready: 'accent',
-  in_progress: 'run',
-  blocked: 'danger',
-  review: 'wait',
-  done: 'run',
-  shelved: 'neutral',
-}
 function StatusFlow({ c }: { c: StatusChange }) {
   return (
     <span className="inline-flex items-center gap-1 font-normal">
@@ -165,6 +157,8 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   const merged = new Map<string, StatusChange>()
   for (const c of changes) {
     if (c.ref && (c.via === 'release' || c.via === 'revise') && mine.some((f) => f.code === c.ref)) merged.set(c.ref, c)
+    // 用户批准了 Agent 的改状态申请（R-188）：并进那条申请的节点
+    if (c.ref && c.via === 'request' && decisions.some((d) => d.code === c.ref)) merged.set(c.ref, c)
   }
   const created = changes.find((c) => c.via === 'create')
   const flowOf = (code: string) => {
@@ -453,6 +447,49 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
         node: (
           <Node icon={<HelpCircle />} tone={tone.ask} title={t.timeline.ask} now={now}>
             <DecisionComposer d={d} embedded />
+          </Node>
+        ),
+      })
+      continue
+    }
+    if (isStatusReq(d) && d.status !== 'closed') {
+      // 改状态申请（R-188）：批准 / 拒绝 / 作废三种结局，批准的那次状态变化并在这里
+      const ok = !d.voided && (d.answer ?? '').trim().startsWith('批准')
+      const at = d.answered_at ?? d.created_at
+      const asker = t.role[(sessions.data?.sessions ?? []).find((x) => x.key === d.session_key)?.role ?? ''] || 'Agent'
+      const note = d.voided ? '' : (d.answer ?? '').trim().replace(/^(批准|拒绝)[；;：:，,\s]*/, '')
+      entries.push({
+        at,
+        key: d.id,
+        round: roundOf(at),
+        node: (
+          <Node
+            icon={d.voided ? <Undo2 /> : ok ? <CheckCheck /> : <ArrowRightLeft />}
+            tone={ok ? tone.evidence : tone.decision}
+            muted={d.voided}
+            title={
+              <>
+                {d.voided ? t.timeline.statusReq.voided : ok ? t.timeline.statusReq.approved : t.timeline.statusReq.rejected}
+                {merged.get(d.code) ? <StatusFlow c={merged.get(d.code)!} /> : <StatusArrow from={d.request_from} to={d.request_to} />}
+                <RefChip code={d.code} status={d.status} link={false} />
+              </>
+            }
+            at={at}
+            now={now}
+          >
+            {d.context && (
+              <p className="text-sm leading-relaxed break-words text-fg-2">
+                <span className="mr-1.5 text-fg-3">{t.timeline.statusReq.why(asker)}</span>
+                <Linkify text={d.context} />
+              </p>
+            )}
+            {d.voided && <p className="text-sm text-fg-3">{t.timeline.statusReq.voidedWhy}</p>}
+            {note && (
+              <Quote cls="bg-sunken/70">
+                <span className="mr-1.5 text-fg-3">{t.timeline.statusReq.note}</span>
+                <Linkify text={note} />
+              </Quote>
+            )}
           </Node>
         ),
       })

@@ -21,6 +21,8 @@ var ErrNotFound = errors.New("记录不存在")
 // Store 封装数据库连接。
 type Store struct {
 	db *sql.DB
+	// OnRequestVoided：改状态申请因需求状态被改动而自动作废后调用（R-188），hub 用它把结果送回申请方。
+	OnRequestVoided func(ids []string)
 }
 
 // Open 打开（必要时创建）数据库并应用结构。
@@ -123,6 +125,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "expires_at", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "timed_out", "INTEGER NOT NULL DEFAULT 0"},
 	{"sessions", "background", "INTEGER NOT NULL DEFAULT 0"},
+	{"decisions", "request_from", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "request_to", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "request_voided", "INTEGER NOT NULL DEFAULT 0"},
 }
 
 func migrate(db *sql.DB) error {

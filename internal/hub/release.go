@@ -17,7 +17,7 @@ import (
 // 必须写一句理由，记成一条放行记录进时间线；你可以一键撤回（改回草稿），PM / Adv 自己改回草稿也算撤回。
 // req_assign 派一条草稿等于顺带放行，同样受开关管、同样要理由。验收通过（done）仍只由你设置。
 
-const releaseOff = "这条还是草稿，先请用户放行，或在项目设置里打开「允许 PM / Adv 放行草稿」"
+const releaseOff = "这条还是草稿：用 req_request_status（ks req request R-x ready --reason …）申请用户批准，或请用户在项目设置里打开「允许 PM / Adv 放行草稿」"
 
 // releaseCheck 检查 callerKey 能不能放行 r，返回调用者会话。
 func (h *Hub) releaseCheck(ctx context.Context, r store.Requirement, callerKey, reason string) (store.Session, error) {
@@ -29,7 +29,7 @@ func (h *Hub) releaseCheck(ctx context.Context, r store.Requirement, callerKey, 
 		return x, apiErr(err)
 	}
 	if x.Role != roles.PM && x.Role != roles.Advisor {
-		return x, huma.Error403Forbidden("只有 PM 或 Adv 能把草稿放行为待开始；Dev 不能放行（避免自己记、自己放、自己做）。需要排期请告诉 PM（pm_notify），或请用户放行；开始做待开始的需求时用 session_link_req，它会变为进行中")
+		return x, huma.Error403Forbidden("只有 PM 或 Adv 能把草稿放行为待开始；Dev 不能放行（避免自己记、自己放、自己做）。需要排期请告诉 PM（pm_notify），或用 req_request_status 申请用户批准；开始做待开始的需求时用 session_link_req，它会变为进行中")
 	}
 	if r.ProjectID == "" || x.ProjectID != r.ProjectID {
 		return x, huma.Error400BadRequest(fmt.Sprintf("%s 不属于你所在的项目，不能放行", r.Code))
@@ -42,7 +42,7 @@ func (h *Hub) releaseCheck(ctx context.Context, r store.Requirement, callerKey, 
 		return x, huma.Error403Forbidden(releaseOff)
 	}
 	if r.Status != store.ReqDraft {
-		return x, huma.Error400BadRequest(fmt.Sprintf("只能放行草稿；%s 现在不是草稿（已搁置的重新打开只由用户操作）", r.Code))
+		return x, huma.Error400BadRequest(fmt.Sprintf("只能放行草稿；%s 现在不是草稿（已搁置的重新打开由用户操作：用 req_request_status 申请）", r.Code))
 	}
 	if strings.TrimSpace(reason) == "" {
 		return x, huma.Error400BadRequest("放行必须写一句理由：reason（ks 用 --reason），说明为什么做法明确、可以直接排期")

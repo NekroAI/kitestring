@@ -9,6 +9,7 @@ import type { useWorkbench } from './inbox'
 import { gateStage, needsApproval } from './plans'
 import { awaitingReply } from './replyBox'
 import { sessionTitle, splitTool } from './SessionCard'
+import { isStatusReq, StatusReqLines } from './statusReq'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
@@ -58,7 +59,7 @@ export function buildAsks(wb: WB): Ask[] {
     for (const d of th.decisions) {
       // 挂在待验收需求上的决策在验收视图里一起处理，不另列一条
       if (d.requirement_code && reviewing.has(d.requirement_code)) continue
-      push({ key: `d:${d.code}`, kind: decisionKind(d), title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
+      push({ key: `d:${d.code}`, kind: decisionKind(d), title: askTitle(d), at: d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     }
     for (const d of th.orphans) push({ key: `o:${d.code}`, kind: 'orphan', title: d.short_title || d.question, at: d.answered_at ?? d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     if (s && s.state !== 'ended') {
@@ -91,6 +92,17 @@ export function decisionKind(d: Decision): AskKind {
   return d.approval ? 'approve' : 'decide'
 }
 
+// askKindLabel：条目的类型词；改状态申请（R-188）叫「申请」。
+export function askKindLabel(a: Ask) {
+  return a.kind === 'request' && isStatusReq(a.d) ? t.ask.status.kind : t.ask.kind[a.kind]
+}
+
+// askTitle：决策条目的标题。改状态申请（R-188）用需求标题——你要一眼看到是哪条需求。
+export function askTitle(d: Decision) {
+  if (isStatusReq(d)) return d.requirement_title || d.question
+  return d.short_title || d.question
+}
+
 // requestLeft：限时请求还剩多久到点（到点按规则视为拒绝）。
 export function requestLeft(d: Decision, now: number) {
   if (!d.expires_at) return ''
@@ -100,7 +112,7 @@ export function requestLeft(d: Decision, now: number) {
 
 // decisionAsk：单条待决策的条目（会话面板等只列决策的地方用）。
 export function decisionAsk(d: Decision, s?: Session): Ask {
-  return { key: `d:${d.code}`, kind: decisionKind(d), title: d.short_title || d.question, at: d.created_at, counted: true, code: d.code, s, d, projectId: d.project_id || '', projectName: d.project_name || '' }
+  return { key: `d:${d.code}`, kind: decisionKind(d), title: askTitle(d), at: d.created_at, counted: true, code: d.code, s, d, projectId: d.project_id || '', projectName: d.project_name || '' }
 }
 
 // ---------- 条目 ----------
@@ -155,6 +167,7 @@ function statusLine(a: Ask, now: number): React.ReactNode {
     case 'approve':
       return firstLine(d?.context) || t.desk.approval
     case 'request':
+      if (isStatusReq(d)) return d?.context ?? ''
       return d ? [t.ask.request.what(d.request_count ?? 1), requestLeft(d, now)].filter(Boolean).join(t.common.sep) : t.desk.approval
     case 'plan': {
       const n = a.plan!.stages.reduce((k, st) => k + st.requirements.length, 0)
@@ -230,6 +243,8 @@ export function AskItem({
 }) {
   const s = a.s
   const who = s ? sessionTitle(s) : a.projectName || t.thread.noSession
+  // 改状态申请（R-188）：多一行——需求编号 + 标题、一句话说明、当前 → 目标状态 + 理由；卡片上不作答，点开进抽屉
+  const sr = a.kind === 'request' && isStatusReq(a.d) ? a.d : undefined
   return (
     <button
       type="button"
@@ -239,7 +254,8 @@ export function AskItem({
       onMouseEnter={onHover && s ? () => onHover(s.key) : undefined}
       onMouseLeave={onHover ? () => onHover(null) : undefined}
       className={cx(
-        'group grid h-[86px] w-full shrink-0 grid-rows-3 content-center gap-y-0.5 overflow-hidden rounded-[14px] border bg-surface px-3.5 text-left shadow-card transition-[border,box-shadow,background] duration-150 hover:border-line-strong hover:shadow-pop',
+        'group grid w-full shrink-0 content-center gap-y-0.5 overflow-hidden rounded-[14px] border bg-surface px-3.5 text-left shadow-card transition-[border,box-shadow,background] duration-150 hover:border-line-strong hover:shadow-pop',
+        sr ? 'h-[106px] grid-rows-4' : 'h-[86px] grid-rows-3',
         a.counted ? 'border-reply/25' : 'border-line',
         active && 'border-accent/60 ring-2 ring-accent/25',
         fresh && 'desk-drop',
@@ -248,19 +264,23 @@ export function AskItem({
       )}
     >
       <span className="flex min-w-0 items-center gap-2 text-[11.5px] leading-5 text-fg-3">
-        <b className={cx('shrink-0 font-semibold tracking-wider', kindTone[a.kind])}>{t.ask.kind[a.kind]}</b>
+        <b className={cx('shrink-0 font-semibold tracking-wider', kindTone[a.kind])}>{sr ? t.ask.status.kind : t.ask.kind[a.kind]}</b>
         {s && <RoleBadge s={s} />}
         <span className="min-w-0 truncate">{showProject && a.projectName && s ? `${a.projectName}${t.common.sep}${who}` : who}</span>
         <span className="ml-auto shrink-0 tabular">{relTime(a.at, now)}</span>
       </span>
       <span className="flex min-w-0 items-center gap-1.5 leading-5">
-        {a.code && <span className="shrink-0 font-mono text-[11.5px] text-fg-3">{a.code}</span>}
+        {(sr ? sr.requirement_code : a.code) && <span className="shrink-0 font-mono text-[11.5px] text-fg-3">{sr ? sr.requirement_code : a.code}</span>}
         <span className="min-w-0 truncate text-[14px] font-semibold text-fg group-hover:text-accent">{a.title}</span>
       </span>
-      <span className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5 text-fg-2">
-        <span className="min-w-0 flex-1 truncate">{statusLine(a, now)}</span>
-        <Advice a={a} />
-      </span>
+      {sr ? (
+        <StatusReqLines d={sr} />
+      ) : (
+        <span className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5 text-fg-2">
+          <span className="min-w-0 flex-1 truncate">{statusLine(a, now)}</span>
+          <Advice a={a} />
+        </span>
+      )}
     </button>
   )
 }

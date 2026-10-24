@@ -344,6 +344,7 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 	if err != nil {
 		return cur, err
 	}
+	var voided []string
 	err = s.tx(ctx, func(t *sql.Tx) error {
 		// 状态一变，“已交给某会话”的记录就作废：再回到待开始时重新排队
 		if _, err := t.ExecContext(ctx, `UPDATE requirements SET status = ?, offered_to = CASE WHEN status = ? THEN offered_to ELSE '' END, offered_at = CASE WHEN status = ? THEN offered_at ELSE '' END, updated_at = ? WHERE id = ?`, status, status, status, now(), cur.ID); err != nil {
@@ -351,6 +352,11 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 		}
 		if cur.Status != status {
 			if err := recordStatus(ctx, t, cur.ID, cur.Status, status); err != nil {
+				return err
+			}
+			// 状态被改动：还在等批准的改状态申请自动作废（R-188）
+			var err error
+			if voided, err = voidStatusRequests(ctx, t, cur.ID); err != nil {
 				return err
 			}
 		}
@@ -362,6 +368,9 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 	})
 	if err != nil {
 		return cur, err
+	}
+	if len(voided) > 0 && s.OnRequestVoided != nil {
+		s.OnRequestVoided(voided)
 	}
 	return s.GetRequirement(ctx, cur.ID)
 }

@@ -22,6 +22,7 @@ import { Linkify, RefChip } from '../ui/refmark'
 import { DecisionChain } from './chain'
 import { actWord, Seal, UndoBar, Verdict, verdictKey } from './verdict'
 import { requestLeft } from './asks'
+import { isStatusReq, StatusReqNote } from './statusReq'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
 function recIndex(options: string[], rec: string): number {
@@ -191,8 +192,8 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
           <h3 className="font-display text-base leading-snug font-semibold text-fg sm:text-[17px]">{title}</h3>
           {d.short_title && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}
         </div>
-        {d.request_kind && <RequestNote d={d} now={now} />}
-        {d.summary?.length ? (
+        {isStatusReq(d) ? <StatusReqNote d={d} /> : d.request_kind && <RequestNote d={d} now={now} />}
+        {isStatusReq(d) ? null : d.summary?.length ? (
           <PlanSummary lines={d.summary} full={d.context ? <Context text={d.context} expanded /> : undefined} />
         ) : (
           d.context && <Context text={d.context} />

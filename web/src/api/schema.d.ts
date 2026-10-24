@@ -338,6 +338,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/requirements/{ref}/status-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent 申请改需求状态：用户在审批抽屉里批准后由纸鸢改（R-188） */
+        post: operations["agent-request-status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/sessions/role": {
         parameters: {
             query?: never;
@@ -1615,6 +1632,14 @@ export interface components {
             /** @description 开了做什么：哪些需求（写编号） */
             work?: string;
         };
+        "Agent-request-statusRequest": {
+            /** @description 一句理由：为什么现在可以改（用户在审批里看到） */
+            reason: string;
+            /** @description 申请的会话 */
+            session_key: string;
+            /** @description 目标状态：ready（草稿 / 已搁置 → 待开始）或 draft（已搁置 → 草稿） */
+            to: string;
+        };
         "Agent-set-briefRequest": {
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
@@ -1998,8 +2023,12 @@ export interface components {
             replaced_by?: string;
             /** Format: int64 */
             request_count?: number;
+            /** @description 改状态申请（R-188）：申请时需求的状态 */
+            request_from?: string;
             /** @enum {string} */
-            request_kind?: "devs";
+            request_kind?: "devs" | "status";
+            /** @description 改状态申请（R-188）：申请改成的状态 */
+            request_to?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
@@ -2011,6 +2040,8 @@ export interface components {
             status: string;
             summary?: string[] | null;
             timed_out?: boolean;
+            /** @description 改状态申请（R-188）：批准前需求状态已被改动，申请自动作废 */
+            voided?: boolean;
         };
         DecisionChain: {
             code: string;
@@ -2075,8 +2106,12 @@ export interface components {
             replaced_by?: string;
             /** Format: int64 */
             request_count?: number;
+            /** @description 改状态申请（R-188）：申请时需求的状态 */
+            request_from?: string;
             /** @enum {string} */
-            request_kind?: "devs";
+            request_kind?: "devs" | "status";
+            /** @description 改状态申请（R-188）：申请改成的状态 */
+            request_to?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
@@ -2088,6 +2123,8 @@ export interface components {
             status: string;
             summary?: string[] | null;
             timed_out?: boolean;
+            /** @description 改状态申请（R-188）：批准前需求状态已被改动，申请自动作废 */
+            voided?: boolean;
         };
         DecisionsOutBody: {
             decisions: components["schemas"]["Decision"][] | null;
@@ -3190,11 +3227,17 @@ export interface components {
             /** @description 操作的会话键（Agent 操作时） */
             session?: string;
             to: string;
-            /** @description 经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 */
+            /** @description 经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 / request 用户批准了 Agent 的改状态申请（ref 是申请的 D-x，R-188） */
             via: string;
         };
         StatusChangesOutBody: {
             changes: components["schemas"]["StatusChange"][] | null;
+        };
+        StatusRequestOutBody: {
+            decision?: components["schemas"]["Decision"];
+            /** @description 这条需求已有在等用户批准的改状态申请，没有新建 */
+            existing: boolean;
+            message: string;
         };
         "Subscribe-pushRequest": {
             auth: string;
@@ -4032,6 +4075,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Requirement"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-request-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-request-statusRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusRequestOutBody"];
                 };
             };
             /** @description Error */

@@ -26,7 +26,7 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
     }
     for (const d of decisions.data ?? [])
       if ((!projectId || d.project_id === projectId) && d.kind === 'decision' && d.answered_at)
-        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: d.timed_out ? t.projects.evTimeout(d.code) : d.proxy_by && !d.overridden_at ? t.projects.evProxy(d.code) : t.projects.evAnswer(d.code, answerVerb(d)), dot: 'bg-wait' })
+        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: d.timed_out ? t.projects.evTimeout(d.code) : d.voided ? t.projects.evVoided(d.code) : d.proxy_by && !d.overridden_at ? t.projects.evProxy(d.code) : t.projects.evAnswer(d.code, answerVerb(d)), dot: 'bg-wait' })
     // 阶段验收通过也记一条（R-161：判断完成后卡片收起、时间线记一条）
     for (const x of plans.data ?? [])
       if (!projectId || x.project_id === projectId)
