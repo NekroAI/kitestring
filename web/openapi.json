@@ -3763,6 +3763,134 @@
         ],
         "type": "object"
       },
+      "Orphan": {
+        "additionalProperties": false,
+        "properties": {
+          "cmd": {
+            "type": "string"
+          },
+          "cpu": {
+            "format": "double",
+            "type": "number"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "device_name": {
+            "type": "string"
+          },
+          "device_online": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local": {
+            "description": "进程在 Hub 所在的这台机器上",
+            "type": "boolean"
+          },
+          "pid": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ports": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "procs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "rss_kb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "session_ended": {
+            "type": "boolean"
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "session_title": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "orphan",
+              "detached"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "device_name",
+          "device_online",
+          "local",
+          "session_ended",
+          "id",
+          "pid",
+          "start",
+          "started_at",
+          "state",
+          "cmd",
+          "cpu",
+          "rss_kb",
+          "procs"
+        ],
+        "type": "object"
+      },
+      "OrphansOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "orphans": {
+            "items": {
+              "$ref": "#/components/schemas/Orphan"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "stops": {
+            "description": "最近 24 小时的停止记录（新的在前）",
+            "items": {
+              "$ref": "#/components/schemas/ProcStop"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "orphans",
+          "stops"
+        ],
+        "type": "object"
+      },
       "Override-decisionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4354,6 +4482,84 @@
           "status",
           "since",
           "days"
+        ],
+        "type": "object"
+      },
+      "ProcStop": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "description": "谁停的：user = 你（网页）",
+            "type": "string"
+          },
+          "cmd": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "device_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "pid": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "proc_id": {
+            "description": "进程号@启动时间",
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "exited",
+              "running",
+              "killed",
+              "failed",
+              "refused",
+              "gone"
+            ],
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "signal": {
+            "description": "SIGTERM / SIGKILL；没发信号时为空",
+            "type": "string"
+          },
+          "state": {
+            "description": "停止时的状态：orphan 孤儿 / detached 已脱离",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "device_name",
+          "proc_id",
+          "pid",
+          "cmd",
+          "project",
+          "session_key",
+          "state",
+          "by",
+          "signal",
+          "result",
+          "detail",
+          "at"
         ],
         "type": "object"
       },
@@ -6004,6 +6210,27 @@
         "required": [
           "existing",
           "message"
+        ],
+        "type": "object"
+      },
+      "StopOrphanInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "force": {
+            "description": "true = SIGKILL（SIGTERM 后仍在运行、你确认强制时）",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "根进程“进程号@启动时间”，取自列表",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "id"
         ],
         "type": "object"
       },
@@ -8793,6 +9020,78 @@
         "summary": "向指定渠道配置发送测试通知",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/orphans": {
+      "get": {
+        "operationId": "list-orphans",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrphansOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话结束后还在跑（或已脱离 Agent）的后台进程，与最近的停止记录（R-209）",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/orphans/stop": {
+      "post": {
+        "operationId": "stop-orphan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopOrphanInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcStop"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "停止一个孤儿 / 已脱离的后台进程：经 Hub 交给所在设备的 daemon 核对后发信号（R-209）",
+        "tags": [
+          "sessions"
         ]
       }
     },

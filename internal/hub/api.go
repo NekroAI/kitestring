@@ -62,6 +62,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerChainAgent(agentAPI)
 	h.registerCommitsWeb(webAPI)
 	h.registerCommitsAgent(agentAPI)
+	h.registerOrphansWeb(webAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -132,6 +133,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerChainAgent(api)
 	h.registerCommitsWeb(api)
 	h.registerCommitsAgent(api)
+	h.registerOrphansWeb(api)
 	return api.OpenAPI()
 }
 

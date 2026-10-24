@@ -141,6 +141,9 @@ const (
 	MsgSessions    = "sessions"     // hub → daemon：本设备上未结束会话的终端实例（daemon 重启后据此继续盯进程，R-204）
 	MsgRoles       = "roles"        // hub → daemon：本设备上有身份的会话全集（覆盖式，R-82）
 	MsgRolePrompts = "role_prompts" // hub → daemon：用户改写过的身份提示词全集（覆盖式，R-98）
+	MsgOrphans     = "orphans"      // daemon → hub：本机会话结束后还在跑（或已脱离 Agent）的后台进程全集（覆盖式，R-209）
+	MsgStopProc    = "stop_proc"    // hub → daemon：停止其中一个（daemon 核对 pid + 启动时间后才发信号）
+	MsgStopResult  = "stop_result"  // daemon → hub：停止结果
 )
 
 // DeviceConfig 是 Hub 下发给 daemon 的运行配置。
@@ -162,6 +165,60 @@ type Envelope struct {
 	Sessions  []SessionInstance `json:"sessions,omitempty"`
 	// RolePrompts：身份 → 用户改写后的提示词正文（只含改写过的；没有的身份用内置默认模板，R-98）。
 	RolePrompts map[string]string `json:"role_prompts,omitempty"`
+	Orphans     []OrphanProc      `json:"orphans,omitempty"`
+	StopProc    *StopProc         `json:"stop_proc,omitempty"`
+	StopResult  *StopResult       `json:"stop_result,omitempty"`
+}
+
+// 后台进程状态（R-209）。
+const (
+	ProcOrphan   = "orphan"   // 开它的 Agent 进程（会话）已经结束，它还在跑
+	ProcDetached = "detached" // 会话还在，但它已脱离 Agent（父进程变成 1，Agent 管不到它），可能仍在用
+)
+
+// OrphanProc 是 daemon 认出的一棵后台进程树（以根进程为准）：会话开出来、会话结束后仍在跑，或已脱离 Agent。
+type OrphanProc struct {
+	ID         string    `json:"id"`    // 根进程“进程号@启动时间”
+	Pid        int       `json:"pid"`   // 根进程号
+	Start      string    `json:"start"` // 根进程启动时间（ps lstart 原文，核对用）
+	StartedAt  time.Time `json:"started_at"`
+	State      string    `json:"state" enum:"orphan,detached"`
+	Cmd        string    `json:"cmd"`
+	Cwd        string    `json:"cwd,omitempty"`
+	SessionKey string    `json:"session_key,omitempty"`
+	Ports      []int     `json:"ports,omitempty"` // 在监听的 TCP 端口（命令行里写了 --port 的排第一）
+	CPU        float64   `json:"cpu"`             // 整棵树的 %CPU 之和
+	RSSKB      int64     `json:"rss_kb"`          // 整棵树的常驻内存（KB）
+	Procs      int       `json:"procs"`           // 树里的进程数
+}
+
+// StopProc 是 Hub 转来的停止请求。Force 为假时发 SIGTERM，为真时发 SIGKILL。
+type StopProc struct {
+	ReqID string `json:"req_id"`
+	Pid   int    `json:"pid"`
+	Start string `json:"start"`
+	Force bool   `json:"force,omitempty"`
+}
+
+// 停止结果。
+const (
+	StopExited  = "exited"  // SIGTERM 后全部退出
+	StopRunning = "running" // SIGTERM 后几秒仍在运行（可再选强制）
+	StopKilled  = "killed"  // SIGKILL 后已退出
+	StopFailed  = "failed"  // 发了信号仍在运行，或发信号出错
+	StopRefused = "refused" // 核对不通过，没有发信号
+	StopGone    = "gone"    // 进程已经不在了，没有发信号
+)
+
+// StopResult 是 daemon 的停止结果。
+type StopResult struct {
+	ReqID   string `json:"req_id"`
+	Result  string `json:"result"`
+	Signal  string `json:"signal,omitempty"` // SIGTERM / SIGKILL；没发信号时为空
+	Detail  string `json:"detail,omitempty"`
+	Waited  int    `json:"waited_ms,omitempty"` // 发信号后等了多久
+	Remain  int    `json:"remain,omitempty"`    // 还在运行的进程数
+	Signals int    `json:"signals,omitempty"`   // 发了信号的进程数
 }
 
 // SessionInstance 是 Hub 记着的一个未结束会话的终端实例（进程号@启动时间）。

@@ -48,20 +48,23 @@ type Daemon struct {
 	devCfg        protocol.DeviceConfig
 	decisions     []protocol.Decision
 	sessions      map[string]*sessionInfo
-	toolUses      map[string]toolUse // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
-	toolCond      *sync.Cond         // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
+	toolUses      map[string]toolUse  // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
+	toolCond      *sync.Cond          // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
 	seeded        map[string][]string // 终端实例 → Hub 记着的会话键（重启后据此继续盯进程，R-204）
-	instances     map[string]string  // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
-	latest        map[string]string  // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
-	staleWarn     map[string]bool    // 较早终端 → 是否已提醒过
-	waiting       map[string]int64   // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
-	roles         map[string]string  // 会话键 → 身份（Hub 下发，R-82）
-	customPrompts map[string]string  // 身份 → 用户改写后的提示词正文（Hub 下发，R-98）
-	stopBlocks    map[string]int     // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
-	heldReply     map[string]string  // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
+	instances     map[string]string   // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
+	latest        map[string]string   // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
+	staleWarn     map[string]bool     // 较早终端 → 是否已提醒过
+	waiting       map[string]int64    // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
+	roles         map[string]string   // 会话键 → 身份（Hub 下发，R-82）
+	customPrompts map[string]string   // 身份 → 用户改写后的提示词正文（Hub 下发，R-98）
+	stopBlocks    map[string]int      // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
+	heldReply     map[string]string   // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
 	waitSeq       int64
-	tools         toolsState // 各会话的 Kitestring 工具版本（R-59）
-	tasks         taskState  // 后台 shell 与子代理线索（R-162）
+	tools         toolsState             // 各会话的 Kitestring 工具版本（R-59）
+	tasks         taskState              // 后台 shell 与子代理线索（R-162）
+	orph          orphanState            // 孤儿 / 已脱离的后台进程（R-209）
+	direct        chan protocol.Envelope // 不落盘、连着 Hub 时直接发的消息（孤儿列表、停止结果）
+	orphanKick    chan struct{}
 }
 
 type toolUse struct {
@@ -74,6 +77,7 @@ type sessionInfo struct {
 	client     string
 	model      string
 	transcript string // 对话记录文件；ks wait 开始时从这里读最新一段回复（R-117）
+	cwd        string // 最近一次事件的工作目录（记后台进程属于哪个项目，R-209）
 }
 
 // New 创建 daemon。
@@ -89,7 +93,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState()}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
 	d.toolCond = sync.NewCond(&d.mu)
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -182,6 +186,7 @@ func (d *Daemon) session(ctx context.Context) error {
 	}
 	d.setConnected(true)
 	d.log.Info("已连接 Hub")
+	d.resendOrphans()
 
 	readErr := make(chan error, 1)
 	acked := make(chan struct{}, 1)
@@ -234,6 +239,10 @@ func (d *Daemon) session(ctx context.Context) error {
 		case <-acked:
 			inflight = false
 		case <-d.kick:
+		case e := <-d.direct:
+			if err := wsjson.Write(cctx, ws, e); err != nil {
+				return err
+			}
 		case <-flush.C:
 			inflight = false // 超时未收到回执则重发（Hub 幂等）
 		}
@@ -265,6 +274,10 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		d.mu.Unlock()
 	case protocol.MsgSessions:
 		d.seedInstances(e.Sessions)
+	case protocol.MsgStopProc:
+		if e.StopProc != nil {
+			go d.handleStop(*e.StopProc)
+		}
 	case protocol.MsgRoles:
 		d.mu.Lock()
 		d.roles = e.Roles
@@ -443,6 +456,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	}
 	if tp := str(p, "transcript_path"); tp != "" {
 		info.transcript = tp
+	}
+	if ev.Cwd != "" {
+		info.cwd = ev.Cwd
 	}
 	ev.Client = info.client
 	if ev.Model == "" {

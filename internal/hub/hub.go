@@ -81,6 +81,8 @@ type Hub struct {
 	kicks    map[string]*time.Timer // 会话 → 待送达的整批需求（攒几秒再送，R-66）
 	dirty    map[string]bool        // 待推送最新数据的会话（R-56，300ms 内合并）
 	dirtyTmr *time.Timer
+	orphans  map[string]deviceOrphans            // deviceID → daemon 上报的孤儿 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
+	stops    map[string]chan protocol.StopResult // 停止请求 → 等 daemon 回结果
 }
 
 // New 创建 Hub。
@@ -95,6 +97,8 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		notified: map[string]time.Time{},
 		kicks:    map[string]*time.Timer{},
 		dirty:    map[string]bool{},
+		orphans:  map[string]deviceOrphans{},
+		stops:    map[string]chan protocol.StopResult{},
 	}
 	if st != nil {
 		st.OnRequestVoided = h.onStatusRequestVoided // 改状态申请因状态被改动而作废，送回申请方（R-188）
@@ -262,7 +266,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 			return err
 		}
 	}
-	if ev.Context > 0 {         // 上下文占用（R-60）
+	if ev.Context > 0 { // 上下文占用（R-60）
 		if err := h.store.SetContext(ctx, key, ev.Context, ev.ContextMax); err != nil {
 			return err
 		}

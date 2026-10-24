@@ -16,6 +16,7 @@ import { AskItem, useAsks, useOpenAsk, type Ask } from '../app/asks'
 import { BriefStrip, HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
 import { Lane, laneTone, setOffline, type LaneMode, type Tone } from '../app/lanes'
 import { useFillHeight } from '../app/pool'
+import { OrphanProcs } from '../app/orphans'
 
 // 工作台（R-170，D-228 原型；R-170 返工按真实运行截图改）：一屏驾驶舱，整页不滚动，各栏在区域内滚动。
 //   左「要你处理」：只放固定高度的条目（R-177），点开右侧的审批抽屉处理，底部「刚处理」；没有待办时左栏收窄成「一切正常」概况。
@@ -360,6 +361,7 @@ export default function WorkbenchPage() {
           <p className="px-4 py-10 text-center font-display text-[15px] text-fg-3">{t.desk.noLanes}</p>
         )}
         {!wb.loading && endedEls}
+        {!wb.loading && <OrphanProcs now={now} />}
       </div>
       {desk.older > 0 && (
         <div className="flex shrink-0 items-center gap-2 px-0.5 text-xs text-fg-3">
