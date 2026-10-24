@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router'
 import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, type ReqFields, type Requirement } from '../api/client'
-import { useDecisions, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
+import { useDecisions, usePrefetchReqs, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx, loadPref, relTime, savePref, useNow } from '../lib/util'
 import { Button, ErrorState, Skeleton, Textarea, Tip } from '../ui/base'
@@ -11,7 +11,7 @@ import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
 import { Collapse } from '../ui/motion'
 import { Menu, Panel, useConfirm } from '../ui/overlay'
-import { Pager, PeekPage } from '../ui/gesture'
+import { Pager } from '../ui/gesture'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { useGoBack, useOpenSession } from './nav'
@@ -461,7 +461,6 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const internal = useRef(false)
   const [anchor, setAnchor] = useState<{ project: string; review: boolean; drafts?: boolean } | null>(null)
   const cur = all.find((x) => x.code === refId)
-  const detail = useRequirement(refId).data
   const peek = usePeek(refId, refId)
   const goBack = useGoBack()
   const pendMap = usePendingMap()
@@ -489,6 +488,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const idx = queue.findIndex((x) => x.code === refId)
   const prev = idx > 0 ? queue[idx - 1] : undefined
   const next = idx >= 0 && idx < queue.length - 1 ? queue[idx + 1] : undefined
+  usePrefetchReqs([queue[idx - 2]?.code, idx >= 0 ? queue[idx + 2]?.code : undefined])
 
   const go = (code: string, d: Dir) => {
     internal.current = true
@@ -551,42 +551,42 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   }, !!refId)
 
   const navBtn = 'flex size-8 items-center justify-center rounded-lg text-fg-2 transition hover:bg-hover hover:text-fg active:scale-95 disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10'
-  const created = detail?.code === cur?.code ? detail?.status_changes?.find((c) => c.via === 'create') : undefined
-  const top = (
+  // 顶栏按「哪一条」画：邻件在带子上露出来时，顶栏就已经是它自己的（第几条、编号、谁创建），切过来时不变
+  const topFor = (code: string | null) => {
+    const x = queue.find((v) => v.code === code) ?? (code === cur?.code ? cur : undefined)
+    const i = queue.findIndex((v) => v.code === code)
+    const n = { i, prev: i > 0 ? queue[i - 1] : undefined, next: i >= 0 && i < queue.length - 1 ? queue[i + 1] : undefined }
+    return (
     <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
       {goBack ? <BackButton back={goBack} /> : queue.length > 1 && (
         <>
-          <Tip content={prev ? `${prev.code} ${prev.title}` : undefined}>
-            <button className={navBtn} disabled={!prev} aria-label={t.reqs.prev} onClick={() => prev && go(prev.code, 'prev')}>
+          <Tip content={n.prev ? `${n.prev.code} ${n.prev.title}` : undefined}>
+            <button className={navBtn} disabled={!n.prev} aria-label={t.reqs.prev} onClick={() => n.prev && go(n.prev.code, 'prev')}>
               <ChevronLeft className="size-[18px]" />
             </button>
           </Tip>
-          <Tip content={next ? `${next.code} ${next.title}` : undefined}>
-            <button className={navBtn} disabled={!next} aria-label={t.reqs.next} onClick={() => next && go(next.code, 'next')}>
+          <Tip content={n.next ? `${n.next.code} ${n.next.title}` : undefined}>
+            <button className={navBtn} disabled={!n.next} aria-label={t.reqs.next} onClick={() => n.next && go(n.next.code, 'next')}>
               <ChevronRight className="size-[18px]" />
             </button>
           </Tip>
-          <span className="ml-1 text-xs text-fg-3 tabular">{anchor?.drafts ? t.pool.queue.position(idx + 1, queue.length) : t.reqs.position(idx + 1, queue.length, !!anchor?.review)}</span>
+          <span className="ml-1 text-xs text-fg-3 tabular">{anchor?.drafts ? t.pool.queue.position(n.i + 1, queue.length) : t.reqs.position(n.i + 1, queue.length, !!anchor?.review)}</span>
         </>
       )}
       <span className="ml-auto flex min-w-0 items-center gap-1 truncate px-1 text-xs text-fg-3">
-        {cur && (
+        {x && (
           <>
-            <RefChip code={cur.code} status={cur.status} link={false} />
+            <RefChip code={x.code} status={x.status} link={false} />
             {/* 谁创建的（R-195 第 5 点）：身份胶囊 + 当时的会话标题，点开是那个会话；老数据没记录会话的写「Agent（没记录是哪个会话）」 */}
             <span className="flex min-w-0 items-center gap-1 max-sm:hidden">
               <span className="shrink-0">·</span>
-              {created ? (
-                <Who actor={created.actor} session={created.session} role={created.role} title={created.session_title} className="max-w-[18em]" />
-              ) : (
-                <Who actor={cur.created_by === 'user' ? 'user' : 'agent'} />
-              )}
-              <span className="shrink-0 whitespace-nowrap">{t.reqs.createdAt(relTime(cur.created_at, now))}</span>
+              <CreatedBy r={x} />
+              <span className="shrink-0 whitespace-nowrap">{t.reqs.createdAt(relTime(x.created_at, now))}</span>
             </span>
           </>
         )}
       </span>
-      {cur && (
+      {x && (
         <Menu
           trigger={
             <button className={navBtn} aria-label={t.common.more}>
@@ -600,7 +600,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
               danger: true,
               onSelect: async () => {
                 if (await confirm({ title: t.common.delete, description: t.reqs.deleteConfirm, confirmText: t.common.delete, danger: true })) {
-                  if (await deleteReq(cur.code)) {
+                  if (await deleteReq(x.code)) {
                     toast(t.reqs.deleted)
                     onClose()
                   }
@@ -615,30 +615,43 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       </button>
     </div>
   )
-  const draftBar = anchor?.drafts && cur && !finished && (
+  }
+  const top = topFor(refId)
+  // 逐条确认草稿的操作条：邻件也画上（不可点），切过来时版面不变
+  const draftBarFor = (x: Requirement | undefined) => {
+    if (!anchor?.drafts || !x || finished) return null
+    const i = queue.findIndex((v) => v.code === x.code)
+    const nx = i >= 0 && i < queue.length - 1 ? queue[i + 1] : undefined
+    return (
     <div className="mx-3 mt-1 mb-1 flex shrink-0 flex-wrap items-center gap-2 rounded-xl bg-sunken/80 px-3 py-2 sm:mx-4">
       <span className="text-xs text-fg-3">{t.pool.draftHintShort}</span>
       <div className="ml-auto flex items-center gap-1.5">
-        <Button size="sm" variant="ghost" disabled={!next || acting} onClick={() => next && go(next.code, 'next')}>
+        <Button size="sm" variant="ghost" disabled={!nx || acting} onClick={() => nx && go(nx.code, 'next')}>
           {t.pool.queue.skip}
         </Button>
-        <Button size="sm" disabled={cur.status !== 'draft' || acting} onClick={() => void draftAct('shelved')}>
+        <Button size="sm" disabled={x.status !== 'draft' || acting} onClick={() => void draftAct('shelved')}>
           {t.pool.queue.shelve}
         </Button>
-        <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} disabled={cur.status !== 'draft'} loading={acting} onClick={() => void draftAct('ready')}>
+        <Button size="sm" variant="primary" icon={<Check className="size-3.5" />} disabled={x.status !== 'draft'} loading={acting} onClick={() => void draftAct('ready')}>
           {t.pool.queue.confirm}
         </Button>
       </div>
     </div>
   )
-  const head = draftBar ? (
-    <>
-      {top}
-      {draftBar}
-    </>
-  ) : (
-    top
-  )
+  }
+  const headFor = (code: string) => {
+    const x = queue.find((v) => v.code === code) ?? (code === cur?.code ? cur : undefined)
+    const bar = draftBarFor(x)
+    const tp = code === refId ? top : topFor(code)
+    return bar ? (
+      <>
+        {tp}
+        {bar}
+      </>
+    ) : (
+      tp
+    )
+  }
 
   return (
     <PeekScope peek={peek}>
@@ -655,19 +668,26 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       <Pager
         k={finished ? 'finished' : (refId ?? '')}
         dir={dir === 'prev' ? -1 : 1}
-        prev={!!prev && !finished}
-        next={!!next && !finished}
-        onNav={(d) => (d > 0 ? next && go(next.code, 'next') : prev && go(prev.code, 'prev'))}
-        peek={(d) => {
+        prev={finished ? undefined : prev?.code}
+        next={finished ? undefined : next?.code}
+        onNav={(d) => {
           const x = d > 0 ? next : prev
-          return x ? <PeekPage kind={x.code} title={x.title} /> : null
+          if (!x) return false
+          go(x.code, d > 0 ? 'next' : 'prev')
         }}
-      >
-        {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} />}
-      </Pager>
+        render={(code) => (code === 'finished' ? <AllDone message={finished || ''} onClose={onClose} top={top} /> : <ReqView refId={code} top={headFor(code)} />)}
+      />
     </Panel>
     </PeekScope>
   )
+}
+
+// CreatedBy：谁创建的（R-195 第 5 点）——身份胶囊 + 当时的会话标题，点开是那个会话；老数据没记录会话的写「Agent（没记录是哪个会话）」。
+// 自己取这一条的详情（和 ReqView 同一个查询），邻件的顶栏也能先画好。
+function CreatedBy({ r }: { r: Requirement }) {
+  const detail = useRequirement(r.code).data
+  const created = detail?.status_changes?.find((c) => c.via === 'create')
+  return created ? <Who actor={created.actor} session={created.session} role={created.role} title={created.session_title} className="max-w-[18em]" /> : <Who actor={r.created_by === 'user' ? 'user' : 'agent'} />
 }
 
 // BackButton：「在这里打开」之后，新抽屉顶上回到原来那个（R-196）。

@@ -262,7 +262,7 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
     return () => ro.disconnect()
   }, [stage])
   // 胶片带：第 k 页在 k * W；拖动、触控板、弹簧都是全站同一套（ui/gesture.tsx 的 useStrip，R-73）
-  const strip = useStrip(W)
+  const strip = useStrip(W, { name: 'viewer' })
   const { pos, go, begin, move, end, wheel } = strip
   const trackX = useTransform(pos, (v) => -v)
   const [k, setK] = useState(0)

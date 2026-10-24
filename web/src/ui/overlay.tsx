@@ -100,7 +100,7 @@ function usePanelDrag(
     resume?: () => void
   },
 ) {
-  type S = { p: DragStart; grab: boolean; inAside: boolean; scroller: HTMLElement | null; x?: XDrag | null; y?: ReturnType<NonNullable<typeof o.pull>> }
+  type S = { p: DragStart; grab: boolean; inAside: boolean; scroller: HTMLElement | null; d0?: number; x?: XDrag | null; y?: ReturnType<NonNullable<typeof o.pull>> }
   useDrag<S>(el, {
     mouse: (p) => !o.sheet && !p.target.closest('button, a, input, textarea, select, [role="button"], [data-aside]') && p.y0 - el!.getBoundingClientRect().top < grabH,
     start: (p) => {
@@ -114,8 +114,10 @@ function usePanelDrag(
         if (!o.pull || dy < 0) return false
         if (!s.grab && s.scroller && s.scroller.scrollTop > 0) return false
         s.y = o.pull(s.p)
+        s.d0 = dy
         return !!s.y
       }
+      s.d0 = dx
       if (s.p.touch && s.p.x0 < G.edge) return false
       // 手指下能横向滚动的代码块、表格、流程图：照常横滚
       if (s.p.touch && scrollsX(s.p.target, -dx, el)) return false
@@ -132,7 +134,17 @@ function usePanelDrag(
       } else s.x = !o.sheet && dx > 0 ? o.close() : null
       return !!s.x
     },
-    move: (s, dx, dy) => (s.y ? s.y.move(dy) : s.x?.move(dx)),
+    early: (s, dx, dy) => {
+      if (!s.p.touch) return false
+      if (Math.abs(dx) >= 3 && Math.abs(dx) > Math.abs(dy) * G.ratio) {
+        if (s.p.x0 < G.edge || scrollsX(s.p.target, -dx, el)) return false
+        return s.inAside || (!o.sheet && s.grab) ? dx > 0 : !!o.pager.current || (!o.sheet && dx > 0)
+      }
+      if (o.pull && dy >= 3 && dy > Math.abs(dx) * G.ratio) return s.grab || !s.scroller || s.scroller.scrollTop <= 0
+      return false
+    },
+    // 位移从定下方向的那一刻算起：接管时内容不跳一下
+    move: (s, dx, dy) => (s.y ? s.y.move(dy - (s.d0 ?? 0)) : s.x?.move(dx - (s.d0 ?? 0))),
     end: (s, v, cancel) => (s.y ? s.y.end(v.y, cancel) : s.x?.end(v.x, cancel)),
     tap: () => o.resume?.(),
   })

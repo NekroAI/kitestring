@@ -141,13 +141,26 @@ export function usePool(projectId?: string) {
   })
 }
 
+export const requirementQuery = (ref: string) => ({
+  queryKey: qk.requirement(ref),
+  queryFn: () => unwrap(api.GET('/api/requirements/{ref}', { params: { path: { ref } } })),
+})
+
 export function useRequirement(ref: string | null) {
   return useQuery({
-    queryKey: qk.requirement(ref ?? ''),
-    queryFn: () => unwrap(api.GET('/api/requirements/{ref}', { params: { path: { ref: ref! } } })),
+    ...requirementQuery(ref ?? ''),
     select: normReq,
     enabled: !!ref,
   })
+}
+
+// usePrefetchReqs：抽屉里提前取再往外一件的详情（邻件本身已经画在带子上，数据随之取好），连续翻页时露出来的不是骨架（R-73）
+export function usePrefetchReqs(codes: (string | undefined)[]) {
+  const qc = useQueryClient()
+  const key = codes.filter(Boolean).join(',')
+  useEffect(() => {
+    for (const c of key ? key.split(',') : []) void qc.prefetchQuery({ ...requirementQuery(c), staleTime: 15_000 })
+  }, [key, qc])
 }
 
 export function usePlans() {

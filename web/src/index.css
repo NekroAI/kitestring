@@ -295,6 +295,10 @@
 [data-state='closed'].panel-slide {
   animation: ks-slide-out 0.18s ease-in forwards;
 }
+/* 抽屉里的上一件 / 下一件（R-73）：竖向滚动区只让浏览器竖着滚，横向交给带子（touchmove 一直可拦） */
+.ks-pager :where(.overflow-y-auto, .overflow-auto) {
+  touch-action: pan-y;
+}
 /* 右拖关闭（R-73）：面板已经跟手弹出去了，不再播关闭动画 */
 [data-flung] {
   animation: none !important;

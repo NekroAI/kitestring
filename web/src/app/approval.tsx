@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { CheckCheck, ChevronLeft, ChevronRight, CircleCheck, PanelRight, X } from 'lucide-react'
 import type { Decision, Session } from '../api/client'
-import { useDecisions, useMorning, usePlans, useSessions } from '../api/queries'
+import { useDecisions, useMorning, usePlans, usePrefetchReqs, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Button, Skeleton, Tip } from '../ui/base'
 import { Panel } from '../ui/overlay'
-import { Pager, PeekPage } from '../ui/gesture'
+import { Pager } from '../ui/gesture'
 import { RoleBadge } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
@@ -129,7 +129,14 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   const prev = inQueue ? order.slice(0, idx).reverse().find((k) => live.has(k)) : undefined
   const next = inQueue ? order.slice(idx + 1).find((k) => live.has(k)) : undefined
   const liveOrder = order.filter((k) => live.has(k))
-  const pos = askKey && live.has(askKey) ? liveOrder.indexOf(askKey) + 1 : 0
+  // 再往外一件的需求详情先取好（邻件本身已画在带子上）
+  const reviewCode = (k?: string) => {
+    const a = k ? find(k) : undefined
+    return a?.kind === 'review' ? a.code : undefined
+  }
+  const liveBefore = (k: string) => order.slice(0, order.indexOf(k)).reverse().find((x) => live.has(x))
+  const liveAfter = (k: string) => order.slice(order.indexOf(k) + 1).find((x) => live.has(x))
+  usePrefetchReqs([reviewCode(prev && liveBefore(prev)), reviewCode(next && liveAfter(next))])
 
   const go = (key: string, d: Dir) => {
     internal.current = true
@@ -200,47 +207,85 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
     const a = k ? find(k) : undefined
     return a ? `${askKindLabel(a)} · ${a.title}` : undefined
   }
-  const top = (
-    <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
-      {goBack ? <BackButton back={goBack} /> : loading && !inQueue ? (
-        // 加载中先占住前后切换的位置（R-211）
-        <span aria-hidden className="flex items-center gap-1">
-          <span className={navBtn}>
-            <ChevronLeft className="size-[18px] opacity-30" />
+  // 顶栏按「哪一件」画：邻件在带子上露出来时，顶栏就已经是它自己的（第几件、类型、编号），切过来时不变
+  const navOf = (key: string) => {
+    const inQ = order.includes(key) && find(key)?.kind !== 'proxy'
+    const i = order.indexOf(key)
+    return {
+      inQ,
+      prev: inQ ? order.slice(0, i).reverse().find((k) => live.has(k)) : undefined,
+      next: inQ ? order.slice(i + 1).find((k) => live.has(k)) : undefined,
+      pos: live.has(key) ? liveOrder.indexOf(key) + 1 : 0,
+    }
+  }
+  const topFor = (key: string) => {
+    const a = find(key)
+    const n = navOf(key)
+    return (
+      <div className="flex shrink-0 items-center gap-1 px-3 pt-3 pb-1 sm:px-4">
+        {goBack ? <BackButton back={goBack} /> : loading && !n.inQ ? (
+          // 加载中先占住前后切换的位置（R-211）
+          <span aria-hidden className="flex items-center gap-1">
+            <span className={navBtn}>
+              <ChevronLeft className="size-[18px] opacity-30" />
+            </span>
+            <span className={navBtn}>
+              <ChevronRight className="size-[18px] opacity-30" />
+            </span>
+            <Skeleton className="ml-1 h-3 w-24" />
           </span>
-          <span className={navBtn}>
-            <ChevronRight className="size-[18px] opacity-30" />
-          </span>
-          <Skeleton className="ml-1 h-3 w-24" />
-        </span>
-      ) : inQueue && (
-        <>
-          <Tip content={label(prev)}>
-            <button className={navBtn} disabled={!prev} aria-label={t.ask.prev} onClick={() => prev && go(prev, 'prev')}>
-              <ChevronLeft className="size-[18px]" />
-            </button>
-          </Tip>
-          <Tip content={label(next)}>
-            <button className={navBtn} disabled={!next} aria-label={t.ask.next} onClick={() => next && go(next, 'next')}>
-              <ChevronRight className="size-[18px]" />
-            </button>
-          </Tip>
-          <span className="ml-1 text-xs whitespace-nowrap text-fg-3 tabular">{pos ? `${t.ask.queue} · ${t.ask.position(pos, liveOrder.length)}` : t.ask.queue}</span>
-        </>
-      )}
-      <span className="ml-auto flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-fg-3">
-        {cur && !finished && (
+        ) : n.inQ && (
           <>
-            <b className="shrink-0 font-semibold tracking-wider text-fg-2">{askKindLabel(cur)}</b>
-            {cur.code && <RefChip code={cur.code} link={false} />}
+            <Tip content={label(n.prev)}>
+              <button className={navBtn} disabled={!n.prev} aria-label={t.ask.prev} onClick={() => n.prev && go(n.prev, 'prev')}>
+                <ChevronLeft className="size-[18px]" />
+              </button>
+            </Tip>
+            <Tip content={label(n.next)}>
+              <button className={navBtn} disabled={!n.next} aria-label={t.ask.next} onClick={() => n.next && go(n.next, 'next')}>
+                <ChevronRight className="size-[18px]" />
+              </button>
+            </Tip>
+            <span className="ml-1 text-xs whitespace-nowrap text-fg-3 tabular">{n.pos ? `${t.ask.queue} · ${t.ask.position(n.pos, liveOrder.length)}` : t.ask.queue}</span>
           </>
         )}
-      </span>
-      <button className={navBtn} aria-label={t.common.close} onClick={onClose}>
-        <X className="size-[18px]" />
-      </button>
-    </div>
-  )
+        <span className="ml-auto flex min-w-0 items-center gap-1.5 truncate px-1 text-xs text-fg-3">
+          {a && (
+            <>
+              <b className="shrink-0 font-semibold tracking-wider text-fg-2">{askKindLabel(a)}</b>
+              {a.code && <RefChip code={a.code} link={false} />}
+            </>
+          )}
+        </span>
+        <button className={navBtn} aria-label={t.common.close} onClick={onClose}>
+          <X className="size-[18px]" />
+        </button>
+      </div>
+    )
+  }
+  const top = topFor(askKey ?? '')
+  // 邻件是否已下了判断（撤销期 / 盖印中），和 useDecided 同一口径
+  const decidedOf = (a: Ask | undefined) => {
+    const pk = pendingKeyOf(a)
+    const e = pk ? pendMap.get(pk) : undefined
+    return !!e && e.act !== 'move'
+  }
+  // 带子上的任意一页：这一件、上一件、下一件同一个画法（邻件提前画好，拖出来就是真实内容）
+  const page = (key: string) => {
+    if (key === 'finished') return <AllDone top={topFor('')} onClose={onClose} />
+    const a = find(key)
+    const tp = key === askKey ? top : topFor(key)
+    // 数据没到齐时先画骨架，不先闪一下「已经处理了」（R-211）
+    if (a) return <AskBody a={a} top={tp} sealed={key === askKey ? sealed : decidedOf(a)} />
+    if (loading)
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {tp}
+          <DrawerSkeleton />
+        </div>
+      )
+    return <Gone top={tp} />
+  }
 
   return (
     <PeekScope peek={peek}>
@@ -257,28 +302,15 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
       <Pager
         k={finished ? 'finished' : (askKey ?? '')}
         dir={dir === 'prev' ? -1 : 1}
-        prev={!!prev && !finished}
-        next={!!next && !finished}
-        onNav={(d) => (d > 0 ? next && go(next, 'next') : prev && go(prev, 'prev'))}
-        peek={(d) => {
-          const a = find((d > 0 ? next : prev) ?? '')
-          return a ? <PeekPage kind={a.code ? `${askKindLabel(a)} · ${a.code}` : askKindLabel(a)} title={a.title} /> : null
+        prev={finished ? undefined : prev}
+        next={finished ? undefined : next}
+        onNav={(d) => {
+          const k = d > 0 ? next : prev
+          if (!k) return false
+          go(k, d > 0 ? 'next' : 'prev')
         }}
-      >
-        {/* 数据没到齐时先画骨架，不先闪一下「已经处理了」（R-211） */}
-        {finished ? (
-          <AllDone top={top} onClose={onClose} />
-        ) : cur ? (
-          <AskBody a={cur} top={top} sealed={sealed} />
-        ) : loading ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {top}
-            <DrawerSkeleton />
-          </div>
-        ) : (
-          <Gone top={top} />
-        )}
-      </Pager>
+        render={page}
+      />
     </Panel>
     </PeekScope>
   )

@@ -1,30 +1,19 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { animate, motion, useMotionValue, useMotionValueEvent, useTransform, type AnimationPlaybackControls, type MotionValue, type Transition } from 'motion/react'
 import { cx } from '../lib/util'
+import { clamp, decide, G, rebase, rub, WheelSegment } from '../lib/gesture'
 
 // 全站手势（R-73，D-491 定稿）：一套参数、一种弹簧、按下即打断。
+// - 参数与纯逻辑（松手判定、妙控板一段手势的聚合）在 lib/gesture.ts，这里是接到 DOM / React 上的部分。
 // - 所有跟手的动画（看图胶片带、抽屉切换上一件 / 下一件、抽屉下拉 / 右拖关闭、列表左滑、长按菜单面板）都用 spring()，
 //   松手时的速度带进弹簧；动画进行中手指一按下，动画停在当前位置，手势从这里接着走（像 macOS 的可中断动画）。
+// - 拖动过程中不触发 React 渲染：位移写进 motion value / 直接写 transform。
 // - 长按（菜单、拖拽、提示）统一 G.longPress；判定方向前先过 G.slop 死区。
 // - 触屏横滑在屏幕左缘 G.edge 内起手时不接，留给浏览器的侧滑返回。
 // - 妙控板双指横滑全站归纸鸢（installWheelGuard）：抽屉 / 看图里是上一件 / 下一件，能横向滚动的区域照常横滚，其它地方吃掉。
 // 系统开了「减少动态效果」时不做弹簧动画（直接到位，和全站 CSS 动效的处理一致），手势本身照常跟手。
 
-export const G = {
-  stiffness: 380,
-  damping: 38,
-  longPress: 450, // ms：长按菜单、触屏拖拽浮起、长按提示同一个
-  slop: 8, // px：判定方向前的死区
-  ratio: 1.2, // 横向：|dx| > |dy| × 1.2
-  edge: 20, // px：屏幕左缘这么宽内起手的横滑留给浏览器返回
-  fling: 400, // px/s：甩动门槛
-  flingWheel: 1500, // px/s：触控板日常滑动本身就快，甩动门槛要高
-  commit: 0.22, // 切换：拖过宽度 22% 就算
-  closeDist: 120, // px：下拉 / 右拖关闭的距离
-  closeV: 600, // px/s：或甩得够快
-  rowOpen: 64, // px：列表左滑过这么多松手停在打开
-  lockMs: 800, // 触控板一次滑动落定后的锁定（惯性滚动不再翻页）
-} as const
+export { clamp, G, rub }
 
 export const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -37,10 +26,69 @@ export function spring(velocity = 0): Transition {
 export const springTo = (v: MotionValue<number>, to: number, velocity = 0, onComplete?: () => void): AnimationPlaybackControls =>
   animate(v, to, { ...(spring(velocity) as object), onComplete } as never)
 
-// rub：越界阻尼（拖过头时越拖越沉），d 为越界距离、dim 为尺度。
-export const rub = (d: number, dim: number) => (1 - 1 / ((d * 0.55) / dim + 1)) * dim
-
-export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+// ---------- 手势日志（排查真机手感用）----------
+// 地址带 ?gesturelog 时才启用（本标签页之后一直开着）：记录原始的 wheel / pointer / touch 事件序列和每帧带子位置、判定，
+// 右下角一个只有图标的按钮导出 JSON（下载，同时尽量复制到剪贴板）。不带参数时什么都不做、什么都不显示。
+type LogRow = Record<string, unknown>
+const LOG_MAX = 40000
+const logRows: LogRow[] = []
+let logOn = false
+export const glog = (row: LogRow) => {
+  if (!logOn) return
+  logRows.push({ t: Math.round(performance.now() * 10) / 10, ...row })
+  if (logRows.length > LOG_MAX) logRows.splice(0, logRows.length - LOG_MAX)
+}
+export function installGestureLog() {
+  if (typeof window === 'undefined') return
+  try {
+    if (new URLSearchParams(location.search).has('gesturelog')) sessionStorage.setItem('ks.gesturelog', '1')
+    logOn = sessionStorage.getItem('ks.gesturelog') === '1'
+  } catch {
+    logOn = new URLSearchParams(location.search).has('gesturelog')
+  }
+  if (!logOn) return
+  const r = (n: number) => Math.round(n * 100) / 100
+  const opts = { capture: true, passive: true } as const
+  window.addEventListener('wheel', (e) => glog({ k: 'wheel', dx: r(e.deltaX), dy: r(e.deltaY), mode: e.deltaMode, x: e.clientX, y: e.clientY, ctrl: e.ctrlKey || undefined }), opts)
+  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'] as const)
+    window.addEventListener(type, (e) => glog({ k: type, pt: e.pointerType, id: e.pointerId, x: r(e.clientX), y: r(e.clientY) }), opts)
+  for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel'] as const)
+    window.addEventListener(type, (e) => glog({ k: type, n: e.touches.length, c: e.cancelable, pts: [...e.changedTouches].map((p) => [r(p.clientX), r(p.clientY)]) }), opts)
+  // 事件之后还有没有被拦下（defaultPrevented）：冒泡阶段最后再记一次
+  window.addEventListener('wheel', (e) => glog({ k: 'wheel-end', prevented: e.defaultPrevented }), { passive: true })
+  window.addEventListener('touchmove', (e) => glog({ k: 'touchmove-end', prevented: e.defaultPrevented }), { passive: true })
+  const env = { ua: navigator.userAgent, w: innerWidth, h: innerHeight, dpr: devicePixelRatio, touch: navigator.maxTouchPoints, reduced: reducedMotion() }
+  const exportLog = () => {
+    const json = JSON.stringify({ env, at: new Date().toISOString(), rows: logRows })
+    try {
+      void navigator.clipboard?.writeText(json)
+    } catch {
+      /* 剪贴板不可用时只下载 */
+    }
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+    a.download = `gesturelog-${Date.now()}.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }
+  const mount = () => {
+    const b = document.createElement('button')
+    b.setAttribute('aria-label', 'export')
+    b.style.cssText = 'position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:2147483647;width:34px;height:34px;border-radius:17px;border:1px solid rgba(0,0,0,.15);background:rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;opacity:.7;pointer-events:auto'
+    b.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>'
+    // 抽屉开着时（模态）点它不算点到抽屉外面
+    for (const type of ['pointerdown', 'mousedown', 'touchstart'] as const) b.addEventListener(type, (e) => e.stopPropagation())
+    b.addEventListener('click', (e) => {
+      e.stopPropagation()
+      exportLog()
+    })
+    document.body.appendChild(b)
+  }
+  if (document.body) mount()
+  else window.addEventListener('DOMContentLoaded', mount)
+  ;(window as unknown as { ksGestureLog: unknown }).ksGestureLog = { rows: logRows, export: exportLog }
+}
 
 // tracker：最近 100ms 的位置采样，松手时算速度；停住再松手 = 没有速度。
 export function tracker() {
@@ -122,26 +170,26 @@ export function installWheelGuard() {
 
 // ---------- 胶片带 ----------
 
-// 触控板没有“松手”事件，从滚轮力度的走势推断（R-69、R-121）。
-// last / peak / rises / drops：力度走势；done：已决定翻页（松手或走满一页）的时刻，之后的惯性忽略
-type Gesture = { from: number; page: number; acc: number; samples: { t: number; v: number }[]; idle?: number; done?: number; wheel?: boolean; last: number; peak: number; rises: number; drops: number }
+type Gesture = { from: number; page: number; samples: { t: number; v: number }[]; wheel?: boolean }
 
 export type Strip = {
   pos: MotionValue<number>
-  snapTo: (page: number, velocity?: number) => void
+  snapTo: (page: number, velocity?: number, then?: () => void) => void
   go: (d: number) => void
   begin: () => void
   move: (dx: number) => void
   end: (velocity?: number) => void
   wheel: (dx: number, dy: number) => boolean
+  shift: (dx: number, settleTo?: number) => void
   dragging: () => boolean
   stop: () => void
 }
 
-// useStrip：一条按页排的带子（第 k 页在 k × W）。手指 / 触控板拖多少，带子就跟着走多少；松手按位移与速度决定翻页还是弹回；
-// 一次手势最多走一页，弹簧动画随时可被新的手势打断、从当前位置接着拖。
+// useStrip：一条按页排的带子（第 k 页在 k × W）。手指 / 触控板拖多少，带子就跟着走多少（只写 motion value，不触发 React 渲染）；
+// 松手按位移与速度决定翻页还是弹回；一次手势最多走一页，弹簧动画随时可被新的手势打断、从当前位置接着拖。
+// 妙控板：一串 wheel 事件按「一段手势」聚合（lib/gesture.ts 的 WheelSegment），一段只判定一次，惯性尾巴吞掉。
 // limit：带子能走的范围 [lo, hi]（px），超出部分越拖越沉；land：决定落到哪一页（默认直接弹过去）；onRest：动画停下。
-export function useStrip(W: number, o: { limit?: () => [number, number] | null; land?: (page: number, velocity: number) => void; onRest?: () => void } = {}): Strip {
+export function useStrip(W: number, o: { limit?: () => [number, number] | null; land?: (page: number, velocity: number) => void; onRest?: () => void; name?: string } = {}): Strip {
   const pos = useMotionValue(0)
   const w = useRef(W)
   w.current = W || 1
@@ -150,20 +198,26 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
   const anim = useRef<AnimationPlaybackControls | null>(null)
   const aim = useRef<number | null>(null) // 正在弹向的那一页：动画中途再翻页时从它往后数
   const gesture = useRef<Gesture | null>(null)
+  const seg = useRef(new WheelSegment())
+  const idle = useRef(0)
   const ref = useRef<Strip>(null!)
   if (!ref.current) {
     const stop = () => {
       anim.current?.stop()
       anim.current = null
     }
-    const snapTo = (page: number, velocity = 0) => {
+    const snapTo = (page: number, velocity = 0, then?: () => void) => {
       stop()
       aim.current = page
-      anim.current = springTo(pos, page * w.current, velocity, () => {
+      glog({ k: 'snap', src: opts.current.name, page, v: Math.round(velocity), from: Math.round(pos.get()) })
+      const a = springTo(pos, page * w.current, velocity, () => {
+        if (anim.current !== a) return
         aim.current = null
         anim.current = null
+        then?.()
         opts.current.onRest?.()
       })
+      anim.current = a
     }
     const land = (page: number, velocity: number) => (opts.current.land ? opts.current.land(page, velocity) : snapTo(page, velocity))
     const go = (d: number) => land((aim.current ?? Math.round(pos.get() / w.current)) + d, 0)
@@ -173,12 +227,12 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
       const from = pos.get()
       const page = aim.current ?? Math.round(from / w.current)
       aim.current = null
-      gesture.current = { from, page, acc: 0, samples: [{ t: performance.now(), v: from }], last: 0, peak: 0, rises: 0, drops: 0 }
+      gesture.current = { from, page, samples: [{ t: performance.now(), v: from }] }
     }
     // dx：手指 / 触控板相对开始时的水平位移（向左为负，即往下一页）。带子最多走到基准页的前后一页
     const move = (dx: number) => {
       const g = gesture.current
-      if (!g || g.done !== undefined) return
+      if (!g) return
       const W = w.current
       let v = clamp(g.from - dx, Math.min(g.from, (g.page - 1) * W), Math.max(g.from, (g.page + 1) * W))
       const lim = opts.current.limit?.()
@@ -189,79 +243,68 @@ export function useStrip(W: number, o: { limit?: () => [number, number] | null; 
       }
       pos.set(v)
       g.samples.push({ t: performance.now(), v })
-      if (g.samples.length > 6) g.samples.shift()
+      while (g.samples.length > 2 && performance.now() - g.samples[0].t > 100) g.samples.shift()
     }
-    // 松手：按这次手势走了多少与速度决定翻页还是弹回；往回甩 = 取消。velocity：触屏给的松手速度（px/s，正数是往下一页）
-    const decide = (g: Gesture, given?: number) => {
-      const [a, b] = [g.samples[0], g.samples[g.samples.length - 1]]
-      const vel = given ?? (b.t > a.t ? ((b.v - a.v) / (b.t - a.t)) * 1000 : 0)
-      const off = pos.get() - g.from
-      const fling = g.wheel ? G.flingWheel : G.fling
-      const W = w.current
-      let d = vel > fling ? 1 : vel < -fling ? -1 : off > W * G.commit ? 1 : off < -W * G.commit ? -1 : 0
-      if (d && Math.abs(off) > 4 && Math.sign(off) !== d) d = 0
-      const lim = opts.current.limit?.()
-      const page = g.page + d
-      if (lim && (page * W < lim[0] - 1 || page * W > lim[1] + 1)) return snapTo(g.page, vel)
-      land(page, vel)
-    }
+    // 松手：按这次手势走了多少与速度决定翻页还是弹回。velocity：给定的松手速度（px/s，正数是往下一页）
     const end = (velocity?: number) => {
       const g = gesture.current
       gesture.current = null
       if (!g) return
-      window.clearTimeout(g.idle)
-      if (g.done === undefined) decide(g, velocity)
-    }
-    // 触控板：力度连续几下回落（手指离开、进入惯性）就当松手，立即决定翻页还是弹回，余下的惯性忽略；走满一页也立即落定；
-    // 滚轮停下 120ms 同样视为结束。回落之后力度又连续回升（新的一次滑动起势）、或方向反过来，就当成新手势；落定后的锁定最多 G.lockMs。
-    // 返回 true 表示这次滚轮归翻页（竖向为主、又不在翻页手势里的不归）。
-    const wheel = (dx: number, dy: number): boolean => {
-      let g = gesture.current
-      if (g && !g.wheel) return true // 触屏正在拖
-      const a = Math.abs(dx)
-      if (g) {
-        g.rises = a > g.last + 1 ? g.rises + 1 : 0
-        const dir = Math.sign(g.samples[g.samples.length - 1].v - g.from)
-        const fresh =
-          (g.done !== undefined && a >= 4 && (g.rises >= 2 || a >= g.last * 3 + 6)) || // 回落后又起势
-          (dir !== 0 && Math.sign(dx) === -dir && a >= 3) || // 方向反过来
-          (g.done !== undefined && performance.now() - g.done > G.lockMs) // 落定后的锁定到期
-        if (fresh) {
-          end()
-          g = null
-        } else {
-          g.drops = a < g.last ? g.drops + 1 : 0
-          if (a > g.peak) g.peak = a
-          g.last = a
-        }
-      }
-      if (!g) {
-        if (a <= Math.abs(dy)) return false
-        begin()
-        g = gesture.current!
-        g.wheel = true
-        g.last = g.peak = a
-      }
-      const cur = g
-      window.clearTimeout(cur.idle)
-      cur.idle = window.setTimeout(() => gesture.current === cur && end(), 120)
-      if (cur.done !== undefined) return true
-      cur.acc -= dx
-      move(cur.acc)
-      const p = pos.get()
+      const [a, b] = [g.samples[0], g.samples[g.samples.length - 1]]
+      const vel = velocity ?? (b.t > a.t ? ((b.v - a.v) / (b.t - a.t)) * 1000 : 0)
       const W = w.current
-      if (p >= (cur.page + 1) * W - 1 || p <= (cur.page - 1) * W + 1) {
-        // 走满一页
-        cur.done = performance.now()
-        land(cur.page + Math.sign(p - cur.page * W), 0)
-      } else if (cur.drops >= 3 && a < cur.peak * 0.7) {
-        // 松手进入惯性
-        cur.done = performance.now()
-        decide(cur)
+      const off = pos.get() - g.from
+      const page = g.page + decide(off, vel, W, g.wheel)
+      const lim = opts.current.limit?.()
+      glog({ k: 'release', src: opts.current.name, off: Math.round(off), v: Math.round(vel), page, base: g.page, wheel: !!g.wheel })
+      if (lim && (page * W < lim[0] - 1 || page * W > lim[1] + 1)) return snapTo(g.page, vel)
+      if (page === g.page) return snapTo(page, vel)
+      land(page, vel)
+    }
+    // 返回 true 表示这次滚轮归翻页（竖向为主、又不在一段横滑里的不归）
+    const wheel = (dx: number, dy: number): boolean => {
+      if (gesture.current && !gesture.current.wheel) return true // 触屏正在拖
+      const now = performance.now()
+      const act = seg.current.feed(dx, dy, now, w.current)
+      if (act.t === 'pass') return false
+      window.clearTimeout(idle.current)
+      idle.current = window.setTimeout(() => {
+        const r = seg.current.idle(performance.now())
+        if (r?.t === 'release' && gesture.current?.wheel) end(-r.velocity)
+      }, G.wheelIdle + 10)
+      if (act.t === 'swallow') return true
+      if (act.t === 'begin') {
+        if (gesture.current) end()
+        begin()
+        gesture.current!.wheel = true
       }
+      if (!gesture.current?.wheel) return true
+      move(act.offset)
+      if (act.t === 'release') end(-act.velocity)
       return true
     }
-    ref.current = { pos, snapTo, go, begin, move, end, wheel, dragging: () => !!gesture.current && gesture.current.done === undefined, stop }
+    // shift：带子换了基准页（抽屉里这一件变成了邻件）——屏幕上不动，只换参照；进行中的拖动和动画接着走、速度不丢
+    const shift = (dx: number, settleTo?: number) => {
+      const W = w.current
+      const running = !!anim.current
+      const v = running ? pos.getVelocity() : 0
+      const target = aim.current
+      stop()
+      pos.set(pos.get() + dx)
+      const g = gesture.current
+      if (g) {
+        g.from += dx
+        g.page += dx / W
+        for (const s of g.samples) s.v += dx
+      }
+      glog({ k: 'shift', src: opts.current.name, dx: Math.round(dx), pos: Math.round(pos.get()), v: Math.round(v) })
+      if (g) return
+      if (settleTo !== undefined) {
+        if (running || Math.abs(pos.get() - settleTo * W) > 0.5) snapTo(settleTo, v)
+      } else if (running && target !== null) snapTo(target + dx / W, v)
+    }
+    pos.on('change', (v) => logOn && glog({ k: 'pos', src: opts.current.name, v: Math.round(v * 10) / 10 }))
+    ref.current = { pos, snapTo, go, begin, move, end, wheel, shift, dragging: () => !!gesture.current, stop }
   }
   return ref.current
 }
@@ -279,6 +322,7 @@ export type DragHandlers<S> = {
   // 没有接成拖动就结束（只是点了一下，或交还了浏览器）：被按下打断的动画在这里接着走完
   tap?: (s: S) => void
   mouse?: (p: DragStart) => boolean // 鼠标也接（例如右侧面板按住顶栏右拖关闭）；默认只接触屏
+  early?: (s: S, dx: number, dy: number) => boolean // 还在死区里时是否先拦下浏览器默认
 }
 
 // useDrag：触屏（以及按需的鼠标）拖动识别——先过死区再定方向，定下来之后吃掉浏览器默认（不滚动页面）。
@@ -303,7 +347,11 @@ export function useDrag<S>(el: HTMLElement | null, h: DragHandlers<S>) {
       const dx = x - a.x0
       const dy = y - a.y0
       if (!a.axis) {
-        if (Math.hypot(dx, dy) < G.slop) return
+        if (Math.hypot(dx, dy) < G.slop) {
+          // 死区里方向已经很明确、而且会接：先拦下浏览器默认，免得 iOS 先开始竖向滚动、之后的 touchmove 拦不住
+          if (ev.cancelable && hr.current.early?.(a.s, dx, dy)) ev.preventDefault()
+          return
+        }
         const axis = Math.abs(dx) > Math.abs(dy) * G.ratio ? 'x' : 'y'
         if (!hr.current.lock(a.s, axis, dx, dy)) {
           a.dropped = true
@@ -381,23 +429,27 @@ export const noDrag = (target: Element) => !!target.closest('input, textarea, se
 // PagerHandle：抽屉（ui/overlay.tsx 的 Panel）把横向拖动交给里面的 Pager。
 export type PagerHandle = { begin: () => void; move: (dx: number) => void; end: (vx: number) => void }
 
-// Leaving：Pager 里刚离开的那一件（正滑出去）。撤销条不再把它当作锚点，撤回立刻挪到顶部浮动条（R-201）
+// Leaving：Pager 里不是这一件的页（邻件、刚离开的那一件）。撤销条不把它当作锚点，撤回挪到顶部浮动条（R-201）
 export const Leaving = createContext(false)
 
 // PagerBind：Panel 提供，里面的 Pager 登记自己
 export const PagerBind = createContext<((h: PagerHandle | null) => void) | null>(null)
 
-type Leave = { k: string; node: ReactNode; side: number }
+type Leave = { k: string; side: number }
 
 // Pager：抽屉内容按「上一件 / 这一件 / 下一件」排成一条带子（看图胶片带的同一套 useStrip）。
-// 左右拖跟手，邻件露出（还没打开过的邻件先露出它的标题 peek，松手切过去后换成完整内容）；松手按位移与速度决定切换还是弹回，
-// 两端没有邻件时越拖越沉。切换由 onNav 交给抽屉（改地址栏参数），k 变了之后带子从刚才的位置接着弹到新的这一件；
-// 按钮、← →、盖印后自动翻到下一件也走同一条带子。动画中途再按住：停在手指下面接着拖，往回拖能回到刚离开的那一件。
-// 妙控板双指横滑同样是切换（非被动 wheel 监听，横向为主时 preventDefault，不触发浏览器前进 / 后退）。
-// dir：k 是怎么变过来的（-1 上一件，1 下一件 / 盖印后前进）。
-export function Pager({ k, dir, prev, next, onNav, peek, children }: { k: string; dir: number; prev: boolean; next: boolean; onNav: (d: 1 | -1) => void; peek: (d: 1 | -1) => ReactNode; children: ReactNode }) {
+// - 三页都是真实内容：打开这一件时上一件、下一件就已经渲染好（数据也随之取好），拖出来看到的就是它们本身，不是骨架；
+//   邻件不可交互（inert），也不登记撤销锚点。页按 key 挂在同一个父元素下，切换只是改它们的位置，不重新挂载。
+// - 左右拖 / 妙控板双指横滑：带子跟手（位移直接写 transform，拖动中不触发 React 渲染）；松手按位移与速度决定切换还是弹回，
+//   两端没有邻件时越拖越沉。决定切换时从当前位移、带当前速度用弹簧走到邻件，走完的那一刻才交给抽屉切换（onNav），
+//   邻件变成这一件、带子位置在同一帧换参照归零，屏幕上不动。
+// - 按钮、← →、盖印后自动翻到下一件：k 直接变了，带子从原位置换参照后弹过来；动画中途再变也接着当前速度走。
+// - 动画中途再按住：停在手指下面接着拖。
+// render(key)：画任意一件（这一件和邻件同一个函数）。dir：k 不是邻件时（跳着前进）从哪边来。
+export function Pager({ k, dir, prev, next, onNav, render }: { k: string; dir: number; prev?: string; next?: string; onNav: (d: 1 | -1) => boolean | void; render: (key: string) => ReactNode }) {
   const bind = useContext(PagerBind)
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
+  const track = useRef<HTMLDivElement>(null)
   const [W, setW] = useState(0)
   const GAP = 16
   useLayoutEffect(() => {
@@ -409,103 +461,99 @@ export function Pager({ k, dir, prev, next, onNav, peek, children }: { k: string
     return () => ro.disconnect()
   }, [root])
   const [st, setSt] = useState<{ k: string; leave: Leave | null }>({ k, leave: null })
-  const last = useRef<ReactNode>(children)
-  const shift = useRef(0)
-  const flingV = useRef(0)
-  const waiting = useRef(0)
-  const nb = useRef({ prev, next })
-  nb.current = { prev, next }
+  const lastNb = useRef({ prev, next })
+  const pendingShift = useRef(0)
+  const nb = useRef({ prev, next, leave: st.leave })
+  nb.current = { prev, next, leave: st.leave }
   const navRef = useRef(onNav)
   navRef.current = onNav
   const strip = useStrip(W, {
-    limit: () => [nb.current.prev || st.leave?.side === -1 ? -W : 0, nb.current.next || st.leave?.side === 1 ? W : 0],
+    name: 'pager',
+    limit: () => [nb.current.prev || nb.current.leave?.side === -1 ? -W : 0, nb.current.next || nb.current.leave?.side === 1 ? W : 0],
     land: (page, v) => {
       if (page === 0) return strip.snapTo(0, v)
-      flingV.current = v
-      navRef.current(page > 0 ? 1 : -1)
-      // 抽屉没有切过去（例如那一件刚被处理掉）：弹回
-      window.cancelAnimationFrame(waiting.current)
-      waiting.current = window.requestAnimationFrame(() => window.requestAnimationFrame(() => strip.snapTo(0, 0)))
+      const d = page > 0 ? 1 : -1
+      // 先走到邻件，走完才切换：切换前后屏幕上不动
+      strip.snapTo(page, v, () => {
+        glog({ k: 'nav', d })
+        if (navRef.current(d) === false) strip.snapTo(0)
+      })
     },
     onRest: () => setSt((s) => (s.leave && Math.abs(strip.pos.get()) < 1 ? { ...s, leave: null } : s)),
   })
-  // k 变了：刚才那一件留在原地变成「离开的那一件」，新的这一件接在它旁边，带子从原位置弹过来
+  // 带子位置直接写 transform（同步，不等下一帧）：换参照的那一帧页的新位置和带子的新位置一起生效
+  useLayoutEffect(() => {
+    const el = track.current
+    if (!el) return
+    const write = (v: number) => (el.style.transform = `translate3d(${-v}px,0,0)`)
+    write(strip.pos.get())
+    return strip.pos.on('change', write)
+  }, [strip])
+  // k 变了：在渲染时就算出新旧关系（新的这一件原来在哪边），布局生效前换参照
   if (st.k !== k) {
-    const d = dir < 0 ? -1 : 1
-    const real = !!st.k && !!k
-    shift.current = real ? d : 0
-    setSt({ k, leave: real ? { k: st.k, node: last.current, side: -d } : null })
+    const old = st.k
+    const adj = k === lastNb.current.next ? 1 : k === lastNb.current.prev ? -1 : 0
+    const d = adj || (dir < 0 ? -1 : 1)
+    pendingShift.current = old && k ? d : 0
+    setSt({ k, leave: old && k && !adj ? { k: old, side: -d } : null })
   }
   useLayoutEffect(() => {
-    last.current = children
+    lastNb.current = { prev, next }
   })
   useLayoutEffect(() => {
-    window.cancelAnimationFrame(waiting.current)
-    const d = shift.current
+    const d = pendingShift.current
+    pendingShift.current = 0
+    glog({ k: 'key', key: st.k, d })
     if (!d) {
       strip.stop()
       strip.pos.set(0)
       return
     }
-    shift.current = 0
-    strip.stop()
-    strip.pos.set(strip.pos.get() - d * W)
-    strip.snapTo(0, flingV.current)
-    flingV.current = 0
+    strip.shift(rebase(0, d, W), 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [st.k])
-  const trackX = useTransform(strip.pos, (v) => -v)
-  // 交给抽屉的拖动入口；触控板横滑在这里接
   useEffect(() => {
     bind?.({ begin: strip.begin, move: strip.move, end: (vx) => strip.end(-vx) })
     return () => bind?.(null)
   }, [bind, strip])
+  // 妙控板：一段手势开头落在能横向滚动的代码块、表格上时，这一整段都交给它横滚；否则整段归带子
   useEffect(() => {
     if (!root) return
+    let last = 0
+    let owner: 'scroll' | 'strip' = 'strip'
     const onWheel = (e: WheelEvent) => {
       if (e.defaultPrevented || e.ctrlKey) return
       const { dx, dy } = wheelDelta(e)
-      if (!strip.dragging() && Math.abs(dx) > Math.abs(dy) && scrollsX(e.target, dx, root)) return // 能横滚的代码块、表格照常横滚
+      const now = performance.now()
+      if (now - last > G.wheelIdle && !strip.dragging()) owner = Math.abs(dx) > Math.abs(dy) && scrollsX(e.target, dx, root) ? 'scroll' : 'strip'
+      last = now
+      if (owner === 'scroll') return
       if (strip.wheel(dx, dy)) e.preventDefault()
     }
     root.addEventListener('wheel', onWheel, { passive: false })
     return () => root.removeEventListener('wheel', onWheel)
   }, [root, strip])
-  const page = 'absolute inset-0 flex min-h-0 flex-col bg-surface'
-  const leave = st.leave
+  const slots: { key: string; off: number }[] = []
+  if (prev) slots.push({ key: prev, off: -1 })
+  if (k) slots.push({ key: k, off: 0 })
+  if (next) slots.push({ key: next, off: 1 })
+  const lv = st.leave
+  if (lv && !slots.some((s) => s.key === lv.k || s.off === lv.side)) slots.push({ key: lv.k, off: lv.side })
   return (
-    <div ref={setRoot} className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <motion.div className="absolute inset-0" style={{ x: trackX }}>
-        {leave && (
-          <div key={leave.k} className={page} style={{ transform: `translateX(${leave.side * W}px)` }} aria-hidden>
-            <Leaving value>{leave.node}</Leaving>
+    <div ref={setRoot} className="ks-pager relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div ref={track} className="absolute inset-0 will-change-transform">
+        {slots.map((s) => (
+          <div
+            key={s.key}
+            data-page={s.key}
+            className="absolute inset-0 flex min-h-0 flex-col bg-surface"
+            style={{ transform: `translate3d(${s.off * W}px,0,0)`, visibility: s.off && !W ? 'hidden' : undefined }}
+            inert={s.off !== 0}
+            aria-hidden={s.off !== 0 || undefined}
+          >
+            <Leaving value={s.off !== 0}>{render(s.key)}</Leaving>
           </div>
-        )}
-        <div key={k} className={page}>
-          <Leaving value={false}>{children}</Leaving>
-        </div>
-        {([-1, 1] as const).map((d) =>
-          (d < 0 ? prev : next) && leave?.side !== d ? (
-            <div key={`peek${d}`} className={cx(page, 'pointer-events-none')} style={{ transform: `translateX(${d * W}px)` }} aria-hidden>
-              {peek(d)}
-            </div>
-          ) : null,
-        )}
-      </motion.div>
-    </div>
-  )
-}
-
-// PeekPage：邻件还没打开时露出来的样子——顶栏位置写它是什么、标题，下面几行淡色占位。
-export function PeekPage({ kind, title }: { kind?: ReactNode; title: ReactNode }) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col px-5 pt-4">
-      {kind && <div className="text-xs font-semibold tracking-wider text-fg-3">{kind}</div>}
-      <div className="mt-2 line-clamp-2 font-display text-[19px] leading-snug text-fg">{title}</div>
-      <div className="mt-5 space-y-2.5">
-        <div className="h-3 w-11/12 rounded-full bg-sunken" />
-        <div className="h-3 w-4/5 rounded-full bg-sunken" />
-        <div className="h-3 w-2/3 rounded-full bg-sunken" />
+        ))}
       </div>
     </div>
   )
@@ -564,6 +612,7 @@ export function SwipeRow({ actions, disabled, children, className, spotKey }: { 
     },
     // 只接横向；收着的时候往右滑不接，左缘起手留给浏览器返回
     lock: (s, axis, dx) => axis === 'x' && !s.edge && !(s.from === 0 && dx > 0),
+    early: (s, dx, dy) => !s.edge && Math.abs(dx) >= 3 && Math.abs(dx) > Math.abs(dy) * G.ratio && !(s.from === 0 && dx > 0),
     move: (s, dx) => {
       let v = s.from + dx
       if (v > 0) v = rub(v, 120)
@@ -578,7 +627,7 @@ export function SwipeRow({ actions, disabled, children, className, spotKey }: { 
     },
   })
   return (
-    <div ref={setEl} data-spot-key={spotKey} className={cx('relative rounded-[14px] transition-[opacity,filter] duration-200', clip && 'overflow-hidden', className)}>
+    <div ref={setEl} data-spot-key={spotKey} className={cx('relative touch-pan-y rounded-[14px] transition-[opacity,filter] duration-200', clip && 'overflow-hidden', className)}>
       <motion.div className="absolute inset-y-0 right-0 flex overflow-hidden" style={{ width: reveal }} aria-hidden={!opened}>
         {actions.map((a, i) => (
           <button
