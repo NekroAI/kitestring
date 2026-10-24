@@ -138,3 +138,52 @@ test('同一分钟在所有行里的位置：同宽的行完全相同，不同�
     assert.ok(Math.abs(axisX(ax, 236, ax.end * 60000) - 236) < 1e-9)
   }
 })
+
+test('token 用量（R-206）：累计值取较新的，各模型相加，命中率分档，价格齐全才有金额，按档位合并', async () => {
+  const { hitRate, hitTone, priceComplete } = await import('./lanedata.ts')
+  const k = 'claude:s1'
+  const v = (n: number, inp: number, cw: number, cr: number, out: number) => ({ in: inp, cw, cw1h: 0, cr, out, n })
+  const st = new LaneStore()
+  st.merge(data([], 1, { tok: [{ k, a: '', model: 'opus', m: [nowMin - 2, nowMin], in: [10, 5], cw: [1000, 0], cw1h: [0, 0], cr: [9000, 100], out: [90, 5], n: [1, 1] }] }))
+  // 推送先到、旧拉取晚到：不被改小
+  st.push({ m: [], s: [], g: [], t: [{ k, a: '', model: 'opus', m: nowMin, t: v(2, 10, 0, 300, 10), h: v(3, 20, 1000, 9300, 100) }] })
+  st.merge(data([], 1, { tok: [{ k, a: '', model: 'opus', m: [nowMin], in: [5], cw: [0], cw1h: [0], cr: [100], out: [5], n: [1] }] }))
+  st.push({ m: [], s: [], g: [], t: [{ k, a: 'sub1', model: 'sonnet', m: nowMin, t: v(1, 1, 20000, 0, 1), h: v(1, 1, 20000, 0, 1) }] })
+  const ax = makeAxis('h1', 720, NOW)
+  const main = st.tokens(k, [''], ax)
+  assert.equal(main.at(-1)!.fresh, 20)
+  assert.equal(main.at(-3)!.fresh, 1100)
+  assert.equal(hitRate(main.at(-3)!), 9000 / 10010)
+  assert.equal(hitTone(0.95), 'hi')
+  assert.equal(hitTone(0.7), 'mid')
+  assert.equal(hitTone(0.2), 'lo')
+  assert.equal(hitTone(null), null)
+  assert.ok(st.hasTokens(k) && !st.hasTokens('codex:x'))
+  // 顶部波形：所有会话含子任务
+  assert.equal(st.tokenTotal(ax).at(-1)!.fresh, 20 + 20002)
+  // 没填价格：没有金额
+  assert.equal(st.tokens(k, [''], ax).at(-1)!.cost, null)
+  st.setPrices({ opus: { in: 5, out: 25, cw: 6.25, cr: 0.5 } })
+  assert.ok(Math.abs(st.tokens(k, [''], ax).at(-1)!.cost! - (10 * 5 + 300 * 0.5 + 10 * 25) / 1e6) < 1e-12)
+  assert.equal(st.tokens(k, ['', 'sub1'], ax).at(-1)!.cost, null) // sonnet 没有价格：整格不算金额
+  assert.equal(priceComplete({ in: 1, out: 2, cw: 3 }), false)
+  assert.equal(priceComplete({ in: 1, out: 2, cw: 3, cr: 0 }), true)
+  // 近 1 周档用小时级
+  const w1 = makeAxis('w1', 720, NOW)
+  assert.equal(st.tokens(k, [''], w1).at(-1)!.fresh, 1120)
+})
+
+test('冷启动：超过阈值、在窗口里的才列出，按时间排', () => {
+  const k = 'claude:s1'
+  const st = new LaneStore()
+  const at = (m: number) => m * 60000 + 5000
+  st.merge(data([], 1, { colds: [
+    { k, a: '', model: 'opus', at: at(nowMin - 1), tokens: 400000, cause: 'idle', idle_min: 120 },
+    { k, a: '', model: 'opus', at: at(nowMin - 30), tokens: 20000, cause: 'compact', idle_min: 1 },
+    { k, a: '', model: 'opus', at: at(nowMin - 300), tokens: 20000, cause: 'model', idle_min: 1 },
+    { k, a: 'x', model: 'opus', at: at(nowMin - 2), tokens: 28000, cause: 'start', idle_min: 0 },
+  ] }))
+  const ax = makeAxis('h1', 720, NOW)
+  assert.deepEqual(st.coldsOf(k, [''], ax).map((c) => c.cause), ['compact', 'idle'])
+  assert.deepEqual(st.coldsOf(k, ['x'], ax).map((c) => c.cause), ['start'])
+})

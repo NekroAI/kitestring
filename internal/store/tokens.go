@@ -167,3 +167,21 @@ func (s *Store) laneTokens(ctx context.Context, from, to int64, hourly bool) ([]
 	}
 	return out, colds, crows.Err()
 }
+
+// TokenModels 返回近 30 天有用量的模型（设置里按它列出可填价格的模型），按名字排。
+func (s *Store) TokenModels(ctx context.Context, now time.Time) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT model FROM lane_token_hours WHERE minute >= ? AND model <> '' ORDER BY model`, unixMinute(now.Add(-LaneKeep)))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

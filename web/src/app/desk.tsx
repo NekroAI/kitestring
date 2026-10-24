@@ -17,7 +17,8 @@ import { useOpenPlan } from './nav'
 import { needsApproval, passedWith, planState, StageRail } from './plans'
 import { useRecent } from './recent'
 import { MorningReports } from './morning'
-import { Wind } from './lanes'
+import { TokBrief, Wind } from './lanes'
+import type { Zoom } from '../lib/lanedata'
 import { Team } from '../pages/Projects'
 
 // 工作台的周边部件（R-113 → R-147 → R-170）：顶部唯一的简报位（离开期间小结 / PM 简报，背后一条随活跃度起伏的风）、
@@ -260,9 +261,10 @@ function awayEnd(r: MorningReport): string | undefined {
   return r.note?.at
 }
 
-// BriefStrip：顶部唯一的简报位。有离开期间小结时放小结（顾问），否则放 PM 简报；背后一条随整体活跃度起伏的风。
+// BriefStrip：顶部唯一的简报位。有离开期间小结时放小结（顾问），否则放 PM 简报；背后是这一档所有会话新算 token 的波形，
+// 右边写这一档的合计（R-206）。
 // 最多两行换行显示，点开看全文（小结卡、各项目的 PM 简报）；离开结束两小时后小结收起成一行，PM 简报接回简报位。断线时整体静止变灰并写明。
-export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number }) {
+export function BriefStrip({ sessions, now, zoom }: { sessions: Session[]; now: number; zoom: Zoom }) {
   const morning = useMorning()
   const projects = useProjects()
   const connected = useConnected()
@@ -316,6 +318,7 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
               <Linkify text={head.text} />
             </span>
             <span className="relative flex shrink-0 items-center gap-2 text-[11.5px] text-fg-3">
+              <TokBrief zoom={zoom} className="max-xl:hidden" />
               {more > 0 && <span>{t.desk.briefMore(more)}</span>}
               {!head.folded && <span className="tabular max-sm:hidden">{relTime(head.at, now)}</span>}
               <span className="inline-flex items-center gap-0.5 text-fg-2">
@@ -325,7 +328,10 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
             </span>
           </>
         ) : (
-          connected && !morning.isPending && !projects.isPending && <span className="relative min-w-0 truncate text-[12.5px] text-fg-3">{t.desk.noBrief}</span>
+          <>
+            {connected && !morning.isPending && !projects.isPending && <span className="relative min-w-0 flex-1 truncate text-[12.5px] text-fg-3">{t.desk.noBrief}</span>}
+            <TokBrief zoom={zoom} className="relative ml-auto shrink-0 text-[11.5px] text-fg-3 max-lg:hidden" />
+          </>
         )}
       </button>
       {open && head && (

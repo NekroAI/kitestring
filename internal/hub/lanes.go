@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -205,7 +206,83 @@ func (h *Hub) getLanes(ctx context.Context, in *lanesIn) (*lanesOut, error) {
 	return &lanesOut{Body: d}, nil
 }
 
+// ---------- 模型价格（R-206，选填） ----------
+// 默认不填、不显示金额。某个模型四项（输入 / 输出 / 写缓存 / 读缓存，每百万 token）都填了，才在悬停和泳道标签里附金额；
+// 没填全的不替用户猜，只显示 token。
+
+const tokenPricesKey = "token_prices"
+
+// TokenPrice 是一个模型每百万 token 的价格；没填的项为空。
+type TokenPrice struct {
+	Model string   `json:"model" minLength:"1" maxLength:"200"`
+	In    *float64 `json:"in,omitempty" minimum:"0" doc:"没命中缓存的输入"`
+	Out   *float64 `json:"out,omitempty" minimum:"0" doc:"输出"`
+	CW    *float64 `json:"cw,omitempty" minimum:"0" doc:"写缓存"`
+	CR    *float64 `json:"cr,omitempty" minimum:"0" doc:"读缓存"`
+}
+
+type TokenPrices struct {
+	Currency string       `json:"currency" maxLength:"8" doc:"金额前面写的货币符号，如 $ 或 ¥；空为 $"`
+	Prices   []TokenPrice `json:"prices" maxItems:"200"`
+}
+
+type tokenPricesOut struct {
+	Body struct {
+		TokenPrices
+		Models []string `json:"models" doc:"近 30 天有用量的模型"`
+	}
+}
+
+func (h *Hub) tokenPrices(ctx context.Context) (TokenPrices, error) {
+	p := TokenPrices{Prices: []TokenPrice{}}
+	raw, err := h.store.GetSetting(ctx, tokenPricesKey)
+	if err != nil || raw == "" {
+		return p, err
+	}
+	err = json.Unmarshal([]byte(raw), &p)
+	if p.Prices == nil {
+		p.Prices = []TokenPrice{}
+	}
+	return p, err
+}
+
+func (h *Hub) getTokenPrices(ctx context.Context, _ *struct{}) (*tokenPricesOut, error) {
+	p, err := h.tokenPrices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &tokenPricesOut{}
+	out.Body.TokenPrices = p
+	if out.Body.Models, err = h.store.TokenModels(ctx, time.Now()); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (h *Hub) putTokenPrices(ctx context.Context, in *struct{ Body TokenPrices }) (*tokenPricesOut, error) {
+	p := TokenPrices{Currency: strings.TrimSpace(in.Body.Currency), Prices: []TokenPrice{}}
+	seen := map[string]bool{}
+	for _, x := range in.Body.Prices {
+		x.Model = strings.TrimSpace(x.Model)
+		if x.Model == "" || seen[x.Model] || (x.In == nil && x.Out == nil && x.CW == nil && x.CR == nil) {
+			continue // 一项都没填的不存
+		}
+		seen[x.Model] = true
+		p.Prices = append(p.Prices, x)
+	}
+	b, _ := json.Marshal(p)
+	if err := h.store.SetSetting(ctx, tokenPricesKey, string(b)); err != nil {
+		return nil, err
+	}
+	h.broker.publish("settings")
+	return h.getTokenPrices(ctx, nil)
+}
+
 func (h *Hub) registerLanesWeb(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "get-lanes", Method: http.MethodGet, Path: "/api/lanes", Tags: []string{"sessions"},
 		Summary: "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）"}, h.getLanes)
+	huma.Register(api, huma.Operation{OperationID: "get-token-prices", Method: http.MethodGet, Path: "/api/token-prices", Tags: []string{"settings"},
+		Summary: "各模型每百万 token 的价格（选填，R-206）与近 30 天用过的模型"}, h.getTokenPrices)
+	huma.Register(api, huma.Operation{OperationID: "put-token-prices", Method: http.MethodPut, Path: "/api/token-prices", Tags: []string{"settings"},
+		Summary: "保存各模型的价格；四项都填了的模型才显示金额（R-206）"}, h.putTokenPrices)
 }

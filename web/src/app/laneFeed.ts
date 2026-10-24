@@ -1,7 +1,7 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { api, unwrap } from '../api/client'
-import { laneSink, serverNow } from '../api/queries'
-import { LaneStore, makeAxis, zoomSpec, ZOOMS, type LaneData, type LanePush, type Zoom } from '../lib/lanedata'
+import { laneSink, serverNow, useTokenPrices } from '../api/queries'
+import { LaneStore, makeAxis, priceComplete, zoomSpec, ZOOMS, type LaneData, type LanePush, type Prices, type Zoom } from '../lib/lanedata'
 
 // 泳道时间线的数据源（R-205）：一份全局的 LaneStore。
 // 打开工作台先拉当前档位要的那段，再在空闲时把近 1 天的分钟和近 1 周的小时预取好，之后换档不再取数；
@@ -74,4 +74,24 @@ export function prefetchLanes() {
   idle(() => {
     void ZOOMS.reduce((p, z) => p.then(() => ensureZoom(z).catch(() => {})), Promise.resolve())
   })
+}
+
+// useLanePrices：把设置里填全了的模型价格交给时间线（R-206）；没填或没填全的模型不算金额。返回货币符号。
+export function useLanePrices() {
+  const q = useTokenPrices()
+  useEffect(() => {
+    const p: Prices = {}
+    for (const x of q.data?.prices ?? []) if (priceComplete(x)) p[x.model] = { in: x.in!, out: x.out!, cw: x.cw!, cr: x.cr! }
+    currency = q.data?.currency || '$'
+    laneStore.setPrices(p)
+    bump()
+  }, [q.data])
+}
+
+let currency = '$'
+// money：金额文字（「约 $1.23」）；没有金额（没填价格、或这里面有模型没填全）时为空
+export function money(cost: number | null | undefined) {
+  if (cost == null || !Object.keys(laneStore.prices).length) return ''
+  if (cost > 0 && cost < 0.01) return `<${currency}0.01`
+  return `${currency}${cost >= 100 ? cost.toFixed(0) : cost.toFixed(2)}`
 }

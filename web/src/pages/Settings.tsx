@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
-import { qk, useDevices, useProjects, usePush, useSettings } from '../api/queries'
+import { qk, useDevices, useProjects, usePush, useSettings, useTokenPrices } from '../api/queries'
 import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
 import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
@@ -713,7 +713,119 @@ function Appearance() {
       </div>
       <RoleNamesGroup />
       <AnnotateGroup />
+      <TokenPricesGroup />
     </>
+  )
+}
+
+// 模型价格（R-206，选填）：默认不填、不显示金额。每个模型四项（每百万 token）都填了，泳道标签和悬停里才附金额；
+// 没填全的这一行写明不显示金额，不替用户猜缺的项。模型列表 = 近 30 天用到的 + 已经填过的 + 手动添加的。
+type PriceKey = 'in' | 'out' | 'cw' | 'cr'
+const priceKeys: PriceKey[] = ['in', 'out', 'cw', 'cr']
+type PriceRow = { model: string } & Record<PriceKey, string>
+
+function TokenPricesGroup() {
+  const q = useTokenPrices()
+  const qc = useQueryClient()
+  const [busy, wrap] = useBusy()
+  const [rows, setRows] = useState<PriceRow[]>([])
+  const [cur, setCur] = useState('')
+  const [extra, setExtra] = useState('')
+  const L = t.settings.prices
+  const fromServer = () => {
+    const d = q.data
+    if (!d) return { rows: [] as PriceRow[], cur: '' }
+    const by = new Map((d.prices ?? []).map((p) => [p.model, p]))
+    const names = [...new Set([...(d.models ?? []), ...by.keys()])]
+    const str = (v?: number) => (v == null ? '' : String(v))
+    return { rows: names.map((m) => ({ model: m, in: str(by.get(m)?.in), out: str(by.get(m)?.out), cw: str(by.get(m)?.cw), cr: str(by.get(m)?.cr) })), cur: d.currency ?? '' }
+  }
+  useEffect(() => {
+    const f = fromServer()
+    setRows(f.rows)
+    setCur(f.cur)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.data])
+  const num = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v)) || Number(v) < 0 ? undefined : Number(v))
+  const filled = (r: PriceRow) => priceKeys.filter((k) => num(r[k]) != null).length
+  const base = fromServer()
+  const dirty = cur !== base.cur || JSON.stringify(rows) !== JSON.stringify(base.rows)
+  const set = (i: number, k: PriceKey, v: string) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
+  const save = () =>
+    wrap(async () => {
+      try {
+        await unwrap(api.PUT('/api/token-prices', { body: { currency: cur.trim(), prices: rows.filter((r) => filled(r) > 0).map((r) => ({ model: r.model, in: num(r.in), out: num(r.out), cw: num(r.cw), cr: num(r.cr) })) } }))
+        await qc.invalidateQueries({ queryKey: qk.tokenPrices })
+        toast.success(t.common.saved)
+      } catch (e) {
+        toast.error(errMsg(e))
+      }
+    })
+  const add = () => {
+    const m = extra.trim()
+    if (!m || rows.some((r) => r.model === m)) return setExtra('')
+    setRows([...rows, { model: m, in: '', out: '', cw: '', cr: '' }])
+    setExtra('')
+  }
+  return (
+    <Group title={L.title} hint={L.hint}>
+      <Card className="space-y-3 p-4 sm:p-5" data-token-prices>
+        <div className="flex flex-wrap items-end gap-3">
+          <p className="min-w-0 flex-1 text-xs text-fg-3">{L.unit}</p>
+          <Field label={L.currency} className="w-24">
+            <Input value={cur} maxLength={8} placeholder="$" onChange={(e) => setCur(e.target.value)} />
+          </Field>
+        </div>
+        {q.isPending ? (
+          <Skeleton className="h-24" />
+        ) : rows.length === 0 ? (
+          <p className="text-[13px] text-fg-3">{L.empty}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-[13px]">
+              <thead>
+                <tr className="text-left text-[12px] text-fg-3">
+                  <th className="py-1.5 pr-3 font-medium">{L.model}</th>
+                  {priceKeys.map((k) => (
+                    <th key={k} className="w-24 px-1 py-1.5 font-medium">
+                      {L.cols[k]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const n = filled(r)
+                  return (
+                    <tr key={r.model} className="border-t border-line align-top">
+                      <td className="py-2 pr-3">
+                        <div className="truncate font-mono text-[12.5px] text-fg">{r.model}</div>
+                        {n > 0 && n < 4 && <div className="mt-0.5 text-[11.5px] text-wait">{L.incomplete}</div>}
+                      </td>
+                      {priceKeys.map((k) => (
+                        <td key={k} className="px-1 py-1.5">
+                          <Input type="number" inputMode="decimal" min={0} step="any" aria-label={`${r.model} ${L.cols[k]}`} value={r[k]} onChange={(e) => set(i, k, e.target.value)} className="h-8 tabular" />
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Input value={extra} placeholder={L.addPlaceholder} onChange={(e) => setExtra(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && add()} className="h-8 max-w-64 min-w-0 flex-1" />
+          <Button size="sm" variant="ghost" disabled={!extra.trim()} onClick={add}>
+            <Plus className="size-4" />
+            {L.add}
+          </Button>
+          <Button variant="primary" className="ml-auto" loading={busy} disabled={!dirty} onClick={save}>
+            {t.common.save}
+          </Button>
+        </div>
+      </Card>
+    </Group>
   )
 }
 

@@ -798,7 +798,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205） */
+        /** 工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206） */
         get: operations["get-lanes"];
         put?: never;
         post?: never;
@@ -1510,6 +1510,24 @@ export interface paths {
         /** 需求状态变更历史：按需求 / 项目 / 时间段查（R-153） */
         get: operations["list-status-changes"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/token-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 各模型每百万 token 的价格（选填，R-206）与近 30 天用过的模型 */
+        get: operations["get-token-prices"];
+        /** 保存各模型的价格；四项都填了的模型才显示金额（R-206） */
+        put: operations["put-token-prices"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2594,8 +2612,37 @@ export interface components {
             start: number;
             type: string;
         };
+        LaneCold: {
+            a: string;
+            /**
+             * Format: int64
+             * @description Unix 毫秒
+             */
+            at: number;
+            /**
+             * @description idle 闲置超过缓存档位；compact 上下文压缩；model 换模型；start 第一次回复；other 看不出
+             * @enum {string}
+             */
+            cause: "idle" | "compact" | "model" | "start" | "other";
+            /**
+             * Format: int64
+             * @description 距上一次回复多少分钟
+             */
+            idle_min: number;
+            k: string;
+            model: string;
+            /** @description 换模型时，之前的模型 */
+            prev_model?: string;
+            /**
+             * Format: int64
+             * @description 这次重算的 token 数
+             */
+            tokens: number;
+        };
         LaneData: {
             agents: components["schemas"]["LaneAgent"][] | null;
+            /** @description 范围内的冷启动（缓存重建） */
+            colds: components["schemas"]["LaneCold"][] | null;
             /**
              * Format: int64
              * @description 范围起点，Unix 分钟（含）
@@ -2619,6 +2666,7 @@ export interface components {
              * @description 范围终点，Unix 分钟（不含）
              */
             to: number;
+            tok: components["schemas"]["LaneTok"][] | null;
         };
         LaneRow: {
             /** @description 子任务的 agent_id；主会话为空 */
@@ -2671,6 +2719,25 @@ export interface components {
              * @description 待命最长等到什么时候（没结束时最多画到这里）
              */
             until?: number;
+        };
+        LaneTok: {
+            a: string;
+            /** @description 读缓存 */
+            cr: number[] | null;
+            /** @description 写缓存（两个档位合计） */
+            cw: number[] | null;
+            /** @description 其中写进 1 小时档的 */
+            cw1h: number[] | null;
+            /** @description 没命中缓存的输入 */
+            in: number[] | null;
+            k: string;
+            /** @description 格子起点，Unix 分钟；按小时取时为整点 */
+            m: number[] | null;
+            model: string;
+            /** @description 回复次数 */
+            n: number[] | null;
+            /** @description 输出 */
+            out: number[] | null;
         };
         LastReply: {
             /** Format: date-time */
@@ -3629,6 +3696,41 @@ export interface components {
         "Test-pushResponse": {
             /** Format: int64 */
             sent: number;
+        };
+        TokenPrice: {
+            /**
+             * Format: double
+             * @description 读缓存
+             */
+            cr?: number;
+            /**
+             * Format: double
+             * @description 写缓存
+             */
+            cw?: number;
+            /**
+             * Format: double
+             * @description 没命中缓存的输入
+             */
+            in?: number;
+            model: string;
+            /**
+             * Format: double
+             * @description 输出
+             */
+            out?: number;
+        };
+        TokenPrices: {
+            /** @description 金额前面写的货币符号，如 $ 或 ¥；空为 $ */
+            currency: string;
+            prices: components["schemas"]["TokenPrice"][] | null;
+        };
+        TokenPricesOutBody: {
+            /** @description 金额前面写的货币符号，如 $ 或 ¥；空为 $ */
+            currency: string;
+            /** @description 近 30 天有用量的模型 */
+            models: string[] | null;
+            prices: components["schemas"]["TokenPrice"][] | null;
         };
         ToolAct: {
             /** Format: date-time */
@@ -7102,6 +7204,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusChangesOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-token-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPricesOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "put-token-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenPrices"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPricesOutBody"];
                 };
             };
             /** @description Error */

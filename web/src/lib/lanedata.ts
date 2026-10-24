@@ -1,6 +1,7 @@
 // 工作台泳道时间线的数据（R-205）：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单。
 // 历史只增不改：接口给的分钟和实时推送的分钟都按「会话 + 子任务 + 分钟」合并，次数只会变大（取较大值），
 // 刷新、换设备、推送和拉取谁先到都一样。换档只是把分钟合并成大格（近 1 周档直接用小时级），不重新取数。
+// token 用量（R-206）也在这里合并，口径同上。
 // 只放纯计算，不碰 React，单测直接跑（lib/lanedata.test.ts）。
 
 export type Zoom = 'h1' | 'h6' | 'd1' | 'w1'
@@ -53,9 +54,65 @@ export type LaneRowIn = { k: string; a: string; m: number[] | null; c: number[] 
 export type Span = { k: string; a: string; kind: 'tool' | 'wait' | string; ref: string; label: string; start: number; end?: number; until?: number }
 export type Agent = { k: string; a: string; label: string; type: string; start: number; end?: number }
 export type SessionMeta = { k: string; title: string; role: string; tool: string; project_id: string; project_name: string; cwd: string; background: boolean; ended_at?: string; last_active_at: string }
-export type LaneData = { now: number; step: number; from: number; to: number; rows: LaneRowIn[] | null; spans: Span[] | null; agents: Agent[] | null; sessions?: SessionMeta[] | null }
+export type LaneData = { now: number; step: number; from: number; to: number; rows: LaneRowIn[] | null; spans: Span[] | null; agents: Agent[] | null; sessions?: SessionMeta[] | null; tok?: TokRowIn[] | null; colds?: Cold[] | null }
 export type LaneMinute = { k: string; a: string; m: number; c: number; hc: number }
-export type LanePush = { m: LaneMinute[] | null; s: Span[] | null; g: Agent[] | null }
+export type LanePush = { m: LaneMinute[] | null; s: Span[] | null; g: Agent[] | null; t?: TokMinute[] | null; c?: Cold[] | null }
+
+// ---------- token 用量（R-206） ----------
+// 本机 daemon 从对话记录读出、按分钟汇总上传的数字。新算 = 没命中缓存的输入 + 写缓存 + 输出；命中率 = 读缓存 / (读缓存 + 输入 + 写缓存)。
+// 值是累计的绝对值，只会变大：拉取和推送谁先到都取回复次数（其次总量）较大的那个。
+export type TokVals = { in: number; cw: number; cw1h: number; cr: number; out: number; n: number }
+export type TokRowIn = { k: string; a: string; model: string; m: number[] | null; in: number[] | null; cw: number[] | null; cw1h: number[] | null; cr: number[] | null; out: number[] | null; n: number[] | null }
+export type TokMinute = { k: string; a: string; model: string; m: number; t: TokVals; h: TokVals }
+export type Cold = { k: string; a: string; model: string; at: number; tokens: number; cause: 'idle' | 'compact' | 'model' | 'start' | 'other' | string; idle_min: number; prev_model?: string }
+// 每百万 token 的价格（设置里选填）；四项都填了的模型才算金额
+export type Price = { in: number; out: number; cw: number; cr: number }
+export type Prices = Record<string, Price>
+
+// 一格（或一段）的用量合计；cost 只在这里面的每个模型都有完整价格时才有
+export type TokCell = { fresh: number; read: number; input: number; n: number; cost: number | null }
+export const emptyCell = (): TokCell => ({ fresh: 0, read: 0, input: 0, n: 0, cost: 0 })
+
+export const freshOf = (v: TokVals) => v.in + v.cw + v.out
+// hitRate：命中率（0～1）；没有输入时为 null
+export function hitRate(c: { read: number; input: number }): number | null {
+  const d = c.read + c.input
+  return d > 0 ? c.read / d : null
+}
+// hitTone：≥90% 深绿 / 60–90% 琥珀 / <60% 红
+export function hitTone(h: number | null): 'hi' | 'mid' | 'lo' | null {
+  if (h == null) return null
+  return h >= 0.9 ? 'hi' : h >= 0.6 ? 'mid' : 'lo'
+}
+
+function addVals(c: TokCell, v: TokVals, price: Price | undefined) {
+  c.fresh += freshOf(v)
+  c.read += v.cr
+  c.input += v.in + v.cw
+  c.n += v.n
+  if (c.cost == null) return
+  if (!price) {
+    if (freshOf(v) + v.cr > 0) c.cost = null
+    return
+  }
+  c.cost += (v.in * price.in + v.cw * price.cw + v.cr * price.cr + v.out * price.out) / 1e6
+}
+
+export function addCell(a: TokCell, b: TokCell) {
+  a.fresh += b.fresh
+  a.read += b.read
+  a.input += b.input
+  a.n += b.n
+  a.cost = a.cost == null || b.cost == null ? null : a.cost + b.cost
+}
+
+// complete：四项价格都填了（数字、不小于 0）
+export function priceComplete(p: Partial<Record<keyof Price, number | null | undefined>> | undefined): p is Price {
+  return !!p && (['in', 'out', 'cw', 'cr'] as const).every((k) => typeof p[k] === 'number' && Number.isFinite(p[k]) && (p[k] as number) >= 0)
+}
+
+// 冷启动阈值：单次写缓存超过这么多才画（和 daemon 一致）
+export const COLD_MIN = 15000
 
 export const rowKey = (k: string, a: string) => k + '\u0001' + a
 const spanKey = (s: Span) => s.k + '\u0001' + s.kind + '\u0001' + s.ref
@@ -77,9 +134,17 @@ export class LaneStore {
   spans = new Map<string, Span>()
   agents = new Map<string, Agent>()
   sessions = new Map<string, SessionMeta>()
+  // token 用量（R-206）：行 → 模型 → 分钟 → 用量；小时级同样
+  tokMin = new Map<string, Map<string, Map<number, TokVals>>>()
+  tokHour = new Map<string, Map<string, Map<number, TokVals>>>()
+  tokKeys = new Set<string>() // 有用量数据的会话（拿不到对话记录的会话不画下半部分）
+  colds = new Map<string, Cold>()
+  prices: Prices = {}
   version = 0
   private cache = new Map<string, number[]>()
   private cacheV = -1
+  private tokCache = new Map<string, TokCell[]>()
+  private tokCacheV = -1
   private spanIdx: Map<string, Span[]> | null = null
   private spanV = -1
 
@@ -95,6 +160,31 @@ export class LaneStore {
     s.add(a)
     const last = tab === this.min ? this.last : this.lastH
     if ((last.get(rk) ?? -1) < m) last.set(rk, m)
+  }
+
+  private putTok(tab: Map<string, Map<string, Map<number, TokVals>>>, k: string, a: string, model: string, m: number, v: TokVals) {
+    const rk = rowKey(k, a)
+    let r = tab.get(rk)
+    if (!r) tab.set(rk, (r = new Map()))
+    let mm = r.get(model)
+    if (!mm) r.set(model, (mm = new Map()))
+    const cur = mm.get(m)
+    // 累计值只会变大：回复次数多的（一样多时总量大的）是新的
+    if (cur && (cur.n > v.n || (cur.n === v.n && freshOf(cur) + cur.cr >= freshOf(v) + v.cr))) return
+    mm.set(m, v)
+    this.tokKeys.add(k)
+    let s = this.rowsOf.get(k)
+    if (!s) this.rowsOf.set(k, (s = new Set()))
+    s.add(a)
+  }
+
+  private putCold(c: Cold) {
+    this.colds.set(`${c.k}\u0001${c.a}\u0001${c.at}`, c)
+  }
+
+  setPrices(p: Prices) {
+    this.prices = p
+    this.version++
   }
 
   private putSpan(s: Span) {
@@ -125,6 +215,13 @@ export class LaneStore {
     for (const s of d.spans ?? []) this.putSpan(s)
     for (const g of d.agents ?? []) this.putAgent(g)
     for (const s of d.sessions ?? []) this.sessions.set(s.k, s)
+    const tt = d.step === 60 ? this.tokHour : this.tokMin
+    for (const r of d.tok ?? []) {
+      const m = r.m ?? []
+      for (let i = 0; i < m.length; i++)
+        this.putTok(tt, r.k, r.a, r.model, m[i], { in: r.in?.[i] ?? 0, cw: r.cw?.[i] ?? 0, cw1h: r.cw1h?.[i] ?? 0, cr: r.cr?.[i] ?? 0, out: r.out?.[i] ?? 0, n: r.n?.[i] ?? 0 })
+    }
+    for (const c of d.colds ?? []) this.putCold(c)
     this.version++
   }
 
@@ -135,7 +232,58 @@ export class LaneStore {
     }
     for (const s of p.s ?? []) this.putSpan(s)
     for (const g of p.g ?? []) this.putAgent(g)
+    for (const x of p.t ?? []) {
+      this.putTok(this.tokMin, x.k, x.a, x.model, x.m, x.t)
+      this.putTok(this.tokHour, x.k, x.a, x.model, Math.floor(x.m / 60) * 60, x.h)
+    }
+    for (const c of p.c ?? []) this.putCold(c)
     this.version++
+  }
+
+  // tokens：这几行（同一会话的主会话 / 若干子任务）每一格的用量合计（各模型相加，价格齐全时附金额）
+  tokens(k: string, agents: string[], ax: Axis): TokCell[] {
+    if (this.tokCacheV !== this.version) {
+      this.tokCache.clear()
+      this.tokCacheV = this.version
+    }
+    const ck = `${k}\u0002${agents.join('\u0002')}\u0002${ax.start}\u0002${ax.n}\u0002${ax.bucket}`
+    const hit = this.tokCache.get(ck)
+    if (hit) return hit
+    const out = Array.from({ length: ax.n }, emptyCell)
+    const hourly = zoomSpec[ax.zoom].hourly
+    for (const a of agents) {
+      const r = (hourly ? this.tokHour : this.tokMin).get(rowKey(k, a))
+      if (!r) continue
+      for (const [model, mm] of r) {
+        const price = this.prices[model]
+        for (const [m, v] of mm) if (m >= ax.start && m < ax.end) addVals(out[Math.floor((m - ax.start) / ax.bucket)], v, price)
+      }
+    }
+    this.tokCache.set(ck, out)
+    return out
+  }
+
+  // tokenTotal：所有会话（含子任务）每一格的用量之和（顶部波形用）
+  tokenTotal(ax: Axis): TokCell[] {
+    const out = Array.from({ length: ax.n }, emptyCell)
+    for (const k of this.tokKeys) {
+      const cells = this.tokens(k, [...(this.rowsOf.get(k) ?? [])], ax)
+      for (let i = 0; i < ax.n; i++) addCell(out[i], cells[i])
+    }
+    return out
+  }
+
+  hasTokens(k: string) {
+    return this.tokKeys.has(k)
+  }
+
+  // coldsOf：这几行在这段时间里的冷启动（单次写缓存超过阈值）
+  coldsOf(k: string, agents: string[], ax: Axis): Cold[] {
+    const from = ax.start * 60000
+    const to = ax.end * 60000
+    const out: Cold[] = []
+    for (const c of this.colds.values()) if (c.k === k && agents.includes(c.a) && c.at >= from && c.at < to && c.tokens > COLD_MIN) out.push(c)
+    return out.sort((a, b) => a.at - b.at)
   }
 
   // calls：这几行（同一会话的主会话 / 若干子任务）在每一格的调用次数之和

@@ -4,14 +4,14 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
-import { agentEnd, axisX, barHeight, cellX, coarse, gridTicks, inWindow, LONG_TOOL, laneAxis, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type SessionMeta, type Zoom } from '../lib/lanedata'
+import { addCell, agentEnd, axisX, barHeight, cellX, coarse, emptyCell, gridTicks, hitRate, hitTone, inWindow, LONG_TOOL, laneAxis, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type Cold, type SessionMeta, type TokCell, type Zoom } from '../lib/lanedata'
 import { cx, duration, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { spring } from '../ui/gesture'
 import { Ctx } from '../ui/contextMenu'
 import { displayState, RoleBadge, RoleTag, ToolMark } from '../ui/marks'
 import { Linkify } from '../ui/refmark'
-import { laneStore, onLaneData, useLaneSnap } from './laneFeed'
+import { laneStore, money, onLaneData, useLaneSnap } from './laneFeed'
 import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
@@ -30,11 +30,10 @@ const MAX_TICKS = 200
 
 // ---------- 灯与风 ----------
 
-// 主会话的工具调用时刻：只给状态灯闪一下、顶部的风起伏用（时间线本身画每分钟汇总，见下面的画布）。
+// 主会话的工具调用时刻：只给状态灯闪一下（时间线本身画每分钟汇总，见下面的画布）。
 // Hub 给近 10 分钟打底（ticks），之后随实时推送的 last_tool_at 追加。
 const tickStore = new Map<string, number[]>()
 const tickSubs = new Set<() => void>()
-let lastTickAt = 0 // 全部会话里最近一次工具调用（驱动顶部的风）
 
 function feedTicks(key: string, list: number[]) {
   const cur = tickStore.get(key) ?? []
@@ -45,7 +44,6 @@ function feedTicks(key: string, list: number[]) {
     if (!at || at < floor || next.some((x) => Math.abs(x - at) < 400)) continue
     next.push(at)
     changed = true
-    if (at > lastTickAt) lastTickAt = at
   }
   if (!changed && next.length === cur.length) return
   next.sort((a, b) => a - b)
@@ -70,26 +68,17 @@ function useLastTick(key: string) {
   )
 }
 
-// activity：全部会话近 1 分钟的调用数（0～1），顶部的风据此起伏。
-export function activity(now = serverNow()) {
-  let n = 0
-  for (const list of tickStore.values()) for (let i = list.length - 1; i >= 0 && now - list[i] < 60_000; i--) n++
-  return Math.min(1, n / 40)
-}
-export const lastAction = () => lastTickAt
-export function onTicks(f: () => void) {
-  tickSubs.add(f)
-  return () => tickSubs.delete(f)
-}
 
 // ---------- 时间线画布（R-205） ----------
 // 每条泳道一张 canvas：中线以上是每格的调用次数（所有主泳道共用一个上限、子泳道共用一个上限，平方根缩放，有动作至少 2px）；
 // 中线上的实心细带是长命令（工具开始到结束超过 20 秒），虚线是 ks wait 待命；悬停显示这一格的数字。
-// 中线以下留给以后的 token 用量（R-206）。数据来自 laneFeed（每分钟汇总，历史只增不改）。
+// 中线以下是每格新算的 token（R-206，所有主泳道共用一个上限，平方根缩放），颜色是这一格的缓存命中率（≥90% 深绿 / 60–90% 琥珀 / <60% 红），
+// 底边的红色小三角是缓存重建（冷启动）；读不到对话记录的会话不画下半部分。子任务行只画上半部分，柱子颜色用命中率。
+// 数据来自 laneFeed（每分钟汇总，历史只增不改）。
 
 export type Tone = 'run' | 'bg' | 'you' | 'park' | 'idle' | 'sub'
 type PaintSpec = { k: string; agents: string[]; sub: boolean; faded: boolean }
-type Painter = { cv: HTMLCanvasElement; spec: () => PaintSpec; hover: number; ax?: Axis; calls?: number[] }
+type Painter = { cv: HTMLCanvasElement; spec: () => PaintSpec; hover: number; ax?: Axis; calls?: number[]; tok?: TokCell[]; colds?: Cold[] }
 const painters = new Set<Painter>()
 let loop = 0
 let offline = false
@@ -98,6 +87,8 @@ let laneWidth = 0 // 最近一次主泳道时间线的宽度（近 1 小时档�
 let sharedAx: Axis | null = null // 所有泳道共用的时间轴（R-219）：只在 paintAll 里按一个宽度算一次
 let maxMain = 1
 let maxSub = 1
+let maxTok = 1
+const tokListeners = new Set<() => void>() // 顶部波形跟着重画
 
 // setLaneZoom：切换分度值（所有泳道一起切），立刻重画。
 export function setLaneZoom(z: Zoom) {
@@ -109,7 +100,7 @@ export function setLaneZoom(z: Zoom) {
 function colors() {
   const css = getComputedStyle(document.documentElement)
   const v = (k: string) => css.getPropertyValue(k).trim()
-  return { run: v('--run'), accent: v('--accent'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong'), line: v('--line'), fg: v('--fg') }
+  return { run: v('--run'), accent: v('--accent'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong'), line: v('--line'), fg: v('--fg'), hi: v('--run'), mid: v('--wait'), lo: v('--reply') }
 }
 type Colors = ReturnType<typeof colors>
 
@@ -124,6 +115,10 @@ function compute(p: Painter, now: number) {
   // 用共享的轴；只有一条泳道单独补画（还没有共享轴）时才按自己的宽度算
   p.ax = sharedAx && sharedAx.zoom === zoomNow ? sharedAx : makeAxis(zoomNow, w, now)
   p.calls = laneStore.calls(sp.k, sp.agents, p.ax)
+  const tok = laneStore.hasTokens(sp.k)
+  p.tok = tok ? laneStore.tokens(sp.k, sp.agents, p.ax) : undefined
+  // 子任务的第一次回复总要写一遍缓存（每个子任务都有），不算缓存重建，不画
+  p.colds = tok ? laneStore.coldsOf(sp.k, sp.agents, p.ax).filter((c) => !(c.a && c.cause === 'start')) : undefined
   p.cv.dataset.axis = `${p.ax.start}:${p.ax.n}:${p.ax.bucket}` // 这一行用的轴（测试核对所有行是同一条）
 }
 
@@ -152,6 +147,7 @@ function paint(p: Painter, now: number, c: Colors) {
   const bw = w / ax.n
   const mid = Math.round(h / 2) + 0.5
   const room = sp.sub ? mid - 3 : mid - 7
+  const roomBelow = h - mid - 7
   // 轴上的刻度（10 分钟 / 1 小时 / 3 小时 / 1 天）
   if (!sp.sub) {
     g.globalAlpha = 0.6 * fade
@@ -192,14 +188,45 @@ function paint(p: Painter, now: number, c: Colors) {
       g.fill()
     }
   }
-  // 调用次数柱
+  // 调用次数柱；子任务行的柱子颜色用这一格的命中率（读不到用量的照旧灰色）
   const max = sp.sub ? maxSub : maxMain
   const pad = Math.max(0.5, Math.min(3, bw * 0.18))
+  const tok = p.tok
+  const hitColor = (cell: TokCell | undefined) => {
+    const tone = cell && !offline ? hitTone(hitRate(cell)) : null
+    return tone ? c[tone] : null
+  }
   g.globalAlpha = (sp.sub ? 0.7 : 0.85) * fade
-  g.fillStyle = offline || sp.sub ? c.idle : c.accent
   for (let i = 0; i < ax.n; i++) {
     const hh = barHeight(calls[i], max, room)
-    if (hh) g.fillRect(cellX(ax, w, i) + pad / 2, mid - 1 - hh, Math.max(1, bw - pad), hh)
+    if (!hh) continue
+    g.fillStyle = sp.sub ? (hitColor(tok?.[i]) ?? c.idle) : offline ? c.idle : c.accent
+    g.fillRect(cellX(ax, w, i) + pad / 2, mid - 1 - hh, Math.max(1, bw - pad), hh)
+  }
+  // 中线以下：每格新算的 token，颜色是命中率
+  if (!sp.sub && tok) {
+    g.globalAlpha = 0.85 * fade
+    for (let i = 0; i < ax.n; i++) {
+      const hh = barHeight(tok[i].fresh, maxTok, roomBelow)
+      if (!hh) continue
+      g.fillStyle = hitColor(tok[i]) ?? c.idle
+      g.fillRect(cellX(ax, w, i) + pad / 2, mid + 1, Math.max(1, bw - pad), hh)
+    }
+  }
+  // 缓存重建：底边的红色小三角（近 1 周档太密，不画）
+  if (p.colds?.length && ax.zoom !== 'w1') {
+    g.globalAlpha = fade
+    g.fillStyle = offline ? c.idle : c.lo
+    const s = sp.sub ? 3 : 4
+    for (const cd of p.colds) {
+      const x = X(cd.at)
+      g.beginPath()
+      g.moveTo(x - s, h - 1)
+      g.lineTo(x + s, h - 1)
+      g.lineTo(x, h - 1 - s * 1.75)
+      g.closePath()
+      g.fill()
+    }
   }
   g.globalAlpha = 1
 }
@@ -211,6 +238,7 @@ export function paintAll() {
   const now = serverNow()
   let mm = 1
   let ms = 1
+  let mt = 1
   // 共享的时间轴：按主泳道时间线列的宽度算一次，所有行（含子任务行、已结束泳道）都用它
   const rows = [...painters].map((p) => ({ w: p.cv.clientWidth, sub: p.spec().sub }))
   sharedAx = laneAxis(zoomNow, rows, now)
@@ -222,9 +250,12 @@ export function paintAll() {
       if (sub) ms = Math.max(ms, v)
       else mm = Math.max(mm, v)
     }
+    if (!sub) for (const v of p.tok ?? []) mt = Math.max(mt, v.fresh)
   })
   maxMain = mm
   maxSub = ms
+  maxTok = mt
+  tokListeners.forEach((f) => f())
   painters.forEach((p) => paint(p, now, c))
 }
 
@@ -274,7 +305,75 @@ function cellText(p: Painter, i: number, now: number): string[] {
   for (const s of tools.slice(0, 2)) out.push(s.end == null ? t.desk.tl.longRunning(s.label, duration(iso(s.start), now)) : t.desk.tl.long(s.label, duration(iso(s.start), s.end)))
   if (tools.length > 2) out.push(t.desk.tl.moreLong(tools.length - 2))
   if (hit.some((s) => s.kind === 'wait')) out.push(t.desk.tl.wait)
+  const cell = p.tok?.[i]
+  if (cell && cell.n > 0) out.push(tokText(cell))
+  const colds = (p.colds ?? []).filter((x) => x.at >= t0 && x.at < t1)
+  for (const x of colds.slice(0, 2)) out.push(coldText(x))
+  if (colds.length > 2) out.push(t.desk.tl.moreCold(colds.length - 2))
   return out
+}
+
+// wan：token 数的写法（不到 1 万写原数，之后按「万」）
+export function wan(n: number) {
+  if (n < 1e4) return String(Math.round(n))
+  const w = n / 1e4
+  return `${w < 100 ? w.toFixed(1).replace(/\.0$/, '') : Math.round(w)} 万`
+}
+
+// pct：命中率的写法（99% 以上留一位小数，免得都写成 100%）
+export function pct(h: number | null) {
+  if (h == null) return '—'
+  const v = h * 100
+  return v >= 99 && v < 100 ? `${(Math.floor(v * 10) / 10).toFixed(1)}%` : `${Math.round(v)}%`
+}
+
+function withMoney(text: string, cost: number | null) {
+  const m = money(cost)
+  return m ? `${text} · ${t.desk.tl.money(m)}` : text
+}
+
+function tokText(c: TokCell) {
+  return withMoney(t.desk.tl.tok(wan(c.fresh), pct(hitRate(c))), c.cost)
+}
+
+function coldText(x: Cold) {
+  const C = t.desk.tl.coldCause
+  const cause = x.cause === 'idle' ? C.idle(x.idle_min) : x.cause === 'compact' ? C.compact : x.cause === 'model' ? C.model(x.prev_model ?? '', x.model) : x.cause === 'start' ? C.start : C.other
+  return t.desk.tl.cold(cause, wan(x.tokens))
+}
+
+// sumCells：一段格子的合计
+function sumCells(cells: TokCell[]) {
+  const s = emptyCell()
+  for (const c of cells) addCell(s, c)
+  return s
+}
+
+// laneTokLabel：泳道末尾的「近 1 小时 · 新算 n 万 · 命中 n%」（随档位；填了价格再附金额）。这一档没有用量时为空。
+// bare：不写档位（同一行旁边已经写了档位时用）。
+export function laneTokLabel(k: string, zoom: Zoom, now: number, bare = false) {
+  if (!laneStore.hasTokens(k)) return ''
+  const ax = sharedAx && sharedAx.zoom === zoom ? sharedAx : makeAxis(zoom, laneWidth || 720, now)
+  const s = sumCells(laneStore.tokens(k, [''], ax))
+  if (!s.n) return ''
+  return withMoney(bare ? t.desk.tl.tok(wan(s.fresh), pct(hitRate(s))) : t.desk.tl.tokLabel(t.desk.zoom[zoom], wan(s.fresh), pct(hitRate(s))), s.cost)
+}
+
+function useTokLabel(k: string, zoom: Zoom, now: number, bare = false) {
+  const minute = Math.floor(now / 60000)
+  return useLaneSnap(() => (void minute, laneTokLabel(k, zoom, serverNow(), bare)))
+}
+
+function TokLabel({ k, zoom, now, className, bare }: { k: string; zoom: Zoom; now: number; className?: string; bare?: boolean }) {
+  const text = useTokLabel(k, zoom, now, bare)
+  if (!text) return null
+  return (
+    <Tip truncated content={text}>
+      <span data-tok-label className={cx('truncate text-[11.5px] leading-4 text-fg-3 tabular', className)}>
+        {text}
+      </span>
+    </Tip>
+  )
 }
 
 function Timeline({ spec, className }: { spec: PaintSpec; className?: string }) {
@@ -689,10 +788,11 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
 
 // laneHeight：泳道按内容给高度（R-170 返工）：在跑的高（动作流 4 行 + 子泳道），等你的适中，待命 / 空闲也有两三行信息；
 // 都是固定值，不随屏幕拉伸，空出来的地方留给下面「最近结束」的会话。
-export function laneHeight(tone: Tone, tasks: number, mode: LaneMode) {
+// 窄一些（没有右侧动作列）时，token 标签（R-206）在左边多占一行。
+export function laneHeight(tone: Tone, tasks: number, mode: LaneMode, tokLine = false) {
   const live = tone === 'run' || tone === 'bg'
   const base = live ? (mode === 'full' ? 108 : 100) : tone === 'you' ? 92 : mode === 'full' ? 74 : 80
-  return base + (tasks ? tasks * 24 + 6 : 0)
+  return base + (tasks ? tasks * 24 + 6 : 0) + (tokLine && (mode === 'mid' || mode === 'narrow') ? 16 : 0)
 }
 
 export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; still?: boolean }
@@ -707,8 +807,9 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
   const req = workReq(s)
   const spec = { k: s.key, agents: [''], sub: false, faded: false }
   const phone = mode === 'phone'
+  const tokLabel = useTokLabel(s.key, zoom, now)
   // 高度按内容给：子任务增减、状态变化时用同一套弹簧长高 / 收矮（R-216），首次出现不播
-  const height = phone ? undefined : laneHeight(tone, tasks.length, mode)
+  const height = phone ? undefined : laneHeight(tone, tasks.length, mode, !!tokLabel)
   const words = quiet ? lastWords(s) : ''
 
   // 左：标题 + 身份；状态标 + 手上的需求；窄处再加一行（当前动作 / 在问什么 / 最后一句话）
@@ -737,6 +838,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
       {live && mode !== 'full' && <ActLine s={s} />}
       {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply"><Linkify text={youLine(s)} /></div>}
       {quiet && (mode === 'mid' || mode === 'narrow') && words && <div className="truncate text-[12px] leading-4 text-fg-3"><Linkify text={words} /></div>}
+      {(mode === 'mid' || mode === 'narrow') && <TokLabel k={s.key} zoom={zoom} now={now} />}
     </div>
   )
   // 右（宽处）：在跑放最近 4 个动作；等你放它在问什么；待命 / 空闲放最后一句话和上次动作的时间
@@ -744,12 +846,18 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
     mode === 'full' &&
     (live ? (
       <div className="flex min-w-0 flex-col justify-center gap-0.5 overflow-hidden border-l border-line px-4 py-2 font-mono text-[12px] leading-[1.6]">
-        <Feed s={s} n={4} />
+        <Feed s={s} n={tokLabel ? 3 : 4} />
+        {tokLabel && <TokLabel k={s.key} zoom={zoom} now={now} className="font-sans" />}
       </div>
     ) : (
       <div className="flex min-w-0 flex-col justify-center gap-1 border-l border-line px-4 py-2">
         <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? <Linkify text={youLine(s)} /> : words ? <Linkify text={words} /> : t.desk.lane.noWords}</p>
-        {quiet && <LastAct s={s} />}
+        {(quiet || tokLabel) && (
+          <div className="flex min-w-0 items-center gap-3">
+            {quiet && <LastAct s={s} className="min-w-0 shrink" />}
+            <TokLabel k={s.key} zoom={zoom} now={now} className="ml-auto shrink-0" />
+          </div>
+        )}
       </div>
     ))
 
@@ -851,7 +959,12 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
               <Timeline spec={{ k: m.k, agents: [''], sub: false, faded: true }} className="absolute inset-0" />
             </div>
           )}
-          {mode === 'full' && <div className="flex min-w-0 items-center border-l border-line px-4 text-[12px] text-fg-3 tabular">{t.desk.tl.sum(t.desk.zoom[zoom], sum)}</div>}
+          {mode === 'full' && (
+            <div className="flex min-w-0 flex-col justify-center border-l border-line px-4 text-[12px] leading-4 text-fg-3 tabular">
+              <span className="truncate">{t.desk.tl.sum(t.desk.zoom[zoom], sum)}</span>
+              <TokLabel k={m.k} zoom={zoom} now={now} bare />
+            </div>
+          )}
         </div>
         {sub && (
           <div className="pb-1.5">
@@ -863,10 +976,24 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
   )
 })
 
-// ---------- 顶部的风 ----------
+// ---------- 顶部的波形（R-206） ----------
 
-// Wind：简报位背后的一条波形，随整体活跃度起伏；只是背景装饰，线色很浅（R-187），不抢正文。只在有新的工具调用后起伏几秒，平时静止；
-// 标签页隐藏、减少动效时不动，断线时压平变灰。
+// briefAxis：顶部波形和简报条右边的合计用的轴——和泳道同一档、同一条轴（还没有泳道画过时按默认宽度算）。
+function briefAxis(now: number) {
+  return sharedAx && sharedAx.zoom === zoomNow ? sharedAx : makeAxis(zoomNow, laneWidth || 720, now)
+}
+
+// tokenWave：所有会话（含子任务）每格新算 token 之和，按自身最大值平方根缩放到 0～1，再做一次三格平滑；没有用量时为空。
+export function tokenWave(cells: TokCell[]): number[] {
+  let max = 0
+  for (const c of cells) max = Math.max(max, c.fresh)
+  if (!max) return []
+  const v = cells.map((c) => Math.sqrt(c.fresh / max))
+  return v.map((x, i) => (2 * x + (v[i - 1] ?? x) + (v[i + 1] ?? x)) / 4)
+}
+
+// Wind：简报条背后的波形——所有会话（含子任务）每格新算的 token 之和（和泳道同一档），平滑；颜色随这一档的整体命中率；
+// 没动作的格子回落到底。只是背景，填色很浅，不抢正文。数据变了、换档时重画；断线时变灰。
 export function Wind() {
   const ref = useRef<HTMLCanvasElement>(null)
   const connected = useConnected()
@@ -874,10 +1001,8 @@ export function Wind() {
     const cv = ref.current
     if (!cv) return
     let raf = 0
-    let energy = activity()
-    let phase = 0
-    let t0 = 0
     const draw = () => {
+      raf = 0
       const dpr = pixelRatio(cv)
       const w = cv.clientWidth
       const h = cv.clientHeight
@@ -890,63 +1015,63 @@ export function Wind() {
       if (!g) return
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
       g.clearRect(0, 0, w, h)
+      const cells = laneStore.tokenTotal(briefAxis(serverNow()))
+      const wave = tokenWave(cells)
+      cv.dataset.wave = wave.length ? String(cells.reduce((a, c) => a + c.fresh, 0)) : ''
+      if (!wave.length) return
       const c = colors()
-      const e = connected ? 0.15 + energy * 0.85 : 0.04
-      ;(
-        [
-          [connected ? c.run : c.idle, 1, 0.15],
-          [connected ? c.park : c.idle, 0.6, 0.09],
-        ] as const
-      ).forEach(([col, k, a], j) => {
-        g.beginPath()
-        g.strokeStyle = col
-        g.globalAlpha = a
-        g.lineWidth = 1.3
-        for (let x = 0; x <= w; x += 4) {
-          const y = h * 0.62 + Math.sin(x / (38 - 10 * e) + phase / (1 + j * 0.4)) * h * 0.16 * e * k + Math.sin(x / 13 + phase * 2.6) * 1.4 * e
-          if (x) g.lineTo(x, y)
-          else g.moveTo(x, y)
-        }
-        g.stroke()
-      })
-    }
-    // 有动作时起伏 2.5 秒，之后停在最后一帧
-    const run = (ts: number) => {
-      if (!t0) t0 = ts
-      const target = activity()
-      energy += (target - energy) * 0.04
-      phase += 0.03
-      draw()
-      if (ts - t0 < 2500 && !document.hidden) raf = requestAnimationFrame(run)
-      else t0 = 0
+      const tone = connected ? hitTone(hitRate(sumCells(cells))) : null
+      const col = tone ? c[tone] : c.idle
+      const top = 6
+      const pts = wave.map((v, i) => [((i + 0.5) / wave.length) * w, h - v * (h - top)] as const)
+      // 平滑曲线：相邻两点的中点之间用二次曲线连
+      g.beginPath()
+      g.moveTo(0, h)
+      g.lineTo(0, pts[0][1])
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x0, y0] = pts[i]
+        const [x1, y1] = pts[i + 1]
+        g.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2)
+      }
+      g.lineTo(w, pts[pts.length - 1][1])
+      g.lineTo(w, h)
+      g.closePath()
+      g.globalAlpha = 0.16
+      g.fillStyle = col
+      g.fill()
+      g.globalAlpha = 1
     }
     const kick = () => {
-      if (!connected || reducedMotion() || document.hidden) {
-        energy = activity()
-        return draw()
-      }
-      if (t0) {
-        t0 = performance.now() // 起伏中又来动作：延长
-        return
-      }
-      cancelAnimationFrame(raf)
-      raf = requestAnimationFrame(run)
+      if (!raf) raf = requestAnimationFrame(draw)
     }
     draw()
-    const off = onTicks(() => {
-      if (serverNow() - lastAction() < 5000) kick()
-    })
-    const ro = new ResizeObserver(draw)
+    tokListeners.add(kick)
+    const off = onLaneData(kick)
+    const ro = new ResizeObserver(kick)
     ro.observe(cv)
     // 主题切换时换色
-    const mo = new MutationObserver(draw)
+    const mo = new MutationObserver(kick)
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
     return () => {
+      tokListeners.delete(kick)
       off()
       ro.disconnect()
       mo.disconnect()
       cancelAnimationFrame(raf)
     }
   }, [connected])
-  return <canvas ref={ref} aria-hidden className="pointer-events-none absolute inset-0 h-full w-full opacity-90" />
+  return <canvas ref={ref} aria-hidden data-token-wave className="pointer-events-none absolute inset-0 h-full w-full" />
+}
+
+// TokBrief：简报条右边这一档的合计「近 1 小时 · 新算 n 万 token · 命中 n%」（填了价格再附金额）；没有用量时不写。
+export function TokBrief({ zoom, className }: { zoom: Zoom; className?: string }) {
+  const minute = Math.floor(serverNow() / 60000)
+  const text = useLaneSnap(() => {
+    void minute
+    const cells = laneStore.tokenTotal(briefAxis(serverNow()))
+    const s = sumCells(cells)
+    return s.n ? withMoney(t.desk.tl.tokBrief(t.desk.zoom[zoom], wan(s.fresh), pct(hitRate(s))), s.cost) : ''
+  })
+  if (!text) return null
+  return <span className={cx('tabular whitespace-nowrap', className)}>{text}</span>
 }

@@ -18,6 +18,7 @@ export const qk = {
   devices: ['devices'] as const,
   projects: ['projects'] as const,
   settings: ['settings'] as const,
+  tokenPrices: ['settings', 'token-prices'] as const,
   rolePrompts: ['role-prompts'] as const,
 }
 
@@ -191,6 +192,15 @@ export function useSettings() {
   return useQuery({
     queryKey: qk.settings,
     queryFn: () => unwrap(api.GET('/api/settings')),
+  })
+}
+
+// 各模型的价格（R-206，选填）：四项都填了的模型才显示金额
+export function useTokenPrices() {
+  return useQuery({
+    queryKey: qk.tokenPrices,
+    queryFn: () => unwrap(api.GET('/api/token-prices')),
+    staleTime: 5 * 60_000,
   })
 }
 

@@ -317,6 +317,20 @@ export const zh = {
       span: { sec: (n: number) => `${n} 秒`, min: (n: number) => `${n} 分钟`, hour: (n: number) => `${n} 小时`, day: (n: number) => `${n} 天` },
       sum: (zoom: string, n: number) => `${zoom} · 调用 ${n} 次`,
       bucket: (min: number) => (min >= 60 ? `${min / 60} 小时` : `${min} 分钟`),
+      // token 用量（R-206）：新算 = 没命中缓存的输入 + 写缓存 + 输出；命中率 = 读缓存 / 全部输入
+      tok: (fresh: string, hit: string) => `新算 ${fresh} token · 命中 ${hit}`,
+      tokLabel: (zoom: string, fresh: string, hit: string) => `${zoom} · 新算 ${fresh} · 命中 ${hit}`,
+      tokBrief: (zoom: string, fresh: string, hit: string) => `${zoom} · 新算 ${fresh} token · 命中 ${hit}`,
+      money: (v: string) => `约 ${v}`,
+      cold: (cause: string, n: string) => `缓存重建 · ${cause} · 重算 ${n} token`,
+      coldCause: {
+        idle: (min: number) => `闲置 ${min >= 120 ? `${Math.round(min / 60)} 小时` : `${min} 分钟`}`,
+        compact: '上下文压缩',
+        model: (from: string, to: string) => (from ? `换模型（${from} → ${to}）` : '换模型'),
+        start: '刚开始',
+        other: '起因不明',
+      },
+      moreCold: (n: number) => `另有 ${n} 次缓存重建`,
     },
     paneAsk: '要你处理',
     paneLanes: '会话',
@@ -1493,6 +1507,20 @@ export const zh = {
         weekNote: '本日从今天 0 点起，本周从周一 0 点起。',
       },
       privacy: '开启进展摘要、标题或回复要点后，每轮最后一条回复（截断到 1500 字）会发送到 Hub。',
+    },
+
+    // 模型价格（R-206，选填）
+    prices: {
+      title: '模型价格（选填）',
+      hint: '工作台的泳道只看 token 数和缓存命中率，默认不显示金额。某个模型四项价格都填了，才在泳道标签和悬停里附上估算金额。',
+      unit: '每百万 token 的价格',
+      currency: '货币符号',
+      model: '模型',
+      cols: { in: '输入', out: '输出', cw: '写缓存', cr: '读缓存' },
+      incomplete: '价格没填全，不显示金额',
+      add: '添加模型',
+      addPlaceholder: '模型名，如 claude-opus-5-5',
+      empty: '还没有读到用量的模型。会话跑起来后，用到的模型会列在这里。',
     },
 
     account: {

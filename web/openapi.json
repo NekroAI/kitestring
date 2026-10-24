@@ -3213,12 +3213,76 @@
         ],
         "type": "object"
       },
+      "LaneCold": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "at": {
+            "description": "Unix 毫秒",
+            "format": "int64",
+            "type": "integer"
+          },
+          "cause": {
+            "description": "idle 闲置超过缓存档位；compact 上下文压缩；model 换模型；start 第一次回复；other 看不出",
+            "enum": [
+              "idle",
+              "compact",
+              "model",
+              "start",
+              "other"
+            ],
+            "type": "string"
+          },
+          "idle_min": {
+            "description": "距上一次回复多少分钟",
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "prev_model": {
+            "description": "换模型时，之前的模型",
+            "type": "string"
+          },
+          "tokens": {
+            "description": "这次重算的 token 数",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "model",
+          "at",
+          "tokens",
+          "cause",
+          "idle_min"
+        ],
+        "type": "object"
+      },
       "LaneData": {
         "additionalProperties": false,
         "properties": {
           "agents": {
             "items": {
               "$ref": "#/components/schemas/LaneAgent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "colds": {
+            "description": "范围内的冷启动（缓存重建）",
+            "items": {
+              "$ref": "#/components/schemas/LaneCold"
             },
             "type": [
               "array",
@@ -3271,6 +3335,15 @@
             "description": "范围终点，Unix 分钟（不含）",
             "format": "int64",
             "type": "integer"
+          },
+          "tok": {
+            "items": {
+              "$ref": "#/components/schemas/LaneTok"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3281,7 +3354,9 @@
           "rows",
           "spans",
           "agents",
-          "sessions"
+          "sessions",
+          "tok",
+          "colds"
         ],
         "type": "object"
       },
@@ -3424,6 +3499,110 @@
           "ref",
           "label",
           "start"
+        ],
+        "type": "object"
+      },
+      "LaneTok": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "cr": {
+            "description": "读缓存",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "cw": {
+            "description": "写缓存（两个档位合计）",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "cw1h": {
+            "description": "其中写进 1 小时档的",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "in": {
+            "description": "没命中缓存的输入",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "k": {
+            "type": "string"
+          },
+          "m": {
+            "description": "格子起点，Unix 分钟；按小时取时为整点",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "n": {
+            "description": "回复次数",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "out": {
+            "description": "输出",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "k",
+          "a",
+          "model",
+          "m",
+          "in",
+          "cw",
+          "cw1h",
+          "cr",
+          "out",
+          "n"
         ],
         "type": "object"
       },
@@ -6792,6 +6971,105 @@
         ],
         "type": "object"
       },
+      "TokenPrice": {
+        "additionalProperties": false,
+        "properties": {
+          "cr": {
+            "description": "读缓存",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "cw": {
+            "description": "写缓存",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "in": {
+            "description": "没命中缓存的输入",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "out": {
+            "description": "输出",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "type": "object"
+      },
+      "TokenPrices": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "description": "金额前面写的货币符号，如 $ 或 ¥；空为 $",
+            "maxLength": 8,
+            "type": "string"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPrice"
+            },
+            "maxItems": 200,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "currency",
+          "prices"
+        ],
+        "type": "object"
+      },
+      "TokenPricesOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "description": "金额前面写的货币符号，如 $ 或 ¥；空为 $",
+            "maxLength": 8,
+            "type": "string"
+          },
+          "models": {
+            "description": "近 30 天有用量的模型",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPrice"
+            },
+            "maxItems": 200,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "models",
+          "currency",
+          "prices"
+        ],
+        "type": "object"
+      },
       "ToolAct": {
         "additionalProperties": false,
         "properties": {
@@ -9411,7 +9689,7 @@
             "description": "Error"
           }
         },
-        "summary": "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）",
+        "summary": "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）",
         "tags": [
           "sessions"
         ]
@@ -11698,6 +11976,76 @@
         "summary": "需求状态变更历史：按需求 / 项目 / 时间段查（R-153）",
         "tags": [
           "requirements"
+        ]
+      }
+    },
+    "/api/token-prices": {
+      "get": {
+        "operationId": "get-token-prices",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPricesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "各模型每百万 token 的价格（选填，R-206）与近 30 天用过的模型",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "put-token-prices",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenPrices"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPricesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "保存各模型的价格；四项都填了的模型才显示金额（R-206）",
+        "tags": [
+          "settings"
         ]
       }
     },

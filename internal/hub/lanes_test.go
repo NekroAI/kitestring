@@ -148,3 +148,33 @@ func TestLaneUsageAckAndPush(t *testing.T) {
 		}
 	}
 }
+
+// 模型价格（R-206）：默认空；一项都没填的不存；同名只留一个；读回带近 30 天用过的模型。
+func TestTokenPrices(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h := New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+	out, err := h.getTokenPrices(ctx, nil)
+	if err != nil || len(out.Body.Prices) != 0 || out.Body.Currency != "" {
+		t.Fatalf("默认 = %+v %v", out.Body, err)
+	}
+	if _, _, err := st.ApplyUsage(ctx, []protocol.UsageMinute{{Key: "claude:s", Model: "opus", Minute: time.Now().Unix() / 60, Input: 1, Requests: 1}}, nil, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	f := func(v float64) *float64 { return &v }
+	in := &struct{ Body TokenPrices }{Body: TokenPrices{Currency: " ¥ ", Prices: []TokenPrice{{Model: "opus", In: f(5), Out: f(25), CW: f(6.25), CR: f(0.5)}, {Model: "opus", In: f(1)}, {Model: "sonnet", In: f(3)}, {Model: "empty"}}}}
+	out, err = h.putTokenPrices(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Body.Currency != "¥" || len(out.Body.Prices) != 2 || *out.Body.Prices[0].Out != 25 || out.Body.Prices[1].Out != nil {
+		t.Fatalf("保存后 = %+v", out.Body)
+	}
+	if len(out.Body.Models) != 1 || out.Body.Models[0] != "opus" {
+		t.Fatalf("模型 = %v", out.Body.Models)
+	}
+}
