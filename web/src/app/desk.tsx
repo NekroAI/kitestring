@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, WifiOff } from 'lucide-react'
-import type { Decision, Plan, Requirement, Session } from '../api/client'
+import type { MorningReport, Plan, Session } from '../api/client'
 import { useConnected, useDecisions, useMorning, usePlans, useProjects, useRequirements } from '../api/queries'
+import { buildAsks, type Ask } from './asks'
 import { t } from '../i18n'
 import type { Scene } from '../i18n/zh'
 import { cx, relTime } from '../lib/util'
@@ -52,51 +53,16 @@ export function Briefs({ sessions, now, skip }: { sessions: Session[]; now: numb
 
 // ---------- 要你处理的事有几件（标题、侧栏角标同一口径） ----------
 
-type Todo =
-  | { kind: 'req'; key: string; code: string; review?: Requirement; decisions: Decision[]; at: string }
-  | { kind: 'dec'; key: string; d: Decision; at: string }
-  | { kind: 'plan'; key: string; x: Plan; at: string }
-  | { kind: 'orphan'; key: string; d: Decision; at: string }
-  | { kind: 'session'; key: string; s: Session; at: string }
-
 // asking：会话在等你授权，或在正式问你（提问 / 计划确认）。
 export const asking = (s: Session) => {
   const ds = displayState(s)
   return ds === 'waiting_approval' || ds === 'waiting_answer'
 }
 
-// useTodo：一件事算一件：同一条需求的验收和决策合成一件；会话等授权、在问你各算一件。
-// 只是一轮做完在等你回复、没有正式问题的会话不算（它在「待命 / 久未回复」档）。
-export function useTodo(wb: WB): Todo[] {
-  const reqs = useRequirements()
-  return useMemo(() => {
-    const out: Todo[] = []
-    const byReq = new Map<string, Extract<Todo, { kind: 'req' }>>()
-    const rowOf = (code: string, at: string) => {
-      let row = byReq.get(code)
-      if (!row) {
-        row = { kind: 'req', key: `r:${code}`, code, decisions: [], at }
-        byReq.set(code, row)
-        out.push(row)
-      }
-      if (at < row.at) row.at = at
-      return row
-    }
-    for (const th of wb.threads) {
-      for (const r of th.reviews) rowOf(r.code, r.updated_at).review = r
-      for (const d of th.decisions) {
-        if (d.requirement_code) rowOf(d.requirement_code, d.created_at).decisions.push(d)
-        else out.push({ kind: 'dec', key: `d:${d.code}`, d, at: d.created_at })
-      }
-      for (const d of th.orphans) out.push({ kind: 'orphan', key: `o:${d.code}`, d, at: d.answered_at ?? d.created_at })
-      const s = th.s
-      if (s && s.state !== 'ended' && asking(s)) out.push({ kind: 'session', key: `s:${s.key}`, s, at: s.state_since || s.last_active_at })
-    }
-    for (const x of wb.plans) out.push({ kind: 'plan', key: `p:${x.code}`, x, at: x.updated_at })
-    return out
-    // reqs.data：需求标题 / 状态更新时重算
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wb.threads, wb.plans, reqs.data])
+// useTodo：计入件数的「要你处理」条目（R-177，app/asks.tsx）：一件事算一件——待验收需求连同挂在它上面的决策算一件，
+// 会话等授权、在问你各算一件；只是一轮做完在等你回复、没有正式问题的会话不算。
+export function useTodo(wb: WB): Ask[] {
+  return useMemo(() => buildAsks(wb).filter((a) => a.counted), [wb])
 }
 
 // ---------- 进行中的计划：右栏 + 手机胶囊 ----------
@@ -241,25 +207,41 @@ export function TeamRail({ groups, className }: { groups: ProjectGroup[]; classN
 
 // ---------- 简报位（R-165 / R-170） ----------
 
+// 离开结束（授权窗口到期 / 撤销；没有窗口时以总述写下的时间算）超过这么久，小结自动收起，PM 简报接回简报位（R-170 返工）。
+const awayFold = 2 * 3600e3
+function awayEnd(r: MorningReport): string | undefined {
+  const g = r.grant
+  if (g) return g.status === 'active' ? undefined : g.revoked_at && g.revoked_at < g.expires_at ? g.revoked_at : g.expires_at
+  return r.note?.at
+}
+
 // BriefStrip：顶部唯一的简报位。有离开期间小结时放小结（顾问），否则放 PM 简报；背后一条随整体活跃度起伏的风。
-// 一行放不下的内容点开看全文（小结卡、各项目的 PM 简报）；断线时整体静止变灰并写明。
+// 最多两行换行显示，点开看全文（小结卡、各项目的 PM 简报）；离开结束两小时后小结收起成一行，PM 简报接回简报位。断线时整体静止变灰并写明。
 export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number }) {
   const morning = useMorning()
   const projects = useProjects()
   const connected = useConnected()
   const [open, setOpen] = useState(false)
   const reports = morning.data?.reports ?? []
-  const skip = new Set(reports.map((r) => r.project_id))
+  const fresh = reports.filter((r) => {
+    const end = awayEnd(r)
+    return !end || now - Date.parse(end) < awayFold
+  })
+  const stale = reports.filter((r) => !fresh.includes(r))
+  const skip = new Set(fresh.map((r) => r.project_id))
   const briefs = (projects.data?.projects ?? []).filter((p) => p.brief && p.brief_at && now - Date.parse(p.brief_at) < briefTTL && !p.hidden && !skip.has(p.id))
   const find = (k?: string) => (k ? sessions.find((x) => x.key === k) : undefined)
-  const r = reports[0]
+  const r = fresh[0]
   const b = briefs[0]
+  const old = stale[0]
   const head = r
-    ? { role: 'advisor', who: find(r.note?.by ?? r.grant?.session_key), any: true, label: t.morning.title, text: r.note?.text ?? t.morning.noNote, at: r.note?.at ?? r.since }
+    ? { role: 'advisor', who: find(r.note?.by ?? r.grant?.session_key), any: true, label: t.morning.title, text: r.note?.text ?? t.morning.noNote, at: r.note?.at ?? r.since, folded: false }
     : b
-      ? { role: 'pm', who: find(b.brief_by), any: false, label: briefs.length > 1 ? b.name : '', text: b.brief ?? '', at: b.brief_at }
-      : null
-  const more = reports.length + briefs.length - 1
+      ? { role: 'pm', who: find(b.brief_by), any: false, label: briefs.length > 1 ? b.name : '', text: b.brief ?? '', at: b.brief_at, folded: false }
+      : old
+        ? { role: 'advisor', who: find(old.note?.by ?? old.grant?.session_key), any: true, label: '', text: t.desk.awayEnded(relTime(awayEnd(old), now)), at: awayEnd(old), folded: true }
+        : null
+  const more = fresh.length + briefs.length + (head?.folded ? 0 : stale.length) - (head && !head.folded ? 1 : 0)
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
@@ -271,23 +253,30 @@ export function BriefStrip({ sessions, now }: { sessions: Session[]; now: number
       <button
         onClick={() => head && setOpen(!open)}
         aria-expanded={head ? open : undefined}
-        className={cx('relative flex h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl bg-surface px-3.5 text-left shadow-card', head && 'cursor-pointer hover:bg-hover/50')}
+        className={cx('relative flex min-h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl bg-surface px-3.5 py-2 text-left shadow-card', head && 'cursor-pointer hover:bg-hover/50')}
       >
         <Wind />
         {!connected && (
-          <span className="relative inline-flex shrink-0 items-center gap-1.5 rounded-full bg-danger-soft px-2 py-0.5 text-[11.5px] font-medium text-danger">
+          <span className="relative inline-flex shrink-0 items-center gap-1.5 self-center rounded-full bg-danger-soft px-2 py-0.5 text-[11.5px] font-medium text-danger">
             <WifiOff className="size-3.5" />
             {t.desk.offline}
           </span>
         )}
         {head ? (
           <>
-            <RoleTag role={head.role} presence={head.who ? presence(head.who, head.any) || undefined : undefined} className="relative bg-surface" />
-            {head.label && <span className="relative shrink-0 text-[12px] font-semibold text-fg-2">{head.label}</span>}
-            <span className="relative min-w-0 flex-1 truncate text-[12.5px] text-fg-2">{head.text}</span>
-            {more > 0 && <span className="relative shrink-0 text-[11.5px] text-fg-3">{t.desk.briefMore(more)}</span>}
-            <span className="relative shrink-0 text-[11px] text-fg-3 tabular max-sm:hidden">{relTime(head.at, now)}</span>
-            <ChevronDown className={cx('relative size-4 shrink-0 text-fg-3 transition-transform', open && 'rotate-180')} />
+            <RoleTag role={head.role} presence={head.who ? presence(head.who, head.any) || undefined : undefined} className="relative shrink-0 self-start bg-surface" />
+            <span className={cx('relative min-w-0 flex-1 text-[13px] leading-[1.45]', head.folded ? 'truncate text-fg-3' : 'line-clamp-2 text-fg-2')}>
+              {head.label && <b className="mr-1.5 font-semibold text-fg">{head.label}</b>}
+              {head.text}
+            </span>
+            <span className="relative flex shrink-0 items-center gap-2 self-start pt-px text-[11.5px] text-fg-3">
+              {more > 0 && <span>{t.desk.briefMore(more)}</span>}
+              {!head.folded && <span className="tabular max-sm:hidden">{relTime(head.at, now)}</span>}
+              <span className="inline-flex items-center gap-0.5 text-fg-2">
+                <span className="max-md:hidden">{t.desk.briefOpen}</span>
+                <ChevronDown className={cx('size-4 transition-transform', open && 'rotate-180')} />
+              </span>
+            </span>
           </>
         ) : (
           connected && <span className="relative min-w-0 truncate text-[12.5px] text-fg-3">{t.desk.noBrief}</span>

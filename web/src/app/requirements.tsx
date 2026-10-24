@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { Bot, ChevronDown, LockOpen, MessageCircleQuestion, Monitor, MoreHorizontal, Palette, Plus, Send, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement } from '../api/client'
@@ -47,12 +48,19 @@ export function toFields(r: Requirement, patch: Partial<ReqFields> = {}): ReqFie
 // useSetStatus：修改状态（右键菜单、状态菜单、拖拽、逐条确认草稿共用）。R-161：一律先进撤销期，撤销条以 toast 出现，不再弹确认框——
 // 待验收 → 已完成就是通过；待验收 → 其它状态就是退回，先要一句意见（必填），送达后再落到目标状态（证据照旧作废，D19）。
 // 返回是否排上了（取消意见框 / 搁置框、已在撤销期里时是 false），逐条确认草稿时据此决定要不要前进（R-133）。
+// R-177：验收只在抽屉里做——在列表、盘面上把待验收改走（拖拽、状态菜单）时打开这条需求的抽屉，由底部的判断完成；已经在它的抽屉里时照旧。
 export function useSetStatus() {
   const { updateReq } = useActions()
   const verdict = useReqVerdict()
   const ask = useAskReason()
+  const openReq = useOpenReq()
+  const [params] = useSearchParams()
   return async (r: Requirement, status: string): Promise<boolean> => {
     if (status === r.status) return false
+    if (r.status === 'review' && params.get('r') !== r.code && params.get('a') !== `r:${r.code}`) {
+      openReq(r.code)
+      return false
+    }
     if (r.status === 'review' && status === 'done') return verdict.pass(r.code, { toast: true })
     const to = (patch: Partial<ReqFields> = {}) => toFields(r, { status: status as ReqFields['status'], ...patch })
     if (r.status === 'review') {

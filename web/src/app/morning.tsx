@@ -10,7 +10,7 @@ import { Collapse } from '../ui/motion'
 import { presence, RoleTag } from '../ui/marks'
 import { Linkify, RefChip } from '../ui/refmark'
 import { useActions } from './actions'
-import { OverrideBox } from './grant'
+import { useOpenAsk } from './nav'
 
 // 离开期间小结（R-165，D-179；版式按顾问意见）：你离开期间参谋做了什么、替你定了什么，占工作台顶部唯一的简报位。
 //   - 有小结的项目由小结占位，PM 简报收成卡里的一行「PM：……」；没有小结的项目照旧显示 PM 简报（见 desk.tsx Briefs）。
@@ -137,9 +137,9 @@ function ReleaseRow({ x }: { x: NonNullable<MorningReport['releases']>[number] }
   )
 }
 
-// ProxyRow：一条代答，紧凑排：问题、Adv 答了什么（风险档）、理由；「推翻」就地展开写你的答复。
+// ProxyRow：一条代答，紧凑排：问题、Adv 答了什么（风险档）、理由；「推翻」打开审批抽屉写你的答复（R-177：不就地作答）。
 function ProxyRow({ d }: { d: Decision }) {
-  const [over, setOver] = useState(false)
+  const openAsk = useOpenAsk()
   const done = !!d.overridden_at
   return (
     <div className="space-y-1 text-[13px]">
@@ -149,9 +149,8 @@ function ProxyRow({ d }: { d: Decision }) {
         {done ? (
           <Badge tone="accent">{t.grant.overridden}</Badge>
         ) : (
-          d.status !== 'closed' &&
-          !over && (
-            <Button size="sm" variant="ghost" className="-my-1 shrink-0" onClick={() => setOver(true)}>
+          d.status !== 'closed' && (
+            <Button size="sm" variant="ghost" className="-my-1 shrink-0" onClick={() => openAsk(`x:${d.code}`)}>
               <Undo2 className="size-3.5" />
               {t.grant.override}
             </Button>
@@ -172,11 +171,6 @@ function ProxyRow({ d }: { d: Decision }) {
           <span className="mr-1.5 text-fg-3">{t.grant.yours}</span>
           <Linkify text={d.answer} />
         </p>
-      )}
-      {over && !done && (
-        <div className="pt-1">
-          <OverrideBox d={d} startOpen onClose={() => setOver(false)} />
-        </div>
       )}
     </div>
   )

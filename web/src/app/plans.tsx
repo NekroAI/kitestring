@@ -303,15 +303,14 @@ function PlanVerdict({ x, st, stack, extra, className }: { x: Plan; st?: Stage; 
 }
 
 // Gate：当前阶段的闸门——阶段小结，然后统一的 [附言][退回][通过]。
-function Gate({ x, st }: { x: Plan; st: Stage }) {
-  // 后面需求都已完成的阶段会一并自动通过（D-60），提示里写真正会开始的那一阶段
-  const next = nextStageOf(x, st)
-  const together = st.requirements.filter((r) => r.status === 'review').map((r) => r.code)
+// pin：判断按钮不放在这里，固定在抽屉底部（GateVerdict，R-177）。
+function Gate({ x, st, pin }: { x: Plan; st: Stage; pin?: boolean }) {
+  // 后面需求都已完成的阶段会一并自动通过（D-60），提示里写真正会开始的那一阶段（见 GateVerdict）
   const ready = stageFinished(st)
   if (!ready && st.status !== 'review') return null
   return (
     <div className="relative mt-3 overflow-hidden rounded-2xl border border-reply/30 bg-gradient-to-b from-reply-soft to-reply-soft/40 p-3.5">
-      <Seal k={stageKey(x, st)} />
+      {!pin && <Seal k={stageKey(x, st)} />}
       <StageScores st={st} />
       {st.summary ? (
         <>
@@ -323,19 +322,29 @@ function Gate({ x, st }: { x: Plan; st: Stage }) {
         <p className="text-[13px] text-fg-3">{t.plan.noSummary}</p>
       )}
       {x.paused && <p className="mt-2 text-xs text-danger">{t.plan.pausedHint}</p>}
-      <PlanVerdict
-        x={x}
-        st={st}
-        stack
-        className="mt-3"
-        extra={
-          <p className="text-xs text-fg-3">
-            {t.verdict.stageNext(next)}
-            {together.length > 0 && <span className="max-sm:block"> · {t.plan.passTogether(together.join('、'))}</span>}
-          </p>
-        }
-      />
+      {!pin && <GateVerdict x={x} st={st} className="mt-3" />}
     </div>
+  )
+}
+
+// GateVerdict：阶段验收的判断行，提示通过后开始哪一阶段、哪些需求一并通过。
+function GateVerdict({ x, st, className }: { x: Plan; st: Stage; className?: string }) {
+  const next = nextStageOf(x, st)
+  const together = st.requirements.filter((r) => r.status === 'review').map((r) => r.code)
+  return (
+    <PlanVerdict
+      key={stageKey(x, st)}
+      x={x}
+      st={st}
+      stack
+      className={className}
+      extra={
+        <p className="text-xs text-fg-3">
+          {t.verdict.stageNext(next)}
+          {together.length > 0 && <span className="max-sm:block"> · {t.plan.passTogether(together.join('、'))}</span>}
+        </p>
+      }
+    />
   )
 }
 
@@ -364,7 +373,7 @@ function StageScores({ st }: { st: Stage }) {
   )
 }
 
-function StageBlock({ x, st, last, sel, onPick }: { x: Plan; st: Stage; last: boolean; sel?: string | null; onPick?: (code: string) => void }) {
+function StageBlock({ x, st, last, sel, onPick, pin }: { x: Plan; st: Stage; last: boolean; sel?: string | null; onPick?: (code: string) => void; pin?: boolean }) {
   const now = useNow()
   const cur = x.status === 'active' && st.seq === x.current
   const locked = st.status === 'locked'
@@ -406,7 +415,7 @@ function StageBlock({ x, st, last, sel, onPick }: { x: Plan; st: Stage; last: bo
           {!st.requirements.length && <p className="rounded-xl border border-dashed border-line-strong/70 px-3 py-2 text-xs text-fg-3">{t.plan.emptyStage}</p>}
         </div>
       </div>
-      {cur && <Gate x={x} st={st} />}
+      {cur && <Gate x={x} st={st} pin={pin} />}
     </div>
   )
 }
@@ -431,18 +440,82 @@ function OwnerMenu({ owner, projectId, onPick, sessions, className }: { owner?: 
 
 const bodyOf = (x: Plan, patch: Partial<PlanBody> = {}): PlanBody => ({ title: x.title, goal: x.goal, project_id: x.project_id || undefined, owner_session: x.owner_session, ...patch })
 
+// PlanBody：计划正文——标题、目标、负责会话、各阶段；底部固定判断：待批准 → 批准 / 退回，待阶段验收 → 通过 / 退回，
+// 自己建的草稿 → 开始。计划抽屉与审批抽屉（R-177）共用；top 是抽屉顶栏。
+export function PlanBody({ x, top, sel, onPick }: { x: Plan; top: ReactNode; sel?: string | null; onPick?: (code: string) => void }) {
+  const sessions = useSessions()
+  const { updatePlan, startPlan } = useActions()
+  const [busy, wrap] = useBusy()
+  const all = sessions.data?.sessions ?? []
+  const owner = all.find((s) => s.key === x.owner_session)
+  const approval = needsApproval(x)
+  const gate = gateStage(x)
+  // 自己建的计划「开始」不是判断，照旧立即开始；Agent 拆的计划走 PlanVerdict（R-161）
+  const start = () => wrap(async () => (await startPlan(x.code)) && toast.success(t.plan.started(x.code)))
+  const foot = 'shrink-0 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]'
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {approval && <Seal k={planKey(x)} className="bg-transparent" />}
+      {gate && <Seal k={stageKey(x, gate)} className="bg-transparent" />}
+      {top}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-6">
+        <h2 className="font-display text-[22px] leading-snug text-fg">{x.title}</h2>
+        {x.goal && <Md text={x.goal} className="mt-1.5 text-sm leading-relaxed text-fg-3" />}
+        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <OwnerMenu owner={owner} projectId={x.project_id} sessions={all} onPick={(key) => void updatePlan(x.code, bodyOf(x, { owner_session: key }))} className="-ml-2 max-w-[320px] bg-accent-soft/70 text-accent hover:bg-accent-soft" />
+          <span className="text-xs text-fg-3">{owner ? t.plan.autoNext : t.plan.ownerHint}</span>
+        </div>
+        <StageRail x={x} className="mt-4 mb-6" />
+        {x.stages.map((st, i) => (
+          <StageBlock key={st.id} x={x} st={st} last={i === x.stages.length - 1} sel={sel} onPick={onPick} pin={!!gate} />
+        ))}
+      </div>
+      {approval ? (
+        <div className={foot}>
+          <PlanVerdict
+            key={x.code}
+            x={x}
+            stack
+            extra={
+              <div className="space-y-0.5 text-xs text-fg-3">
+                {shelvedByStage(x).map((s) => (
+                  <p key={s.seq} className="text-wait">
+                    {t.plan.shelvedNote(s.seq, s.n)}
+                  </p>
+                ))}
+                <p>{t.verdict.planNext}</p>
+              </div>
+            }
+          />
+        </div>
+      ) : gate ? (
+        <div className={foot}>
+          <GateVerdict x={x} st={gate} />
+        </div>
+      ) : (
+        (x.status === 'draft' || x.status === 'shelved') && (
+          <div className={cx(foot, 'space-y-2.5')}>
+            <p className="text-xs text-fg-3">{t.plan.startHint}</p>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="primary" loading={busy} disabled={!planReqCount(x)} onClick={() => void start()} icon={<Send className="size-4" />}>
+                {t.plan.start}
+              </Button>
+            </div>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
 export function PlanPanel({ code, onClose }: { code: string | null; onClose: () => void }) {
   const plans = usePlans()
-  const sessions = useSessions()
-  const { updatePlan, deletePlan, startPlan } = useActions()
+  const { deletePlan } = useActions()
   const confirm = useConfirm()
-  const [busy, wrap] = useBusy()
   const [editing, setEditing] = useState(false)
   const [sel, setSel] = useState<string | null>(null) // 宽屏：左侧并排打开的需求
   const roomy = useMedia('(min-width: 1140px)')
   const x = (plans.data ?? []).find((p) => p.code === code)
-  const all = sessions.data?.sessions ?? []
-  const owner = all.find((s) => s.key === x?.owner_session)
   useEffect(() => setSel(null), [code])
   const shown = roomy && sel && x?.stages.some((st) => st.requirements.some((r) => r.code === sel)) ? sel : null
 
@@ -464,9 +537,6 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
         },
       ]
     : []
-  const approval = !!x && needsApproval(x)
-  // 自己建的计划「开始」不是判断，照旧立即开始；Agent 拆的计划走 PlanVerdict（R-161）
-  const start = () => wrap(async () => x && (await startPlan(x.code)) && toast.success(t.plan.started(x.code)))
   const aside = shown ? (
     <ReqView
       key={shown}
@@ -490,67 +560,29 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
     <>
       <Panel open={!!code && !editing} onClose={onClose} wide bare title={x?.title ?? t.plan.title} aside={aside}>
         {x ? (
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            {approval && <Seal k={planKey(x)} className="bg-transparent" />}
-            <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
-              <RefChip code={x.code} status={x.status} link={false} />
-              <PlanChip x={x} />
-              <span className="flex-1" />
-              <Menu
-                trigger={
-                  <Button size="icon-sm" variant="ghost" aria-label={t.common.more}>
-                    <MoreHorizontal className="size-4" />
-                  </Button>
-                }
-                items={menu}
-              />
-              <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={onClose}>
-                <X className="size-4" />
-              </Button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-6">
-              <h2 className="font-display text-[22px] leading-snug text-fg">{x.title}</h2>
-              {x.goal && <Md text={x.goal} className="mt-1.5 text-sm leading-relaxed text-fg-3" />}
-              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <OwnerMenu owner={owner} projectId={x.project_id} sessions={all} onPick={(key) => void updatePlan(x.code, bodyOf(x, { owner_session: key }))} className="-ml-2 max-w-[320px] bg-accent-soft/70 text-accent hover:bg-accent-soft" />
-                <span className="text-xs text-fg-3">{owner ? t.plan.autoNext : t.plan.ownerHint}</span>
-              </div>
-              <StageRail x={x} className="mt-4 mb-6" />
-              {x.stages.map((st, i) => (
-                <StageBlock key={st.id} x={x} st={st} last={i === x.stages.length - 1} sel={shown} onPick={roomy ? (c) => setSel(sel === c ? null : c) : undefined} />
-              ))}
-            </div>
-            {approval ? (
-              <div className="shrink-0 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
-                <PlanVerdict
-                  key={x.code}
-                  x={x}
-                  stack
-                  extra={
-                    <div className="space-y-0.5 text-xs text-fg-3">
-                      {shelvedByStage(x).map((s) => (
-                        <p key={s.seq} className="text-wait">
-                          {t.plan.shelvedNote(s.seq, s.n)}
-                        </p>
-                      ))}
-                      <p>{t.verdict.planNext}</p>
-                    </div>
-                  }
-                />
-              </div>
-            ) : (
-              (x.status === 'draft' || x.status === 'shelved') && (
-                <div className="shrink-0 space-y-2.5 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
-                  <p className="text-xs text-fg-3">{t.plan.startHint}</p>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button variant="primary" loading={busy} disabled={!planReqCount(x)} onClick={() => void start()} icon={<Send className="size-4" />}>
-                      {t.plan.start}
+          <PlanBody
+            x={x}
+            sel={shown}
+            onPick={roomy ? (c) => setSel(sel === c ? null : c) : undefined}
+            top={
+              <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
+                <RefChip code={x.code} status={x.status} link={false} />
+                <PlanChip x={x} />
+                <span className="flex-1" />
+                <Menu
+                  trigger={
+                    <Button size="icon-sm" variant="ghost" aria-label={t.common.more}>
+                      <MoreHorizontal className="size-4" />
                     </Button>
-                  </div>
-                </div>
-              )
-            )}
-          </div>
+                  }
+                  items={menu}
+                />
+                <Button size="icon-sm" variant="ghost" aria-label={t.common.close} onClick={onClose}>
+                  <X className="size-4" />
+                </Button>
+              </div>
+            }
+          />
         ) : (
           <div className="p-6 text-sm text-fg-3">{plans.isPending ? '' : t.plan.empty}</div>
         )}

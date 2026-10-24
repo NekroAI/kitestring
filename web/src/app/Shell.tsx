@@ -10,7 +10,9 @@ import { useWorkbench } from './inbox'
 import { useTodo } from './desk'
 import { usePanelParams } from './nav'
 import { GrantBanner } from './grant'
-import { PlanPanel } from './plans'
+import { planState, PlanPanel } from './plans'
+import { ApprovalPanel } from './approval'
+import { usePlans } from '../api/queries'
 import { ReqPanel } from './reqDrawer'
 import { SessionPanel } from './SessionPanel'
 import { CommandProvider, KeyCaps, modKey, useCommand, withKey } from './command'
@@ -184,7 +186,11 @@ export function Shell() {
   const connected = useLiveUpdates(true)
   const wb = useWorkbench()
   const todo = useTodo(wb).length // 与工作台「待你处理」同一口径
-  const { session, req, plan, close } = usePanelParams()
+  const { session, req, plan, ask, close } = usePanelParams()
+  // 在等你的计划（待批准、待阶段验收）一律在审批抽屉里处理（R-177）：?plan= 打开它时落到审批抽屉
+  const plans = usePlans()
+  const px = plan ? (plans.data ?? []).find((x) => x.code === plan) : undefined
+  const planAsk = px && planState(px).needsYou ? `${planState(px).tone === 'approve' ? 'p' : 'g'}:${px.code}` : null
   const [collapsed, setCollapsed] = usePref('ks.sidebar.collapsed', false)
   // 侧边栏宽度给其它固定定位的元素用（如工作台底部的批量操作条）
   useEffect(() => document.documentElement.style.setProperty('--sidebar-w', collapsed ? '4rem' : '232px'), [collapsed])
@@ -219,7 +225,8 @@ export function Shell() {
       <TabBar todo={todo} />
       <SessionPanel sessionKey={session} onClose={close} />
       <ReqPanel refId={req} onClose={close} />
-      <PlanPanel code={plan} onClose={close} />
+      <PlanPanel code={planAsk ? null : plan} onClose={close} />
+      <ApprovalPanel askKey={ask ?? planAsk} onClose={close} />
     </div>
     </CommandProvider>
     </RefIndexProvider>

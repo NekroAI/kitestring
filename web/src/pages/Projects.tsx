@@ -11,7 +11,9 @@ import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { displayState, presence, presenceDot } from '../ui/marks'
 import { Item, List } from '../ui/motion'
 import { useActions } from '../app/actions'
-import { useOpenReq } from '../app/nav'
+import { useOpenAsk, useOpenReq } from '../app/nav'
+import { AskItem, useAsks } from '../app/asks'
+import { useWorkbench } from '../app/inbox'
 import { NewReqModal, statusCls } from '../app/requirements'
 import { SessionRow } from '../app/thread'
 import { Linkify, ReqGlyph } from '../ui/refmark'
@@ -205,6 +207,22 @@ function NeedDevs({ p, now }: { p: Stat; now: number }) {
   )
 }
 
+// ProjectAsks：这个项目里要你处理的事——固定大小的条目，点开审批抽屉（R-177）。
+function ProjectAsks({ id, now }: { id: string; now: number }) {
+  const asks = useAsks(useWorkbench()).filter((a) => a.projectId === id)
+  const openAsk = useOpenAsk()
+  if (!asks.length) return null
+  return (
+    <Section title={`${t.desk.paneAsk} · ${asks.filter((a) => a.counted).length}`}>
+      <div className="grid grid-cols-1 gap-2 @container sm:grid-cols-2">
+        {asks.map((a) => (
+          <AskItem key={a.key} a={a} now={now} onOpen={openAsk} />
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const openReq = useOpenReq()
   const navigate = useNavigate()
@@ -259,6 +277,8 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
           </Button>
         </div>
       </div>
+
+      <ProjectAsks id={p.id} now={now} />
 
       <Section title={t.projects.now} right={<Team sessions={p.sessions} />}>
         <NeedDevs p={p} now={now} />

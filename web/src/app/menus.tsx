@@ -1,4 +1,4 @@
-import { Palette, Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2, Undo2 } from 'lucide-react'
+import { Palette, Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ReqFields, Requirement, Session } from '../api/client'
 import { t } from '../i18n'
@@ -13,7 +13,6 @@ import { useOpenReq, useOpenSession } from './nav'
 import { allStatuses, priorities, toFields, useSetStatus } from './requirements'
 import { ReqGlyph } from '../ui/refmark'
 import { sessionTitle } from './SessionCard'
-import { useReqVerdict } from './verdict'
 
 const copy = async (text: string) => (await copyText(text)) && toast.success(t.common.copied)
 
@@ -61,18 +60,12 @@ export function useReqMenu() {
   const pick = useAssign()
   const setStatus = useSetStatus()
   const { updateReq, deleteReq } = useActions()
-  const verdict = useReqVerdict()
   const confirm = useConfirm()
   return (r: Requirement): CtxItem[] => [
     { type: 'label', label: `${r.code} ${r.title}` },
     { label: t.menu.openReq, icon: <PanelRight />, onSelect: () => openReq(r.code) },
-    // 批准 / 退回（R-161）：和卡片上同一对词、同一图标；都先进撤销期（toast），退回先要意见
-    ...(r.status === 'review'
-      ? [
-          { label: t.verdict.pass('accept'), icon: <Check />, onSelect: () => void verdict.pass(r.code, { toast: true }) },
-          { label: t.verdict.back('accept'), icon: <Undo2 />, onSelect: () => void setStatus(r, 'in_progress') },
-        ]
-      : []),
+    // 待验收：只给「去验收」，打开抽屉在底部判断（R-177：审批只在抽屉里做，不在菜单里就地通过 / 退回）
+    ...(r.status === 'review' ? [{ label: t.desk.review, icon: <Check />, onSelect: () => openReq(r.code) }] : []),
     ...(r.status !== 'done' && r.status !== 'shelved'
       ? [{ type: 'sub' as const, label: t.assign.menu, icon: <Send />, items: assignItems(sessions.data?.sessions ?? [], r.project_id, (s) => void pick(r.code, s)) }]
       : []),

@@ -1,4 +1,3 @@
-import { memo, type ComponentType, type ReactNode } from 'react'
 import {
   Bot,
   CheckCircle2,
@@ -6,13 +5,9 @@ import {
   Hourglass,
   FileCode2,
   FileText,
-  GitBranch,
   Globe,
   HelpCircle,
   ListChecks,
-  MessageSquare,
-  Monitor,
-  MonitorDot,
   Plug,
   Search,
   ShieldAlert,
@@ -20,23 +15,17 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import type { Decision, Session } from '../api/client'
+import type { Session } from '../api/client'
 import { t } from '../i18n'
-import { Item, List } from '../ui/motion'
-import { cx, duration, relTime, shortPath, useMedia, useNow } from '../lib/util'
+import { duration, shortPath, useNow } from '../lib/util'
 
 const shortClock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
-import { Card, Tip } from '../ui/base'
+import { Tip } from '../ui/base'
 import { Menu } from '../ui/overlay'
 import { ctxLoad, ctxTip } from './assign'
-import { displayState, RoleBadge, Sparkline, StatusPill, ToolMark, stateStyle } from '../ui/marks'
-import { DecisionComposer } from './DecisionCard'
-import { LiveFeed } from './liveFeed'
-import { useSessionMenu } from './menus'
-import { Ctx } from '../ui/contextMenu'
-import { useOpenReq, useOpenSession } from './nav'
+import { displayState } from '../ui/marks'
+import { useOpenReq } from './nav'
 import { Linkify, RefChip, ReqGlyph } from '../ui/refmark'
-import { bgCount, TaskLanes } from './tasks'
 
 // 工具名 → 图标。
 export function toolIcon(label: string): LucideIcon {
@@ -78,17 +67,6 @@ export function sessionExtras(s: Session): string {
 
 export function sessionTitle(s: Session): string {
   return s.title || s.project_name || shortPath(s.cwd, 28) || t.session.noProject
-}
-
-function Meta({ icon: Icon, tip, children, className }: { icon: LucideIcon | ComponentType<{ className?: string }>; tip: string; children: ReactNode; className?: string }) {
-  return (
-    <Tip content={tip}>
-      <span className={cx('inline-flex min-w-0 items-center gap-1', className)}>
-        <Icon className="size-3.5 shrink-0" />
-        <span className="truncate">{children}</span>
-      </span>
-    </Tip>
-  )
 }
 
 // 等你处理时的提示块：在问你 / 请你确认计划 / 请求执行 / 回复要点。
@@ -173,162 +151,6 @@ export function Callout({ s }: { s: Session }) {
   return null
 }
 
-function ActionLine({ s, now }: { s: Session; now: number }) {
-  const phone = useMedia('(max-width: 767px)') // 手机上实时动作只留最新一条（R-147）
-  if (!s.last_tool || s.state === 'ended') return null
-  // 运行中：最近几次动作滚动展示
-  if (displayState(s) === 'running')
-    return (
-      <Tip content={t.session.action}>
-        <div className="rounded-lg bg-surface-2 px-2.5 py-1.5">
-          <LiveFeed s={s} now={now} lines={phone ? 1 : 3} />
-        </div>
-      </Tip>
-    )
-  const Icon = toolIcon(s.last_tool)
-  const [name, brief] = splitTool(s.last_tool)
-  const live = displayState(s) === 'running'
-  return (
-    <Tip content={t.session.action}>
-      <div className={cx('flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px]', live ? 'bg-surface-2' : 'bg-transparent px-0')}>
-        <Icon className={cx('size-4 shrink-0', live ? 'text-run' : 'text-fg-3')} />
-        <span className="shrink-0 font-medium text-fg-2">{name}</span>
-        {brief && <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-3">{brief}</span>}
-        <span className="ml-auto shrink-0 text-xs text-fg-3 tabular">{relTime(s.last_tool_at, now)}</span>
-      </div>
-    </Tip>
-  )
-}
-
-// SessionCard：会话卡片。
-// - 普通形态：一眼看出它在做什么、做了多久、顺不顺利。
-// - wide（要你处理）：附带提问 / 授权请求 / 回复要点，并就地回答待决策。
-export const SessionCard = memo(function SessionCard({ s, now, decisions = [], wide }: { s: Session; now: number; decisions?: Decision[]; wide?: boolean }) {
-  const open = useOpenSession()
-  const menu = useSessionMenu()
-  const ds = displayState(s)
-  const st = stateStyle[ds] ?? stateStyle.idle
-  const ended = s.state === 'ended'
-  const reqs = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')
-  // 有回复要点时，要点本身就是进展，标题下只放你最后说的话，避免重复。
-  const hasDigest = ds === 'waiting_reply' && !!(s.digest_done || s.digest_ask)
-  const useSummary = !!s.summary && !hasDigest
-  const headline = useSummary ? s.summary : s.last_prompt
-  const showPrompt = useSummary && !!s.last_prompt
-
-  const body = (
-    <div className="flex min-w-0 flex-1 flex-col gap-3">
-      {/* 标题行 */}
-      <div className="flex items-start gap-3">
-        <ToolMark tool={s.tool} />
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[15px] font-semibold text-fg">{sessionTitle(s)}</span>
-            <RoleBadge s={s} />
-            <span className="ml-auto shrink-0 pl-1">
-              <StatusPill state={ds} since={s.state_since} now={now} bg={bgCount(s)} />
-            </span>
-          </div>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-fg-3">
-            <Meta icon={Monitor} tip={sessionExtras(s)}>
-              {s.device_name}
-            </Meta>
-            {s.branch && (
-              <Meta icon={GitBranch} tip={s.dirty ? t.session.dirtyTip(s.dirty) : t.session.branch} className="font-mono">
-                {s.branch}
-                {s.dirty > 0 && <span className="ml-1 font-sans font-medium text-wait tabular">±{s.dirty}</span>}
-              </Meta>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 在做什么 */}
-      {headline && (
-        <div className="min-w-0">
-          <p className={cx('line-clamp-2 text-sm leading-relaxed', useSummary ? 'text-fg' : 'text-fg-2')}>
-            {!useSummary && (
-              <Tip content={t.session.you}>
-                <MessageSquare className="mr-1.5 mb-0.5 inline size-3.5 text-fg-3" />
-              </Tip>
-            )}
-            <Linkify text={headline} />
-          </p>
-          {showPrompt && (
-            <p className="mt-1 line-clamp-1 text-[13px] text-fg-3">
-              <Tip content={t.session.you}>
-                <MessageSquare className="mr-1.5 mb-0.5 inline size-3.5" />
-              </Tip>
-              <Linkify text={s.last_prompt} />
-            </p>
-          )}
-        </div>
-      )}
-
-      <Callout s={s} />
-      {s.other_terminal && s.state !== 'ended' && (
-        <div className="flex min-w-0 items-start gap-1.5 text-xs leading-relaxed text-accent">
-          <MonitorDot className="mt-0.5 size-3.5 shrink-0" />
-          <span className="min-w-0">{t.session.otherTerminalShort}</span>
-        </div>
-      )}
-      {!(ds === 'waiting_approval' || ds === 'waiting_answer' || ds === 'background' || ds === 'parked') && <ActionLine s={s} now={now} />}
-
-      {/* 底部指标 */}
-      <div className="mt-auto flex items-center gap-3 border-t border-line pt-2.5 text-xs text-fg-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
-          <ReqCount s={s} />
-          {!reqs.length && <span>{relTime(s.last_active_at, now)}</span>}
-        </div>
-        <Sparkline data={s.activity} state={ds} />
-      </div>
-      {!wide && <TaskLanes s={s} now={now} />}
-    </div>
-  )
-
-  const clickable = {
-    role: 'button' as const,
-    tabIndex: 0,
-    'data-nav-item': '',
-    onClick: () => open(s.key),
-    onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key),
-  }
-
-  if (wide && decisions.length) {
-    // 有待决策：上方会话信息，下方就地作答（宽屏两列）。
-    return (
-      <Card className={cx('overflow-hidden', st.ring)}>
-        <Ctx items={menu(s)} className="rounded-none">
-          <div {...clickable} className="cursor-pointer p-4 transition-colors hover:bg-hover/40 sm:p-5">
-            {body}
-          </div>
-        </Ctx>
-        <div className={cx('@container border-t border-line bg-surface-2/60 p-3 sm:p-4')}>
-          <List className={cx('grid grid-cols-1 items-start gap-x-3', decisions.length > 1 && '@3xl:grid-cols-2')} space={12}>
-            {decisions.map((d) => (
-              <Item key={d.id} space={12} layout>
-                <DecisionComposer d={d} embedded />
-              </Item>
-            ))}
-          </List>
-        </div>
-      </Card>
-    )
-  }
-
-  return (
-    <Ctx items={menu(s)} className="h-full">
-    <Card
-      {...clickable}
-      className={cx('flex h-full cursor-pointer flex-col p-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-pop', st.ring, ended && 'opacity-65 hover:opacity-100', ds === 'running' && 'live-edge')}
-    >
-      {body}
-    </Card>
-    </Ctx>
-  )
-})
-
-// ReqCount：会话手上没做完的需求，直接列出印记；超过两条时其余收进“+n”菜单（R-96）。
 export function ReqCount({ s }: { s: Session }) {
   const openReq = useOpenReq()
   const open = s.requirements.filter((r) => r.status !== 'done' && r.status !== 'shelved')

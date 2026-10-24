@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useDecisions, usePlans, useRequirements } from '../api/queries'
-import { useOpenPlan, useOpenReq } from '../app/nav'
+import { useOpenAsk, useOpenPlan, useOpenReq } from '../app/nav'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Tip } from './base'
@@ -206,17 +206,20 @@ function useLit(code: string) {
 }
 
 // useOpenRef：点哪个印记都落到同一个地方。需求开需求抽屉，计划开计划抽屉；
-// 决策没有自己的面板，落到它挂着的需求（或计划）上，都没有时回工作台。
+// 待答的决策开审批抽屉；答过的决策没有自己的面板，落到它挂着的需求（或计划）上，都没有时回工作台。
 export function useOpenRef() {
   const openReq = useOpenReq()
   const openPlan = useOpenPlan()
   const nav = useNavigate()
+  const openAsk = useOpenAsk()
   const index = useContext(RefIndexContext)
   return (code: string) => {
     const kind = refKind(code)
     if (kind === 'req') return openReq(code)
     if (kind === 'plan') return openPlan(code)
     const d = index?.get(code)
+    // 还在等你答的决策点开审批抽屉（R-177）；挂在待验收需求上的，落到那件验收
+    if (d?.status === 'pending') return openAsk(d.reqCode && index?.get(d.reqCode)?.status === 'review' ? `r:${d.reqCode}` : `d:${code}`)
     if (d?.reqCode) openReq(d.reqCode)
     else if (d?.planCode) openPlan(d.planCode)
     else nav('/')

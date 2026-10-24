@@ -11,8 +11,9 @@ import { Menu, Panel } from '../ui/overlay'
 import { Md } from '../ui/markdown'
 import { displayState, RoleBadge, Sparkline, StatusPill, ToolMark } from '../ui/marks'
 import { useActions } from './actions'
-import { DecisionComposer, DecisionRow } from './DecisionCard'
-import { SideReqContext, useOpenReq } from './nav'
+import { DecisionRow } from './DecisionCard'
+import { SideReqContext, useOpenAsk, useOpenReq } from './nav'
+import { AskItem, decisionAsk } from './asks'
 import { ReqView } from './reqDrawer'
 import { CtxRing, ctxLoad, useAssign } from './assign'
 import { NewReqModal } from './requirements'
@@ -171,6 +172,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const ownership = useOwnership()
   const [creating, setCreating] = useState(false)
   const openReq = useOpenReq()
+  const openAsk = useOpenAsk()
   // 宽屏：点需求在会话抽屉左侧再开一层（和计划里同一机制与断点），窄屏仍走全局需求抽屉
   const roomy = useMedia('(min-width: 1140px)')
   const [sel, setSel] = useState<string | null>(null)
@@ -270,9 +272,10 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           <Collapse show={pending.length > 0}>
             <Section title={t.decision.status.pending}>
               <List space={12}>
+                {/* 只放固定大小的条目，点开审批抽屉作答（R-177） */}
                 {pending.map((d) => (
                   <Item key={d.id} space={12}>
-                    <DecisionComposer d={d} embedded />
+                    <AskItem a={decisionAsk(d)} now={now} onOpen={openAsk} />
                   </Item>
                 ))}
               </List>

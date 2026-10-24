@@ -13,6 +13,7 @@ import { FullSheet } from '../ui/overlay'
 import { RoleTag, StatusDot, displayState, presence } from '../ui/marks'
 import { PlanGlyph, ProjGlyph, RefChip, ReqStatus, TurnSeal, useOpenRef } from '../ui/refmark'
 import { useOpenPlan, useOpenReq, useOpenSession } from './nav'
+import { useOpenAsk } from './asks'
 import { NewReqModal } from './requirements'
 import { PlanEditor } from './plans'
 import { sessionTitle } from './SessionCard'
@@ -72,7 +73,10 @@ export function CommandProvider({ children }: { children: ReactNode }) {
   const pendingG = useRef(0)
   const desktop = useDesktop()
 
-  const drawerReq = params.get('r')
+  // 审批抽屉（?a=，R-177）里的需求验收与需求抽屉同样接 A / R / ⌘↵ / ⌘⌫；J / K 在审批抽屉里切换上下一件
+  const askParam = params.get('a')
+  const drawerReq = params.get('r') ?? (askParam?.startsWith('r:') ? askParam.slice(2) : null)
+  const drawer = !!(params.get('r') || askParam)
   const otherPanel = !!(params.get('s') || params.get('plan'))
   const cur = drawerReq ? reqs?.find((r) => r.code === drawerReq) : undefined
   const defaultProject = pathname.startsWith('/projects/') ? pathname.split('/')[2] : pathname === '/requirements' ? loadPref('ks.reqs.project', '') || undefined : undefined
@@ -96,7 +100,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
           return nav('/settings')
         case 'next':
         case 'prev':
-          if (drawerReq) return emit('ks:req-step', a === 'next' ? 1 : -1)
+          if (drawer) return emit('ks:req-step', a === 'next' ? 1 : -1)
           if (!otherPanel) stepFocus(a === 'next' ? 1 : -1)
           return
         case 'pass':
@@ -109,7 +113,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
           return emit('ks:reqs-view', 'next')
       }
     },
-    [nav, drawerReq, otherPanel],
+    [nav, drawerReq, drawer, otherPanel],
   )
 
   useEffect(() => {
@@ -118,7 +122,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
       const res = resolveKey(e, {
         typing: isTyping(e.target as Element) || isTyping(document.activeElement),
         blocked: palette || help || newReq || newPlan || !!document.querySelector('[data-ks-modal]'),
-        drawer: !!drawerReq,
+        drawer,
         reviewing: cur?.status === 'review',
         reqPage: pathname === '/requirements',
         pendingG: pendingG.current > Date.now(),
@@ -132,7 +136,7 @@ export function CommandProvider({ children }: { children: ReactNode }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [palette, help, newReq, newPlan, drawerReq, cur?.status, pathname, run, desktop])
+  }, [palette, help, newReq, newPlan, drawer, cur?.status, pathname, run, desktop])
 
   const ctx = useMemo(() => ({ openPalette: () => setPalette(true), openHelp: () => setHelp(true) }), [])
   return (
@@ -169,6 +173,7 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
   const openPlan = useOpenPlan()
   const openSession = useOpenSession()
   const openRef = useOpenRef()
+  const openAsk = useOpenAsk()
   const nav = useNavigate()
   const [, setTheme] = useTheme()
   const { pathname } = useLocation()
@@ -251,7 +256,12 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
         boost: d.status === 'pending' ? 30 : 0,
         icon: <RefChip code={d.code} link={false} />,
         meta: d.status === 'pending' ? <TurnSeal /> : null,
-        run: go(() => openRef(d.code)),
+        // 待决策点开审批抽屉（R-177）；挂在待验收需求上的，和验收在同一件里处理
+        run: go(() => {
+          if (d.status !== 'pending') return openRef(d.code)
+          const r = d.requirement_code ? reqs?.find((x) => x.code === d.requirement_code) : undefined
+          openAsk(r?.status === 'review' ? `r:${r.code}` : `d:${d.code}`)
+        }),
       })
     for (const p of plans ?? [])
       items.push({
@@ -305,7 +315,7 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
           run: go(() => nav(`/projects/${p.id}`)),
         })
     return items
-  }, [cur, reqs, decs, plans, sessions, projects, pathname, onAction, close, openReq, openPlan, openSession, openRef, nav, setTheme])
+  }, [cur, reqs, decs, plans, sessions, projects, pathname, onAction, close, openReq, openPlan, openSession, openRef, openAsk, nav, setTheme])
 }
 
 type Section = { key: string; label: string; items: Item[] }

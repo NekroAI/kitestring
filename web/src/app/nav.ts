@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext } from 'react'
 import { useSearchParams } from 'react-router'
 
-// 详情面板通过 URL 参数打开（?s=会话键、?r=需求编号），任何页面都能打开、链接可分享。
+// 详情面板通过 URL 参数打开（?s=会话键、?r=需求编号、?plan=计划编号、?a=审批条目），任何页面都能打开、链接可分享。
 
 export function useOpenSession() {
   const [, setParams] = useSearchParams()
@@ -10,6 +10,7 @@ export function useOpenSession() {
       setParams((p) => {
         const n = new URLSearchParams(p)
         n.delete('r')
+        n.delete('a')
         n.set('s', key)
         return n
       }),
@@ -28,6 +29,7 @@ export function useOpenReq() {
       setParams((p) => {
         const n = new URLSearchParams(p)
         n.delete('s')
+        n.delete('a')
         n.delete('q')
         n.delete('qp')
         n.set('r', ref)
@@ -46,6 +48,7 @@ export function useOpenDraftQueue() {
       setParams((p) => {
         const n = new URLSearchParams(p)
         n.delete('s')
+        n.delete('a')
         n.set('r', ref)
         n.set('q', 'drafts')
         if (project) n.set('qp', project)
@@ -64,6 +67,7 @@ export function useOpenPlan() {
         const n = new URLSearchParams(p)
         n.delete('s')
         n.delete('r')
+        n.delete('a')
         n.set('plan', ref)
         return n
       }),
@@ -80,11 +84,28 @@ export function usePanelParams() {
         n.delete('s')
         n.delete('r')
         n.delete('plan')
+        n.delete('a')
         n.delete('q')
         n.delete('qp')
         return n
       }),
     [setParams],
   )
-  return { session: params.get('s'), req: params.get('r'), plan: params.get('plan'), close }
+  // a：审批抽屉（R-177），值是「要你处理」条目的键（见 app/asks.tsx）
+  return { session: params.get('s'), req: params.get('r'), plan: params.get('plan'), ask: params.get('a'), close }
+}
+
+// useOpenAsk：打开审批抽屉（?a=键，R-177；键见 app/asks.tsx），关掉其它抽屉。
+export function useOpenAsk() {
+  const [, setParams] = useSearchParams()
+  return useCallback(
+    (key: string) =>
+      setParams((p) => {
+        const n = new URLSearchParams(p)
+        for (const k of ['s', 'r', 'plan', 'q', 'qp']) n.delete(k)
+        n.set('a', key)
+        return n
+      }),
+    [setParams],
+  )
 }

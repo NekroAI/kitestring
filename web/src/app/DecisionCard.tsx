@@ -84,7 +84,8 @@ function Context({ text, expanded }: { text: string; expanded?: boolean }) {
 }
 
 // DecisionComposer：待决策，像回复消息一样作答。
-export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: boolean }) {
+// drawer：在审批抽屉里（R-177）——正文在抽屉中部滚动，附言与判断按钮固定在抽屉底部；打开时焦点放进来，⌘↵ / 数字键直接可用。
+export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedded?: boolean; drawer?: boolean }) {
   const now = useNow()
   const { drafts, setDraft, queued, sealed, send, cancel } = useOutbox()
   const { closeDecision } = useActions()
@@ -126,6 +127,10 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
   useEffect(() => {
     if (draft.choice === 'other' || draft.noteOpen) noteRef.current?.focus()
   }, [draft.choice, draft.noteOpen])
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (drawer) box.current?.focus({ preventScroll: true })
+  }, [drawer, d.code])
 
   const choose = (c: number | 'other') => setDraft(d.code, { choice: draft.choice === c ? null : c })
   // 回答 / 批准 / 拒绝（R-161、R-176）：都先进撤销期（发件箱），卡片底部换成同一个撤销条。
@@ -158,23 +163,8 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
     else if (e.key === '0' && options.length) choose('other')
   }
 
-  return (
-    <AnnotateTarget.Provider
-      value={(f) => {
-        setIncoming((x) => [...x, f])
-      }}
-    >
-    <div
-      tabIndex={-1}
-      onKeyDown={onKey}
-      onClick={(e) => e.stopPropagation()}
-      className={cx(
-        'group relative overflow-hidden rounded-2xl border bg-surface outline-none transition-[box-shadow,border] focus-within:shadow-pop',
-        answer && !sendingAt ? 'border-accent/50' : 'border-line',
-        !embedded && 'shadow-card',
-      )}
-    >
-      <div className={cx('space-y-3', embedded ? 'p-3.5 sm:p-4' : 'p-4 sm:p-5')}>
+  const body = (
+    <>
         <Source d={d} now={now} embedded={embedded} />
         <HoldNote code={d.code} />
         <div>
@@ -302,6 +292,10 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           </div>
         )}
 
+    </>
+  )
+  const foot = (
+    <>
         {deviates && !sendingAt && (
           <Input
             value={draft.reason ?? ''}
@@ -318,7 +312,8 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
           <Verdict
             mode={approval ? 'verdict' : 'answer'}
             scene={scene}
-            stack={free}
+            stack={free || drawer}
+            size={drawer ? 'md' : undefined}
             noteRef={noteRef}
             note={draft.note}
             onNote={(v) => setDraft(d.code, { note: v })}
@@ -354,7 +349,41 @@ export function DecisionComposer({ d, embedded }: { d: Decision; embedded?: bool
             }
           />
         )}
-      </div>
+    </>
+  )
+  return (
+    <AnnotateTarget.Provider
+      value={(f) => {
+        setIncoming((x) => [...x, f])
+      }}
+    >
+    <div
+      ref={box}
+      tabIndex={-1}
+      onKeyDown={onKey}
+      onClick={(e) => e.stopPropagation()}
+      className={cx(
+        'group relative outline-none',
+        drawer ? 'flex min-h-0 flex-1 flex-col' : 'overflow-hidden rounded-2xl border bg-surface transition-[box-shadow,border] focus-within:shadow-pop',
+        !drawer && (answer && !sendingAt ? 'border-accent/50' : 'border-line'),
+        !embedded && !drawer && 'shadow-card',
+      )}
+    >
+      {drawer ? (
+        <>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-bg/40 px-4 py-5 sm:px-5">
+            {body}
+          </div>
+          <footer className="shrink-0 space-y-2.5 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
+            {foot}
+          </footer>
+        </>
+      ) : (
+        <div className={cx('space-y-3', embedded ? 'p-3.5 sm:p-4' : 'p-4 sm:p-5')}>
+        {body}
+        {foot}
+        </div>
+      )}
       <Seal show={!!sealedNow} act={sendingAct} scene={scene} />
     </div>
     </AnnotateTarget.Provider>
