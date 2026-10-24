@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Navigate, useNavigate, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -14,11 +14,10 @@ import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segme
 import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
 
-type Tab = 'devices' | 'notify' | 'projects' | 'prompts' | 'ai' | 'appearance' | 'account'
+type Tab = 'devices' | 'notify' | 'prompts' | 'ai' | 'appearance' | 'account'
 const tabs: { id: Tab; icon: LucideIcon }[] = [
   { id: 'devices', icon: Monitor },
   { id: 'notify', icon: Bell },
-  { id: 'projects', icon: FolderGit2 },
   { id: 'prompts', icon: ScrollText },
   { id: 'ai', icon: Sparkles },
   { id: 'appearance', icon: Palette },
@@ -957,20 +956,15 @@ function Account({ version }: { version: string }) {
 export default function SettingsPage({ version }: { version: string }) {
   const [params, setParams] = useSearchParams()
   const tab = (tabs.find((x) => x.id === params.get('tab'))?.id ?? 'devices') as Tab
-  const navigate = useNavigate()
-  // 项目设置只在项目页维护一份（R-51）：这里的“项目”页签直接跳过去
   const go = (id: Tab) =>
-    id === 'projects'
-      ? navigate('/projects')
-      : setParams((p) => {
-          const n = new URLSearchParams(p)
-          n.set('tab', id)
-          return n
-        })
+    setParams((p) => {
+      const n = new URLSearchParams(p)
+      n.set('tab', id)
+      return n
+    })
   const body: Record<Tab, ReactNode> = {
     devices: <Devices />,
     notify: <Notify />,
-    projects: <Navigate to="/projects" replace />,
     prompts: <RolePrompts />,
     ai: <AI />,
     appearance: <Appearance />,
