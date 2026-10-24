@@ -31,14 +31,16 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
   const ds = displayState(s)
   const a = activity(s)
   const ended = s.state === 'ended'
+  const fade = ended && 'opacity-60 transition-opacity group-hover:opacity-100'
   return (
     <Ctx items={menu(s)} className="rounded-xl">
     <button
       onClick={() => open(s.key)}
-      className={cx('group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-hover/70', ended && 'opacity-60 hover:opacity-100')}
+      className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-hover/70"
     >
+      {/* 结束的会话整行变淡，但工具图标不跟着淡，一眼认出是 Claude 还是 Codex（R-187） */}
       <ToolMark tool={s.tool} size="sm" />
-      <div className="min-w-0 flex-1">
+      <div className={cx('min-w-0 flex-1', fade)}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-fg">{sessionTitle(s)}</span>
           {showProject && s.project_name && <span className="shrink-0 text-xs text-fg-3">{s.project_name}</span>}
@@ -52,11 +54,11 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
         )}
       </div>
       {/* 一行档只放：标题、身份、最后一句话、设备、状态（R-147） */}
-      <span className="hidden shrink-0 items-center gap-1 text-xs text-fg-3 @lg:flex">
+      <span className={cx('hidden shrink-0 items-center gap-1 text-xs text-fg-3 @lg:flex', fade)}>
         <Monitor className="size-3.5" />
         {s.device_name}
       </span>
-      <span className="shrink-0">{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} bg={bgCount(s)} />}</span>
+      <span className={cx('shrink-0', fade)}>{ended ? <span className="text-xs text-fg-3">{relTime(s.last_active_at, now)}</span> : <StatusPill state={ds} since={s.state_since} now={now} bg={bgCount(s)} />}</span>
     </button>
     </Ctx>
   )

@@ -5,7 +5,7 @@ import { t } from '../i18n'
 import { cx, duration, relTime, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { Ctx } from '../ui/contextMenu'
-import { displayState, RoleBadge } from '../ui/marks'
+import { displayState, RoleBadge, ToolMark } from '../ui/marks'
 import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
@@ -13,7 +13,7 @@ import { sessionTitle, splitTool } from './SessionCard'
 import { liveTasks, type BgTask } from './tasks'
 import { reducedMotion } from './verdict'
 
-// 工作台的会话泳道（R-170，D-228 原型）：每个会话一条——左边标题、身份（D-177 描边胶囊 + 在线点）、
+// 工作台的会话泳道（R-170，D-228 原型）：每个会话一条——左边工具图标（Claude / Codex，R-187）、标题、身份（D-177 描边胶囊 + 在线点）、
 // 状态标（灯与状态字合一，带已运行时长）；中间近 10 分钟的时间线（每次工具调用一个刻度，右边是现在）；
 // 右边当前动作。泳道按内容给高度（在跑的高、等你适中、待命 / 空闲带最后一句话和上次动作），后台任务按 R-162 作为子泳道挂在会话下面。
 // 动效只在有动作时出现：灯在主会话调用工具时闪一下，动作流新进一行时滑入一次；只有「等你」的灯会呼吸。
@@ -346,6 +346,7 @@ function LastAct({ s, now, className }: { s: Session; now: number; className?: s
 export type LaneMode = 'full' | 'mid' | 'narrow' | 'phone'
 
 // 时间线一列有上限（R-170 返工：超宽屏上不让它横跨大半屏），多出的宽度给左边的标题和右边的动作 / 最后一句话。
+// 动作列在超宽屏上也不无限拉宽：工作台按三列合计约 97rem 给中栏封顶（R-187，pages/Workbench.tsx 的 laneMax）。
 const cols: Record<LaneMode, string> = {
   full: 'grid-cols-[minmax(230px,19rem)_minmax(160px,34rem)_minmax(260px,1fr)]',
   mid: 'grid-cols-[minmax(220px,17rem)_minmax(0,1fr)]',
@@ -413,6 +414,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
   const id = (
     <div className={cx('flex min-w-0 flex-col justify-center gap-1 px-3.5', quiet ? 'py-2' : 'py-2.5')}>
       <div className="flex min-w-0 items-center gap-2">
+        <ToolMark tool={s.tool} size="sm" />
         <span className={cx('truncate font-semibold', quiet ? 'text-[14px] text-fg-2' : 'text-[15px] text-fg')}>{sessionTitle(s)}</span>
         <RoleBadge s={s} />
       </div>
@@ -501,7 +503,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: Lan
 
 // ---------- 顶部的风 ----------
 
-// Wind：简报位背后的一条波形，随整体活跃度起伏。只在有新的工具调用后起伏几秒，平时静止；
+// Wind：简报位背后的一条波形，随整体活跃度起伏；只是背景装饰，线色很浅（R-187），不抢正文。只在有新的工具调用后起伏几秒，平时静止；
 // 标签页隐藏、减少动效时不动，断线时压平变灰。
 export function Wind() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -530,8 +532,8 @@ export function Wind() {
       const e = connected ? 0.15 + energy * 0.85 : 0.04
       ;(
         [
-          [connected ? c.run : c.idle, 1, 0.35],
-          [connected ? c.park : c.idle, 0.6, 0.22],
+          [connected ? c.run : c.idle, 1, 0.15],
+          [connected ? c.park : c.idle, 0.6, 0.09],
         ] as const
       ).forEach(([col, k, a], j) => {
         g.beginPath()

@@ -232,7 +232,6 @@ export const zh = {
     laneSubShort: (run: number, total: number) => `${run} 在跑 / 共 ${total}`,
     groupSub: (run: number, park: number) => [run && `${run} 在跑`, park && `${park} 待命`].filter(Boolean).join(' · '),
     endedFoot: (n: number) => `已结束 ${n}`,
-    axis: '时间线：近 10 分钟，右边是现在',
     noAsk: '暂时没有要你处理的事',
     noLanes: '还没有会话。在任意终端里打开 Claude Code 或 Codex，它会出现在这里。',
     handled: '刚处理',
@@ -240,7 +239,6 @@ export const zh = {
     briefMore: (n: number) => `另有 ${n} 条`,
     offline: '已断线 · 画面已静止，正在重连',
     sumLine: (todo: number, run: number) => `${todo} 件要你处理 · ${run} 个在跑`,
-    legend: { run: '在跑 · 动作时闪一下', you: '等你', park: '待命', idle: '空闲' },
     asksN: (n: number) => `+${n} 在等你回复`,
     // R-170 返工：空状态、最近结束、离开期间小结收起
     allClear: '一切正常',

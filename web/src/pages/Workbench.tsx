@@ -88,6 +88,9 @@ function useBox() {
 
 // ---------- 版面 ----------
 
+// 宽版泳道三列的上限（标题 19rem + 时间线 34rem + 动作 44rem）加上滚动区的内边距，见 app/lanes.tsx 的 cols.full
+const laneMax = (19 + 34 + 44) * 16 + 12
+
 function PaneHead({ title, n, children }: { title: string; n?: number | string; children?: React.ReactNode }) {
   return (
     <header className="flex h-8 min-w-0 shrink-0 items-center gap-2 px-0.5">
@@ -95,26 +98,6 @@ function PaneHead({ title, n, children }: { title: string; n?: number | string; 
       {n !== undefined && <span className="min-w-0 truncate text-[12.5px] text-fg-3 tabular">{n}</span>}
       {children}
     </header>
-  )
-}
-
-const legendTone = [
-  ['run', 'bg-run-soft text-run', 'var(--run)'],
-  ['you', 'bg-reply-soft text-reply', 'var(--reply)'],
-  ['park', 'bg-accent-soft text-accent', 'var(--accent)'],
-  ['idle', 'text-fg-3 ring-1 ring-inset ring-line', ''],
-] as const
-
-function Legend() {
-  return (
-    <div className="flex shrink-0 items-center gap-1.5 self-start pt-2.5 text-[11.5px] whitespace-nowrap">
-      {legendTone.map(([k, cls, c]) => (
-        <span key={k} className={cx('inline-flex items-center gap-1.5 rounded-full py-0.5 pr-2 pl-1.5', cls)}>
-          <i className={cx('desk-lamp', k === 'idle' && 'ring-[1.5px] ring-idle ring-inset')} style={{ ['--lamp' as string]: c || 'transparent' }} />
-          {t.desk.legend[k]}
-        </span>
-      ))}
-    </div>
   )
 }
 
@@ -205,9 +188,23 @@ export default function WorkbenchPage() {
   const hasAsks = asks.length > 0 || wb.loading
 
   // 左右栏宽度（rem 按 16px 算），中栏拿剩下的；泳道版式按中栏宽度定
-  const leftW = hasAsks ? (roomy ? 26 : W >= 1180 ? 23 : rail ? 20 : 19) * 16 : (roomy ? 18 : W >= 1180 ? 16 : 14) * 16
-  const rightW = rail ? (roomy ? 23 : W >= 1180 ? 21 : 16.5) * 16 : 0
+  let leftW = hasAsks ? (roomy ? 26 : W >= 1180 ? 23 : rail ? 20 : 19) * 16 : (roomy ? 18 : W >= 1180 ? 16 : 14) * 16
+  let rightW = rail ? (roomy ? 23 : W >= 1180 ? 21 : 16.5) * 16 : 0
   const gaps = roomy ? 40 : W >= 1180 ? 32 : 28
+  // 超宽屏（带鱼屏）：中栏比泳道三列的上限还宽时封顶（R-187），不让动作列拉出大片空白；多出来的宽度按 6:4 先分给
+  // 「要你处理」（最多 48rem）和「风向」（最多 36rem），一边到顶就给另一边，两边都到顶后剩下的才还给中栏。1920 及以下不触发。
+  if (rail) {
+    const extra = W - leftW - rightW - gaps - laneMax
+    if (extra > 0) {
+      const lCap = hasAsks ? 48 * 16 : leftW
+      const rCap = 36 * 16
+      let l = Math.min(lCap - leftW, extra * 0.6)
+      let r = Math.min(rCap - rightW, extra - l)
+      l = Math.min(lCap - leftW, extra - r)
+      leftW += l
+      rightW += r
+    }
+  }
   const centerW = W - leftW - rightW - gaps
   const mode: LaneMode = phone ? 'phone' : centerW >= 720 ? 'full' : centerW >= 440 ? 'mid' : 'narrow'
 
@@ -364,16 +361,14 @@ export default function WorkbenchPage() {
         )}
         {!wb.loading && endedEls}
       </div>
-      <div className="flex shrink-0 items-center gap-2 px-0.5 text-xs text-fg-3">
-        {desk.older > 0 && (
+      {desk.older > 0 && (
+        <div className="flex shrink-0 items-center gap-2 px-0.5 text-xs text-fg-3">
           <button onClick={() => setShowOlder(!showOlder)} aria-expanded={showOlder} className="inline-flex shrink-0 items-center gap-1 hover:text-fg-2">
             <ChevronRight className={cx('size-3.5 transition-transform', showOlder && 'rotate-90')} />
             {t.desk.olderEnded(desk.older)}
           </button>
-        )}
-        {desk.older > 0 && !phone && <span aria-hidden>·</span>}
-        {!phone && <span className="truncate">{t.desk.axis}</span>}
-      </div>
+        </div>
+      )}
     </section>
   )
 
@@ -382,7 +377,7 @@ export default function WorkbenchPage() {
     <aside className={cx('flex min-h-0 min-w-0 flex-col gap-2.5', phone && tab !== 'side' && 'hidden')}>
       {!phone && <PaneHead title={t.desk.paneWind} />}
       <PlansRail className={cx('shrink-0', !phone && 'desk-scroll max-h-[42%] overflow-y-auto')} />
-      <RecentRail now={now} className={cx(!phone ? 'min-h-[8rem] flex-1' : 'max-h-[60vh]')} />
+      <RecentRail now={now} fill={!phone} className={cx(!phone ? 'min-h-[8rem] flex-1' : 'max-h-[60vh]')} />
       <TeamRail groups={wb.projects} className="shrink-0" />
     </aside>
   )
@@ -408,8 +403,8 @@ export default function WorkbenchPage() {
   return (
     <div ref={setEl} style={fillH ? { height: fillH } : undefined} className="min-w-0">
       <div style={{ height: fillH }} className={cx('flex min-w-0 flex-col', phone ? 'gap-3' : 'gap-3.5')}>
-        {/* 顶栏：标题与件数 · 简报位（背后的风，最多两行） · 状态说明 */}
-        <div className={cx('grid min-w-0 items-start gap-x-4 gap-y-2.5', phone ? 'grid-cols-1' : W >= 1400 ? 'grid-cols-[auto_minmax(0,1fr)_auto]' : 'grid-cols-[auto_minmax(0,1fr)]')}>
+        {/* 顶栏：标题与件数 · 简报位（背后的风，最多两行）；不放状态图例（R-187） */}
+        <div className={cx('grid min-w-0 items-start gap-x-4 gap-y-2.5', phone ? 'grid-cols-1' : 'grid-cols-[auto_minmax(0,1fr)]')}>
           <div className="flex min-w-0 items-baseline gap-3 pt-2">
             <h1 className="shrink-0 font-display text-2xl leading-none font-bold tracking-wider text-fg">{t.home.title}</h1>
             <span className="truncate text-[13px] whitespace-nowrap text-fg-3 tabular">{t.desk.sumLine(todo.length, run)}</span>
@@ -422,7 +417,6 @@ export default function WorkbenchPage() {
             )}
           </div>
           <BriefStrip sessions={wb.sessions} now={now} />
-          {!phone && W >= 1400 && <Legend />}
           {!rail && <PlanChips className={cx(!phone && 'col-span-2')} />}
           {phone && (
             <div role="tablist" className="flex gap-1.5">
