@@ -199,8 +199,8 @@ func TestRecommendDevs(t *testing.T) {
 	if err := c.Do(ctx, "GET", "/agent/decisions/"+d.Code, nil, &cur); err != nil {
 		t.Fatal(err)
 	}
-	if !cur.TimedOut || cur.Status == store.DecPending {
-		t.Fatalf("超时后应记为超时、不再待批：%+v", cur)
+	if !cur.TimedOut || cur.Status == store.DecPending || cur.Verdict != store.VerdictRejected {
+		t.Fatalf("超时后应记为超时、视为拒绝（verdict = rejected，R-239）、不再待批：%+v", cur)
 	}
 	if code := e.callStatus("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": d.Code, "answer": "批准"}}}); code/100 == 2 {
 		t.Fatal("超时后不能再答")

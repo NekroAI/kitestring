@@ -223,6 +223,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				Choices []int    `json:"choices,omitempty" doc:"要拍板的点：逐点选第几个（从 0 开始）"`
 				Reject  bool     `json:"reject,omitempty"`
 				Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）"`
+				Verdict string   `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：批准还是拒绝（R-239）"`
 			}
 		}) (*decisionOut, error) {
 			d0, err := h.store.GetDecision(ctx, in.Ref)
@@ -246,7 +247,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				}
 				choices = in.Body.Choices
 			}
-			d, err := h.store.AnswerDecisionPoints(ctx, d0.ID, answer, files, choices, in.Body.Reason)
+			d, err := h.store.AnswerDecisionPoints(ctx, d0.ID, answer, files, choices, in.Body.Reason, answerVerdict(in.Body.Verdict, in.Body.Reject))
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -307,6 +308,7 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 				Reason     string `json:"reason" doc:"为什么这样答、为什么不必等用户（必填）"`
 				Risk       string `json:"risk" doc:"你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档"`
 				Choices    []int  `json:"choices,omitempty" doc:"要拍板的点：逐点选第几个（从 0 开始）"`
+				Verdict    string `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：代答批准还是拒绝（R-239）；不填时按答复开头的「批准 / 拒绝」记一次"`
 			}
 		}) (*decisionOut, error) {
 			d0, err := h.store.GetDecision(ctx, in.Ref)
@@ -328,7 +330,7 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 			if answer == "" {
 				return nil, huma.Error400BadRequest("答复不能为空")
 			}
-			d, err := h.store.ProxyAnswerDecision(ctx, d0.ID, x.Key, answer, b.Reason, eff, choices)
+			d, err := h.store.ProxyAnswerDecision(ctx, d0.ID, x.Key, answer, b.Reason, eff, choices, b.Verdict)
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
 			}

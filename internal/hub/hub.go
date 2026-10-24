@@ -322,10 +322,10 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	case next.Background:
 		// 后台任务不生成标题 / 摘要，不占模型额度（R-179）
 	case ev.Name == "UserPromptSubmit" && ev.Source != protocol.SourceAuto:
-		if next.DigestDone != "" || next.DigestAsk != "" {
+		if next.DigestDone != "" {
 			_ = h.store.ClearDigest(ctx, key)
 		}
-		if next.ReplyAsk != "" { // 你在终端里回了它，不再算在等你回复（R-117）
+		if next.ReplyAsk != "" { // 你在终端里回了它，ks wait 不再按上一轮的问句提醒它（R-117）
 			_ = h.store.ClearReplyAsk(ctx, key)
 		}
 		go h.aiOnPrompt(key, ev.Prompt)

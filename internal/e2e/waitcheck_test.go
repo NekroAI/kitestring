@@ -16,7 +16,7 @@ import (
 )
 
 // ks wait 开始前的自查（R-117）：名下没有等用户处理的事项时先提示——最后回复像在问用户时提示加重，
-// 只是待命时轻提一句；有待答决策 / 待验收需求时不提示。在等你回复的会话可在工作台直接回复，回复会唤醒 ks wait。
+// 只是待命时轻提一句；有待答决策 / 待验收需求时不提示。可在会话面板上直接给它发一句话，会唤醒 ks wait。
 func TestWaitCheck(t *testing.T) {
 	e := setup(t)
 	cwd, _ := os.Getwd()
@@ -48,13 +48,12 @@ func TestWaitCheck(t *testing.T) {
 		e.waitFor("一轮结束", func() bool { s := e.session(key); return s.State == store.StateWaitReply })
 	}
 
-	// 1. 最后回复在问用户、名下没有正式事项 → 加重提示；工作台拿到「在等你回复」的摘录
+	// 1. 最后回复在问用户、名下没有正式事项 → 加重提示（摘录只给 ks wait 用，不给网页，R-239）
 	turn("改登录页", "登录页改好了，测试都过了。\n\n要不要现在提交？", nil)
-	e.waitFor("记下在等你回复", func() bool { return e.session(key).ReplyAsk != "" })
-	if ask := e.session(key).ReplyAsk; !strings.Contains(ask, "要不要现在提交") || !strings.Contains(ask, "登录页改好了") {
+	got := run()
+	if ask := got.Ask; !strings.Contains(ask, "要不要现在提交") || !strings.Contains(ask, "登录页改好了") {
 		t.Fatalf("摘录应是最后一段（短时带上前一段）：%q", ask)
 	}
-	got := run()
 	if got.Pending != 0 || !got.Asking || !strings.Contains(got.Hint, "像是在问用户") || !strings.Contains(got.Hint, "decision_raise") || !strings.Contains(got.Hint, "照常等待") {
 		t.Fatalf("在问用户却没有正式事项，应加重提示：%+v", got)
 	}
@@ -76,8 +75,8 @@ func TestWaitCheck(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("回复后 ks wait 没有返回")
 	}
-	if s := e.session(key); s.ReplyAsk != "" {
-		t.Fatalf("回复后不应再显示在等你回复：%q", s.ReplyAsk)
+	if got := run(); got.Asking {
+		t.Fatalf("回复后不应再按上一轮的问句提醒：%+v", got)
 	}
 
 	// 3. 只是汇报、继续待命 → 轻提示，不说“像是在问用户”
@@ -85,9 +84,6 @@ func TestWaitCheck(t *testing.T) {
 	got = run()
 	if got.Asking || got.Hint == "" || strings.Contains(got.Hint, "像是在问用户") || !strings.Contains(got.Hint, "只是待命") {
 		t.Fatalf("单纯待命应轻提示：%+v", got)
-	}
-	if e.session(key).ReplyAsk != "" {
-		t.Fatal("汇报性质的回复不应算在等你回复")
 	}
 
 	// 4. 后台挂 ks wait 时这一轮还没结束：以对话记录里最新的回复为准

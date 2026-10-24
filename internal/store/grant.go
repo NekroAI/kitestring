@@ -196,12 +196,18 @@ func (s *Store) RevokeGrant(ctx context.Context, ref string) (Grant, error) {
 }
 
 // ProxyAnswerDecision 记下参谋代答：状态进入“已决策待接收”，送达提问方；代答人、理由、风险档、原文都留在决策上。
-func (s *Store) ProxyAnswerDecision(ctx context.Context, id, by, answer, reason, risk string, choices []int) (Decision, error) {
+// verdict 是批准类决策的结论（R-239），规则同 AnswerDecisionPoints。
+func (s *Store) ProxyAnswerDecision(ctx context.Context, id, by, answer, reason, risk string, choices []int, verdict string) (Decision, error) {
 	answer = strings.TrimSpace(answer)
+	d0, err := s.GetDecision(ctx, id)
+	if err != nil {
+		return d0, err
+	}
+	verdict = answerVerdict(d0, answer, verdict)
 	n := now()
-	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_files = '[]', choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '',
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_files = '[]', choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '', verdict = ?,
 		proxy_by = ?, proxy_reason = ?, proxy_risk = ?, proxy_answer = ?, proxy_at = ?, overridden_at = '' WHERE id = ? AND status = ?`,
-		DecAnswered, answer, blocks.Encode(choices), n, by, strings.TrimSpace(reason), risk, answer, n, id, DecPending)
+		DecAnswered, answer, blocks.Encode(choices), n, verdict, by, strings.TrimSpace(reason), risk, answer, n, id, DecPending)
 	if err != nil {
 		return Decision{}, err
 	}

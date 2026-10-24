@@ -15,7 +15,7 @@ import (
 type AIFeatures struct {
 	Summary       bool `json:"summary,omitempty"`        // 会话一句话进展
 	Title         bool `json:"title,omitempty"`          // 会话标题 + 阶段
-	Digest        bool `json:"digest,omitempty"`         // 等你回复时提炼“做了什么 / 等你决定什么”
+	Digest        bool `json:"digest,omitempty"`         // 一轮结束时提炼“这一轮做了什么”（不再概括在等你什么，R-239）
 	DecisionTitle bool `json:"decision_title,omitempty"` // 决策短标题
 	Recap         bool `json:"recap,omitempty"`          // 时段回顾
 }
@@ -90,7 +90,7 @@ func (h *Hub) aiOnPrompt(key, prompt string) {
 	}
 }
 
-// aiOnStop 在一轮结束时，按开启的功能一次调用生成摘要、标题、等你回复要点。
+// aiOnStop 在一轮结束时，按开启的功能一次调用生成摘要、标题、这一轮做了什么。
 // 不再让模型猜“阶段”：它只反映最后一轮说了什么、待命后不会刷新，与状态胶囊和需求印记重复且常常过时（R-125）。
 func (h *Hub) aiOnStop(key, prompt, reply string) {
 	s, ok := h.aiSettings()
@@ -118,21 +118,22 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 		}
 	}
 	if s.AI.Digest {
-		fields = append(fields, `"done": 这一轮助手做成了什么，一句话，不超过 40 字`, `"ask": 助手在等用户决定或提供什么；没有明确需要用户做的就输出空字符串，不超过 40 字`)
+		// 只记做了什么；会话在不在等用户只认决策、验收、授权、提问工具这些明确记录，不让模型从回复里概括（R-239）
+		fields = append(fields, `"done": 这一轮助手做成了什么，一句话，不超过 40 字`)
 	}
 	system := "你是开发进度速记员。根据用户给 AI 编程助手的最后一条指令和助手这一轮的最后回复，输出一个 JSON 对象，只包含以下字段：\n" + strings.Join(fields, "\n") + "\n用中文，简洁具体，不要客套。只输出 JSON。"
 	user := fmt.Sprintf("最后一条指令：\n%s\n\n助手最后回复：\n%s", prompt, reply)
-	var out struct{ Summary, Title, Done, Ask string }
+	var out struct{ Summary, Title, Done string }
 	if err := summary.ChatJSON(h.aiCtx(ctx, aiTurn), s.Summary, system, user, 600, &out); err != nil {
 		h.log.Warn("生成会话摘要失败", "session", key, "err", err)
 		return
 	}
-	a := store.SessionAI{Summary: summary.Clean(out.Summary, 80), Title: summary.Clean(titleNoise.Replace(out.Title), 20), DigestDone: summary.Clean(out.Done, 80), DigestAsk: summary.Clean(out.Ask, 80)}
+	a := store.SessionAI{Summary: summary.Clean(out.Summary, 80), Title: summary.Clean(titleNoise.Replace(out.Title), 20), DigestDone: summary.Clean(out.Done, 80)}
 	if !s.AI.Summary {
 		a.Summary = ""
 	}
 	if !s.AI.Digest {
-		a.DigestDone, a.DigestAsk = "", ""
+		a.DigestDone = ""
 	}
 	if err := h.store.SetSessionAI(ctx, key, a); err != nil {
 		return

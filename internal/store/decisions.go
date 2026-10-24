@@ -66,12 +66,15 @@ type Decision struct {
 	// Summary 是方案要点，每条一行（通常以需求编号开头）；有它时网页把完整说明折叠起来。
 	Summary          []string   `json:"summary,omitempty"`
 	Recommendation   string     `json:"recommendation"`
+	RecOption        int        `json:"rec_option" doc:"推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）"`
+	RecPick          *int       `json:"-"`           // 只用于创建：提问方明确给的推荐序号；CreateDecision 据此和推荐文字定 RecOption
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
 	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell,release,edit"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
 	Answer           string     `json:"answer"`
+	Verdict          string     `json:"verdict" enum:",approved,rejected" doc:"批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空"`
 	AnswerReason     string     `json:"answer_reason,omitempty" doc:"用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent"`
 	CreatedAt        time.Time  `json:"created_at"`
 	AnsweredAt       *time.Time `json:"answered_at,omitempty"`
@@ -138,7 +141,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
 	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
-	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to
+	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -156,7 +159,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
 		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
-		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo)
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption)
 	d.ExpiresAt = parseNullTS(sql.NullString{String: expires, Valid: expires != ""})
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
@@ -222,8 +225,12 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		if d.ExpiresAt != nil {
 			expires = ts(*d.ExpiresAt)
 		}
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo)
+		rec := RecOption(d.Options, d.Recommendation, d.RecPick)
+		if d.Approval {
+			rec = -1
+		}
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to, rec_option) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo, rec)
 		if err != nil {
 			return err
 		}
@@ -284,12 +291,14 @@ func (s *Store) queryDecs(ctx context.Context, q string, args ...any) ([]Decisio
 
 // AnswerDecision 记录用户答复，状态进入“已决策待接收”。已接收的决策允许改答，会重新进入待接收。
 func (s *Store) AnswerDecision(ctx context.Context, ref, answer string, files []FileRef) (Decision, error) {
-	return s.AnswerDecisionPoints(ctx, ref, answer, files, nil, "")
+	return s.AnswerDecisionPoints(ctx, ref, answer, files, nil, "", "")
 }
 
 // AnswerDecisionPoints 作答；choices 是逐点的选择（R-112），没有要拍板的点时为 nil；
 // reason 是可选的一句话理由（R-157），去空白、最多 200 字，改答时以最新一次为准。
-func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, files []FileRef, choices []int, reason string) (Decision, error) {
+// verdict 是批准类决策的结论（VerdictApproved / VerdictRejected，R-239），由作答方明确给出；
+// 旧客户端没给时按所选选项（答复开头的「批准 / 拒绝」）定一次并存下。非批准类决策忽略。
+func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, files []FileRef, choices []int, reason, verdict string) (Decision, error) {
 	d, err := s.GetDecision(ctx, ref)
 	if err != nil {
 		return d, err
@@ -306,12 +315,24 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 	// 你给参谋代答过的决策重新作答 = 推翻代答（R-163）：记下推翻时间，代答原文留在 proxy_answer
 	n := now()
 	_, reason = NormShelveReason("", reason)
-	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_reason = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '',
-		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, reason, filesJSON(files), blocks.Encode(choices), n, n, d.ID)
+	verdict = answerVerdict(d, answer, verdict)
+	_, err = s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, answer_reason = ?, answer_files = ?, choices = ?, answered_at = ?, delivered_at = NULL, delivered_turn = '', verdict = ?,
+		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, reason, filesJSON(files), blocks.Encode(choices), n, verdict, n, d.ID)
 	if err != nil {
 		return d, err
 	}
 	return s.GetDecision(ctx, d.ID)
+}
+
+// answerVerdict：批准类决策这次作答的结论。明确给出的为准；没给（旧客户端）时按所选选项文字定一次。
+func answerVerdict(d Decision, answer, verdict string) string {
+	if !d.Approval {
+		return ""
+	}
+	if verdict == VerdictApproved || verdict == VerdictRejected {
+		return verdict
+	}
+	return legacyVerdict(answer)
 }
 
 // ExpireRequest：限时请求到点仍没作答，按规则视为拒绝（R-169）——写入 answer、标记 timed_out，进入“已决策待接收”送给提问方。
@@ -324,8 +345,8 @@ func (s *Store) ExpireRequest(ctx context.Context, id, answer string) (Decision,
 	if d0.RequestKind == "" || d0.ExpiresAt == nil || time.Now().Before(*d0.ExpiresAt) || d0.Status != DecPending {
 		return d0, false, nil
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, timed_out = 1, answered_at = ?, delivered_at = NULL, delivered_turn = ''
-		WHERE id = ? AND status = ?`, DecAnswered, answer, now(), d0.ID, DecPending)
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, answer = ?, timed_out = 1, verdict = ?, answered_at = ?, delivered_at = NULL, delivered_turn = ''
+		WHERE id = ? AND status = ?`, DecAnswered, answer, VerdictRejected, now(), d0.ID, DecPending)
 	if err != nil {
 		return Decision{}, false, err
 	}

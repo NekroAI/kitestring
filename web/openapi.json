@@ -231,6 +231,14 @@
           },
           "session_key": {
             "type": "string"
+          },
+          "verdict": {
+            "description": "批准类决策：代答批准还是拒绝（R-239）；不填时按答复开头的「批准 / 拒绝」记一次",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -785,6 +793,11 @@
           },
           "recommendation": {
             "type": "string"
+          },
+          "recommended_option": {
+            "description": "推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配",
+            "format": "int64",
+            "type": "integer"
           },
           "requirement": {
             "description": "关联需求 ID 或 R-编号",
@@ -1718,6 +1731,11 @@
           "question": {
             "type": "string"
           },
+          "rec_option": {
+            "description": "推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）",
+            "format": "int64",
+            "type": "integer"
+          },
           "recommendation": {
             "type": "string"
           },
@@ -1788,6 +1806,15 @@
           "timed_out": {
             "type": "boolean"
           },
+          "verdict": {
+            "description": "批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空",
+            "enum": [
+              "",
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
+          },
           "voided": {
             "description": "改状态申请（R-188）：批准前需求状态已被改动，申请自动作废",
             "type": "boolean"
@@ -1803,11 +1830,13 @@
           "approval",
           "context_files",
           "recommendation",
+          "rec_option",
           "short_title",
           "kind",
           "answer_files",
           "status",
           "answer",
+          "verdict",
           "created_at"
         ],
         "type": "object"
@@ -2066,6 +2095,11 @@
           "question": {
             "type": "string"
           },
+          "rec_option": {
+            "description": "推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）",
+            "format": "int64",
+            "type": "integer"
+          },
           "recommendation": {
             "type": "string"
           },
@@ -2136,6 +2170,15 @@
           "timed_out": {
             "type": "boolean"
           },
+          "verdict": {
+            "description": "批准类决策的结论（R-239）：作答时明确记下，approved 批准 / rejected 拒绝（含超时视为拒绝，另见 timed_out）；其它决策为空",
+            "enum": [
+              "",
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
+          },
           "voided": {
             "description": "改状态申请（R-188）：批准前需求状态已被改动，申请自动作废",
             "type": "boolean"
@@ -2151,11 +2194,13 @@
           "approval",
           "context_files",
           "recommendation",
+          "rec_option",
           "short_title",
           "kind",
           "answer_files",
           "status",
           "answer",
+          "verdict",
           "created_at"
         ],
         "type": "object"
@@ -3286,6 +3331,14 @@
           "reject": {
             "description": "批准类的多点决策：拒绝（此时不要求逐点选择）",
             "type": "boolean"
+          },
+          "verdict": {
+            "description": "批准类决策：用户点的是批准还是拒绝（R-239），存成字段，放行检查和界面只读它",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -4566,6 +4619,14 @@
           },
           "reject": {
             "type": "boolean"
+          },
+          "verdict": {
+            "description": "批准类决策：批准还是拒绝（R-239）",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -6570,9 +6631,6 @@
           "device_name": {
             "type": "string"
           },
-          "digest_ask": {
-            "type": "string"
-          },
           "digest_done": {
             "type": "string"
           },
@@ -6639,9 +6697,6 @@
               "array",
               "null"
             ]
-          },
-          "reply_ask": {
-            "type": "string"
           },
           "requirements": {
             "items": {
@@ -6727,6 +6782,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "wait_kind": {
+            "enum": [
+              "",
+              "approval",
+              "question"
+            ],
+            "type": "string"
+          },
           "worktree": {
             "type": "boolean"
           }
@@ -6744,6 +6807,7 @@
           "dirty",
           "state",
           "state_detail",
+          "wait_kind",
           "last_prompt",
           "summary",
           "state_since",
@@ -6757,7 +6821,6 @@
           "activity",
           "title",
           "digest_done",
-          "digest_ask",
           "started_at",
           "last_active_at",
           "other_terminal",
@@ -12513,7 +12576,7 @@
             "description": "Error"
           }
         },
-        "summary": "回复在等你回复的会话（送达方式同留言）",
+        "summary": "给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒）",
         "tags": [
           "sessions"
         ]

@@ -194,20 +194,21 @@ type decisionWithdrawIn struct {
 }
 
 type decisionIn struct {
-	Question       string           `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，单独成立、无需上下文也能看懂（建议 60 字以内）"`
-	Context        string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的待拍板的点，那些另开决策。建议 400 字以内"`
-	Options        []string         `json:"options,omitempty" jsonschema:"候选选项"`
-	OptionImages   []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
-	Approval       bool             `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
-	Images         []string         `json:"images,omitempty" jsonschema:"问题附带的本机图片路径（例如待批准的方案图）"`
-	Recommendation string           `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
-	Requirement    string           `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
-	Blocks         []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
-	Points         []map[string]any `json:"points,omitempty" jsonschema:"要拍板的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
-	Summary        []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
-	FromDecision   string           `json:"from_decision,omitempty" jsonschema:"来源决策（如 D-142）：这条是接着哪条决策往下问的，或要推翻哪条决策的结论；决策详情里会连成后果链"`
-	Overturns      bool             `json:"overturns,omitempty" jsonschema:"为 true 表示这条要推翻 from_decision 那条的结论（例如用户之前选了 B，现在要改回 A）；接着往下问时不填"`
-	Risk           string           `json:"risk,omitempty" jsonschema:"风险档：low / medium / high，不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high。用户开了授权窗口时，low / medium 的决策可能由主助理代答（用户可推翻，推翻时会送来更正）"`
+	Question          string           `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，单独成立、无需上下文也能看懂（建议 60 字以内）"`
+	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的待拍板的点，那些另开决策。建议 400 字以内"`
+	Options           []string         `json:"options,omitempty" jsonschema:"候选选项"`
+	OptionImages      []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
+	Approval          bool             `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
+	Images            []string         `json:"images,omitempty" jsonschema:"问题附带的本机图片路径（例如待批准的方案图）"`
+	Recommendation    string           `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
+	RecommendedOption int              `json:"recommended_option,omitempty" jsonschema:"推荐的是第几个选项（从 1 开始，对应 options）；界面上这个选项标「推荐」，用户没选它时会问一句为什么。不填时只有 recommendation 与某个选项文字完全相同才标"`
+	Requirement       string           `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
+	Blocks            []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
+	Points            []map[string]any `json:"points,omitempty" jsonschema:"要拍板的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
+	Summary           []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
+	FromDecision      string           `json:"from_decision,omitempty" jsonschema:"来源决策（如 D-142）：这条是接着哪条决策往下问的，或要推翻哪条决策的结论；决策详情里会连成后果链"`
+	Overturns         bool             `json:"overturns,omitempty" jsonschema:"为 true 表示这条要推翻 from_decision 那条的结论（例如用户之前选了 B，现在要改回 A）；接着往下问时不填"`
+	Risk              string           `json:"risk,omitempty" jsonschema:"风险档：low / medium / high，不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high。用户开了授权窗口时，low / medium 的决策可能由主助理代答（用户可推翻，推翻时会送来更正）"`
 }
 
 type decisionAnswerIn struct {
@@ -216,6 +217,7 @@ type decisionAnswerIn struct {
 	Choices  []int  `json:"choices,omitempty" jsonschema:"决策有要拍板的点时，逐点选第几个选项（从 1 开始）"`
 	Reason   string `json:"reason" jsonschema:"为什么这样答、为什么不必等用户（必填，显示在用户的代答记录里）"`
 	Risk     string `json:"risk" jsonschema:"你自己的风险判断：low / medium / high（必填）。取它和提问方标的中更高的一档，超出用户授权的范围就会被拒"`
+	Verdict  string `json:"verdict,omitempty" jsonschema:"批准类决策（选项是批准 / 拒绝）必填：approved 批准 / rejected 拒绝，记成字段，放行检查只认它"`
 }
 
 type planReqIn struct {
@@ -490,6 +492,9 @@ func (t *tools) register(s *mcp.Server) {
 			if in.Approval {
 				body["approval"] = true
 			}
+			if in.RecommendedOption > 0 {
+				body["recommended_option"] = in.RecommendedOption - 1
+			}
 			cache := map[string]string{}
 			if len(in.Images) > 0 {
 				ids, err := t.uploadCached(ctx, in.Images, cache)
@@ -548,6 +553,9 @@ func (t *tools) register(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{Name: "decision_answer", Description: "主助理（Aide，也叫参谋）用：用户开了授权窗口时，在到期前代用户答复本项目范围内的决策。必须写 reason 和你自己的风险判断 risk（取它和提问方标的中更高的一档，超出窗口范围就拒绝）。硬规则永不代答：批准方案 / 计划、设计选型（带效果图）、产品方向、语义 / 接口 / 权限变更、不可逆或对外操作、验收，以及你自己提的决策；拿不准的留给用户。代答会留痕，用户可推翻，推翻时更正送回提问方。没有窗口、窗口已到期 / 撤销、或你不是被授权的 Adv 时会被拒绝。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionAnswerIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"session_key": t.sessionKey(ctx, req), "answer": in.Answer, "reason": in.Reason, "risk": in.Risk}
+			if in.Verdict != "" {
+				body["verdict"] = in.Verdict
+			}
 			if len(in.Choices) > 0 {
 				cs := make([]int, len(in.Choices))
 				for i, c := range in.Choices {

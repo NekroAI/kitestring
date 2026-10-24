@@ -431,6 +431,7 @@ func runAnswer(args []string) error {
 	answer := fs.String("answer", "", "答复；有要拍板的点时是附言")
 	reason := fs.String("reason", "", "为什么这样答、为什么不必等用户（必填）")
 	risk := fs.String("risk", "", "你自己的风险判断：low / medium / high（必填），取它和提问方标的中更高的一档")
+	verdict := fs.String("verdict", "", "批准类决策必填：approved 批准 / rejected 拒绝")
 	var choices intList
 	fs.Var(&choices, "choice", "有要拍板的点时逐点选第几个（从 1 开始），按点的顺序重复")
 	if err := parseAnywhere(fs, args); err != nil {
@@ -440,6 +441,9 @@ func runAnswer(args []string) error {
 		return fmt.Errorf("用法：ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low|medium|high [--choice 1 --choice 2]（只有被授权的 Adv 在用户的授权窗口内能用）")
 	}
 	body := map[string]any{"session_key": cliSession(*session), "answer": *answer, "reason": *reason, "risk": *risk}
+	if *verdict != "" {
+		body["verdict"] = *verdict
+	}
 	if len(choices) > 0 {
 		cs := make([]int, len(choices))
 		for i, c := range choices {
@@ -465,7 +469,8 @@ func runDecision(args []string) error {
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	question := fs.String("question", "", "问题：一句话，只问一件事（建议 60 字以内）")
 	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的待拍板的点另开决策（建议 400 字以内）")
-	rec := fs.String("recommend", "", "推荐")
+	rec := fs.String("recommend", "", "推荐及理由")
+	recOpt := fs.Int("recommend-option", 0, "推荐的是第几个 --option（从 1 开始）；不填时只有 --recommend 与某个选项文字完全相同才标推荐")
 	req := fs.String("req", "", "关联需求")
 	risk := fs.String("risk", "", "风险档 low / medium / high，不填按 high；产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high")
 	fromDec := fs.String("from", "", "来源决策（D-x）：接着哪条决策往下问，或要推翻哪条")
@@ -495,6 +500,9 @@ func runDecision(args []string) error {
 	}
 	if *approval {
 		body["approval"] = true
+	}
+	if *recOpt > 0 {
+		body["recommended_option"] = *recOpt - 1
 	}
 	if len(imgs) > 0 {
 		tmp := map[string]any{}

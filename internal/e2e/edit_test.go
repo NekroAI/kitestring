@@ -187,6 +187,30 @@ func TestEditRequirement(t *testing.T) {
 	if es := edits(get(r2.Code)); !strings.Contains(es[0].Answer, dOK.Code) {
 		t.Fatalf("修改记录应写凭哪条批准：%s", es[0].Answer)
 	}
+	// 放行检查读结论字段 verdict，不看答复文字开头（R-239）：网页带了 verdict 时以它为准
+	answerV := func(code, text, verdict string) {
+		e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": code, "answer": text, "verdict": verdict}}}, nil)
+	}
+	dNote := raise(map[string]any{"question": "改验收标准？", "approval": true, "requirement": r2.Code})
+	answerV(dNote.Code, "同意，按这个改", store.VerdictApproved)
+	if _, err = edit(r2.Code, "claude:dev", map[string]any{"acceptance": "1. 再新", "approval": dNote.Code}); err != nil {
+		t.Fatalf("verdict = approved 时答复文字不以「批准」开头也应放行：%v", err)
+	}
+	dNo := raise(map[string]any{"question": "改验收标准？", "approval": true, "requirement": r2.Code})
+	answerV(dNo.Code, "批准不了，范围太大", store.VerdictRejected)
+	_, err = edit(r2.Code, "claude:dev", map[string]any{"acceptance": "1. 又新", "approval": dNo.Code})
+	mustFail(err, "没有批准", "verdict = rejected 即使文字以「批准」开头")
+	// 旧客户端没带 verdict：按所选选项文字记一次，存成字段
+	var cur store.Decision
+	if err := c.Do(ctx, "GET", "/agent/decisions/"+dOK.Code, nil, &cur); err != nil || cur.Verdict != store.VerdictApproved {
+		t.Fatalf("没带 verdict 的「批准」应记成 approved：%v %+v", err, cur.Verdict)
+	}
+	if err := c.Do(ctx, "GET", "/agent/decisions/"+dPending.Code, nil, &cur); err != nil || cur.Verdict != store.VerdictRejected {
+		t.Fatalf("没带 verdict 的「拒绝：…」应记成 rejected：%v %+v", err, cur.Verdict)
+	}
+	if err := c.Do(ctx, "GET", "/agent/decisions/"+dPlain.Code, nil, &cur); err != nil || cur.Verdict != "" {
+		t.Fatalf("非批准类决策不记结论：%v %+v", err, cur.Verdict)
+	}
 
 	// 4. 已完成 / 已搁置的被拒（PM 也不行）
 	e.call("PUT", "/api/requirements/"+r2.Code, map[string]any{"title": got.Title, "detail": got.Detail, "acceptance": got.Acceptance, "status": "done"}, nil)

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -375,13 +376,19 @@ func TestAIFeatures(t *testing.T) {
 	hook(t, "claude", map[string]any{"session_id": "ai-2", "cwd": cwd, "hook_event_name": "Stop", "last_assistant_message": "已在登录表单加了记住我复选框并补了测试，有效期你想用多久？"})
 	e.waitFor("一轮结束后生成摘要、阶段与要点", func() bool {
 		s := e.session("claude:ai-2")
-		return s.Summary == "已加记住我复选框" && s.DigestDone == "加了复选框和测试" && s.DigestAsk == "有效期选 7 天还是 30 天"
+		return s.Summary == "已加记住我复选框" && s.DigestDone == "加了复选框和测试"
 	})
+	// 模型不再概括「在等你什么」（R-239）：会话 JSON 里没有 digest_ask，等待类型只由事件定
+	var raw map[string]any
+	e.call("GET", "/api/sessions/"+url.PathEscape("claude:ai-2"), nil, &raw)
+	if b, _ := json.Marshal(raw); strings.Contains(string(b), "digest_ask") || strings.Contains(string(b), "有效期选 7 天还是 30 天") {
+		t.Fatalf("会话不应再带模型猜的「在等你什么」：%s", b)
+	}
 
 	hook(t, "claude", map[string]any{"session_id": "ai-2", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "30 天", "prompt_id": "p2"})
 	e.waitFor("新一轮开始时清掉要点", func() bool {
 		s := e.session("claude:ai-2")
-		return s.DigestAsk == "" && s.Title == "登录页记住我"
+		return s.DigestDone == "" && s.Title == "登录页记住我"
 	})
 
 	c := client.New(5 * time.Second)

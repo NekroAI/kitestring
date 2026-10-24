@@ -35,22 +35,37 @@ func timeoutRejectText(what string) string {
 	return "超时未批，按规则视为拒绝" + what + "（用户没有作答，不是用户明确拒绝；需要的话可以换个时机再提）"
 }
 
-// approvalText：批准类决策（approval）送给 Agent 的答复。选「拒绝」的写成明确的拒绝，批准原样送达（与界面「批准」一致）。
+// answerVerdict：作答请求里批准类决策的结论（R-239）。明确给了就用；多点决策整体拒绝（reject）是拒绝；
+// 都没有时返回空，由 store 按所选选项文字记一次（旧客户端兼容）。
+func answerVerdict(verdict string, reject bool) string {
+	switch {
+	case verdict == store.VerdictApproved || verdict == store.VerdictRejected:
+		return verdict
+	case reject:
+		return store.VerdictRejected
+	}
+	return ""
+}
+
+// answerNote：答复里所选选项（「批准」「拒绝」）后面的附言。批准还是拒绝看 d.Verdict（R-239），这里只取附言。
 // 单点时网页发来的是选项文字加附言（「拒绝」「拒绝；附言」），多点时是 pointsAnswer 拼的「拒绝：附言」。
+func answerNote(answer, label string) string {
+	a := strings.TrimSpace(answer)
+	if rest, ok := strings.CutPrefix(a, label); ok {
+		return strings.TrimLeft(rest, "；;：:，, \n")
+	}
+	return a
+}
+
+// approvalText：批准类决策（approval）送给 Agent 的答复。结论读 d.Verdict：拒绝的写成明确的拒绝，批准原样送达（与界面「批准」一致）。
 func approvalText(d store.Decision) string {
 	if d.RequestKind != "" {
 		return requestText(d)
 	}
-	if !d.Approval {
+	if !d.Approval || d.Verdict != store.VerdictRejected {
 		return d.Answer
 	}
-	a := strings.TrimSpace(d.Answer)
-	rest, ok := strings.CutPrefix(a, "拒绝")
-	if !ok {
-		return d.Answer
-	}
-	rest = strings.TrimLeft(rest, "；;：:，, \n")
-	return rejectedText("这个请求", rest)
+	return rejectedText("这个请求", answerNote(d.Answer, "拒绝"))
 }
 
 // requestWhat：限时请求在文字里怎么称呼，例如「开 2 个 Dev 会话的推荐」。
@@ -64,9 +79,9 @@ func requestWhat(d store.Decision) string {
 	return "这个请求"
 }
 
-// requestApproved：用户批准了限时请求（答复以「批准」开头）。
+// requestApproved：用户批准了请求（读结论字段 verdict，R-239）。
 func requestApproved(d store.Decision) bool {
-	return !d.TimedOut && strings.HasPrefix(strings.TrimSpace(d.Answer), "批准")
+	return !d.TimedOut && !d.Voided && d.Verdict == store.VerdictApproved
 }
 
 // requestText：限时请求（R-169）送给提问方的答复——批准 / 拒绝 / 超时视为拒绝三种写法分明。
@@ -83,23 +98,22 @@ func requestText(d store.Decision) string {
 		}
 		return t
 	}
-	a := strings.TrimSpace(d.Answer)
-	if rest, ok := strings.CutPrefix(a, "拒绝"); ok {
-		t := rejectedText(what, strings.TrimLeft(rest, "；;：:，, \n"))
+	switch d.Verdict {
+	case store.VerdictRejected:
+		t := rejectedText(what, answerNote(d.Answer, "拒绝"))
 		if devs {
 			t += "。不开 Dev 会话，继续用一次性子代理做，不要再催用户开。"
 		}
 		return t
-	}
-	rest, ok := strings.CutPrefix(a, "批准")
-	if !ok {
+	case store.VerdictApproved:
+	default:
 		return d.Answer
 	}
 	t := "批准（用户批准了" + what + "）"
 	if devs {
 		t += "。接入语已推送给用户；Dev 上线待命时你会收到通知，再用 req_assign 派活，在那之前照常用一次性子代理。"
 	}
-	if note := strings.TrimLeft(rest, "；;：:，, \n"); note != "" {
+	if note := answerNote(d.Answer, "批准"); note != "" {
 		t += "附言：" + note
 	}
 	return t

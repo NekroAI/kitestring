@@ -151,6 +151,17 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "reply_to", "TEXT NOT NULL DEFAULT ''"},
 	// 交接卸任（R-224）：被新会话接任后不再挂 ks wait、不再被唤醒；重新声明身份时清除
 	{"sessions", "retired_at", "TEXT NOT NULL DEFAULT ''"},
+	// 状态只认明确记录（R-239）：等待类型、批准 / 拒绝、推荐选项存成字段，老数据补列时一次性回填
+	{"sessions", "wait_kind", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "verdict", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "rec_option", "INTEGER NOT NULL DEFAULT -1"},
+}
+
+// columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。
+var columnFills = map[string]func(*sql.DB) error{
+	"sessions.wait_kind":   fillWaitKind,
+	"decisions.verdict":    fillVerdict,
+	"decisions.rec_option": fillRecOption,
 }
 
 // sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。
@@ -173,6 +184,11 @@ func migrate(db *sql.DB) error {
 		if n == 0 {
 			if _, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, c.table, c.column, c.ddl)); err != nil {
 				return err
+			}
+			if fill := columnFills[c.table+"."+c.column]; fill != nil {
+				if err := fill(db); err != nil {
+					return fmt.Errorf("回填 %s.%s：%w", c.table, c.column, err)
+				}
 			}
 		}
 	}

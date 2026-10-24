@@ -371,6 +371,7 @@ type answersIn struct {
 			Choices []int    `json:"choices,omitempty" doc:"逐点的选择（R-112）：与决策的 points 一一对应，填选项序号"`
 			Reject  bool     `json:"reject,omitempty" doc:"批准类的多点决策：拒绝（此时不要求逐点选择）"`
 			Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）：没选推荐项时说为什么；会随答复送给提问的 Agent，并记在决策上"`
+			Verdict string   `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：用户点的是批准还是拒绝（R-239），存成字段，放行检查和界面只读它"`
 		} `json:"answers" minItems:"1"`
 	}
 }
@@ -876,7 +877,7 @@ func (h *Hub) registerWeb(api huma.API) {
 						choices = a.Choices
 					}
 				}
-				d, err := h.store.AnswerDecisionPoints(ctx, a.Ref, answer, files, choices, a.Reason)
+				d, err := h.store.AnswerDecisionPoints(ctx, a.Ref, answer, files, choices, a.Reason, answerVerdict(a.Verdict, a.Reject))
 				if err != nil {
 					return nil, apiErr(err)
 				}
@@ -1136,21 +1137,22 @@ type summaryTestOut struct {
 
 type agentDecisionIn struct {
 	Body struct {
-		SessionKey     string   `json:"session_key,omitempty" doc:"提出决策的会话，由 daemon 填写"`
-		Question       string   `json:"question" minLength:"1"`
-		Context        string   `json:"context,omitempty"`
-		Options        []string `json:"options,omitempty"`
-		OptionImages   []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
-		Approval       bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
-		Images         []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
-		Blocks         []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
-		Points         []any    `json:"points,omitempty" doc:"要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
-		Summary        []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
-		Recommendation string   `json:"recommendation,omitempty"`
-		Requirement    string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
-		FromDecision   string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
-		Overturns      bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
-		Risk           string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
+		SessionKey        string   `json:"session_key,omitempty" doc:"提出决策的会话，由 daemon 填写"`
+		Question          string   `json:"question" minLength:"1"`
+		Context           string   `json:"context,omitempty"`
+		Options           []string `json:"options,omitempty"`
+		OptionImages      []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
+		Approval          bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
+		Images            []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
+		Blocks            []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
+		Points            []any    `json:"points,omitempty" doc:"要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
+		Summary           []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
+		Recommendation    string   `json:"recommendation,omitempty"`
+		RecommendedOption *int     `json:"recommended_option,omitempty" doc:"推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配"`
+		Requirement       string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
+		FromDecision      string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
+		Overturns         bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
+		Risk              string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
 	}
 }
 
@@ -1410,6 +1412,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				d.Options = []string{"批准", "拒绝"}
 				b.OptionImages = nil
 			}
+			d.RecPick = b.RecommendedOption // 推荐选项存成字段（R-239），CreateDecision 定 rec_option
 			if len(b.Images) > 0 {
 				fs, err := h.store.ResolveFiles(ctx, b.Images)
 				if err != nil {
