@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStor
 import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
-import { cx, duration, shortDuration } from '../lib/util'
+import { cx, duration, relTime, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { Ctx } from '../ui/contextMenu'
 import { displayState, RoleBadge } from '../ui/marks'
@@ -15,7 +15,7 @@ import { reducedMotion } from './verdict'
 
 // 工作台的会话泳道（R-170，D-228 原型）：每个会话一条——左边标题、身份（D-177 描边胶囊 + 在线点）、
 // 状态标（灯与状态字合一，带已运行时长）；中间近 10 分钟的时间线（每次工具调用一个刻度，右边是现在）；
-// 右边当前动作。在跑 / 等你的泳道高，待命 / 空闲的细；后台任务按 R-162 作为子泳道挂在会话下面。
+// 右边当前动作。泳道按内容给高度（在跑的高、等你适中、待命 / 空闲带最后一句话和上次动作），后台任务按 R-162 作为子泳道挂在会话下面。
 // 动效只在有动作时出现：灯在主会话调用工具时闪一下，动作流新进一行时滑入一次；只有「等你」的灯会呼吸。
 // 时间线不画闪光点、不画常驻波纹；标签页隐藏时停画，断线时静止变灰，减少动效时每 5 秒才重画一帧。
 
@@ -89,9 +89,16 @@ function colors() {
   return { run: v('--run'), you: v('--reply'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong') }
 }
 
+// pixelRatio：画布每个 CSS 像素对应几个设备像素——设备像素比 × 祖先的 CSS 缩放（工作台在超宽屏上整体放大，R-170）。
+export function pixelRatio(cv: HTMLCanvasElement) {
+  const dpr = window.devicePixelRatio || 1
+  const zoom = cv.clientWidth ? cv.getBoundingClientRect().width / cv.clientWidth : 1
+  return dpr * (zoom > 0.2 && zoom < 5 ? zoom : 1)
+}
+
 function paint(p: Painter, now: number, c: ReturnType<typeof colors>) {
   const { cv } = p
-  const dpr = window.devicePixelRatio || 1
+  const dpr = pixelRatio(cv)
   const w = cv.clientWidth
   const h = cv.clientHeight
   if (!w || !h) return
@@ -223,7 +230,6 @@ export function laneTone(s: Session, waiting: boolean): Tone {
   if (ds === 'parked') return 'park'
   return 'idle'
 }
-export const tall = (tone: Tone) => tone === 'run' || tone === 'bg' || tone === 'you'
 
 const pill: Record<string, string> = {
   run: 'bg-run-soft text-run',
@@ -276,11 +282,15 @@ export function StateTag({ s, tone, now }: { s: Session; tone: Tone; now: number
   )
 }
 
-// workLine：泳道副标题——手上的需求，其次是摘要、你最后说的话。
-export function workLine(s: Session) {
-  const r = s.requirements.find((x) => x.status !== 'done' && x.status !== 'shelved')
-  if (r) return `${r.code} · ${r.title}`
-  return s.summary || s.last_prompt || ''
+// workLine：手上的需求（编号 + 标题）；没有需求时为空。
+export function workReq(s: Session) {
+  return s.requirements.find((x) => x.status !== 'done' && x.status !== 'shelved')
+}
+
+// lastWords：待命 / 空闲泳道上它最后说的一句话（做完了什么、在等什么），其次是摘要、你最后说的话。
+export function lastWords(s: Session) {
+  const ask = s.reply_ask?.split('\n').map((x) => x.trim()).filter(Boolean).at(-1)
+  return s.digest_ask || ask || s.digest_done || s.summary || s.last_prompt || ''
 }
 
 // youLine：等你的会话在问什么。
@@ -313,27 +323,36 @@ function Feed({ s, n }: { s: Session; n: number }) {
   )
 }
 
-// ActLine：没有右侧动作列时（1500 以下），当前动作写在状态标下一行。
+// ActLine：没有右侧动作列时，当前动作写在状态标下一行。
 function ActLine({ s }: { s: Session }) {
   const feed = useToolFeed(s)
   const a = feed.at(-1)
   if (!a) return null
   const [name, brief] = splitTool(a.label)
   return (
-    <div key={a.at} className="desk-in truncate font-mono text-[11px] leading-4 text-fg-2">
+    <div key={a.at} className="desk-in truncate font-mono text-[11.5px] leading-4 text-fg-2">
       ▸ {name} {brief}
     </div>
   )
+}
+
+// LastAct：上次动作的时间（和是什么动作），待命 / 空闲泳道用。
+function LastAct({ s, now, className }: { s: Session; now: number; className?: string }) {
+  const at = s.last_tool_at || s.last_active_at
+  if (!at) return null
+  const [name] = s.last_tool ? splitTool(s.last_tool) : ['']
+  return <div className={cx('truncate text-[11.5px] text-fg-3 tabular', className)}>{t.desk.lane.lastAct(relTime(at, now), name)}</div>
 }
 
 // ---------- 泳道 ----------
 
 export type LaneMode = 'full' | 'mid' | 'narrow' | 'phone'
 
+// 时间线一列有上限（R-170 返工：超宽屏上不让它横跨大半屏），多出的宽度给左边的标题和右边的动作 / 最后一句话。
 const cols: Record<LaneMode, string> = {
-  full: 'grid-cols-[minmax(200px,16rem)_minmax(0,1fr)_minmax(200px,min(26rem,26%))]',
-  mid: 'grid-cols-[minmax(200px,16rem)_minmax(0,1fr)]',
-  narrow: 'grid-cols-[minmax(150px,13rem)_minmax(0,1fr)]',
+  full: 'grid-cols-[minmax(230px,19rem)_minmax(160px,34rem)_minmax(260px,1fr)]',
+  mid: 'grid-cols-[minmax(220px,17rem)_minmax(0,1fr)]',
+  narrow: 'grid-cols-[minmax(160px,13rem)_minmax(0,1fr)]',
   phone: 'grid-cols-1',
 }
 
@@ -371,116 +390,115 @@ function SubLane({ task, now, mode, last }: { task: BgTask; now: number; mode: L
   )
 }
 
+// laneHeight：泳道按内容给高度（R-170 返工）：在跑的高（动作流 4 行 + 子泳道），等你的适中，待命 / 空闲也有两三行信息；
+// 都是固定值，不随屏幕拉伸，空出来的地方留给下面「最近结束」的会话。
+export function laneHeight(tone: Tone, tasks: number, mode: LaneMode) {
+  const live = tone === 'run' || tone === 'bg'
+  const base = live ? (mode === 'full' ? 108 : 100) : tone === 'you' ? 92 : mode === 'full' ? 74 : 80
+  return base + (tasks ? tasks * 24 + 6 : 0)
+}
+
 export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; lit?: boolean; onHover?: (k: string | null) => void }
 
 export const Lane = memo(function Lane({ s, tone, now, mode, lit, onHover }: LaneProps) {
   useFeedTicks(s)
   const open = useOpenSession()
   const menu = useSessionMenu()
-  const isTall = tall(tone)
-  const tasks = isTall ? liveTasks(s) : []
   const live = tone === 'run' || tone === 'bg'
-  const work = workLine(s)
+  const quiet = tone === 'park' || tone === 'idle'
+  const tasks = live || tone === 'you' ? liveTasks(s) : []
+  const req = workReq(s)
   const ticks = () => tickStore.get(s.key) ?? []
   const phone = mode === 'phone'
-  // 高度按状态自动分配：在跑分 3 份、至少 96px；待命 / 空闲分 1 份、至少 44px；子泳道每条加 24px
-  // 等你但没在动的泳道分 2 份（它的时间线是静的，信息在右侧那句话里）
-  const minH = isTall ? (live ? 96 : mode === 'full' ? 76 : 88) + tasks.length * 24 + (tasks.length ? 6 : 0) : 44
-  const style = phone ? undefined : { flex: `${live ? 3 : isTall ? 2 : 1} 1 0px`, minHeight: minH, maxHeight: isTall ? undefined : 60 }
+  const style = phone ? undefined : { height: laneHeight(tone, tasks.length, mode) }
+  const words = quiet ? lastWords(s) : ''
 
-  const title = (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className={cx('truncate font-semibold text-fg', isTall ? 'text-[14px]' : 'text-[13px]')}>{sessionTitle(s)}</span>
-      <RoleBadge s={s} />
-      {!isTall && phone && (
-        <span className="ml-auto shrink-0">
-          <StateTag s={s} tone={tone} now={now} />
-        </span>
-      )}
-    </div>
-  )
+  // 左：标题 + 身份；状态标 + 手上的需求；窄处再加一行（当前动作 / 在问什么 / 最后一句话）
   const id = (
-    <div className={cx('flex min-w-0 flex-col justify-center gap-1 px-3.5', isTall ? 'py-2.5' : 'py-1.5')}>
-      {title}
-      {isTall && (
-        <div className="flex min-w-0 items-center gap-2">
-          <StateTag s={s} tone={tone} now={now} />
-          <Tip content={sessionExtras(s)}>
-            <span className="min-w-0 truncate text-[11.5px] text-fg-3">{work}</span>
-          </Tip>
-        </div>
-      )}
+    <div className={cx('flex min-w-0 flex-col justify-center gap-1 px-3.5', quiet ? 'py-2' : 'py-2.5')}>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={cx('truncate font-semibold', quiet ? 'text-[14px] text-fg-2' : 'text-[15px] text-fg')}>{sessionTitle(s)}</span>
+        <RoleBadge s={s} />
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <StateTag s={s} tone={tone} now={now} />
+        <Tip content={sessionExtras(s)}>
+          <span className="min-w-0 truncate text-[12px] text-fg-2">
+            {req ? (
+              <>
+                <span className="mr-1 font-mono text-[11.5px] text-fg-3">{req.code}</span>
+                {req.title}
+              </>
+            ) : (
+              <span className="text-fg-3">{live ? s.summary || s.last_prompt : ''}</span>
+            )}
+          </span>
+        </Tip>
+      </div>
       {live && mode !== 'full' && <ActLine s={s} />}
-      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[11.5px] leading-4 text-reply">{youLine(s)}</div>}
+      {tone === 'you' && (mode === 'mid' || mode === 'narrow') && <div className="truncate text-[12px] leading-4 text-reply">{youLine(s)}</div>}
+      {quiet && (mode === 'mid' || mode === 'narrow') && words && <div className="truncate text-[12px] leading-4 text-fg-3">{words}</div>}
     </div>
   )
+  // 右（宽处）：在跑放最近 4 个动作；等你放它在问什么；待命 / 空闲放最后一句话和上次动作的时间
   const right =
     mode === 'full' &&
     (live ? (
-      <div className="flex min-w-0 flex-col justify-center gap-0.5 overflow-hidden border-l border-line px-3.5 py-2 font-mono text-[11.5px] leading-[1.6]">
+      <div className="flex min-w-0 flex-col justify-center gap-0.5 overflow-hidden border-l border-line px-4 py-2 font-mono text-[12px] leading-[1.6]">
         <Feed s={s} n={4} />
       </div>
     ) : (
-      <div className={cx('flex min-w-0 items-center gap-2.5 px-3.5 text-[12px]', isTall && 'border-l border-line text-[12.5px]', tone === 'you' ? 'text-reply' : 'text-fg-3')}>
-        {/* 细泳道：状态标放在右侧那句话前面，左边留给标题 */}
-        {!isTall && <StateTag s={s} tone={tone} now={now} />}
-        <span className={cx('min-w-0', isTall ? 'line-clamp-3' : 'truncate')}>{tone === 'you' ? youLine(s) : s.digest_done || s.summary || s.last_prompt}</span>
+      <div className="flex min-w-0 flex-col justify-center gap-1 border-l border-line px-4 py-2">
+        <p className={cx('line-clamp-2 text-[13px] leading-snug', tone === 'you' ? 'text-reply' : words ? 'text-fg-2' : 'text-fg-3')}>{tone === 'you' ? youLine(s) : words || t.desk.lane.noWords}</p>
+        {quiet && <LastAct s={s} now={now} />}
       </div>
     ))
 
   return (
-    <div style={style} className={cx(!phone && 'flex min-h-0')}>
-    <Ctx items={menu(s)} className="flex min-h-0 w-full rounded-[14px]">
-      <div
-        role="button"
-        tabIndex={0}
-        data-lane={s.key}
-        onClick={() => open(s.key)}
-        onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key)}
-        onMouseEnter={onHover && (() => onHover(s.key))}
-        onMouseLeave={onHover && (() => onHover(null))}
-        className={cx(
-          'grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] text-left transition-[background,box-shadow] duration-200',
-          isTall ? 'grid-rows-[minmax(0,1fr)_auto] bg-surface shadow-card hover:bg-hover/40' : 'grid-rows-1 bg-transparent ring-1 ring-line ring-inset hover:bg-surface/60',
-          tone === 'you' && 'ring-1 ring-reply/30 ring-inset',
-          lit && 'desk-lit',
-        )}
-      >
-        <div className={cx('grid min-h-0 min-w-0', cols[mode])}>
-          {id}
-          {!phone ? (
-            !isTall && mode !== 'full' ? (
-              // 窄处的细泳道：状态标放在时间线左端，标题不被挤掉
-              <div className="flex min-h-0 min-w-0 items-center gap-2 pr-0">
-                <StateTag s={s} tone={tone} now={now} />
-                <div className="relative h-full min-w-0 flex-1">
-                  <Timeline ticks={ticks} tone={tone} className="absolute inset-0" />
-                </div>
-              </div>
-            ) : (
+    <div style={style} className={cx(!phone && 'flex shrink-0')}>
+      <Ctx items={menu(s)} className="flex min-h-0 w-full rounded-[14px]">
+        <div
+          role="button"
+          tabIndex={0}
+          data-lane={s.key}
+          onClick={() => open(s.key)}
+          onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(s.key)}
+          onMouseEnter={onHover && (() => onHover(s.key))}
+          onMouseLeave={onHover && (() => onHover(null))}
+          className={cx(
+            'grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] text-left transition-[background,box-shadow] duration-200',
+            tasks.length ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-1',
+            quiet ? 'bg-surface/55 ring-1 ring-line ring-inset hover:bg-surface' : 'bg-surface shadow-card hover:bg-hover/40',
+            tone === 'you' && 'ring-1 ring-reply/30 ring-inset',
+            lit && 'desk-lit',
+          )}
+        >
+          <div className={cx('grid min-h-0 min-w-0', cols[mode])}>
+            {id}
+            {!phone ? (
               <div className="relative min-h-0 min-w-0">
                 <Timeline ticks={ticks} tone={tone} className="absolute inset-0" />
               </div>
-            )
-          ) : (
-            live && (
-              <div className="relative mx-3.5 mb-2 h-10">
-                <Timeline ticks={ticks} tone={tone} className="absolute inset-0" />
-              </div>
-            )
-          )}
-          {right}
-          {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply">{youLine(s)}</div>}
-        </div>
-        {tasks.length > 0 && (
-          <div className="pb-1.5">
-            {tasks.map((x, i) => (
-              <SubLane key={x.id} task={x} now={now} mode={mode} last={i === tasks.length - 1} />
-            ))}
+            ) : (
+              live && (
+                <div className="relative mx-3.5 mb-2 h-10">
+                  <Timeline ticks={ticks} tone={tone} className="absolute inset-0" />
+                </div>
+              )
+            )}
+            {right}
+            {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply">{youLine(s)}</div>}
+            {phone && quiet && words && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-fg-3">{words}</div>}
           </div>
-        )}
-      </div>
-    </Ctx>
+          {tasks.length > 0 && (
+            <div className="pb-1.5">
+              {tasks.map((x, i) => (
+                <SubLane key={x.id} task={x} now={now} mode={mode} last={i === tasks.length - 1} />
+              ))}
+            </div>
+          )}
+        </div>
+      </Ctx>
     </div>
   )
 })
@@ -500,7 +518,7 @@ export function Wind() {
     let phase = 0
     let t0 = 0
     const draw = () => {
-      const dpr = window.devicePixelRatio || 1
+      const dpr = pixelRatio(cv)
       const w = cv.clientWidth
       const h = cv.clientHeight
       if (!w || !h) return
