@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { HoverCard } from 'radix-ui'
 import { Check, ChevronDown, ChevronRight, ListChecks } from 'lucide-react'
 import type { Requirement, Schemas } from '../api/client'
@@ -97,6 +97,34 @@ export function useWidth() {
     return () => ro.disconnect()
   }, [el])
   return [setEl, w] as const
+}
+
+// 盘面占满视口剩余高度（顶栏、页面标题以下）：整页不滚动，内容多时在各区域内部滚动（R-133）。
+// 高度 = 视口高 - 元素在文档里的顶部位置 - main 的底部留白；窗口太矮（< 420）时退回整页滚动。
+export function useFillHeight(el: HTMLElement | null, on: boolean) {
+  const [h, setH] = useState<number>()
+  useLayoutEffect(() => {
+    if (!el || !on) {
+      setH(undefined)
+      return
+    }
+    const main = el.closest('main')
+    const calc = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY
+      const pb = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 0
+      setH(Math.max(420, Math.floor(window.innerHeight - top - pb)))
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    // 授权横幅出现 / 消失会改变页面顶部位置
+    const ro = new ResizeObserver(calc)
+    if (el.parentElement) ro.observe(el.parentElement)
+    return () => {
+      window.removeEventListener('resize', calc)
+      ro.disconnect()
+    }
+  }, [el, on])
+  return h
 }
 
 // ---------- 分布条 ----------
@@ -393,11 +421,14 @@ function useDrop(status: string) {
   }
 }
 
+// 区域内滚动的内容区：两侧留一点边距，需求块悬停上浮和阴影不被裁掉
+const scrollBody = '-mx-1 overflow-y-auto overscroll-contain px-1 py-0.5'
+
 const zone = (over: boolean) => cx('rounded-2xl transition-colors', over ? 'bg-accent-soft ring-2 ring-accent/40' : 'bg-sunken/70')
 
 function ColHead({ status, n, extra, right }: { status: string; n: number; extra?: ReactNode; right?: ReactNode }) {
   return (
-    <div className="flex min-h-7 items-center gap-2 px-1 pb-2">
+    <div className="flex min-h-7 shrink-0 items-center gap-2 px-1 pb-2">
       <ReqGlyph status={status} />
       <span className="text-[13px] font-semibold whitespace-nowrap text-fg">{t.reqStatus[status]}</span>
       <span className="text-xs text-fg-3 tabular">{n}</span>
@@ -412,23 +443,17 @@ function EmptyHint({ status, over }: { status: string; over: boolean }) {
 }
 
 // NarrowCol：待开始 / 进行中 / 阻塞 / 待验收这样的窄列；空列只占一个提示块高度。
-export function NarrowCol({ status, items, className, limit, onAll, width }: { status: string; items: Requirement[]; className?: string; limit?: number; onAll?: () => void; width?: number }) {
+// 内容多时列头（标题和计数）固定在顶部，列内滚动，全部显示、不再截断。
+export function NarrowCol({ status, items, className, width }: { status: string; items: Requirement[]; className?: string; width?: number }) {
   const { over, props } = useDrop(status)
-  const shown = limit ? items.slice(0, limit) : items
   return (
-    <section {...props} style={width ? { width } : undefined} className={cx('min-w-0 self-start p-2', width && 'shrink-0', zone(over), className)}>
+    <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col self-start p-2', width && 'shrink-0', zone(over), className)}>
       <ColHead status={status} n={items.length} />
       {items.length ? (
-        <div className="flex flex-col gap-2">
-          {shown.map((r) => (
+        <div className={cx('flex min-h-0 flex-col gap-2', scrollBody)}>
+          {items.map((r) => (
             <Tile key={r.id} r={r} faded={status === 'shelved'} />
           ))}
-          {limit && items.length > limit && onAll && (
-            <button onClick={onAll} className="flex items-center gap-0.5 px-1 py-1 text-xs text-fg-3 hover:text-fg">
-              {t.pool.doneAll(items.length)}
-              <ChevronRight className="size-3.5" />
-            </button>
-          )}
         </div>
       ) : (
         <EmptyHint status={status} over={over} />
@@ -441,7 +466,7 @@ export function NarrowCol({ status, items, className, limit, onAll, width }: { s
 export function DraftBlock({ items, cols, onConfirmEach, className, compact }: { items: Requirement[]; cols: number; onConfirmEach: () => void; className?: string; compact?: boolean }) {
   const { over, props } = useDrop('draft')
   return (
-    <section {...props} className={cx('min-w-0 p-2.5', zone(over), className)}>
+    <section {...props} className={cx('flex max-h-full min-h-0 min-w-0 flex-col p-2.5', zone(over), className)}>
       <ColHead
         status="draft"
         n={items.length}
@@ -455,7 +480,7 @@ export function DraftBlock({ items, cols, onConfirmEach, className, compact }: {
         }
       />
       {items.length ? (
-        <div className="space-y-2.5">
+        <div className={cx('min-h-0 space-y-2.5', scrollBody)}>
           {priorities.map((p) => {
             const layer = items.filter((r) => r.priority === p)
             if (!layer.length) return null
@@ -504,10 +529,10 @@ function DoneBars({ days }: { days: Schemas['PoolDay'][] }) {
 }
 
 // 已完成：近 7 天每日完成柱 + 最近 7 条（淡色）+「全部 N 条」。
-export function DoneBody({ items, days, onAll }: { items: Requirement[]; days: Schemas['PoolDay'][]; onAll: () => void }) {
+export function DoneBody({ items, days, onAll, className }: { items: Requirement[]; days: Schemas['PoolDay'][]; onAll: () => void; className?: string }) {
   const open = useOpenReq()
   return (
-    <div className="space-y-2.5">
+    <div className={cx('space-y-2.5', className)}>
       <DoneBars days={days} />
       <div className="space-y-0.5">
         {items.slice(0, 7).map((r) => (
@@ -531,9 +556,9 @@ export function DoneCol({ items, days, onAll, className, width }: { items: Requi
   const { over, props } = useDrop('done')
   const week = days.reduce((n, d) => n + d.count, 0)
   return (
-    <section {...props} style={width ? { width } : undefined} className={cx('min-w-0 self-start p-2', width && 'shrink-0', zone(over), className)}>
+    <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col self-start p-2', width && 'shrink-0', zone(over), className)}>
       <ColHead status="done" n={items.length} extra={t.pool.doneHead(week)} />
-      <DoneBody items={items} days={days} onAll={onAll} />
+      <DoneBody items={items} days={days} onAll={onAll} className={cx('min-h-0', scrollBody)} />
     </section>
   )
 }
@@ -543,8 +568,8 @@ export function FoldRow({ status, n, summary, children }: { status: string; n: n
   const [open, setOpen] = useState(false)
   const { over, props } = useDrop(status)
   return (
-    <section {...props} className={cx('p-2', zone(over))}>
-      <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full min-w-0 items-center gap-2 px-1 py-1 text-left">
+    <section {...props} className={cx('flex max-h-[50%] shrink-0 flex-col p-2', zone(over))}>
+      <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full min-w-0 shrink-0 items-center gap-2 px-1 py-1 text-left">
         <ReqGlyph status={status} />
         <span className="text-[13px] font-semibold text-fg">{t.reqStatus[status]}</span>
         <span className="text-xs text-fg-3 tabular">{n}</span>
@@ -554,7 +579,7 @@ export function FoldRow({ status, n, summary, children }: { status: string; n: n
           <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} />
         </span>
       </button>
-      {open && <div className="px-1 pt-2 pb-1">{children}</div>}
+      {open && <div className={cx('min-h-0 pt-2 pb-1', scrollBody)}>{children}</div>}
     </section>
   )
 }
@@ -565,10 +590,10 @@ export function StatusGrid({ status, items, width, onConfirmEach, bare }: { stat
   const { over, props } = useDrop(status)
   if (status === 'draft') return <DraftBlock items={items} cols={cols} onConfirmEach={onConfirmEach} />
   return (
-    <section {...(bare ? {} : props)} className={cx(!bare && 'p-2.5', !bare && zone(over))}>
+    <section {...(bare ? {} : props)} className={cx('flex max-h-full min-h-0 flex-col', !bare && 'p-2.5', !bare && zone(over))}>
       {!bare && <ColHead status={status} n={items.length} />}
       {items.length ? (
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+        <div className={cx('grid min-h-0 gap-2', scrollBody)} style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
           {items.map((r) => (
             <Tile key={r.id} r={r} faded={status === 'done' || status === 'shelved'} />
           ))}

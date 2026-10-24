@@ -39,6 +39,7 @@ import {
   sortReqs,
   StatusGrid,
   useColorOf,
+  useFillHeight,
   useWidth,
   type ColorBy,
   type Pool,
@@ -148,14 +149,13 @@ type BoardProps = {
   shelved: boolean
   active: string | null
   onAll: (status: string) => void
-  onFocus: (status: string) => void // 列太长时「全部 N 条」：盘面上只看这一段
-  onConfirmEach: () => void
+    onConfirmEach: () => void
 }
 
 const WIDE = 1240 // 内容区至少这么宽才横排：草稿列占剩余宽度，其余状态是窄列
 const PHONE = 700 // 内容区窄于此用手机布局
 
-function Board({ width, pool, items, shelved, active, onAll, onFocus, onConfirmEach }: BoardProps) {
+function Board({ width, pool, items, shelved, active, onAll, onConfirmEach }: BoardProps) {
   const since = useMemo(() => new Map(pool.items.map((x) => [x.code, x])), [pool.items])
   const by = (s: string) => {
     const list = items.filter((r) => r.status === s)
@@ -164,23 +164,22 @@ function Board({ width, pool, items, shelved, active, onAll, onFocus, onConfirmE
   const done = by('done')
   const week = pool.done_daily.reduce((n, d) => n + d.count, 0)
 
-  if (active) return <StatusGrid status={active} items={by(active)} width={width} onConfirmEach={onConfirmEach} />
+  if (active) return <div className="flex h-full"><StatusGrid status={active} items={by(active)} width={width} onConfirmEach={onConfirmEach} /></div>
 
   if (width >= WIDE) {
     // 越宽越能用满：窄列随宽度放宽、能显示的条数增加，多出来的宽度全给草稿列（列数随之增加，需求块保持 ~230px 宽）
     const narrow = width >= 2600 ? 248 : width >= 2000 ? 216 : width >= 1560 ? 176 : 156
     const doneW = width >= 2600 ? 320 : width >= 2000 ? 280 : width >= 1560 ? 244 : 212
-    const limit = width >= 2600 ? 16 : width >= 2000 ? 12 : 8
     const cols = flowStatuses.length + (shelved ? 1 : 0)
     const draftW = width - narrow * cols - doneW - 12 * (cols + 1)
     return (
-      <div className="flex items-start gap-3">
+      <div className="flex h-full items-start gap-3">
         <DraftBlock items={by('draft')} cols={Math.max(2, Math.min(12, Math.floor((draftW - 12) / 230)))} onConfirmEach={onConfirmEach} className="flex-1" compact={draftW < 560} />
         {flowStatuses.map((s) => (
-          <NarrowCol key={s} status={s} items={by(s)} width={narrow} limit={limit} onAll={() => onFocus(s)} />
+          <NarrowCol key={s} status={s} items={by(s)} width={narrow} />
         ))}
         <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={doneW} />
-        {shelved && <NarrowCol status="shelved" items={by('shelved')} limit={limit} onAll={() => onAll('shelved')} width={narrow} />}
+        {shelved && <NarrowCol status="shelved" items={by('shelved')} width={narrow} />}
       </div>
     )
   }
@@ -188,19 +187,19 @@ function Board({ width, pool, items, shelved, active, onAll, onFocus, onConfirmE
   const flowing = flowStatuses.reduce((n, s) => n + by(s).length, 0)
   const sh = by('shelved')
   return (
-    <div className="space-y-4">
-      <section>
-        <div className="mb-2 flex items-center gap-2 px-1">
+    <div className="flex h-full flex-col gap-4">
+      <section className="flex max-h-[40%] shrink-0 flex-col">
+        <div className="mb-2 flex shrink-0 items-center gap-2 px-1">
           <span className="text-[13px] font-semibold text-fg">{t.pool.flowing}</span>
           <span className="text-xs text-fg-3 tabular">{flowing}</span>
         </div>
-        <div className="grid grid-cols-4 items-start gap-3">
+        <div className="grid min-h-0 grid-cols-4 grid-rows-[minmax(0,1fr)] items-start gap-3">
           {flowStatuses.map((s) => (
-            <NarrowCol key={s} status={s} items={by(s)} limit={5} onAll={() => onFocus(s)} />
+            <NarrowCol key={s} status={s} items={by(s)} />
           ))}
         </div>
       </section>
-      <DraftBlock items={by('draft')} cols={width >= 1000 ? 4 : width >= 760 ? 3 : 2} onConfirmEach={onConfirmEach} compact={width < 900} />
+      <DraftBlock items={by('draft')} cols={width >= 1000 ? 4 : width >= 760 ? 3 : 2} onConfirmEach={onConfirmEach} compact={width < 900} className="shrink" />
       <FoldRow status="done" n={done.length} summary={t.pool.doneSummary(week, pool.done_yesterday)}>
         <DoneBody items={done} days={pool.done_daily} onAll={() => onAll('done')} />
       </FoldRow>
@@ -274,6 +273,7 @@ export default function RequirementsPage() {
   const projects = useProjects()
   const plans = usePlans()
   const [measure, width] = useWidth()
+  const [rootEl, setRootEl] = useState<HTMLElement | null>(null)
   const setStatus = useSetStatus()
   const openQueue = useOpenDraftQueue()
   const [project, setProject] = usePref<string>('ks.reqs.project', '')
@@ -291,6 +291,8 @@ export default function RequirementsPage() {
   const searchRef = useRef<HTMLInputElement>(null)
   const pool = usePool(project || undefined)
   const phone = width > 0 && width < PHONE
+  // 桌面 / 平板的盘面占满视口剩余高度，各区域内滚动；手机维持整页纵向滚动
+  const fillH = useFillHeight(rootEl, view === 'pool' && !phone && width > 0)
   const newItem = () => (view === 'plans' ? setCreatingPlan(true) : setCreating(true))
 
   // V / 命令面板切换视图（R-127）
@@ -408,7 +410,14 @@ export default function RequirementsPage() {
   const p = pool.data
 
   return (
-    <div ref={measure}>
+    <div
+      ref={(el) => {
+        measure(el)
+        setRootEl(el)
+      }}
+      className={fillH ? 'flex flex-col' : undefined}
+      style={fillH ? { height: fillH } : undefined}
+    >
       {phone ? (
         <div className="mb-4">
           <div className="flex items-center gap-1">
@@ -554,7 +563,9 @@ export default function RequirementsPage() {
                 {phone ? (
                   <PhoneBoard items={filtered} statuses={phoneStatuses} status={phoneStatus} setStatus={setMStatus} pool={p} />
                 ) : (
-                  <Board width={width} pool={p} items={filtered} shelved={shelved} active={active} onAll={showAll} onFocus={setActive} onConfirmEach={confirmEach} />
+                  <div className={fillH ? 'min-h-[260px] flex-1' : undefined}>
+                  <Board width={width} pool={p} items={filtered} shelved={shelved} active={active} onAll={showAll} onConfirmEach={confirmEach} />
+                  </div>
                 )}
               </PoolProvider>
             )
