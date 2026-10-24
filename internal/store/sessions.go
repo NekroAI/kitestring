@@ -567,6 +567,24 @@ func (s *Store) PromptsBetween(ctx context.Context, key string, from, to time.Ti
 	return out, rows.Err()
 }
 
+// InstancesForDevice 列出设备上未结束会话记着的终端实例（R-204）。
+func (s *Store) InstancesForDevice(ctx context.Context, deviceID string) ([]protocol.SessionInstance, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, instance, prev_instance FROM sessions WHERE device_id = ? AND state <> ? AND (instance <> '' OR prev_instance <> '')`, deviceID, StateEnded)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []protocol.SessionInstance
+	for rows.Next() {
+		var x protocol.SessionInstance
+		if err := rows.Scan(&x.Key, &x.Instance, &x.PrevInstance); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
 // MarkDeviceLost 把设备下未结束的会话标为失联，返回受影响的会话键。
 func (s *Store) MarkDeviceLost(ctx context.Context, deviceID string) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT key FROM sessions WHERE device_id = ? AND ended_at IS NULL AND state <> ?`, deviceID, StateLost)

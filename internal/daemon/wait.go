@@ -169,17 +169,62 @@ func (d *Daemon) watchInstances(ctx context.Context) {
 			insts[k] = v
 		}
 		d.mu.Unlock()
-		for inst, key := range insts {
-			if instanceAlive(inst) {
-				continue
+		d.checkInstances(instanceAlive)
+	}
+}
+
+// seedInstances 记下 Hub 下发的会话终端实例（R-204）：daemon 重启后内存里没有它们，进程在重启前后退出就永远没人补发结束。
+func (d *Daemon) seedInstances(list []protocol.SessionInstance) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	add := func(inst, key string) {
+		if inst == "" {
+			return
+		}
+		for _, k := range d.seeded[inst] {
+			if k == key {
+				return
 			}
-			d.mu.Lock()
-			delete(d.instances, inst)
+		}
+		d.seeded[inst] = append(d.seeded[inst], key)
+	}
+	for _, x := range list {
+		add(x.Instance, x.Key)
+		add(x.PrevInstance, x.Key)
+	}
+}
+
+// checkInstances 核对本机见过的（含 Hub 下发的）终端实例，进程不在了就补发 SessionEnd。
+func (d *Daemon) checkInstances(alive func(string) bool) {
+	d.mu.Lock()
+	keys := map[string]map[string]bool{}
+	for inst, key := range d.instances {
+		keys[inst] = map[string]bool{key: true}
+	}
+	for inst, ks := range d.seeded {
+		if keys[inst] == nil {
+			keys[inst] = map[string]bool{}
+		}
+		for _, k := range ks {
+			keys[inst][k] = true
+		}
+	}
+	d.mu.Unlock()
+	for inst, set := range keys {
+		if alive(inst) {
+			continue
+		}
+		d.mu.Lock()
+		delete(d.instances, inst)
+		delete(d.seeded, inst)
+		for key := range set {
 			if d.latest[key] == inst {
 				delete(d.latest, key) // 最新终端没了，较早的那个重新领活
 			}
-			delete(d.staleWarn, inst)
-			d.mu.Unlock()
+		}
+		delete(d.staleWarn, inst)
+		d.mu.Unlock()
+		for key := range set {
 			tool, sid, ok := strings.Cut(key, ":")
 			if !ok {
 				continue
