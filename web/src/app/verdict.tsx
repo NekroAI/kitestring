@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useContext, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, CornerDownLeft, Undo2 } from 'lucide-react'
 import { AnimatePresence, motion, useIsPresent } from 'motion/react'
@@ -8,6 +8,7 @@ import { cx } from '../lib/util'
 import { dockView } from '../lib/pending'
 import { Button, Textarea } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
+import { Leaving, reducedMotion as reduced, spring } from '../ui/gesture'
 import { useActions } from './actions'
 
 // 统一的判断动作（R-161）：肯定 / 否定 / 回答 / 撤销在全站只有一种样式、一种节奏。
@@ -33,7 +34,7 @@ export const SEAL_MS = 700
 // 提交成功后保持「已盖印」多久：等列表刷新把卡片收起 / 需求块留在新列，避免先闪回原样（全站只在这里定义）
 export const SEALED_HOLD_MS = 2500
 
-export const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
+export const reducedMotion = reduced
 const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms))
 
 // move：带文字的一般动作（改为进行中、开始计划、撤销授权、撤回放行），没有印章
@@ -224,7 +225,7 @@ const bump = (key: string, d: number) => {
 // useUndoAnchor：把撤销条 / 遮罩登记为这件事的锚点；元素进出视口（含列内滚动、抽屉翻走）时更新。
 // 正在退场的元素（抽屉翻页时滑走的上一件）不算：它马上就不在了，撤回应当立刻挪到浮动条。
 export function useUndoAnchor(k: string | undefined) {
-  const present = useIsPresent()
+  const present = useIsPresent() && !useContext(Leaving)
   const key = present ? k : undefined
   const [el, setEl] = useState<HTMLElement | null>(null)
   useEffect(() => {
@@ -463,7 +464,7 @@ export function Seal({ k, show, act, scene, className }: { k?: string; show?: bo
           <motion.span
             initial={{ opacity: 0, scale: a === 'back' ? 1.3 : 1.7, rotate: -16 }}
             animate={{ opacity: a === 'back' ? 0.85 : 1, scale: 1, rotate: -10 }}
-            transition={{ type: 'spring', bounce: a === 'back' ? 0.15 : 0.38, duration: 0.42 }}
+            transition={spring()}
             className={cx('flex items-center justify-center rounded-xl border-[3px] bg-surface/80 font-display tracking-[0.2em] shadow-xs', a === 'back' ? 'h-14 w-28 text-lg' : 'h-20 w-32 text-2xl', tone)}
           >
             {t.verdict.stamp(actWord(a, '', scene ?? e?.scene))}

@@ -64,6 +64,10 @@ export const zh = {
     askTitle: (code: string) => `${ACC.back} ${code}`,
     askDesc: '写下哪里要改，会一起送给 Agent；已有的验收证据会作废。',
     askPlaceholder: '哪里要改？',
+    // 列表左滑拒绝批准类决策（R-73）：先写理由
+    rejectTitle: (s: Scene, code: string) => `${VERB[s].back} ${code}`,
+    rejectDesc: '写下理由，会一起送给 Agent。',
+    rejectPlaceholder: (s: Scene) => `为什么${VERB[s].back}？`,
     keyPass: (s: Scene) => `${VERB[s].pass} · ⌘↵`,
     keyBack: (s: Scene) => `${VERB[s].back} · ⌘⌫`,
     stageNext: (next: number | null) => (next ? `${ACC.pass}后开始阶段 ${next}` : `${ACC.pass}后计划完成`),

@@ -35,7 +35,8 @@ export function composeAnswer(d: Draft | undefined, options: string[]): string {
 export const decKey = (code: string) => `dec:${code}`
 
 // SendItem：一条答复。多点决策时 answer 是附言，choices 是逐点的选择，reject 表示整体拒绝；act / scene 决定撤销条和印章的用词。
-type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; act: Act; scene: Scene }
+// after：提交成功后再做（例如清掉列表左滑拒绝时写的理由草稿）
+type SendItem = { code: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; act: Act; scene: Scene; after?: () => void }
 
 const toBody = (it: SendItem) => ({ ref: it.code, answer: it.answer, files: it.files, choices: it.choices, reject: it.reject, reason: it.reason })
 
@@ -62,6 +63,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
         // 改状态申请在你批准前状态已被改动（R-188）：后端把它作废了，告诉你没有执行
         if (res.decisions?.some((d) => d.voided)) toast(t.ask.status.voidedToast)
         dropDraft(decDraftKey(it.code)) // 提交成功才清草稿：撤销期里撤回时草稿还在
+        it.after?.()
         return true
       },
     }),

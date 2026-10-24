@@ -11,11 +11,14 @@ import { initTheme } from './lib/theme'
 import { registerSW } from './lib/push'
 import { ConfirmProvider } from './ui/overlay'
 import { TipProvider } from './ui/base'
+import { installWheelGuard } from './ui/gesture'
 import App from './App'
 import './index.css'
 
 initTheme()
 registerSW()
+// 妙控板双指横滑归纸鸢，不触发浏览器前进 / 后退（R-73）
+installWheelGuard()
 
 // iOS Safari 无视 viewport 的 user-scalable=no：拦下页面级的捏合与多指缩放。
 // 看图器用指针事件自己算缩放，不受影响。

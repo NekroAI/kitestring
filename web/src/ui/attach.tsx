@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
-import { AnimatePresence, animate as animateValue, motion, useMotionValue, useMotionValueEvent, useTransform, type AnimationPlaybackControls } from 'motion/react'
+import { AnimatePresence, motion, useMotionValueEvent, useTransform } from 'motion/react'
 import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
 import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Maximize2, PenLine, Play, X } from 'lucide-react'
@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Button, Tip } from './base'
+import { G, tracker, useStrip } from './gesture'
 import { useSettings } from '../api/queries'
 
 // 附件：任何可以写字的地方都可以贴图（粘贴、拖拽、选择文件），也可以附 MP4 / WebM 录屏。
@@ -260,7 +261,9 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
     ro.observe(stage)
     return () => ro.disconnect()
   }, [stage])
-  const pos = useMotionValue(0) // 胶片带位置：第 k 页在 k * W
+  // 胶片带：第 k 页在 k * W；拖动、触控板、弹簧都是全站同一套（ui/gesture.tsx 的 useStrip，R-73）
+  const strip = useStrip(W)
+  const { pos, go, begin, move, end, wheel } = strip
   const trackX = useTransform(pos, (v) => -v)
   const [k, setK] = useState(0)
   const kRef = useRef(0)
@@ -277,101 +280,7 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
     setLit(null)
     setBefore(false)
   })
-  const anim = useRef<AnimationPlaybackControls | null>(null)
-  const gesture = useRef<Gesture | null>(null)
   const [host, setHost] = useState<HTMLDivElement | null>(null)
-
-  const aim = useRef<number | null>(null) // 正在弹向的那一页：动画中途再翻页时从它往后数
-  const snapTo = (page: number, velocity = 0) => {
-    anim.current?.stop()
-    aim.current = page
-    anim.current = animateValue(pos, page * W, { type: 'spring', stiffness: 380, damping: 38, velocity, onComplete: () => (aim.current = null) })
-  }
-  const go = (d: number) => snapTo((aim.current ?? Math.round(pos.get() / W)) + d)
-  // 拖动开始：打断正在进行的动画，从当前位置接着走；以动画正要去的那一页为基准（连续翻页不丢页）
-  const begin = () => {
-    anim.current?.stop()
-    const from = pos.get()
-    const page = aim.current ?? Math.round(from / W)
-    aim.current = null
-    gesture.current = { from, page, acc: 0, samples: [{ t: performance.now(), v: from }], last: 0, peak: 0, rises: 0, drops: 0 }
-  }
-  // dx：手指 / 触控板相对开始时的水平位移（向左为负，即往下一张）。带子最多走到基准页的前后一页（从动画中途接手时，起点可能还没到基准页）
-  const move = (dx: number) => {
-    const g = gesture.current
-    if (!g || g.done !== undefined) return
-    const v = clamp(g.from - dx, Math.min(g.from, (g.page - 1) * W), Math.max(g.from, (g.page + 1) * W))
-    pos.set(v)
-    g.samples.push({ t: performance.now(), v })
-    if (g.samples.length > 6) g.samples.shift()
-  }
-  // 松手：按这次手势走了多少与速度决定翻页还是弹回
-  const decide = (g: Gesture) => {
-    const [a, b] = [g.samples[0], g.samples[g.samples.length - 1]]
-    const vel = b.t > a.t ? ((b.v - a.v) / (b.t - a.t)) * 1000 : 0 // px/s，正数是往下一张
-    const off = pos.get() - g.from // 这次手势带子走了多少（从动画中途接手时也只看这一段）
-    const fling = g.wheel ? 1500 : 400 // 触控板日常滑动本身就快，甩动门槛要高，免得轻轻一碰就翻页
-    const page = vel > fling || off > W * 0.22 ? g.page + 1 : vel < -fling || off < -W * 0.22 ? g.page - 1 : g.page
-    snapTo(page, vel)
-  }
-  const end = () => {
-    const g = gesture.current
-    gesture.current = null
-    if (!g) return
-    window.clearTimeout(g.idle)
-    if (g.done === undefined) decide(g)
-  }
-  // 触控板：没有“松手”事件，从滚轮力度的走势推断。
-  // - 力度连续几下回落（手指离开、进入惯性）就当松手：立即决定翻页还是弹回，余下的惯性滚动忽略；
-  //   走满一页也立即落定。滚轮停下 120ms 同样视为结束。
-  // - macOS 的惯性滚动会一直发事件，不能只靠停顿判断下一次滑动：回落之后力度又连续回升（新的一次滑动起势）、
-  //   或方向反过来，就当成新手势；落定后的锁定最多 LOCK_MS（R-121）。
-  // 返回 true 表示这次滚轮归翻页（竖向为主、又不在翻页手势里的，交给看图器缩放）。
-  const wheel = (dx: number, dy: number): boolean => {
-    let g = gesture.current
-    if (g && !g.wheel) return true // 触屏正在拖
-    const a = Math.abs(dx)
-    if (g) {
-      g.rises = a > g.last + 1 ? g.rises + 1 : 0
-      const dir = Math.sign(g.samples[g.samples.length - 1].v - g.from)
-      const fresh =
-        (g.done !== undefined && a >= 4 && (g.rises >= 2 || a >= g.last * 3 + 6)) || // 回落后又起势
-        (dir !== 0 && Math.sign(dx) === -dir && a >= 3) || // 方向反过来
-        (g.done !== undefined && performance.now() - g.done > LOCK_MS) // 落定后的锁定到期
-      if (fresh) {
-        end()
-        g = null
-      } else {
-        g.drops = a < g.last ? g.drops + 1 : 0
-        if (a > g.peak) g.peak = a
-        g.last = a
-      }
-    }
-    if (!g) {
-      if (a <= Math.abs(dy)) return false
-      begin()
-      g = gesture.current!
-      g.wheel = true
-      g.last = g.peak = a
-    }
-    const cur = g
-    window.clearTimeout(cur.idle)
-    cur.idle = window.setTimeout(() => gesture.current === cur && end(), 120)
-    if (cur.done !== undefined) return true
-    cur.acc -= dx
-    move(cur.acc)
-    const p = pos.get()
-    if (p >= (cur.page + 1) * W - 1 || p <= (cur.page - 1) * W + 1) {
-      // 走满一页
-      cur.done = performance.now()
-      snapTo(cur.page + Math.sign(p - cur.page * W))
-    } else if (cur.drops >= 3 && a < cur.peak * 0.7) {
-      // 松手进入惯性
-      cur.done = performance.now()
-      decide(cur)
-    }
-    return true
-  }
   const cur = at(k)
   const hasBefore = !!cur.before
   useEffect(() => {
@@ -419,7 +328,7 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
       open={open}
       onOpenChange={(o) => {
         if (o) {
-          anim.current?.stop()
+          strip.stop()
           pos.set(0)
           kRef.current = 0
           setK(0)
@@ -569,9 +478,6 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 type View = { s: number; x: number; y: number }
-// last / peak / rises / drops：滚轮力度的走势，用来认出松手与新的一次滑动；done：已决定翻页（松手或走满一页）的时刻，之后的惯性忽略
-type Gesture = { from: number; page: number; acc: number; samples: { t: number; v: number }[]; idle?: number; done?: number; wheel?: boolean; last: number; peak: number; rises: number; drops: number }
-const LOCK_MS = 800
 
 // Viewer：胶片带上的一页。滚轮上下滚（鼠标滚轮、触控板双指上下滑）与触控板捏合缩放，放大后拖动平移；
 // 触屏双指缩放、单指拖动、下滑关闭；单击任意处关闭（拖动、平移、捏合后松手不算；放大到某个框时单击是复原）。
@@ -621,7 +527,7 @@ function Viewer({
   cur.current = v
   const pts = useRef(new Map<number, { x: number; y: number }>())
   const pinch = useRef<{ d: number; c: { x: number; y: number }; base: View } | null>(null)
-  const drag = useRef<{ x: number; y: number; base: View; touch: boolean; axis?: 'x' | 'y' } | null>(null)
+  const drag = useRef<{ x: number; y: number; base: View; touch: boolean; axis?: 'x' | 'y'; tr?: ReturnType<typeof tracker> } | null>(null)
   const moved = useRef(false)
   const target = useAnnotateTarget()
   const [annotating, setAnnotating] = useState(false)
@@ -740,7 +646,7 @@ function Viewer({
       pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), c: rel((a.x + b.x) / 2, (a.y + b.y) / 2), base: cur.current }
       drag.current = null
     } else if (pts.current.size === 1) {
-      drag.current = { x: e.clientX, y: e.clientY, base: cur.current, touch: e.pointerType === 'touch' }
+      drag.current = { x: e.clientX, y: e.clientY, base: cur.current, touch: e.pointerType === 'touch', tr: tracker() }
     }
   }
   const onMove = (e: ReactPointerEvent) => {
@@ -763,8 +669,9 @@ function Viewer({
     if (g.base.s > 1) return track({ ...g.base, x: g.base.x + dx, y: g.base.y + dy })
     if (!g.touch) return
     // 先看手指往哪个方向走：左右交给胶片带跟手翻页，向下是关闭
-    if (!g.axis && Math.abs(dx) + Math.abs(dy) > 6) {
-      g.axis = nav && Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
+    g.tr?.add(e.clientX, e.clientY)
+    if (!g.axis && Math.hypot(dx, dy) > G.slop) {
+      g.axis = nav && Math.abs(dx) > Math.abs(dy) * G.ratio ? 'x' : 'y'
       if (g.axis === 'x') nav!.begin()
     }
     if (g.axis === 'x') nav!.move(dx)
@@ -782,7 +689,8 @@ function Viewer({
     drag.current = null
     if (g?.axis === 'x') return nav?.end()
     if (g && g.base.s === 1 && cur.current.y > 0) {
-      if (cur.current.y > 120) onClose()
+      const vy = g.tr?.v().y ?? 0
+      if ((cur.current.y > G.closeDist && vy > -200) || vy > G.closeV) onClose()
       else animate({ s: 1, x: 0, y: 0 })
     }
   }

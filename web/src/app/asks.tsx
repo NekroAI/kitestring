@@ -10,11 +10,17 @@ import { gateStage, needsApproval } from './plans'
 import { awaitingReply } from './replyBox'
 import { sessionTitle, splitTool } from './SessionCard'
 import { isStatusReq, StatusReqLines } from './statusReq'
-import { DraftMark } from './draft'
+import { DraftMark, dropDraft } from './draft'
+import { Check, Undo2 } from 'lucide-react'
+import { SwipeRow, type RowAction } from '../ui/gesture'
+import { useAskReason } from '../ui/overlay'
+import { composeAnswer, decKey, useOutbox } from './outbox'
+import { PendingCover, usePending, useReqVerdict } from './verdict'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
 // 不铺开证据、不就地展开、不就地作答；点开进抽屉，抽屉里可以上一条 / 下一条连续处理。
+// 唯一的例外（D-491，R-73）：触屏上验收、批准类决策可以左滑露出「通过 / 退回」（useAskActions）。
 // 条目的键也是抽屉的地址（?a=键）：r:R-1 需求验收、d:D-2 决策、p:P-3 计划批准、g:P-3 阶段验收、o:D-4 转交、
 // s:会话键 会话在等授权 / 在问你、m:会话键 在等你回复（不计件数）、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
 
@@ -220,8 +226,74 @@ function Advice({ a }: { a: Ask }) {
   return null
 }
 
+// swipeKey：这件事在撤销期里用的键（与审批抽屉、Verdict 一致）；没有左滑快捷操作的返回 undefined。
+function swipeKey(a: Ask) {
+  if (a.kind === 'review' && a.code) return a.code
+  const d = a.d
+  // 只给批准类单点决策（批准 / 拒绝）；选项类要先选、多点决策要逐点选，进抽屉做
+  if ((a.kind === 'approve' || a.kind === 'request') && d && d.approval && !d.points?.length && d.status === 'pending' && !d.voided) return decKey(d.code)
+  return undefined
+}
+
+// useAskActions：列表左滑露出的「通过 / 退回」（D-491，是 R-177「审批只在右侧抽屉里作答」的例外，见 docs/principles.md 第 2 条）。
+// 点了才执行，走全站同一个撤销期（verdict.tsx 的 schedule）；退回 / 拒绝先写意见（原因框，R-202 的草稿：关掉再打开还在，提交成功才清）。
+function useAskActions(a: Ask): RowAction[] {
+  const verdict = useReqVerdict()
+  const { send } = useOutbox()
+  const ask = useAskReason()
+  const key = swipeKey(a)
+  if (!key) return []
+  if (a.kind === 'review') {
+    const code = a.code!
+    const draft = `reason:${code}:back`
+    return [
+      {
+        label: t.verdict.back('accept'),
+        icon: <Undo2 />,
+        tone: 'plain',
+        run: async () => {
+          const r = await ask({ title: t.verdict.askTitle(code), description: t.verdict.askDesc, confirmText: t.verdict.back('accept'), placeholder: t.verdict.askPlaceholder, kinds: [], required: true, multiline: true, draft })
+          if (r) verdict.back(code, { comment: r.note, after: () => dropDraft(draft) })
+        },
+      },
+      { label: t.verdict.pass('accept'), icon: <Check />, tone: 'primary', run: () => void verdict.pass(code) },
+    ]
+  }
+  const d = a.d!
+  const scene = d.request_kind ? 'request' : 'approval'
+  const options = d.options ?? []
+  const draft = `reason:${d.code}:back`
+  return [
+    {
+      label: t.verdict.back(scene),
+      icon: <Undo2 />,
+      tone: 'plain',
+      run: async () => {
+        const r = await ask({ title: t.verdict.rejectTitle(scene, d.code), description: t.verdict.rejectDesc, confirmText: t.verdict.back(scene), placeholder: t.verdict.rejectPlaceholder(scene), kinds: [], required: true, multiline: true, draft })
+        if (r) send([{ code: d.code, answer: composeAnswer({ choice: 1, note: r.note }, options), act: 'back', scene, after: () => dropDraft(draft) }])
+      },
+    },
+    { label: t.verdict.pass(scene), icon: <Check />, tone: 'primary', run: () => send([{ code: d.code, answer: composeAnswer({ choice: 0, note: '' }, options), act: 'pass', scene }]) },
+  ]
+}
+
 // AskItem：固定高度的条目，点开审批抽屉。高度不随内容变（标题、状态都只占一行）。
-export function AskItem({
+// 触屏上验收、批准类决策可以左滑露出「通过 / 退回」（swipe = false 时不给，例如会话面板里）。
+export function AskItem(props: Parameters<typeof AskCard>[0] & { swipe?: boolean }) {
+  const { swipe = true, ...rest } = props
+  const actions = useAskActions(props.a)
+  const key = swipeKey(props.a)
+  const pend = usePending(key)
+  if (!swipe || !actions.length) return <AskCard {...rest} />
+  return (
+    <SwipeRow actions={actions} disabled={!!pend} className="shrink-0">
+      <AskCard {...rest} />
+      {key && <PendingCover k={key} />}
+    </SwipeRow>
+  )
+}
+
+function AskCard({
   a,
   now,
   onOpen,

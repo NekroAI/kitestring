@@ -256,7 +256,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
                 {/* 只放固定大小的条目，点开审批抽屉作答（R-177） */}
                 {pending.map((d) => (
                   <Item key={d.id} space={12}>
-                    <AskItem a={decisionAsk(d)} now={now} onOpen={openAsk} />
+                    <AskItem a={decisionAsk(d)} now={now} onOpen={openAsk} swipe={false} />
                   </Item>
                 ))}
               </List>

@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { G } from './gesture'
 
 // 触屏拖拽（R-55）：网页原生拖放在 iPad / 手机上不起作用，这里用触摸事件自己做。
-// 长按约 0.3 秒卡片“浮起”（轻震），随后移动手指即进入拖拽，影子跟着手指走；
-// 松手时落在哪个带 data-drop 的区域，就把它交给 onDrop。浮起后不动继续按住，照常弹出长按菜单（Ctx）。
+// 长按（全站统一 G.longPress，R-73）卡片“浮起”（轻震），随后移动手指即进入拖拽，影子跟着手指走；
+// 松手时落在哪个带 data-drop 的区域，就把它交给 onDrop。同一时刻长按菜单（Ctx）也弹出：不动 = 菜单，接着移动 = 拖拽（菜单随即收起）。
 
 export const dragState = { active: false }
 export const DRAG_START = 'ks-touch-drag-start'
 
-const LIFT_MS = 300
-const SLOP = 10
+const LIFT_MS = G.longPress
+const SLOP = G.slop
 
 type Drag = { id: string; x: number; y: number; w: number; ghost: ReactNode }
 

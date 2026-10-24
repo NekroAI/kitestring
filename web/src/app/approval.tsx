@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
-import { AnimatePresence, motion } from 'motion/react'
 import { CheckCheck, ChevronLeft, ChevronRight, CircleCheck, PanelRight, X } from 'lucide-react'
 import type { Decision, Session } from '../api/client'
 import { useDecisions, usePlans, useSessions } from '../api/queries'
@@ -8,6 +7,7 @@ import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Button, Tip } from '../ui/base'
 import { Panel } from '../ui/overlay'
+import { Pager, PeekPage } from '../ui/gesture'
 import { RoleBadge } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
@@ -36,11 +36,6 @@ import { useAdvance, usePendingMap } from './verdict'
 
 type Dir = 'next' | 'prev' | 'pass'
 
-const slide = {
-  enter: (d: Dir) => ({ x: d === 'prev' ? -56 : 56, opacity: 0 }),
-  center: { x: 0, opacity: 1, rotate: 0 },
-  exit: (d: Dir) => ({ x: d === 'prev' ? 96 : -56, opacity: 0, rotate: d === 'pass' ? 1.2 : 0 }),
-}
 
 // pendingKeyOf：这件事在撤销期 / 盖印中用的键（与 Verdict 的 pendingKey、发件箱的 decKey 一致）。
 function pendingKeyOf(a: Ask | undefined) {
@@ -246,29 +241,21 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
       aside={peek.stack.length && askKey ? <RefPeek peek={peek} from={`a:${askKey}`} mainLabel={cur?.code} /> : undefined}
       onAsideClose={peek.close}
       title={cur ? `${askKindLabel(cur)} ${cur.title}` : t.ask.queue}
-      onSwipe={(d) => {
-        if (d === 'left' && next) go(next, 'next')
-        else if (d === 'right' && prev) go(prev, 'prev')
-        else return false
-        return true
-      }}
     >
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <AnimatePresence initial={false} custom={dir} mode="popLayout">
-          <motion.div
-            key={finished ? 'finished' : (askKey ?? '')}
-            custom={dir}
-            variants={slide}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
-            className="flex min-h-0 flex-1 flex-col bg-surface"
-          >
-            {finished ? <AllDone top={top} onClose={onClose} /> : cur ? <AskBody a={cur} top={top} sealed={sealed} /> : <Gone top={top} />}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      {/* 左右拖 / 妙控板双指横滑切换上一件 / 下一件（R-73），和顶栏 ‹ ›、← → 同一条带子 */}
+      <Pager
+        k={finished ? 'finished' : (askKey ?? '')}
+        dir={dir === 'prev' ? -1 : 1}
+        prev={!!prev && !finished}
+        next={!!next && !finished}
+        onNav={(d) => (d > 0 ? next && go(next, 'next') : prev && go(prev, 'prev'))}
+        peek={(d) => {
+          const a = find((d > 0 ? next : prev) ?? '')
+          return a ? <PeekPage kind={a.code ? `${askKindLabel(a)} · ${a.code}` : askKindLabel(a)} title={a.title} /> : null
+        }}
+      >
+        {finished ? <AllDone top={top} onClose={onClose} /> : cur ? <AskBody a={cur} top={top} sealed={sealed} /> : <Gone top={top} />}
+      </Pager>
     </Panel>
     </PeekScope>
   )

@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
-import { AnimatePresence, motion } from 'motion/react'
 import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, type ReqFields, type Requirement } from '../api/client'
@@ -12,6 +11,7 @@ import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { AnnotateTarget } from '../ui/annotate'
 import { Collapse } from '../ui/motion'
 import { Menu, Panel, useConfirm } from '../ui/overlay'
+import { Pager, PeekPage } from '../ui/gesture'
 import { PriorityDot, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
 import { useGoBack, useOpenSession } from './nav'
@@ -386,11 +386,6 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
 
 // ---------- 抽屉：导航与切换 ----------
 
-const slide = {
-  enter: (d: Dir) => ({ x: d === 'next' ? 56 : -56, opacity: 0 }),
-  center: { x: 0, opacity: 1, rotate: 0 },
-  exit: (d: Dir) => ({ x: d === 'next' ? -56 : 96, opacity: 0, rotate: d === 'pass' ? 1.2 : 0 }),
-}
 
 export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: () => void }) {
   const now = useNow()
@@ -596,29 +591,21 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       aside={peek.stack.length && refId ? <RefPeek peek={peek} from={`r:${refId}`} mainLabel={refId} /> : undefined}
       onAsideClose={peek.close}
       title={cur ? `${cur.code} ${cur.title}` : t.reqs.title}
-      onSwipe={(d) => {
-        if (d === 'left' && next) go(next.code, 'next')
-        else if (d === 'right' && prev) go(prev.code, 'prev')
-        else return false
-        return true
-      }}
     >
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <AnimatePresence initial={false} custom={dir} mode="popLayout">
-          <motion.div
-            key={finished ? 'finished' : (refId ?? '')}
-            custom={dir}
-            variants={slide}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
-            className="flex min-h-0 flex-1 flex-col bg-surface"
-          >
-            {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} />}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      {/* 左右拖 / 妙控板双指横滑切换上一条 / 下一条（R-73），和顶栏 ‹ ›、← → 同一条带子 */}
+      <Pager
+        k={finished ? 'finished' : (refId ?? '')}
+        dir={dir === 'prev' ? -1 : 1}
+        prev={!!prev && !finished}
+        next={!!next && !finished}
+        onNav={(d) => (d > 0 ? next && go(next.code, 'next') : prev && go(prev.code, 'prev'))}
+        peek={(d) => {
+          const x = d > 0 ? next : prev
+          return x ? <PeekPage kind={x.code} title={x.title} /> : null
+        }}
+      >
+        {finished ? <AllDone message={finished} onClose={onClose} top={top} /> : refId && <ReqView refId={refId} top={head} />}
+      </Pager>
     </Panel>
     </PeekScope>
   )

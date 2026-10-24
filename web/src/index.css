@@ -154,8 +154,10 @@
     /* 应用式界面：页面不随手势缩放（看图器自己处理捏合） */
     touch-action: pan-x pan-y;
     font-feature-settings: 'cv11', 'ss01';
-    /* 页面整体不回弹：iOS 上回弹会把底部切换栏一起拖走（R-24）；内部滚动区各自 overscroll-contain */
+    /* 页面整体不回弹：iOS 上回弹会把底部切换栏一起拖走（R-24）；内部滚动区各自 overscroll-contain。
+       横向也不回弹、不连到浏览器的前进 / 后退：妙控板双指横滑归纸鸢（R-73，配合 ui/gesture.tsx 的 installWheelGuard） */
     overscroll-behavior: none;
+    overscroll-behavior-x: none;
   }
   body {
     @apply bg-bg text-fg antialiased;
@@ -292,6 +294,10 @@
 }
 [data-state='closed'].panel-slide {
   animation: ks-slide-out 0.18s ease-in forwards;
+}
+/* 右拖关闭（R-73）：面板已经跟手弹出去了，不再播关闭动画 */
+[data-flung] {
+  animation: none !important;
 }
 /* 命令面板（R-127）：从上方轻轻落下 */
 @keyframes ks-cmd-in {

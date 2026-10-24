@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DRAG_START, dragState } from './touchDrag'
-import { Drawer } from 'vaul'
 import { ContextMenu } from 'radix-ui'
 import { Check, ChevronRight } from 'lucide-react'
 import { cx, useMedia } from '../lib/util'
 import { t } from '../i18n'
+import { G } from './gesture'
+import { BottomSheet } from './overlay'
 
 // 右键（桌面）/ 长按（iPad、手机）菜单：对一个对象的深入操作，不用精确点小按钮。
 // 菜单项和下拉菜单同一种样式；支持一层子菜单（例如“改状态”）。
@@ -67,12 +68,7 @@ function Sheet({ items, open, onClose }: { items: CtxItem[]; open: boolean; onCl
   const row = 'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] active:bg-hover disabled:opacity-40'
   return (
     // handleOnly：只有顶部把手能拖。整块可拖时，点菜单项手指稍微一动就被当成拖动，点击被吞掉、面板弹一下又回来
-    <Drawer.Root open={open} onOpenChange={(o) => !o && onClose()} onAnimationEnd={() => !open && setSub(null)} handleOnly noBodyStyles>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-[60] bg-black/40" />
-        <Drawer.Content aria-describedby={undefined} className="fixed inset-x-0 bottom-0 z-[60] max-h-[85dvh] overflow-y-auto rounded-t-3xl border-t border-line bg-surface px-3 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] outline-none">
-          <Drawer.Handle className="mx-auto mt-1 mb-2 !h-1.5 !w-10 !rounded-full !bg-line-strong" />
-          <Drawer.Title className="sr-only">{t.common.more}</Drawer.Title>
+    <BottomSheet open={open} onClose={onClose} onClosed={() => setSub(null)} handleOnly title={t.common.more} z="z-[60]" scrimClass="bg-black/40" className="max-h-[85dvh] overflow-y-auto rounded-t-3xl border-t border-line bg-surface px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {items.map((it, i) =>
             it.type === 'separator' ? (
               <div key={i} className="mx-3 my-1 h-px bg-line" />
@@ -121,13 +117,11 @@ function Sheet({ items, open, onClose }: { items: CtxItem[]; open: boolean; onCl
               </button>
             ),
           )}
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+    </BottomSheet>
   )
 }
 
-// useLongPress：触屏长按（约半秒、手指没怎么移动）时触发，并吞掉随后的那次点击。
+// useLongPress：触屏长按（全站统一 G.longPress、手指移动不超过死区，R-73）时触发，并吞掉随后的那次点击。
 function useLongPress(onLong: () => void) {
   const timer = useRef(0)
   const start = useRef<{ x: number; y: number } | null>(null)
@@ -145,10 +139,10 @@ function useLongPress(onLong: () => void) {
         fired.current = true
         navigator.vibrate?.(8)
         onLong()
-      }, 480)
+      }, G.longPress)
     },
     onPointerMove: (e: React.PointerEvent) => {
-      if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > 10) cancel()
+      if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > G.slop) cancel()
     },
     onPointerUp: cancel,
     onPointerCancel: cancel,

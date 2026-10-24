@@ -5,7 +5,6 @@ import { cx } from '../lib/util'
 // 元素出现与消失都不能“瞬间跳变”：高度平滑展开 / 收起，周围的内容跟着移动。
 
 export const ease = [0.2, 0.8, 0.2, 1] as const
-export const spring: Transition = { type: 'spring', bounce: 0.15, duration: 0.4 }
 const t: Transition = { duration: 0.28, ease }
 
 // 动画过程中裁剪内容，结束后恢复可见，避免长期裁掉阴影、焦点框与折角。

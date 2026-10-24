@@ -21,6 +21,7 @@ import { PlanGlyph, ProjGlyph, RefChip, ReqGlyph, TurnSeal } from '../ui/refmark
 import { nextView, useKsEvent } from '../app/command'
 import { Flights } from '../app/flight'
 import { PendingCover, usePendingMap } from '../app/verdict'
+import { G } from '../ui/gesture'
 import { DraftMark } from '../app/draft'
 import { shownStatus } from '../lib/pending'
 import {
@@ -264,7 +265,8 @@ function PhoneBoard({ items, statuses, status, setStatus, pool }: { items: Requi
           if (!s) return
           const dx = e.changedTouches[0].clientX - s.x
           const dy = e.changedTouches[0].clientY - s.y
-          if (Math.abs(dx) > 64 && Math.abs(dx) > Math.abs(dy) * 1.6) step(dx < 0 ? 1 : -1)
+          // 横滑换列：阈值与全站手势同一套（R-73），左缘起手留给浏览器返回
+          if (s.x >= G.edge && Math.abs(dx) > G.rowOpen && Math.abs(dx) > Math.abs(dy) * G.ratio) step(dx < 0 ? 1 : -1)
         }}
       >
         <PhoneList status={status} items={list} />

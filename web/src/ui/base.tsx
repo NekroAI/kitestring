@@ -3,6 +3,7 @@ import { Switch as RSwitch, Tooltip } from 'radix-ui'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { cx } from '../lib/util'
 import { t } from '../i18n'
+import { G } from './gesture'
 
 // ---------- Button ----------
 
@@ -287,9 +288,8 @@ export function Segmented<T extends string>({
 
 // Tip：悬停提示（R-186 收敛）。只给三类元素用：只有图标的按钮、被截断的文字（truncated，真截断时才弹全文）、
 // 确实需要解释的标记（状态点、身份标、徽标）；有文字的按钮、展开侧栏的一级入口不挂。
-// 触屏：轻点只做元素本身的动作，不弹；长按约 500ms 才弹，弹出后松手吞掉这次点击，1.5 秒后收起。
+// 触屏：轻点只做元素本身的动作，不弹；长按（全站统一 450ms，R-73）才弹，弹出后松手吞掉这次点击，1.5 秒后收起。
 // 在带长按菜单（Ctx，R-27）的卡片里长按优先给菜单，这里不弹。
-const TIP_LONG_PRESS = 500
 function clipped(el: Element | null) {
   if (!el) return false
   if (el.scrollWidth > el.clientWidth + 1) return true
@@ -332,10 +332,10 @@ export function Tip({ content, children, side = 'top', truncated }: { content: R
             if (truncated && !clipped(ref.current)) return
             fired.current = true
             setOpen(true)
-          }, TIP_LONG_PRESS)
+          }, G.longPress)
         }}
         onPointerMove={(e) => {
-          if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) cancel()
+          if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > G.slop) cancel()
         }}
         onPointerUp={() => {
           cancel()
