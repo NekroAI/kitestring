@@ -215,11 +215,14 @@ type proc struct {
 	pid, ppid int
 	age       time.Duration
 	cmd       string
+	start     string  // 启动时间（ps lstart，LC_ALL=C，空白规整为单个空格）：和 pid 一起认进程，防 pid 复用（R-209）
+	cpu       float64 // %CPU
+	rss       int64   // 常驻内存（KB）
 }
 
 // listProcs 读一次本机进程表。
 func listProcs() ([]proc, error) {
-	cmd := exec.Command("ps", "-A", "-ww", "-o", "pid=,ppid=,etime=,command=")
+	cmd := exec.Command("ps", "-A", "-ww", "-o", "pid=,ppid=,%cpu=,rss=,stat=,lstart=,etime=,command=")
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {
@@ -228,15 +231,20 @@ func listProcs() ([]proc, error) {
 	var ps []proc
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)
-		if len(f) < 4 {
+		if len(f) < 12 { // pid ppid %cpu rss stat lstart（5 段）etime 命令
 			continue
+		}
+		if strings.HasPrefix(f[4], "Z") {
+			continue // 僵尸进程已经退出，只是父进程还没收尸
 		}
 		pid, err1 := strconv.Atoi(f[0])
 		ppid, err2 := strconv.Atoi(f[1])
 		if err1 != nil || err2 != nil {
 			continue
 		}
-		ps = append(ps, proc{pid: pid, ppid: ppid, age: parseEtime(f[2]), cmd: strings.Join(f[3:], " ")})
+		cpu, _ := strconv.ParseFloat(f[2], 64)
+		rss, _ := strconv.ParseInt(f[3], 10, 64)
+		ps = append(ps, proc{pid: pid, ppid: ppid, cpu: cpu, rss: rss, start: strings.Join(f[5:10], " "), age: parseEtime(f[10]), cmd: strings.Join(f[11:], " ")})
 	}
 	return ps, nil
 }
@@ -390,20 +398,33 @@ func taskSig(ts []protocol.Task) string {
 func (d *Daemon) watchTasks(ctx context.Context) {
 	t := time.NewTicker(taskScanEvery)
 	defer t.Stop()
+	n := orphanEvery - 1 // 启动后第一轮就扫孤儿
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-d.orphanKick:
+			n = orphanEvery // 停止进程后、重连 Hub 后马上重扫一次孤儿
 		}
-		d.scanTasks(time.Now())
+		now := time.Now()
+		ps, err := listProcs()
+		if err != nil {
+			continue
+		}
+		d.scanTasks(now, ps)
+		if n++; n >= orphanEvery {
+			n = 0
+			d.scanOrphans(now, ps)
+		}
 	}
 }
 
-func (d *Daemon) scanTasks(now time.Time) {
+func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 	// 每个 agent 进程归到一个会话：同一进程 /clear 后换了会话取最近有事件的；
 	// Codex 经 app-server / 桌面 App 跑时一个进程承载多个会话，分不清归属，不认
 	byPid := map[int]string{}
+	agentInst := map[int]string{} // agent 进程号 → “进程号@启动时间”
 	shared := map[int]bool{}
 	d.mu.Lock()
 	for inst, key := range d.instances {
@@ -418,14 +439,11 @@ func (d *Daemon) scanTasks(now time.Time) {
 		}
 		if cur, ok := byPid[pid]; !ok || d.tasks.lastEvt[key].After(d.tasks.lastEvt[cur]) {
 			byPid[pid] = key
+			agentInst[pid] = inst
 		}
 	}
 	d.mu.Unlock()
 	if len(byPid) == 0 {
-		return
-	}
-	ps, err := listProcs()
-	if err != nil {
 		return
 	}
 	children := map[int][]proc{}
@@ -439,6 +457,7 @@ func (d *Daemon) scanTasks(now time.Time) {
 		tasks []protocol.Task
 	}
 	var reports []report
+	var shells []bgShell
 	d.mu.Lock()
 	for pid, key := range byPid {
 		if shared[pid] {
@@ -452,6 +471,11 @@ func (d *Daemon) scanTasks(now time.Time) {
 			}
 		}
 		tasks := sessionTasks(now, children[pid], calls)
+		for _, tk := range tasks {
+			if sp, err := strconv.Atoi(strings.TrimPrefix(tk.ID, "sh-")); err == nil {
+				shells = append(shells, bgShell{key: key, agent: agentInst[pid], pid: sp})
+			}
+		}
 		// 后台调用的线索在进程结束后就没用了
 		for id, c := range calls {
 			if c.bg && now.Sub(c.at) > time.Minute && !anyMatch(children[pid], c) {
@@ -466,6 +490,7 @@ func (d *Daemon) scanTasks(now time.Time) {
 		reports = append(reports, report{key, tasks})
 	}
 	d.mu.Unlock()
+	d.recordShells(now, ps, shells)
 	for _, r := range reports {
 		tool, sid, ok := strings.Cut(r.key, ":")
 		if !ok {

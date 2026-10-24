@@ -192,6 +192,7 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   devices: [['devices'], ['sessions']],
   projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning']],
   settings: [['settings']],
+  orphans: [['orphans']],
 }
 
 function invalidateTopics(qc: QueryClient, topics: string[]) {

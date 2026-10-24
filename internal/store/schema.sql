@@ -268,6 +268,26 @@ CREATE TABLE IF NOT EXISTS ai_calls (
 );
 CREATE INDEX IF NOT EXISTS ai_calls_at ON ai_calls(at);
 
+-- 停止后台进程的留痕（R-209）：谁、什么时候、哪台设备、哪个进程、结果。进程以“进程号@启动时间”认（proc_id）；
+-- signal：SIGTERM / SIGKILL，没发信号时为空；result：exited / running / killed / failed / refused / gone
+CREATE TABLE IF NOT EXISTS proc_stops (
+	id          TEXT PRIMARY KEY,
+	device_id   TEXT NOT NULL,
+	device_name TEXT NOT NULL DEFAULT '',
+	proc_id     TEXT NOT NULL,
+	pid         INTEGER NOT NULL,
+	cmd         TEXT NOT NULL DEFAULT '',
+	project     TEXT NOT NULL DEFAULT '',
+	session_key TEXT NOT NULL DEFAULT '',
+	state       TEXT NOT NULL DEFAULT '',
+	by          TEXT NOT NULL DEFAULT '',
+	signal      TEXT NOT NULL DEFAULT '',
+	result      TEXT NOT NULL,
+	detail      TEXT NOT NULL DEFAULT '',
+	at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS proc_stops_at ON proc_stops(at);
+
 -- 提交（R-156）：daemon 读本地 git log 上报的、标题写了需求编号或是 revert 的提交，以及 Agent 手动关联 / 上报 CI 的提交。
 -- 纸鸢只记录与展示，不改仓库、不触发 CI。reqs 是关联的需求编号，写成 ",R-12,R-13,"；reverts 是它回滚的提交哈希；
 -- source：git 本地采集 / agent 手动。ci_*：CI 结果（只读，来自 Agent 上报或 GitHub 只读接口），ci_at 是最后一次查询或上报的时间

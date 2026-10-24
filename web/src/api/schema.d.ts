@@ -822,6 +822,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/orphans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 会话结束后还在跑（或已脱离 Agent）的后台进程，与最近的停止记录（R-209） */
+        get: operations["list-orphans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/orphans/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 停止一个孤儿 / 已脱离的后台进程：经 Hub 交给所在设备的 daemon 核对后发信号（R-209） */
+        post: operations["stop-orphan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/passkeys": {
         parameters: {
             query?: never;
@@ -2658,6 +2692,40 @@ export interface components {
         OkBodyBody: {
             ok: boolean;
         };
+        Orphan: {
+            cmd: string;
+            /** Format: double */
+            cpu: number;
+            cwd?: string;
+            device_id: string;
+            device_name: string;
+            device_online: boolean;
+            id: string;
+            /** @description 进程在 Hub 所在的这台机器上 */
+            local: boolean;
+            /** Format: int64 */
+            pid: number;
+            ports?: number[] | null;
+            /** Format: int64 */
+            procs: number;
+            project_id?: string;
+            project_name?: string;
+            /** Format: int64 */
+            rss_kb: number;
+            session_ended: boolean;
+            session_key?: string;
+            session_title?: string;
+            start: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            state: "orphan" | "detached";
+        };
+        OrphansOutBody: {
+            orphans: components["schemas"]["Orphan"][] | null;
+            /** @description 最近 24 小时的停止记录（新的在前） */
+            stops: components["schemas"]["ProcStop"][] | null;
+        };
         "Override-decisionRequest": {
             /** @description 你的答复；有要拍板的点时是附言，可空 */
             answer: string;
@@ -2839,6 +2907,29 @@ export interface components {
              */
             since: string;
             status: string;
+        };
+        ProcStop: {
+            /** Format: date-time */
+            at: string;
+            /** @description 谁停的：user = 你（网页） */
+            by: string;
+            cmd: string;
+            detail: string;
+            device_id: string;
+            device_name: string;
+            id: string;
+            /** Format: int64 */
+            pid: number;
+            /** @description 进程号@启动时间 */
+            proc_id: string;
+            project: string;
+            /** @enum {string} */
+            result: "exited" | "running" | "killed" | "failed" | "refused" | "gone";
+            session_key: string;
+            /** @description SIGTERM / SIGKILL；没发信号时为空 */
+            signal: string;
+            /** @description 停止时的状态：orphan 孤儿 / detached 已脱离 */
+            state: string;
         };
         Project: {
             agent_release: boolean;
@@ -3291,6 +3382,13 @@ export interface components {
             /** @description 这条需求已有在等用户批准的改状态申请，没有新建 */
             existing: boolean;
             message: string;
+        };
+        StopOrphanInBody: {
+            device_id: string;
+            /** @description true = SIGKILL（SIGTERM 后仍在运行、你确认强制时） */
+            force?: boolean;
+            /** @description 根进程“进程号@启动时间”，取自列表 */
+            id: string;
         };
         "Subscribe-pushRequest": {
             auth: string;
@@ -5157,6 +5255,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-orphans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrphansOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "stop-orphan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopOrphanInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcStop"];
                 };
             };
             /** @description Error */

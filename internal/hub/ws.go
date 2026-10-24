@@ -122,6 +122,12 @@ func (h *Hub) handleDeviceMsg(ctx context.Context, c *deviceConn, e protocol.Env
 		}
 		_ = h.store.SetDeviceOnline(ctx, c.dev.ID, true, nil)
 		c.send(protocol.Envelope{Type: protocol.MsgAck, Ack: acks})
+	case protocol.MsgOrphans:
+		h.setOrphans(c.dev.ID, e.Orphans)
+	case protocol.MsgStopResult:
+		if e.StopResult != nil {
+			h.stopDone(*e.StopResult)
+		}
 	case protocol.MsgDelivered:
 		changed := false
 		for _, d := range e.Delivered {
