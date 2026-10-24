@@ -1,11 +1,13 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { AnimatePresence, motion } from 'motion/react'
 import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
 import { agentEnd, barHeight, coarse, gridTicks, inWindow, LONG_TOOL, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type SessionMeta, type Zoom } from '../lib/lanedata'
 import { cx, duration, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
+import { spring } from '../ui/gesture'
 import { Ctx } from '../ui/contextMenu'
 import { displayState, RoleBadge, RoleTag, ToolMark } from '../ui/marks'
 import { Linkify } from '../ui/refmark'
@@ -493,10 +495,12 @@ function Feed({ s, n }: { s: Session; n: number }) {
         const last = i === feed.length - 1
         const [name, brief] = splitTool(a.label)
         return (
-          <div key={Date.parse(a.at) + a.label} className={cx('truncate', last ? 'desk-in text-fg' : 'text-fg-3')}>
-            {last ? '▸ ' : '✓ '}
-            {name} <Linkify text={brief} label="code" />
-          </div>
+          <Tip key={Date.parse(a.at) + a.label} truncated content={a.label}>
+            <div className={cx('truncate', last ? 'desk-in text-fg' : 'text-fg-3')}>
+              {last ? '▸ ' : '✓ '}
+              {name} <Linkify text={brief} label="code" />
+            </div>
+          </Tip>
         )
       })}
     </>
@@ -510,9 +514,11 @@ function ActLine({ s }: { s: Session }) {
   if (!a) return null
   const [name, brief] = splitTool(a.label)
   return (
-    <div key={a.at} className="desk-in truncate font-mono text-[11.5px] leading-4 text-fg-2">
-      ▸ {name} <Linkify text={brief} label="code" />
-    </div>
+    <Tip key={a.at} truncated content={a.label}>
+      <div className="desk-in truncate font-mono text-[11.5px] leading-4 text-fg-2">
+        ▸ {name} <Linkify text={brief} label="code" />
+      </div>
+    </Tip>
   )
 }
 
@@ -662,9 +668,11 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
       {mode === 'full' && (
         <div className="flex h-full min-w-0 items-center gap-2.5 border-l border-line px-4 font-mono text-[11px]">
           {tool && (
-            <span key={task?.last_action_at ?? ''} className="desk-in min-w-0 truncate">
-              ▸ {tool} {brief}
-            </span>
+            <Tip key={task?.last_action_at ?? ''} truncated content={task?.last_action}>
+              <span className="desk-in min-w-0 truncate">
+                ▸ {tool} {brief}
+              </span>
+            </Tip>
           )}
           {when && <span className="shrink-0 font-sans tabular">{when}</span>}
         </div>
@@ -681,9 +689,9 @@ export function laneHeight(tone: Tone, tasks: number, mode: LaneMode) {
   return base + (tasks ? tasks * 24 + 6 : 0)
 }
 
-export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; lit?: boolean; onHover?: (k: string | null) => void }
+export type LaneProps = { s: Session; tone: Tone; now: number; mode: LaneMode; zoom: Zoom; lit?: boolean; still?: boolean; onHover?: (k: string | null) => void }
 
-export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, onHover }: LaneProps) {
+export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, still, onHover }: LaneProps) {
   useFeedTicks(s)
   const open = useOpenSession()
   const menu = useSessionMenu()
@@ -693,7 +701,8 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, onHover 
   const req = workReq(s)
   const spec = { k: s.key, agents: [''], sub: false, faded: false }
   const phone = mode === 'phone'
-  const style = phone ? undefined : { height: laneHeight(tone, tasks.length, mode) }
+  // 高度按内容给：子任务增减、状态变化时用同一套弹簧长高 / 收矮（R-216），首次出现不播
+  const height = phone ? undefined : laneHeight(tone, tasks.length, mode)
   const words = quiet ? lastWords(s) : ''
 
   // 左：标题 + 身份；状态标 + 手上的需求；窄处再加一行（当前动作 / 在问什么 / 最后一句话）
@@ -739,7 +748,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, onHover 
     ))
 
   return (
-    <div style={style} className={cx(!phone && 'flex shrink-0')}>
+    <motion.div initial={false} animate={height === undefined ? undefined : { height }} transition={still ? { duration: 0 } : spring()} className={cx(!phone && 'flex shrink-0')}>
       <Ctx items={menu(s)} className="flex min-h-0 w-full rounded-[14px]">
         <div
           role="button"
@@ -751,7 +760,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, onHover 
           onMouseLeave={onHover && (() => onHover(null))}
           className={cx(
             'grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] text-left transition-[background,box-shadow] duration-200',
-            tasks.length ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-1',
+            'grid-rows-[minmax(0,1fr)_auto]',
             quiet ? 'bg-surface/55 ring-1 ring-line ring-inset hover:bg-surface' : 'bg-surface shadow-card hover:bg-hover/40',
             tone === 'you' && 'ring-1 ring-reply/30 ring-inset',
             lit && 'desk-lit',
@@ -774,16 +783,18 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, lit, onHover 
             {phone && tone === 'you' && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-reply"><Linkify text={youLine(s)} /></div>}
             {phone && quiet && words && <div className="line-clamp-2 px-3.5 pb-2.5 text-[12.5px] text-fg-3"><Linkify text={words} /></div>}
           </div>
-          {tasks.length > 0 && (
-            <div className="pb-1.5">
+          <div className={cx('relative', tasks.length > 0 && 'pb-1.5')}>
+            <AnimatePresence initial={false} mode="popLayout">
               {tasks.map((x, i) => (
-                <SubLane key={x.id} row={x} k={s.key} now={now} mode={mode} last={i === tasks.length - 1} />
+                <motion.div key={x.id} layout="position" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={still ? { duration: 0 } : spring()}>
+                  <SubLane row={x} k={s.key} now={now} mode={mode} last={i === tasks.length - 1} />
+                </motion.div>
               ))}
-            </div>
-          )}
+            </AnimatePresence>
+          </div>
         </div>
       </Ctx>
-    </div>
+    </motion.div>
   )
 })
 

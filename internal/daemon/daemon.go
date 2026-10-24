@@ -950,7 +950,7 @@ func toolBrief(tool string, in map[string]any) string {
 	switch tool {
 	case "Bash", "shell", "exec_command", "local_shell":
 		if c := str(in, "command"); c != "" {
-			return clean(c, 80)
+			return clean(c, 200)
 		}
 		if arr, ok := in["command"].([]any); ok {
 			parts := make([]string, 0, len(arr))
@@ -959,7 +959,7 @@ func toolBrief(tool string, in map[string]any) string {
 					parts = append(parts, s)
 				}
 			}
-			return clean(strings.Join(parts, " "), 80)
+			return clean(strings.Join(parts, " "), 200)
 		}
 	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit":
 		if f := str(in, "file_path"); f != "" {

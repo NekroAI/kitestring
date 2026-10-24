@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDown, WifiOff } from 'lucide-react'
 import type { MorningReport, Plan, Session } from '../api/client'
 import { useConnected, useDecisions, useMorning, usePlans, useProjects, useRequirements } from '../api/queries'
@@ -7,6 +8,8 @@ import { t } from '../i18n'
 import type { Scene } from '../i18n/zh'
 import { cx, loadPref, relTime, savePref } from '../lib/util'
 import { Skeleton, Tip } from '../ui/base'
+import { Item, List, useSettled } from '../ui/motion'
+import { spring } from '../ui/gesture'
 import { displayState, presence, RoleTag } from '../ui/marks'
 import { Linkify, PlanGlyph, shortTitle } from '../ui/refmark'
 import type { ProjectGroup, useWorkbench } from './inbox'
@@ -193,20 +196,33 @@ export function RecentRail({ now, className, limit = 14, fill }: { now: number; 
     return () => ro.disconnect()
   }, [box, fill])
   const recent = useRecent(undefined, fill && fit ? fit : limit)
+  // 首次加载（数据陆续到齐、按栏高算出条数）这段时间里的出现不算进场（R-216）
+  const still = !useSettled(recent.length > 0 && (!fill || fit > 0))
   return (
     <Panel title={t.desk.recentTitle} fill={fill} className={cx('flex min-h-0 flex-col', className)}>
       {recent.length ? (
         <ul ref={setBox} className="desk-scroll relative -mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           <span aria-hidden className="absolute top-2.5 bottom-2.5 left-[4px] w-px bg-line-strong" />
-          {recent.map((e, i) => (
-            <li key={i} className="relative grid grid-cols-[9px_minmax(0,1fr)_auto] items-baseline gap-2.5 py-[5px] text-[12.5px] text-fg-2">
-              <span className={cx('size-[9px] translate-y-px rounded-full bg-surface ring-2 ring-inset', ringOf[e.dot] ?? 'ring-line-strong')} />
-              <span className="truncate">
-                <Linkify text={e.text} />
-              </span>
-              <span className="text-[11px] text-fg-3 tabular">{relTime(e.at, now)}</span>
-            </li>
-          ))}
+          <AnimatePresence initial={false}>
+            {recent.map((e) => (
+              <motion.li
+                key={`${e.at}|${e.text}`}
+                layout="position"
+                initial={still ? false : { height: 0, opacity: 0, overflow: 'hidden' }}
+                animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
+                exit={still ? undefined : { height: 0, opacity: 0, overflow: 'hidden' }}
+                transition={spring()}
+              >
+                <div className="relative grid grid-cols-[9px_minmax(0,1fr)_auto] items-baseline gap-2.5 py-[5px] text-[12.5px] text-fg-2">
+                  <span className={cx('size-[9px] translate-y-px rounded-full bg-surface ring-2 ring-inset', ringOf[e.dot] ?? 'ring-line-strong')} />
+                  <span className="truncate">
+                    <Linkify text={e.text} />
+                  </span>
+                  <span className="text-[11px] text-fg-3 tabular">{relTime(e.at, now)}</span>
+                </div>
+              </motion.li>
+            ))}
+          </AnimatePresence>
         </ul>
       ) : (
         <p className="text-xs text-fg-3">{t.projects.noRecent}</p>
@@ -363,17 +379,22 @@ const actTone: Record<string, string> = { pass: 'text-run', answer: 'text-accent
 
 export function HandledLog({ now, className }: { now: number; className?: string }) {
   const list = useHandled(now)
+  const still = !useSettled(list.length > 0)
   if (!list.length) return null
   return (
     <div className={cx('grid gap-1.5 border-t border-dashed border-line-strong pt-2.5', className)}>
       <h5 className="text-[11.5px] font-semibold tracking-wider text-fg-3">{t.desk.handled}</h5>
-      {list.map((x, i) => (
-        <div key={i} className="flex min-w-0 items-baseline gap-2 text-[12.5px] text-fg-2">
-          <span className={cx('shrink-0 text-[11px]', actTone[x.act])}>{x.act === 'answer' ? t.verdict.pass('answer') : x.act === 'pass' ? t.verdict.pass(x.scene) : t.verdict.back(x.scene)}</span>
-          <span className="min-w-0 flex-1 truncate">{x.text}</span>
-          <span className="shrink-0 text-[11px] text-fg-3 tabular">{relTime(x.at, now)}</span>
-        </div>
-      ))}
+      <List space={6}>
+        {list.map((x) => (
+          <Item key={`${x.at}|${x.act}|${x.text}`} space={6} layout fluid still={still}>
+            <div className="flex min-w-0 items-baseline gap-2 text-[12.5px] text-fg-2">
+              <span className={cx('shrink-0 text-[11px]', actTone[x.act])}>{x.act === 'answer' ? t.verdict.pass('answer') : x.act === 'pass' ? t.verdict.pass(x.scene) : t.verdict.back(x.scene)}</span>
+              <span className="min-w-0 flex-1 truncate">{x.text}</span>
+              <span className="shrink-0 text-[11px] text-fg-3 tabular">{relTime(x.at, now)}</span>
+            </div>
+          </Item>
+        ))}
+      </List>
     </div>
   )
 }

@@ -299,7 +299,6 @@ function AskCard({
   onOpen,
   active,
   lit,
-  fresh,
   showProject,
   onHover,
   className,
@@ -309,7 +308,6 @@ function AskCard({
   onOpen: (key: string) => void
   active?: boolean
   lit?: boolean
-  fresh?: boolean
   showProject?: boolean
   onHover?: (k: string | null) => void
   className?: string
@@ -331,7 +329,6 @@ function AskCard({
         sr ? 'h-[106px] grid-rows-4' : 'h-[86px] grid-rows-3',
         a.counted ? 'border-reply/25' : 'border-line',
         active && 'border-accent/60 ring-2 ring-accent/25',
-        fresh && 'desk-drop',
         lit && 'desk-lit',
         className,
       )}

@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { motion } from 'motion/react'
 import { ChevronRight, CircleCheck, History, MonitorSmartphone, Moon, Search } from 'lucide-react'
 import type { Session } from '../api/client'
 import { useConnected, useSettings } from '../api/queries'
@@ -21,6 +22,7 @@ import { coarse, makeAxis, ZOOMS, type SessionMeta, type Zoom } from '../lib/lan
 import { serverNow, usePlans } from '../api/queries'
 import { useFillHeight } from '../app/pool'
 import { OrphanProcs } from '../app/orphans'
+import { Collapse, Item, List, useSettled } from '../ui/motion'
 
 // 工作台（R-170，D-228 原型；R-170 返工按真实运行截图改）：一屏驾驶舱，整页不滚动，各栏在区域内滚动。
 //   左「要你处理」：只放固定高度的条目（R-177），点开右侧的审批抽屉处理，底部「刚处理」；没有待办时放「一切正常」概况，栏宽不变（R-211）。
@@ -312,13 +314,8 @@ export default function WorkbenchPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [phone, setTab])
 
-  // 新进「要你处理」的条目落下一次
-  const seen = useRef<Set<string> | null>(null)
-  const askKeys = asks.map((x) => x.key)
-  const fresh = new Set(seen.current ? askKeys.filter((x) => !seen.current!.has(x)) : [])
-  useEffect(() => {
-    if (!wb.loading) seen.current = new Set(askKeys)
-  })
+  // 首次加载（骨架换成内容）这段时间里的出现不算进场，不播动画；之后各栏的增、删、换位置才用弹簧过渡（R-216）
+  const still = !useSettled(!wb.loading && laneReady)
 
   // 各栏的骨架按上次加载完的样子画（R-211）；搜索过滤时的样子不记
   const lay = phone ? 'p' : mode
@@ -355,39 +352,42 @@ export default function WorkbenchPage() {
           )}
         </PaneHead>
       )}
-      <div ref={setAskBox} className={cx('desk-scroll flex min-h-0 flex-col gap-2', !phone && 'flex-1 overflow-y-auto overscroll-contain p-0.5 pr-1.5')}>
+      <motion.div layoutScroll ref={setAskBox} className={cx('desk-scroll flex min-h-0 flex-col gap-2', !phone && 'flex-1 overflow-y-auto overscroll-contain p-0.5 pr-1.5')}>
         {wb.loading ? (
           <ShapeSkeleton shape={askShape} />
         ) : asks.length ? (
-          asks.map((a) => (
-            <AskItem
-              key={a.key}
-              a={a}
-              now={now}
-              onOpen={openAsk}
-              active={openKey === a.key}
-              fresh={fresh.has(a.key)}
-              showProject={multiAsk}
-              lit={!!a.s && hover?.from === 'lane' && hover.k === a.s.key}
-              onHover={(key) => setHover(key ? { k: key, from: 'ask' } : null)}
-            />
-          ))
+          <List space={8}>
+            {asks.map((a) => (
+              <Item key={a.key} space={8} layout fluid still={still}>
+                <AskItem
+                  a={a}
+                  now={now}
+                  onOpen={openAsk}
+                  active={openKey === a.key}
+                  showProject={multiAsk}
+                  lit={!!a.s && hover?.from === 'lane' && hover.k === a.s.key}
+                  onHover={(key) => setHover(key ? { k: key, from: 'ask' } : null)}
+                />
+              </Item>
+            ))}
+          </List>
         ) : (
           <AllClear run={run} park={park} now={now} />
         )}
-      </div>
+      </motion.div>
       <HandledLog now={now} className="shrink-0" />
     </section>
   )
 
   // ---- 中：会话泳道 ----
-  const laneEls = desk.groups.map((g) => {
+  // 泳道、分组标题、已结束的泳道排成一维列表，增、删、换位置都用同一套弹簧（R-216）
+  const laneEls = desk.groups.flatMap((g) => {
     const href = projectHref(g.pk)
     const gr = g.rows.filter((x) => x.tone === 'run' || x.tone === 'bg').length
     const gp = g.rows.filter((x) => x.tone === 'park').length
-    return (
-      <Fragment key={g.pk}>
-        {multi && (
+    return [
+      multi && (
+        <Item key={`g:${g.pk}`} space={8} layout fluid still={still}>
           <div className="flex shrink-0 items-center gap-2 px-1 pt-1 text-[12px] text-fg-3">
             <ProjGlyph />
             {href ? (
@@ -400,15 +400,19 @@ export default function WorkbenchPage() {
             <span className="shrink-0 tabular">{t.desk.groupSub(gr, gp)}</span>
             <span aria-hidden className="h-0 min-w-4 flex-1 border-t border-dashed border-line" />
           </div>
-        )}
-        {g.rows.map((r) => (
-          <Lane key={r.s.key} s={r.s} tone={r.tone} now={now} mode={mode} zoom={zoom} lit={hover?.from === 'ask' && hover.k === r.s.key} onHover={(key) => setHover(key ? { k: key, from: 'lane' } : null)} />
-        ))}
-        {g.done.map((m) => (
-          <EndedLane key={m.k} m={m} now={now} mode={mode} zoom={zoom} />
-        ))}
-      </Fragment>
-    )
+        </Item>
+      ),
+      ...g.rows.map((r) => (
+        <Item key={r.s.key} space={8} layout fluid still={still}>
+          <Lane s={r.s} tone={r.tone} now={now} mode={mode} zoom={zoom} still={still} lit={hover?.from === 'ask' && hover.k === r.s.key} onHover={(key) => setHover(key ? { k: key, from: 'lane' } : null)} />
+        </Item>
+      )),
+      ...g.done.map((m) => (
+        <Item key={`e:${m.k}`} space={8} layout fluid still={still}>
+          <EndedLane m={m} now={now} mode={mode} zoom={zoom} />
+        </Item>
+      )),
+    ]
   })
   const endedEls = (desk.recent.length > 0 || (showOlder && desk.older > 0)) && (
     <div className="shrink-0">
@@ -417,9 +421,13 @@ export default function WorkbenchPage() {
         <span aria-hidden className="h-0 min-w-4 flex-1 border-t border-dashed border-line" />
       </div>
       <div className="@container rounded-[14px] p-1 ring-1 ring-line ring-inset">
-        {(showOlder ? desk.ended : desk.recent).map((s) => (
-          <SessionRow key={s.key} s={s} now={now} showProject={multi} />
-        ))}
+        <List>
+          {(showOlder ? desk.ended : desk.recent).map((s) => (
+            <Item key={s.key} layout fluid still={still}>
+              <SessionRow s={s} now={now} showProject={multi} />
+            </Item>
+          ))}
+        </List>
       </div>
     </div>
   )
@@ -436,7 +444,7 @@ export default function WorkbenchPage() {
           </span>
         </div>
       </PaneHead>
-      <div ref={setLaneBox} className={cx('desk-scroll flex min-h-0 flex-col gap-2', !phone && 'flex-1 overflow-y-auto overscroll-contain p-0.5 pr-1.5')}>
+      <motion.div layoutScroll ref={setLaneBox} className={cx('desk-scroll flex min-h-0 flex-col gap-2', !phone && 'flex-1 overflow-y-auto overscroll-contain p-0.5 pr-1.5')}>
         {laneLoading ? (
           <ShapeSkeleton shape={laneShape} />
         ) : !wb.devices.length ? (
@@ -455,9 +463,11 @@ export default function WorkbenchPage() {
           </Card>
         ) : desk.lanes.length || desk.doneLanes ? (
           <>
-            {run === 0 && !k && <NoRun sessions={wb.sessions} now={now} />}
+            <Collapse show={run === 0 && !k} fluid still={still}>
+              <NoRun sessions={wb.sessions} now={now} />
+            </Collapse>
             {!phone && <LaneAxis zoom={zoom} mode={mode} now={now} />}
-            {laneEls}
+            <List space={8}>{laneEls}</List>
           </>
         ) : k ? (
           <p className="px-4 py-10 text-center font-display text-[15px] text-fg-3">{t.home.noMatch}</p>
@@ -468,7 +478,7 @@ export default function WorkbenchPage() {
         )}
         {!laneLoading && endedEls}
         {!laneLoading && <OrphanProcs now={now} />}
-      </div>
+      </motion.div>
       {!laneLoading && desk.older > 0 && (
         <div className="flex shrink-0 items-center gap-2 px-0.5 text-xs text-fg-3">
           <button onClick={() => setShowOlder(!showOlder)} aria-expanded={showOlder} className="inline-flex shrink-0 items-center gap-1 hover:text-fg-2">

@@ -695,22 +695,13 @@ nav.fixed {
     box-shadow: 0 0 0 5px color-mix(in srgb, var(--reply) 28%, transparent);
   }
 }
-/* 动作流新进的一行、待办新进的一张：只在出现时动一次 */
+/* 动作流新进的一行：只在出现时动一次 */
 .desk-in {
   animation: desk-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @keyframes desk-in {
   from {
     transform: translateY(8px);
-    opacity: 0;
-  }
-}
-.desk-drop {
-  animation: desk-drop 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-@keyframes desk-drop {
-  from {
-    transform: translateY(-12px);
     opacity: 0;
   }
 }

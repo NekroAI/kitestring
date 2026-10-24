@@ -18,6 +18,17 @@ function isCard(el: HTMLElement) {
   return !!bg && bg !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(bg)
 }
 
+// blocksOf：容器里的各块。带 data-skel-flat 的包装（列表动画的 List）不算一块，取它里面的；带 data-skel-wrap 的（列表动画的 Item）取里面真正的内容。
+function blocksOf(el: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = []
+  for (const c of Array.from(el.children) as HTMLElement[]) {
+    if (c.dataset.skelFlat !== undefined) out.push(...blocksOf(c))
+    else if (c.dataset.skelWrap !== undefined) out.push((c.firstElementChild?.firstElementChild as HTMLElement | null) ?? c)
+    else out.push(c)
+  }
+  return out
+}
+
 // useShape：读出上次记下的形状；ready 之后（且 record 为真）持续记下 el 的子块（高度变化时更新）。
 // 子块带 data-fill 的在骨架里撑满剩余高度（如「最近动态」），不按记下的高度画。
 export function useShape(key: string, el: HTMLElement | null, ready: boolean, fallback: Shape, record = true): Shape {
@@ -33,7 +44,7 @@ export function useShape(key: string, el: HTMLElement | null, ready: boolean, fa
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         const out: Shape = []
-        for (const c of Array.from(el.children) as HTMLElement[]) {
+        for (const c of blocksOf(el)) {
           const h = Math.round(c.getBoundingClientRect().height)
           if (!h || c.dataset.skelSkip !== undefined) continue
           out.push({ h, card: isCard(c) || undefined, fill: c.dataset.fill !== undefined || undefined })
@@ -44,12 +55,16 @@ export function useShape(key: string, el: HTMLElement | null, ready: boolean, fa
     }
     const ro = new ResizeObserver(save)
     ro.observe(el)
-    for (const c of Array.from(el.children)) ro.observe(c)
+    const watch = () => {
+      for (const c of blocksOf(el)) ro.observe(c)
+      for (const f of Array.from(el.querySelectorAll('[data-skel-flat]'))) mo.observe(f, { childList: true })
+    }
     const mo = new MutationObserver(() => {
-      for (const c of Array.from(el.children)) ro.observe(c)
+      watch()
       save()
     })
     mo.observe(el, { childList: true })
+    watch()
     save()
     return () => {
       window.clearTimeout(timer)
