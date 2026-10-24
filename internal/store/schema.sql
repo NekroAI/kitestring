@@ -419,3 +419,28 @@ CREATE TABLE IF NOT EXISTS lane_colds (
 	PRIMARY KEY (session_key, agent_id, at_ms)
 );
 CREATE INDEX IF NOT EXISTS lane_colds_at ON lane_colds(at_ms);
+
+-- 后台命令（R-208，shell 泳道）：各设备 daemon 记下的 run_in_background 命令（Codex 是会话下的后台 shell），每条一行，daemon 有变化时整条覆盖。
+-- ref 是 tool_use_id（Codex 是“sh-进程号@启动时间”），tid 是对应 R-162 后台任务的 ID；kind：build 构建 / 测试、deploy 部署、service 服务、poll 轮询、other。
+-- status：running / ok / failed / stopped / ended（已结束，退出码未知）/ lost（结束时间也不知道）。last_line 是最后一行输出的摘要（截断），不存输出内容。
+-- hot：跑飞（cpu / mem），hot_ms 开始时刻，rss_kb 当时整棵进程树的内存。时间都是 Unix 毫秒。保留 30 天。
+CREATE TABLE IF NOT EXISTS lane_shells (
+	session_key TEXT NOT NULL,
+	ref         TEXT NOT NULL,
+	agent_id    TEXT NOT NULL DEFAULT '',
+	tid         TEXT NOT NULL DEFAULT '',
+	device_id   TEXT NOT NULL DEFAULT '',
+	kind        TEXT NOT NULL DEFAULT 'other',
+	label       TEXT NOT NULL DEFAULT '',
+	cmd         TEXT NOT NULL DEFAULT '',
+	start_ms    INTEGER NOT NULL,
+	end_ms      INTEGER,
+	status      TEXT NOT NULL,
+	exit_code   INTEGER,
+	last_line   TEXT NOT NULL DEFAULT '',
+	hot         TEXT NOT NULL DEFAULT '',
+	hot_ms      INTEGER,
+	rss_kb      INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (session_key, ref)
+);
+CREATE INDEX IF NOT EXISTS lane_shells_start ON lane_shells(start_ms);

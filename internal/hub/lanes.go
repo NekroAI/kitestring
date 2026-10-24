@@ -28,11 +28,12 @@ type laneState struct {
 	agents map[string]store.LaneAgent
 	toks   map[string]store.LaneTokMinute
 	colds  []store.LaneCold
+	shells map[string]protocol.ShellCmd
 	tmr    *time.Timer
 }
 
 func newLaneState() *laneState {
-	return &laneState{tracker: store.NewLaneTracker(), mins: map[string]store.LaneMinute{}, spans: map[string]store.LaneSpan{}, agents: map[string]store.LaneAgent{}, toks: map[string]store.LaneTokMinute{}}
+	return &laneState{tracker: store.NewLaneTracker(), mins: map[string]store.LaneMinute{}, spans: map[string]store.LaneSpan{}, agents: map[string]store.LaneAgent{}, toks: map[string]store.LaneTokMinute{}, shells: map[string]protocol.ShellCmd{}}
 }
 
 // LanePush 是一条实时推送：变了的格子、时段与子任务，以及 token 用量的格子和新的冷启动（R-206）。
@@ -42,6 +43,7 @@ type LanePush struct {
 	Agents  []store.LaneAgent     `json:"g"`
 	Tokens  []store.LaneTokMinute `json:"t"`
 	Colds   []store.LaneCold      `json:"c"`
+	Shells  []protocol.ShellCmd   `json:"sh"` // 后台命令（R-208），整条
 }
 
 // laneUsage 存下 daemon 上传的一批 token 用量（只有数字），并推给网页。存好了返回真（daemon 据此不再重发）。
@@ -52,6 +54,17 @@ func (h *Hub) laneUsage(ctx context.Context, us []protocol.UsageMinute, cs []pro
 		return false
 	}
 	h.lanePush(store.LaneWrite{Tokens: mins, Colds: colds})
+	return true
+}
+
+// laneShells 存下 daemon 上传的一批后台命令（R-208），并推给网页。存好了返回真（daemon 据此不再重发）。
+func (h *Hub) laneShells(ctx context.Context, deviceID string, cs []protocol.ShellCmd) bool {
+	out, err := h.store.ApplyShells(ctx, deviceID, cs)
+	if err != nil {
+		h.log.Warn("记录后台命令失败", "err", err)
+		return false
+	}
+	h.lanePush(store.LaneWrite{Shells: out})
 	return true
 }
 
@@ -94,7 +107,7 @@ func (h *Hub) laneEvent(ctx context.Context, key string, ev protocol.Event) {
 
 // lanePush 把变化攒 300ms 再推；同一格只推最新值。
 func (h *Hub) lanePush(w store.LaneWrite) {
-	if w.Minute == nil && len(w.Spans) == 0 && len(w.Agents) == 0 && len(w.Tokens) == 0 && len(w.Colds) == 0 {
+	if w.Minute == nil && len(w.Spans) == 0 && len(w.Agents) == 0 && len(w.Tokens) == 0 && len(w.Colds) == 0 && len(w.Shells) == 0 {
 		return
 	}
 	l := h.lanes
@@ -113,12 +126,18 @@ func (h *Hub) lanePush(w store.LaneWrite) {
 		l.toks[fmt.Sprintf("%s\x00%s\x00%s\x00%d", t.Key, t.Agent, t.Model, t.Minute)] = t
 	}
 	l.colds = append(l.colds, w.Colds...)
+	for _, c := range w.Shells {
+		l.shells[c.Key+"\x00"+c.Ref] = c
+	}
 	if l.tmr != nil {
 		return
 	}
 	l.tmr = time.AfterFunc(lanePushDelay, func() {
 		l.qmu.Lock()
-		p := LanePush{Minutes: []store.LaneMinute{}, Spans: []store.LaneSpan{}, Agents: []store.LaneAgent{}, Tokens: []store.LaneTokMinute{}, Colds: append([]store.LaneCold{}, l.colds...)}
+		p := LanePush{Minutes: []store.LaneMinute{}, Spans: []store.LaneSpan{}, Agents: []store.LaneAgent{}, Tokens: []store.LaneTokMinute{}, Colds: append([]store.LaneCold{}, l.colds...), Shells: []protocol.ShellCmd{}}
+		for _, c := range l.shells {
+			p.Shells = append(p.Shells, c)
+		}
 		for _, t := range l.toks {
 			p.Tokens = append(p.Tokens, t)
 		}
@@ -132,7 +151,7 @@ func (h *Hub) lanePush(w store.LaneWrite) {
 			p.Agents = append(p.Agents, a)
 		}
 		l.mins, l.spans, l.agents = map[string]store.LaneMinute{}, map[string]store.LaneSpan{}, map[string]store.LaneAgent{}
-		l.toks, l.colds = map[string]store.LaneTokMinute{}, nil
+		l.toks, l.colds, l.shells = map[string]store.LaneTokMinute{}, nil, map[string]protocol.ShellCmd{}
 		l.tmr = nil
 		l.qmu.Unlock()
 		h.broker.publishLane(p)
@@ -280,7 +299,7 @@ func (h *Hub) putTokenPrices(ctx context.Context, in *struct{ Body TokenPrices }
 
 func (h *Hub) registerLanesWeb(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "get-lanes", Method: http.MethodGet, Path: "/api/lanes", Tags: []string{"sessions"},
-		Summary: "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）"}, h.getLanes)
+		Summary: "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）；后台命令（R-208）"}, h.getLanes)
 	huma.Register(api, huma.Operation{OperationID: "get-token-prices", Method: http.MethodGet, Path: "/api/token-prices", Tags: []string{"settings"},
 		Summary: "各模型每百万 token 的价格（选填，R-206）与近 30 天用过的模型"}, h.getTokenPrices)
 	huma.Register(api, huma.Operation{OperationID: "put-token-prices", Method: http.MethodPut, Path: "/api/token-prices", Tags: []string{"settings"},

@@ -187,3 +187,20 @@ test('冷启动：超过阈值、在窗口里的才列出，按时间排', () =>
   assert.deepEqual(st.coldsOf(k, [''], ax).map((c) => c.cause), ['compact', 'idle'])
   assert.deepEqual(st.coldsOf(k, ['x'], ax).map((c) => c.cause), ['start'])
 })
+
+test('后台命令（R-208）：按范围取、整条覆盖、结束了的不被还在跑的旧数据盖掉、不知道结束时间的只算 10 分钟', () => {
+  const st = new LaneStore()
+  const sh = (ref: string, startAgo: number, extra: object = {}) => ({ k: 'claude:s', ref, kind: 'build', label: ref, cmd: ref, start: NOW - startAgo * 60000, status: 'running', ...extra })
+  st.merge(data([], 1, { shells: [sh('a', 30), sh('b', 200, { status: 'failed', end: NOW - 190 * 60000, exit: 1 }), sh('c', 300, { status: 'lost' })] }))
+  const h1 = makeAxis('h1', 720, NOW)
+  assert.deepEqual(st.shellsOf('claude:s', h1, NOW).map((x) => x.ref), ['a'])
+  const h6 = makeAxis('h6', 720, NOW)
+  assert.deepEqual(st.shellsOf('claude:s', h6, NOW).map((x) => x.ref), ['c', 'b', 'a'])
+  // 推送：a 结束了；随后到的拉取里 a 还在跑（旧数据），不盖掉
+  st.push({ m: [], s: [], g: [], sh: [sh('a', 30, { status: 'ok', end: NOW - 60000, exit: 0 })] })
+  st.merge(data([], 1, { shells: [sh('a', 30)] }))
+  assert.equal(st.shellsOf('claude:s', h1, NOW)[0].status, 'ok')
+  // 不知道结束时间的只算开始后 10 分钟：近 1 小时里看不到 5 小时前开始的
+  const late = makeAxis('h6', 720, NOW + 2 * 3600e3)
+  assert.ok(!st.shellsOf('claude:s', late, NOW + 2 * 3600e3).some((x) => x.ref === 'c'))
+})

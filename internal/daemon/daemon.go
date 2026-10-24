@@ -66,6 +66,7 @@ type Daemon struct {
 	direct        chan protocol.Envelope // 不落盘、连着 Hub 时直接发的消息（孤儿列表、停止结果）
 	orphanKick    chan struct{}
 	usage         *usageScanner // token 用量（R-206）
+	shells        *shellTracker // 后台命令（R-208）
 }
 
 type toolUse struct {
@@ -102,6 +103,11 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 		q.close()
 		return nil, fmt.Errorf("打开用量记录失败：%w", err)
 	}
+	if d.shells, err = openShells(q.db); err != nil {
+		q.close()
+		return nil, fmt.Errorf("打开后台命令记录失败：%w", err)
+	}
+	d.usage.onLine = d.shells.transcriptLine
 	d.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(hub)
@@ -196,6 +202,7 @@ func (d *Daemon) session(ctx context.Context) error {
 	d.log.Info("已连接 Hub")
 	d.resendOrphans()
 	d.usage.reset()
+	d.shells.reset()
 
 	readErr := make(chan error, 1)
 	acked := make(chan struct{}, 1)
@@ -266,6 +273,8 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		}
 	case protocol.MsgUsageAck:
 		d.usage.acked(e.Ack)
+	case protocol.MsgShellsAck:
+		d.shells.acked(e.Ack)
 	case protocol.MsgDecisions:
 		for _, dec := range e.Decisions {
 			for _, f := range dec.Files {
@@ -492,6 +501,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)
 	}
 	d.noteTaskEvent(key, p, &ev)
+	d.shells.onHook(key, p, &ev)
 	if d.usage != nil {
 		d.usage.track(key, transcript)
 	}

@@ -54,9 +54,35 @@ export type LaneRowIn = { k: string; a: string; m: number[] | null; c: number[] 
 export type Span = { k: string; a: string; kind: 'tool' | 'wait' | string; ref: string; label: string; start: number; end?: number; until?: number }
 export type Agent = { k: string; a: string; label: string; type: string; start: number; end?: number }
 export type SessionMeta = { k: string; title: string; role: string; tool: string; project_id: string; project_name: string; cwd: string; background: boolean; ended_at?: string; last_active_at: string }
-export type LaneData = { now: number; step: number; from: number; to: number; rows: LaneRowIn[] | null; spans: Span[] | null; agents: Agent[] | null; sessions?: SessionMeta[] | null; tok?: TokRowIn[] | null; colds?: Cold[] | null }
+export type LaneData = { now: number; step: number; from: number; to: number; rows: LaneRowIn[] | null; spans: Span[] | null; agents: Agent[] | null; sessions?: SessionMeta[] | null; tok?: TokRowIn[] | null; colds?: Cold[] | null; shells?: Shell[] | null }
 export type LaneMinute = { k: string; a: string; m: number; c: number; hc: number }
-export type LanePush = { m: LaneMinute[] | null; s: Span[] | null; g: Agent[] | null; t?: TokMinute[] | null; c?: Cold[] | null }
+export type LanePush = { m: LaneMinute[] | null; s: Span[] | null; g: Agent[] | null; t?: TokMinute[] | null; c?: Cold[] | null; sh?: Shell[] | null }
+
+// ---------- 后台命令（R-208） ----------
+// daemon 每条整条上传（类型、描述、命令、起止、结果、最后一行输出摘要），这里按会话 + ref 覆盖。
+export type ShellStatus = 'running' | 'ok' | 'failed' | 'stopped' | 'ended' | 'lost'
+export type Shell = {
+  k: string
+  a?: string
+  ref: string
+  tid?: string
+  kind: string
+  label: string
+  cmd: string
+  start: number
+  end?: number
+  status: ShellStatus | string
+  exit?: number
+  last?: string
+  hot?: 'cpu' | 'mem' | string
+  hot_at?: number
+  rss_kb?: number
+}
+// 结束时间不知道的（lost）只当它占开始后的 10 分钟（和 Hub 一致）
+export const LOST_SPAN = 10 * 60_000
+export const shellEnd = (s: Shell, nowMs: number) => (s.end ? s.end : s.status === 'lost' ? s.start + LOST_SPAN : nowMs)
+export const shellLive = (s: Shell) => s.status === 'running'
+
 
 // ---------- token 用量（R-206） ----------
 // 本机 daemon 从对话记录读出、按分钟汇总上传的数字。新算 = 没命中缓存的输入 + 写缓存 + 输出；命中率 = 读缓存 / (读缓存 + 输入 + 写缓存)。
@@ -139,6 +165,7 @@ export class LaneStore {
   tokHour = new Map<string, Map<string, Map<number, TokVals>>>()
   tokKeys = new Set<string>() // 有用量数据的会话（拿不到对话记录的会话不画下半部分）
   colds = new Map<string, Cold>()
+  shells = new Map<string, Shell>()
   prices: Prices = {}
   version = 0
   private cache = new Map<string, number[]>()
@@ -182,6 +209,23 @@ export class LaneStore {
     this.colds.set(`${c.k}\u0001${c.a}\u0001${c.at}`, c)
   }
 
+  private putShell(x: Shell) {
+    const key = x.k + '\u0001' + x.ref
+    const cur = this.shells.get(key)
+    // 已经知道结束了，不被还在跑的旧数据（先发出、后到的拉取结果）盖掉
+    if (cur && !shellLive(cur) && shellLive(x)) return
+    this.shells.set(key, x)
+  }
+
+  // shellsOf：这个会话在这段时间里的后台命令（按开始排）
+  shellsOf(k: string, ax: Axis, nowMs: number): Shell[] {
+    const from = ax.start * 60000
+    const to = ax.end * 60000
+    const out: Shell[] = []
+    for (const x of this.shells.values()) if (x.k === k && x.start < to && shellEnd(x, nowMs) >= from) out.push(x)
+    return out.sort((a, b) => a.start - b.start)
+  }
+
   setPrices(p: Prices) {
     this.prices = p
     this.version++
@@ -222,6 +266,7 @@ export class LaneStore {
         this.putTok(tt, r.k, r.a, r.model, m[i], { in: r.in?.[i] ?? 0, cw: r.cw?.[i] ?? 0, cw1h: r.cw1h?.[i] ?? 0, cr: r.cr?.[i] ?? 0, out: r.out?.[i] ?? 0, n: r.n?.[i] ?? 0 })
     }
     for (const c of d.colds ?? []) this.putCold(c)
+    for (const x of d.shells ?? []) this.putShell(x)
     this.version++
   }
 
@@ -237,6 +282,7 @@ export class LaneStore {
       this.putTok(this.tokHour, x.k, x.a, x.model, Math.floor(x.m / 60) * 60, x.h)
     }
     for (const c of p.c ?? []) this.putCold(c)
+    for (const x of p.sh ?? []) this.putShell(x)
     this.version++
   }
 

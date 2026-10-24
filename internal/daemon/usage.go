@@ -79,6 +79,8 @@ type usageScanner struct {
 	batches map[string][]usageSent
 	seq     int64
 	sentAt  time.Time
+	// onLine：Claude Code 记录的每一行也给后台命令（R-208）看一眼（结束通知、后台任务编号）
+	onLine func(key, agent string, line []byte, cut time.Time)
 }
 
 type usageSent struct {
@@ -265,6 +267,7 @@ func (u *usageScanner) scanFile(f *usageFile) (int, error) {
 	agg := &usageAgg{minutes: map[[4]string]*protocol.UsageMinute{}}
 	off := f.offset
 	cut := u.now().Add(-usageKeep)
+	shellCut := u.now().Add(-shellKeep)
 	for off-f.offset < usageChunk {
 		line, err := r.ReadBytes('\n')
 		if err != nil {
@@ -275,6 +278,9 @@ func (u *usageScanner) scanFile(f *usageFile) (int, error) {
 			u.codexLine(f, line, cut, agg)
 		} else {
 			u.claudeLine(f, line, cut, agg)
+			if u.onLine != nil {
+				u.onLine(f.key, f.agent, line, shellCut)
+			}
 		}
 	}
 	if off == f.offset {

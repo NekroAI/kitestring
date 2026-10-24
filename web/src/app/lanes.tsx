@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
-import { addCell, agentEnd, axisX, barHeight, cellX, coarse, emptyCell, gridTicks, hitRate, hitTone, inWindow, LONG_TOOL, laneAxis, makeAxis, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type Cold, type SessionMeta, type TokCell, type Zoom } from '../lib/lanedata'
+import { addCell, agentEnd, axisX, barHeight, cellX, coarse, emptyCell, gridTicks, hitRate, hitTone, inWindow, LONG_TOOL, laneAxis, makeAxis, shellEnd, shellLive, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type Cold, type SessionMeta, type Shell, type TokCell, type Zoom } from '../lib/lanedata'
 import { cx, duration, shortDuration } from '../lib/util'
 import { Tip } from '../ui/base'
 import { spring } from '../ui/gesture'
@@ -77,7 +77,8 @@ function useLastTick(key: string) {
 // 数据来自 laneFeed（每分钟汇总，历史只增不改）。
 
 export type Tone = 'run' | 'bg' | 'you' | 'park' | 'idle' | 'sub'
-type PaintSpec = { k: string; agents: string[]; sub: boolean; faded: boolean }
+// sh：shell 泳道（R-208）的一行，只画这条后台命令从开始到结束的横段
+type PaintSpec = { k: string; agents: string[]; sub: boolean; faded: boolean; sh?: Shell }
 type Painter = { cv: HTMLCanvasElement; spec: () => PaintSpec; hover: number; ax?: Axis; calls?: number[]; tok?: TokCell[]; colds?: Cold[] }
 const painters = new Set<Painter>()
 let loop = 0
@@ -100,7 +101,7 @@ export function setLaneZoom(z: Zoom) {
 function colors() {
   const css = getComputedStyle(document.documentElement)
   const v = (k: string) => css.getPropertyValue(k).trim()
-  return { run: v('--run'), accent: v('--accent'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong'), line: v('--line'), fg: v('--fg'), hi: v('--run'), mid: v('--wait'), lo: v('--reply') }
+  return { run: v('--run'), accent: v('--accent'), park: v('--accent'), idle: v('--idle'), grid: v('--line-strong'), line: v('--line'), fg: v('--fg'), hi: v('--run'), mid: v('--wait'), lo: v('--reply'), danger: v('--danger'), wait: v('--wait') }
 }
 type Colors = ReturnType<typeof colors>
 
@@ -143,6 +144,11 @@ function paint(p: Painter, now: number, c: Colors) {
   g.clearRect(0, 0, w, h)
   const sp = p.spec()
   const fade = sp.faded ? 0.5 : 1
+  if (sp.sh) {
+    paintShell(g, sp.sh, ax, w, h, now, c)
+    g.globalAlpha = 1
+    return
+  }
   const X = (t: number) => axisX(ax, w, t)
   const bw = w / ax.n
   const mid = Math.round(h / 2) + 0.5
@@ -231,6 +237,65 @@ function paint(p: Painter, now: number, c: Colors) {
   g.globalAlpha = 1
 }
 
+// paintShell：一条后台命令（R-208），不画刻度，只画一段横条——在跑绿色（跑飞黄色），成功灰色末端打勾，
+// 失败红色末端打叉加退出码，被停止灰色末端方块，退出码未知的灰色末端一道竖线，结束时间也不知道的画成渐隐。
+function paintShell(g: CanvasRenderingContext2D, x: Shell, ax: Axis, w: number, h: number, now: number, c: Colors) {
+  const X = (t: number) => axisX(ax, w, t)
+  const mid = Math.round(h / 2)
+  const live = shellLive(x)
+  const raw1 = X(shellEnd(x, now))
+  const x0 = Math.max(0, X(x.start))
+  const x1 = Math.min(w, raw1)
+  if (raw1 < 0 || x0 >= w) return
+  const fail = x.status === 'failed'
+  const col = offline ? c.idle : live ? (x.hot ? c.wait : c.run) : fail ? c.danger : c.idle
+  const bw = Math.max(3, x1 - x0)
+  if (x.status === 'lost') {
+    const gr = g.createLinearGradient(x0, 0, x0 + bw, 0)
+    gr.addColorStop(0, col)
+    gr.addColorStop(1, 'transparent')
+    g.globalAlpha = 0.6
+    g.fillStyle = gr
+  } else {
+    g.globalAlpha = live ? 0.85 : fail ? 0.75 : 0.5
+    g.fillStyle = col
+  }
+  g.beginPath()
+  g.roundRect(x0, mid - 3, bw, 6, 3)
+  g.fill()
+  if (live || x.status === 'lost' || raw1 > w + 1) return
+  // 末端记号：紧跟在横条后面（刚结束、贴着右边时收进画面里）
+  const m = Math.min(x0 + bw + 3, w - (fail ? 10 : 9))
+  g.globalAlpha = 1
+  g.lineWidth = fail ? 1.8 : 1.6
+  g.strokeStyle = col
+  g.fillStyle = col
+  if (x.status === 'ok') {
+    g.beginPath()
+    g.moveTo(m, mid)
+    g.lineTo(m + 3, mid + 3)
+    g.lineTo(m + 8, mid - 3)
+    g.stroke()
+  } else if (fail) {
+    g.beginPath()
+    g.moveTo(m, mid - 3.5)
+    g.lineTo(m + 7, mid + 3.5)
+    g.moveTo(m + 7, mid - 3.5)
+    g.lineTo(m, mid + 3.5)
+    g.stroke()
+    if (x.exit != null && m + 12 + 18 < w) {
+      g.font = '600 10px ui-sans-serif, system-ui, sans-serif'
+      g.textBaseline = 'middle'
+      g.fillText(String(x.exit), m + 10, mid + 0.5)
+    }
+  } else if (x.status === 'stopped') {
+    g.fillRect(m, mid - 3, 6, 6)
+  } else {
+    g.globalAlpha = 0.7
+    g.fillRect(m - 2, mid - 4.5, 1.5, 9)
+  }
+}
+
 // paintAll：先算出每条泳道这一档的格子，求共用上限，再统一画。
 export function paintAll() {
   if (typeof document === 'undefined' || document.hidden || !painters.size) return
@@ -294,6 +359,8 @@ const iso = (t: number) => new Date(t).toISOString()
 // cellText：悬停那一格的数字：时间范围、调用次数、碰到的长命令和待命。
 function cellText(p: Painter, i: number, now: number): string[] {
   const ax = p.ax
+  const sh = p.spec().sh
+  if (sh) return shellTip(sh, now)
   if (!ax || !p.calls || i < 0 || i >= ax.n) return []
   const t0 = (ax.start + i * ax.bucket) * 60000
   const t1 = t0 + ax.bucket * 60000
@@ -311,6 +378,70 @@ function cellText(p: Painter, i: number, now: number): string[] {
   for (const x of colds.slice(0, 2)) out.push(coldText(x))
   if (colds.length > 2) out.push(t.desk.tl.moreCold(colds.length - 2))
   return out
+}
+
+// ---------- shell 泳道（R-208） ----------
+
+const at = (v: number, now: number) => (now - v > 20 * 3600e3 ? `${day(v)} ${clock(v)}` : clock(v))
+
+// shellResult：右边写的结果（在跑的写跑飞或最近一行输出）。tone 决定颜色。
+function shellResult(x: Shell, now: number): { text: string; tone: 'fail' | 'hot' | 'run' | 'done'; mono?: boolean } {
+  const S = t.desk.tl.sh
+  if (shellLive(x)) {
+    if (x.hot) return { text: hotText(x, now), tone: 'hot' }
+    return x.last ? { text: x.last, tone: 'run', mono: true } : { text: S.running, tone: 'run' }
+  }
+  switch (x.status) {
+    case 'ok':
+      return { text: S.ok(duration(iso(x.start), shellEnd(x, now))), tone: 'done' }
+    case 'failed':
+      return { text: S.failed(x.exit ?? null), tone: 'fail' }
+    case 'stopped':
+      return { text: S.stopped, tone: 'done' }
+    case 'lost':
+      return { text: S.lost, tone: 'done' }
+  }
+  return { text: S.ended, tone: 'done' }
+}
+
+function hotText(x: Shell, now: number) {
+  const S = t.desk.tl.sh
+  const d = duration(iso(x.hot_at || x.start), now)
+  if (x.hot === 'mem') return S.hotMem(x.rss_kb ? (x.rss_kb >= 1 << 20 ? `${(x.rss_kb / (1 << 20)).toFixed(1)} GB` : `${Math.round(x.rss_kb / 1024)} MB`) : '', d).replace(' ·  · ', ' · ')
+  return S.hotCpu(d)
+}
+
+// shellTip：悬停看完整命令、起止时间、最后一行输出（描述、类型、结果已经写在这一行里，不再重复）。
+function shellTip(x: Shell, now: number): string[] {
+  const S = t.desk.tl.sh
+  const cmd = x.cmd.split('\n').slice(0, 6).join('\n')
+  const out = [cmd.length > 600 ? cmd.slice(0, 600) + '…' : cmd]
+  const end = x.end ? S.tipEnd(at(x.end, now), duration(iso(x.start), x.end)) : shellLive(x) ? S.tipRunning(duration(iso(x.start), now)) : S.tipEndUnknown
+  out.push(`${S.tipStart(at(x.start, now))} · ${end}`)
+  // 结果（退出码、跑飞）已经写在这一行右边，不再重复；在跑的最近一行输出也已经在右边
+  if (x.last && !(shellLive(x) && !x.hot)) out.push(S.tipLast(x.last))
+  if (x.a) {
+    const g = laneStore.agents.get(x.k + '\u0001' + x.a)
+    out.push(S.tipAgent(g?.label || g?.type || t.session.taskUnnamed))
+  }
+  return out
+}
+
+// failedShells：这一档里这个会话失败了几个后台命令（会话标题旁的小红点）
+function failedShells(k: string, zoom: Zoom, now: number) {
+  const ax = sharedAx && sharedAx.zoom === zoom ? sharedAx : makeAxis(zoom, laneWidth || 720, now)
+  return laneStore.shellsOf(k, ax, now).filter((x) => x.status === 'failed').length
+}
+
+function FailDot({ k, zoom, now }: { k: string; zoom: Zoom; now: number }) {
+  const minute = Math.floor(now / 60000)
+  const n = useLaneSnap(() => (void minute, failedShells(k, zoom, serverNow())))
+  if (!n) return null
+  return (
+    <Tip content={t.desk.tl.sh.failDot(n)}>
+      <i data-shell-fail={n} aria-label={t.desk.tl.sh.failDot(n)} className="size-[7px] shrink-0 rounded-full bg-danger" />
+    </Tip>
+  )
 }
 
 // wan：token 数的写法（不到 1 万写原数，之后按「万」）
@@ -398,7 +529,7 @@ function Timeline({ spec, className }: { spec: PaintSpec; className?: string }) 
     }
   }, [])
   // 换了要画的行（子任务合并、结束变淡）立刻重画，不等下一帧
-  const sig = `${spec.k}|${spec.agents.join(',')}|${spec.sub}|${spec.faded}`
+  const sig = `${spec.k}|${spec.agents.join(',')}|${spec.sub}|${spec.faded}|${spec.sh ? `${spec.sh.status}:${spec.sh.end ?? ''}:${spec.sh.hot ?? ''}` : ''}`
   useEffect(() => {
     if (ref.current) paintAll()
   }, [sig])
@@ -652,9 +783,11 @@ const cols: Record<LaneMode, string> = {
 
 // 子任务按每分钟汇总画（R-205）：结束后不立刻删，变淡、标「已结束」，留到滑出窗口；近 1 / 6 小时每个会话最多列 6 个
 // （在跑的优先），多的合成一行「还有 n 个」；近 1 天 / 1 周合成一行「子任务（共 n 个）」。后台 shell 照旧只列在跑的（R-162）。
-type SubRow = { id: string; kind: 'agent' | 'shell' | 'agg' | 'more'; label: string; guess: boolean; agents: string[]; ended: number; start: number; task?: BgTask }
+// sh：shell 泳道的一条后台命令（R-208）；shmore：多出来的合成一行；shagg：近 1 天 / 1 周档只给计数。shell：没有记录的 R-162 后台 shell（旧版 daemon）。
+type SubRow = { id: string; kind: 'agent' | 'shell' | 'agg' | 'more' | 'sh' | 'shmore' | 'shagg'; label: string; guess: boolean; agents: string[]; ended: number; start: number; task?: BgTask; sh?: Shell }
 
 const SUB_MAX = 6
+const SH_MAX = 5
 
 function agentName(g: Agent, task?: BgTask): { text: string; guess: boolean } {
   if (g.label) return { text: g.label, guess: false }
@@ -693,7 +826,21 @@ function subRows(s: Session, zoom: Zoom, now: number): SubRow[] {
     const rest = vis.filter((x) => !pick.includes(x))
     if (rest.length) rows.push({ id: 'more', kind: 'more', label: t.desk.tl.subMore(rest.length), guess: false, agents: rest.map((x) => x.g.a), ended: 1, start: Math.min(...rest.map((x) => x.g.start)) })
   }
-  for (const x of tasks) if (x.kind === 'shell') rows.push({ id: x.id, kind: 'shell', label: taskName(x).text, guess: false, agents: [], ended: 0, start: Date.parse(x.started_at), task: x })
+  // 后台命令（R-208）：近 1 / 6 小时每条一行（在跑的优先，最多 SH_MAX 条，多的合成一行）；近 1 天 / 1 周只给计数
+  const shs = laneStore.shellsOf(s.key, ax, now)
+  if (coarse(zoom)) {
+    if (shs.length)
+      rows.push({ id: 'shagg', kind: 'shagg', label: t.desk.tl.sh.count(shs.length, shs.filter((x) => x.status === 'failed').length), guess: false, agents: [], ended: 1, start: shs[0].start })
+  } else {
+    const pick = [...shs].sort((a, b) => Number(!shellLive(a)) - Number(!shellLive(b)) || shellEnd(b, now) - shellEnd(a, now)).slice(0, SH_MAX)
+    pick.sort((a, b) => a.start - b.start)
+    for (const x of pick) rows.push({ id: 'sh:' + x.ref, kind: 'sh', label: x.label, guess: false, agents: [], ended: shellLive(x) ? 0 : shellEnd(x, now), start: x.start, sh: x })
+    if (shs.length > pick.length) rows.push({ id: 'shmore', kind: 'shmore', label: t.desk.tl.sh.more(shs.length - pick.length), guess: false, agents: [], ended: 1, start: 0 })
+  }
+  // 没有记录的后台 shell（旧版 daemon、认不出调用的）照旧按 R-162 列出在跑的
+  const known = new Set<string>()
+  for (const x of laneStore.shells.values()) if (x.k === s.key && x.tid && shellLive(x)) known.add(x.tid)
+  for (const x of tasks) if (x.kind === 'shell' && !known.has(x.id)) rows.push({ id: x.id, kind: 'shell', label: taskName(x).text, guess: false, agents: [], ended: 0, start: Date.parse(x.started_at), task: x })
   return rows
 }
 
@@ -701,7 +848,7 @@ function subRows(s: Session, zoom: Zoom, now: number): SubRow[] {
 function useSubRows(s: Session, zoom: Zoom, now: number) {
   const sig = useLaneSnap(() =>
     subRows(s, zoom, serverNow())
-      .map((r) => `${r.id}:${r.ended ? 1 : 0}:${r.label}`)
+      .map((r) => `${r.id}:${r.ended ? 1 : 0}:${r.label}${r.sh ? `:${r.sh.status}:${r.sh.end ?? ''}:${r.sh.hot ?? ''}:${r.sh.exit ?? ''}:${r.sh.last ?? ''}` : ''}`)
       .join('|'),
   )
   const minute = Math.floor(now / 60000)
@@ -735,14 +882,53 @@ function spanText(from: string, now: number) {
 // subTime：子任务行唯一的时间。结束了写「多久前结束」；在跑的写「最近动作 多久前」，还没有动作记录就写「已跑 多久」。
 // 窄屏（iPad 竖屏）上名字列太窄，在跑的只留「多久前」，完整说法放悬停提示里。
 function subTime(row: SubRow, now: number, short = false) {
-  if (row.kind === 'more') return ''
+  if (row.kind === 'more' || row.kind === 'shmore' || row.kind === 'shagg') return ''
   if (row.ended) return row.ended > 1e12 ? t.desk.tl.endedAt(agoText(row.ended, now)) : ''
   if (row.kind === 'agg') return ''
   if (row.task?.last_action_at) return short ? agoText(row.task.last_action_at, now) : t.desk.tl.lastAct(agoText(row.task.last_action_at, now))
   return t.desk.tl.running(spanText(iso(row.start), now))
 }
 
+const resultTone = { fail: 'text-danger', hot: 'text-wait', run: 'text-fg-2', done: 'text-fg-3' }
+
+// ShellLane：shell 泳道的一行（R-208）——左边类型 + 描述，中间横段，右边结果或最近一行输出；高度和子任务行一样固定。
+function ShellLane({ row, now, mode, last }: { row: SubRow; now: number; mode: LaneMode; last: boolean }) {
+  const x = row.sh!
+  const res = shellResult(x, now)
+  const ended = !shellLive(x)
+  const spec = { k: x.k, agents: [], sub: true, faded: false, sh: x }
+  const result = (
+    <Tip truncated content={res.text}>
+      <span data-shell-result={x.status} className={cx('min-w-0 truncate', resultTone[res.tone], res.mono && 'font-mono text-[11px]', mode !== 'full' && 'max-w-[45%] shrink-0 text-[11px]')}>
+        {res.text}
+      </span>
+    </Tip>
+  )
+  return (
+    <div data-shell={x.ref} data-shell-status={x.status} data-shell-hot={x.hot || undefined} className={cx('grid h-6 items-center text-fg-3', cols[mode], mode === 'phone' && 'h-auto py-0.5')}>
+      <div className={cx('flex min-w-0 items-center gap-1.5 pr-3 pl-6 text-[11.5px]', ended && x.status !== 'failed' && 'opacity-75')}>
+        <span aria-hidden className="relative h-6 w-2.5 shrink-0">
+          <span className={cx('absolute top-0 left-0 border-l border-line-strong', last ? 'h-1/2' : 'h-full')} />
+          <span className="absolute top-1/2 left-0 w-full border-t border-line-strong" />
+        </span>
+        <span className="min-w-[3.8em] shrink-0 rounded border border-line bg-surface-2 px-1 text-center text-[10.5px] leading-[15px] text-fg-2">{t.desk.tl.sh.kind[x.kind] ?? t.desk.tl.sh.kind.other}</span>
+        <Tip truncated content={x.label}>
+          <span className="min-w-0 flex-1 truncate">{x.label}</span>
+        </Tip>
+        {mode !== 'full' && result}
+      </div>
+      {mode !== 'phone' && (
+        <div className="h-6 min-w-0">
+          <Timeline spec={spec} />
+        </div>
+      )}
+      {mode === 'full' && <div className="flex h-full min-w-0 items-center gap-2.5 border-l border-line px-4 text-[11.5px]">{result}</div>}
+    </div>
+  )
+}
+
 function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: number; mode: LaneMode; last: boolean }) {
+  if (row.kind === 'sh') return <ShellLane row={row} now={now} mode={mode} last={last} />
   const task = row.task
   const ended = row.ended > 0
   const [tool, brief] = !ended && task?.last_action ? splitTool(task.last_action) : ['', '']
@@ -750,6 +936,7 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
   const short = mode === 'narrow' && !ended && !!task?.last_action_at
   const whenShort = short ? subTime(row, now, true) : when
   const kind = row.kind === 'shell' ? t.session.taskKind.shell : row.kind === 'agent' ? t.session.taskKind.agent : ''
+  const count = row.kind === 'shmore' || row.kind === 'shagg'
   const spec = { k, agents: row.agents, sub: true, faded: ended }
   return (
     <div className={cx('grid h-6 items-center text-fg-3', cols[mode], mode === 'phone' && 'h-auto py-0.5')}>
@@ -761,15 +948,13 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
         </span>
         {kind && <span className="w-9 shrink-0 text-[10.5px] opacity-80">{kind}</span>}
         <Tip truncated={!row.guess} content={row.guess ? `${t.session.taskUnnamed}${t.common.sep}${row.label}` : row.label}>
-          <span className={cx('min-w-0 flex-1 truncate', (row.guess || row.kind === 'more') && 'italic opacity-80')}>{row.label}</span>
+          <span data-shell-count={count ? row.kind : undefined} className={cx('min-w-0 flex-1 truncate', (row.guess || row.kind === 'more' || row.kind === 'shmore') && 'italic opacity-80')}>
+            {row.label}
+          </span>
         </Tip>
         {mode !== 'full' && when && (short ? <Tip content={when}><span className="shrink-0 text-[11px] tabular">{whenShort}</span></Tip> : <span className="shrink-0 text-[11px] tabular">{when}</span>)}
       </div>
-      {mode !== 'phone' && (
-        <div className="h-6 min-w-0">
-          <Timeline spec={spec} />
-        </div>
-      )}
+      {mode !== 'phone' && <div className="h-6 min-w-0">{!count && <Timeline spec={spec} />}</div>}
       {mode === 'full' && (
         <div className="flex h-full min-w-0 items-center gap-2.5 border-l border-line px-4 font-mono text-[11px]">
           {tool && (
@@ -818,6 +1003,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still }: Lane
       <div className="flex min-w-0 items-center gap-2">
         <ToolMark tool={s.tool} size="sm" />
         <span className={cx('truncate font-semibold', quiet ? 'text-[14px] text-fg-2' : 'text-[15px] text-fg')}>{sessionTitle(s)}</span>
+        <FailDot k={s.key} zoom={zoom} now={now} />
         <RoleBadge s={s} />
       </div>
       <div className="flex min-w-0 items-center gap-2">
@@ -930,11 +1116,16 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
   const sub: SubRow | null = agents.length
     ? { id: 'agg', kind: 'agg', label: t.desk.tl.subAgg(agents.length), guess: false, agents: agents.map((g) => g.a), ended: 1, start: Math.min(...agents.map((g) => g.start)) }
     : null
+  const shs = laneStore.shellsOf(m.k, ax, now)
+  const shRow: SubRow | null = shs.length
+    ? { id: 'shagg', kind: 'shagg', label: t.desk.tl.sh.count(shs.length, shs.filter((x) => x.status === 'failed').length), guess: false, agents: [], ended: 1, start: shs[0].start }
+    : null
+  const subs = [sub, shRow].filter((x): x is SubRow => !!x)
   const title = m.title || m.project_name || m.cwd.split('/').filter(Boolean).at(-1) || t.session.noProject
   const when = m.ended_at ? t.desk.tl.endedSession(agoText(m.ended_at, now)) : t.desk.lane.quiet(duration(m.last_active_at, now))
   const phone = mode === 'phone'
   return (
-    <div style={phone ? undefined : { height: endedLaneHeight(sub ? 1 : 0) }} className={cx(!phone && 'flex shrink-0')}>
+    <div style={phone ? undefined : { height: endedLaneHeight(subs.length) }} className={cx(!phone && 'flex shrink-0')}>
       <div
         role="button"
         tabIndex={0}
@@ -943,13 +1134,14 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
         data-spot-key={m.k}
         onClick={() => open(m.k)}
         onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && open(m.k)}
-        className={cx('grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] bg-surface/40 text-left ring-1 ring-line ring-inset transition-[background-color,opacity,filter] duration-200 hover:bg-surface', sub ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-1')}
+        className={cx('grid w-full min-w-0 cursor-pointer overflow-hidden rounded-[14px] bg-surface/40 text-left ring-1 ring-line ring-inset transition-[background-color,opacity,filter] duration-200 hover:bg-surface', subs.length ? 'grid-rows-[minmax(0,1fr)_auto]' : 'grid-rows-1')}
       >
         <div className={cx('grid min-h-0 min-w-0', cols[mode])}>
           <div className="flex min-w-0 flex-col justify-center gap-0.5 px-3.5 py-1.5 opacity-80">
             <div className="flex min-w-0 items-center gap-2">
               <ToolMark tool={m.tool} size="sm" />
               <span className="truncate text-[13.5px] font-semibold text-fg-2">{title}</span>
+              <FailDot k={m.k} zoom={zoom} now={now} />
               {m.role && <RoleTag role={m.role} presence="offline" />}
             </div>
             <div className="truncate text-[11.5px] text-fg-3">{when}</div>
@@ -966,9 +1158,11 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
             </div>
           )}
         </div>
-        {sub && (
+        {subs.length > 0 && (
           <div className="pb-1.5">
-            <SubLane row={sub} k={m.k} now={now} mode={mode} last />
+            {subs.map((r, i) => (
+              <SubLane key={r.id} row={r} k={m.k} now={now} mode={mode} last={i === subs.length - 1} />
+            ))}
           </div>
         )}
       </div>

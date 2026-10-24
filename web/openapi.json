@@ -3317,6 +3317,15 @@
               "null"
             ]
           },
+          "shells": {
+            "items": {
+              "$ref": "#/components/schemas/ShellCmd"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "spans": {
             "items": {
               "$ref": "#/components/schemas/LaneSpan"
@@ -3356,7 +3365,8 @@
           "agents",
           "sessions",
           "tok",
-          "colds"
+          "colds",
+          "shells"
         ],
         "type": "object"
       },
@@ -6492,6 +6502,90 @@
           "upload_video_mb",
           "upload_file_mb",
           "dev_request_minutes"
+        ],
+        "type": "object"
+      },
+      "ShellCmd": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "string"
+          },
+          "cmd": {
+            "type": "string"
+          },
+          "end": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "exit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "hot": {
+            "enum": [
+              "cpu",
+              "mem"
+            ],
+            "type": "string"
+          },
+          "hot_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "build",
+              "deploy",
+              "service",
+              "poll",
+              "other"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "last": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "rss_kb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "start": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "ok",
+              "failed",
+              "stopped",
+              "ended",
+              "lost"
+            ],
+            "type": "string"
+          },
+          "tid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "k",
+          "ref",
+          "kind",
+          "label",
+          "cmd",
+          "start",
+          "status"
         ],
         "type": "object"
       },
@@ -9689,7 +9783,7 @@
             "description": "Error"
           }
         },
-        "summary": "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）",
+        "summary": "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）；后台命令（R-208）",
         "tags": [
           "sessions"
         ]

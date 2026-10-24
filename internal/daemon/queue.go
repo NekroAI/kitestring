@@ -28,7 +28,7 @@ func openQueue(path string) (*queue, error) {
 		CREATE TABLE IF NOT EXISTS agent_calls (seq INTEGER PRIMARY KEY AUTOINCREMENT, session_key TEXT NOT NULL, typ TEXT NOT NULL, descr TEXT NOT NULL, at TEXT NOT NULL);
 		-- 会话开出来的后台进程（R-209）：pid + 启动时间认一个进程；agent 是开它的 Agent 进程（“进程号@启动时间”，启动时间不知道时只有进程号）；
 		-- source：shell = 扫进程表时在会话的后台 shell 下面看到的，env = 命令环境里的 CLAUDE_PID 认出来的。
-		-- ended_at / exit_code 留给 R-208（后台命令结束时间与退出码）；现在 ended_at 只记“发现它不在了”的时间。stop_*：停止记录
+		-- ended_at：发现它不在了的时间；同一进程是后台命令（R-208，bg_cmds）时补上准确的结束时间与退出码（知道时）。stop_*：停止记录
 		CREATE TABLE IF NOT EXISTS bg_procs (
 			pid INTEGER NOT NULL, start TEXT NOT NULL, session_key TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '',
 			cwd TEXT NOT NULL DEFAULT '', cmd TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '',
@@ -187,7 +187,7 @@ func (q *queue) procsLive() map[string]procRec {
 	return out
 }
 
-// procsEnded 标记这些进程已不在（R-208 之前只有大致时间、没有退出码），并清掉一周前结束的记录。
+// procsEnded 标记这些进程已不在（大致时间；是后台命令的由 R-208 补准），并清掉一周前结束的记录。
 func (q *queue) procsEnded(now time.Time, ids []procRec) {
 	at := now.UTC().Format(time.RFC3339)
 	for _, r := range ids {

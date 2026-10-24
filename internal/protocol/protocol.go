@@ -147,6 +147,8 @@ const (
 	MsgStopResult  = "stop_result"  // daemon → hub：停止结果
 	MsgUsage       = "usage"        // daemon → hub：按分钟汇总的 token 用量与冷启动（只有数字，R-206）
 	MsgUsageAck    = "usage_ack"    // hub → daemon：已存下的用量批次（Ack 里是批次号）
+	MsgShells      = "shells"       // daemon → hub：后台命令的起止、结果与最后一行输出摘要（R-208，有变化的才发）
+	MsgShellsAck   = "shells_ack"   // hub → daemon：已存下的后台命令批次（Ack 里是批次号）
 )
 
 // DeviceConfig 是 Hub 下发给 daemon 的运行配置。
@@ -175,6 +177,8 @@ type Envelope struct {
 	Batch string        `json:"batch,omitempty"`
 	Usage []UsageMinute `json:"usage,omitempty"`
 	Colds []ColdStart   `json:"colds,omitempty"`
+	// 后台命令（R-208）：Batch 同上，Hub 存好后用 MsgShellsAck 回批次号
+	Shells []ShellCmd `json:"shells,omitempty"`
 }
 
 // UsageMinute 是本机从对话记录里读出的、某会话（或子任务）某模型某一分钟的 token 用量累计值（绝对值，Hub 直接覆盖，重发不重复计）。
@@ -211,6 +215,45 @@ type ColdStart struct {
 	Cause     string `json:"cause" enum:"idle,compact,model,start,other"`
 	IdleMin   int    `json:"idle_min"` // 距上一次回复多少分钟（第一次回复为 0）
 	PrevModel string `json:"prev_model,omitempty"`
+}
+
+// 后台命令的结果（R-208）。
+const (
+	ShellRunning = "running" // 还在跑
+	ShellOK      = "ok"      // 成功（退出码 0）
+	ShellFailed  = "failed"  // 失败（退出码非 0）
+	ShellStopped = "stopped" // 被停止（Agent 停掉、到了后台时限、被信号终止、纸鸢停的）
+	ShellEnded   = "ended"   // 已结束，退出码未知（进程不在了，没收到结束通知）
+	ShellLost    = "lost"    // 结束时间和退出码都不知道（本功能上线前开始、进程早已不在的）
+)
+
+// 后台命令的类型（R-208，按命令自动识别）。
+const (
+	ShellBuild   = "build"   // 构建 / 测试
+	ShellDeploy  = "deploy"  // 部署
+	ShellService = "service" // 服务（开发服务器等常驻进程）
+	ShellPoll    = "poll"    // 轮询（until / while 循环里 sleep、tail -f、gh run watch）
+	ShellOther   = "other"
+)
+
+// ShellCmd 是一条后台命令（R-208）：Claude Code run_in_background 的命令，或 Codex 会话下活过宽限期的后台 shell。
+// 只带类型、描述、命令、起止、退出码和最后一行输出的摘要（截断），不带输出内容本身。
+type ShellCmd struct {
+	Key    string `json:"k"`
+	Agent  string `json:"a,omitempty"`   // 子任务里开的：子任务的 agent_id
+	Ref    string `json:"ref"`           // tool_use_id；Codex 的后台 shell 是“sh-进程号@启动时间”
+	Task   string `json:"tid,omitempty"` // 对应 R-162 后台任务的 ID（sh-进程号），网页据此不重复列
+	Kind   string `json:"kind" enum:"build,deploy,service,poll,other"`
+	Label  string `json:"label"` // run_in_background 的描述，没有就是命令摘要（截断）
+	Cmd    string `json:"cmd"`   // 完整命令（截断到 1000 字），悬停时看
+	Start  int64  `json:"start"` // Unix 毫秒
+	End    int64  `json:"end,omitempty"`
+	Status string `json:"status" enum:"running,ok,failed,stopped,ended,lost"`
+	Exit   *int   `json:"exit,omitempty"`
+	Last   string `json:"last,omitempty"`               // 最后一行输出（截到 160 字），只在本机读输出文件得到
+	Hot    string `json:"hot,omitempty" enum:"cpu,mem"` // 跑飞：CPU 长时间占满 / 内存持续上涨
+	HotAt  int64  `json:"hot_at,omitempty"`             // 从什么时候开始（Unix 毫秒）
+	RSSKB  int64  `json:"rss_kb,omitempty"`             // 跑飞时整棵进程树的常驻内存
 }
 
 // 后台进程状态（R-209）。

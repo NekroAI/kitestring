@@ -128,6 +128,10 @@ func (h *Hub) handleDeviceMsg(ctx context.Context, c *deviceConn, e protocol.Env
 		if h.laneUsage(ctx, e.Usage, e.Colds) && e.Batch != "" {
 			c.send(protocol.Envelope{Type: protocol.MsgUsageAck, Ack: []string{e.Batch}})
 		}
+	case protocol.MsgShells:
+		if h.laneShells(ctx, c.dev.ID, e.Shells) && e.Batch != "" {
+			c.send(protocol.Envelope{Type: protocol.MsgShellsAck, Ack: []string{e.Batch}})
+		}
 	case protocol.MsgStopResult:
 		if e.StopResult != nil {
 			h.stopDone(*e.StopResult)

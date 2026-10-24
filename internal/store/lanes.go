@@ -74,6 +74,8 @@ type LaneData struct {
 	// token 用量（R-206）：本机读得到对话记录的会话才有；没有的会话不画下半部分
 	Tokens []LaneTok  `json:"tok"`
 	Colds  []LaneCold `json:"colds" doc:"范围内的冷启动（缓存重建）"`
+	// 后台命令（R-208）：和范围有交集的；还在跑的一直算
+	Shells []protocol.ShellCmd `json:"shells"`
 }
 
 // LaneSession 是时间线上一个会话的简要信息。
@@ -317,6 +319,7 @@ type LaneWrite struct {
 	Agents []LaneAgent
 	Tokens []LaneTokMinute // token 用量（R-206）
 	Colds  []LaneCold
+	Shells []protocol.ShellCmd // 后台命令（R-208）
 }
 
 // ApplyLane 把一条事件的影响写进汇总表。
@@ -492,6 +495,9 @@ func (s *Store) Lanes(ctx context.Context, from, to time.Time, hourly bool) (Lan
 		return out, err
 	}
 	fromMs, toMs := out.From*60000, out.To*60000
+	if out.Shells, err = s.laneShells(ctx, fromMs, toMs); err != nil {
+		return out, err
+	}
 	srows, err := s.db.QueryContext(ctx, `SELECT session_key, agent_id, kind, ref, label, start_ms, end_ms, until_ms FROM lane_spans
 		WHERE start_ms < ? AND (end_ms IS NULL OR end_ms >= ?) ORDER BY start_ms`, toMs, fromMs)
 	if err != nil {
@@ -546,8 +552,9 @@ func (s *Store) Lanes(ctx context.Context, from, to time.Time, hourly bool) (Lan
 	}
 	qrows, err := s.db.QueryContext(ctx, `SELECT s.key, s.title, s.role, s.tool, COALESCE(s.project_id, ''), COALESCE(p.name, ''), s.cwd, s.background, s.last_active_at, s.ended_at
 		FROM sessions s LEFT JOIN projects p ON p.id = s.project_id
-		WHERE s.key IN (SELECT session_key FROM lane_hours WHERE minute >= ? AND minute < ? UNION SELECT session_key FROM lane_token_hours WHERE minute >= ? AND minute < ?)`,
-		out.From/60*60, out.To, out.From/60*60, out.To)
+		WHERE s.key IN (SELECT session_key FROM lane_hours WHERE minute >= ? AND minute < ? UNION SELECT session_key FROM lane_token_hours WHERE minute >= ? AND minute < ?
+			UNION SELECT session_key FROM lane_shells WHERE start_ms < ? AND (end_ms >= ? OR (end_ms IS NULL AND status = 'running')))`,
+		out.From/60*60, out.To, out.From/60*60, out.To, toMs, fromMs)
 	if err != nil {
 		return out, err
 	}
@@ -581,6 +588,9 @@ func (s *Store) CompactLanes(ctx context.Context, now time.Time) (int, error) {
 	}
 	c := ms(cut)
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM lane_colds WHERE at_ms < ?`, c); err != nil {
+		return int(n), err
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM lane_shells WHERE start_ms < ? AND (end_ms < ? OR (end_ms IS NULL AND status IN ('lost', 'ended')))`, c, c); err != nil {
 		return int(n), err
 	}
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM lane_spans WHERE start_ms < ? AND (end_ms < ? OR (end_ms IS NULL AND COALESCE(until_ms, 0) < ?))`, c, c, c); err != nil {

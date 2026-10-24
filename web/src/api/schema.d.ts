@@ -798,7 +798,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206） */
+        /** 工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）；后台命令（R-208） */
         get: operations["get-lanes"];
         put?: never;
         post?: never;
@@ -2655,6 +2655,7 @@ export interface components {
             now: number;
             rows: components["schemas"]["LaneRow"][] | null;
             sessions: components["schemas"]["LaneSession"][] | null;
+            shells: components["schemas"]["ShellCmd"][] | null;
             spans: components["schemas"]["LaneSpan"][] | null;
             /**
              * Format: int64
@@ -3558,6 +3559,31 @@ export interface components {
              * @description 录屏大小上限（MB）
              */
             upload_video_mb: number;
+        };
+        ShellCmd: {
+            a?: string;
+            cmd: string;
+            /** Format: int64 */
+            end?: number;
+            /** Format: int64 */
+            exit?: number;
+            /** @enum {string} */
+            hot?: "cpu" | "mem";
+            /** Format: int64 */
+            hot_at?: number;
+            k: string;
+            /** @enum {string} */
+            kind: "build" | "deploy" | "service" | "poll" | "other";
+            label: string;
+            last?: string;
+            ref: string;
+            /** Format: int64 */
+            rss_kb?: number;
+            /** Format: int64 */
+            start: number;
+            /** @enum {string} */
+            status: "running" | "ok" | "failed" | "stopped" | "ended" | "lost";
+            tid?: string;
         };
         Stage: {
             id: string;
