@@ -25,6 +25,7 @@ import { PendingCover, usePendingMap } from '../app/verdict'
 import { G } from '../ui/gesture'
 import { DraftMark } from '../app/draft'
 import { shownStatus } from '../lib/pending'
+import { ReviewBadge } from '../app/verify'
 import {
   catColor,
   COL_PAD,
@@ -95,6 +96,7 @@ function ReqListRow({ r, expanded, onToggle }: { r: Requirement; expanded: boole
           <PlanBadge r={r} className="max-sm:hidden" />
           <DesignBadge r={r} className="max-sm:hidden" />
           <ReleaseBadge r={r} className="max-sm:hidden" />
+          <ReviewBadge r={r} className="max-sm:hidden" />
           {r.pending_decisions > 0 && (
             <Tip content={t.reqs.decisionsTip(r.pending_decisions)}>
               <span className="inline-flex items-center gap-1 text-xs text-wait tabular">

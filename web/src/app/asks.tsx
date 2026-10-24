@@ -16,6 +16,7 @@ import { SwipeRow, type RowAction } from '../ui/gesture'
 import { useAskReason } from '../ui/overlay'
 import { composeAnswer, decKey, useOutbox } from './outbox'
 import { PendingCover, usePending, usePendingMap, useReqVerdict } from './verdict'
+import { ReviewMark } from './verify'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
@@ -377,6 +378,7 @@ function AskCard({
       ) : (
         <span className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5 text-fg-2">
           <span className="min-w-0 flex-1 truncate">{statusLine(a, now)}</span>
+          {a.kind === 'review' && <ReviewMark r={a.req} />}
           <Advice a={a} />
         </span>
       )}

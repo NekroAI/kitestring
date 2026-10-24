@@ -159,7 +159,7 @@ export const zh = {
       return `${both('advisor')}：只答问题、做设计（出方案、效果图、记草稿），可以有多个，不常驻`
     },
     get reviewer() {
-      return `${both('reviewer')}：只做审查，意见挂在需求上；任何工具（含 Codex）的会话都能担任`
+      return `${both('reviewer')}：审查和验证，结论挂在需求上，不改代码和状态；任何工具（含 Codex）的会话都能担任`
     },
     get pm() {
       return `${both('pm')}：替你干活，每项目一个、常驻——排期、派子任务、合并部署、写简报`
@@ -1011,7 +1011,7 @@ export const zh = {
       return rt`交给${'reviewer'}`
     },
     get title() {
-      return rt`交给${'reviewer'} · 只审查，不改状态、不影响验收`
+      return rt`交给${'reviewer'} · 审查和验证，不改状态；交意见前不进「要你处理」`
     },
     get none() {
       return rt`本项目还没有${'reviewer'}会话。开一个会话（Claude Code、Codex 都行），对它说下面这句话：`
@@ -1026,9 +1026,29 @@ export const zh = {
     get badge() {
       return rt`${'reviewer'}`
     },
-    hint: '审查意见只供参考：不改变需求状态，也不影响验收',
+    hint: '评审只审查和验证：不改需求状态；交给它的待验收需求，评审交意见前不进「要你处理」',
     more: '展开全部',
     less: '收起',
+  },
+  // 评审验证（R-232、R-237）：交给评审的待验收需求，评审交意见前不进「要你处理」
+  verify: {
+    reviewing: (who: string) => rt`${'reviewer'}中` + (who ? ` · ${who}` : ''),
+    get inProgress() {
+      return rt`${'reviewer'}中`
+    },
+    get overdue() {
+      return rt`${'reviewer'}未完成`
+    },
+    unfinished: '未完成',
+    pass: (p: number, n: number) => `通过 ${p}/${n}`,
+    fail: (n: number) => `不通过 ${n} 条`,
+    done: '已交意见',
+    mark: (x: string) => rt`${'reviewer'} ` + x,
+    reviewingTip: (who: string) => `${who || '评审'} 在验证，交意见前不进「要你处理」；不想等也可以直接验收`,
+    overdueTip: (who: string) => `${who || '评审'} 没在时限内交意见，已照常交给你验收`,
+    get auto() {
+      return rt`纸鸢自动交给${'reviewer'}`
+    },
   },
   own: {
     draftShort: '待你确认',

@@ -348,7 +348,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rev 交审查意见（R-88）：不改需求状态，不拦截验收 */
+        /** Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；交给评审的待验收需求这时进用户的验收卡，有不通过的通知主调度 */
         post: operations["agent-submit-review"];
         delete?: never;
         options?: never;
@@ -1820,14 +1820,6 @@ export interface components {
             role: string;
             session_key: string;
         };
-        "Agent-submit-reviewRequest": {
-            /** @description 附图 ID（先上传到 /api/agent/files） */
-            files?: string[] | null;
-            /** @description 提交意见的会话（身份必须是 reviewer） */
-            session_key: string;
-            /** @description 审查意见（可用 Markdown） */
-            summary: string;
-        };
         "Agent-submit-stageRequest": {
             /** @description 表达块（R-97），同证据；不合法的块丢掉并在 block_warnings 里说明 */
             blocks?: unknown[] | null;
@@ -2506,6 +2498,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -2880,6 +2873,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -3407,6 +3401,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -3472,6 +3467,7 @@ export interface components {
             project_id?: string;
             project_name?: string;
             release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
             reviews?: components["schemas"]["Evidence"][] | null;
             sessions: string[] | null;
             source: string;
@@ -3491,6 +3487,22 @@ export interface components {
             status: string;
             title: string;
         };
+        ReviewBody: {
+            /** @description 表达块（R-97）：验证结果放一个 checklist，逐条 pass / fail / ask 加一句依据；也可以附 figure / compare 截图。不合法的块丢掉并在 block_warnings 里说明，意见照常保存 */
+            blocks?: unknown[] | null;
+            /** @description 怎么验的（跑了哪些测试、演示环境怎么起的），默认折叠 */
+            details?: string;
+            /** @description 附图 ID（先上传到 /api/agent/files） */
+            files?: string[] | null;
+            /** @description 带标题与框的截图（R-183）：[{id: 附件 ID, title: 一句话标题, boxes: [{x, y, w, h, label, criterion}]}]，框用图片原始尺寸的比例坐标（0～1） */
+            images?: unknown[] | null;
+            /** @description 提交意见的会话（身份必须是 reviewer） */
+            session_key: string;
+            /** @description 审查意见正文（可用 Markdown）；给了 verdict / blocks 时可省略，由 hub 拼出纯文本 */
+            summary?: string;
+            /** @description 一句结论（40 字以内） */
+            verdict?: string;
+        };
         ReviewInBody: {
             items: components["schemas"]["ReviewItem"][] | null;
         };
@@ -3504,6 +3516,93 @@ export interface components {
         ReviewOutBody: {
             feedback: components["schemas"]["Decision"][] | null;
             requirements: components["schemas"]["Requirement"][] | null;
+        };
+        ReviewState: {
+            /**
+             * Format: date-time
+             * @description 交给评审的时间
+             */
+            asked_at?: string;
+            /** @description 交验收时纸鸢自动派给在线评审的（否则是手动交给评审） */
+            auto?: boolean;
+            /**
+             * Format: date-time
+             * @description 等到什么时候：过了照常弹给用户，标「评审未完成」
+             */
+            due_at?: string;
+            /**
+             * Format: int64
+             * @description done：不通过的条数
+             */
+            fail: number;
+            /**
+             * Format: int64
+             * @description done：验证清单通过的条数
+             */
+            pass: number;
+            /** @description done：评审交的那条意见 */
+            review_id?: string;
+            /** Format: date-time */
+            reviewed_at?: string;
+            /** @description 在审的评审会话 */
+            session_key: string;
+            /** @description 评审会话的标题 */
+            session_title?: string;
+            /**
+             * @description reviewing 评审中（不进「要你处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见
+             * @enum {string}
+             */
+            state: "reviewing" | "overdue" | "done";
+            /**
+             * Format: int64
+             * @description done：验证清单总条数（没交清单为 0）
+             */
+            total: number;
+            /** @description done：评审的一句结论（没有时取意见开头） */
+            verdict?: string;
+        };
+        ReviewSubmitOutBody: {
+            acceptance: string;
+            block_warnings?: string[] | null;
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            created_by: string;
+            detail: string;
+            doc_link: string;
+            evidence?: components["schemas"]["Evidence"][] | null;
+            feedback?: components["schemas"]["Decision"][] | null;
+            files: components["schemas"]["FileRef"][] | null;
+            from_decision?: string;
+            id: string;
+            image_hints?: string[] | null;
+            kind: string;
+            next_actor: string;
+            /** Format: date-time */
+            offered_at?: string;
+            offered_to?: string;
+            /** Format: int64 */
+            pending_decisions: number;
+            plan_code?: string;
+            plan_id?: string;
+            priority: string;
+            project_id?: string;
+            project_name?: string;
+            release?: components["schemas"]["Release"];
+            review?: components["schemas"]["ReviewState"];
+            review_id: string;
+            reviews?: components["schemas"]["Evidence"][] | null;
+            sessions: string[] | null;
+            source: string;
+            /** Format: int64 */
+            stage_seq?: number;
+            stage_status?: string;
+            stage_title?: string;
+            status: string;
+            status_changes?: components["schemas"]["StatusChange"][] | null;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
         };
         RoleOutBody: {
             /** @description 因本次接任主调度 / 主助理被降为无身份的会话 */
@@ -4704,7 +4803,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Agent-submit-reviewRequest"];
+                "application/json": components["schemas"]["ReviewBody"];
             };
         };
         responses: {
@@ -4714,7 +4813,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Requirement"];
+                    "application/json": components["schemas"]["ReviewSubmitOutBody"];
                 };
             };
             /** @description Error */

@@ -15,6 +15,7 @@ import { useOpenReq } from './nav'
 import { allStatuses, priorities, useSetStatus } from './requirements'
 import { PendingCover } from './verdict'
 import { DraftMark } from './draft'
+import { ReviewChip } from './verify'
 
 // 需求池盘面（R-133）：分布条、池子指标、按状态流动排列的需求块。
 // 布局按内容区的实际宽度排（不看视口）：侧栏展开或折叠时，盘面自动在宽屏横排与纵向之间切换。
@@ -424,6 +425,7 @@ export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
         <RefChip code={r.code} title="" status={r.status} link={false} />
         {r.kind === 'design' && <span className="shrink-0 rounded bg-accent-soft px-1 text-[11px] leading-4 font-medium text-accent">{t.design.label}</span>}
         {r.plan_code && <span className="min-w-0 truncate rounded bg-sunken px-1 font-mono text-[11px] leading-4 font-semibold text-fg-2">{r.plan_code}</span>}
+        <ReviewChip r={r} />
         <DraftMark owners={[r.code]} />
         <span className="ml-auto shrink-0 text-[11px] whitespace-nowrap text-fg-3 tabular" title={t.pool.ageTip(createdAt(r.created_at))}>
           {ageText(r.created_at, now)}

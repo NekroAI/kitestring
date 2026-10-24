@@ -20,6 +20,7 @@ import { SessionRow } from '../app/thread'
 import { RefLine, ReqGlyph } from '../ui/refmark'
 import { useRecent } from '../app/recent'
 import { GrantPanel } from '../app/grant'
+import { reviewHeld } from '../app/verify'
 
 // 项目：左侧项目列表常驻，右侧回答“这个项目现在怎样”（D-20 选定 B 主从双栏；窄屏退化为列表 → 详情）。
 
@@ -73,7 +74,7 @@ function useStats(): { list: Stat[]; loading: boolean } {
         live: mine.filter((s) => s.state !== 'ended' && s.state !== 'lost'),
         reqs: rq,
         open,
-        review: open.filter((r) => r.status === 'review').length,
+        review: open.filter((r) => r.status === 'review' && !reviewHeld(r)).length,
         last,
         needDevs: p.need_devs,
         needReason: p.need_reason,
@@ -248,7 +249,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const [granting, setGranting] = useState(false)
   const counts = order.map((s) => [s, p.open.filter((r) => r.status === s).length] as const).filter(([, n]) => n)
   const done = p.reqs.filter((r) => r.status === 'done').length
-  const firstReview = p.open.filter((r) => r.status === 'review').sort((a, b) => a.updated_at.localeCompare(b.updated_at))[0]
+  const firstReview = p.open.filter((r) => r.status === 'review' && !reviewHeld(r)).sort((a, b) => a.updated_at.localeCompare(b.updated_at))[0]
   const live = [...p.live].sort((a, b) => Number(displayState(b) === 'parked') - Number(displayState(a) === 'parked') || b.last_active_at.localeCompare(a.last_active_at))
 
   // 最近进展：跨会话汇总这个项目的提交验收、退回、留言、交出与决策答复（与工作台右栏共用）

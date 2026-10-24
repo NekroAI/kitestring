@@ -27,6 +27,7 @@ export type BlockItem = Schemas['Item']
 export type Payload = Schemas['Payload']
 export type Evidence = Schemas['Evidence']
 export type StatusChange = Schemas['StatusChange']
+export type ReviewState = Schemas['ReviewState']
 
 // 未登录回调：任何接口返回 401 时触发，由 App 跳回登录页。
 let onUnauthorized: () => void = () => {}

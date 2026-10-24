@@ -30,6 +30,7 @@ import { PendingBar, Seal, useAdvance, usePending, usePendingMap, useReqVerdict,
 import { plainText } from '../ui/markdown'
 import { DraftLine, draftExists, useDraft } from './draft'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
+import { ReviewBadge } from './verify'
 
 // 需求抽屉：从上到下是“需求是什么”（固定）→ 来回的记录（滚动，最新在下）→ 轮到你做的事（固定在底部）。
 // 验收时可以在同一个抽屉里连续处理同一项目的待验收：通过后自动滑到下一条，顶部左右按钮切换。
@@ -220,6 +221,7 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
         <PlanBadge r={r} className="px-2.5 py-1 text-sm" />
         <DesignBadge r={r} className="px-2.5 py-1 text-sm" />
         <ReleaseBadge r={r} />
+        <ReviewBadge r={r} />
         <span className={cx('contents', compact && 'max-sm:hidden')}>
         <Menu
           align="start"
