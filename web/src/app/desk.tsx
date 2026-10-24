@@ -11,7 +11,7 @@ import { displayState, presence, RoleTag } from '../ui/marks'
 import { Linkify, PlanGlyph, shortTitle } from '../ui/refmark'
 import type { ProjectGroup, useWorkbench } from './inbox'
 import { useOpenPlan } from './nav'
-import { needsApproval, planState, StageRail } from './plans'
+import { needsApproval, passedWith, planState, StageRail } from './plans'
 import { useRecent } from './recent'
 import { MorningReports } from './morning'
 import { Wind } from './lanes'
@@ -349,15 +349,7 @@ export function useHandled(now: number, limit = 4): Handled[] {
     }
     // 阶段验收：你通过一个阶段时，后面需求早已逐条验收完的阶段会一并自动通过（D-60），计划随之完成——这是你的一次判断，
     // 只记一条，写你验收的那个阶段（R-211：P-2 曾因此出现两条一样的「通过 会话身份与工人池」）
-    for (const x of plans.data ?? []) {
-      let last = 0
-      for (const st of x.stages.filter((v) => v.passed_at).sort((a, b) => a.seq - b.seq)) {
-        const at = Date.parse(st.passed_at!)
-        if (last && Math.abs(at - last) < 2000) continue
-        last = at
-        out.push({ at: st.passed_at!, act: 'pass', scene: 'accept', text: `${x.title} · ${t.ref.stage(st.seq)}` })
-      }
-    }
+    for (const x of plans.data ?? []) for (const st of x.stages) if (st.passed_at && !passedWith(x, st)) out.push({ at: st.passed_at, act: 'pass', scene: 'accept', text: `${x.title} · ${t.ref.stage(st.seq)}` })
     return out
       .filter((x) => now - Date.parse(x.at) < handledTTL)
       .sort((a, b) => b.at.localeCompare(a.at))

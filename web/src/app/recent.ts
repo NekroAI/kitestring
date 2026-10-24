@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { Requirement } from '../api/client'
 import { useDecisions, usePlans, useRequirements } from '../api/queries'
 import { t } from '../i18n'
+import { passedWith } from './plans'
 
 // 最近动态：跨会话汇总交证据、退回、留言、派活、完成与决策答复。项目页与工作台右栏共用。
 export type RecentItem = { at: string; code: string; text: string; dot: string }
@@ -30,7 +31,12 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
     // 阶段验收通过也记一条（R-161：判断完成后卡片收起、时间线记一条）
     for (const x of plans.data ?? [])
       if (!projectId || x.project_id === projectId)
-        for (const st of x.stages) if (st.passed_at) out.push({ at: st.passed_at, code: x.code, text: t.projects.evStage(x.code, st.seq, st.title), dot: 'bg-run' })
+        for (const st of x.stages) {
+          if (!st.passed_at) continue
+          // 随前一个阶段自动通过的不算你通过的（R-211）
+          const by = passedWith(x, st)
+          out.push({ at: st.passed_at, code: x.code, text: by ? t.projects.evStageWith(x.code, st.seq, st.title, by) : t.projects.evStage(x.code, st.seq, st.title), dot: 'bg-run' })
+        }
     return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit)
   }, [list, projectId, limit, decisions.data, plans.data])
 }

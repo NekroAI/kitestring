@@ -372,13 +372,30 @@ function StageScores({ st }: { st: Stage }) {
   )
 }
 
+// passedWith：阶段是不是随前一个阶段一起自动通过的（你通过阶段 N 时，后面需求早已逐条验收完的阶段一并通过，D-60）。
+// 是就返回你验收的那个阶段号，否则 0。同一次操作写下的通过时间相同，按 2 秒内连号判断（R-211：写清是谁做的）。
+export function passedWith(x: Plan, st: Stage): number {
+  if (!st.passed_at) return 0
+  let by = 0
+  let prev = 0
+  for (const v of [...x.stages].sort((a, b) => a.seq - b.seq)) {
+    const at = v.passed_at ? Date.parse(v.passed_at) : 0
+    by = at && prev && Math.abs(at - prev) < 2000 ? by : v.seq
+    prev = at
+    if (v.seq === st.seq) return by === st.seq ? 0 : by
+  }
+  return 0
+}
+
 function StageBlock({ x, st, last, sel, onPick, pin }: { x: Plan; st: Stage; last: boolean; sel?: string | null; onPick?: (code: string) => void; pin?: boolean }) {
   const now = useNow()
   const cur = x.status === 'active' && st.seq === x.current
   const locked = st.status === 'locked'
   const hint =
     st.status === 'passed'
-      ? t.plan.passedAt(relTime(st.passed_at, now))
+      ? passedWith(x, st)
+        ? t.plan.passedWith(passedWith(x, st), relTime(st.passed_at, now))
+        : t.plan.passedAt(relTime(st.passed_at, now))
       : locked
         ? x.status === 'active' ? t.plan.lockedHint(st.seq - 1) : ''
         : st.status === 'review'
