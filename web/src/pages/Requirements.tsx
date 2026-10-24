@@ -173,13 +173,13 @@ function Board({ width, pool, items, shelved, active, onAll, onConfirmEach }: Bo
     const cols = flowStatuses.length + (shelved ? 1 : 0)
     const draftW = width - narrow * cols - doneW - 12 * (cols + 1)
     return (
-      <div className="flex h-full items-start gap-3">
+      <div className="flex h-full items-stretch gap-3">
         <DraftBlock items={by('draft')} cols={Math.max(2, Math.min(12, Math.floor((draftW - 12) / 230)))} onConfirmEach={onConfirmEach} className="flex-1" compact={draftW < 560} />
         {flowStatuses.map((s) => (
-          <NarrowCol key={s} status={s} items={by(s)} width={narrow} />
+          <NarrowCol key={s} status={s} items={by(s)} width={narrow} fill />
         ))}
-        <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={doneW} />
-        {shelved && <NarrowCol status="shelved" items={by('shelved')} width={narrow} />}
+        <DoneCol items={done} days={pool.done_daily} onAll={() => onAll('done')} width={doneW} fill />
+        {shelved && <NarrowCol status="shelved" items={by('shelved')} width={narrow} fill />}
       </div>
     )
   }

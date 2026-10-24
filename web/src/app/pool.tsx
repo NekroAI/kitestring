@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { HoverCard } from 'radix-ui'
 import { Check, ChevronDown, ChevronRight, ListChecks } from 'lucide-react'
 import type { Requirement, Schemas } from '../api/client'
@@ -509,7 +509,7 @@ export function DraftBlock({ items, cols, onConfirmEach, className }: { items: R
           })}
         </div>
       ) : (
-        <EmptyHint status="draft" over={over} />
+        <EmptyHint status="draft" over={over} fill />
       )}
     </section>
   )
@@ -541,13 +541,26 @@ function DoneBars({ days }: { days: Schemas['PoolDay'][] }) {
 }
 
 // 已完成：近 7 天每日完成柱 + 最近 7 条（淡色）+「全部 N 条」。
-export function DoneBody({ items, days, onAll, className }: { items: Requirement[]; days: Schemas['PoolDay'][]; onAll: () => void; className?: string }) {
+// fit：宽屏列里按可用高度放条数（至少 7 条），柱和「全部 N 条」固定，窗口高度变化时重算（R-199）。
+const DONE_ROW = 28 // 一条最近完成的行高（含间距）
+export function DoneBody({ items, days, onAll, className, fit }: { items: Requirement[]; days: Schemas['PoolDay'][]; onAll: () => void; className?: string; fit?: boolean }) {
   const open = useOpenReq()
+  const listRef = useRef<HTMLDivElement>(null)
+  const [n, setN] = useState(7)
+  useLayoutEffect(() => {
+    const el = listRef.current
+    if (!fit || !el) return
+    const calc = () => setN(Math.max(7, Math.floor((el.clientHeight + 2) / DONE_ROW)))
+    calc()
+    const ro = new ResizeObserver(calc)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [fit])
   return (
-    <div className={cx('space-y-2.5', className)}>
+    <div className={cx(fit ? 'flex min-h-0 flex-1 flex-col gap-2.5' : 'space-y-2.5', className)}>
       <DoneBars days={days} />
-      <div className="space-y-0.5">
-        {items.slice(0, 7).map((r) => (
+      <div ref={listRef} className={cx('space-y-0.5', fit && 'min-h-0 flex-1 overflow-y-auto overscroll-contain')}>
+        {items.slice(0, fit ? n : 7).map((r) => (
           <button key={r.id} onClick={() => open(r.code)} className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1 py-1 text-left opacity-75 transition hover:bg-hover hover:opacity-100">
             <RefChip code={r.code} title="" status={r.status} link={false} />
             <span className="min-w-0 flex-1 truncate text-xs text-fg-2">{r.title}</span>
@@ -555,7 +568,7 @@ export function DoneBody({ items, days, onAll, className }: { items: Requirement
         ))}
       </div>
       {items.length > 0 && (
-        <button onClick={onAll} className="flex items-center gap-0.5 px-1 text-xs text-fg-3 hover:text-fg">
+        <button onClick={onAll} className="flex shrink-0 items-center gap-0.5 px-1 text-xs text-fg-3 hover:text-fg">
           {t.pool.doneAll(items.length)}
           <ChevronRight className="size-3.5" />
         </button>
@@ -564,13 +577,13 @@ export function DoneBody({ items, days, onAll, className }: { items: Requirement
   )
 }
 
-export function DoneCol({ items, days, onAll, className, width }: { items: Requirement[]; days: Schemas['PoolDay'][]; onAll: () => void; className?: string; width?: number }) {
+export function DoneCol({ items, days, onAll, className, width, fill }: { items: Requirement[]; days: Schemas['PoolDay'][]; onAll: () => void; className?: string; width?: number; fill?: boolean }) {
   const { over, props } = useDrop('done')
   const week = days.reduce((n, d) => n + d.count, 0)
   return (
-    <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col self-start p-2', width && 'shrink-0', zone(over), className)}>
+    <section {...props} style={width ? { width } : undefined} className={cx('flex max-h-full min-h-0 min-w-0 flex-col p-2', fill ? 'self-stretch' : 'self-start', width && 'shrink-0', zone(over), className)}>
       <ColHead status="done" n={items.length} extra={t.pool.doneHead(week)} />
-      <DoneBody items={items} days={days} onAll={onAll} className={cx('min-h-0', scrollBody)} />
+      <DoneBody items={items} days={days} onAll={onAll} fit={fill} className={fill ? undefined : cx('min-h-0', scrollBody)} />
     </section>
   )
 }
