@@ -34,7 +34,7 @@ Hub 据此推导你在看板上看到的状态：运行中、等你处理（权�
 
 ## 决策如何回到 agent
 
-1. agent 遇到需要你拍板的事，调用 `decision_raise`，附上选项和它的推荐。
+1. agent 遇到需要你决策的事，调用 `decision_raise`，附上选项和它的推荐。
 2. 决策进入你的收件箱，并推送到你的手机或浏览器。
 3. 你在看板上作答。Hub 把答复路由到提出它的那个会话，下发到该设备的 daemon。
 4. 你下次给这个会话发消息时，prompt hook 把答复注入 agent 的上下文（`additionalContext`）。会话已结束的，恢复时送达。
@@ -67,7 +67,7 @@ Agent 做完一段、需要你验收或答复才能继续时，可以运行 `ks 
 | `session_link_req` | 标明本会话正在做某条需求 |
 | `req_update_status` | 推进需求状态，例如改为待验收 |
 | `evidence_attach` | 为验收附上测试结果、提交、截图或录屏 |
-| `decision_raise` | 请你拍板，附选项、推荐与方案图 |
+| `decision_raise` | 请你决策，附选项、推荐与方案图 |
 | `plan_create` `plan_update` `plan_get` `stage_submit` | 把大目标拆成阶段、查看进度、提交完成的阶段 |
 
 同样的操作也有命令行版本（`ks req`、`ks plan`、`ks decision`、`ks wait`，见 `ks --help`）；agent 的 MCP 连接还是旧版本时可以改用它。

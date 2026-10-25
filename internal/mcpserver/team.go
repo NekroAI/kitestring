@@ -78,7 +78,7 @@ type briefIn struct {
 
 type handoffIn struct {
 	Doing   string `json:"doing" jsonschema:"在做的：每件事写需求编号、做到哪、分支 / worktree 在哪"`
-	Waiting string `json:"waiting,omitempty" jsonschema:"等用户的：待答决策、待验收的需求、要用户拍板的事（写编号）"`
+	Waiting string `json:"waiting,omitempty" jsonschema:"等用户的：待答决策、待验收的需求、要用户决策的事（写编号）"`
 	Rules   string `json:"rules,omitempty" jsonschema:"约定和规矩：用户定过的、团队里说好的、还没做成系统的口头约定"`
 	Next    string `json:"next" jsonschema:"下一步：接任后先做什么"`
 	Notes   string `json:"notes,omitempty" jsonschema:"注意事项：坑、在跑的进程、别碰的东西"`
@@ -106,7 +106,7 @@ type tellIn struct {
 }
 
 func (t *tools) registerTeam(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的团队成员发消息（命令行 ks team tell）：按身份送给本项目现在的那个会话，不认会话名。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户拍板的事仍用 decision_raise。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的团队成员发消息（命令行 ks team tell）：按身份送给本项目现在的那个会话，不认会话名。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
 			key, agent := t.caller(ctx, req)
 			if key == "" {

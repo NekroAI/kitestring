@@ -112,7 +112,7 @@ type handoffWriteIn struct {
 	Body struct {
 		SessionKey string `json:"session_key" minLength:"1"`
 		Doing      string `json:"doing" doc:"在做的：需求编号、做到哪"`
-		Waiting    string `json:"waiting,omitempty" doc:"等用户的：待答决策、待验收、要用户拍板的事"`
+		Waiting    string `json:"waiting,omitempty" doc:"等用户的：待答决策、待验收、要用户决策的事"`
 		Rules      string `json:"rules,omitempty" doc:"约定和规矩：用户定过的、团队里说好的"`
 		Next       string `json:"next" doc:"下一步"`
 		Notes      string `json:"notes,omitempty" doc:"注意事项：坑、在跑的进程、别碰的东西"`

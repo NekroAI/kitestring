@@ -428,13 +428,13 @@ func runWithdraw(args []string) error {
 func runAnswer(args []string) error {
 	fs := flag.NewFlagSet("decision answer", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
-	answer := fs.String("answer", "", "答复；有要拍板的点时是附言")
+	answer := fs.String("answer", "", "答复；有要决策的点时是附言")
 	reason := fs.String("reason", "", "为什么这样答、为什么不必等用户（必填）")
 	risk := fs.String("risk", "", "你自己的风险判断：low / medium / high（必填），取它和提问方标的中更高的一档")
 	verdict := fs.String("verdict", "", "批准类决策必填：approved 批准 / rejected 拒绝")
 	hardCheck := fs.String("hard-check", "", "硬规则核对（必填）：none = 不属于 product / design / semantics / permission / gate / irreversible / acceptance 任何一类；属于其中一类就不要代答")
 	var choices intList
-	fs.Var(&choices, "choice", "有要拍板的点时逐点选第几个（从 1 开始），按点的顺序重复")
+	fs.Var(&choices, "choice", "有要决策的点时逐点选第几个（从 1 开始），按点的顺序重复")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -464,12 +464,12 @@ func runDecision(args []string) error {
 		return runAnswer(args[1:])
 	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要拍板的点.json] [--summary 方案要点]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要决策的点.json] [--summary 方案要点]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	question := fs.String("question", "", "问题：一句话，只问一件事（建议 60 字以内）")
-	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的待拍板的点另开决策（建议 400 字以内）")
+	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的待决策的点另开决策（建议 400 字以内）")
 	rec := fs.String("recommend", "", "推荐及理由")
 	recOpt := fs.Int("recommend-option", 0, "推荐的是第几个 --option（从 1 开始）；不填时只有 --recommend 与某个选项文字完全相同才标推荐")
 	req := fs.String("req", "", "关联需求")
@@ -484,7 +484,7 @@ func runDecision(args []string) error {
 	var imgs stringList
 	fs.Var(&imgs, "image", "问题附带的图片路径（例如待批准的方案图），可重复")
 	blocksArg := fs.String("blocks", "", "表达块，JSON 数组或 JSON 文件路径")
-	pointsArg := fs.String("points", "", `要拍板的点，JSON 数组或 JSON 文件路径：[{"question":…,"options":[{"label":…,"desc":…,"recommended":true}]}]`)
+	pointsArg := fs.String("points", "", `要决策的点，JSON 数组或 JSON 文件路径：[{"question":…,"options":[{"label":…,"desc":…,"recommended":true}]}]`)
 	var summary stringList
 	fs.Var(&summary, "summary", "方案要点，每条一行（以需求编号开头），可重复")
 	if err := parseAnywhere(fs, args[1:]); err != nil {
@@ -548,7 +548,7 @@ func runDecision(args []string) error {
 // 写作规范（R-110），与 MCP 工具说明一致。
 const (
 	evidenceGuide = "证据写法：第一句是结论（40 字以内，写用户能看到的变化）；逐条对照验收标准写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图；“你需要做的”只写机器验证不了的事，没有就不写；风险可选；实现细节放最后；无关的顺带改动单列或另记需求。截图每张写一句话标题、用 boxes 框出改动的地方（框里写 criterion 标明证明第几条验收点，网页会裁成小图放在那条旁边；--image '{\"path\",\"title\",\"boxes\"}' 或 --images 附图.json），重点看的图放前面，补充、测试一类的放后面。交之前先自查截图里的文字有没有被截断、溢出或重叠。交错的证据用 ks req evidence void <证据 id> --reason 理由 作废后重交，不要堆着。" + writing.UIEvidenceGuide
-	decisionGuide = "决策写法：问题一句话，每次只问一件事；一个方案里有几个点要分别拍板时用 --points 逐点给选项（标出推荐），不埋在说明里；说明按“结论 / 依据 / 细节”写，方案长时用 --summary 每条需求一行。" + writing.DecisionTableGuide
+	decisionGuide = "决策写法：问题一句话，每次只问一件事；一个方案里有几个点要分别决策时用 --points 逐点给选项（标出推荐），不埋在说明里；说明按“结论 / 依据 / 细节”写，方案长时用 --summary 每条需求一行。" + writing.DecisionTableGuide
 	stageGuide    = "小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据。"
 )
 

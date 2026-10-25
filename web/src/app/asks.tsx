@@ -46,7 +46,7 @@ export type Ask = {
 
 type WB = ReturnType<typeof useWorkbench>
 
-// 越小越靠前：拍板 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交；同类里等得越久越靠前。
+// 越小越靠前：决策 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交；同类里等得越久越靠前。
 const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, orphan: 4, proxy: 9 }
 
 // buildAsks：从工作台数据算出全部条目（工作台、侧栏角标、抽屉队列同一口径）。

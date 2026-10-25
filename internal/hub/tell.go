@@ -286,7 +286,7 @@ func (h *Hub) registerAgentTell(api huma.API) {
 			agent := strings.TrimSpace(in.Body.AgentID)
 			out := &tellOut{}
 			if me.ProjectID == "" {
-				out.Body.Message = "当前会话不属于任何项目，没有团队成员可以发；要用户拍板的事用 decision_raise。"
+				out.Body.Message = "当前会话不属于任何项目，没有团队成员可以发；要用户决策的事用 decision_raise。"
 				return out, nil
 			}
 			reqID := ""
@@ -353,12 +353,12 @@ func (h *Hub) registerAgentTell(api huma.API) {
 					switch role {
 					case roles.Aide:
 						if msg.SessionKey = h.liveRole(ctx, me.ProjectID, roles.PM); msg.SessionKey == "" {
-							return nil, huma.Error409Conflict("本项目现在没有主助理，也没有主调度，消息没有送出；要用户拍板的事用 decision_raise。")
+							return nil, huma.Error409Conflict("本项目现在没有主助理，也没有主调度，消息没有送出；要用户决策的事用 decision_raise。")
 						}
 						toRole = roles.PM
 						note = "（原本发给主助理；本项目现在没有主助理，请你处理或问用户）"
 					case roles.Reviewer:
-						return nil, huma.Error409Conflict("本项目现在没有在线的评审会话，消息没有送出；要审查请让主调度派审查任务，要用户拍板的事用 decision_raise。")
+						return nil, huma.Error409Conflict("本项目现在没有在线的评审会话，消息没有送出；要审查请让主调度派审查任务，要用户决策的事用 decision_raise。")
 					default:
 						out.Body.Message = noPMNote
 						return out, nil

@@ -17,9 +17,9 @@ import (
 //   - 窗口按项目开，同一项目同时只有一个；有到期时间（最长 24 小时）和范围（最高风险档：low 或 medium）；随时可撤销，到期自动失效。
 //   - 只有被授权的那个主助理会话能代答，别的身份、别的会话一律拒绝；必须写理由，并给出自己的风险判断——
 //     风险档只升不降：取提问方标的和参谋判断中更高的一档，超出窗口范围就拒绝。提问方没标风险档按 high 算。
-//   - 硬规则永不代答（R-210 起见 hardrule.go）：批准方案 / 计划（approval）、设计选型（选项或要拍板的点带效果图）、提问方标了 hard 的、
+//   - 硬规则永不代答（R-210 起见 hardrule.go）：批准方案 / 计划（approval）、设计选型（选项或要决策的点带效果图）、提问方标了 hard 的、
 //     主助理 hard_check 没填 none 的、兜底词命中的（拿不准）、非决策类、已答复 / 已关闭、参谋自己提的；
-//     要拍板的点（points）整体判定，任何一点命中硬规则整条都不代答。验收、批准计划本来不走决策接口，代答碰不到。
+//     要决策的点（points）整体判定，任何一点命中硬规则整条都不代答。验收、批准计划本来不走决策接口，代答碰不到。
 //   - 代答留痕在决策上（谁、理由、风险档、原文、时间），网页标「主助理代答」；你可以推翻（重新作答），更正会送回提问方。
 //   - 窗口开着时，参谋可以代答的决策先不推送通知（不吵醒你），但仍留在收件箱里；参谋答了就移走。
 
@@ -68,7 +68,7 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 		return x, "", apiErr(err)
 	}
 	if x.Role != roles.Aide {
-		return x, "", huma.Error403Forbidden(notAide("代答决策", x.Role) + "；要用户拍板的事请等用户答复")
+		return x, "", huma.Error403Forbidden(notAide("代答决策", x.Role) + "；要用户决策的事请等用户答复")
 	}
 	if d.ProjectID == "" || d.ProjectID != x.ProjectID {
 		return x, "", huma.Error403Forbidden(d.Code + " 不属于你所在的项目，不能代答")
@@ -111,7 +111,7 @@ func (h *Hub) proxyCheck(ctx context.Context, d store.Decision, caller, advRisk,
 	switch hardCheck = strings.TrimSpace(hardCheck); {
 	case hardCheck == "none":
 	case hardKinds[hardCheck] != "":
-		return x, "", huma.Error403Forbidden(fmt.Sprintf("硬规则，不能代答：你判断 %s 属于「%s」，只由用户拍板；留给用户", d.Code, hardKinds[hardCheck]))
+		return x, "", huma.Error403Forbidden(fmt.Sprintf("硬规则，不能代答：你判断 %s 属于「%s」，只由用户决策；留给用户", d.Code, hardKinds[hardCheck]))
 	default:
 		return x, "", huma.Error400BadRequest("代答前要核对硬规则：hard_check = none 表示不属于以下任何一类；属于其中一类就不要代答，留给用户。旧版 MCP 没有 hard_check 参数：请用 ks decision answer --hard-check none，或用 /mcp 重连。" + hardKindsDoc)
 	}
@@ -214,9 +214,9 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body struct {
-				Answer  string   `json:"answer" doc:"你的答复；有要拍板的点时是附言，可空"`
+				Answer  string   `json:"answer" doc:"你的答复；有要决策的点时是附言，可空"`
 				Files   []string `json:"files,omitempty" doc:"附件 ID"`
-				Choices []int    `json:"choices,omitempty" doc:"要拍板的点：逐点选第几个（从 0 开始）"`
+				Choices []int    `json:"choices,omitempty" doc:"要决策的点：逐点选第几个（从 0 开始）"`
 				Reject  bool     `json:"reject,omitempty"`
 				Reason  string   `json:"reason,omitempty" doc:"可选的一句话理由（R-157）"`
 				Verdict string   `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：批准还是拒绝（R-239）"`
@@ -301,10 +301,10 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 			Ref  string `path:"ref"`
 			Body struct {
 				SessionKey string `json:"session_key,omitempty"`
-				Answer     string `json:"answer,omitempty" doc:"答复；有要拍板的点时是附言，可空"`
+				Answer     string `json:"answer,omitempty" doc:"答复；有要决策的点时是附言，可空"`
 				Reason     string `json:"reason" doc:"为什么这样答、为什么不必等用户（必填）"`
 				Risk       string `json:"risk" doc:"你自己的风险判断：low / medium / high（必填）；取它和提问方标的中更高的一档"`
-				Choices    []int  `json:"choices,omitempty" doc:"要拍板的点：逐点选第几个（从 0 开始）"`
+				Choices    []int  `json:"choices,omitempty" doc:"要决策的点：逐点选第几个（从 0 开始）"`
 				Verdict    string `json:"verdict,omitempty" enum:"approved,rejected" doc:"批准类决策：代答批准还是拒绝（R-239）；不填时按答复开头的「批准 / 拒绝」记一次"`
 				HardCheck  string `json:"hard_check,omitempty" doc:"硬规则核对（必填，R-210）：none = 核对过，不属于硬规则；填 product / design / semantics / permission / gate / irreversible / acceptance 中的一类表示属于它，会被拒绝"`
 			}

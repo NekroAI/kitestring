@@ -207,11 +207,11 @@
         "additionalProperties": false,
         "properties": {
           "answer": {
-            "description": "答复；有要拍板的点时是附言，可空",
+            "description": "答复；有要决策的点时是附言，可空",
             "type": "string"
           },
           "choices": {
-            "description": "要拍板的点：逐点选第几个（从 0 开始）",
+            "description": "要决策的点：逐点选第几个（从 0 开始）",
             "items": {
               "format": "int64",
               "type": "integer"
@@ -862,7 +862,7 @@
             "type": "boolean"
           },
           "points": {
-            "description": "要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明",
+            "description": "要决策的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明",
             "items": {},
             "type": [
               "array",
@@ -957,7 +957,7 @@
             ]
           },
           "from_decision": {
-            "description": "产生这条需求的决策（R-154），如 D-142；用户在某条决策里拍板后由此新建的需求要填",
+            "description": "产生这条需求的决策（R-154），如 D-142；用户在某条决策里作答后由此新建的需求要填",
             "type": "string"
           },
           "kind": {
@@ -3667,7 +3667,7 @@
             "type": "string"
           },
           "waiting": {
-            "description": "等用户的：待答决策、待验收、要用户拍板的事",
+            "description": "等用户的：待答决策、待验收、要用户决策的事",
             "type": "string"
           },
           "written_at": {
@@ -3737,7 +3737,7 @@
             "type": "string"
           },
           "waiting": {
-            "description": "等用户的：待答决策、待验收、要用户拍板的事",
+            "description": "等用户的：待答决策、待验收、要用户决策的事",
             "type": "string"
           }
         },
@@ -3849,7 +3849,7 @@
         "additionalProperties": false,
         "properties": {
           "answer": {
-            "description": "答复；有要拍板的点（points）时是附言，可空",
+            "description": "答复；有要决策的点（points）时是附言，可空",
             "type": "string"
           },
           "choices": {
@@ -5155,11 +5155,11 @@
         "additionalProperties": false,
         "properties": {
           "answer": {
-            "description": "你的答复；有要拍板的点时是附言，可空",
+            "description": "你的答复；有要决策的点时是附言，可空",
             "type": "string"
           },
           "choices": {
-            "description": "要拍板的点：逐点选第几个（从 0 开始）",
+            "description": "要决策的点：逐点选第几个（从 0 开始）",
             "items": {
               "format": "int64",
               "type": "integer"

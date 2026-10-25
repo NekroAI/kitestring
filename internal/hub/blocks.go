@@ -63,7 +63,7 @@ func pointsAnswer(d store.Decision, choices []int, note string, reject bool) (st
 		return "拒绝", nil
 	}
 	if len(choices) != len(d.Points) {
-		return "", fmt.Errorf("%s 有 %d 个要拍板的点，收到 %d 个选择", d.Code, len(d.Points), len(choices))
+		return "", fmt.Errorf("%s 有 %d 个要决策的点，收到 %d 个选择", d.Code, len(d.Points), len(choices))
 	}
 	var b strings.Builder
 	if d.Approval {

@@ -11,7 +11,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// TestDecisionPoints：一个决策有两个要拍板的点，分别作答后逐点注入 Agent 的上下文（R-112）；
+// TestDecisionPoints：一个决策有两个要决策的点，分别作答后逐点注入 Agent 的上下文（R-112）；
 // 批准类可整体拒绝；没选全时拒绝提交；旧的单选决策照常作答。
 func TestDecisionPoints(t *testing.T) {
 	e := setup(t)
@@ -45,7 +45,7 @@ func TestDecisionPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(d.Points) != 2 || d.Points[0].Title != "旧 PM 被接管后变成什么？" || !d.Points[0].Items[0].Recommended || len(d.Summary) != 2 || len(d.BlockWarnings) != 1 {
-		t.Fatalf("要拍板的点保存不对：%+v %v", d.Points, d.BlockWarnings)
+		t.Fatalf("要决策的点保存不对：%+v %v", d.Points, d.BlockWarnings)
 	}
 
 	// 没选全：拒绝提交并说明

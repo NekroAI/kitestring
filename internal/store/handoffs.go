@@ -26,7 +26,7 @@ type Handoff struct {
 	FromTitle   string     `json:"from_title"`
 	Status      string     `json:"status" enum:"requested,written,taken"`
 	Doing       string     `json:"doing" doc:"在做的：需求编号、做到哪"`
-	Waiting     string     `json:"waiting" doc:"等用户的：待答决策、待验收、要用户拍板的事"`
+	Waiting     string     `json:"waiting" doc:"等用户的：待答决策、待验收、要用户决策的事"`
 	Rules       string     `json:"rules" doc:"约定和规矩：用户定过的、团队里说好的"`
 	Next        string     `json:"next" doc:"下一步"`
 	Notes       string     `json:"notes" doc:"注意事项：坑、别碰的东西、在跑的进程"`

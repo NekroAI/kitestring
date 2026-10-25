@@ -1797,9 +1797,9 @@ export interface components {
             verdict: "pass" | "return" | "clear";
         };
         "Agent-answer-decisionRequest": {
-            /** @description 答复；有要拍板的点时是附言，可空 */
+            /** @description 答复；有要决策的点时是附言，可空 */
             answer?: string;
-            /** @description 要拍板的点：逐点选第几个（从 0 开始） */
+            /** @description 要决策的点：逐点选第几个（从 0 开始） */
             choices?: number[] | null;
             /** @description 硬规则核对（必填，R-210）：none = 核对过，不属于硬规则；填 product / design / semantics / permission / gate / irreversible / acceptance 中的一类表示属于它，会被拒绝 */
             hard_check?: string;
@@ -2013,7 +2013,7 @@ export interface components {
             options?: string[] | null;
             /** @description 为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision） */
             overturns?: boolean;
-            /** @description 要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明 */
+            /** @description 要决策的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明 */
             points?: unknown[] | null;
             question: string;
             recommendation?: string;
@@ -2046,7 +2046,7 @@ export interface components {
             detail?: string;
             doc_link?: string;
             files?: string[] | null;
-            /** @description 产生这条需求的决策（R-154），如 D-142；用户在某条决策里拍板后由此新建的需求要填 */
+            /** @description 产生这条需求的决策（R-154），如 D-142；用户在某条决策里作答后由此新建的需求要填 */
             from_decision?: string;
             /** @description design = 设计类需求（标注，Agent 按需要交方案图）；feature = 普通；不传表示不修改 */
             kind?: string;
@@ -2957,7 +2957,7 @@ export interface components {
             taken_at?: string;
             taken_by?: string;
             taken_title?: string;
-            /** @description 等用户的：待答决策、待验收、要用户拍板的事 */
+            /** @description 等用户的：待答决策、待验收、要用户决策的事 */
             waiting: string;
             /** Format: date-time */
             written_at?: string;
@@ -2982,7 +2982,7 @@ export interface components {
             /** @description 约定和规矩：用户定过的、团队里说好的 */
             rules?: string;
             session_key: string;
-            /** @description 等用户的：待答决策、待验收、要用户拍板的事 */
+            /** @description 等用户的：待答决策、待验收、要用户决策的事 */
             waiting?: string;
         };
         IgnoreOrphanInBody: {
@@ -3032,7 +3032,7 @@ export interface components {
             why?: string;
         };
         Item1: {
-            /** @description 答复；有要拍板的点（points）时是附言，可空 */
+            /** @description 答复；有要决策的点（points）时是附言，可空 */
             answer: string;
             /** @description 逐点的选择（R-112）：与决策的 points 一一对应，填选项序号 */
             choices?: number[] | null;
@@ -3416,9 +3416,9 @@ export interface components {
             stops: components["schemas"]["ProcStop"][] | null;
         };
         "Override-decisionRequest": {
-            /** @description 你的答复；有要拍板的点时是附言，可空 */
+            /** @description 你的答复；有要决策的点时是附言，可空 */
             answer: string;
-            /** @description 要拍板的点：逐点选第几个（从 0 开始） */
+            /** @description 要决策的点：逐点选第几个（从 0 开始） */
             choices?: number[] | null;
             /** @description 附件 ID */
             files?: string[] | null;

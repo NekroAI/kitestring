@@ -106,7 +106,7 @@ func (h *Hub) onDecisionRaised(ctx context.Context, d store.Decision) {
 			text += "（" + r.Code + "）"
 		}
 	}
-	text += "，等用户在 Kitestring 上拍板。"
+	text += "，等用户在 Kitestring 上决策。"
 	if h.proxyQuiet(ctx, d) {
 		text += "用户开着参谋授权窗口，这条在范围内：被授权的主助理可以用 decision_answer 代答（写理由和自己的风险判断），拿不准就留给用户。"
 	}
