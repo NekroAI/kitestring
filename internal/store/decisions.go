@@ -60,7 +60,7 @@ type Decision struct {
 	Approval        bool           `json:"approval"`         // 请你批准（选项固定为“批准 / 拒绝”，两种都可以附言）
 	ContextFiles    []FileRef      `json:"context_files"`    // 问题本身附带的图（例如待批准的方案图）
 	Blocks          []blocks.Block `json:"blocks,omitempty"` // 说明里附的表达块（R-97）
-	// 要拍板的点（R-112）：每个点是一个 options 块，标题是问题；用户逐点选择，Choices 与之一一对应（-1 = 没选）。
+	// 要决策的点（R-112）：每个点是一个 options 块，标题是问题；用户逐点选择，Choices 与之一一对应（-1 = 没选）。
 	Points  []blocks.Block `json:"points,omitempty"`
 	Choices []int          `json:"choices,omitempty"`
 	// Summary 是方案要点，每条一行（通常以需求编号开头）；有它时网页把完整说明折叠起来。
@@ -297,7 +297,7 @@ func (s *Store) AnswerDecision(ctx context.Context, ref, answer string, files []
 	return s.AnswerDecisionPoints(ctx, ref, answer, files, nil, "", "")
 }
 
-// AnswerDecisionPoints 作答；choices 是逐点的选择（R-112），没有要拍板的点时为 nil；
+// AnswerDecisionPoints 作答；choices 是逐点的选择（R-112），没有要决策的点时为 nil；
 // reason 是可选的一句话理由（R-157），去空白、最多 200 字，改答时以最新一次为准。
 // verdict 是批准类决策的结论（VerdictApproved / VerdictRejected，R-239），由作答方明确给出；
 // 旧客户端没给时按所选选项（答复开头的「批准 / 拒绝」）定一次并存下。非批准类决策忽略。

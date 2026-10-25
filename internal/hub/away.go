@@ -58,7 +58,7 @@ type pushMeta struct {
 func eventClass(event string) (pushClass, string) {
 	switch event {
 	case notify.EventDecisionRaised:
-		return pushHard, "要你拍板"
+		return pushHard, "要你决策"
 	case notify.EventRequirementReview:
 		return pushMerge, "待验收"
 	case notify.EventWaitingReply:

@@ -55,7 +55,7 @@ func DecisionHint(question, context string) string {
 		tips = append(tips, fmt.Sprintf("问题 %d 字，超过 %d 字：一句话只问一件事", n, QuestionMax))
 	}
 	if n := Count(context); n > DecisionContextMax {
-		tips = append(tips, fmt.Sprintf("说明 %d 字，超过 %d 字：按“结论 / 依据 / 细节”压缩，要拍板的点拆成单独的决策", n, DecisionContextMax))
+		tips = append(tips, fmt.Sprintf("说明 %d 字，超过 %d 字：按“结论 / 依据 / 细节”压缩，要决策的点拆成单独的决策", n, DecisionContextMax))
 	}
 	return hint(tips)
 }

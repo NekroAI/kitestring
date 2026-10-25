@@ -6,7 +6,7 @@ import { cx } from '../lib/util'
 import { fileUrl, ZoomButton } from '../ui/attach'
 import { Linkify } from '../ui/refmark'
 
-// 多点决策（R-112，原型 ④）：一个方案里有几个点要拍板时，每个点单独一组选项（R-97 的 options 块），默认选推荐，可以分别选。
+// 多点决策（R-112，原型 ④）：一个方案里有几个点要决策时，每个点单独一组选项（R-97 的 options 块），默认选推荐，可以分别选。
 
 // currentPicks：没动过的点默认选推荐（没有推荐时为 -1，要用户自己选）。
 export function currentPicks(d: Decision, picks?: number[]) {

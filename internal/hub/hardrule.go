@@ -6,8 +6,8 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 硬规则（R-210）：这几类决策只由用户拍板，主助理在授权窗口内也不能代答，接口层拒绝。
-//   - 自动判定：批准方案 / 计划（approval）、选项或要拍板的点带效果图（设计选型）。
+// 硬规则（R-210）：这几类决策只由用户决策，主助理在授权窗口内也不能代答，接口层拒绝。
+//   - 自动判定：批准方案 / 计划（approval）、选项或要决策的点带效果图（设计选型）。
 //   - 提问方标注：decision_raise 的 hard 字段（下面 hardKinds），标了就不能代答、风险档按 high。
 //   - 代答方核对：decision_answer 必须带 hard_check = none，表示主助理核对过不属于这几类；填了某一类就拒绝。
 //   - 兜底（不拦截提问、只降级）：没标 hard，但问题或选项里出现 unsureWords 里的词，算「拿不准」——
@@ -37,17 +37,17 @@ func hardOf(d store.Decision) string {
 		return "批准方案 / 计划只由用户操作"
 	}
 	if name, ok := hardKinds[d.Hard]; ok {
-		return name + "只由用户拍板"
+		return name + "只由用户决策"
 	}
 	for _, fs := range d.OptionFiles {
 		if len(fs) > 0 {
-			return "设计选型（选项带效果图）只由用户拍板"
+			return "设计选型（选项带效果图）只由用户决策"
 		}
 	}
 	for _, p := range d.Points {
 		for _, it := range p.Items {
 			if it.Image != nil {
-				return "设计选型（要拍板的点带效果图）只由用户拍板"
+				return "设计选型（要决策的点带效果图）只由用户决策"
 			}
 		}
 	}

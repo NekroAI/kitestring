@@ -370,7 +370,7 @@ type answersIn struct {
 	Body struct {
 		Answers []struct {
 			Ref     string   `json:"ref"`
-			Answer  string   `json:"answer" doc:"答复；有要拍板的点（points）时是附言，可空"`
+			Answer  string   `json:"answer" doc:"答复；有要决策的点（points）时是附言，可空"`
 			Files   []string `json:"files,omitempty" doc:"附件 ID（图片、录屏或任意文件）"`
 			Choices []int    `json:"choices,omitempty" doc:"逐点的选择（R-112）：与决策的 points 一一对应，填选项序号"`
 			Reject  bool     `json:"reject,omitempty" doc:"批准类的多点决策：拒绝（此时不要求逐点选择）"`
@@ -1151,7 +1151,7 @@ type agentDecisionIn struct {
 		Approval          bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
 		Images            []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
 		Blocks            []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
-		Points            []any    `json:"points,omitempty" doc:"要拍板的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
+		Points            []any    `json:"points,omitempty" doc:"要决策的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
 		Summary           []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
 		Recommendation    string   `json:"recommendation,omitempty"`
 		RecommendedOption *int     `json:"recommended_option,omitempty" doc:"推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配"`
@@ -1174,7 +1174,7 @@ type agentReqIn struct {
 	Body struct {
 		ReqFields
 		SessionKey   string `json:"session_key,omitempty"`
-		FromDecision string `json:"from_decision,omitempty" doc:"产生这条需求的决策（R-154），如 D-142；用户在某条决策里拍板后由此新建的需求要填"`
+		FromDecision string `json:"from_decision,omitempty" doc:"产生这条需求的决策（R-154），如 D-142；用户在某条决策里作答后由此新建的需求要填"`
 	}
 }
 

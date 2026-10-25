@@ -141,7 +141,7 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 	h.broker.publish("sessions")
 }
 
-const decisionTitlePrompt = `把下面这个需要用户拍板的问题压缩成一个不超过 14 个汉字的中文短标题，让人一眼知道要决定什么。不要问号和引号。只输出标题。`
+const decisionTitlePrompt = `把下面这个需要用户决策的问题压缩成一个不超过 14 个汉字的中文短标题，让人一眼知道要决定什么。不要问号和引号。只输出标题。`
 
 // aiOnDecision 为新决策生成短标题。
 func (h *Hub) aiOnDecision(d store.Decision) {

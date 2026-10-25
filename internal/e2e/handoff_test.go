@@ -81,7 +81,7 @@ func TestHandoff(t *testing.T) {
 	recv(ch, "还有 1 个子任务在跑")
 
 	// 子任务没交完：handoff_write 被拒
-	body := map[string]any{"session_key": "claude:ho-1", "doing": r.Code + " 做到一半，分支 line3", "waiting": "D-9 等用户拍板", "rules": "部署只走脚本", "next": "跑全量检查后交验收", "notes": "别停 5199 端口的 pnpm dev"}
+	body := map[string]any{"session_key": "claude:ho-1", "doing": r.Code + " 做到一半，分支 line3", "waiting": "D-9 等用户决策", "rules": "部署只走脚本", "next": "跑全量检查后交验收", "notes": "别停 5199 端口的 pnpm dev"}
 	if err := c.Do(ctx, "POST", "/agent/handoff", body, nil); err == nil || !strings.Contains(err.Error(), "子任务在跑") {
 		t.Fatalf("有在跑的子任务时应拒绝写交接：%v", err)
 	}

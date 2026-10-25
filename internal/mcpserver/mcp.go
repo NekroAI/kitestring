@@ -29,12 +29,12 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 {{ROLES}}
 - 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿只有主调度 / 主助理关联、且项目开了「允许主调度 / 主助理放行草稿」才会记一次放行并变为进行中；开发、顾问等其他身份或没开时只关联、仍是草稿，要请主调度或用户放行）。
 - 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏；用户在对话里提的每条需求、反馈都要记。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
-- 需要用户拍板的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
+- 需要用户决策的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
 - 决策后果链：按用户在某条决策里的答复新建需求时，req_create 带 from_decision（D-x）；接着某条决策往下问、或要推翻它的结论时，decision_raise 带 from_decision（推翻时再加 overturns = true）。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。界面类证据的截图用真实数据，改到证据 / 决策显示时新旧两种格式都要截图。
 - 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
-- 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户拍板时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图，用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
+- 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图，用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
 - 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开工。计划开始或阶段解锁时，该阶段的需求会交给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动交给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
@@ -139,7 +139,7 @@ type reqCreateIn struct {
 	Source       string   `json:"source,omitempty" jsonschema:"来源，如：用户对话、issue 链接、截图"`
 	DocLink      string   `json:"doc_link,omitempty" jsonschema:"仓库内方案文档路径或链接"`
 	Kind         string   `json:"kind,omitempty" jsonschema:"需求类型：design = 设计类（先交方案、用户选定后再实现），不填为普通需求"`
-	FromDecision string   `json:"from_decision,omitempty" jsonschema:"产生这条需求的决策编号（如 D-142）：用户在某条决策里拍板后由此新建的需求要填，决策详情里会显示它产生了这条需求"`
+	FromDecision string   `json:"from_decision,omitempty" jsonschema:"产生这条需求的决策编号（如 D-142）：用户在某条决策里作答后由此新建的需求要填，决策详情里会显示它产生了这条需求"`
 	Images       []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），如截图"`
 }
 
@@ -173,10 +173,10 @@ type evidenceIn struct {
 	Kind    string           `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
 	Verdict string           `json:"verdict,omitempty" jsonschema:"一句结论，40 字以内，写用户能看到的变化。纸鸢用大字放在最上面"`
 	Blocks  []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（推荐，验收证据至少给一个 checklist），类型和字段见工具说明"`
-	Todo    []string         `json:"todo,omitempty" jsonschema:"要你做的：只写机器验证不了、要用户动手或拍板的事，每条一句；没有就不写"`
+	Todo    []string         `json:"todo,omitempty" jsonschema:"要你做的：只写机器验证不了、要用户动手或决策的事，每条一句；没有就不写"`
 	Details string           `json:"details,omitempty" jsonschema:"实现细节（改了哪些文件、测试命令），默认折叠"`
 	Aside   []string         `json:"aside,omitempty" jsonschema:"和本需求无关的顺带改动，每条一句，默认折叠"`
-	Summary string           `json:"summary,omitempty" jsonschema:"证据正文（可用 Markdown）。给了 verdict 和 blocks 时可以不写，纸鸢会拼出纯文本；只写文字时按顺序写：1. 第一句是结论，40 字以内，写用户能看到的变化（例如：登录页支持“记住我”，重开浏览器不用再登录）；2. 逐条对照验收标准，每条写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图（如：图 1）；3. 你需要做的：只写机器验证不了、要用户动手或拍板的事，没有就不写；4. 风险或副作用（可选）；5. 实现细节放最后（改了哪些文件、测试命令）；和本需求无关的顺带改动单列，或另记需求。全文建议 600 字以内"`
+	Summary string           `json:"summary,omitempty" jsonschema:"证据正文（可用 Markdown）。给了 verdict 和 blocks 时可以不写，纸鸢会拼出纯文本；只写文字时按顺序写：1. 第一句是结论，40 字以内，写用户能看到的变化（例如：登录页支持“记住我”，重开浏览器不用再登录）；2. 逐条对照验收标准，每条写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图（如：图 1）；3. 你需要做的：只写机器验证不了、要用户动手或决策的事，没有就不写；4. 风险或副作用（可选）；5. 实现细节放最后（改了哪些文件、测试命令）；和本需求无关的顺带改动单列，或另记需求。全文建议 600 字以内"`
 	Link    string           `json:"link,omitempty" jsonschema:"链接或文件路径"`
 	Images  []any            `json:"images,omitempty" jsonschema:"截图（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时按这里的顺序全部显示：重点看的放前面，补充、测试一类的放后面。每项写成 {path: 本机路径, title: 一句话标题（20 字以内，如：工作台 · 带鱼屏 · 没有待办时）, boxes: [{x, y, w, h, label: 一句标签, criterion: 对应第几条验收点（可选）}]}；boxes 用矩形框标出这次改动的地方，坐标是图片原始尺寸的比例（0～1，左上角为原点），看图时画在图上、可一键隐藏；写了 criterion 的框会裁成小图放在那条验收点旁边。只写路径字符串也行，但网页只能用文件名当标题。已经放进 figure / compare 块的图不用再列"`
 	Videos  []string         `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
@@ -195,7 +195,7 @@ type decisionWithdrawIn struct {
 
 type decisionIn struct {
 	Question          string           `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，单独成立、无需上下文也能看懂（建议 60 字以内）"`
-	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的待拍板的点，那些另开决策。建议 400 字以内"`
+	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的待决策的点，那些另开决策。建议 400 字以内"`
 	Options           []string         `json:"options,omitempty" jsonschema:"候选选项"`
 	OptionImages      []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
 	Approval          bool             `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
@@ -204,7 +204,7 @@ type decisionIn struct {
 	RecommendedOption int              `json:"recommended_option,omitempty" jsonschema:"推荐的是第几个选项（从 1 开始，对应 options）；界面上这个选项标「推荐」，用户没选它时会问一句为什么。不填时只有 recommendation 与某个选项文字完全相同才标"`
 	Requirement       string           `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
 	Blocks            []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
-	Points            []map[string]any `json:"points,omitempty" jsonschema:"要拍板的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
+	Points            []map[string]any `json:"points,omitempty" jsonschema:"要决策的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
 	Summary           []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
 	FromDecision      string           `json:"from_decision,omitempty" jsonschema:"来源决策（如 D-142）：这条是接着哪条决策往下问的，或要推翻哪条决策的结论；决策详情里会连成后果链"`
 	Overturns         bool             `json:"overturns,omitempty" jsonschema:"为 true 表示这条要推翻 from_decision 那条的结论（例如用户之前选了 B，现在要改回 A）；接着往下问时不填"`
@@ -214,8 +214,8 @@ type decisionIn struct {
 
 type decisionAnswerIn struct {
 	Decision  string `json:"decision" jsonschema:"要代答的决策编号，如 D-135"`
-	Answer    string `json:"answer,omitempty" jsonschema:"答复；决策有要拍板的点（points）时是附言，可空"`
-	Choices   []int  `json:"choices,omitempty" jsonschema:"决策有要拍板的点时，逐点选第几个选项（从 1 开始）"`
+	Answer    string `json:"answer,omitempty" jsonschema:"答复；决策有要决策的点（points）时是附言，可空"`
+	Choices   []int  `json:"choices,omitempty" jsonschema:"决策有要决策的点时，逐点选第几个选项（从 1 开始）"`
 	Reason    string `json:"reason" jsonschema:"为什么这样答、为什么不必等用户（必填，显示在用户的代答记录里）"`
 	Risk      string `json:"risk" jsonschema:"你自己的风险判断：low / medium / high（必填）。取它和提问方标的中更高的一档，超出用户授权的范围就会被拒"`
 	Verdict   string `json:"verdict,omitempty" jsonschema:"批准类决策（选项是批准 / 拒绝）必填：approved 批准 / rejected 拒绝，记成字段，放行检查只认它"`
@@ -256,7 +256,7 @@ type planRefIn struct {
 type stageSubmitIn struct {
 	Plan    string           `json:"plan" jsonschema:"计划编号（如 P-1）或 ID"`
 	Stage   int              `json:"stage" jsonschema:"阶段序号（从 1 开始），只能是计划的当前阶段"`
-	Summary string           `json:"summary" jsonschema:"阶段小结，用户阶段验收时看：只写跨需求的整体效果、遗留问题和你需要做的（机器验证不了、要用户动手或拍板的事）。不要重复各条需求的证据，那些用户在需求里看"`
+	Summary string           `json:"summary" jsonschema:"阶段小结，用户阶段验收时看：只写跨需求的整体效果、遗留问题和你需要做的（机器验证不了、要用户动手或决策的事）。不要重复各条需求的证据，那些用户在需求里看"`
 	Blocks  []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），例如整体指标 metrics、跨需求的流程 flow；类型和字段见工具说明"`
 }
 
@@ -484,7 +484,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(fmt.Sprintf("%s 的证据 %s 已作废（还有效的证据 %d 条）", out.Code, in.Evidence, out.evidenceCount())), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要拍板的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别拍板时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。" + writing.DecisionTableGuide + "要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要用户回答的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别决策时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。" + writing.DecisionTableGuide + "要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "risk": in.Risk, "hard": in.Hard, "from_decision": in.FromDecision, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)

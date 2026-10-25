@@ -262,9 +262,9 @@ export const zh = {
     todo: (n: number) => `待你处理 · ${n}`,
     clear: '没有要你处理的事。',
     doing: '进行中',
-    kind: { review: '验收', decide: '拍板', plan: '计划', orphan: '转交', approve: '授权', answer: '提问', reply: '回复' } as Record<string, string>,
+    kind: { review: '验收', decide: '决策', plan: '计划', orphan: '转交', approve: '授权', answer: '提问', reply: '回复' } as Record<string, string>,
     review: '去验收',
-    decide: '去拍板',
+    decide: '去决策',
     view: '去看',
     handle: '去处理',
     reply: '去回复',
@@ -384,7 +384,7 @@ export const zh = {
 
   // 审批抽屉与「要你处理」条目（R-177）
   ask: {
-    kind: { review: '验收', decide: '拍板', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答' } as Record<string, string>,
+    kind: { review: '验收', decide: '决策', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答' } as Record<string, string>,
     score: (pass: number, total: number) => `${pass}/${total} 达标`,
     rec: (rec: string) => `推荐：${rec}`,
     options: (n: number) => `${n} 个选项`,
@@ -605,7 +605,7 @@ export const zh = {
   // 按身份生成的压缩命令（R-224）：/compact 后面写清「保留什么」，摘要时照它留
   compactCmd: (role: string, project: string) =>
     ({
-      aide: `/compact 保留：我是 ${project} 主助理；在做和待验收的需求、等用户拍板的决策；用户定过的规矩；未完成的约定`,
+      aide: `/compact 保留：我是 ${project} 主助理；在做和待验收的需求、等用户回答的决策；用户定过的规矩；未完成的约定`,
       pm: `/compact 保留：我是 ${project} 主调度；派活队列、各分支和部署状态、在跑的子任务`,
       advisor: `/compact 保留：我是 ${project} 顾问；在讨论的问题和方案、用户的倾向、要记的草稿`,
       reviewer: `/compact 保留：我是 ${project} 评审；在审的需求、已提和待提的审查意见`,
@@ -805,8 +805,8 @@ export const zh = {
     hover: {
       by: { user: '你提出', agent: 'Agent 记下' } as Record<string, string>,
       byRole: '记下',
-      decided: (codes: string) => `${codes} 已拍板`,
-      pending: (codes: string) => `${codes} 等你拍板`,
+      decided: (codes: string) => `${codes} 已决策`,
+      pending: (codes: string) => `${codes} 等你决策`,
       hint: '点开看详情 · 拖到别的列改状态',
       noDetail: '还没有描述',
     },
@@ -946,7 +946,7 @@ export const zh = {
     label: '设计',
     phase: { propose: '设计', choose: '设计 · 待你选方案', build: '设计 · 实现中' } as Record<string, string>,
     make: '设为设计需求',
-    makeHint: '标注为设计类：Agent 需要你拍板时会交方案图让你选',
+    makeHint: '标注为设计类：Agent 需要你决策时会交方案图让你选',
     unmake: '改回普通需求',
     toggle: '设计需求',
   },
@@ -1498,7 +1498,7 @@ export const zh = {
       } as Record<string, string>,
       evTip: {
         get decision_raised() {
-          return rt`Agent 有问题要你拍板，或${'pm'}请你开${'dev'}会话`
+          return rt`Agent 有问题要你决策，或${'pm'}请你开${'dev'}会话`
         },
         waiting_approval: '同一会话 1 分钟内只推一次',
         requirement_review: '需求做完，等你验收',
