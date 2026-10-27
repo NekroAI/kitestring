@@ -292,7 +292,12 @@ export function apply(ctx, config = {}) {
         st.lastReply = textOfBlocks(data.message?.content)
         const usage = data.usage
         if (usage && typeof usage === 'object') {
-          if (Number(usage.inputTokens) > 0) st.contextTokens = Number(usage.inputTokens)
+          // DSH 的 inputTokens 不含缓存命中/写入：上下文要三项相加。
+          const context = (Number(usage.inputTokens) || 0) + (Number(usage.cacheReadTokens) || 0) + (Number(usage.cacheWriteTokens) || 0)
+          if (context > 0) {
+            st.contextTokens = context
+            log('debug', `上下文 ${st.key}: ${context}`)
+          }
           void reportUsage(st, usage, event.time)
         }
       } else if (event.type === 'request/context') {
@@ -377,8 +382,8 @@ export function apply(ctx, config = {}) {
     if (!opts.usage) return
     const cached = Number(usage.cacheReadTokens) || 0
     const cacheWrite = Number(usage.cacheWriteTokens) || 0
-    const totalInput = Number(usage.inputTokens) || 0
-    const input = Math.max(totalInput - cached - cacheWrite, 0)
+    // DSH 的 inputTokens 就是未命中缓存的输入，不需要再减缓存。
+    const input = Math.max(Number(usage.inputTokens) || 0, 0)
     const output = Number(usage.outputTokens) || 0
     if (input + cached + cacheWrite + output === 0) return
     const model = String(st.agent.options?.model ?? '') || 'dsh'
