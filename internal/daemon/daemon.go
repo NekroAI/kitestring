@@ -799,8 +799,13 @@ func (d *Daemon) injection(ev protocol.Event) string {
 }
 
 // rolePrompt：有身份的会话恢复或压缩上下文后，补发身份提示词（R-82）。
+// DSH 的压缩由插件在 compaction/end 时报 PostCompact，不用 SessionStart（那会把状态改成空闲）。
 func (d *Daemon) rolePrompt(ev protocol.Event) string {
-	if ev.Name != "SessionStart" || (ev.Source != "resume" && ev.Source != "compact") {
+	compact := ev.Name == "SessionStart" && (ev.Source == "resume" || ev.Source == "compact")
+	if ev.Tool == protocol.ToolDSH && ev.Name == "PostCompact" {
+		compact = true
+	}
+	if !compact {
 		return ""
 	}
 	key := protocol.SessionKey(ev.Tool, ev.SessionID)

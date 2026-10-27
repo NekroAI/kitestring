@@ -297,6 +297,13 @@ export function apply(ctx, config = {}) {
         }
       } else if (event.type === 'request/context') {
         if (Number(data.contextWindow) > 0) st.contextWindow = Number(data.contextWindow)
+      } else if (event.type === 'compaction/end') {
+        // 压缩后补回身份提示词和纸鸢的关键状态：DSH 的 system prompt 会重新组装，但身份在对话历史里。
+        void sendHook(st, { hook_event_name: 'PostCompact', source: 'compact' }).then((context) => {
+          if (!context) return
+          st.startContext = st.startContext ? `${st.startContext}\n${context}` : context
+          log('debug', `压缩后补上下文 ${st.key}`)
+        })
       } else if (event.type === 'tool/call') {
         onToolCall(st, data)
       } else if (event.type === 'tool/result') {
