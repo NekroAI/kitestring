@@ -28,6 +28,9 @@ const (
 	CodexWait = 30 * time.Minute
 )
 
+// dshWaitText：DSH 的待命由 Host 插件负责，模型自己调 ks wait 时用它说明情况并立即返回。
+const dshWaitText = "[Kitestring] 这个 DSH 会话由纸鸢插件自动待命：结束这一轮即可，插件会在空闲时接住后续消息，不需要运行 ks wait。"
+
 // WaitResult 是 /wait 的返回：reason 为 delivered、timeout、replaced、canceled。
 type WaitResult struct {
 	Reason  string `json:"reason"`
@@ -58,7 +61,13 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	}
 	tool, sid, ok := strings.Cut(key, ":")
 	if !ok || sid == "" {
-		_ = json.NewEncoder(w).Encode(WaitResult{Error: "认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定"})
+		_ = json.NewEncoder(w).Encode(WaitResult{Error: "认不出当前会话：请在 Claude Code / Codex / DSH 的对话里运行，或用 --session tool:id 指定"})
+		return
+	}
+	// DSH 由 Host 插件用 via=plugin 走同一个 /wait 接口待命；模型自己跑 ks wait 时直接返回，
+	// 避免插件已经待命的情况下再多挂一层前台等待（那种等待会占着回合不放）。
+	if tool == protocol.ToolDSH && q.Get("via") != "plugin" {
+		_ = json.NewEncoder(w).Encode(WaitResult{Reason: "disabled", Session: key, Text: dshWaitText})
 		return
 	}
 	timeout, limit := DefaultWait, MaxWait

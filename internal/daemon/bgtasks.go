@@ -56,7 +56,7 @@ func newTaskState() taskState {
 
 func isShellTool(name string) bool {
 	switch name {
-	case "Bash", "shell", "exec_command", "local_shell":
+	case "Bash", "shell", "exec_command", "local_shell", "bash", "pwsh":
 		return true
 	}
 	return false

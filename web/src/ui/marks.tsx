@@ -1,7 +1,7 @@
 import { absTime, cx, duration, shortDuration } from '../lib/util'
 import { t } from '../i18n'
 import { Tip } from './base'
-import { ClaudeGlyph, CodexGlyph } from './brand'
+import { ClaudeGlyph, CodexGlyph, DshGlyph } from './brand'
 
 // 会话状态的视觉映射。waiting_answer 是 waiting_reply 的细分：Agent 正在向你提问或请你确认计划。
 export const stateStyle: Record<string, { dot: string; pill: string; ring?: string; live?: boolean; slow?: boolean }> = {
@@ -111,7 +111,7 @@ export function ToolMark({ tool, size = 'md' }: { tool: string; size?: 'sm' | 'm
   return (
     <Tip content={t.tool[tool] ?? tool}>
       <span className={cx('inline-flex shrink-0 items-center justify-center border border-line bg-surface-2', box)} aria-label={t.tool[tool] ?? tool}>
-        {tool === 'claude' ? <ClaudeGlyph className={glyph} /> : <CodexGlyph className={cx(glyph, 'text-fg')} />}
+        {tool === 'claude' ? <ClaudeGlyph className={glyph} /> : tool === 'dsh' ? <DshGlyph className={cx(glyph, 'text-fg')} /> : <CodexGlyph className={cx(glyph, 'text-fg')} />}
       </span>
     </Tip>
   )

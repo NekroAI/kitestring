@@ -405,7 +405,7 @@ func str(p map[string]any, k string) string {
 func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	p := req.Payload
 	sid := str(p, "session_id")
-	if sid == "" || (req.Tool != protocol.ToolClaude && req.Tool != protocol.ToolCodex) {
+	if sid == "" || (req.Tool != protocol.ToolClaude && req.Tool != protocol.ToolCodex && req.Tool != protocol.ToolDSH) {
 		return protocol.Event{}, false
 	}
 	name := str(p, "hook_event_name")
@@ -470,6 +470,10 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	client, model := "", ""
 	if needClient {
 		client = detectClient(req)
+	}
+	// DSH 插件直接走 HTTP，没有 hook 子进程可供推断；客户端形态由插件自己给（web / desktop）。
+	if req.Tool == protocol.ToolDSH {
+		client = str(p, "client")
 	}
 	if needModel {
 		model = claudeModel(str(p, "transcript_path"))
@@ -776,12 +780,18 @@ func (d *Daemon) rolePrompt(ev protocol.Event) string {
 	d.mu.Unlock()
 	p := roles.Compose(role, body)
 	if p != "" {
+		if ev.Tool == protocol.ToolDSH {
+			p = dshRoleNote + p
+		}
 		// 压缩后另附会话在纸鸢里的关键状态（R-224）：关联的需求、待答决策、在跑的子任务，补摘要漏掉的；
 		// 恢复和压缩都附项目的子任务模型策略（R-228），改了策略后新开的、恢复的会话拿到的是最新的
 		p += d.stateNote(key, ev.Source)
 	}
 	return p
 }
+
+// dshRoleNote 盖掉身份提示词里“挂 ks wait”的说法（DSH 的等待由 Host 插件负责）。
+const dshRoleNote = "[Kitestring] 你在 DeepSeek Harness（DSH）中：这一轮结束后纸鸢插件会自动保持待命，并在用户答复、验收或派工时于同一会话唤醒你。不要运行 ks wait，也不要为了等用户而让回合不结束；下面关于 ks wait 的说明按这条执行。\n\n"
 
 // stateNote 向 Hub 取会话的关键状态（R-224）；取不到时返回空，不耽误 hook。
 func (d *Daemon) stateNote(key, source string) string {
@@ -1044,7 +1054,7 @@ func toolBrief(tool string, in map[string]any) string {
 		return filepath.Base(p)
 	}
 	switch tool {
-	case "Bash", "shell", "exec_command", "local_shell":
+	case "Bash", "shell", "exec_command", "local_shell", "bash", "pwsh":
 		if c := str(in, "command"); c != "" {
 			return clean(c, 200)
 		}

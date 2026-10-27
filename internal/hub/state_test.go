@@ -46,6 +46,47 @@ func TestApplyEventLifecycle(t *testing.T) {
 	}
 }
 
+func TestDSHParksWithoutWaitProcess(t *testing.T) {
+	t0 := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	ev := func(sec int, name string) protocol.Event {
+		return protocol.Event{Tool: protocol.ToolDSH, SessionID: "s", Name: name, Time: t0.Add(time.Duration(sec) * time.Second)}
+	}
+	cur := applyEvent(nil, "dev", "", ev(0, "SessionStart"))
+	if cur.State != store.StateIdle {
+		t.Fatalf("SessionStart 后应为空闲，得到 %s", cur.State)
+	}
+	// DSH 插件在回合结束后挂 /wait：即使状态还是“运行中”（等待超时续挂），也应显示待命。
+	cur = applyEvent(&cur, "dev", "", ev(1, "UserPromptSubmit"))
+	cur = applyEvent(&cur, "dev", "", protocol.Event{
+		Tool: protocol.ToolDSH, SessionID: "s", Name: protocol.EventWait,
+		Time: t0.Add(2 * time.Second), Until: ptrTime(t0.Add(time.Hour)),
+	})
+	if cur.State != store.StateParked || !cur.Parked {
+		t.Fatalf("DSH 等待应显示待命，得到 %s parked=%v", cur.State, cur.Parked)
+	}
+	// 你在 DSH 里直接发消息：插件仍在待命，但页面应回到运行中。
+	cur = applyEvent(&cur, "dev", "", ev(3, "UserPromptSubmit"))
+	if cur.State != store.StateRunning || cur.Parked {
+		t.Fatalf("用户发消息后应运行中且不显示待命，得到 %s parked=%v", cur.State, cur.Parked)
+	}
+	// 目标模式没有真正的 idle：等待还挂着，但工具已经在跑，不能还显示待命。
+	cur = applyEvent(&cur, "dev", "", ev(4, protocol.EventWait))
+	cur = applyEvent(&cur, "dev", "", ev(5, "PreToolUse"))
+	if cur.Parked || cur.ParkedUntil != nil {
+		t.Fatalf("有工具在跑时不应保留待命标记，parked=%v until=%v", cur.Parked, cur.ParkedUntil)
+	}
+	// 轮末重新挂等待：又回到待命。
+	cur = applyEvent(&cur, "dev", "", protocol.Event{
+		Tool: protocol.ToolDSH, SessionID: "s", Name: protocol.EventWait,
+		Time: t0.Add(6 * time.Second), Until: ptrTime(t0.Add(time.Hour)),
+	})
+	if cur.State != store.StateParked || !cur.Parked {
+		t.Fatalf("轮末重新挂等待后应回到待命，得到 %s parked=%v", cur.State, cur.Parked)
+	}
+}
+
+func ptrTime(t time.Time) *time.Time { return &t }
+
 func TestAskUserQuestionIsWaitingReply(t *testing.T) {
 	t0 := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	cur := applyEvent(nil, "dev", "", protocol.Event{Tool: "claude", SessionID: "s", Name: "UserPromptSubmit", Time: t0})

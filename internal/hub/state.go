@@ -88,6 +88,11 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		if x.Tool == protocol.ToolCodex {
 			x.Parked = false // Codex 在前台跑 ks wait：你在终端里发了消息，说明那次等待已被打断
 		}
+		if x.Tool == protocol.ToolDSH {
+			// DSH 的待命在插件里，不占回合；你在 DSH 里发消息时它仍在挂着，
+			// 但页面应显示“在跑”，等这一轮结束（Stop）再回到待命。
+			x.Parked = false
+		}
 		// Claude Code 的 ks wait 在后台跑，你在终端里插话并不会让它退出：仍算挂着，
 		// 这一轮结束（Stop）后照样待命；等待真正结束时会收到 KsWaitEnd（R-108）。
 		x.DoneAt = nil // 你又给它发了消息，不再算已完成
@@ -95,6 +100,12 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.LastPrompt = ev.Prompt
 		}
 	case "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact":
+		if x.Tool == protocol.ToolDSH {
+			// DSH 的等待跨回合常驻：插件在轮末挂上后不会因为下一轮开始就撤掉。
+			// 有工具在跑就说明它在干活，先把“待命”标记收起来；轮末的 EventWait 会再挂上。
+			x.Parked = false
+			x.ParkedUntil = nil
+		}
 		if ev.AgentID != "" && ev.Name == "PreToolUse" {
 			x.Tasks = agentAction(x.Tasks, ev) // 子代理的工具调用记在它自己名下（R-162）
 		}
@@ -165,9 +176,10 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		// Agent 用 ks wait 挂起：待命，你在 Kitestring 上一回应它就继续。
 		// Claude Code 在后台运行 ks wait，这一轮结束（Stop）才算待命；
 		// Codex 在前台运行，这一轮一直“在跑命令”，等待开始就是待命（R-74）。
+		// DSH 的等待由插件在回合结束后重挂，状态可能还是“运行中”（等待超时续挂），同样算待命。
 		x.Parked = true
 		x.ParkedUntil = ev.Until
-		if x.State != store.StateEnded && (x.State != store.StateRunning || x.Tool == protocol.ToolCodex) {
+		if x.State != store.StateEnded && (x.State != store.StateRunning || x.Tool == protocol.ToolCodex || x.Tool == protocol.ToolDSH) {
 			x.State, x.StateDetail = store.StateParked, ""
 		}
 	case protocol.EventWaitEnd:

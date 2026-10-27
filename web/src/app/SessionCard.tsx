@@ -94,7 +94,7 @@ export function Callout({ s }: { s: Session }) {
               {[t.session.parkedFor(duration(s.state_since, now)), s.parked_until && t.session.parkedUntil(shortClock(s.parked_until), duration(new Date(now).toISOString(), Date.parse(s.parked_until)))].filter(Boolean).join(t.common.sep)}
             </span>
           </div>
-          <div className="mt-0.5 leading-relaxed text-fg">{s.tool === 'codex' ? t.session.parkedHintCodex : t.session.parkedHint}</div>
+          <div className="mt-0.5 leading-relaxed text-fg">{s.tool === 'codex' ? t.session.parkedHintCodex : s.tool === 'dsh' ? t.session.parkedHintDSH : t.session.parkedHint}</div>
         </div>
       </div>
     )

@@ -111,7 +111,7 @@ func main() {
 	case "hook":
 		os.Exit(hookcli.Run(args, os.Stdin, os.Stdout))
 	case "mcp":
-		err = mcpserver.Run(signalContext())
+		err = mcpserver.Run(signalContext(), mcpClient(args))
 	case "req":
 		err = runReq(args)
 	case "plan":
@@ -310,4 +310,14 @@ func runStatus() error {
 	b, _ := json.MarshalIndent(st, "", "  ")
 	fmt.Println(string(b))
 	return nil
+}
+
+// mcpClient 读 `ks mcp --client <名称>`：DSH 的插件传 dsh，用来换掉说明里关于 ks wait 的部分。
+func mcpClient(args []string) string {
+	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	client := fs.String("client", "", "调用方：dsh（可省略）")
+	if err := fs.Parse(args); err != nil {
+		return ""
+	}
+	return *client
 }

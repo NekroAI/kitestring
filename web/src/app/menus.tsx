@@ -49,8 +49,12 @@ export function useSessionMenu() {
         : []),
       ...(canHandoff(s) ? [{ label: t.menu.handoff, hint: t.menu.handoffHint, icon: <HandoffIcon />, onSelect: () => void handoff(s) }] : []),
       { type: 'separator' },
-      { label: t.menu.copyResume, hint: resumeCommand(s), icon: <Terminal />, onSelect: () => void copy(resumeCommand(s)) },
-      ...(resumeNeedsLogin(s) ? [{ type: 'label' as const, label: t.menu.resumeLoginHint }] : []),
+      ...(s.tool !== 'dsh'
+        ? [
+            { label: t.menu.copyResume, hint: resumeCommand(s), icon: <Terminal />, onSelect: () => void copy(resumeCommand(s)) },
+            ...(resumeNeedsLogin(s) ? [{ type: 'label' as const, label: t.menu.resumeLoginHint }] : []),
+          ]
+        : []),
       { label: t.menu.copySessionId, icon: <ClipboardCopy />, onSelect: () => void copy(s.session_id) },
     ]
   }

@@ -24,6 +24,20 @@ import (
 // instructions 是 MCP 说明；{{ROLES}} 换成各身份的职责与别称（R-190，来自 roles.Team）。
 var instructions = strings.Replace(instructionsTmpl, "{{ROLES}}", roles.Team(), 1)
 
+// dshInstructionsNote 放在 DSH 会话的说明最前面：DSH 的待命由 Host 插件负责，
+// 与 Claude / Codex 自己挂 ks wait 的方式不同，先说清楚再让模型读通用说明。
+const dshInstructionsNote = `你在 DeepSeek Harness（DSH）中运行，纸鸢 Host 插件负责待命：这一轮结束后插件会自动保持在线，用户在纸鸢上答复、验收或派工时，会在同一个会话里唤醒你。不要运行 ks wait，也不要为了等用户而让回合保持不结束；下面关于 ks wait 的说明对 DSH 不适用。
+
+`
+
+// instructionsFor 按调用方返回 MCP 说明。client 为空表示 Claude / Codex 等自挂等待的客户端。
+func instructionsFor(client string) string {
+	if client == "dsh" {
+		return dshInstructionsNote + instructions
+	}
+	return instructions
+}
+
 const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
 - 会话身份：用户让你担任某个身份时（如“接管 PM”“当参谋”“做主助理”“当顾问”“做开发”“当评审”），运行 shell 命令 ks role aide|advisor|reviewer|pm|dev（也认中文名和别称，如 ks role 参谋），按它输出的身份提示词工作。各身份的职责与别称：
 {{ROLES}}
@@ -42,9 +56,9 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
   - Codex：没有“后台命令结束后唤醒”的机制，要在前台运行 ks wait（自动最多等 30 分钟，不用加 --timeout；shell 工具的超时设成 35 分钟以上）。命令还在运行时继续等它结束，不要中断、不要重复运行。超时时它会提示你收尾：照做，用一两句话说明进度和在等什么，然后结束本轮，不要再运行 ks wait 续等。前台等待期间这一轮一直开着，Codex 会定期查看命令输出，每次消耗少量额度（主要是缓存读取），所以最多 30 分钟。
   - 订阅事件（--on）：主助理 / 主调度挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、参谋授权窗口）时是 settings，改需求状态时是 status（status 之外，派活的主调度和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：主助理订阅 decision,review,settings，主调度订阅 review,blocked,settings，顾问、开发等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是派活；不进用户收件箱、不推送。`
 
-// Run 以 stdio 运行 MCP server。
-func Run(ctx context.Context) error {
-	s := mcp.NewServer(&mcp.Implementation{Name: "kitestring", Version: version.Version}, &mcp.ServerOptions{Instructions: instructions})
+// Run 以 stdio 运行 MCP server。clientName 是调用方（目前只区分 dsh），影响呈现给模型的说明。
+func Run(ctx context.Context, clientName string) error {
+	s := mcp.NewServer(&mcp.Implementation{Name: "kitestring", Version: version.Version}, &mcp.ServerOptions{Instructions: instructionsFor(clientName)})
 	t := &tools{c: client.New(20 * time.Second)}
 	t.register(s)
 	t.registerTeam(s)
@@ -62,6 +76,9 @@ type tools struct {
 //   - Claude：用 _meta 里的 toolUseId 向 daemon 查询（与 PreToolUse hook 对齐）；
 //     进程环境里的 CLAUDE_CODE_SESSION_ID 只作兜底——同一进程内恢复或清空会话后它会过期。
 func (t *tools) sessionKey(ctx context.Context, req *mcp.CallToolRequest) string {
+	if key := metaSessionKey(req); key != "" {
+		return key
+	}
 	if req.Params != nil && req.Params.Meta != nil {
 		if id, ok := req.Params.Meta["claudecode/toolUseId"].(string); ok && id != "" {
 			var out struct {
@@ -77,6 +94,9 @@ func (t *tools) sessionKey(ctx context.Context, req *mcp.CallToolRequest) string
 
 // caller 和 sessionKey 一样识别会话，顺带返回发起调用的子任务 agent_id（主线程为空，R-191）。
 func (t *tools) caller(ctx context.Context, req *mcp.CallToolRequest) (key, agent string) {
+	if key := metaSessionKey(req); key != "" {
+		return key, metaAgentID(req)
+	}
 	if req.Params != nil && req.Params.Meta != nil {
 		if id, ok := req.Params.Meta["claudecode/toolUseId"].(string); ok && id != "" {
 			var out struct {
@@ -91,7 +111,29 @@ func (t *tools) caller(ctx context.Context, req *mcp.CallToolRequest) (key, agen
 	return sessionKeyFromMeta(req), ""
 }
 
+// metaSessionKey 读调用方插件直接注入的完整会话键（如 dsh:session-xxx）。
+// DSH 的 MCP 桥由 Host 插件持有，没有 hook 进程可对齐，按每次调用带身份最准确（D17 的扩展）。
+func metaSessionKey(req *mcp.CallToolRequest) string {
+	if req.Params == nil || req.Params.Meta == nil {
+		return ""
+	}
+	key, _ := req.Params.Meta["kitestring/session"].(string)
+	return strings.TrimSpace(key)
+}
+
+// metaAgentID 读调用方插件带上的子任务标识（主线程为空）。
+func metaAgentID(req *mcp.CallToolRequest) string {
+	if req.Params == nil || req.Params.Meta == nil {
+		return ""
+	}
+	id, _ := req.Params.Meta["kitestring/agent"].(string)
+	return strings.TrimSpace(id)
+}
+
 func sessionKeyFromMeta(req *mcp.CallToolRequest) string {
+	if key := metaSessionKey(req); key != "" {
+		return key
+	}
 	tool := ""
 	if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {
 		name := strings.ToLower(p.ClientInfo.Name)

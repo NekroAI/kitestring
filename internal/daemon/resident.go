@@ -32,6 +32,10 @@ func (d *Daemon) stopGuard(ev protocol.Event) string {
 	if ev.Name != "Stop" {
 		return ""
 	}
+	// DSH 的待命在 Host 插件里，不需要（也不能）用 ks wait 证明在线，Stop 一律放行。
+	if ev.Tool == protocol.ToolDSH {
+		return ""
+	}
 	d.mu.Lock()
 	role := d.roles[key]
 	d.mu.Unlock()

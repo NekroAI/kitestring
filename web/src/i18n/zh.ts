@@ -135,6 +135,7 @@ export const zh = {
   tool: {
     claude: 'Claude Code',
     codex: 'Codex',
+    dsh: 'DSH',
   } as Record<string, string>,
   state: {
     running: '运行中',
@@ -535,6 +536,7 @@ export const zh = {
     parked: '待命中',
     parkedHint: '在这里答复、验收或留言，它会立刻接着干，不用回到终端',
     parkedHintCodex: '在这里答复、验收或留言，它会立刻接着干；超时后它会收尾结束本轮，之后的答复在你下次给它发消息时送达',
+    parkedHintDSH: 'DSH 插件在待命：在这里答复、验收或留言，同一个会话会自动接着干，不用回到 DSH 里发消息',
     parkedFor: (v: string) => `已等 ${v}`,
     parkedUntil: (at: string, left: string) => `最长到 ${at}（还剩 ${left}）`,
     otherTerminal: '这个对话在另一个终端也开着。状态与送达以你最近发消息的终端为准，较早的终端不再领活，也已被提醒。',

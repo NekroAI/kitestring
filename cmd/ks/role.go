@@ -61,6 +61,10 @@ func runRole(args []string) error {
 		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）降为普通会话，并已收到通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
 	}
 	fmt.Print(out.Prompt)
+	// DSH 的等待由 Host 插件负责，身份提示词里关于 ks wait 的说法要当场盖掉，避免模型照着挂起来。
+	if strings.HasPrefix(key, "dsh:") {
+		fmt.Print("\n[Kitestring] 你在 DeepSeek Harness（DSH）中：这一轮结束后纸鸢插件会自动保持待命，并在用户答复、验收或派工时于同一会话唤醒你。不要运行 ks wait，也不要为了等用户而让回合不结束；上面关于 ks wait 的说明按这条执行。\n")
+	}
 	return nil
 }
 

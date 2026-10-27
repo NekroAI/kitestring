@@ -16,3 +16,14 @@ export function CodexGlyph({ className }: { className?: string }) {
     </svg>
   )
 }
+
+// DSH（DeepSeek Harness）没有单独的公开产品标识，用一个中性的环 + 波线做标记，随主题变色。
+export function DshGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M12 3a9 9 0 1 0 0 18" strokeLinecap="round" />
+      <path d="M6.6 12c2.2-2.3 4.2-2.3 6.4 0s4.2 2.3 6.4 0" strokeLinecap="round" />
+      <circle cx="19.2" cy="7.2" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}

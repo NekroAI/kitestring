@@ -54,13 +54,17 @@ func parseAnywhere(fs *flag.FlagSet, args []string) error {
 	return fs.Parse(append([]string{"--"}, pos...))
 }
 
-// cliSession 推断 CLI 调用所在会话：显式参数优先，其次 Claude 注入的环境变量。
+// cliSession 推断 CLI 调用所在会话：显式参数优先，其次 agent 注入的环境变量。
 func cliSession(flagVal string) string {
 	if flagVal != "" {
 		return flagVal
 	}
 	if sid := os.Getenv("CLAUDE_CODE_SESSION_ID"); sid != "" {
 		return protocol.SessionKey(protocol.ToolClaude, sid)
+	}
+	// DSH 的 shell 工具会给每次调用带 DSH_SESSION_ID（与 Host 插件上报的会话一致）。
+	if sid := os.Getenv("DSH_SESSION_ID"); sid != "" {
+		return protocol.SessionKey(protocol.ToolDSH, sid)
 	}
 	return ""
 }
@@ -592,25 +596,32 @@ func runWait(args []string) error {
 	}
 	q.Set("ppid", strconv.Itoa(os.Getppid()))
 	// 先认出会话键并一直带着：daemon 重启（例如升级）后不再认得父进程，重连时要靠会话键
-	if key := currentSession(*session); key != "" {
+	key := currentSession(*session)
+	if key != "" {
 		q.Set("session_key", key)
 	}
+	// DSH 的待命由 Host 插件负责：这里只是被模型误调时的兜底，不欢迎语、不挂起，直接拿 daemon 的说明。
+	dsh := strings.HasPrefix(key, protocol.ToolDSH+":")
 	// 先自查（R-117）：名下没有用户能在面板上推进的事时先提示，再照常等待；查不到时不提示
 	var check struct {
 		Hint    string `json:"hint"`
 		Retired bool   `json:"retired"`
 	}
-	cctx, ccancel := context.WithTimeout(context.Background(), 8*time.Second)
-	if err := client.New(8*time.Second).Do(cctx, "GET", "/wait/check?"+q.Encode(), nil, &check); err == nil && check.Hint != "" {
-		fmt.Print(check.Hint)
+	if !dsh {
+		cctx, ccancel := context.WithTimeout(context.Background(), 8*time.Second)
+		if err := client.New(8*time.Second).Do(cctx, "GET", "/wait/check?"+q.Encode(), nil, &check); err == nil && check.Hint != "" {
+			fmt.Print(check.Hint)
+		}
+		ccancel()
 	}
-	ccancel()
 	if check.Retired {
 		return nil // 已交接卸任（R-224）：不再挂起等待
 	}
-	fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
-	if v := q.Get("on"); v != "" && v != protocol.OnNone && v != protocol.OnDefault {
-		fmt.Fprintf(os.Stderr, "[Kitestring] 另外订阅了本项目的事件：%s；发生时也会唤醒你。\n", v)
+	if !dsh {
+		fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
+		if v := q.Get("on"); v != "" && v != protocol.OnNone && v != protocol.OnDefault {
+			fmt.Fprintf(os.Stderr, "[Kitestring] 另外订阅了本项目的事件：%s；发生时也会唤醒你。\n", v)
+		}
 	}
 	// daemon 重启（例如部署升级）会断开连接：在截止时间内重连继续等，而不是报错把 Agent 白白唤醒（R-227）。
 	ctx := signalContext()
@@ -645,6 +656,9 @@ func runWait(args []string) error {
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。可以结束本轮；用户回来后会在对话里继续。\n", waited)
 		}
 	case "stale":
+		fmt.Println(res.Text)
+	case "disabled":
+		// DSH 的等待由 Host 插件负责：直接把说明交给模型，不占回合。
 		fmt.Println(res.Text)
 	case "replaced":
 		fmt.Println("[Kitestring] 同一对话有新的 ks wait 接替等待，本次结束。")
