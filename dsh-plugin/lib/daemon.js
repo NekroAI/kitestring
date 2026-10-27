@@ -73,4 +73,23 @@ export class DaemonClient {
   status() {
     return this.request('GET', '/status', undefined, { timeoutMs: 2000 })
   }
+
+  // usage 上报一次模型回复的 token 用量（绝对值）。daemon 按分钟累加，随原有批次送到 Hub。
+  usage({ sessionKey, model, at, input, cacheRead, cacheWrite, output, requests }) {
+    return this.request(
+      'POST',
+      '/usage',
+      {
+        session_key: sessionKey,
+        model,
+        at,
+        input,
+        cache_read: cacheRead,
+        cache_write: cacheWrite,
+        output,
+        requests,
+      },
+      { timeoutMs: 3000 },
+    )
+  }
 }

@@ -144,6 +144,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /session", d.handleSessionLookup)
 	mux.HandleFunc("GET /wait", d.handleWait)
 	mux.HandleFunc("GET /wait/check", d.handleWaitCheck)
+	// 插件直接上报的 token 用量（目前是 DSH）：写进同一个 usage_minutes 表，随原有批次发给 Hub。
+	mux.HandleFunc("POST /usage", d.handleUsage)
 	mux.Handle("/agent/", d.watchTools(d.proxy))
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
@@ -401,6 +403,22 @@ func str(p map[string]any, k string) string {
 	return ""
 }
 
+// intField 读 payload 里的数字（JSON 解出来是 float64；也容忍 int 与 json.Number）。
+func intField(p map[string]any, k string) int {
+	switch v := p[k].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	}
+	return 0
+}
+
 // buildEvent 把 hook 原始输入裁剪为上报事件（D3：不含对话与代码正文）。
 func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	p := req.Payload
@@ -424,6 +442,13 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.TurnID = str(p, "prompt_id")
 	}
 	ev.Instance = d.agentInstance(req.PPID)
+	// DSH 插件直接走 HTTP，没有 hook 子进程；它自己报 Host 的 "进程号@启动时间"，
+	// 进程消失时 watchInstances 会像 Claude / Codex 一样补发 SessionEnd。
+	if req.Tool == protocol.ToolDSH {
+		if inst := str(p, "instance"); inst != "" {
+			ev.Instance = inst
+		}
+	}
 	if ev.Instance != "" {
 		d.mu.Lock()
 		d.instances[ev.Instance] = key
@@ -507,7 +532,12 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	d.mu.Unlock()
 	if name == "Stop" {
 		ev.BgTasks, ev.BgBrief = backgroundTasks(p)
-		ev.Context, ev.ContextMax = contextUsage(str(p, "transcript_path"))
+		if req.Tool == protocol.ToolDSH {
+			// DSH 没有 transcript：上下文数字由插件在 Stop 里直接给。
+			ev.Context, ev.ContextMax = intField(p, "context"), intField(p, "context_max")
+		} else {
+			ev.Context, ev.ContextMax = contextUsage(str(p, "transcript_path"))
+		}
 		// 这一轮的最后回复同步到 Hub，在会话详情里显示（R-109）；Claude Code 与 Codex 的 Stop 都带 last_assistant_message
 		ev.Reply = summary.Truncate(strings.TrimSpace(str(p, "last_assistant_message")), protocol.ReplyMax)
 	}

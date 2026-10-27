@@ -33,12 +33,12 @@ const dshWaitText = "[Kitestring] 这个 DSH 会话由纸鸢插件自动待命�
 
 // WaitResult 是 /wait 的返回：reason 为 delivered、timeout、replaced、canceled。
 type WaitResult struct {
-	Reason  string `json:"reason"`
-	Text    string `json:"text,omitempty"`
-	Session string `json:"session_key,omitempty"`
-	Timeout string `json:"timeout,omitempty"` // 实际用的最长等待时间
-	Resident bool  `json:"resident,omitempty"` // 会话是 PM / 开发，要求常驻在线：超时后接着等（R-83）
-	Error   string `json:"error,omitempty"`
+	Reason   string `json:"reason"`
+	Text     string `json:"text,omitempty"`
+	Session  string `json:"session_key,omitempty"`
+	Timeout  string `json:"timeout,omitempty"`  // 实际用的最长等待时间
+	Resident bool   `json:"resident,omitempty"` // 会话是 PM / 开发，要求常驻在线：超时后接着等（R-83）
+	Error    string `json:"error,omitempty"`
 }
 
 func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +84,7 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	my := d.waitSeq
 	d.waiting[key] = my
 	delete(d.stopBlocks, key) // 已按要求挂上，不再算连续拦下
-	d.toolCond.Broadcast() // 让同一会话较早的等待退出
+	d.toolCond.Broadcast()    // 让同一会话较早的等待退出
 	d.mu.Unlock()
 	d.reportWait(tool, sid, protocol.EventWait, "", &until, waitOn(q.Get("on")))
 

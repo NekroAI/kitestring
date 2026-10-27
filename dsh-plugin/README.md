@@ -10,6 +10,8 @@
 | 纸鸢 → DSH | 空闲时在 daemon 上挂 `/wait`（12 小时，超时自动续）；收到消息用 `agent.followup()` 唤醒同一个会话 |
 | 工具 | 连一个 `ks mcp --client dsh`，把 28 个工具原样注册给模型；每次调用用 MCP `_meta` 带准确的 `dsh:<session id>` |
 | 上下文 | `ks mcp` 的说明作为系统提示词；纸鸢的决策答复在每一步之前注入，不靠猜时机 |
+| 用量 | 每次模型回复把 token 用量发给 daemon（与 Claude / Codex 同一张表），Stop 时带上下文占用与窗口大小 |
+| 生命周期 | 上报 Host 的 `pid@启动时间`；Host 消失时 daemon 在一个心跳周期内补发 SessionEnd |
 
 插件不读任何模型凭证，不另建推理通道；推理始终由 DSH 自己的 Host 完成。等待期间不产生模型调用。
 
@@ -39,6 +41,7 @@ web profile 开着 HMR，保存 patch 后几秒内生效；没有 HMR 时重启 
 | `socketPath` | `$KS_HOME/daemon.sock`，否则 `~/.kitestring/daemon.sock` | 本机 daemon |
 | `ksBin` | `~/.local/bin/ks`，没有就用 `ks` | 启动 `ks mcp` 的可执行文件 |
 | `standby` | `true` | 空闲时挂 `/wait` 并唤醒；关掉只上报事件和工具 |
+| `usage` | `true` | 是否上报 token 用量与上下文占用 |
 | `events` | `true` | 是否上报会话事件（关掉后工具仍可用） |
 | `attach` | `all` | 设为 `none` 时不起任何作用，用于先观察加载 |
 | `debug` | `false` | 同时把诊断写到 `/tmp/kitestring-dsh.log` |
@@ -52,7 +55,6 @@ web profile 开着 HMR，保存 patch 后几秒内生效；没有 HMR 时重启 
 
 ## 已知边界
 
-- 还没做 token / 上下文占用统计，纸鸢里的用量圆环对 DSH 会话暂不显示。
 - 从纸鸢创建 / 恢复 DSH 会话、原生审批双向同步，尚未实现。
 - 桌面 profile 需要在桌面自己的 profile 里安装并验证；容器里的 `dsh web` 需要把 daemon 装在运行 Host 的机器上。
 - 同一个会话同时开在两个 Host（桌面 + web）时，后挂上的等待会接管，另一个进入重试，不会两边都唤醒。

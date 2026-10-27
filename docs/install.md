@@ -58,6 +58,21 @@ ks uninstall --claude-dir ~/.claude-x                      # remove this directo
 
 What is shared and what is separate: the Hub, the session list, requirement and decision data, and the role prompts (delivered by the Hub) are the same for every directory. Each config directory has its own user-level `CLAUDE.md`, project memory, custom agents, skills and login. `ks install --status` lists what `~/.claude` has that the directory lacks. To share personal preferences, symlink them yourself, e.g. `ln -s ~/.claude/CLAUDE.md ~/.claude-x/CLAUDE.md` (Kitestring never creates links for you).
 
+## DeepSeek Harness (DSH)
+
+DSH sessions can join the board through the Host plugin in this repository (`dsh-plugin/`). It uses DSH's own session events and `agent.followup()` / `inject()`, so no `ks wait` process is involved: the plugin keeps a `/wait` request open while the session is idle and wakes the same agent when you answer in Kitestring.
+
+Requires DSH 0.2.1-rc.4 and a running `ks daemon` on the same machine. From a source checkout:
+
+```sh
+dsh plugin --profile web add link:"$PWD/dsh-plugin"
+scripts/install-dsh-plugin.sh --profile web
+```
+
+The web profile reloads profile patches by itself; otherwise restart `dsh --profile web`. Sessions then appear with the DSH mark. `ks role …` works inside DSH shells through `DSH_SESSION_ID`; do not run `ks wait` there — the daemon answers it immediately and explains that the plugin owns standby.
+
+The plugin reports token usage and context size (the session ring), and ends a session when the Host process disappears. It has been verified against the `web` profile; the desktop profile and Windows were not tested. Creating or resuming DSH sessions from Kitestring, and two-way native approval, are not implemented yet.
+
 ## Handoff
 
 When compacting or switching sessions, hand off: click "Hand off" on a session in the web UI so the old session writes a structured handoff, then run `ks takeover <role>` in the project directory (for example `ks takeover pm`; `--tool codex` starts it in Codex, `--print` only prints the command). If the old session's MCP lacks `handoff_write`, it can use `ks handoff --doing … --next …` instead. See [roles.md](roles.md) for the full flow.

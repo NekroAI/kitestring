@@ -7,6 +7,7 @@
 //
 // 约束：插件不读任何模型凭证，不另建推理通道；推理始终由 DSH 自己的 Host 完成。
 import { randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { appendFileSync, existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -17,7 +18,7 @@ import { normalizeToolSchema } from './lib/schema.js'
 
 export const name = 'kitestring-dsh'
 // systemPrompt 用来放 ks mcp 的说明；sessions 用来解析子会话的父会话。
-export const inject = ['tools', 'systemPrompt', 'agents', 'sessions']
+export const inject = ['tools', 'systemPrompt', 'agents', 'sessions', 'llm']
 
 // 工具返回值对模型的投影：只保留文本，结构化值原样留给程序化调用方。
 // 形状与 DSH 自带 MCP 桥一致，这样 output schema 能通过注册表的子集校验。
@@ -54,6 +55,19 @@ function pickKsBin(configured) {
   const local = path.join(os.homedir(), '.local', 'bin', 'ks')
   if (existsSync(local)) return local
   return 'ks'
+}
+
+// hostInstance 返回 "<pid>@<启动时间>"，格式和 daemon 的 instanceAlive 一致。
+// 这样 Host 崩掉时 daemon 能在一个心跳周期内补发 SessionEnd，而不是让会话一直挂着“待命”。
+// 取不到启动时间就不报：宁可退化成旧行为，也不要被误判成“进程已消失”。
+function hostInstance() {
+  try {
+    const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } }).trim()
+    if (out) return `${process.pid}@${out.replace(/\s+/g, ' ')}`
+  } catch {
+    // ps 不可用时忽略
+  }
+  return ''
 }
 
 function kitestringMessage(text) {
@@ -105,9 +119,12 @@ export function apply(ctx, config = {}) {
     ksBin: pickKsBin(config.ksBin),
     standby: config.standby !== false,
     events: config.events !== false,
+    usage: config.usage !== false,
     attach: config.attach !== 'none',
     debug: config.debug === true,
   }
+  // Host 进程身份：崩溃后 daemon 能据此补发 SessionEnd。
+  const instance = hostInstance()
   const daemon = new DaemonClient({ socketPath: opts.socketPath, logger })
   const sessions = new Map()
   let mcp = null
@@ -142,6 +159,7 @@ export function apply(ctx, config = {}) {
       cwd: typeof header.cwd === 'string' ? header.cwd : '',
       model: String(agent.options?.model ?? ''),
       client: clientKind(),
+      ...(instance ? { instance } : {}),
     }
   }
 
@@ -191,6 +209,8 @@ export function apply(ctx, config = {}) {
       source,
       startContext: '',
       lastReply: '',
+      contextTokens: 0,
+      contextWindow: 0,
       injectedTurn: null,
       calls: new Map(),
       waitAbort: null,
@@ -208,8 +228,26 @@ export function apply(ctx, config = {}) {
       log('debug', `会话就绪 ${st.key}（${source}）`)
     })()
     log('debug', `接入会话 ${st.key}（${source}）inbox turn=${agent.inbox?.nextTurn?.length ?? '?'} step=${agent.inbox?.nextStep?.length ?? '?'}`)
+    void resolveContextWindow(st)
     if (opts.standby && agent.status === 'idle') void startWait(st)
     return st
+  }
+
+  // resolveContextWindow 让插件加载前就存在的会话也能拿到窗口大小（request/context 事件已经过去了）。
+  async function resolveContextWindow(st) {
+    const provider = String(st.agent.options?.provider ?? '')
+    const model = String(st.agent.options?.model ?? '')
+    if (!provider || !model) return
+    try {
+      const info = await ctx.llm.resolveModelInfo(provider, model)
+      const window = Number(info?.context?.contextWindow)
+      if (window > 0) {
+        st.contextWindow = window
+        log('debug', `上下文窗口 ${st.key}: ${window}`)
+      }
+    } catch (error) {
+      log('debug', `读取上下文窗口失败：${error.message}`)
+    }
   }
 
   function normalizeSource(source) {
@@ -252,6 +290,13 @@ export function apply(ctx, config = {}) {
       const data = event?.data ?? {}
       if (event.type === 'assistant/message') {
         st.lastReply = textOfBlocks(data.message?.content)
+        const usage = data.usage
+        if (usage && typeof usage === 'object') {
+          if (Number(usage.inputTokens) > 0) st.contextTokens = Number(usage.inputTokens)
+          void reportUsage(st, usage, event.time)
+        }
+      } else if (event.type === 'request/context') {
+        if (Number(data.contextWindow) > 0) st.contextWindow = Number(data.contextWindow)
       } else if (event.type === 'tool/call') {
         onToolCall(st, data)
       } else if (event.type === 'tool/result') {
@@ -307,6 +352,8 @@ export function apply(ctx, config = {}) {
       hook_event_name: aborted ? 'Interrupt' : 'Stop',
       turn_id: `${st.id}:${data.turn}`,
       last_assistant_message: st.lastReply,
+      context: st.contextTokens,
+      context_max: st.contextWindow,
     }
     st.lastReply = ''
     st.stopPromise = (async () => {
@@ -316,6 +363,30 @@ export function apply(ctx, config = {}) {
     // 不依赖真的出现 idle：目标 / 后台任务这类会话可能一轮接一轮地跑。
     // 挂上等待不影响它们继续工作，纸鸢的消息会排成下一轮。
     void startWait(st)
+  }
+
+  // reportUsage 把一次模型回复的 token 用量交给 daemon；DSH 没有 transcript，不能等 usageScanner 去读文件。
+  function reportUsage(st, usage, at) {
+    if (!opts.usage) return
+    const cached = Number(usage.cacheReadTokens) || 0
+    const cacheWrite = Number(usage.cacheWriteTokens) || 0
+    const totalInput = Number(usage.inputTokens) || 0
+    const input = Math.max(totalInput - cached - cacheWrite, 0)
+    const output = Number(usage.outputTokens) || 0
+    if (input + cached + cacheWrite + output === 0) return
+    const model = String(st.agent.options?.model ?? '') || 'dsh'
+    void daemon
+      .usage({
+        sessionKey: st.key,
+        model,
+        at: typeof at === 'number' ? at : Date.now(),
+        input,
+        cacheRead: cached,
+        cacheWrite,
+        output,
+        requests: 1,
+      })
+      .catch((error) => log('debug', `上报用量失败：${error.message}`))
   }
 
   // ---- 上下文注入 -------------------------------------------------------

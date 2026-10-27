@@ -634,6 +634,26 @@ func (u *usageScanner) reset() {
 	u.mu.Unlock()
 }
 
+// record 记一次外部上报的用量（DSH 插件直接给数字，没有 transcript 可读）。
+// 与转录扫描写同一张表：按分钟累加，版本号 +1、sent 置 0，下一轮 pending 会把它带给 Hub。
+func (u *usageScanner) record(key, model string, at time.Time, in, cw, cr, out, requests int64) error {
+	if key == "" || model == "" {
+		return nil
+	}
+	if at.IsZero() {
+		at = u.now()
+	}
+	if requests <= 0 {
+		requests = 1
+	}
+	minute := at.Unix() / 60
+	_, err := u.db.Exec(`INSERT INTO usage_minutes(session_key, agent_id, model, minute, inp, cw, cw1h, cr, out, n, ver, sent, touched) VALUES(?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1, 0, ?)
+		ON CONFLICT(session_key, agent_id, model, minute) DO UPDATE SET inp = inp + excluded.inp, cw = cw + excluded.cw,
+			cr = cr + excluded.cr, out = out + excluded.out, n = n + excluded.n, ver = ver + 1, sent = 0, touched = excluded.touched`,
+		key, "", model, minute, max(in, 0), max(cw, 0), max(cr, 0), max(out, 0), requests, u.now().Unix())
+	return err
+}
+
 // watchUsage 每 usageEvery 读一轮对话记录，连着 Hub 时把变化发出去。
 func (d *Daemon) watchUsage(ctx context.Context) {
 	t := time.NewTicker(usageEvery)

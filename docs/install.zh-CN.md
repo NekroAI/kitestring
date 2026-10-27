@@ -58,6 +58,21 @@ ks uninstall --claude-dir ~/.claude-x                      # 只移除这一个�
 
 哪些共用、哪些隔开：Hub、会话列表、需求和决策数据、角色提示词（由 Hub 注入）对所有目录都一样；用户级 `CLAUDE.md`、项目记忆、自定义子 Agent、skills 和登录凭证按配置目录隔开。`ks install --status` 会列出 `~/.claude` 里有、这个目录里缺的项。个人偏好想共用，请自己建软链接，例如 `ln -s ~/.claude/CLAUDE.md ~/.claude-x/CLAUDE.md`（纸鸢不会替你建）。
 
+## DeepSeek Harness（DSH）
+
+DSH 会话也能上墙：用本仓库里的 Host 插件（`dsh-plugin/`）。它走 DSH 自己的会话事件和 `agent.followup()` / `inject()`，不需要 `ks wait` 进程——插件在会话空闲时挂着一个 `/wait`，你在纸鸢上答复时唤醒同一个 agent。
+
+要求 DSH 0.2.1-rc.4 和同机运行的 `ks daemon`。从源码目录安装：
+
+```sh
+dsh plugin --profile web add link:"$PWD/dsh-plugin"
+scripts/install-dsh-plugin.sh --profile web
+```
+
+web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --profile web`。之后会话会带 DSH 标记出现在看板上。DSH 的 shell 里能通过 `DSH_SESSION_ID` 正常使用 `ks role …`；不要在那里运行 `ks wait`——daemon 会立即返回并说明待命由插件负责。
+
+插件会报 token 用量和上下文大小（会话圆环），Host 进程消失时会结束会话。目前只在 `web` profile 上验证过；桌面版和 Windows 没有验证。从纸鸢创建/恢复 DSH 会话、原生审批双向同步还没有做。
+
 ## 会话交接
 
 压缩或换会话时可以交接：在网页会话上点「交接」，旧会话写下结构化交接；在项目目录运行 `ks takeover <身份>`（如 `ks takeover pm`，`--tool codex` 用 Codex 开，`--print` 只打印命令）启动接任会话。旧版 MCP 没有 `handoff_write` 时，旧会话可用 `ks handoff --doing … --next …` 写交接。流程详见 [roles.md](roles.md)。

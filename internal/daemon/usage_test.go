@@ -63,6 +63,30 @@ func newUsage(t *testing.T, dir string) (*queue, *usageScanner) {
 	return q, u
 }
 
+// 插件直接上报的用量（DSH）：按分钟累加、版本号 +1、sent 置 0，等下一批发给 Hub。
+func TestUsageRecordFromPlugin(t *testing.T) {
+	q, u := newUsage(t, t.TempDir())
+	at := usageT0.Add(5 * time.Minute)
+	if err := u.record("dsh:s1", "deepseek-flash", at, 100, 10, 20, 30, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.record("dsh:s1", "deepseek-flash", at, 50, 0, 0, 10, 1); err != nil {
+		t.Fatal(err)
+	}
+	var inp, cw, cr, out, n, ver, sent int64
+	row := q.db.QueryRow(`SELECT inp, cw, cr, out, n, ver, sent FROM usage_minutes WHERE session_key = ? AND agent_id = '' AND minute = ?`, "dsh:s1", at.Unix()/60)
+	if err := row.Scan(&inp, &cw, &cr, &out, &n, &ver, &sent); err != nil {
+		t.Fatal(err)
+	}
+	if inp != 150 || cw != 10 || cr != 20 || out != 40 || n != 2 || ver != 2 || sent != 0 {
+		t.Fatalf("累加结果不对：inp=%d cw=%d cr=%d out=%d n=%d ver=%d sent=%d", inp, cw, cr, out, n, ver, sent)
+	}
+	env, ok := u.pending()
+	if !ok || len(env.Usage) != 1 || env.Usage[0].Input != 150 || env.Usage[0].Requests != 2 {
+		t.Fatalf("pending 应带上这条用量：%+v ok=%v", env.Usage, ok)
+	}
+}
+
 type tot struct{ in, cw, cw1h, cr, out, n int64 }
 
 func totals(t *testing.T, u *usageScanner, key, agent string) tot {
