@@ -9,7 +9,8 @@ import { createInterface } from 'node:readline'
 const PROTOCOL_VERSION = '2025-11-25'
 
 export class McpClient {
-  constructor({ command, args = [], cwd, env = process.env, logger, clientName = 'kitestring-dsh', clientVersion = '0.1.0' }) {
+  constructor({ command, args = [], cwd, env = process.env, logger, clientName = 'kitestring-dsh', clientVersion = '0.1.0', spawnFn = spawn }) {
+    this.spawnFn = spawnFn
     this.command = command
     this.args = args
     this.cwd = cwd
@@ -35,15 +36,24 @@ export class McpClient {
 
   async start() {
     if (this.child) throw new Error('MCP 客户端已经启动')
-    const child = spawn(this.command, this.args, { cwd: this.cwd, env: this.env, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = this.spawnFn(this.command, this.args, { cwd: this.cwd, env: this.env, stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
 
     const exited = new Promise((resolve) => {
       child.once('exit', (code, signal) => resolve({ code, signal }))
     })
-    child.once('error', (error) => {
+    // error 可能来不止一次（启动失败、kill 失败）：用 on，避免第二次成了未处理的 error 把 Host 带崩。
+    child.on('error', (error) => {
       this.failAll(new Error(`启动 ${this.command} 失败：${error.message}`))
     })
+    // ks mcp 退出后再写 stdin 会得到 EPIPE；不监听的话这个 error 会让整个 Host 崩溃（R-251）。
+    // 这里只记日志并让挂着的请求失败，退出本身由 exit 事件接着处理（重连）。
+    child.stdin?.on('error', (error) => {
+      this.log('debug', `ks mcp stdin 出错：${error.message}`)
+      this.failAll(new Error(`ks mcp 连接已断开：${error.message}`))
+    })
+    child.stdout?.on('error', (error) => this.log('debug', `ks mcp stdout 出错：${error.message}`))
+    child.stderr?.on('error', (error) => this.log('debug', `ks mcp stderr 出错：${error.message}`))
     child.once('exit', (code, signal) => {
       const wasClosed = this.closed
       this.failAll(new Error(`ks mcp 已退出（code=${code}, signal=${signal ?? ''}）`))
@@ -100,10 +110,21 @@ export class McpClient {
     }
   }
 
-  write(msg) {
+  // alive：子进程还在、stdin 还能写。写之前先查，进程已退出时直接报错而不是往断掉的管道里写。
+  alive() {
     const child = this.child
-    if (!child || this.closed) throw new Error('MCP 连接已关闭')
-    child.stdin.write(`${JSON.stringify(msg)}\n`)
+    if (!child || this.closed) return false
+    if (child.exitCode !== null && child.exitCode !== undefined) return false
+    if (child.signalCode !== null && child.signalCode !== undefined) return false
+    const stdin = child.stdin
+    return Boolean(stdin && !stdin.destroyed && stdin.writable !== false && !stdin.writableEnded)
+  }
+
+  write(msg) {
+    if (!this.alive()) throw new Error('MCP 连接已关闭')
+    this.child.stdin.write(`${JSON.stringify(msg)}\n`, (error) => {
+      if (error) this.log('debug', `写入 ks mcp 失败：${error.message}`)
+    })
   }
 
   notify(method, params) {
@@ -115,7 +136,7 @@ export class McpClient {
   }
 
   request(method, params, { timeoutMs = 120_000, signal } = {}) {
-    if (!this.child || this.closed) return Promise.reject(new Error('MCP 连接已关闭'))
+    if (!this.alive()) return Promise.reject(new Error('MCP 连接已关闭'))
     const id = this.nextId++
     return new Promise((resolve, reject) => {
       let settled = false

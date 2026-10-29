@@ -4,10 +4,13 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 
-// defaultSocketPath 与 daemon.Home() 的规则保持一致：KS_HOME 优先，否则 ~/.kitestring。
+// ksHome 与 daemon.Home() 的规则保持一致：KS_HOME 优先，否则 ~/.kitestring。
+export function ksHome() {
+  return process.env.KS_HOME || path.join(os.homedir(), '.kitestring')
+}
+
 export function defaultSocketPath() {
-  const home = process.env.KS_HOME || path.join(os.homedir(), '.kitestring')
-  return path.join(home, 'daemon.sock')
+  return path.join(ksHome(), 'daemon.sock')
 }
 
 export class DaemonClient {
@@ -63,8 +66,10 @@ export class DaemonClient {
   }
 
   // wait 以插件身份挂起等待（via=plugin）。daemon 侧只把这类请求当作 DSH 的待命，不拦截模型自己跑的 ks wait。
-  wait({ sessionKey, timeoutMs, signal }) {
+  // instance 是 Host 的“进程号@启动时间”：同一会话开在两个 Host 时，daemon 据此让较早的那个直接返回 stale（R-251）。
+  wait({ sessionKey, instance, timeoutMs, signal }) {
     const q = new URLSearchParams({ session_key: sessionKey, via: 'plugin', timeout: `${Math.max(1, Math.floor(timeoutMs / 1000))}s` })
+    if (instance) q.set('instance', instance)
     // 客户端比 daemon 的上限再多等一点，避免两端同时到期时把正常超时误判成连接错误。
     return this.request('GET', `/wait?${q.toString()}`, undefined, { signal, timeoutMs: timeoutMs + 60_000 })
   }
@@ -75,12 +80,14 @@ export class DaemonClient {
   }
 
   // usage 上报一次模型回复的 token 用量（绝对值）。daemon 按分钟累加，随原有批次送到 Hub。
-  usage({ sessionKey, model, at, input, cacheRead, cacheWrite, output, requests }) {
+  // agentId 是子代理的会话 ID（主线程为空）：子代理的用量记在根会话名下（R-251）。
+  usage({ sessionKey, agentId, model, at, input, cacheRead, cacheWrite, output, requests }) {
     return this.request(
       'POST',
       '/usage',
       {
         session_key: sessionKey,
+        ...(agentId ? { agent_id: agentId } : {}),
         model,
         at,
         input,
