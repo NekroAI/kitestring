@@ -1,6 +1,9 @@
 package roles
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // 别称识别（R-190）：标识、英文简写、中文名、别称和「接管 / 当 / 做」的说法都映射到标识。
 func TestResolve(t *testing.T) {
@@ -24,5 +27,18 @@ func TestResolve(t *testing.T) {
 	}
 	if !Unique(Aide) || !Unique(PM) || Unique(Advisor) || !Resident(Aide) || Resident(Advisor) {
 		t.Error("主助理、主调度每项目唯一；主助理常驻、顾问不常驻")
+	}
+}
+
+// R-229：主调度提示词写明小验证与二次退回复盘；主调度、开发写明待命超时。
+func TestPMPromptRework(t *testing.T) {
+	pm := Prompt(PM)
+	for _, want := range []string{"小验证子任务", "这条路行不行", "附证据", "验证通过再派全套实现", "第二次被退回", "先停下复盘做法", "不要接着在原做法上修补", "待命超时 · 建议收尾"} {
+		if !strings.Contains(pm, want) {
+			t.Fatalf("主调度提示词缺 %q", want)
+		}
+	}
+	if dev := Prompt(Dev); !strings.Contains(dev, "待命超时") || !strings.Contains(dev, "不再给你送订阅事件") {
+		t.Fatal("开发提示词应写明待命超时")
 	}
 }

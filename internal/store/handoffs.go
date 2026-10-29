@@ -153,3 +153,33 @@ func (s *Store) SetRetired(ctx context.Context, key string, retired bool) error 
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET retired_at = ? WHERE key = ?`, v, key)
 	return err
 }
+
+// QuietTellQuestion 是只告知的团队消息的标题（R-198、R-227）：它不唤醒 ks wait，也不清除待命超时。
+const QuietTellQuestion = "团队消息（不唤醒）"
+
+// DevIdleDefault 是开发会话待命超时的默认时长（R-229），项目设置里可调。
+const DevIdleDefault = 30 * time.Minute
+
+// DevIdleLimit 是项目设置的开发待命超时时长；没设（0）时为默认 30 分钟。
+func (p Project) DevIdleLimit() time.Duration {
+	if p.DevIdleMinutes > 0 {
+		return time.Duration(p.DevIdleMinutes) * time.Minute
+	}
+	return DevIdleDefault
+}
+
+// SetIdle 记下开发会话待命超时（R-229）。
+func (s *Store) SetIdle(ctx context.Context, key string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET idle_at = ? WHERE key = ?`, ts(at.UTC()), key)
+	return err
+}
+
+// ClearIdle 清除待命超时（派活、点名给它的消息、你给它发消息时）；返回原来是不是待命超时。
+func (s *Store) ClearIdle(ctx context.Context, key string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET idle_at = '' WHERE key = ? AND idle_at <> ''`, key)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}

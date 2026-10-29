@@ -6007,6 +6007,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "dev_idle_minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
           "doc_root": {
             "type": "string"
           },
@@ -6050,6 +6054,7 @@
           "agent_release",
           "commit_on_accept",
           "model_policy",
+          "dev_idle_minutes",
           "created_at",
           "need_devs",
           "need_reason",
@@ -6069,6 +6074,13 @@
           },
           "commit_on_accept": {
             "type": "boolean"
+          },
+          "dev_idle_minutes": {
+            "description": "开发会话待命超时的分钟数（5～720，默认 30）",
+            "format": "int64",
+            "maximum": 720,
+            "minimum": 5,
+            "type": "integer"
           },
           "doc_root": {
             "type": "string"
@@ -7298,6 +7310,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "idle_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "key": {
             "type": "string"
           },
@@ -8490,7 +8506,7 @@
             "type": "integer"
           },
           "retired": {
-            "description": "会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待",
+            "description": "会话已被接任卸任（R-224、R-229）：ks wait 输出 hint 后直接返回，不再等待",
             "type": "boolean"
           }
         },

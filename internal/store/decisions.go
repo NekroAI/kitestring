@@ -217,6 +217,12 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			if err != nil {
 				return err
 			}
+			if d.SessionKey != "" && d.Question != QuietTellQuestion {
+				// 点名送给它的（派活、排队送达、留言、团队消息、身份通知）：待命超时的开发恢复正常（R-229）
+				if _, err := t.ExecContext(ctx, `UPDATE sessions SET idle_at = '' WHERE key = ? AND idle_at <> ''`, d.SessionKey); err != nil {
+					return err
+				}
+			}
 			return snapDecision(ctx, t, id, d.AssignedBy)
 		}
 		optFiles := d.OptionFiles
@@ -323,6 +329,11 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 		overridden_at = CASE WHEN proxy_by <> '' THEN ? ELSE overridden_at END WHERE id = ?`, DecAnswered, answer, reason, filesJSON(files), blocks.Encode(choices), n, verdict, n, d.ID)
 	if err != nil {
 		return d, err
+	}
+	if d.SessionKey != "" { // 答复送回提问方：待命超时的开发恢复正常（R-229）
+		if _, err := s.ClearIdle(ctx, d.SessionKey); err != nil {
+			return d, err
+		}
 	}
 	return s.GetDecision(ctx, d.ID)
 }

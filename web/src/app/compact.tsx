@@ -1,8 +1,8 @@
-import { ArrowRightLeft, Copy } from 'lucide-react'
+import { ArrowRightLeft, Copy, TimerOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Session } from '../api/client'
 import { t } from '../i18n'
-import { copyText, cx, wan } from '../lib/util'
+import { copyText, cx, relTime, wan } from '../lib/util'
 import { Button, Tip } from '../ui/base'
 import { ctxColor, ctxLoad, ctxTip, CtxRing } from './assign'
 import { useQueryClient } from '@tanstack/react-query'
@@ -81,6 +81,41 @@ export function CompactRow({ s }: { s: Session }) {
         <Copy className="size-3.5" />
         {t.session.compactCopy}
       </Button>
+    </div>
+  )
+}
+
+// ---------- 待命超时（R-229） ----------
+
+// 开发会话待命超过项目设置的时长、手上没有排给它的需求：Hub 记下 idle_at（明确记录，不在网页上猜）。
+const idleOf = (s: Session) => (s.idle_at && s.role === 'dev' && s.state !== 'ended' ? s.idle_at : '')
+
+// IdleTag：泳道状态标后面的「待命超时 · 建议收尾」；窄处只留沙漏。
+export function IdleTag({ s }: { s: Session }) {
+  if (!idleOf(s)) return null
+  return (
+    <Tip content={t.session.idleTip}>
+      <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] leading-4 font-medium whitespace-nowrap text-wait" aria-label={t.session.idle}>
+        <TimerOff className="size-3.5" />
+        <span className="@max-[12rem]:hidden">{t.session.idle}</span>
+      </span>
+    </Tip>
+  )
+}
+
+// IdleRow：会话面板顶部一行「待命超时、没有排给它的需求 · 建议收尾」，右侧是标记时间。
+export function IdleRow({ s, now }: { s: Session; now: number }) {
+  if (!idleOf(s)) return null
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl bg-wait-soft px-3 py-2">
+      <TimerOff className="mt-0.5 size-4 shrink-0 text-wait" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 text-[13px] font-medium text-wait">{t.session.idleLine}</span>
+          <span className="shrink-0 text-[11.5px] text-fg-3 tabular">{t.session.idleSince(relTime(s.idle_at, now))}</span>
+        </div>
+        <div className="text-[12px] leading-relaxed text-fg-2">{t.session.idleTip}</div>
+      </div>
     </div>
   )
 }

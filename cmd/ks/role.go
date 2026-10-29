@@ -58,7 +58,7 @@ func runRole(args []string) error {
 	if out.Handoff {
 		fmt.Printf("[Kitestring] 已接任%s：上一任写的交接附在下面，上一任已自动卸任。\n", roles.Display(role))
 	} else if len(out.Demoted) > 0 {
-		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）降为普通会话，并已收到通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
+		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）已卸任（不再被唤醒），并已收到卸任通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
 	}
 	fmt.Print(out.Prompt)
 	// DSH 的等待由 Host 插件负责，身份提示词里关于 ks wait 的说法要当场盖掉，避免模型照着挂起来。

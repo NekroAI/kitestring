@@ -555,6 +555,11 @@ export const zh = {
     compactCopyTipCodex: '点一下复制 /compact，到这个会话的终端里粘贴执行（Codex 的 /compact 不带保留说明）',
     compactCopied: '已复制压缩命令，到终端粘贴执行',
     compactCopy: '复制命令',
+    // 待命超时的开发（R-229）：没有排给它的需求，建议收尾；纸鸢已不再给它送订阅事件
+    idle: '待命超时 · 建议收尾',
+    idleLine: '待命超时、没有排给它的需求 · 建议收尾',
+    idleSince: (when: string) => `${when}标记`,
+    idleTip: '近期没有要派给它的活，就到它的终端里让它收尾结束。纸鸢已不再给它送订阅事件；派活、点名给它的消息照常送到，派活后自动恢复',
     toolsStaleTip: (v: string) => `这个会话的 Kitestring 工具还是升级前的版本（${v}），看不到新功能。重启会话，或在终端里输入 /mcp 重连 kitestring 后生效；Agent 也已被提醒改用 ks 命令行`,
     sessionId: '会话 ID',
     startedAt: '开始',
@@ -625,7 +630,7 @@ export const zh = {
     written: '交接已写好 · 在项目目录运行接任命令',
     taken: (by: string) => `已由「${by}」接任`,
     takenFrom: (from: string) => `接任了「${from}」的交接`,
-    retired: '已交接卸任：不再被唤醒',
+    retired: '已卸任：不再被唤醒',
     copyCmd: '复制接任命令',
     sections: { doing: '在做的', waiting: '等用户的', rules: '约定和规矩', next: '下一步', notes: '注意事项' } as Record<string, string>,
   },
@@ -907,6 +912,9 @@ export const zh = {
       return rt`你验收通过一条需求后，纸鸢给负责的${'pm'}送一条消息，由它只提交属于这条需求的改动（中文说明、带需求编号）；纸鸢自己不动仓库，也从不推送，推送永远要你明确要求。被退回的需求不提交`
     },
     modelPolicy: '子任务模型策略',
+    devIdle: '开发待命超时',
+    devIdleHint: '开发会话待命超过这么久、手上又没有排给它的需求时，泳道上标「待命超时 · 建议收尾」并告诉主调度，之后不再给它送订阅事件；派活、点名给它的消息照常送到，派活后自动恢复。默认 30 分钟',
+    minutes: '分钟',
     modelPolicyOptions: { economy: '经济', balanced: '均衡', quality: '质量优先' } as Record<string, string>,
     modelPolicyHints: {
       economy: '尽量用便宜的小模型；只有新机制、跨模块或返工过的活才用最强的',

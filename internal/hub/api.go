@@ -353,6 +353,8 @@ type projectIn struct {
 		CommitOnAccept *bool `json:"commit_on_accept,omitempty"`
 		// ModelPolicy：子任务模型策略（R-228）：economy（经济）/ balanced（均衡，默认）/ quality（质量优先）；不传表示不修改
 		ModelPolicy *string `json:"model_policy,omitempty" enum:"economy,balanced,quality" doc:"子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先"`
+		// DevIdleMinutes：开发会话待命超时（R-229）：待命超过这么多分钟、手上没有排给它的需求，就提示收尾、不再送订阅事件；不传表示不修改
+		DevIdleMinutes *int `json:"dev_idle_minutes,omitempty" minimum:"5" maximum:"720" doc:"开发会话待命超时的分钟数（5～720，默认 30）"`
 	}
 }
 
@@ -641,6 +643,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.ModelPolicy != nil {
 				policy = *in.Body.ModelPolicy
 			}
+			idle := cur.DevIdleMinutes
+			if in.Body.DevIdleMinutes != nil {
+				idle = *in.Body.DevIdleMinutes
+			}
 			if in.Body.AgentRelease != nil {
 				release = *in.Body.AgentRelease
 			}
@@ -650,7 +656,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.Hidden != nil {
 				hidden = *in.Body.Hidden
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy})
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy, DevIdleMinutes: idle})
 			if err != nil {
 				return nil, apiErr(err)
 			}

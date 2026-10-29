@@ -192,8 +192,9 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	h.resumeGrantExpiry(ctx)
 	h.resumeRequestExpiry(ctx)
 	go h.laneMaintenance(ctx)
-	go h.reviewWatch(ctx) // 交给评审 30 分钟没动静的，照常弹给用户（R-237）
-	go h.awayLoop(ctx) // 暂时离开：每分钟判断一次能处理的是否都处理完（R-210）
+	go h.reviewWatch(ctx)  // 交给评审 30 分钟没动静的，照常弹给用户（R-237）
+	go h.devIdleWatch(ctx) // 待命超时的开发会话：提示收尾，不再送订阅事件（R-229）
+	go h.awayLoop(ctx)     // 暂时离开：每分钟判断一次能处理的是否都处理完（R-210）
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
@@ -323,6 +324,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	case next.Background:
 		// 后台任务不生成标题 / 摘要，不占模型额度（R-179）
 	case ev.Name == "UserPromptSubmit" && ev.Source != protocol.SourceAuto:
+		h.clearIdle(ctx, key) // 你在终端给它发了消息：待命超时的开发恢复正常（R-229）
 		if next.DigestDone != "" {
 			_ = h.store.ClearDigest(ctx, key)
 		}
@@ -496,6 +498,9 @@ func (h *Hub) decisionsChanged(ctx context.Context, d store.Decision) {
 	h.broker.publish("decisions", "sessions", "requirements")
 	if d.SessionKey == "" {
 		return
+	}
+	if d.Question != quietTellQ {
+		h.clearIdle(ctx, d.SessionKey) // 点名给它的（派活、答复、指名消息）照常叫醒，同时恢复待命超时的开发（R-229）
 	}
 	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 		h.pushDecisions(ctx, x.DeviceID)

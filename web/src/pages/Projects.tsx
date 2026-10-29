@@ -410,6 +410,8 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const [release, setRelease] = useState(!!projects.data?.projects.find((x) => x.id === p.id)?.agent_release)
   const [commitOnAccept, setCommitOnAccept] = useState(!!projects.data?.projects.find((x) => x.id === p.id)?.commit_on_accept)
   const [policy, setPolicy] = useState(projects.data?.projects.find((x) => x.id === p.id)?.model_policy || 'balanced')
+  const [idle, setIdle] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.dev_idle_minutes || 30))
+  const idleMin = Math.min(720, Math.max(5, Math.round(Number(idle)) || 30))
   const { mergeProject } = useActions()
   const confirm = useConfirm()
   const navigate = useNavigate()
@@ -430,7 +432,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality' })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality', dev_idle_minutes: idleMin })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -464,6 +466,15 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
           <Segmented value={policy} onChange={setPolicy} options={Object.entries(t.projects.modelPolicyOptions).map(([value, label]) => ({ value, label }))} />
           <span className="mt-1.5 block text-xs leading-relaxed text-fg-3">{t.projects.modelPolicyHints[policy]}</span>
         </div>
+        {/* 开发待命超时（R-229）：待命超过它、手上没有排给它的需求，提示收尾、不再送订阅事件 */}
+        <Field label={t.projects.devIdle} hint={t.projects.devIdleHint}>
+          <div className="flex items-center gap-2">
+            <div className="w-28 shrink-0">
+              <Input type="number" inputMode="numeric" min={5} max={720} value={idle} onChange={(e) => setIdle(e.target.value)} />
+            </div>
+            <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
+          </div>
+        </Field>
         <Checkbox checked={hidden} onChange={setHidden} hint={t.projects.hideHint}>
           {t.projects.hide}
         </Checkbox>

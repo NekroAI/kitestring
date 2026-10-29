@@ -248,9 +248,21 @@ func (h *Hub) takeOver(ctx context.Context, x store.Session, role string, demote
 	return handoffText(hd, role), demoted
 }
 
-// retiredNote：交接后卸任的旧会话收到的通知。
-func retiredNote(project, role, by string) string {
-	return fmt.Sprintf("你在项目「%s」的%s身份已交接给「%s」，你已卸任：不要再挂 ks wait，用一两句话收尾后结束本轮。之后纸鸢不会再唤醒你，也不会再拦你结束。", project, roles.Display(role), by)
+// retiredNote：被接任后卸任的旧会话收到的通知（R-224；R-229 起没写交接直接 ks role 接任也卸任）。
+// handed 为写了交接再接任；pending 是它提的、还等用户答复的决策，写明答复改为下次对话时送达。
+func retiredNote(project, role, by string, handed bool, pending []string) string {
+	how := "已由「" + by + "」接任"
+	if handed {
+		how = "已交接给「" + by + "」"
+	}
+	s := fmt.Sprintf("你在项目「%s」的%s身份%s，你已卸任：不要再挂 ks wait，用一两句话收尾后结束本轮。之后纸鸢不会再唤醒你（订阅事件也不再送），也不会再拦你结束。", project, roles.Display(role), how)
+	if !handed {
+		s += handover[role]
+	}
+	if len(pending) > 0 {
+		s += "你提的待答决策（" + strings.Join(pending, "、") + "）仍留在用户的「要你处理」里，用户答复后会在下次对话时送达给你。"
+	}
+	return s + "要恢复，在这个会话里重新运行 ks role <身份>。"
 }
 
 // stateNote：压缩上下文后补注入的关键状态——关联的需求、待答决策、在跑的子任务（R-224）。都没有时返回空。

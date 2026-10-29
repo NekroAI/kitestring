@@ -55,3 +55,25 @@ func TestHandoffAskCLIFallback(t *testing.T) {
 		}
 	}
 }
+
+// R-229：被接任的卸任通知——交接后 / 直接接任两种说法，列出它提的待答决策和去向，写明怎么恢复。
+func TestRetiredNote(t *testing.T) {
+	direct := retiredNote("纸鸢", "pm", "新会话", false, []string{"D-7", "D-9"})
+	for _, want := range []string{"已由「新会话」接任", "你已卸任", "不会再唤醒你", "订阅事件也不再送", "D-7、D-9", "下次对话时送达", "派出去的需求由新主调度接手", "ks role"} {
+		if !strings.Contains(direct, want) {
+			t.Fatalf("直接接任的卸任通知缺 %q：%s", want, direct)
+		}
+	}
+	handed := retiredNote("纸鸢", "aide", "新会话", true, nil)
+	if !strings.Contains(handed, "已交接给「新会话」") || strings.Contains(handed, "待答决策") || strings.Contains(handed, "授权窗口") {
+		t.Fatalf("交接后的卸任通知不对：%s", handed)
+	}
+}
+
+func TestHumanMinutes(t *testing.T) {
+	for d, want := range map[time.Duration]string{20 * time.Second: "1 分钟", 45 * time.Minute: "45 分钟", 2 * time.Hour: "2 小时", 90 * time.Minute: "1 小时 30 分钟"} {
+		if got := humanMinutes(d); got != want {
+			t.Fatalf("%v → %q，应为 %q", d, got, want)
+		}
+	}
+}

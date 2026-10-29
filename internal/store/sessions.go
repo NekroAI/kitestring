@@ -78,7 +78,8 @@ type Session struct {
 	Tasks            []BgTask         `json:"tasks"`                                     // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
-	RetiredAt        *time.Time       `json:"retired_at,omitempty"` // 交接给新会话后卸任的时间（R-224）：不再挂 ks wait、不再被唤醒
+	RetiredAt        *time.Time       `json:"retired_at,omitempty"` // 被新会话接任后卸任的时间（R-224、R-229）：不再挂 ks wait、不再被唤醒
+	IdleAt           *time.Time       `json:"idle_at,omitempty"`    // 开发会话待命超时的时间（R-229）：待命超过项目设置的时长、没有排给它的需求；提示收尾，不再送订阅事件
 }
 
 // BgTask 是会话下一个在跑的后台任务（R-162）：只有类型、标签、开始时间与最近动作，不含命令输出与对话内容。
@@ -138,18 +139,18 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.profile, s.profile_dir, s.launcher, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.wait_kind, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at,
+	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at, s.idle_at,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired string
+	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired, idle string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Profile, &x.ProfileDir, &x.Launcher, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.WaitKind, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired,
+		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired, &idle,
 		&started, &active, &ended)
 	x.Tasks = []BgTask{}
 	if tasks != "" && tasks != "[]" {
@@ -177,6 +178,10 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	if retired != "" {
 		t := parseTS(retired)
 		x.RetiredAt = &t
+	}
+	if idle != "" {
+		t := parseTS(idle)
+		x.IdleAt = &t
 	}
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
@@ -422,9 +427,11 @@ type Subscriber struct {
 
 // WaitSubscribers 列出项目里在线（挂着 ks wait 或正在跑）、有身份或给过 --on 的会话，最近活跃的在前。
 // 一轮结束没挂 ks wait、已结束、失联、你标为已完成的不算：不在线时不给它攒消息。
+// 被接任卸任的、待命超时的开发也不算（R-229）：订阅事件直接不送（不是降为只告知），点名给它的消息照常走 tell。
 func (s *Store) WaitSubscribers(ctx context.Context, projectID string) ([]Subscriber, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT key, role, wait_on FROM sessions
 		WHERE project_id = ? AND (role <> '' OR wait_on <> '') AND done_at = '' AND state NOT IN (?, ?)
+			AND retired_at = '' AND idle_at = ''
 			AND (parked = 1 OR state IN (?, ?, ?, ?))
 		ORDER BY last_active_at DESC`, projectID, StateEnded, StateLost, StateParked, StateRunning, StateBackground, StateWaitApproval)
 	if err != nil {

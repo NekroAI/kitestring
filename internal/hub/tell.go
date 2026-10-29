@@ -48,7 +48,7 @@ func (h *Hub) tell(ctx context.Context, to, projectID, reqID, text string) (stor
 
 // quietTellQ 是静默团队消息的标题（R-198）：照旧入队，会话下一轮开始或 ks wait 因别的消息被唤醒时一并注入，但它本身不唤醒 ks wait。
 // 用标题区分，不加新列：下行时 pushDecisions 据此置 Quiet。
-const quietTellQ = "团队消息（不唤醒）"
+const quietTellQ = store.QuietTellQuestion
 
 // 团队消息和订阅事件分两档（R-227），档位由发送方类型 / 事件类型定，不靠会话自己判断：
 //   - 要对方动手的，立刻叫醒（tell）：提问、求裁定、派活、用户答复、新决策要查冲突、review 交验收、需求受阻、

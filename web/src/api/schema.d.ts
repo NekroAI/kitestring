@@ -3686,6 +3686,8 @@ export interface components {
             commit_on_accept: boolean;
             /** Format: date-time */
             created_at: string;
+            /** Format: int64 */
+            dev_idle_minutes: number;
             doc_root: string;
             hidden: boolean;
             id: string;
@@ -3703,6 +3705,11 @@ export interface components {
             agent_release?: boolean;
             auto_dispatch?: boolean;
             commit_on_accept?: boolean;
+            /**
+             * Format: int64
+             * @description 开发会话待命超时的分钟数（5～720，默认 30）
+             */
+            dev_idle_minutes?: number;
             doc_root: string;
             hidden?: boolean;
             /**
@@ -4046,6 +4053,8 @@ export interface components {
             done_at?: string;
             /** Format: date-time */
             ended_at?: string;
+            /** Format: date-time */
+            idle_at?: string;
             key: string;
             /** Format: date-time */
             last_active_at: string;
@@ -4421,7 +4430,7 @@ export interface components {
              * @description 名下等用户处理的事项件数
              */
             pending: number;
-            /** @description 会话已交接卸任（R-224）：ks wait 输出 hint 后直接返回，不再等待 */
+            /** @description 会话已被接任卸任（R-224、R-229）：ks wait 输出 hint 后直接返回，不再等待 */
             retired?: boolean;
         };
         WeComConfig: {

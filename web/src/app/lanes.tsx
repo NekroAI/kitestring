@@ -17,7 +17,7 @@ import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
 import { sessionTitle, splitTool } from './SessionCard'
 import { liveTasks, taskName, type BgTask } from './tasks'
-import { CtxBadge } from './compact'
+import { CtxBadge, IdleTag } from './compact'
 import { reducedMotion } from './verdict'
 
 // 工作台的会话泳道（R-170，D-228 原型）：每个会话一条——左边工具图标（Claude / Codex，R-187）、标题、身份（D-177 描边胶囊 + 在线点）、
@@ -1007,6 +1007,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still, you }:
       </div>
       <div className="flex min-w-0 items-center gap-2">
         <StateTag s={s} tone={tone} now={now} />
+        <IdleTag s={s} />
         <Tip truncated content={req ? `${req.code} ${req.title}` : live ? s.summary || s.last_prompt : ''}>
           <span className="min-w-0 truncate text-[12px] text-fg-2">
             {req ? (

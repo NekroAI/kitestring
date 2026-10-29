@@ -56,8 +56,10 @@ type Project struct {
 	// CommitOnAccept：需求验收通过后，提示负责的 主调度 按项目设置提交属于它的改动（R-192）；纸鸢只送消息，不动仓库，不推送；默认关闭
 	CommitOnAccept bool `json:"commit_on_accept"`
 	// ModelPolicy：子任务模型策略（R-228）：economy 经济 / balanced 均衡 / quality 质量优先；空串按均衡。写进主调度、主助理、开发的身份提示词，只给倾向
-	ModelPolicy string    `json:"model_policy"`
-	CreatedAt   time.Time `json:"created_at"`
+	ModelPolicy string `json:"model_policy"`
+	// DevIdleMinutes：开发会话待命超过多少分钟、且没有排给它的需求，就算「待命超时」（R-229）：提示收尾、不再送订阅事件；0 按默认 30 分钟
+	DevIdleMinutes int       `json:"dev_idle_minutes"`
+	CreatedAt      time.Time `json:"created_at"`
 	// NeedDevs / NeedReason / NeedAt：PM 请你开开发会话（R-87）；有足够开发上线后自动清除
 	NeedDevs   int        `json:"need_devs"`
 	NeedReason string     `json:"need_reason"`
@@ -178,7 +180,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 
 // ListProjects 列出全部项目。
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, dev_idle_minutes, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +189,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		var created, needAt, briefAt, briefLook string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &p.DevIdleMinutes, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTS(created)
@@ -205,8 +207,8 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	var p Project
 	var created, needAt, briefAt, briefLook string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, dev_idle_minutes, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &p.DevIdleMinutes, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -221,7 +223,7 @@ func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 
 // UpdateProject 修改项目名称、所属工作空间与方案文档根路径。
 func (s *Store) UpdateProject(ctx context.Context, p Project) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ?, hidden = ?, agent_release = ?, commit_on_accept = ?, model_policy = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.Hidden, p.AgentRelease, p.CommitOnAccept, p.ModelPolicy, p.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ?, hidden = ?, agent_release = ?, commit_on_accept = ?, model_policy = ?, dev_idle_minutes = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.Hidden, p.AgentRelease, p.CommitOnAccept, p.ModelPolicy, p.DevIdleMinutes, p.ID)
 	if err != nil {
 		return err
 	}

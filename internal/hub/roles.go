@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -22,7 +21,7 @@ type roleOut struct {
 		Label      string   `json:"label" doc:"身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空"`
 		Name       string   `json:"name" doc:"身份中文名（主助理 / 顾问 / 评审 / 主调度 / 开发）；无身份时为空"`
 		Prompt     string   `json:"prompt" doc:"身份提示词，ks role 直接打印给 Agent"`
-		Demoted    []string `json:"demoted" doc:"因本次接任主调度 / 主助理被降为无身份的会话"`
+		Demoted    []string `json:"demoted" doc:"因本次接任主调度 / 主助理被降为无身份并卸任的会话（R-229）"`
 		Handoff    bool     `json:"handoff" doc:"接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾"`
 	}
 }
@@ -73,6 +72,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 	if role != "" && x.RetiredAt != nil {
 		_ = h.store.SetRetired(ctx, key, false) // 卸任的会话重新声明身份：回到正常
 	}
+	h.clearIdle(ctx, key) // 重新声明身份：待命超时从头算（R-229）
 	handoff, demoted := h.takeOver(ctx, x, role, demoted)
 	devices := map[string]bool{x.DeviceID: true}
 	name := x.Title
@@ -85,10 +85,14 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 			continue
 		}
 		devices[old.DeviceID] = true
-		answer := fmt.Sprintf("你在项目「%s」的%s身份已由「%s」接任，你现在是没有身份的普通会话：不必再常驻挂 ks wait，把手上的事收个尾、说明进度后结束本轮即可；%s", old.ProjectName, roles.Display(role), name, handover[role])
-		if old.RetiredAt != nil {
-			answer = retiredNote(old.ProjectName, role, name) // 交接后卸任（R-224）
+		// 被接任一律卸任（R-229）：有没有写交接都走 R-224 同一处标记——ks wait 直接返回、订阅事件不再送，重新 ks role 时恢复
+		handed := old.RetiredAt != nil
+		if !handed {
+			if err := h.store.SetRetired(ctx, k, true); err != nil {
+				h.log.Warn("标记旧会话卸任失败", "err", err)
+			}
 		}
+		answer := retiredNote(old.ProjectName, role, name, handed, h.pendingCodes(ctx, k))
 		d, err := h.store.CreateDecision(ctx, store.Decision{
 			Kind: store.KindRole, SessionKey: k, ProjectID: old.ProjectID, Question: roles.Display(role) + " 已被接任",
 			Answer: answer,
@@ -114,6 +118,21 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 	}
 	h.sessionChanged(key)
 	return demoted, handoff, nil
+}
+
+// pendingCodes 列出会话提的、还等用户答复的决策编号（卸任通知里写明它们的去向，R-229）。
+func (h *Hub) pendingCodes(ctx context.Context, key string) []string {
+	decs, err := h.store.ListDecisions(ctx, []string{store.DecPending}, -1)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, d := range decs {
+		if d.SessionKey == key && d.Code != "" && d.Kind != store.KindTell && d.Kind != store.KindRole && d.Kind != store.KindNote {
+			out = append(out, d.Code)
+		}
+	}
+	return out
 }
 
 // handover：卸任时交代谁接手。

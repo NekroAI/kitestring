@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/roles"
@@ -172,6 +173,9 @@ func projectSettingsChanges(before, after store.Project) []string {
 	flip(before.AutoDispatch, after.AutoDispatch, "「自动派发」（会话空闲时自动送达排给它的待开始需求）")
 	if roles.NormPolicy(before.ModelPolicy) != roles.NormPolicy(after.ModelPolicy) {
 		out = append(out, fmt.Sprintf("用户把项目 %s 的「子任务模型策略」从「%s」改为「%s」：之后派子任务按新的倾向选模型（身份提示词已更新，ks role 重新读到的就是新的）。", before.Name, roles.PolicyName(before.ModelPolicy), roles.PolicyName(after.ModelPolicy)))
+	}
+	if before.DevIdleLimit() != after.DevIdleLimit() {
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「开发待命超时」从 %d 分钟改为 %d 分钟：开发会话待命超过它、手上没有排给它的需求时，纸鸢提示收尾，不再给它送订阅事件。", before.Name, int(before.DevIdleLimit()/time.Minute), int(after.DevIdleLimit()/time.Minute)))
 	}
 	return out
 }
