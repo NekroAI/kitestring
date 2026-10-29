@@ -559,6 +559,16 @@ const (
 	stageGuide    = "小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据。"
 )
 
+// askQuote 是 ks wait 提醒里引用「像在问用户」那句原话的一行（R-235）：让会话知道是哪句话被认成在问，
+// 该补提 decision_raise 还是改成陈述。没有原话时返回空串。
+func askQuote(ask string) string {
+	ask = strings.TrimSpace(ask)
+	if ask == "" {
+		return ""
+	}
+	return "[Kitestring] 像在问用户的那句原话：「" + ask + "」——要用户拍板就补提 decision_raise（带选项和推荐），只是报告状态就改成陈述句，别用「等你确认」「要不要我……」这类问句式。\n"
+}
+
 // printHint 输出字数提示（内容已保存，只提醒下次压缩）。
 func printHint(h string) {
 	if h != "" {
@@ -608,12 +618,14 @@ func runWait(args []string) error {
 	// 先自查（R-117）：名下没有用户能在面板上推进的事时先提示，再照常等待；查不到时不提示
 	var check struct {
 		Hint    string `json:"hint"`
+		Ask     string `json:"ask"`
 		Retired bool   `json:"retired"`
 	}
 	if !dsh {
 		cctx, ccancel := context.WithTimeout(context.Background(), 8*time.Second)
 		if err := client.New(8*time.Second).Do(cctx, "GET", "/wait/check?"+q.Encode(), nil, &check); err == nil && check.Hint != "" {
 			fmt.Print(check.Hint)
+			fmt.Print(askQuote(check.Ask))
 		}
 		ccancel()
 	}
