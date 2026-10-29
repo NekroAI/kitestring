@@ -19,6 +19,10 @@ var (
 // SourceAuto 标记由 agent 自动注入（非用户输入）的 UserPromptSubmit。
 const SourceAuto = "auto"
 
+// SourceStandby 标在 DSH 插件的 Stop / Interrupt 上：插件开着待命，这一轮结束后马上挂 /wait，
+// Hub 直接记成待命，不再先记“等你回复”再转待命（R-251）。
+const SourceStandby = "standby"
+
 // CleanPrompt 把 UserPromptSubmit 的原始文本整理成用户可读的形式。
 // auto 为真表示这不是用户输入（如后台任务完成通知），不应当作“你最后说的话”。
 func CleanPrompt(p string) (text string, auto bool) {

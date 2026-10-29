@@ -15,7 +15,7 @@ func newQDaemon(t *testing.T, dir string) *Daemon {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Daemon{q: q, tasks: newTaskState(), instances: map[string]string{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, kick: make(chan struct{}, 1), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	return &Daemon{q: q, tasks: newTaskState(), instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, kick: make(chan struct{}, 1), log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
 // R-203：PreToolUse(Agent) 与 SubagentStart 之间 daemon 重启，名字仍能配上。

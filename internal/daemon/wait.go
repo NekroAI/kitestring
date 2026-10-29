@@ -60,6 +60,14 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tool, sid, ok := strings.Cut(key, ":")
+	// DSH 插件带上自己 Host 的实例（R-251）：同一会话开在两个 Host 时，较早的那个不再挂等待，
+	// 免得两边每隔一会儿就互相接管。Claude / Codex 的实例仍按 ppid 推断，不走这里。
+	if tool == protocol.ToolDSH && q.Get("via") == "plugin" && inst == "" {
+		if pi := q.Get("instance"); pi != "" && d.isStale(key, pi) {
+			_ = json.NewEncoder(w).Encode(WaitResult{Reason: "stale", Session: key, Text: staleText})
+			return
+		}
+	}
 	if !ok || sid == "" {
 		_ = json.NewEncoder(w).Encode(WaitResult{Error: "认不出当前会话：请在 Claude Code / Codex / DSH 的对话里运行，或用 --session tool:id 指定"})
 		return
@@ -219,6 +227,15 @@ func (d *Daemon) checkInstances(alive func(string) bool) {
 			keys[inst][k] = true
 		}
 	}
+	// 一个 DSH Host 承载的全部会话（R-251）：instances 只记得最后一个
+	for inst, set := range d.dshInst {
+		if keys[inst] == nil {
+			keys[inst] = map[string]bool{}
+		}
+		for k := range set {
+			keys[inst][k] = true
+		}
+	}
 	d.mu.Unlock()
 	for inst, set := range keys {
 		if alive(inst) {
@@ -227,6 +244,7 @@ func (d *Daemon) checkInstances(alive func(string) bool) {
 		d.mu.Lock()
 		delete(d.instances, inst)
 		delete(d.seeded, inst)
+		delete(d.dshInst, inst)
 		for key := range set {
 			if d.latest[key] == inst {
 				delete(d.latest, key) // 最新终端没了，较早的那个重新领活

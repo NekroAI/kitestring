@@ -53,6 +53,9 @@ type Daemon struct {
 	toolCond      *sync.Cond          // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
 	seeded        map[string][]string // 终端实例 → Hub 记着的会话键（重启后据此继续盯进程，R-204）
 	instances     map[string]string   // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
+	// dshInst：DSH Host 实例 → 它承载的全部会话（R-251）。一个 Host 同时开多个会话共用同一个“进程号@启动时间”，
+	// instances 一对一只记得最后一个；Host 崩溃时要按这里把每个会话都结束。只有 DSH 用，Claude / Codex 不走这里。
+	dshInst map[string]map[string]bool
 	latest        map[string]string   // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
 	staleWarn     map[string]bool     // 较早终端 → 是否已提醒过
 	waiting       map[string]int64    // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
@@ -100,7 +103,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
 	d.toolCond = sync.NewCond(&d.mu)
 	if d.usage, err = openUsage(q.db); err != nil {
 		q.close()
@@ -452,6 +455,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if ev.Instance != "" {
 		d.mu.Lock()
 		d.instances[ev.Instance] = key
+		if req.Tool == protocol.ToolDSH {
+			d.noteDSHInstanceLocked(ev.Instance, key, name == "SessionEnd")
+		}
 		d.mu.Unlock()
 	}
 	if name == "UserPromptSubmit" {
@@ -656,6 +662,9 @@ func claudeModel(path string) string {
 // injection 按 D15 计算本次 hook 需要注入的决策文本，并记录送达。
 func (d *Daemon) injection(ev protocol.Event) string {
 	redeliver := ev.Name == "SessionStart" && (ev.Source == "resume" || ev.Source == "compact")
+	if ev.Tool == protocol.ToolDSH && ev.Name == "PostCompact" {
+		redeliver = true // DSH 的压缩不走 SessionStart：压缩后同样重发仍然有效的答复（R-251）
+	}
 	if ev.Name != "UserPromptSubmit" && !redeliver {
 		return ""
 	}
@@ -1147,4 +1156,24 @@ func toolBrief(tool string, in map[string]any) string {
 		return clean(d, 60)
 	}
 	return ""
+}
+
+// noteDSHInstanceLocked 记下 DSH Host 实例承载的会话（R-251）；会话自己结束时从集合里去掉，
+// 免得 Host 之后退出时再给它补一次结束。调用方持有 d.mu。
+func (d *Daemon) noteDSHInstanceLocked(inst, key string, ended bool) {
+	set := d.dshInst[inst]
+	if ended {
+		if set != nil {
+			delete(set, key)
+			if len(set) == 0 {
+				delete(d.dshInst, inst)
+			}
+		}
+		return
+	}
+	if set == nil {
+		set = map[string]bool{}
+		d.dshInst[inst] = set
+	}
+	set[key] = true
 }

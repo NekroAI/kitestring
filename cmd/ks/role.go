@@ -74,6 +74,10 @@ func currentSession(flagVal string) string {
 	if flagVal != "" {
 		return flagVal
 	}
+	// 在 DSH 的 shell 里：直接认 DSH 根会话。按父进程找会认到启动 DSH 的那个 Claude Code（R-251）。
+	if key, _ := dshSession(); key != "" {
+		return key
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var res struct {
@@ -102,6 +106,9 @@ func resolveTellSender(flagVal, detected, agent string) (key, ag string, claimed
 // currentTeller 识别 ks team tell 所在的对话和发消息的子任务（R-191）：按父进程找到会话，
 // 再取这个会话最近一条 ks team tell 命令是哪个子任务发的（主线程发的为空）。认不出时退回 currentSession。
 func currentTeller() (key, agent string) {
+	if key, agent := dshSession(); key != "" {
+		return key, agent // DSH：子代理发的消息带子代理会话 ID（R-251）
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var res struct {

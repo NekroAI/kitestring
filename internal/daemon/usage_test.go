@@ -67,10 +67,10 @@ func newUsage(t *testing.T, dir string) (*queue, *usageScanner) {
 func TestUsageRecordFromPlugin(t *testing.T) {
 	q, u := newUsage(t, t.TempDir())
 	at := usageT0.Add(5 * time.Minute)
-	if err := u.record("dsh:s1", "deepseek-flash", at, 100, 10, 20, 30, 1); err != nil {
+	if err := u.record("dsh:s1", "", "deepseek-flash", at, 100, 10, 20, 30, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := u.record("dsh:s1", "deepseek-flash", at, 50, 0, 0, 10, 1); err != nil {
+	if err := u.record("dsh:s1", "", "deepseek-flash", at, 50, 0, 0, 10, 1); err != nil {
 		t.Fatal(err)
 	}
 	var inp, cw, cr, out, n, ver, sent int64
@@ -84,6 +84,13 @@ func TestUsageRecordFromPlugin(t *testing.T) {
 	env, ok := u.pending()
 	if !ok || len(env.Usage) != 1 || env.Usage[0].Input != 150 || env.Usage[0].Requests != 2 {
 		t.Fatalf("pending 应带上这条用量：%+v ok=%v", env.Usage, ok)
+	}
+	// 子代理的用量记在根会话名下、带子代理 ID（R-251），与主线程分开累加
+	if err := u.record("dsh:s1", "child", "deepseek-flash", at, 7, 0, 0, 3, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := totals(t, u, "dsh:s1", "child"); got.in != 7 || got.out != 3 || got.n != 1 {
+		t.Fatalf("子代理用量不对：%+v", got)
 	}
 }
 

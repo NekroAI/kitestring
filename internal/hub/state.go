@@ -100,9 +100,10 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.LastPrompt = ev.Prompt
 		}
 	case "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact":
-		if x.Tool == protocol.ToolDSH {
+		if x.Tool == protocol.ToolDSH && ev.AgentID == "" && (ev.Name == "PreToolUse" || ev.Name == "PostToolUse") {
 			// DSH 的等待跨回合常驻：插件在轮末挂上后不会因为下一轮开始就撤掉。
-			// 有工具在跑就说明它在干活，先把“待命”标记收起来；轮末的 EventWait 会再挂上。
+			// 主线程有工具在跑就说明它在干活，先把“待命”标记收起来；轮末的 Stop 会再记成待命。
+			// 子代理的工具事件、压缩不算（子代理在后台跑，压缩可能发生在两轮之间）（R-251）。
 			x.Parked = false
 			x.ParkedUntil = nil
 		}
@@ -176,15 +177,24 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		// Agent 用 ks wait 挂起：待命，你在 Kitestring 上一回应它就继续。
 		// Claude Code 在后台运行 ks wait，这一轮结束（Stop）才算待命；
 		// Codex 在前台运行，这一轮一直“在跑命令”，等待开始就是待命（R-74）。
-		// DSH 的等待由插件在回合结束后重挂，状态可能还是“运行中”（等待超时续挂），同样算待命。
+		// DSH 的等待由插件挂在回合之间：一轮正在跑时（目标模式下一轮已开始、12 小时超时续挂）
+		// 只记下“挂着”，不改成待命；这一轮结束的 Stop 会记成待命（R-251）。
 		x.Parked = true
 		x.ParkedUntil = ev.Until
-		if x.State != store.StateEnded && (x.State != store.StateRunning || x.Tool == protocol.ToolCodex || x.Tool == protocol.ToolDSH) {
+		if x.State != store.StateEnded && (x.State != store.StateRunning || x.Tool == protocol.ToolCodex) {
 			x.State, x.StateDetail = store.StateParked, ""
 		}
 	case protocol.EventWaitEnd:
 		x.Parked = false
 		x.ParkedUntil = nil
+		if x.Tool == protocol.ToolDSH {
+			// DSH 的等待由插件自己续挂：超时、插件重载、Host 退出都会结束这次等待，但会话并没有在等你；
+			// 只有送达才转运行中。Host 真退出时 daemon 按进程补发 SessionEnd（R-251）。
+			if x.State == store.StateParked && ev.Reason == "delivered" {
+				x.State = store.StateRunning
+			}
+			break
+		}
 		if x.State == store.StateParked {
 			if ev.Reason == "delivered" || (ev.Reason == "timeout" && roles.Resident(x.Role)) {
 				x.State = store.StateRunning // 收到你的答复，马上继续；常驻的 PM / 开发超时后会接着等，不算等你（R-83）
@@ -193,6 +203,12 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			}
 		}
 	case "Stop":
+		if x.Tool == protocol.ToolDSH && ev.Source == protocol.SourceStandby {
+			// DSH 插件开着待命：这一轮结束就是待命，紧接着会挂上 /wait；不记“等你回复”、不推送（R-251）。
+			x.Parked = true
+			x.State, x.StateDetail = store.StateParked, ""
+			break
+		}
 		if x.Parked {
 			// 后台挂着的是 ks wait：不是“后台运行”也不是“等你回复”，而是待命。
 			x.State, x.StateDetail = store.StateParked, ""
@@ -205,6 +221,12 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 		}
 		x.State, x.StateDetail, x.WaitKind = store.StateWaitReply, "", ""
 	case "Interrupt":
+		if x.Tool == protocol.ToolDSH && ev.Source == protocol.SourceStandby {
+			// 你在 DSH 里中断了这一轮：插件照样马上待命，不是在等你回复（R-251）。
+			x.Parked = true
+			x.State, x.StateDetail = store.StateParked, ""
+			break
+		}
 		x.State, x.StateDetail, x.WaitKind = store.StateWaitReply, "", ""
 	case "SessionEnd":
 		if x.State == store.StateEnded && x.EndedAt != nil {

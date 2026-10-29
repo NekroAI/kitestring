@@ -456,7 +456,8 @@ func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 		if err != nil {
 			continue
 		}
-		if info := d.sessions[key]; info != nil && (info.client == "app-server" || info.client == "desktop") {
+		// 一个 DSH Host 同时开着多个会话时同样分不清 shell 归谁（R-251）
+		if info := d.sessions[key]; info != nil && (info.client == "app-server" || info.client == "desktop") || len(d.dshInst[inst]) > 1 {
 			shared[pid] = true
 			continue
 		}

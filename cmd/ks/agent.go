@@ -55,18 +55,38 @@ func parseAnywhere(fs *flag.FlagSet, args []string) error {
 }
 
 // cliSession 推断 CLI 调用所在会话：显式参数优先，其次 agent 注入的环境变量。
+// DSH 排在 Claude 前面：从 Claude Code 终端里启动的 DSH 会继承 CLAUDE_CODE_SESSION_ID，
+// 而 DSH 的 shell 每次调用都会重建 DSH_* 变量，能看到它就一定是在 DSH 里（R-251）。
 func cliSession(flagVal string) string {
 	if flagVal != "" {
 		return flagVal
 	}
+	if key, _ := dshSession(); key != "" {
+		return key
+	}
 	if sid := os.Getenv("CLAUDE_CODE_SESSION_ID"); sid != "" {
 		return protocol.SessionKey(protocol.ToolClaude, sid)
 	}
-	// DSH 的 shell 工具会给每次调用带 DSH_SESSION_ID（与 Host 插件上报的会话一致）。
-	if sid := os.Getenv("DSH_SESSION_ID"); sid != "" {
-		return protocol.SessionKey(protocol.ToolDSH, sid)
-	}
 	return ""
+}
+
+// 纸鸢 DSH 插件给每次 shell 调用注入的变量（R-251）：根会话键与子代理会话 ID（主线程为空）。
+// DSH 自带的 DSH_SESSION_ID 在子代理里是子会话，纸鸢只认根会话，所以优先用插件给的。
+const (
+	envDSHRootSession = "DSH_KITESTRING_SESSION"
+	envDSHAgent       = "DSH_KITESTRING_AGENT"
+)
+
+// dshSession 认出 DSH shell 里的会话：插件给的根会话优先；老插件没有时退回 DSH_SESSION_ID。
+// 不在 DSH 里时返回空。
+func dshSession() (key, agent string) {
+	if v := os.Getenv(envDSHRootSession); strings.HasPrefix(v, protocol.ToolDSH+":") && len(v) > len(protocol.ToolDSH)+1 {
+		return v, os.Getenv(envDSHAgent)
+	}
+	if sid := os.Getenv("DSH_SESSION_ID"); sid != "" {
+		return protocol.SessionKey(protocol.ToolDSH, sid), ""
+	}
+	return "", ""
 }
 
 func agentCall(method, path string, body any) error {

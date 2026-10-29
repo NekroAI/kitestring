@@ -51,37 +51,71 @@ func TestDSHParksWithoutWaitProcess(t *testing.T) {
 	ev := func(sec int, name string) protocol.Event {
 		return protocol.Event{Tool: protocol.ToolDSH, SessionID: "s", Name: name, Time: t0.Add(time.Duration(sec) * time.Second)}
 	}
+	wait := func(sec int) protocol.Event {
+		return protocol.Event{Tool: protocol.ToolDSH, SessionID: "s", Name: protocol.EventWait, Time: t0.Add(time.Duration(sec) * time.Second), Until: ptrTime(t0.Add(time.Hour))}
+	}
 	cur := applyEvent(nil, "dev", "", ev(0, "SessionStart"))
 	if cur.State != store.StateIdle {
 		t.Fatalf("SessionStart 后应为空闲，得到 %s", cur.State)
 	}
-	// DSH 插件在回合结束后挂 /wait：即使状态还是“运行中”（等待超时续挂），也应显示待命。
+	// 一轮在跑时等待续挂（目标模式下一轮已开始、超时续挂）：只记“挂着”，不改成待命。
 	cur = applyEvent(&cur, "dev", "", ev(1, "UserPromptSubmit"))
-	cur = applyEvent(&cur, "dev", "", protocol.Event{
-		Tool: protocol.ToolDSH, SessionID: "s", Name: protocol.EventWait,
-		Time: t0.Add(2 * time.Second), Until: ptrTime(t0.Add(time.Hour)),
-	})
-	if cur.State != store.StateParked || !cur.Parked {
-		t.Fatalf("DSH 等待应显示待命，得到 %s parked=%v", cur.State, cur.Parked)
+	cur = applyEvent(&cur, "dev", "", wait(2))
+	if cur.State != store.StateRunning || !cur.Parked {
+		t.Fatalf("运行中挂上等待应仍为运行中，得到 %s parked=%v", cur.State, cur.Parked)
 	}
-	// 你在 DSH 里直接发消息：插件仍在待命，但页面应回到运行中。
+	// 你在 DSH 里直接发消息：插件仍在待命，但页面是运行中。
 	cur = applyEvent(&cur, "dev", "", ev(3, "UserPromptSubmit"))
 	if cur.State != store.StateRunning || cur.Parked {
 		t.Fatalf("用户发消息后应运行中且不显示待命，得到 %s parked=%v", cur.State, cur.Parked)
 	}
-	// 目标模式没有真正的 idle：等待还挂着，但工具已经在跑，不能还显示待命。
-	cur = applyEvent(&cur, "dev", "", ev(4, protocol.EventWait))
+	// 主线程有工具在跑：收起待命标记；子代理的工具事件不动它。
+	cur = applyEvent(&cur, "dev", "", wait(4))
+	sub := ev(5, "PreToolUse")
+	sub.AgentID = "child"
+	if got := applyEvent(&cur, "dev", "", sub); !got.Parked {
+		t.Fatalf("子代理的工具事件不应收起待命标记")
+	}
 	cur = applyEvent(&cur, "dev", "", ev(5, "PreToolUse"))
 	if cur.Parked || cur.ParkedUntil != nil {
 		t.Fatalf("有工具在跑时不应保留待命标记，parked=%v until=%v", cur.Parked, cur.ParkedUntil)
 	}
-	// 轮末重新挂等待：又回到待命。
-	cur = applyEvent(&cur, "dev", "", protocol.Event{
-		Tool: protocol.ToolDSH, SessionID: "s", Name: protocol.EventWait,
-		Time: t0.Add(6 * time.Second), Until: ptrTime(t0.Add(time.Hour)),
-	})
+	// 插件开着待命的 Stop：直接待命，不经过“等你回复”（R-251）。
+	stop := ev(6, "Stop")
+	stop.Source = protocol.SourceStandby
+	cur = applyEvent(&cur, "dev", "", stop)
 	if cur.State != store.StateParked || !cur.Parked {
-		t.Fatalf("轮末重新挂等待后应回到待命，得到 %s parked=%v", cur.State, cur.Parked)
+		t.Fatalf("待命的 Stop 应直接待命，得到 %s parked=%v", cur.State, cur.Parked)
+	}
+	cur = applyEvent(&cur, "dev", "", wait(7))
+	if cur.State != store.StateParked {
+		t.Fatalf("轮末挂等待后仍应待命，得到 %s", cur.State)
+	}
+	// 等待超时 / 被取消（插件续挂、重载）：不是在等你，仍是待命。
+	for _, reason := range []string{"timeout", "canceled"} {
+		end := ev(8, protocol.EventWaitEnd)
+		end.Reason = reason
+		if got := applyEvent(&cur, "dev", "", end); got.State != store.StateParked {
+			t.Fatalf("等待以 %s 结束后应仍为待命，得到 %s", reason, got.State)
+		}
+	}
+	// 送达：转运行中。
+	end := ev(8, protocol.EventWaitEnd)
+	end.Reason = "delivered"
+	if got := applyEvent(&cur, "dev", "", end); got.State != store.StateRunning {
+		t.Fatalf("送达后应运行中，得到 %s", got.State)
+	}
+	// 中断同样直接待命。
+	intr := ev(9, "Interrupt")
+	intr.Source = protocol.SourceStandby
+	if got := applyEvent(&cur, "dev", "", intr); got.State != store.StateParked {
+		t.Fatalf("待命的中断应直接待命，得到 %s", got.State)
+	}
+	// 关了待命的插件（没有 standby 标记）：照旧是等你回复。
+	plain := applyEvent(&cur, "dev", "", ev(10, "UserPromptSubmit"))
+	plain = applyEvent(&plain, "dev", "", ev(11, "Stop"))
+	if plain.State != store.StateWaitReply {
+		t.Fatalf("没开待命的 Stop 应为等你回复，得到 %s", plain.State)
 	}
 }
 

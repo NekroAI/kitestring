@@ -13,6 +13,7 @@ import (
 func (d *Daemon) handleUsage(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		SessionKey string `json:"session_key"`
+		AgentID    string `json:"agent_id"` // 子代理（DSH 子会话 ID）；主线程为空（R-251）
 		Model      string `json:"model"`
 		At         int64  `json:"at"` // Unix 毫秒
 		Input      int64  `json:"input"`
@@ -34,7 +35,7 @@ func (d *Daemon) handleUsage(w http.ResponseWriter, r *http.Request) {
 		at = time.UnixMilli(in.At)
 	}
 	if d.usage != nil {
-		if err := d.usage.record(in.SessionKey, in.Model, at, in.Input, in.CacheWrite, in.CacheRead, in.Output, in.Requests); err != nil {
+		if err := d.usage.record(in.SessionKey, in.AgentID, in.Model, at, in.Input, in.CacheWrite, in.CacheRead, in.Output, in.Requests); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
