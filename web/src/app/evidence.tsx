@@ -5,7 +5,7 @@ import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { checklistOf, citesOf, cropLayout, explicitMode, itemNo, otherFiles, proofsOf, shotsOf, splitLegacy, type Box, type Proof, type Shot } from '../lib/proofs'
 import { Badge, Tip } from '../ui/base'
-import { fileUrl, isVideo, Lightbox, Thumbs, type ViewShot } from '../ui/attach'
+import { fileUrl, thumbUrl, ThumbImg, isVideo, Lightbox, Thumbs, type ViewShot } from '../ui/attach'
 import { criteriaOf, ResultIcon, Score } from '../ui/blocks'
 import { shotTitle } from '../ui/shots'
 import { Md } from '../ui/markdown'
@@ -49,6 +49,7 @@ function useProof(e: Evidence, acceptance?: string) {
 // ---------- 证据小图与切片 ----------
 
 // Crop：从截图里裁出一个框（box 为空时显示整张图的顶部）。outline：在切片上把框描出来。
+// 小预览用 960 档缩略图（框按比例算，布局不受影响）；点开的大切片按原图像素定「看得清」的缩放，才加载原图（R-246）
 function Crop({ src, box, legible, outline, className }: { src: string; box: Box | null; legible?: boolean; outline?: boolean; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null)
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
@@ -66,7 +67,7 @@ function Crop({ src, box, legible, outline, className }: { src: string; box: Box
   return (
     <span ref={ref} className={cx('relative block overflow-hidden bg-sunken', className)}>
       <img
-        src={fileUrl(src)}
+        src={legible ? fileUrl(src) : thumbUrl(src, 960)}
         alt=""
         loading="lazy"
         draggable={false}
@@ -188,7 +189,7 @@ function Gallery({ shots, group }: { shots: Shot[]; group: ViewShot[] }) {
                 {isVideo(s.file.mime) ? (
                   <video src={`${fileUrl(s.file.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover object-left-top" />
                 ) : (
-                  <img src={fileUrl(s.file.id)} alt="" loading="lazy" className="size-full object-cover object-left-top" />
+                  <ThumbImg id={s.file.id} alt="" loading="lazy" className="size-full object-cover object-left-top" />
                 )}
                 <span className="absolute top-1.5 left-1.5 flex flex-wrap gap-1 text-[11px] leading-[17px] text-white">
                   <span className="rounded-[5px] bg-black/60 px-1.5 tabular">{t.proof.figure(si + 1)}</span>

@@ -10,7 +10,7 @@ import { Menu, useConfirm } from '../ui/overlay'
 import { RoleTag, StatusDot, ToolMark } from '../ui/marks'
 import { ProxyNote } from './grant'
 import { HoldNote } from './morning'
-import { fileUrl, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
+import { ThumbImg, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
 import { isImage } from '../lib/files'
 import { BlockList } from '../ui/blocks'
 import { AnnotateTarget } from '../ui/annotate'
@@ -254,7 +254,7 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
           <div className={cx('grid gap-2.5', ctxImgs.length > 1 && 'grid-cols-2')}>
             {ctxImgs.map((f) => (
               <div key={f.id} className="group/ctx relative overflow-hidden rounded-xl border border-line bg-sunken">
-                <img src={fileUrl(f.id)} alt={f.name} loading="lazy" className="max-h-[360px] w-full object-cover object-top" />
+                <ThumbImg id={f.id} alt={f.name} loading="lazy" className="max-h-[360px] w-full object-cover object-top" />
                 <span className="absolute top-2 right-2 opacity-0 transition group-hover/ctx:opacity-100 pointer-coarse:opacity-100">
                   <ZoomButton f={f} group={ctxImgs} />
                 </span>
@@ -286,7 +286,7 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
                   )}
                 >
                   <div className="relative aspect-[16/10] overflow-hidden border-b border-line bg-sunken">
-                    <img src={fileUrl(img.id)} alt={o} loading="lazy" className="size-full object-cover object-top transition-transform duration-300 group-hover/opt:scale-[1.02]" />
+                    <ThumbImg id={img.id} alt={o} loading="lazy" className="size-full object-cover object-top transition-transform duration-300 group-hover/opt:scale-[1.02]" />
                     <span className="absolute top-2 right-2 opacity-0 transition group-hover/opt:opacity-100 pointer-coarse:opacity-100" onClick={(e) => e.stopPropagation()}>
                       <ZoomButton f={img} group={optImgs} />
                     </span>

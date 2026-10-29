@@ -89,7 +89,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	if web != nil {
 		root.Handle("/", web)
 	}
-	return withClient(root)
+	return withGzip(withClient(root))
 }
 
 func apiConfig() huma.Config {

@@ -159,7 +159,14 @@ func (h *Hub) handleDownload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	f, err := os.Open(h.filePath(ref.ID))
+	path, ctype := h.filePath(ref.ID), ref.Mime
+	// ?w=480 要缩小版（R-246）；生成不了就回落原图
+	if tw := thumbWidth(r.URL.Query().Get("w")); tw > 0 && !r.URL.Query().Has("download") {
+		if tp, tt, ok := h.thumbFile(ref.ID, ref.Mime, tw); ok {
+			path, ctype = tp, tt
+		}
+	}
+	f, err := os.Open(path)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "附件文件丢失")
 		return
@@ -181,7 +188,7 @@ func (h *Hub) handleDownload(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Content-Disposition", disp)
 	}
-	w.Header().Set("Content-Type", ref.Mime)
+	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// ServeContent 支持 Range 请求，Safari 播放视频需要。

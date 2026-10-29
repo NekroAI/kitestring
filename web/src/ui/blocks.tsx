@@ -3,7 +3,7 @@ import { Maximize2 } from 'lucide-react'
 import type { Block, BlockItem } from '../api/client'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { fileUrl, isVideo, Lightbox, ZoomButton, type FileRef, type ViewShot } from './attach'
+import { fileUrl, ThumbImg, isVideo, Lightbox, ZoomButton, type FileRef, type ViewShot } from './attach'
 import { BoxLayer, BoxLegend, BoxToggle, shotTitle } from './shots'
 import { Linkify } from './refmark'
 
@@ -130,7 +130,7 @@ function Media({ f, className, limit, hideBoxes, group }: { f: FileRef; classNam
       <button type="button" aria-label={shotTitle(f)} className="group relative block w-full cursor-zoom-in">
         <span ref={box} className={cx('block overflow-hidden rounded-[10px] border border-line bg-sunken', limit && 'relative max-h-[50dvh]')}>
           <span className="relative block">
-            <img src={fileUrl(f.id)} alt={shotTitle(f)} loading="lazy" onLoad={limit ? measure : undefined} className={cx('block h-auto w-full', className)} />
+            <ThumbImg id={f.id} alt={shotTitle(f)} loading="lazy" onLoad={limit ? measure : undefined} className={cx('block h-auto w-full', className)} />
             <BoxLayer boxes={f.boxes} hidden={hideBoxes} />
           </span>
         </span>
@@ -161,9 +161,9 @@ export function Compare({ before, after, title, limit, hideBoxes }: { before: Fi
           className={cx('relative block w-full cursor-pointer overflow-hidden rounded-[10px] border border-line bg-sunken select-none', limit && 'max-h-[50dvh]')}
         >
           <span className="grid [&>*]:[grid-area:1/1]">
-            <img src={fileUrl(before.id)} alt={`${t.blocks.before}：${title || before.name}`} draggable={false} className={cx('block h-auto w-full transition-opacity duration-200', old ? 'opacity-100' : 'opacity-0')} />
+            <ThumbImg id={before.id} alt={`${t.blocks.before}：${title || before.name}`} draggable={false} className={cx('block h-auto w-full transition-opacity duration-200', old ? 'opacity-100' : 'opacity-0')} />
             <span className={cx('relative block self-start transition-opacity duration-200', old ? 'opacity-0' : 'opacity-100')}>
-              <img src={fileUrl(after.id)} alt={`${t.blocks.after}：${title || after.name}`} draggable={false} className="block h-auto w-full" />
+              <ThumbImg id={after.id} alt={`${t.blocks.after}：${title || after.name}`} draggable={false} className="block h-auto w-full" />
               <BoxLayer boxes={after.boxes} hidden={hideBoxes} />
             </span>
           </span>

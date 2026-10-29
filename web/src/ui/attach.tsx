@@ -9,6 +9,7 @@ import { boxLabel, focusView, type Cite } from '../lib/proofs'
 import { toast } from 'sonner'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
+import { pickTier, tierRank, type ThumbTier } from '../lib/thumb'
 import { Button, Tip } from './base'
 import { G, tracker, useStrip } from './gesture'
 import { useSettings } from '../api/queries'
@@ -21,6 +22,28 @@ import { fmtSize, isImage, isMedia, isText, isVideo, kindOf, limitFor, previewTe
 export type FileRef = { id: string; name: string; mime: string; size: number; title?: string | null; boxes?: Box[] | null }
 
 export const fileUrl = (id: string) => `/api/files/${encodeURIComponent(id)}`
+// 缩小版（R-246）：w 取 480 / 960 / 1920，Hub 首次请求时生成；生成不了会回落原图。点开大图时仍用 fileUrl 加载原图。
+export const thumbUrl = (id: string, w: ThumbTier = 480) => `${fileUrl(id)}?w=${w}`
+
+// ThumbImg：按图实际显示宽度（× 设备像素比）自动选档的图，别处一律用它显示附件图片，不要写死档位。
+// 先量好宽度再给 src，只升不降（窗口变宽会换更清楚的档，变窄不换）。
+export function ThumbImg({ id, ...rest }: { id: string } & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'>) {
+  const ref = useRef<HTMLImageElement>(null)
+  const [tier, setTier] = useState<ThumbTier | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => {
+      const next = pickTier(el.clientWidth, window.devicePixelRatio || 1)
+      setTier((cur) => (cur !== null && tierRank(cur) >= tierRank(next) ? cur : next))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [id])
+  return <img ref={ref} src={tier === null ? undefined : thumbUrl(id, tier)} {...rest} />
+}
 export const downloadUrl = (id: string) => `${fileUrl(id)}?download=1`
 export { isVideo }
 
@@ -182,7 +205,7 @@ function Still({ src, alt }: { src: string; alt: string }) {
 function Preview({ f }: { f: FileRef }) {
   if (isVideo(f.mime)) return <video src={`${fileUrl(f.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" />
   if (f.mime === 'image/gif') return <Still src={fileUrl(f.id)} alt={f.name} />
-  return <img src={fileUrl(f.id)} alt={f.name} className="size-full object-cover" loading="lazy" />
+  return <ThumbImg id={f.id} alt={f.name} className="size-full object-cover" loading="lazy" />
 }
 
 // Thumb：附件缩略图，点击放大；录屏与动图带播放标记。
@@ -588,7 +611,7 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
                       {isVideo(x.mime) ? (
                         <video src={`${fileUrl(x.id)}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover object-left-top" />
                       ) : isImage(x.mime) ? (
-                        <img src={fileUrl(x.id)} alt="" loading="lazy" className="size-full object-cover object-left-top" />
+                        <ThumbImg id={x.id} alt="" loading="lazy" className="size-full object-cover object-left-top" />
                       ) : (
                         <span className="flex size-full flex-col items-center gap-1 px-1.5 pt-2 text-white/75">
                           <FileText className="size-4 shrink-0" />
