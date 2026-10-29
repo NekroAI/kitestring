@@ -859,6 +859,9 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 	switch dec.Kind {
 	case "feedback":
 		fmt.Fprintf(b, "- %s「%s」修改意见：%s\n", dec.ReqCode, oneLine(dec.ReqTitle), dec.Answer)
+		if dec.Advice != "" {
+			fmt.Fprintf(b, "  %s\n", dec.Advice)
+		}
 	case "note":
 		if dec.ReqCode == "" {
 			fmt.Fprintf(b, "- 用户回复：%s\n", dec.Answer)

@@ -407,6 +407,9 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: proxyText(d), Delivered: d.Status == store.DecDelivered,
 			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: d.Kind == store.KindTell && d.Question == quietTellQ,
 			Replyable: d.Kind == store.KindTell && d.AssignedBy != ""}
+		if d.Kind == store.KindFeedback {
+			pd.Advice = d.Context
+		}
 		if d.Kind == store.KindPlan {
 			pd.ReqCode, pd.ReqTitle = d.PlanCode, d.Question // 计划进展：编号与标题是计划的
 		}

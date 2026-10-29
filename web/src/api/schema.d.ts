@@ -2880,6 +2880,7 @@ export interface components {
         };
         EvidenceOutBody: {
             acceptance: string;
+            advice?: components["schemas"]["Advice"];
             /** @description 没有保存的块及原因；证据本身已保存 */
             block_warnings?: string[] | null;
             code: string;
@@ -3284,6 +3285,7 @@ export interface components {
         };
         LinkOutBody: {
             acceptance: string;
+            advice?: components["schemas"]["Advice"];
             code: string;
             /** Format: date-time */
             created_at: string;
@@ -3830,6 +3832,7 @@ export interface components {
         };
         ReqCreatedOutBody: {
             acceptance: string;
+            advice?: components["schemas"]["Advice"];
             code: string;
             /** Format: date-time */
             created_at: string;
@@ -3898,6 +3901,7 @@ export interface components {
         };
         Requirement: {
             acceptance: string;
+            advice?: components["schemas"]["Advice"];
             code: string;
             /** Format: date-time */
             created_at: string;
@@ -4018,6 +4022,7 @@ export interface components {
         };
         ReviewSubmitOutBody: {
             acceptance: string;
+            advice?: components["schemas"]["Advice"];
             block_warnings?: string[] | null;
             code: string;
             /** Format: date-time */
@@ -4060,7 +4065,7 @@ export interface components {
             updated_at: string;
         };
         RoleOutBody: {
-            /** @description 因本次接任主调度 / 主助理被降为无身份的会话 */
+            /** @description 因本次接任主调度 / 主助理被降为无身份并卸任的会话（R-229） */
             demoted: string[] | null;
             /** @description 接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾 */
             handoff: boolean;

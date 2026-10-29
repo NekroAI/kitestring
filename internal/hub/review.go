@@ -62,6 +62,19 @@ func (h *Hub) feedbackTarget(ctx context.Context, r store.Requirement) string {
 	return fallback.Key
 }
 
+// adviceText：主助理的验收建议写成一句话，随退回送给接手的会话；开头标明是主助理的建议、不是用户原话（R-242）。
+func adviceText(a store.Advice) string {
+	v := "建议退回"
+	if a.Verdict == "pass" {
+		v = "建议通过"
+	}
+	s := "主助理的验收建议（不是用户原话）：" + v
+	if r := strings.TrimSpace(a.Reason); r != "" {
+		s += "，理由：" + r
+	}
+	return s
+}
+
 func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error) {
 	out := &reviewOut{}
 	out.Body.Requirements = []store.Requirement{}
@@ -118,8 +131,17 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 				return nil, err
 			}
 			comment := strings.TrimSpace(it.Comment)
-			if comment == "" && len(files) == 0 {
+			// 主助理对这条需求有「建议退回」时，用户同意可以不写附言（R-242）；其余情况照旧必填
+			adv, hasAdv := h.store.AdviceOf(ctx, r.ID)
+			if comment == "" && len(files) == 0 && !(hasAdv && adv.Verdict == "return") {
 				return nil, huma.Error400BadRequest(r.Code + "：请写下修改意见或附上图片")
+			}
+			advText := ""
+			if hasAdv {
+				advText = adviceText(adv)
+				if comment == "" && len(files) == 0 {
+					comment = "（用户没写附言，按主助理建议退回）"
+				}
 			}
 			before := r
 			if r, err = h.store.SetRequirementStatus(store.WithActor(ctx, store.Actor{Via: "revise"}), r.ID, store.ReqInProgress); err != nil {
@@ -128,7 +150,7 @@ func (h *Hub) review(ctx context.Context, items []reviewItem) (*reviewOut, error
 			h.reopenStage(ctx, before, r.Status)
 			d, err := h.store.CreateDecision(ctx, store.Decision{
 				Kind: store.KindFeedback, SessionKey: h.feedbackTarget(ctx, r), ProjectID: r.ProjectID, RequirementID: r.ID,
-				Question: r.Title, Answer: comment, AnswerFiles: files,
+				Question: r.Title, Answer: comment, AnswerFiles: files, Context: advText,
 			})
 			if err != nil {
 				return nil, apiErr(err)

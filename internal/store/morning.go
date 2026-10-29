@@ -81,6 +81,21 @@ func (s *Store) SetAdvice(ctx context.Context, reqID, verdict, reason, by string
 	return err
 }
 
+// AdviceOf 返回一条需求现在有效的验收建议：需求是待验收、建议写在最近一次交证据之后才算（规则同 ReviewAdvice）。
+// 退回通知和 req_get 用它把主助理的建议带给接手的会话（R-242）；没有时第二个返回值为 false。
+func (s *Store) AdviceOf(ctx context.Context, reqID string) (Advice, bool) {
+	r, err := s.ReviewAdvice(ctx, "")
+	if err != nil {
+		return Advice{}, false
+	}
+	for _, a := range r {
+		if a.RequirementID == reqID {
+			return a, true
+		}
+	}
+	return Advice{}, false
+}
+
 // ReviewAdvice 列出待验收需求上的验收建议（只算现在还是待验收的需求；建议写在最近一次交证据之前的视为过时，不返回）。
 // projectID 为空表示全部。
 func (s *Store) ReviewAdvice(ctx context.Context, projectID string) ([]Advice, error) {

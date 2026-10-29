@@ -129,6 +129,7 @@ type Decision struct {
 	ReqTitle   string    `json:"req_title,omitempty"`
 	Files      []File    `json:"files,omitempty"`     // 答复 / 意见的附件（图片、录屏或任意文件）
 	Quiet      bool      `json:"quiet,omitempty"`     // 不唤醒 ks wait（R-198）：照旧注入，下一轮开始或因别的消息唤醒时一并带上
+	Advice     string    `json:"advice,omitempty"`    // kind=feedback：退回时主助理的验收建议（一句话，已标明出处；不是用户原话，R-242）
 	Replyable  bool      `json:"replyable,omitempty"` // 会话发来的团队消息（R-191）：送达时写上怎么回复，回复自动送回发消息的一方
 }
 

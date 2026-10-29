@@ -618,6 +618,7 @@ export type VerdictProps = {
   onIncoming?: () => void
   onPass: () => void
   onBack?: () => void
+  backByAdvice?: boolean // 主助理建议退回（R-242）：不写附言也能退回，按钮写「按建议退回」
   canPass?: boolean
   disabled?: boolean
   busy?: boolean
@@ -658,7 +659,7 @@ export function Verdict(p: VerdictProps) {
   // 否定（退回 / 拒绝）必须附意见：没写就先把焦点放到附言框，并提示要写什么
   const back = () => {
     if (off || !p.onBack) return
-    if (!hasNote) {
+    if (!hasNote && !p.backByAdvice) {
       setNeed(true)
       ref.current?.focus()
       return
@@ -673,7 +674,7 @@ export function Verdict(p: VerdictProps) {
         ref={ref}
         minRows={p.minRows ?? 1}
         value={p.note}
-        placeholder={need ? t.verdict.needNote(scene) : (p.placeholder ?? (mode === 'answer' ? t.verdict.noteOptional : t.verdict.note(scene)))}
+        placeholder={need ? t.verdict.needNote(scene) : (p.placeholder ?? (mode === 'answer' ? t.verdict.noteOptional : p.backByAdvice ? t.verdict.noteByAdvice : t.verdict.note(scene)))}
         aria-invalid={need || undefined}
         onChange={(e) => p.onNote(e.target.value)}
         onKeyDown={(e) => verdictKey(e, { pass, back: mode === 'verdict' ? back : undefined })}
@@ -685,7 +686,7 @@ export function Verdict(p: VerdictProps) {
     <div className="flex shrink-0 items-center gap-2">
       {mode === 'verdict' && p.onBack && (
         <Button size={size} className={btnCls} disabled={off} icon={<Undo2 className="size-4" />} onClick={back}>
-          {t.verdict.back(scene)}
+          {p.backByAdvice && !hasNote ? t.verdict.backByAdvice : t.verdict.back(scene)}
         </Button>
       )}
       <Button

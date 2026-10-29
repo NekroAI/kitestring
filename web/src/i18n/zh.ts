@@ -43,6 +43,9 @@ export const zh = {
     back: (s: Scene) => VERB[s].back,
     undo: '撤销',
     note: (s: Scene) => `附言（${VERB[s].back}时必填，可附图片或文件）`,
+    // 主助理建议退回时（R-242）：同意建议可以不写附言，按钮改成「按建议退回」，建议原文会一起送给接手的会话
+    backByAdvice: '按建议退回',
+    noteByAdvice: '附言（可不写：主助理的建议会一起送给 Agent，可附图片或文件）',
     noteOptional: '附言（可选，可附图片或文件）',
     needNote: (s: Scene) => (s === 'accept' || s === 'plan' ? `${VERB[s].back}要写下意见：哪里要改` : `${VERB[s].back}要写下理由`),
     // 撤销条：「3 秒后通过」「R-12 · 3 秒后退回」「D-8 · 3 秒后拒绝」「R-12 · 3 秒后改为进行中」

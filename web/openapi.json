@@ -3345,6 +3345,9 @@
           "acceptance": {
             "type": "string"
           },
+          "advice": {
+            "$ref": "#/components/schemas/Advice"
+          },
           "block_warnings": {
             "description": "没有保存的块及原因；证据本身已保存",
             "items": {
@@ -4564,6 +4567,9 @@
         "properties": {
           "acceptance": {
             "type": "string"
+          },
+          "advice": {
+            "$ref": "#/components/schemas/Advice"
           },
           "code": {
             "type": "string"
@@ -6433,6 +6439,9 @@
           "acceptance": {
             "type": "string"
           },
+          "advice": {
+            "$ref": "#/components/schemas/Advice"
+          },
           "code": {
             "type": "string"
           },
@@ -6711,6 +6720,9 @@
         "properties": {
           "acceptance": {
             "type": "string"
+          },
+          "advice": {
+            "$ref": "#/components/schemas/Advice"
           },
           "code": {
             "type": "string"
@@ -7102,6 +7114,9 @@
           "acceptance": {
             "type": "string"
           },
+          "advice": {
+            "$ref": "#/components/schemas/Advice"
+          },
           "block_warnings": {
             "items": {
               "type": "string"
@@ -7287,7 +7302,7 @@
         "additionalProperties": false,
         "properties": {
           "demoted": {
-            "description": "因本次接任主调度 / 主助理被降为无身份的会话",
+            "description": "因本次接任主调度 / 主助理被降为无身份并卸任的会话（R-229）",
             "items": {
               "type": "string"
             },

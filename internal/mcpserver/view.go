@@ -91,6 +91,12 @@ type reqView struct {
 		Files      []fileView `json:"files"`
 		Voided     bool       `json:"voided"`
 	} `json:"reviews"`
+	Advice *struct {
+		Verdict string     `json:"verdict"`
+		Reason  string     `json:"reason"`
+		ByTitle string     `json:"by_title"`
+		At      *time.Time `json:"at"`
+	} `json:"advice"`
 	Feedback []struct {
 		Code         string     `json:"code"`
 		Kind         string     `json:"kind"`
@@ -193,6 +199,17 @@ func (r reqView) String() string {
 	if n := len(r.Evidence) - r.evidenceCount(); n > 0 {
 		fmt.Fprintf(&b, "已作废的证据 %d 条（不列出）\n", n)
 	}
+	if a := r.Advice; a != nil {
+		v := "建议退回"
+		if a.Verdict == "pass" {
+			v = "建议通过"
+		}
+		s := "主助理的验收建议（参考，不是用户原话；验收通过 / 退回只有用户能定）：" + v
+		if a.Reason != "" {
+			s += "，理由：" + a.Reason
+		}
+		b.WriteString(s + "\n")
+	}
 	if len(r.Reviews) > 0 {
 		fmt.Fprintf(&b, "审查意见（%d 条，Rev 给的参考，不改状态）：\n", len(r.Reviews))
 		for _, e := range r.Reviews {
@@ -234,6 +251,9 @@ func (r reqView) String() string {
 			}
 		default:
 			s = fmt.Sprintf("  - %s%s %s：%s", when, f.Code, fbLabel[f.Kind], f.Answer)
+			if f.Kind == "feedback" && f.Context != "" {
+				s += "\n      " + f.Context // 退回时随带的主助理验收建议（R-242）
+			}
 		}
 		if len(f.AnswerFiles) > 0 {
 			var fl strings.Builder

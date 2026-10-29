@@ -364,6 +364,8 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
   const setFiles = (v: FileRef[]) => dr.set({ files: v })
   const reviewing = r.status === 'review'
   const dirty = dr.dirty
+  // 主助理建议退回时，用户同意可以不写附言（R-242）
+  const byAdvice = reviewing && r.advice?.verdict === 'return'
   const box = useRef<HTMLTextAreaElement>(null)
   const pend = usePending(r.code)
   const clear = dr.drop
@@ -383,7 +385,7 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
   }
   const back = () => {
     if (pend) return
-    if (!dirty) return box.current?.focus()
+    if (!dirty && !byAdvice) return box.current?.focus()
     verdict.back(r.code, { comment: text, files: ids, after: clear })
   }
   // 快捷键 A / ⌘↵ 通过，R 只聚焦附言框（R-127），⌘⌫ 退回（没写意见时同样先聚焦附言框）
@@ -423,6 +425,7 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
         draft={<DraftLine h={dr} />}
         onPass={pass}
         onBack={back}
+        backByAdvice={byAdvice}
         size="md"
         extra={
           <div className="flex min-w-0 items-center gap-2">

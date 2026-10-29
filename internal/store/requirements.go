@@ -73,6 +73,8 @@ type Requirement struct {
 	FromDecision string `json:"from_decision,omitempty"`
 	// StatusChanges：状态变更历史（R-153），时间正序；上线前的旧需求没有
 	StatusChanges []StatusChange `json:"status_changes,omitempty"`
+	// Advice：待验收时主助理当前有效的验收建议（R-242）；req_get 带上它，没有建议或不在待验收时为空
+	Advice *Advice `json:"advice,omitempty"`
 	// Review：待验收时这一轮的评审验证情况（R-232、R-237），推导得出；没交给评审、也没收到审查意见时为空
 	Review    *ReviewState `json:"review,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`
@@ -264,6 +266,11 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 		return r, err
 	}
 	r.Review = s.ReviewOf(ctx, r, time.Now())
+	if r.Status == ReqReview {
+		if a, ok := s.AdviceOf(ctx, r.ID); ok {
+			r.Advice = &a
+		}
+	}
 	return r, nil
 }
 
