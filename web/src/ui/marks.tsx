@@ -104,7 +104,7 @@ export function ProfileBadge({ s }: { s: { profile?: string; profile_dir?: strin
   )
 }
 
-// ToolMark：Claude Code / Codex 的品牌标记，放在统一的柔和底板上。
+// ToolMark：Claude Code / Codex / DSH 的品牌标记，放在统一的柔和底板上。
 export function ToolMark({ tool, size = 'md' }: { tool: string; size?: 'sm' | 'md' | 'lg' }) {
   const box = size === 'sm' ? 'size-5 rounded-md' : size === 'lg' ? 'size-9 rounded-xl' : 'size-8 rounded-[10px]'
   const glyph = size === 'sm' ? 'size-3.5' : size === 'lg' ? 'size-6' : 'size-5'
