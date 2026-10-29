@@ -1,4 +1,5 @@
 import { toast } from 'sonner'
+import { titleOf } from '../lib/waiting'
 import { Undo2 } from 'lucide-react'
 import type { Decision, MorningReport } from '../api/client'
 import { useMorning } from '../api/queries'
@@ -34,7 +35,7 @@ export function ProxyLine({ d, onOpen }: { d: Decision; onOpen?: () => void }) {
     >
       <RefChip code={d.code} status={d.status} link={false} />
       <span className="min-w-0 flex-1 truncate">
-        <span className="text-fg">{d.short_title || d.question}</span>
+        <span className="text-fg">{titleOf(d)}</span>
         <span className="text-fg-3">{t.common.sep}</span>
         <span className={cx(done ? 'text-fg-3 line-through' : 'text-fg-2')}>{d.proxy_answer}</span>
         {d.proxy_risk && <span className="text-fg-3">{t.common.sep + t.grant.risk[d.proxy_risk]}</span>}

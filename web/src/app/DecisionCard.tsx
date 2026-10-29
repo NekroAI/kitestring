@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { ArrowRightLeft, Keyboard, PenLine, RotateCcw, Sparkles, Timer } from 'lucide-react'
+import { ArrowRightLeft, Check, ChevronRight, Keyboard, PenLine, RotateCcw, Sparkles, Timer } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Decision, Session } from '../api/client'
+import type { Decision, Requirement, Session } from '../api/client'
+import { useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Card, Input, Tip } from '../ui/base'
 import { Menu, useConfirm } from '../ui/overlay'
-import { RoleTag, ToolMark } from '../ui/marks'
+import { RoleTag, StatusDot, ToolMark } from '../ui/marks'
 import { ProxyNote } from './grant'
 import { HoldNote } from './morning'
 import { fileUrl, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
@@ -18,6 +19,7 @@ import { composeAnswer, decDraftKey, decKey, emptyDraft, useOutbox, type Draft }
 import { DraftLine, useDraft } from './draft'
 import { currentPicks, picksText, PlanSummary, Points } from './points'
 import { useOpenReq, useOpenSession } from './nav'
+import { sessionTitle } from './SessionCard'
 import { targetItems } from './assign'
 import { Md, plainText } from '../ui/markdown'
 import { Linkify, RefChip } from '../ui/refmark'
@@ -25,11 +27,11 @@ import { DecisionChain } from './chain'
 import { PendingBar, Seal, usePending, Verdict, verdictKey } from './verdict'
 import { requestLeft } from './asks'
 import { isStatusReq, StatusReqNote } from './statusReq'
-import { approvedOf, recOf } from '../lib/waiting'
+import { approvedOf, recOf, titleOf } from '../lib/waiting'
 
 // 推荐内容与某个选项一致时，返回该选项序号。
 
-// 来源行：独立展示时显示项目与设备；嵌在会话卡片里时只显示编号、需求与时间。
+// 来源行：独立展示时显示项目、设备与需求；嵌在需求时间线里时只显示编号、来源决策与时间。
 function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boolean }) {
   const openSession = useOpenSession()
   const openReq = useOpenReq()
@@ -43,7 +45,8 @@ function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boo
           <span className="truncate">{[d.project_name, d.device_name].filter(Boolean).join(t.common.sep)}</span>
         </button>
       )}
-      {d.requirement_code && (
+      {/* 嵌在需求时间线里时，需求就是这一页本身，不再重复（设计原则第 5 条） */}
+      {d.requirement_code && !embedded && (
         <RefChip code={d.requirement_code} label="title" onOpen={openReq} />
       )}
       {d.from_decision && (
@@ -53,6 +56,57 @@ function Source({ d, now, embedded }: { d: Decision; now: number; embedded?: boo
         </span>
       )}
       <span className="ml-auto tabular">{relTime(d.created_at, now)}</span>
+    </div>
+  )
+}
+
+// AskerLine（R-241）：没挂需求的决策，卡片顶部一行带上提问会话最近在做什么——会话标题、在做的需求、最近交付的几件；点开是那个会话。
+// 只读已有记录：会话关联的需求和它们的状态，不猜会话在想什么。
+export function AskerLine({ d }: { d: Decision }) {
+  const sessions = useSessions()
+  const reqs = useRequirements()
+  const openSession = useOpenSession()
+  const key = d.origin_session || d.session_key || ''
+  if (!key) return null
+  const s = (sessions.data?.sessions ?? []).find((x) => x.key === key)
+  const title = s ? sessionTitle(s) : d.by_title || d.project_name || ''
+  const mine = (reqs.data ?? []).filter((r) => r.sessions.includes(key))
+  const recent = (a: Requirement, b: Requirement) => b.updated_at.localeCompare(a.updated_at)
+  const working = mine.filter((r) => r.status === 'in_progress' || r.status === 'blocked').sort(recent).slice(0, 2)
+  const delivered = mine.filter((r) => r.status === 'review' || r.status === 'done').sort(recent).slice(0, 3)
+  const tool = key.split(':')[0]
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => openSession(key)}
+      onKeyDown={(e) => e.key === 'Enter' && openSession(key)}
+      aria-label={t.decision.asker.open}
+      className="group/asker flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border border-line bg-surface-2/70 px-3 py-2 text-[13px] text-fg-3 transition hover:border-line-strong hover:bg-hover"
+    >
+      {s ? <StatusDot state={s.state} /> : tool && <ToolMark tool={tool} size="sm" />}
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="max-w-full min-w-0 truncate font-medium text-fg-2 group-hover/asker:text-fg">{title}</span>
+        {working.length ? (
+          <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+            <span className="shrink-0">{t.decision.asker.working}</span>
+            {working.map((r) => (
+              <RefChip key={r.code} code={r.code} status={r.status} label="title" className="max-w-[16em]" />
+            ))}
+          </span>
+        ) : (
+          <span className="shrink-0">{t.decision.asker.idle}</span>
+        )}
+        {delivered.length > 0 && (
+          <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+            <span className="shrink-0">{t.decision.asker.delivered}</span>
+            {delivered.map((r) => (
+              <RefChip key={r.code} code={r.code} status={r.status} />
+            ))}
+          </span>
+        )}
+      </span>
+      <ChevronRight className="size-4 shrink-0 opacity-60 group-hover/asker:opacity-100" />
     </div>
   )
 }
@@ -99,7 +153,8 @@ function RequestNote({ d, now }: { d: Decision; now: number }) {
   )
 }
 
-export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedded?: boolean; drawer?: boolean }) {
+// autoFocus：在需求时间线上作答这一条（R-241，从「要你处理」打开）时，焦点放进来，⌘↵ / 数字键直接可用。
+export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decision; embedded?: boolean; drawer?: boolean; autoFocus?: boolean }) {
   const now = useNow()
   const { send } = useOutbox()
   const dr = useDraft<Draft>(decDraftKey(d.code), emptyDraft)
@@ -136,7 +191,7 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
   const sendingAt = !!pendE
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const free = !multi && (options.length === 0 || draft.choice === 'other')
-  const title = d.short_title || d.question
+  const title = titleOf(d)
   // 方案对比：任一选项带效果图时，选项改为看图点选的卡片
   const visual = (d.option_files ?? []).some((f) => f?.length)
   const optImgs = (d.option_files ?? []).flatMap((fs) => fs?.slice(0, 1) ?? [])
@@ -148,8 +203,8 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
   }, [draft.choice, draft.noteOpen])
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (drawer) box.current?.focus({ preventScroll: true })
-  }, [drawer, d.code])
+    if (drawer || autoFocus) box.current?.focus({ preventScroll: true })
+  }, [drawer, autoFocus, d.code])
 
   const choose = (c: number | 'other') => setDraft(d.code, { choice: draft.choice === c ? null : c })
   // 回答 / 批准 / 拒绝（R-161、R-176）：都先进撤销期（发件箱），卡片底部换成同一个撤销条。
@@ -180,11 +235,12 @@ export function DecisionComposer({ d, embedded, drawer }: { d: Decision; embedde
 
   const body = (
     <>
+        {!embedded && !d.requirement_code && !isStatusReq(d) && <AskerLine d={d} />}
         <Source d={d} now={now} embedded={embedded} />
         <HoldNote code={d.code} />
         <div>
           <h3 className="font-display text-base leading-snug font-semibold text-fg sm:text-[17px]">{title}</h3>
-          {d.short_title && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}
+          {titleOf(d) !== d.question && <p className="mt-1 text-sm leading-relaxed text-fg-2">{d.question}</p>}
         </div>
         {isStatusReq(d) ? <StatusReqNote d={d} /> : d.request_kind && <RequestNote d={d} now={now} />}
         {isStatusReq(d) ? null : d.summary?.length ? (
@@ -411,7 +467,7 @@ export function OrphanCard({ d, sessions }: { d: Decision; sessions: Session[] }
   return (
     <Card className="flex h-full flex-col gap-3 p-4">
       <Source d={d} now={now} />
-      <div className="text-[15px] font-semibold text-fg">{d.short_title || d.question}</div>
+      <div className="text-[15px] font-semibold text-fg">{titleOf(d)}</div>
       <AnswerBlock d={d} />
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-fg-3">{t.decision.orphan}</span>
@@ -466,7 +522,7 @@ export function DecisionRow({ d }: { d: Decision }) {
           <RefChip code={d.code} status={d.status} link={false} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-fg">{d.short_title || d.question}</span>
+          <span className="block truncate text-sm text-fg">{titleOf(d)}</span>
           {d.answer && <span className="block truncate text-[13px] text-fg-3">{d.answer}</span>}
         </span>
         {d.proxy_by && !d.overridden_at && <RoleTag role="aide" />}
@@ -478,7 +534,7 @@ export function DecisionRow({ d }: { d: Decision }) {
       </button>
       {open && (
         <div className="rise space-y-3 px-3.5 pb-3.5 sm:pl-[60px]">
-          {d.short_title && <p className="text-sm text-fg-2">{d.question}</p>}
+          {titleOf(d) !== d.question && <p className="text-sm text-fg-2">{d.question}</p>}
           {d.context && <Context text={d.context} />}
           <BlockList blocks={d.blocks} />
           {d.proxy_by ? <ProxyNote d={d} /> : d.answer && <AnswerBlock d={d} />}
@@ -497,16 +553,81 @@ export function DecisionRow({ d }: { d: Decision }) {
   )
 }
 
+// pickedOf：你选的是哪几个选项。批准类读结论字段 verdict（R-239）；选项类用 choices，没有时按答复开头的选项文字认（答复就是所选选项的原文）
+function pickedOf(d: Decision): Set<number> {
+  const opts = d.options ?? []
+  const ans = (d.answer || '').trim()
+  const byAns = opts.findIndex((o) => !!o.trim() && ans.startsWith(o.trim()))
+  const ok = approvedOf(d)
+  return new Set(d.approval ? (ok === undefined ? [] : [ok ? 0 : 1]) : d.choices?.length ? d.choices : byAns >= 0 ? [byAns] : [])
+}
+
+// answerNote：答复里除去所选选项之外你另写的话（附言）。多点决策的答复是「按以下选择：…\n附言：…」，选项类是「选项；附言」。
+export function answerNote(d: Decision): string {
+  const ans = (d.answer || '').trim()
+  if (!ans) return ''
+  if (d.points?.length) {
+    if (/^(批准，)?按以下选择：/.test(ans)) {
+      const i = ans.indexOf('\n附言：')
+      return i >= 0 ? ans.slice(i + 4).trim() : ''
+    }
+    return ans.replace(/^(批准|拒绝)[：:]?/, '').trim()
+  }
+  const opts = d.options ?? []
+  const hit = [...pickedOf(d)].map((i) => opts[i]?.trim() ?? '').find((o) => o && ans.startsWith(o))
+  if (hit) return ans.slice(hit.length).replace(/^[；;：:，,\s]+/, '').trim()
+  return ans
+}
+
+// DecisionOutcome（R-241）：答完的决策当时的选项和你选的那个（标出推荐）。多点决策逐点列；批准类不列「批准 / 拒绝」两个按钮，结论写在头上。
+export function DecisionOutcome({ d }: { d: Decision }) {
+  const pts = d.points ?? []
+  if (pts.length) {
+    const ch = d.choices ?? []
+    return (
+      <ol className="space-y-2">
+        {pts.map((p, i) => (
+          <li key={p.id || i} className="space-y-1">
+            <p className="text-[13px] leading-snug break-words text-fg-2">
+              <span className="mr-1 text-fg-3 tabular">{i + 1}.</span>
+              <Linkify text={p.title ?? ''} />
+            </p>
+            <OptionRows labels={(p.items ?? []).map((o) => o.label ?? '')} picked={new Set(ch[i] != null && ch[i] >= 0 ? [ch[i]] : [])} rec={(p.items ?? []).findIndex((o) => o.recommended)} />
+          </li>
+        ))}
+      </ol>
+    )
+  }
+  if (d.approval || !(d.options ?? []).length) return null
+  return <OptionRows labels={d.options ?? []} picked={pickedOf(d)} rec={recOf(d)} />
+}
+
+function OptionRows({ labels, picked, rec }: { labels: string[]; picked: Set<number>; rec: number }) {
+  return (
+    <ul className="space-y-1">
+      {labels.map((o, i) => {
+        const on = picked.has(i)
+        return (
+          <li key={i} className={cx('flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-[13px] leading-relaxed', on ? 'border-accent/50 bg-accent-soft/50 text-fg' : 'border-line/70 text-fg-3')}>
+            <span className={cx('mt-[3px] flex size-3.5 shrink-0 items-center justify-center rounded-full border', on ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong')}>{on && <Check className="size-2.5" strokeWidth={3} />}</span>
+            <span className="min-w-0 flex-1 break-words">
+              <Linkify text={o} />
+            </span>
+            {on && <span className="shrink-0 text-xs font-medium text-accent">{t.decision.picked}</span>}
+            {i === rec && <Badge tone="neutral">{t.decision.recommended}</Badge>}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 // DecisionPeek：引用里点开的决策（R-196，左边那张只读纸）——谁问的、问题、背景、选项（推荐 / 你选的）、答复、后果链。
 export function DecisionPeek({ d }: { d: Decision }) {
   const now = useNow()
   const opts = d.options ?? []
   const rec = recOf(d)
-  // 你选的：批准类读结论字段 verdict（R-239）；选项类用 choices，没有时按答复开头的选项文字认（答复就是所选选项的原文）
-  const ans = (d.answer || '').trim()
-  const byAns = opts.findIndex((o) => !!o.trim() && ans.startsWith(o.trim()))
-  const ok = approvedOf(d)
-  const picked = new Set(d.approval ? (ok === undefined ? [] : [ok ? 0 : 1]) : d.choices?.length ? d.choices : byAns >= 0 ? [byAns] : [])
+  const picked = pickedOf(d)
   const tone = d.status === 'delivered' ? 'run' : d.status === 'answered' ? 'reply' : d.status === 'pending' ? 'wait' : 'neutral'
   return (
     <div className="space-y-3">
@@ -517,15 +638,16 @@ export function DecisionPeek({ d }: { d: Decision }) {
         <span className="ml-auto tabular">{relTime(d.answered_at || d.created_at, now)}</span>
       </div>
       <h3 className="font-display text-[17px] leading-snug font-semibold text-fg">
-        <Linkify text={d.short_title || d.question} />
+        <Linkify text={titleOf(d)} />
       </h3>
-      {d.short_title && (
+      {titleOf(d) !== d.question && (
         <p className="text-sm leading-relaxed text-fg-2">
           <Linkify text={d.question} />
         </p>
       )}
       {d.context && <Context text={d.context} />}
       <BlockList blocks={d.blocks} />
+      {!!d.points?.length && <DecisionOutcome d={d} />}
       {opts.length > 0 && (
         <ol className="space-y-1.5">
           {opts.map((o, i) => (

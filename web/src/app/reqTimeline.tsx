@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Undo2 } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { ChevronDown, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision, Requirement, StatusChange } from '../api/client'
 import { useMorning } from '../api/queries'
@@ -11,15 +11,16 @@ import { Thumbs } from '../ui/attach'
 import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
 import { Linkify, RefChip } from '../ui/refmark'
-import { DecisionComposer } from './DecisionCard'
+import { answerNote, DecisionComposer, DecisionOutcome } from './DecisionCard'
 import { ProxyNote } from './grant'
-import { EvidenceBody, EvidenceCard, EvidenceRow, hasPayload, VoidedEvidence } from './evidence'
+import { EvidenceBody, EvidenceCard, EvidenceRow, gist, hasPayload, VoidedEvidence } from './evidence'
 import { DecisionChain } from './chain'
 import { CommitTags, shortSha, useReqCommits } from './commits'
 import { isStatusReq, StatusArrow, statusTone } from './statusReq'
 import { Who } from './who'
 import { releaseKey, useWithdrawRelease } from './requirements'
 import { PendingBar } from './verdict'
+import { PlanSummary } from './points'
 import { approvedOf } from '../lib/waiting'
 
 // 需求抽屉只有这一条时间线（R-195）：从上往下按时间排，每份证据只出现一次——本轮最新的一份展开，其余收成一行，点开就地展开。
@@ -153,8 +154,14 @@ function EditDiff({ rows }: { rows: (string[] | null)[] }) {
 
 const Act = ({ children }: { children: ReactNode }) => <span className="text-fg-2">{children}</span>
 
-export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decision[] }) {
+// focus（R-241）：从「要你处理」点开挂在这条需求上的待答决策时，它是时间线的最后一步、原地作答；
+// 早期的记录折叠起来（只留最近几步），证据都收成一行，打开时停在这条决策上。
+const KEEP = 3
+
+export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions: Decision[]; focus?: string }) {
   const now = useNow()
+  const [early, setEarly] = useState(false) // 展开了前面折叠的记录
+  useEffect(() => setEarly(false), [r.id, focus])
   const morning = useMorning()
   const wr = useWithdrawRelease()
   const commitsQ = useReqCommits(r.code)
@@ -208,7 +215,7 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   ]
   for (const e of r.evidence ?? []) {
     const round = roundOf(e.created_at)
-    const isLatest = e.id === latest
+    const isLatest = e.id === latest && !focus
     let body: ReactNode
     if (e.voided && e.void_reason) body = <VoidedEvidence e={e} r={r} />
     else if (isLatest) body = <EvidenceCard e={e} r={r} latest />
@@ -310,7 +317,15 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
             </>
           }
         >
-          {hasPayload(e) ? (
+          {focus && !opened.has(e.id) ? (
+            // 作答决策时（R-241）审查意见也先收成一行，点开就地展开
+            <button onClick={() => toggle(e.id)} className="flex w-full items-center gap-2 rounded-[10px] border border-wait/25 bg-wait-soft/30 px-2.5 py-2 text-left text-[13px] text-fg-2 transition hover:border-wait/50">
+              <span className="min-w-0 flex-1 truncate">
+                <Linkify text={gist(e)} />
+              </span>
+              <ChevronDown className="size-3.5 shrink-0 -rotate-90 text-fg-3" />
+            </button>
+          ) : hasPayload(e) ? (
             <div className="@container rounded-xl border border-wait/25 bg-wait-soft/40 px-3.5 py-3">
               <EvidenceBody e={e} r={r} />
             </div>
@@ -368,6 +383,12 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
               <>
                 <Who actor="agent" session={f.assigned_by} role={f.context} title={f.by_title} className="max-w-[16em]" />
                 <Act>{t.proof.edited}</Act>
+                {f.from_decision && (
+                  <span className="inline-flex items-center gap-1">
+                    {t.timeline.editFrom}
+                    <RefChip code={f.from_decision} />
+                  </span>
+                )}
               </>
             }
           >
@@ -482,11 +503,13 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   for (const d of decisions.filter((x) => x.kind === 'decision')) {
     const asker = <Who actor="agent" session={d.origin_session || d.session_key} title={d.by_title} className="max-w-[16em]" />
     if (d.status === 'pending') {
+      const focused = d.code === focus
       entries.push({
-        at: '￿', // 等你回答的问题放在最后，紧挨着底部的输入区
+        at: focused ? '￿￿' : '￿', // 等你回答的问题放在最后，紧挨着底部的输入区；从「要你处理」点开的那条排在最后
         key: d.id,
         round: current,
         node: (
+          <div data-latest={focused ? '' : undefined}>
           <Node
             tone={dot.ask}
             now={now}
@@ -497,8 +520,9 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
               </>
             }
           >
-            <DecisionComposer d={d} embedded />
+            <DecisionComposer d={d} embedded autoFocus={focused} />
           </Node>
+          </div>
         ),
       })
       continue
@@ -545,6 +569,11 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
       })
       continue
     }
+    // 你的答复：选了选项的只显示另写的附言（选项已经在上面标出来了）；批准类的结论写在头上
+    const structured = !!d.points?.length || (!!d.options?.length && !d.approval) || (d.approval && approvedOf(d) !== undefined)
+    const note = structured ? answerNote(d) : (d.answer ?? '')
+    const noteLabel = structured ? t.decision.noteLabel : t.timeline.answer
+    const ok = d.status !== 'closed' ? approvedOf(d) : undefined
     entries.push({
       at: d.created_at,
       key: d.id,
@@ -561,12 +590,17 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
               <Act>{t.timeline.decision}</Act>
               <RefChip code={d.code} status={d.status} link={false} />
               {d.status === 'closed' && <Badge tone="neutral">{t.timeline.withdrawn}</Badge>}
+              {ok !== undefined && !d.proxy_by && <Badge tone={ok ? 'run' : 'danger'}>{t.decision.verdict[ok ? 'approved' : 'rejected']}</Badge>}
             </>
           }
         >
-          <p className="text-sm text-fg">
-            <Linkify text={d.short_title || d.question} />
+          {/* 原问题照原样显示（R-238：短标题可能改了意思） */}
+          <p className="text-sm leading-relaxed break-words text-fg">
+            <Linkify text={d.question} />
           </p>
+          {d.status !== 'closed' && d.approval && !!d.summary?.length && <PlanSummary lines={d.summary} />}
+          {/* 当时的选项和你选的那个（R-241） */}
+          {d.status !== 'closed' && <DecisionOutcome d={d} />}
           {d.status === 'closed' && d.close_reason && (
             <p className="text-sm text-fg-2">
               {t.timeline.withdrawnReason}：<Linkify text={d.close_reason} />
@@ -575,10 +609,10 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
           {d.proxy_by ? (
             <ProxyNote d={d} />
           ) : (
-            d.answer && (
+            note && (
               <p className="rounded-xl bg-sunken/70 px-3 py-2 text-sm leading-relaxed break-words whitespace-pre-wrap text-fg">
-                <span className="mr-1.5 text-fg-3">{t.timeline.answer}</span>
-                <Linkify text={d.answer} />
+                <span className="mr-1.5 text-fg-3">{noteLabel}</span>
+                <Linkify text={note} />
               </p>
             )
           )}
@@ -659,7 +693,23 @@ export function ReqTimeline({ r, decisions }: { r: Requirement; decisions: Decis
   const showRounds = revises.length > 0
   const items: ReactNode[] = []
   let last = 0
+  // 作答这条决策时只留最近几步，前面的折叠成一行（R-241）
+  const hidden = focus && !early ? Math.max(0, entries.length - 1 - KEEP) : 0
+  if (focus && entries.length - 1 > KEEP) {
+    items.push(
+      <Item key="earlier">
+        <div className="relative z-[1] pb-3">
+          <button onClick={() => setEarly(!early)} className="relative flex w-full items-center gap-2 bg-surface py-1 pl-[22px] text-left text-[12.5px] text-fg-3 transition hover:text-fg">
+            <span aria-hidden className="absolute top-1/2 left-[3px] size-[9px] -translate-y-1/2 rounded-full border-2 border-dashed border-line-strong bg-surface" />
+            <span>{early ? t.timeline.earlierFold : t.timeline.earlier(entries.length - 1 - KEEP)}</span>
+            <ChevronDown className={cx('size-3.5 transition-transform', early && 'rotate-180')} />
+          </button>
+        </div>
+      </Item>,
+    )
+  }
   entries.forEach((e, i) => {
+    if (i < hidden) return
     if (showRounds && e.round !== last) {
       items.push(
         <Item key={'round' + e.round}>

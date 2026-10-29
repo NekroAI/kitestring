@@ -201,7 +201,7 @@ func TestAssignerNotifiedOnBlockedAndDecision(t *testing.T) {
 	woke(t, pmW, "受阻", r.Code)
 	pmW = parkWaitOn(t, e, c, "claude:pm", "none")
 	before := pendingCount(e)
-	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"session_key": "claude:dev", "question": "无关的问题？", "options": []string{"是", "否"}}, nil); err != nil {
+	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"session_key": "claude:dev", "question": "无关的问题？", "options": []string{"是", "否"}, "requirement": "none"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	asleep(t, pmW, "PM（决策没关联需求）")

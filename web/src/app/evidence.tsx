@@ -347,7 +347,7 @@ export function EvidenceCard({ e, r, latest, onFold }: { e: Evidence; r: Require
 }
 
 // gist：收起时的一行：结构化证据用结论，老格式用第一句。
-const gist = (e: Evidence) => e.payload?.verdict || splitLegacy(e.summary).first
+export const gist = (e: Evidence) => e.payload?.verdict || splitLegacy(e.summary).first
 
 // EvidenceRow：收起的一份证据：谁 · 交了证据 · 较早 / 退回时已作废 · 结论 · 达标 · 几张图 · 时间，点开就地展开。
 // 窄处（手机）分两行，结论单独一行。

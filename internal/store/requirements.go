@@ -433,6 +433,25 @@ func (s *Store) UnlinkSession(ctx context.Context, reqID, sessionKey string) err
 	return err
 }
 
+// OpenReqsOfSession 列出会话关联着、还没完成也没搁置的需求 ID（草稿、待开始、进行中、阻塞、待验收都算）。
+// decision_raise 没带需求时用它判断「会话只在做一条需求」（R-241）：恰好一条才自动挂上。
+func (s *Store) OpenReqsOfSession(ctx context.Context, sessionKey string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT r.id FROM requirement_sessions rs JOIN requirements r ON r.id = rs.requirement_id WHERE rs.session_key = ? AND r.status NOT IN (?, ?) ORDER BY rs.linked_at`, sessionKey, ReqDone, ReqShelved)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // AddEvidence 为需求附加证据。
 func (s *Store) AddEvidence(ctx context.Context, e Evidence) (Evidence, error) {
 	e.ID = protocol.NewID()

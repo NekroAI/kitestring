@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { titleOf } from '../lib/waiting'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Dialog as RDialog } from 'radix-ui'
 import { ArrowRight, Check, FilePlus2, FolderKanban, Keyboard, LayoutDashboard, LayoutGrid, List, ListTodo, Monitor, Moon, Search, Settings2, Sun, Undo2, X } from 'lucide-react'
@@ -252,7 +253,7 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
         id: `d:${d.code}`,
         kind: 'dec',
         code: d.code,
-        title: d.short_title || d.question,
+        title: titleOf(d),
         fields: [d.project_name ?? '', d.requirement_code ?? '', d.question],
         boost: d.status === 'pending' ? 30 : 0,
         icon: <RefChip code={d.code} link={false} />,

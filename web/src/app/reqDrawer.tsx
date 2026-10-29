@@ -44,7 +44,9 @@ type Dir = 'next' | 'prev' | 'pass'
 // ---------- 主体 ----------
 
 // peek：左边那张只读预览纸（R-196）——不带底部的留言 / 验收。
-export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; peek?: boolean }) {
+// focus：从「要你处理」点开挂在这条需求上的待答决策（R-241）——顶部是状态和验收要点，时间线早期折叠、最后一步是这条决策，
+// 在时间线里原地作答（答复草稿和决策卡同一份，切来切去不丢）；底部不再放留言框，免得两个输入框。
+export function ReqView({ refId, top, peek, focus }: { refId: string; top?: ReactNode; peek?: boolean; focus?: string }) {
   const q = useRequirement(refId)
   const decisions = useDecisions()
   const r = q.data
@@ -87,7 +89,7 @@ export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; 
     toLatest()
     const ids = [120, 400, 900, 1600].map((ms) => window.setTimeout(() => !touched.current && toLatest(), ms))
     return () => ids.forEach((id) => window.clearTimeout(id))
-  }, [r?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [r?.id, focus]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const el = scroller.current
     const grew = count > seen.current
@@ -111,7 +113,7 @@ export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; 
       ) : (
         <>
           <div ref={headBox} className="contents">
-            <Brief r={r} compact={reviewing} />
+            <Brief r={r} compact={reviewing && !focus} focus={!!focus} />
           </div>
           <div
             ref={scroller}
@@ -124,11 +126,11 @@ export function ReqView({ refId, top, peek }: { refId: string; top?: ReactNode; 
             onPointerDown={() => (touched.current = true)}
             onKeyDown={() => (touched.current = true)}
             data-req-scroll=""
-            className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain bg-surface px-4 py-4 sm:px-5', peek && 'pb-[max(1rem,env(safe-area-inset-bottom))]')}
+            className={cx('min-h-0 flex-1 overflow-y-auto overscroll-contain bg-surface px-4 py-4 sm:px-5', (peek || focus) && 'pb-[max(1rem,env(safe-area-inset-bottom))]')}
           >
-            <ReqTimeline r={r} decisions={related} />
+            <ReqTimeline r={r} decisions={related} focus={focus} />
           </div>
-          {!peek && (
+          {!peek && !focus && (
           <footer className="shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
             <Composer
               key={r.code}
@@ -198,7 +200,8 @@ export function DrawerSkeleton({ peek }: { peek?: boolean }) {
 
 // Brief：需求本身——标题、状态、可折叠的说明（描述、验收标准、关联会话、来源）。
 // compact：验收时手机上不显示两行摘要，把第一屏留给证据（说明仍可展开）。
-function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
+// focus：在这条需求上作答决策时（R-241），两行摘要换成验收要点——作答时要对照的是这条需求要做到什么。
+function Brief({ r, compact, focus }: { r: Requirement; compact?: boolean; focus?: boolean }) {
   const projects = useProjects()
   const sessions = useSessions()
   const { updateReq, linkReq } = useActions()
@@ -259,7 +262,14 @@ function Brief({ r, compact }: { r: Requirement; compact?: boolean }) {
         <button onClick={() => setOpen(true)} className={cx('mt-2 block w-full text-left text-[13px] leading-relaxed text-fg-3 transition hover:text-fg-2', compact && 'max-sm:hidden')}>
           {/* 截断放在里面的块上：WebKit（iPad Safari）不让 button 变成 -webkit-box，line-clamp 直接加在 button 上会失效（R-182） */}
           <span className="line-clamp-2">
-            <Linkify text={plainText(r.detail || r.acceptance) || t.reqs.briefEmpty} />
+            {focus && r.acceptance ? (
+              <>
+                <span className="mr-1.5 font-medium text-fg-2">{t.reqs.acceptance}</span>
+                <Linkify text={plainText(r.acceptance)} />
+              </>
+            ) : (
+              <Linkify text={plainText(r.detail || r.acceptance) || t.reqs.briefEmpty} />
+            )}
           </span>
         </button>
       )}

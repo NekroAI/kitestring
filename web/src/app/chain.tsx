@@ -40,7 +40,7 @@ function Dec({ d }: { d: { code: string; title: string; status: string; reason?:
 }
 
 function empty(c: Chain) {
-  return !c.from && !c.replaced_by && !(c.followups ?? []).length && !(c.replaces ?? []).length && !(c.requirements ?? []).length
+  return !c.from && !c.replaced_by && !(c.followups ?? []).length && !(c.replaces ?? []).length && !(c.requirements ?? []).length && !(c.edits ?? []).length
 }
 
 // skipReq：嵌在某条需求的时间线里时，不再重复列出「针对」这条需求本身
@@ -81,6 +81,13 @@ export function DecisionChain({ code, skipReq }: { code: string; skipReq?: strin
       {later.map((x) => (
         <Line key={'f' + x.code} label={t.chain.followedBy}>
           <Dec d={x} />
+        </Line>
+      ))}
+      {/* 因此改了需求 / 放行（R-241）：按这条决策改了哪些字段、放行了哪条；嵌在这条需求自己的时间线里时不再重复写需求编号 */}
+      {(c.edits ?? []).map((x) => (
+        <Line key={'e' + x.code} label={x.kind === 'release' ? t.chain.released : t.chain.edited}>
+          {x.kind !== 'release' && !!x.fields?.length && <span className="text-fg">{x.fields.join('、')}</span>}
+          {x.req_code !== skipReq ? <RefChip code={x.req_code} title={x.req_title} label="title" className="max-w-[18em]" /> : x.kind === 'release' && <span className="text-fg">{t.chain.releasedTo}</span>}
         </Line>
       ))}
       {(c.requirements ?? []).map((r) => (

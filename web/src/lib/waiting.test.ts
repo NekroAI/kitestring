@@ -1,6 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { approvedOf, recOf, sessionAsk, verdictOf } from './waiting.ts'
+import { approvedOf, recOf, sessionAsk, titleOf, verdictOf } from './waiting.ts'
+
+test('短标题改了原问题的意思就显示原问题（R-238 / R-241）', () => {
+  const question = '评审不做成固定关卡，改成「交给评审了就先等它」，行吗？'
+  assert.equal(titleOf({ question, short_title: '评审延迟后是否直接进验收' }), question) // D-714 的真实例子
+  assert.equal(titleOf({ question, short_title: '评审改成交给了就先等它' }), '评审改成交给了就先等它')
+  assert.equal(titleOf({ question, short_title: '' }), question)
+})
 
 // R-235 两张截图和 R-239 截图里的原文：只是对话里的话，没有提决策、没用提问工具
 const texts = [

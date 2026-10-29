@@ -414,6 +414,7 @@ type decisionRaisedOut struct {
 	Body struct {
 		store.Decision
 		BlockWarnings []string `json:"block_warnings,omitempty" doc:"没有保存的块及原因；决策本身已提出"`
+		AutoLinked    bool     `json:"auto_linked,omitempty" doc:"没带需求、会话只关联一条没完成的需求，纸鸢自动挂上了（R-241）"`
 	}
 }
 
@@ -1155,7 +1156,7 @@ type agentDecisionIn struct {
 		Summary           []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
 		Recommendation    string   `json:"recommendation,omitempty"`
 		RecommendedOption *int     `json:"recommended_option,omitempty" doc:"推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配"`
-		Requirement       string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号"`
+		Requirement       string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号；不写时会话只关联一条没完成的需求就自动挂上（R-241），写 none 表示与在做的需求无关、不挂"`
 		FromDecision      string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
 		Overturns         bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
 		Risk              string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
@@ -1449,6 +1450,15 @@ func (h *Hub) registerAgent(api huma.API) {
 					d.ProjectID = x.ProjectID
 				}
 			}
+			auto := false
+			if strings.EqualFold(strings.TrimSpace(b.Requirement), "none") {
+				b.Requirement = "" // 明说和在做的需求无关（如「做完这些要不要上线」），不自动挂
+			} else if b.Requirement == "" && b.SessionKey != "" {
+				// 没带需求、会话只在做一条需求（没完成也没搁置的关联恰好一条）时自动挂上（R-241）
+				if ids, err := h.store.OpenReqsOfSession(ctx, b.SessionKey); err == nil && len(ids) == 1 {
+					b.Requirement, auto = ids[0], true
+				}
+			}
 			if b.Requirement != "" {
 				r, err := h.store.GetRequirement(ctx, b.Requirement)
 				if err != nil {
@@ -1474,6 +1484,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			out := &decisionRaisedOut{}
 			out.Body.Decision = d
 			out.Body.BlockWarnings = warns
+			out.Body.AutoLinked = auto
 			return out, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-get-decision", Method: http.MethodGet, Path: "/api/agent/decisions/{ref}", Tags: tag},

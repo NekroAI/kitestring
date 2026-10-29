@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { titleOf } from '../lib/waiting'
 import { useSearchParams } from 'react-router'
 import { CheckCheck, ChevronLeft, ChevronRight, CircleCheck, PanelRight, X } from 'lucide-react'
 import type { Decision, Session } from '../api/client'
@@ -120,7 +121,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   // 再往外一件的需求详情先取好（邻件本身已画在带子上）
   const reviewCode = (k?: string) => {
     const a = k ? find(k) : undefined
-    return a?.kind === 'review' ? a.code : undefined
+    return a?.kind === 'review' ? a.code : a?.d?.requirement_code || undefined // 挂了需求的决策也打开需求（R-241）
   }
   const liveBefore = (k: string) => order.slice(0, order.indexOf(k)).reverse().find((x) => live.has(x))
   const liveAfter = (k: string) => order.slice(order.indexOf(k) + 1).find((x) => live.has(x))
@@ -342,6 +343,8 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
   if (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request') {
     if (d && isStatusReq(d) && d.voided) return <VoidedBody d={d} top={top} />
     if (!d || (d.status !== 'pending' && !sealed)) return <Gone top={top} />
+    // 挂了需求的决策（R-241）：打开这条需求，决策是时间线的最后一步，原地作答；改状态申请、限时请求照旧用决策卡
+    if (d.requirement_code && !isStatusReq(d) && !d.request_kind) return <ReqView key={d.code} refId={d.requirement_code} top={top} focus={d.code} />
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {top}
@@ -395,8 +398,8 @@ function ProxyBody({ d, top }: { d: Decision; top: ReactNode }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {top}
       <Scroll>
-        <h3 className="font-display text-[17px] leading-snug font-semibold text-fg">{d.short_title || d.question}</h3>
-        {d.short_title && <p className="text-sm leading-relaxed text-fg-2">{d.question}</p>}
+        <h3 className="font-display text-[17px] leading-snug font-semibold text-fg">{titleOf(d)}</h3>
+        {titleOf(d) !== d.question && <p className="text-sm leading-relaxed text-fg-2">{d.question}</p>}
         {d.context && <Md text={d.context} className="text-sm leading-relaxed text-fg-2" />}
         <ProxyNote d={d} withOverride={false} />
       </Scroll>

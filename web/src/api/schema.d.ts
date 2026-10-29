@@ -2022,7 +2022,7 @@ export interface components {
              * @description 推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配
              */
             recommended_option?: number;
-            /** @description 关联需求 ID 或 R-编号 */
+            /** @description 关联需求 ID 或 R-编号；不写时会话只关联一条没完成的需求就自动挂上（R-241），写 none 表示与在做的需求无关、不挂 */
             requirement?: string;
             /**
              * @description 风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答
@@ -2407,6 +2407,25 @@ export interface components {
             status: string;
             title: string;
         };
+        ChainEdit: {
+            /** Format: date-time */
+            at: string;
+            /** @description 修改 / 放行记录自己的编号（D-x） */
+            code: string;
+            /** @description true = 修改时声明了依据这条决策（from_decision / approval）；false = 理由里写了这个编号 */
+            declared?: boolean;
+            /** @description 改了哪些字段（中文名：标题、描述、验收标准……）；放行时为空 */
+            fields: string[] | null;
+            /**
+             * @description edit = 改了需求内容；release = 放行（草稿改为待开始）
+             * @enum {string}
+             */
+            kind: "edit" | "release";
+            /** @description 修改说明 / 放行理由 */
+            note: string;
+            req_code: string;
+            req_title: string;
+        };
         ChainReq: {
             code: string;
             commits: components["schemas"]["ChainCommit"][] | null;
@@ -2559,6 +2578,8 @@ export interface components {
         };
         DecisionChain: {
             code: string;
+            /** @description 因它改了哪些需求的内容、放行了哪些需求（R-241），按时间排 */
+            edits: components["schemas"]["ChainEdit"][] | null;
             /** @description 之后声明来自它的决策；overturns = 推翻了它 */
             followups: components["schemas"]["ChainDec"][] | null;
             /** @description 它接着 / 推翻的那条决策（overturns = 推翻） */
@@ -2578,6 +2599,8 @@ export interface components {
             answered_at?: string;
             approval: boolean;
             assigned_by?: string;
+            /** @description 没带需求、会话只关联一条没完成的需求，纸鸢自动挂上了（R-241） */
+            auto_linked?: boolean;
             /** @description 没有保存的块及原因；决策本身已提出 */
             block_warnings?: string[] | null;
             blocks?: components["schemas"]["Block"][] | null;
@@ -2693,6 +2716,8 @@ export interface components {
             approval?: string;
             /** @description 新描述；不传表示不改 */
             detail?: string;
+            /** @description 这次修改是按哪条决策的答复改的（D-x）：时间线上连在那条决策下面；带了 approval 时默认就是它 */
+            from_decision?: string;
             /**
              * @description 新类型：design = 设计类，feature = 普通；不传表示不改
              * @enum {string}

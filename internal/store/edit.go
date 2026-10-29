@@ -20,8 +20,9 @@ type FieldChange struct {
 	After  string
 }
 
-// CreateEdit 记一次修改。
-func (s *Store) CreateEdit(ctx context.Context, r Requirement, by, role, note string, changes []FieldChange) (Decision, error) {
+// CreateEdit 记一次修改。fromDecision 是这次修改依据的决策（D-x，R-241）：用户在那条决策里定了什么才这样改；
+// 带它的修改会连在那条决策下面（后果链「因此改了…」）。没有时为空。
+func (s *Store) CreateEdit(ctx context.Context, r Requirement, by, role, note, fromDecision string, changes []FieldChange) (Decision, error) {
 	rows := make([][]string, 0, len(changes))
 	for _, c := range changes {
 		rows = append(rows, []string{c.Field, c.Label, c.Before, c.After})
@@ -34,8 +35,8 @@ func (s *Store) CreateEdit(ctx context.Context, r Requirement, by, role, note st
 			return err
 		}
 		n := now()
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, '[]', ?, ?, ?)`,
-			id, seq, nullStr(by), nullStr(by), nullStr(r.ProjectID), r.ID, r.Title, role, blocks.Encode(table), KindEdit, DecClosed, note, n, n, by)
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by, from_decision) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, '[]', ?, ?, ?, ?)`,
+			id, seq, nullStr(by), nullStr(by), nullStr(r.ProjectID), r.ID, r.Title, role, blocks.Encode(table), KindEdit, DecClosed, note, n, n, by, fromDecision)
 		if err != nil {
 			return err
 		}

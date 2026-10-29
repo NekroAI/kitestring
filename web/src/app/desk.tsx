@@ -17,7 +17,7 @@ import { needsApproval, passedWith, planState, StageRail } from './plans'
 import { useRecent } from './recent'
 import { Team } from '../pages/Projects'
 import { usePendingMap } from './verdict'
-import { approvedOf } from '../lib/waiting'
+import { approvedOf, titleOf } from '../lib/waiting'
 
 // 工作台的周边部件（R-113 → R-147 → R-170）：顶部唯一的简报位（离开期间小结 / PM 简报，背后一条随活跃度起伏的风）、
 // 窄窗的计划胶囊、右栏「风向」（进行中的计划、最近动态串成一条竖线、队伍固定在底部）、左栏底部「刚处理」。
@@ -244,7 +244,7 @@ export function useHandled(now: number, limit = 4): Handled[] {
       const ok = approvedOf(d) // 批准 / 拒绝读结论字段（R-239）
       if (d.approval && ok === undefined) continue
       const act = d.approval ? (ok ? 'pass' : 'back') : 'answer'
-      out.push({ at: d.answered_at, act, scene: d.request_kind ? 'request' : d.approval ? 'approval' : 'answer', text: d.short_title || d.question })
+      out.push({ at: d.answered_at, act, scene: d.request_kind ? 'request' : d.approval ? 'approval' : 'answer', text: titleOf(d) })
     }
     // 阶段验收：你通过一个阶段时，后面需求早已逐条验收完的阶段会一并自动通过（D-60），计划随之完成——这是你的一次判断，
     // 只记一条，写你验收的那个阶段（R-211：P-2 曾因此出现两条一样的「通过 会话身份与工人池」）
@@ -256,7 +256,7 @@ export function useHandled(now: number, limit = 4): Handled[] {
       const text = (() => {
         if (e.key.startsWith('dec:')) {
           const d = decisions.data?.find((x) => x.code === e.key.slice(4))
-          return d && (d.short_title || d.question)
+          return d && (titleOf(d))
         }
         if (e.key.startsWith('plan:')) return plans.data?.find((x) => x.code === e.key.slice(5))?.title
         if (e.key.startsWith('stage:')) {

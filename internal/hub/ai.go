@@ -141,7 +141,9 @@ func (h *Hub) aiOnStop(key, prompt, reply string) {
 	h.broker.publish("sessions")
 }
 
-const decisionTitlePrompt = `把下面这个需要用户决策的问题压缩成一个不超过 14 个汉字的中文短标题，让人一眼知道要决定什么。不要问号和引号。只输出标题。`
+// 短标题只做缩写，不改原问题的意思（R-238 / R-241）：只给模型原问题、不给说明，免得它把背景里的说法换进来；
+// 生成后再核对一遍用字，和原问题对不上的不用，界面照旧显示原问题。
+const decisionTitlePrompt = `把下面这个需要用户决策的问题缩写成一个不超过 14 个汉字的中文短标题。只能删减，不能改写：保留原问题里的关键词和它在问的那件事，不要换成别的说法，不要加入原问题里没有的内容，不要改变问的方向（问「要不要做 A」就仍是 A）。不要问号和引号。只输出标题。`
 
 // aiOnDecision 为新决策生成短标题。
 func (h *Hub) aiOnDecision(d store.Decision) {
@@ -151,12 +153,15 @@ func (h *Hub) aiOnDecision(d store.Decision) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	text, err := summary.Chat(h.aiCtx(ctx, aiDecisionTitle), s.Summary, decisionTitlePrompt, d.Question+"\n"+summary.Truncate(d.Context, 400), 40)
+	if len([]rune(strings.TrimSpace(d.Question))) <= 16 {
+		return // 原问题已经够短，直接显示原问题
+	}
+	text, err := summary.Chat(h.aiCtx(ctx, aiDecisionTitle), s.Summary, decisionTitlePrompt, d.Question, 40)
 	if err != nil {
 		h.log.Warn("生成决策短标题失败", "decision", d.Code, "err", err)
 		return
 	}
-	if t := summary.Clean(titleNoise.Replace(text), 24); t != "" {
+	if t := summary.Clean(titleNoise.Replace(text), 24); t != "" && store.TitleKeepsMeaning(t, d.Question) {
 		_ = h.store.SetDecisionTitle(ctx, d.ID, t)
 		h.broker.publish("decisions")
 	}

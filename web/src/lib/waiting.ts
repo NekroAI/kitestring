@@ -33,3 +33,19 @@ export function verdictOf(scene: string, act: string): 'approved' | 'rejected' |
   if (act === 'back') return 'rejected'
   return undefined
 }
+
+// titleOf：决策的标题（R-238 / R-241）。模型生成的短标题只做缩写——用字至少七成出自原问题才用，
+// 改写成别的意思的（老数据里有，如 D-714）不用，直接显示原问题。和 Hub 生成时的核对（hub/ai.go titleKeepsMeaning）同一口径。
+export function titleOf(d: { short_title?: string; question: string }): string {
+  const st = (d.short_title ?? '').trim()
+  if (!st) return d.question
+  const seen = new Set([...d.question.toLowerCase()])
+  let n = 0
+  let hit = 0
+  for (const ch of st.toLowerCase()) {
+    if (!/[\p{L}\p{N}]/u.test(ch)) continue
+    n++
+    if (seen.has(ch)) hit++
+  }
+  return n > 0 && hit * 10 >= n * 7 ? st : d.question
+}

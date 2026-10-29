@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { titleOf } from '../lib/waiting'
 import { useNavigate } from 'react-router'
 import { useDecisions, usePlans, useRequirements } from '../api/queries'
 import { PeekContext, SideReqContext, useNavReq, useOpenAsk, useOpenPlan } from '../app/nav'
@@ -172,7 +173,7 @@ export function RefIndexProvider({ children }: { children: ReactNode }) {
       m.set(d.code, {
         kind: 'dec',
         code: d.code,
-        title: d.short_title || d.question,
+        title: titleOf(d),
         status: d.status,
         turn: d.status === 'pending',
         reqCode: d.requirement_code || undefined,

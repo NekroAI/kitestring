@@ -32,6 +32,8 @@ type editIn struct {
 		Kind       *string `json:"kind,omitempty" enum:"feature,design" doc:"新类型：design = 设计类，feature = 普通；不传表示不改"`
 		Reason     string  `json:"reason,omitempty" doc:"为什么改（建议写，会显示在时间线上）"`
 		Approval   string  `json:"approval,omitempty" doc:"进行中 / 阻塞 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x）"`
+		// R-241：这次修改依据的决策，时间线上连在那条决策下面（因此改了…）；带了 approval 时就是它，可不写
+		FromDecision string `json:"from_decision,omitempty" doc:"这次修改是按哪条决策的答复改的（D-x）：时间线上连在那条决策下面；带了 approval 时默认就是它"`
 	}
 }
 
@@ -156,6 +158,10 @@ func (h *Hub) registerAgentEdit(api huma.API) {
 				}
 				approval = strings.TrimSpace(b.Approval)
 			}
+			from, err := h.fromDecision(ctx, b.FromDecision) // 依据的决策（R-241），先校验再改
+			if err != nil {
+				return nil, err
+			}
 			next.Status = "" // 只改内容，不动状态
 			if _, err := h.store.UpdateRequirement(ctx, next); err != nil {
 				return nil, apiErr(err)
@@ -173,8 +179,11 @@ func (h *Hub) registerAgentEdit(api huma.API) {
 					approval = d.Code
 				}
 				note += "（验收标准已获用户批准 " + approval + "）"
+				if from == "" {
+					from = approval
+				}
 			}
-			if _, err := h.store.CreateEdit(ctx, cur, x.Key, x.Role, note, changes); err != nil {
+			if _, err := h.store.CreateEdit(ctx, cur, x.Key, x.Role, note, from, changes); err != nil {
 				return nil, apiErr(err)
 			}
 			r, err := h.store.GetRequirement(ctx, cur.ID)

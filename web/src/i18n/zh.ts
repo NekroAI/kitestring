@@ -675,6 +675,16 @@ export const zh = {
     resent: '你下次给它发消息时重新送达',
     answer: '你的答复',
     context: '背景',
+    // R-241：答完的决策在需求时间线上显示当时的选项和你选的；没挂需求的决策带上提问会话最近在做什么
+    picked: '你选的',
+    verdict: { approved: '你批准了', rejected: '你拒绝了' } as Record<string, string>,
+    noteLabel: '附言',
+    asker: {
+      working: '在做',
+      delivered: '最近交付',
+      idle: '没有在做的需求',
+      open: '打开提问会话',
+    },
   },
 
   reqs: {
@@ -1184,6 +1194,9 @@ export const zh = {
     releaseReason: '理由',
     edit: (who: string) => `${who} 修改了需求`,
     editExpand: '查看改前改后',
+    editFrom: '依据',
+    earlier: (n: number) => `前面还有 ${n} 步`,
+    earlierFold: '收起前面的记录',
     editBefore: '改前',
     editAfter: '改后',
     editEmpty: '（空）',
@@ -1224,6 +1237,9 @@ export const zh = {
     overturnedBy: '被推翻',
     followedBy: '后续',
     relation: { from: '产生了', source: '产生了', about: '针对' } as Record<string, string>,
+    edited: '因此改了',
+    released: '因此放行',
+    releasedTo: '改为待开始',
   },
   // 提交、回滚与 CI（R-156）：纸鸢只记录与展示，不改仓库、不触发 CI
   commits: {

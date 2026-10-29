@@ -882,7 +882,7 @@
             "type": "integer"
           },
           "requirement": {
-            "description": "关联需求 ID 或 R-编号",
+            "description": "关联需求 ID 或 R-编号；不写时会话只关联一条没完成的需求就自动挂上（R-241），写 none 表示与在做的需求无关、不挂",
             "type": "string"
           },
           "risk": {
@@ -1873,6 +1873,61 @@
         ],
         "type": "object"
       },
+      "ChainEdit": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "code": {
+            "description": "修改 / 放行记录自己的编号（D-x）",
+            "type": "string"
+          },
+          "declared": {
+            "description": "true = 修改时声明了依据这条决策（from_decision / approval）；false = 理由里写了这个编号",
+            "type": "boolean"
+          },
+          "fields": {
+            "description": "改了哪些字段（中文名：标题、描述、验收标准……）；放行时为空",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "edit = 改了需求内容；release = 放行（草稿改为待开始）",
+            "enum": [
+              "edit",
+              "release"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "description": "修改说明 / 放行理由",
+            "type": "string"
+          },
+          "req_code": {
+            "type": "string"
+          },
+          "req_title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "kind",
+          "req_code",
+          "req_title",
+          "fields",
+          "note",
+          "at"
+        ],
+        "type": "object"
+      },
       "ChainReq": {
         "additionalProperties": false,
         "properties": {
@@ -2378,6 +2433,16 @@
           "code": {
             "type": "string"
           },
+          "edits": {
+            "description": "因它改了哪些需求的内容、放行了哪些需求（R-241），按时间排",
+            "items": {
+              "$ref": "#/components/schemas/ChainEdit"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "followups": {
             "description": "之后声明来自它的决策；overturns = 推翻了它",
             "items": {
@@ -2420,7 +2485,8 @@
           "code",
           "followups",
           "replaces",
-          "requirements"
+          "requirements",
+          "edits"
         ],
         "type": "object"
       },
@@ -2452,6 +2518,10 @@
           },
           "assigned_by": {
             "type": "string"
+          },
+          "auto_linked": {
+            "description": "没带需求、会话只关联一条没完成的需求，纸鸢自动挂上了（R-241）",
+            "type": "boolean"
           },
           "block_warnings": {
             "description": "没有保存的块及原因；决策本身已提出",
@@ -2871,6 +2941,10 @@
           },
           "detail": {
             "description": "新描述；不传表示不改",
+            "type": "string"
+          },
+          "from_decision": {
+            "description": "这次修改是按哪条决策的答复改的（D-x）：时间线上连在那条决策下面；带了 approval 时默认就是它",
             "type": "string"
           },
           "kind": {

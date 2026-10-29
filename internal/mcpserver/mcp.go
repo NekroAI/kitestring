@@ -200,14 +200,15 @@ type reqRequestStatusIn struct {
 }
 
 type reqEditIn struct {
-	Ref        string  `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
-	Title      *string `json:"title,omitempty" jsonschema:"新标题；不要把编号写进标题，开头的编号前缀会被去掉；不传表示不改"`
-	Detail     *string `json:"detail,omitempty" jsonschema:"新描述（整段替换）；不传表示不改"`
-	Acceptance *string `json:"acceptance,omitempty" jsonschema:"新验收标准（整段替换）；需求进行中 / 阻塞 / 待验收时要同时给 approval；不传表示不改"`
-	Priority   *string `json:"priority,omitempty" jsonschema:"新优先级 P0 到 P3；不传表示不改"`
-	Kind       *string `json:"kind,omitempty" jsonschema:"新类型：design = 设计类，feature = 普通；不传表示不改"`
-	Reason     string  `json:"reason,omitempty" jsonschema:"为什么改，一句话，会显示在时间线上"`
-	Approval   string  `json:"approval,omitempty" jsonschema:"进行中之后改验收标准时必填：这条需求上用户已批准的批准类决策编号（D-x，用 decision_raise approval = true 发起）"`
+	Ref          string  `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	Title        *string `json:"title,omitempty" jsonschema:"新标题；不要把编号写进标题，开头的编号前缀会被去掉；不传表示不改"`
+	Detail       *string `json:"detail,omitempty" jsonschema:"新描述（整段替换）；不传表示不改"`
+	Acceptance   *string `json:"acceptance,omitempty" jsonschema:"新验收标准（整段替换）；需求进行中 / 阻塞 / 待验收时要同时给 approval；不传表示不改"`
+	Priority     *string `json:"priority,omitempty" jsonschema:"新优先级 P0 到 P3；不传表示不改"`
+	Kind         *string `json:"kind,omitempty" jsonschema:"新类型：design = 设计类，feature = 普通；不传表示不改"`
+	Reason       string  `json:"reason,omitempty" jsonschema:"为什么改，一句话，会显示在时间线上"`
+	Approval     string  `json:"approval,omitempty" jsonschema:"进行中之后改验收标准时必填：这条需求上用户已批准的批准类决策编号（D-x，用 decision_raise approval = true 发起）"`
+	FromDecision string  `json:"from_decision,omitempty" jsonschema:"这次修改是按哪条决策的答复改的（D-x）：时间线上会连在那条决策下面，用户看得到「因为这条决策改了验收标准」；带了 approval 时默认就是它"`
 }
 
 type evidenceIn struct {
@@ -236,7 +237,7 @@ type decisionWithdrawIn struct {
 }
 
 type decisionIn struct {
-	Question          string           `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，单独成立、无需上下文也能看懂（建议 60 字以内）"`
+	Question          string           `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，脱离对话也能读懂——用户没看过你们的对话，不要写「刚才那个」「按上面说的」，把要定的事和它会带来什么写进这一句（建议 60 字以内）"`
 	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的待决策的点，那些另开决策。建议 400 字以内"`
 	Options           []string         `json:"options,omitempty" jsonschema:"候选选项"`
 	OptionImages      []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
@@ -244,7 +245,7 @@ type decisionIn struct {
 	Images            []string         `json:"images,omitempty" jsonschema:"问题附带的本机图片路径（例如待批准的方案图）"`
 	Recommendation    string           `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
 	RecommendedOption int              `json:"recommended_option,omitempty" jsonschema:"推荐的是第几个选项（从 1 开始，对应 options）；界面上这个选项标「推荐」，用户没选它时会问一句为什么。不填时只有 recommendation 与某个选项文字完全相同才标"`
-	Requirement       string           `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）"`
+	Requirement       string           `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）：问题是哪条需求推进中冒出来的就写哪条，用户会在这条需求的时间线上看着来龙去脉作答。不写时本会话只关联一条没完成的需求就自动挂上；和在做的需求无关的临时问题（如「做完这些要不要上线」）写 none"`
 	Blocks            []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
 	Points            []map[string]any `json:"points,omitempty" jsonschema:"要决策的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
 	Summary           []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
@@ -435,7 +436,7 @@ func (t *tools) register(s *mcp.Server) {
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目主调度 / 主助理 / 顾问；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 阻塞 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqEditIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"session_key": t.sessionKey(ctx, req), "reason": in.Reason, "approval": in.Approval}
+			body := map[string]any{"session_key": t.sessionKey(ctx, req), "reason": in.Reason, "approval": in.Approval, "from_decision": in.FromDecision}
 			dropEmpty(body)
 			for k, v := range map[string]*string{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "priority": in.Priority, "kind": in.Kind} {
 				if v != nil {
@@ -526,7 +527,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(fmt.Sprintf("%s 的证据 %s 已作废（还有效的证据 %d 条）", out.Code, in.Evidence, out.evidenceCount())), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要用户回答的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别决策时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。" + writing.DecisionTableGuide + "要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
+	mcp.AddTool(s, &mcp.Tool{Name: "decision_raise", Description: "向用户提出一个需要用户回答的决策，进入用户的决策收件箱并推送通知。只用于要用户回答的问题；要告诉 PM 的事用 pm_notify，不要发成决策。写法：问题一句话，每次只问一件事，脱离对话也能读懂（用户看不到你们的对话）；在做某条需求时带上 requirement，决策会挂在这条需求的时间线上，用户看着需求的来龙去脉作答；互不相关的问题拆成几个决策，不要埋在说明里；说明按“结论 / 依据 / 细节”写，能用表达块（blocks）说清的就不写长文。一个方案里有几个点要用户分别决策时，用 points 逐点给选项（每点标出推荐），不要把它们埋在说明里；方案较长时用 summary 每条需求一行，完整说明会被折叠。" + writing.DecisionTableGuide + "要用户回答才能推进的问题，先用它发到面板再等，终端里的话用户不一定看得到。超过字数阈值照常保存，返回里会提示压缩。用户作答后，答复会在用户下一次发消息时自动注入本会话上下文；在此之前可以继续推进不受影响的工作。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in decisionIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"question": in.Question, "context": in.Context, "options": in.Options, "recommendation": in.Recommendation, "requirement": in.Requirement, "risk": in.Risk, "hard": in.Hard, "from_decision": in.FromDecision, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
@@ -581,13 +582,18 @@ func (t *tools) register(s *mcp.Server) {
 				body["summary"] = in.Summary
 			}
 			var out struct {
-				Code          string   `json:"code"`
-				BlockWarnings []string `json:"block_warnings"`
+				Code            string   `json:"code"`
+				RequirementCode string   `json:"requirement_code"`
+				AutoLinked      bool     `json:"auto_linked"`
+				BlockWarnings   []string `json:"block_warnings"`
 			}
 			if err := t.c.Do(ctx, "POST", "/agent/decisions", body, &out); err != nil {
 				return nil, nil, err
 			}
 			msg := fmt.Sprintf("%v 已进入用户的决策收件箱，作答后会自动注入本会话", out.Code)
+			if out.AutoLinked && out.RequirementCode != "" {
+				msg += fmt.Sprintf("\n本会话只在做 %s，已自动挂到它的时间线上；不是关于它的，撤回后重提并写明 requirement。", out.RequirementCode)
+			}
 			msg += blockWarnings(out.BlockWarnings)
 			if h := writing.DecisionHint(in.Question, in.Context); h != "" {
 				msg += "\n" + h

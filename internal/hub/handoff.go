@@ -272,11 +272,7 @@ func (h *Hub) stateNote(ctx context.Context, key string) (string, error) {
 	}
 	for _, d := range list {
 		if d.SessionKey == key || d.OriginSession == key {
-			q := d.ShortTitle
-			if q == "" {
-				q = d.Question
-			}
-			decs = append(decs, fmt.Sprintf("%s「%s」", d.Code, oneLineClip(q, 60)))
+			decs = append(decs, fmt.Sprintf("%s「%s」", d.Code, oneLineClip(store.DecisionTitle(d), 60)))
 		}
 	}
 	now := time.Now()

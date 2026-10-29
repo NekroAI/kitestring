@@ -260,7 +260,7 @@ func runReq(args []string) error {
 	detail := fs.String("detail", "", "create / edit：细节")
 	acceptance := fs.String("acceptance", "", "create / edit：验收标准")
 	status := fs.String("status", "", "create：初始状态")
-	fromDec := fs.String("from-decision", "", "create：产生这条需求的决策编号（D-x）")
+	fromDec := fs.String("from-decision", "", "create：产生这条需求的决策编号（D-x）；edit：这次修改依据的决策（D-x），时间线上连在那条决策下面")
 	priority := fs.String("priority", "", "create / edit：优先级 P0-P3")
 	fs.String("type", "", "edit：需求类型 design（设计类）/ feature（普通）")
 	approval := fs.String("approval", "", "edit：进行中之后改验收标准时，用户已批准的批准类决策编号（D-x）")
@@ -325,6 +325,9 @@ func runReq(args []string) error {
 			return fmt.Errorf("用法：ks req edit <R-编号> [--title ...] [--detail ...] [--acceptance ...] [--priority P0-P3] [--type design|feature] [--reason 为什么改] [--approval D-x（进行中之后改验收标准必填）]")
 		}
 		body := editBody(fs, key, *reason, *approval)
+		if *fromDec != "" {
+			body["from_decision"] = *fromDec
+		}
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/edit", body)
 	case "status":
 		if fs.NArg() < 2 {

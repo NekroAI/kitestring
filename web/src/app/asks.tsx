@@ -3,7 +3,7 @@ import type { Decision, Plan, Requirement, Session } from '../api/client'
 import { useMorning, useRequirement } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime } from '../lib/util'
-import { sessionAsk } from '../lib/waiting'
+import { sessionAsk, titleOf } from '../lib/waiting'
 import { displayState, RoleBadge, RoleTag } from '../ui/marks'
 import { plainText } from '../ui/markdown'
 import type { useWorkbench } from './inbox'
@@ -70,7 +70,7 @@ export function buildAsks(wb: WB): Ask[] {
       if (d.requirement_code && reviewing.has(d.requirement_code)) continue
       push({ key: `d:${d.code}`, kind: decisionKind(d), title: askTitle(d), at: d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     }
-    for (const d of th.orphans) push({ key: `o:${d.code}`, kind: 'orphan', title: d.short_title || d.question, at: d.answered_at ?? d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
+    for (const d of th.orphans) push({ key: `o:${d.code}`, kind: 'orphan', title: titleOf(d), at: d.answered_at ?? d.created_at, counted: true, code: d.code, s, d, projectId: pid(d), projectName: pname(d) })
     if (s && s.state !== 'ended') {
       const ds = displayState(s)
       const k = ds === 'done' ? '' : sessionAsk(s) // 等授权、提问工具在问才算（R-239）
@@ -134,7 +134,7 @@ export function askKindLabel(a: Ask) {
 // askTitle：决策条目的标题。改状态申请（R-188）用需求标题——你要一眼看到是哪条需求。
 export function askTitle(d: Decision) {
   if (isStatusReq(d)) return d.requirement_title || d.question
-  return d.short_title || d.question
+  return titleOf(d)
 }
 
 // requestLeft：限时请求还剩多久到点（到点按规则视为拒绝）。
