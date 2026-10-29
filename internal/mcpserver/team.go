@@ -99,14 +99,15 @@ type morningIn struct {
 
 type tellIn struct {
 	Text        string `json:"text" jsonschema:"要说的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13；问取舍时写清选项和你倾向哪个）"`
-	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
+	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
+	ToSession   string `json:"to_session,omitempty" jsonschema:"点名收件会话键（tool:id）：本项目有多个顾问 / 评审时指定；不填发给该身份最近活跃的一个"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"回复收到的团队消息时填它的编号（D-x）：回复自动送回发消息的一方"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
 	FYI         bool   `json:"fyi,omitempty" jsonschema:"只告知（R-227）：对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上。部署 / 重启、进展通报填 true；提问、求裁定、派活、回复不填（立刻叫醒）"`
 }
 
 func (t *tools) registerTeam(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的团队成员发消息（命令行 ks team tell）：按身份送给本项目现在的那个会话，不认会话名。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的团队成员发消息（命令行 ks team tell）：按身份送给本项目现在的那个会话，不认会话名。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
 			key, agent := t.caller(ctx, req)
 			if key == "" {
@@ -115,7 +116,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			var out struct {
 				Message string `json:"message"`
 			}
-			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "reply_to": in.ReplyTo, "agent_id": agent}
+			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "to_session": in.ToSession, "reply_to": in.ReplyTo, "agent_id": agent}
 			dropEmpty(body)
 			if in.FYI {
 				body["fyi"] = true

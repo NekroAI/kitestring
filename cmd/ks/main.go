@@ -53,8 +53,9 @@ agent 调用：
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
-  team tell <文字> [--to aide|pm|reviewer] [--req R-x] [--fyi]
-                                 按身份给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），
+  team tell <文字> [--to aide|pm|reviewer|advisor] [--to-session tool:id] [--req R-x] [--fyi]
+                                 按身份给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），交接给顾问用 --to advisor（多个顾问时发给最近活跃的，或 --to-session 点名；没有在线顾问时报错退回）；
+                                 发送方只认当前对话，tell 不接受 --session（防冒用别的会话）；
                                  进度和受阻告诉主调度；没有主助理时退回给主调度；交验收时主调度会自动收到通知；
                                  项目没有主调度时不送，返回「本项目当前没有主调度，消息未送达」（不算出错）
                                  --fyi 标明「只告知」（R-227）：对方不必动手，不唤醒它的 ks wait，下次因别的事被叫醒或用户发消息时一并带上；

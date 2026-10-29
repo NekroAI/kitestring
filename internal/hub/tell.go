@@ -202,6 +202,11 @@ func (h *Hub) devDown(key string) {
 // liveRole 返回项目里身份为 role、没结束的会话中最近活跃的那个，没有时为空。
 // 主调度、主助理每项目唯一；评审可能有多个，取最近活跃的（R-191）。
 func (h *Hub) liveRole(ctx context.Context, projectID, role string) string {
+	return h.liveRoleExcept(ctx, projectID, role, "")
+}
+
+// liveRoleExcept 同 liveRole，但跳过会话 except（发消息的一方自己，R-248：顾问可能有多个，不能把话选回给自己）。
+func (h *Hub) liveRoleExcept(ctx context.Context, projectID, role, except string) string {
 	if projectID == "" {
 		return ""
 	}
@@ -210,7 +215,7 @@ func (h *Hub) liveRole(ctx context.Context, projectID, role string) string {
 		return ""
 	}
 	for _, x := range list {
-		if x.Role == role && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil {
+		if x.Key != except && x.Role == role && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil {
 			return x.Key
 		}
 	}
@@ -224,7 +229,7 @@ func (h *Hub) liveIn(ctx context.Context, key, projectID string) bool {
 }
 
 // tellRoles 是团队消息可以按身份寻址的收件身份（R-191）。
-var tellRoles = map[string]bool{roles.PM: true, roles.Aide: true, roles.Reviewer: true}
+var tellRoles = map[string]bool{roles.PM: true, roles.Aide: true, roles.Reviewer: true, roles.Advisor: true}
 
 // senderName 是团队消息里称呼发消息一方的方式：「身份 会话」，子任务再加「的子任务「名字」（agent_id）」。
 func (h *Hub) senderName(ctx context.Context, me store.Session, agent string) string {
@@ -263,13 +268,14 @@ type tellOut struct {
 func (h *Hub) registerAgentTell(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-tell-pm", Method: http.MethodPost, Path: "/api/agent/team/tell", Tags: []string{"agent"},
 		Summary:     "给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）",
-		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。"},
+		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）。按身份发给本项目现在没结束的那个会话；评审、顾问有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey  string `json:"session_key" minLength:"1" doc:"调用者"`
 				Text        string `json:"text" minLength:"1" doc:"要说的话"`
 				Requirement string `json:"requirement,omitempty" doc:"相关需求编号（如 R-12），可省略"`
-				To          string `json:"to,omitempty" doc:"收件身份：pm（默认）、aide、reviewer；也认中文名（主调度 / 主助理 / 评审）。回复时不填"`
+				To          string `json:"to,omitempty" doc:"收件身份：pm（默认）、aide、reviewer、advisor；也认中文名（主调度 / 主助理 / 评审 / 顾问）。回复时不填"`
+				ToSession   string `json:"to_session,omitempty" doc:"指定收件会话键（tool:id）：必须是本项目没结束、有身份的会话；与 to 同时填时身份要对得上。本项目有多个顾问 / 评审时用它点名；不填则发给该身份最近活跃的一个（R-248）"`
 				ReplyTo     string `json:"reply_to,omitempty" doc:"回复收到的团队消息：填它的编号（D-x）"`
 				FYI         bool   `json:"fyi,omitempty" doc:"只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、派活、回复，立刻叫醒）。部署 / 重启、进展通报这类用 true"`
 				AgentID     string `json:"agent_id,omitempty" doc:"发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上"`
@@ -343,12 +349,28 @@ func (h *Hub) registerAgentTell(api huma.API) {
 				if t := strings.TrimSpace(in.Body.To); t != "" {
 					r, ok := roles.Resolve(t)
 					if !ok || !tellRoles[r] {
-						return nil, huma.Error400BadRequest("收件身份只能是 pm（主调度）、aide（主助理）或 reviewer（评审），收到的是「" + t + "」")
+						return nil, huma.Error400BadRequest("收件身份只能是 pm（主调度）、aide（主助理）、reviewer（评审）或 advisor（顾问），收到的是「" + t + "」")
 					}
 					role = r
 				}
+				if ts := strings.TrimSpace(in.Body.ToSession); ts != "" {
+					x, err := h.store.GetSession(ctx, ts)
+					if err != nil || !h.liveIn(ctx, ts, me.ProjectID) || x.Role == "" {
+						return nil, huma.Error409Conflict("会话 " + ts + " 不是本项目里没结束、有身份的会话，消息没有送出")
+					}
+					if strings.TrimSpace(in.Body.To) != "" && x.Role != role {
+						return nil, huma.Error400BadRequest(fmt.Sprintf("会话 %s 的身份是%s，不是你填的%s", ts, roles.Name(x.Role), roles.Name(role)))
+					}
+					role = x.Role
+				}
 				toRole = role
-				msg.SessionKey = h.liveRole(ctx, me.ProjectID, role)
+				if ts := strings.TrimSpace(in.Body.ToSession); ts != "" {
+					msg.SessionKey = ts
+				} else if roles.Unique(role) {
+					msg.SessionKey = h.liveRole(ctx, me.ProjectID, role) // 主调度 / 主助理每项目唯一；自己发给自己由下面统一处理（子任务可以发给所属会话）
+				} else {
+					msg.SessionKey = h.liveRoleExcept(ctx, me.ProjectID, role, me.Key) // 顾问 / 评审可能有多个，不选回自己
+				}
 				if msg.SessionKey == "" {
 					switch role {
 					case roles.Aide:
@@ -357,6 +379,8 @@ func (h *Hub) registerAgentTell(api huma.API) {
 						}
 						toRole = roles.PM
 						note = "（原本发给主助理；本项目现在没有主助理，请你处理或问用户）"
+					case roles.Advisor:
+						return nil, huma.Error409Conflict("本项目现在没有在线的顾问会话，消息没有送出（已退回给你）；请让用户拉起顾问，或把要交接的内容写进需求再请用户转告；要用户决策的事用 decision_raise。")
 					case roles.Reviewer:
 						return nil, huma.Error409Conflict("本项目现在没有在线的评审会话，消息没有送出；要审查请让主调度派审查任务，要用户决策的事用 decision_raise。")
 					default:

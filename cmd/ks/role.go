@@ -174,13 +174,14 @@ func runMorning(args []string) error {
 // runTeam：ks team——列出本项目的 PM 与开发会话（R-86）。
 func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)
-	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	session := fs.String("session", "", "会话键（tool:session_id）：仅 tell 之外的子命令用来指定当前会话；tell 不接受（发送方只认 hook / 环境识别的当前会话，防冒用，R-248），点名收件会话用 --to-session")
+	toSession := fs.String("to-session", "", "tell：点名收件会话键（tool:id），须是本项目没结束、有身份的会话；本项目有多个顾问 / 评审时用它指定，不填则发给最近活跃的那个")
 	reason := fs.String("reason", "", "recommend / need：为什么要开 Dev 会话（为什么要并行、为什么子代理不合适）")
 	work := fs.String("work", "", "recommend：开了做什么（需求编号）")
 	duration := fs.String("duration", "", "recommend：预计用多久")
 	minutes := fs.Int("minutes", 0, "recommend：批准时限（分钟），默认用设置里的（30）")
 	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
-	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）")
+	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）| advisor（顾问）；也认中文名和别称")
 	reply := fs.String("reply", "", "tell：回复收到的团队消息（填它的编号 D-x），回复会送回发消息的一方")
 	fyi := fs.Bool("fyi", false, "tell：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、派活、回复），立刻叫醒。部署 / 重启、进展通报用 --fyi")
 	if err := parseAnywhere(fs, args); err != nil {
@@ -188,7 +189,10 @@ func runTeam(args []string) error {
 	}
 	tell := fs.NArg() > 0 && fs.Arg(0) == "tell"
 	key, agent := *session, ""
-	if tell && key == "" {
+	if tell && *session != "" {
+		return fmt.Errorf("ks team tell 不接受 --session：发送方只认当前对话（hook / 环境识别），不能指定或冒用别的会话；要点名收件会话请用 --to-session tool:id，或 --to advisor|aide|pm|reviewer 按身份发")
+	}
+	if tell {
 		key, agent = currentTeller()
 	} else {
 		key = currentSession(key)
@@ -227,10 +231,10 @@ func runTeam(args []string) error {
 		// 或回复收到的团队消息；只送给 Agent、不进用户收件箱（R-135 / R-191）
 		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
 		if text == "" {
-			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer] [--req R-x]\n      ks team tell --reply D-x <回复>")
+			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer|advisor] [--req R-x]\n      ks team tell --reply D-x <回复>")
 		}
 		body := map[string]any{"session_key": key, "text": text}
-		for k, v := range map[string]string{"requirement": *req, "to": *to, "reply_to": *reply, "agent_id": agent} {
+		for k, v := range map[string]string{"requirement": *req, "to": *to, "to_session": *toSession, "reply_to": *reply, "agent_id": agent} {
 			if v != "" {
 				body[k] = v
 			}
