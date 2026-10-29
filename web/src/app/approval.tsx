@@ -29,8 +29,8 @@ import { useAdvance, usePendingMap } from './verdict'
 // Agent 的限时请求（R-169 推荐开 Dev 会话）、转交、会话在等你、推翻代答。同一个外壳（需求抽屉的版式：顶栏 → 中部滚动 → 底部固定的判断），
 // 按类型换中部内容；底部统一是 R-161 的 Verdict，用词按 R-176 的场景。
 // 从「要你处理」打开时按它的顺序排队：顶部 ‹ › 切换，← → / J K 同样切换；处理完显示「都处理完了」。
-// 撤销期不挡下一步（R-201，docs/principles.md 第 8 条）：点了通过 / 批准 / 回答，就地盖一下印、随即滑到下一件，不等 3 秒；
-// 撤回挪到顶部浮动条，点了回到那一件再撤销（verdict.tsx 的 useAdvance）。
+// 撤销期不挡用户的下一步（R-201），但系统替用户做的下一步要等撤销期结束（R-226，docs/principles.md 第 8 条）：点了通过 / 批准 / 回答，停在这一件盖着撤销遮罩，3 秒走完盖印后才滑到下一件；
+// 撤回则不翻；撤销期内自己翻走会取消这次自动跳转，撤回挪到顶部浮动条（verdict.tsx 的 useAdvance）。
 
 type Dir = 'next' | 'prev' | 'pass'
 
@@ -158,7 +158,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   }
   const sealed = useDecided(cur)
   const awayOn = !!useAway().data?.away // 离开中：这里的处理照常生效，记进时段报告（R-210）
-  // 下了判断就翻到下一件（盖一下印之后）；撤回时回到这一件
+  // 下了判断停在这一件，撤销期走完盖印后翻到下一件；撤销期内撤回或自己翻走则不翻
   const here = askKey
   useAdvance(pendingKeyOf(cur), inQueue && !finished, advance, () => here && go(here, 'prev'))
   const wasLive = useRef(false)

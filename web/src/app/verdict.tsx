@@ -7,6 +7,7 @@ import type { Scene } from '../i18n/zh'
 import { cx } from '../lib/util'
 import { dockView } from '../lib/pending'
 import { secsAt } from '../lib/undo'
+import { advanceStep } from '../lib/advance'
 import { Button, Textarea } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { Leaving, reducedMotion as reduced, spring } from '../ui/gesture'
@@ -17,13 +18,13 @@ import { useActions } from './actions'
 //   各入口把场景（Scene）传进来，按钮、撤销条、印章、快捷键提示都按场景取词（i18n/zh.ts 的 VERB），行为不随场景变。
 // - Verdict：[附言（否定时必填）][否定][肯定]，决策是 [附言][回答]；放在卡片底部右侧，各处同一顺序、颜色、图标。
 //
-// 撤销期（R-201，docs/principles.md 第 8 条「撤销期不挡下一步」）：全站只有这一个调度器（schedule），需求验收、决策答复（outbox）、
+// 撤销期（R-201，docs/principles.md 第 8 条「撤销期不挡用户的下一步，但系统替用户做的下一步要等它结束」）：全站只有这一个调度器（schedule），需求验收、决策答复（outbox）、
 // 计划 / 阶段、改需求状态、开始计划、撤销授权、撤回放行都走它；计时、提交、盖印、页面关闭时立即提交都只在这里写一次。
 // - 结果立刻到位：排上后界面马上显示操作后的样子（需求进新列，见 lib/pending 的 shownStatus），元素上盖同一个撤销条（UndoBar）：
 //   行内摆法（PendingBar，卡片底部的判断行换成它）和遮罩摆法（PendingCover，盖在需求块上）；不锁界面、不排队，用户可以马上做下一件事。
 // - 元素看不见时（翻到下一件、列内滚走、手机上不在当前列）撤回挪到顶部浮动条（UndoDock）；批量只出一条汇总。
 // - 到点：盖印（Seal：印章盖下 → 停顿 SEAL_MS）→ 提交 → 卡片收起 / 留在新列；失败时元素回到原处（带同一套换列动画），错误由 useActions 提示。
-// - 连续审批（useAdvance）：一进撤销期就在原处盖一下印，SEAL_MS 后翻到下一件；浮动条里点撤回会先回到那一件再撤销。
+// - 连续审批（useAdvance，R-226）：下了判断后停在原件、盖着撤销遮罩，撤销期走完盖印后才自动翻到下一件；撤回则不翻；撤销期内自己翻走会取消这次自动跳转。
 // - 撤销期的状态放在模块里，离开页面（切走路由、标签页隐藏）照常计时、到点提交；页面真的关闭或刷新时用 keepalive 立即提交，不丢。
 
 // 撤销时长（D-229：3 秒，全站一致）。
@@ -57,7 +58,6 @@ export type Entry = {
   subject: string // 浮动条里写在前面的对象（R-12、P-3）
   to?: string // 需求改到的状态：撤销期里需求池按它显示（结果立刻到位）
   group?: string // 批量操作：同一组只出一条浮动条
-  stamp?: boolean // 连续审批：撤销期里就先盖一下印（随后翻到下一件）
   reopen?: () => void // 浮动条里撤回时先回到这一件
   phase: Phase
   timer: number
@@ -183,35 +183,43 @@ if (typeof window !== 'undefined')
 
 // ---------- 连续审批 ----------
 
-// useAdvance：连续审批（需求抽屉的连续验收、审批抽屉）——这件事一进撤销期，就在原处盖一下印，SEAL_MS 后翻到下一件，不等 3 秒；
-// 刚批的那件不在屏幕上了，撤回出现在顶部浮动条，点了先回到这一件（reopen）再撤销。同一次排上只翻一次（翻回来看它时不会再被翻走）。
+// useAdvance：连续审批（需求抽屉的连续验收、审批抽屉）——下了判断后停在这一件，盖着撤销遮罩；撤销期走完（进入盖印）才自动翻到下一件（R-226），
+// 盖印那一下（SEAL_MS）之后滑走。撤销期内撤回：恢复原状、不翻；用户自己翻走（→ / J / 下一件）：立刻生效、自动跳转取消，不会多翻一件，
+// 这时撤回在顶部浮动条里，点了先回到这一件（reopen）再撤销。时机判断在 lib/advance.ts；计时仍只有 schedule 这一套，这里不另起计时。
 // 一般动作（改状态等，act = move）不翻页；only 限定只在某种判断后翻（需求抽屉只在通过后翻，退回留在原处）。
 export function useAdvance(key: string | undefined, on: boolean, advance: () => void, reopen?: () => void, only?: Act) {
   const e = usePending(key)
-  const waiting = on && !!key && !!e && e.phase === 'wait' && e.act !== 'move' && (!only || e.act === only)
-  const handled = useRef(0)
+  const hit = !!e && e.act !== 'move' && (!only || e.act === only)
+  const armed = useRef(0)
   const timer = useRef(0)
-  const at = e?.at ?? 0
   const go = useRef(advance)
   go.current = advance
+  const phase = hit ? e.phase : undefined
+  const at = hit ? e.at : 0
   useEffect(() => {
-    if (!waiting || !key || handled.current === at) return
-    handled.current = at
-    const stamp = SHOW_STAMP && !reducedMotion()
-    patch(key, { stamp, reopen })
-    timer.current = window.setTimeout(() => {
+    const r = advanceStep(armed.current, phase && key ? { at, phase } : undefined, on && !!key)
+    if (phase === 'wait' && key && r.armed !== armed.current) patch(key, { reopen })
+    armed.current = r.armed
+    if (r.fire) {
+      timer.current = window.setTimeout(() => {
+        timer.current = 0
+        go.current()
+      }, SHOW_STAMP && !reducedMotion() ? SEAL_MS : 0)
+    } else if (!phase && timer.current) {
+      // 盖印那一下里失败回滚了：不翻
+      window.clearTimeout(timer.current)
       timer.current = 0
-      patch(key, { stamp: false }) // 印只盖这一下；翻回来看它时不再顶着印
-      go.current()
-    }, stamp ? SEAL_MS : 0)
-  }, [waiting, key, at]) // eslint-disable-line react-hooks/exhaustive-deps
-  // 盖印那一下里就撤回了（或换了一件）：不翻
-  useEffect(() => {
-    if (waiting || !timer.current) return
-    window.clearTimeout(timer.current)
-    timer.current = 0
-  }, [waiting])
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+    }
+  }, [key, on, phase, at]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 换了一件（用户自己翻走）或离开：这次自动跳转取消
+  useEffect(
+    () => () => {
+      armed.current = 0
+      window.clearTimeout(timer.current)
+      timer.current = 0
+    },
+    [key, on],
+  )
 }
 
 // ---------- 锚点：元素看不看得见 ----------
@@ -544,10 +552,10 @@ function GroupText({ items }: { items: Entry[] }) {
 // ---------- 印章 ----------
 
 // Seal：生效反馈（D-229）——到点后在卡片上盖一方印（肯定朱红、回答墨蓝、否定淡墨且轻一些），印文按场景（已通过 / 已批准 / 已拒绝…），停顿片刻后卡片收起。
-// 连续审批时撤销期一开始就盖（stamp），随后翻到下一件。卡片需要 relative；k 取模块里的撤销状态，也可以直接给 show / act / scene。减少动效时不盖印。
+// 连续审批时撤销期走完才盖（进入盖印阶段），随后翻到下一件（R-226）。卡片需要 relative；k 取模块里的撤销状态，也可以直接给 show / act / scene。减少动效时不盖印。
 export function Seal({ k, show, act, scene, className }: { k?: string; show?: boolean; act?: Act; scene?: Scene; className?: string }) {
   const e = usePending(k)
-  const on = SHOW_STAMP && !reducedMotion() && (show ?? (!!e && e.act !== 'move' && (e.phase !== 'wait' || !!e.stamp)))
+  const on = SHOW_STAMP && !reducedMotion() && (show ?? (!!e && e.act !== 'move' && e.phase !== 'wait'))
   const a = act ?? e?.act ?? 'pass'
   const tone = a === 'back' ? 'border-fg-3/70 text-fg-3' : a === 'answer' ? 'border-accent text-accent' : 'border-seal text-seal'
   return (

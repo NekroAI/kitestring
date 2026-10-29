@@ -366,7 +366,7 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
     })
   const ids = files.map((f) => f.id)
   // 通过时也可以带附言（作为留言送达，需求仍是已完成）。
-  // 连续验收时撤销期不挡下一步（docs/principles.md 第 8 条）：盖一下印就翻到下一件（ReqPanel 的 useAdvance），撤回挪到顶部浮动条
+  // 连续验收（docs/principles.md 第 8 条）：通过后停在这一条盖着撤销遮罩，撤销期走完才翻到下一条（ReqPanel 的 useAdvance，R-226）
   const pass = () => {
     if (pend) return
     verdict.pass(r.code, { comment: text, files: ids, after: clear })
@@ -507,7 +507,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
       { replace: true },
     )
   }
-  // 连续验收：这一条一进撤销期，盖一下印（Seal 在 ReqView 里）就滑到下一条；浮动条里撤回时回到这一条（R-201）
+  // 连续验收：这一条撤销期走完、盖印之后才滑到下一条；撤销期内自己翻走会取消这次自动跳转；浮动条里撤回时回到这一条（R-226）
   const onAdvance = (code: string) => {
     // 已经下了判断、还在撤销期里的不算下一件（它在服务端仍是待验收）
     const target = queue.filter((x) => x.code !== code && (!anchor?.review || x.status === 'review') && !pendMap.has(x.code))
