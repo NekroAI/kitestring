@@ -76,6 +76,8 @@ type reqView struct {
 	StageSeq         int        `json:"stage_seq"`
 	StageTitle       string     `json:"stage_title"`
 	StageStatus      string     `json:"stage_status"`
+	BlockedOn        string     `json:"blocked_on"` // 受阻时在等的 R-x / D-x（R-243）
+	BlockedReason    string     `json:"blocked_reason"`
 	Files            []fileView `json:"files"`
 	Evidence         []struct {
 		ID      string     `json:"id"`
@@ -142,6 +144,9 @@ func (r reqView) line() string {
 	}
 	if r.PendingDecisions > 0 {
 		parts = append(parts, fmt.Sprintf("%d 个待决", r.PendingDecisions))
+	}
+	if r.Status == "blocked" && r.BlockedOn != "" {
+		parts = append(parts, "在等 "+r.BlockedOn)
 	}
 	return fmt.Sprintf("%s「%s」%s", r.Code, r.Title, strings.Join(nonEmpty(parts), " · "))
 }

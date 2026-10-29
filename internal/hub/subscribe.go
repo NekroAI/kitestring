@@ -174,6 +174,9 @@ func projectSettingsChanges(before, after store.Project) []string {
 	if roles.NormPolicy(before.ModelPolicy) != roles.NormPolicy(after.ModelPolicy) {
 		out = append(out, fmt.Sprintf("用户把项目 %s 的「子任务模型策略」从「%s」改为「%s」：之后派子任务按新的倾向选模型（身份提示词已更新，ks role 重新读到的就是新的）。", before.Name, roles.PolicyName(before.ModelPolicy), roles.PolicyName(after.ModelPolicy)))
 	}
+	if before.StallLimit() != after.StallLimit() {
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「进行中停滞」从 %d 分钟改为 %d 分钟：进行中的需求这么久没动静、又没有会话在跑，就进用户的「要你处理」。", before.Name, int(before.StallLimit()/time.Minute), int(after.StallLimit()/time.Minute)))
+	}
 	if before.DevIdleLimit() != after.DevIdleLimit() {
 		out = append(out, fmt.Sprintf("用户把项目 %s 的「开发待命超时」从 %d 分钟改为 %d 分钟：开发会话待命超过它、手上没有排给它的需求时，纸鸢提示收尾，不再给它送订阅事件。", before.Name, int(before.DevIdleLimit()/time.Minute), int(after.DevIdleLimit()/time.Minute)))
 	}

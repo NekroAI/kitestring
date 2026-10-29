@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Decision, Requirement, Session } from '../api/client'
-import { useDecisions, usePlans, useRequirements, useSessions } from '../api/queries'
+import { useDecisions, usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
+import { attention, stallLimit } from '../lib/waiton'
 import { displayState } from '../ui/marks'
 import { usePlanTodo } from './plans'
 import { reviewHeld } from './verify'
@@ -45,6 +46,8 @@ export function useWorkbench() {
   const reqs = useRequirements()
   const plans = usePlanTodo()
   const plansQ = usePlans() // 计划也进「要你处理」（待批准、待阶段验收），到齐前算加载中（R-211）
+  const projectsQ = useProjects() // 停滞阈值按项目设置（R-243）
+  const minute = useMinute() // 停滞按时间算：每分钟重算一次
 
   return useMemo(() => {
     const ss = sessions.data?.sessions ?? []
@@ -134,6 +137,9 @@ export function useWorkbench() {
     }
     const projects = [...groups.values()].sort((a, b) => a.urgency - b.urgency || b.lastActive.localeCompare(a.lastActive))
     const all = [...threads.values()]
+    // 等你的事（R-243）：受阻指向落到你身上的、没写等什么的受阻、被等着定稿的草稿、停滞的进行中需求
+    const stall = new Map((projectsQ.data?.projects ?? []).map((p) => [p.id, stallLimit(p.stall_minutes)]))
+    const att = attention(rs, ds, ss, minute, (pid) => stall.get(pid) ?? stallLimit(0))
 
     return {
       loading: sessions.isPending || decisions.isPending || reqs.isPending || plansQ.isPending,
@@ -150,7 +156,19 @@ export function useWorkbench() {
       threads: all,
       running: ss.filter((s) => s.state === 'running' || s.state === 'background'),
       plans, // 在等你的计划：待批准、待阶段验收
-      todo: all.reduce((n, th) => n + th.items, 0) + plans.length,
+      attention: att,
+      reqs: rs,
+      todo: all.reduce((n, th) => n + th.items, 0) + plans.length + att.blocked.length + att.drafts.length + att.stalled.length,
     }
-  }, [sessions, decisions, reqs, plans, plansQ.isPending])
+  }, [sessions, decisions, reqs, plans, plansQ.isPending, projectsQ.data, minute])
+}
+
+// useMinute：每分钟变一次的当前时间（停滞判断用，R-243）。
+function useMinute() {
+  const [m, setM] = useState(() => Math.floor(Date.now() / 60000) * 60000)
+  useEffect(() => {
+    const id = window.setInterval(() => setM(Math.floor(Date.now() / 60000) * 60000), 30_000)
+    return () => window.clearInterval(id)
+  }, [])
+  return m
 }

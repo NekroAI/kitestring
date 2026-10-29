@@ -646,6 +646,10 @@
             "description": "相关需求编号（如 R-12），可省略",
             "type": "string"
           },
+          "session_claimed": {
+            "description": "session_key 是调用方用 --session 自报的（自动识别不到当前会话时，R-248）：hub 校验它是没结束、属于某个项目的会话，并在返回里注明按它认定发送方",
+            "type": "boolean"
+          },
           "session_key": {
             "description": "调用者",
             "minLength": 1,
@@ -657,7 +661,11 @@
             "type": "string"
           },
           "to": {
-            "description": "收件身份：pm（默认）、aide、reviewer；也认中文名（主调度 / 主助理 / 评审）。回复时不填",
+            "description": "收件身份：pm（默认）、aide、reviewer、advisor；也认中文名（主调度 / 主助理 / 评审 / 顾问）。回复时不填",
+            "type": "string"
+          },
+          "to_session": {
+            "description": "指定收件会话键（tool:id）：必须是本项目没结束、有身份的会话；与 to 同时填时身份要对得上。本项目有多个顾问 / 评审时用它点名；不填则发给该身份最近活跃的一个（R-248）",
             "type": "string"
           }
         },
@@ -724,6 +732,10 @@
               "done",
               "shelved"
             ],
+            "type": "string"
+          },
+          "waiting_on": {
+            "description": "设为 blocked 时在等的需求或决策编号（R-x / D-x，R-243）：顺着等待关系落到用户身上的那一条会在「要你处理」写明「R-x 在等这条」；不写时这条受阻需求本身进「要你处理」",
             "type": "string"
           }
         },
@@ -3358,6 +3370,14 @@
               "null"
             ]
           },
+          "blocked_on": {
+            "description": "受阻时在等的需求或决策编号（R-x / D-x，R-243）",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "description": "受阻原因的一句话（R-243）",
+            "type": "string"
+          },
           "code": {
             "type": "string"
           },
@@ -4570,6 +4590,14 @@
           },
           "advice": {
             "$ref": "#/components/schemas/Advice"
+          },
+          "blocked_on": {
+            "description": "受阻时在等的需求或决策编号（R-x / D-x，R-243）",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "description": "受阻原因的一句话（R-243）",
+            "type": "string"
           },
           "code": {
             "type": "string"
@@ -6162,6 +6190,10 @@
           "remote": {
             "type": "string"
           },
+          "stall_minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
           "workspace_id": {
             "type": "string"
           }
@@ -6177,6 +6209,7 @@
           "commit_on_accept",
           "model_policy",
           "dev_idle_minutes",
+          "stall_minutes",
           "created_at",
           "need_devs",
           "need_reason",
@@ -6222,6 +6255,13 @@
           "name": {
             "minLength": 1,
             "type": "string"
+          },
+          "stall_minutes": {
+            "description": "进行中需求停滞的分钟数（30～2880，默认 120）",
+            "format": "int64",
+            "maximum": 2880,
+            "minimum": 30,
+            "type": "integer"
           },
           "workspace_id": {
             "type": "string"
@@ -6441,6 +6481,14 @@
           },
           "advice": {
             "$ref": "#/components/schemas/Advice"
+          },
+          "blocked_on": {
+            "description": "受阻时在等的需求或决策编号（R-x / D-x，R-243）",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "description": "受阻原因的一句话（R-243）",
+            "type": "string"
           },
           "code": {
             "type": "string"
@@ -6723,6 +6771,14 @@
           },
           "advice": {
             "$ref": "#/components/schemas/Advice"
+          },
+          "blocked_on": {
+            "description": "受阻时在等的需求或决策编号（R-x / D-x，R-243）",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "description": "受阻原因的一句话（R-243）",
+            "type": "string"
           },
           "code": {
             "type": "string"
@@ -7125,6 +7181,14 @@
               "array",
               "null"
             ]
+          },
+          "blocked_on": {
+            "description": "受阻时在等的需求或决策编号（R-x / D-x，R-243）",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "description": "受阻原因的一句话（R-243）",
+            "type": "string"
           },
           "code": {
             "type": "string"
@@ -10425,7 +10489,7 @@
     },
     "/api/agent/team/tell": {
       "post": {
-        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。",
+        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）。按身份发给本项目现在没结束的那个会话；评审、顾问有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。",
         "operationId": "agent-tell-pm",
         "requestBody": {
           "content": {

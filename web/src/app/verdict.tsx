@@ -138,12 +138,19 @@ async function fire(key: string) {
     return emit()
   }
   patch(key, { phase: 'done' })
-  window.setTimeout(() => {
+  // 至少保持 SEALED_HOLD_MS，并且等列表数据刷新回来再撤（R-266）：只按固定时长撤，慢网络下旧数据会把条目又带回来一下
+  void Promise.all([sleep(SEALED_HOLD_MS), settle()]).then(() => {
     if (pending.get(key)?.phase === 'done') {
       pending.delete(key)
       emit()
     }
-  }, SEALED_HOLD_MS)
+  })
+}
+
+// settle：等手头的数据请求都回来（main.tsx 用 QueryClient 注册；最多等 15 秒，lib/settle.ts）。
+let settle: () => Promise<unknown> = () => Promise.resolve()
+export function setSettle(fn: () => Promise<unknown>) {
+  settle = fn
 }
 
 export function undo(key: string) {

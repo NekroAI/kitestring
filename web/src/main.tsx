@@ -6,7 +6,8 @@ import { Toaster } from 'sonner'
 import { ApiError, setUnauthorizedHandler } from './api/client'
 import { qk } from './api/queries'
 import { OutboxProvider } from './app/outbox'
-import { UndoDock } from './app/verdict'
+import { setSettle, UndoDock } from './app/verdict'
+import { waitIdle } from './lib/settle'
 import { initTheme } from './lib/theme'
 import { registerSW } from './lib/push'
 import { ConfirmProvider } from './ui/overlay'
@@ -52,6 +53,9 @@ const queryClient = new QueryClient({
     },
   },
 })
+
+// 撤销期结束、提交成功后，等数据请求都回来再撤掉本地的「已处理」（R-266）
+setSettle(() => waitIdle({ busy: () => queryClient.isFetching() > 0, sleep: (ms) => new Promise((ok) => window.setTimeout(ok, ms)), now: () => Date.now() }))
 
 // 任何接口返回 401：把登录状态置为未登录，路由守卫会跳回登录页。
 setUnauthorizedHandler(() => {

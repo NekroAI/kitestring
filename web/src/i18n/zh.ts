@@ -17,6 +17,9 @@ import { both, roleNames, rt } from './roles.ts'
 // - answer   选项类决策：回答（没有否定动作）
 // - permit   会话等授权：允许 / 拒绝（网页上暂不提供，预留）
 // 送给 Agent 的答复里，拒绝 / 退回 / 超时视为拒绝分别写明（后端 internal/hub/verdict.go）。
+// joinCodes：R-1、R-2 两条以内全写，再多写「R-1 等 3 条」（R-243）
+const joinCodes = (codes: string[]) => (codes.length <= 2 ? codes.join('、') : `${codes[0]} 等 ${codes.length} 条`)
+
 export type Scene = 'accept' | 'plan' | 'approval' | 'request' | 'answer' | 'permit'
 const VERB: Record<Scene, { pass: string; back: string }> = {
   accept: { pass: '通过', back: '退回' },
@@ -395,9 +398,65 @@ export const zh = {
     sessionsSub: (n: number, ended: number) => `${n} 个在线 · 已结束 ${ended}`,
   },
 
+  // 失败提示里「哪件事没成功」的说法（R-236）：「关闭 D-964 没成功：连不上纸鸢……没有改动，可以再试一次。」规则见 lib/fail.ts
+  fail: {
+    answer: (refs: string[]) => (refs.length === 1 ? `提交 ${refs[0]} 的答复` : `提交 ${refs.length} 条答复`),
+    reassign: (ref: string) => `转交 ${ref}`,
+    close: (ref: string) => `关闭 ${ref}`,
+    resend: (ref: string) => `重新送达 ${ref}`,
+    override: (ref: string) => `推翻 ${ref} 的代答`,
+    openGrant: '开授权窗口',
+    revokeGrant: (ref: string) => `撤销授权 ${ref}`,
+    startAway: '设为暂时离开',
+    endAway: '结束暂时离开',
+    withdraw: (ref: string) => `撤回 ${ref} 的放行`,
+    review: (items: { ref: string; verdict: string }[]) =>
+      items.length === 1 ? `${items[0].verdict === 'accept' ? '通过' : '退回'} ${items[0].ref}` : `验收 ${items.length} 条需求`,
+    note: (ref: string) => `给 ${ref} 留言`,
+    assign: (ref: string) => `交出 ${ref}`,
+    askReview: (ref: string) => `把 ${ref} 交给评审`,
+    reply: '发送消息',
+    markDone: '标记会话',
+    createReq: '新建需求',
+    updateReq: (ref: string) => `修改 ${ref}`,
+    deleteReq: (ref: string) => `删除 ${ref}`,
+    link: (ref: string, unlink: boolean) => (unlink ? `取消关联 ${ref}` : `关联 ${ref}`),
+    createPlan: '新建计划',
+    updatePlan: (ref: string) => `修改 ${ref}`,
+    deletePlan: (ref: string) => `删除 ${ref}`,
+    startPlan: (ref: string) => `批准 ${ref}`,
+    rejectPlan: (ref: string) => `退回 ${ref}`,
+    passStage: (ref: string, seq: number) => `通过 ${ref} 阶段 ${seq}`,
+    reviseStage: (ref: string, seq: number) => `退回 ${ref} 阶段 ${seq}`,
+    createDevice: '新增设备',
+    revokeDevice: '吊销设备',
+    deleteDevice: '删除设备',
+    updateProject: '保存项目设置',
+    mergeProject: '合并项目',
+    saveWorkspace: '保存工作区',
+    deleteWorkspace: '删除工作区',
+    dismissNeed: '撤下开会话提示',
+    save: '保存设置',
+    login: '登录',
+    stop: '停止进程',
+    ignore: '忽略进程',
+    compact: '复制压缩命令',
+  },
   // 审批抽屉与「要你处理」条目（R-177）
   ask: {
-    kind: { review: '验收', decide: '决策', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答' } as Record<string, string>,
+    kind: { review: '验收', decide: '决策', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答', blocked: '受阻', waited: '待定稿', stalled: '停滞' } as Record<string, string>,
+    // 等你的事（R-243）：受阻指向、被等着定稿的草稿、停滞的进行中需求
+    waitedBy: (by: string[]) => `${joinCodes(by)} 在等这条`,
+    waitedDraft: (by: string[]) => `${joinCodes(by)} 在等它定稿`,
+    blockedBare: '受阻，没写在等什么',
+    blockedWhy: (why: string) => `受阻：${why}`,
+    blockedGone: (on: string) => `等的 ${on} 已经结束，仍标受阻`,
+    blockedMissing: (on: string) => `等的 ${on} 找不到，仍标受阻`,
+    stalledLine: (dur: string) => `进行中，${dur}没有动静，也没有会话在做`,
+    whyWaited: (by: string[]) => `${joinCodes(by)} 受阻在等这条草稿定稿。定稿（改为待开始或改写清楚）后，等它的工作才能往下走。`,
+    whyBlocked: '这条需求标了受阻，但没有指向在等的需求或决策，没人会自己把它往下推。看看它在等什么：能解开就改状态，等的是别的需求就让会话把受阻指向它。',
+    whyBlockedGone: (on: string) => `这条需求在等的 ${on} 已经结束，它却还标着受阻。看一下是否可以继续做，或改成别的状态。`,
+    whyStalled: (dur: string) => `这条需求标着进行中，但需求和关联会话已经 ${dur}没有动静，也没有会话在跑。可以给会话发消息让它接着做，或者改状态。停滞时长在设置里按项目调。`,
     score: (pass: number, total: number) => `${pass}/${total} 达标`,
     rec: (rec: string) => `推荐：${rec}`,
     options: (n: number) => `${n} 个选项`,
@@ -926,6 +985,8 @@ export const zh = {
     modelPolicy: '子任务模型策略',
     devIdle: '开发待命超时',
     devIdleHint: '开发会话待命超过这么久、手上又没有排给它的需求时，泳道上标「待命超时 · 建议收尾」并告诉主调度，之后不再给它送订阅事件；派活、点名给它的消息照常送到，派活后自动恢复。默认 30 分钟',
+    stall: '进行中停滞',
+    stallHint: '进行中的需求超过这么久没有动静、也没有会话在跑，就放进「要你处理」，免得工作停在你看不到的地方。只从记录算，不唤醒会话。默认 120 分钟',
     minutes: '分钟',
     modelPolicyOptions: { economy: '经济', balanced: '均衡', quality: '质量优先' } as Record<string, string>,
     modelPolicyHints: {
@@ -1230,6 +1291,8 @@ export const zh = {
     bySystem: '纸鸢',
     changed: '把状态改为',
     shelveWhy: '搁置原因',
+    blockedWhy: '受阻原因',
+    waitOn: '· 在等',
     statusReq: {
       approved: '你批准了 Agent 的申请',
       rejected: '你拒绝了 Agent 的申请',

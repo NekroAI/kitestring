@@ -158,6 +158,9 @@ func (h *Hub) planMsg(ctx context.Context, x store.Plan, text string, files ...s
 	}); err != nil {
 		h.log.Warn("记录计划进展失败", "err", err)
 	}
+	if s.State == store.StateEnded || s.State == store.StateLost {
+		h.noticeSweep(ctx) // 负责会话已结束：只告知的进展（计划已完成）当场关掉，不进待转交（R-265）
+	}
 }
 
 func stageName(st store.Stage) string { return fmt.Sprintf("阶段 %d「%s」", st.Seq, st.Title) }

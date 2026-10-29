@@ -92,7 +92,7 @@ function useSaveSettings() {
       if (okMsg) toast.success(okMsg)
       return true
     } catch (e) {
-      toast.error(errMsg(e))
+      toast.error(errMsg(e, t.fail.save))
       return false
     }
   }
@@ -256,7 +256,7 @@ function NotifyForm({ value, onChange }: { value: NotifyConfig; onChange: (v: No
         await unwrap(api.POST('/api/notify/test', { body: value }))
         toast.success(t.settings.notify.testOk)
       } catch (e) {
-        toast.error(errMsg(e))
+        toast.error(errMsg(e, t.fail.save))
       }
     })
   return (
@@ -353,7 +353,7 @@ function PushGroup() {
         await fn()
         if (done) toast.success(done)
       } catch (e) {
-        toast.error(errMsg(e))
+        toast.error(errMsg(e, t.fail.save))
       }
       refresh()
       void qc.invalidateQueries({ queryKey: ['settings', 'push'] })
@@ -748,7 +748,7 @@ function CacheHoldsGroup() {
         await qc.invalidateQueries({ queryKey: qk.cacheHolds })
         toast.success(t.common.saved)
       } catch (e) {
-        toast.error(errMsg(e))
+        toast.error(errMsg(e, t.fail.save))
       }
     })
   return (
@@ -821,7 +821,7 @@ function TokenPricesGroup() {
         await qc.invalidateQueries({ queryKey: qk.tokenPrices })
         toast.success(t.common.saved)
       } catch (e) {
-        toast.error(errMsg(e))
+        toast.error(errMsg(e, t.fail.save))
       }
     })
   const add = () => {
@@ -966,7 +966,7 @@ function Passkeys() {
         await registerPasskey()
         toast.success(t.settings.passkey.added)
       } catch (e) {
-        if (!(e instanceof DOMException && e.name === 'NotAllowedError')) toast.error(errMsg(e))
+        if (!(e instanceof DOMException && e.name === 'NotAllowedError')) toast.error(errMsg(e, t.fail.save))
       }
       refresh()
     })
@@ -976,7 +976,7 @@ function Passkeys() {
       await unwrap(api.DELETE('/api/passkeys/{id}', { params: { path: { id } } }))
       refresh()
     } catch (e) {
-      toast.error(errMsg(e))
+      toast.error(errMsg(e, t.fail.save))
     }
   }
   const row = (p: (typeof here)[number]) => (
@@ -1031,7 +1031,7 @@ function RolePromptCard({ rp }: { rp: RolePrompt }) {
         await refresh()
         toast.success(L.saved)
       } catch (e) {
-        toast.error(errMsg(e))
+        toast.error(errMsg(e, t.fail.save))
       }
     })
   const restore = async () => {
@@ -1042,7 +1042,7 @@ function RolePromptCard({ rp }: { rp: RolePrompt }) {
         await refresh()
         toast.success(L.restored)
       } catch (e) {
-        toast.error(errMsg(e))
+        toast.error(errMsg(e, t.fail.save))
       }
     })
   }
@@ -1213,7 +1213,7 @@ function Account({ version }: { version: string }) {
         setPw({ old: '', next: '' })
         toast.success(t.settings.account.passwordChanged)
       } catch (e) {
-        toast.error(errMsg(e))
+        toast.error(errMsg(e, t.fail.save))
       }
     })
   return (

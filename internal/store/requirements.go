@@ -75,6 +75,10 @@ type Requirement struct {
 	StatusChanges []StatusChange `json:"status_changes,omitempty"`
 	// Advice：待验收时主助理当前有效的验收建议（R-242）；req_get 带上它，没有建议或不在待验收时为空
 	Advice *Advice `json:"advice,omitempty"`
+	// BlockedOn / BlockedReason：受阻时在等什么（R-243）——等的需求 / 决策编号（R-x / D-x）和一句话说明；
+	// 没写等什么的受阻需求本身进「要你处理」，指向了的顺着等待关系落到你身上的那一条上写明「R-x 在等这条」。离开受阻时清空
+	BlockedOn     string `json:"blocked_on,omitempty" doc:"受阻时在等的需求或决策编号（R-x / D-x，R-243）"`
+	BlockedReason string `json:"blocked_reason,omitempty" doc:"受阻原因的一句话（R-243）"`
 	// Review：待验收时这一轮的评审验证情况（R-232、R-237），推导得出；没交给评审、也没收到审查意见时为空
 	Review    *ReviewState `json:"review,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`
@@ -123,7 +127,7 @@ const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.na
 	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending'),
 	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, ''), r.offered_to, r.offered_at,
 	COALESCE((SELECT x.seq || char(31) || x.assigned_by || char(31) || x.context || char(31) || x.answer || char(31) || x.created_at FROM decisions x
-		WHERE x.requirement_id = r.id AND x.kind = 'release' AND x.close_reason = '' ORDER BY x.seq DESC LIMIT 1), ''), r.from_decision
+		WHERE x.requirement_id = r.id AND x.kind = 'release' AND x.close_reason = '' ORDER BY x.seq DESC LIMIT 1), ''), r.from_decision, r.blocked_on, r.blocked_reason
 	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id
 	LEFT JOIN plan_stages ps ON ps.id = r.stage_id LEFT JOIN plans pl ON pl.id = ps.plan_id`
 
@@ -140,7 +144,7 @@ func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var seq, planSeq int
 	var created, updated, files, offeredAt, release string
 	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions,
-		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt, &release, &r.FromDecision)
+		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt, &release, &r.FromDecision, &r.BlockedOn, &r.BlockedReason)
 	r.Release = parseRelease(release)
 	r.OfferedAt = parseNullTS(sql.NullString{String: offeredAt, Valid: offeredAt != ""})
 	r.Files = parseFiles(files)
@@ -373,6 +377,12 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 		if _, err := t.ExecContext(ctx, `UPDATE requirements SET status = ?, offered_to = CASE WHEN status = ? THEN offered_to ELSE '' END, offered_at = CASE WHEN status = ? THEN offered_at ELSE '' END, updated_at = ? WHERE id = ?`, status, status, status, now(), cur.ID); err != nil {
 			return err
 		}
+		if status != ReqBlocked && (cur.BlockedOn != "" || cur.BlockedReason != "") {
+			// 不再受阻：在等什么随之清空（R-243）
+			if _, err := t.ExecContext(ctx, `UPDATE requirements SET blocked_on = '', blocked_reason = '' WHERE id = ?`, cur.ID); err != nil {
+				return err
+			}
+		}
 		if cur.Status != status {
 			if err := recordStatus(ctx, t, cur.ID, cur.Status, status); err != nil {
 				return err
@@ -396,6 +406,28 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 		s.OnRequestVoided(voided)
 	}
 	return s.GetRequirement(ctx, cur.ID)
+}
+
+// NormWaitRef 把受阻指向整理成规范编号（R-243）：r-12 / R-12 / d-5 → R-12 / D-5；不是需求或决策编号的返回空串。
+func NormWaitRef(ref string) string {
+	r := strings.ToUpper(strings.TrimSpace(ref))
+	for _, p := range []string{"R", "D"} {
+		if n, ok := parseRef(r, p); ok && strings.HasPrefix(r, p+"-") && n > 0 {
+			return p + "-" + strconv.Itoa(n)
+		}
+	}
+	return ""
+}
+
+// SetBlockedOn 记下受阻的需求在等什么（R-243）：on 是规范编号（R-x / D-x）或空，reason 是一句话。
+// 只在需求是受阻状态时写；调用方先把状态改成受阻。
+func (s *Store) SetBlockedOn(ctx context.Context, id, on, reason string) error {
+	reason = strings.Join(strings.Fields(reason), " ")
+	if r := []rune(reason); len(r) > 200 {
+		reason = string(r[:200])
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE requirements SET blocked_on = ?, blocked_reason = ?, updated_at = ? WHERE id = ? AND status = ?`, on, reason, now(), id, ReqBlocked)
+	return err
 }
 
 // SetOffered 记下待开始的需求已交给哪个会话（交出或排队送达）。

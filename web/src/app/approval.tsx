@@ -12,7 +12,7 @@ import { Pager } from '../ui/gesture'
 import { RoleBadge } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
-import { askKindLabel, askTitle, buildAsks, decisionKind, pendingKeyOf, type Ask } from './asks'
+import { askKindLabel, askTitle, buildAsks, decisionKind, pendingKeyOf, roughDuration, type Ask } from './asks'
 import { useKsEvent } from './command'
 import { DecisionComposer, OrphanCard } from './DecisionCard'
 import { ProxyNote, OverrideBox } from './grant'
@@ -74,6 +74,9 @@ function useAskSource() {
     const s = (sessions.data?.sessions ?? []).find((v) => v.key === id)
     if (p === 's' && s) return { key, kind: s.state === 'waiting_approval' ? 'permit' : 'question', title: sessionTitle(s), at: s.state_since, counted: true, s, projectId: s.project_id ?? '', projectName: s.project_name ?? '' }
     if (p === 'r') return { key, kind: 'review', title: id, at: '', counted: true, code: id, projectId: '', projectName: '' }
+    // 等你的事（R-243）：已经不在队列里（刚处理完）时仍打开那条需求
+    const reqKind = ({ b: 'blocked', w: 'waited', t: 'stalled' } as const)[p as 'b' | 'w' | 't']
+    if (reqKind) return { key, kind: reqKind, title: id, at: '', counted: true, code: id, projectId: '', projectName: '' }
     return undefined
   }
   return { asks, find, loading: wb.loading }
@@ -121,7 +124,7 @@ export function ApprovalPanel({ askKey, onClose }: { askKey: string | null; onCl
   // 再往外一件的需求详情先取好（邻件本身已画在带子上）
   const reviewCode = (k?: string) => {
     const a = k ? find(k) : undefined
-    return a?.kind === 'review' ? a.code : a?.d?.requirement_code || undefined // 挂了需求的决策也打开需求（R-241）
+    return a?.kind === 'review' || a?.kind === 'blocked' || a?.kind === 'waited' || a?.kind === 'stalled' ? a.code : a?.d?.requirement_code || undefined // 挂了需求的决策也打开需求（R-241）
   }
   const liveBefore = (k: string) => order.slice(0, order.indexOf(k)).reverse().find((x) => live.has(x))
   const liveAfter = (k: string) => order.slice(order.indexOf(k) + 1).find((x) => live.has(x))
@@ -335,6 +338,19 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
         }
       />
     )
+  // 等你的事（R-243）：打开这条需求，顶上一句写明为什么在这里、谁在等它；改状态、发消息都在需求里做
+  if (a.kind === 'blocked' || a.kind === 'waited' || a.kind === 'stalled')
+    return (
+      <ReqView
+        refId={a.code!}
+        top={
+          <>
+            {top}
+            <WhyHere a={a} />
+          </>
+        }
+      />
+    )
   if (a.kind === 'plan' || a.kind === 'stage') {
     const x = (plans.data ?? []).find((v) => v.code === a.code) ?? a.plan
     return x ? <PlanBody key={x.code} x={x} top={top} /> : <Gone top={top} />
@@ -356,6 +372,25 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
   if (a.kind === 'proxy' && d) return <ProxyBody d={d} top={top} />
   if (a.s) return <SessionBody s={a.s} top={top} />
   return <Gone top={top} />
+}
+
+// WhyHere：等你的事为什么在「要你处理」里（R-243），一句话写在抽屉顶上。
+function WhyHere({ a }: { a: Ask }) {
+  const now = Date.now()
+  const r = a.req
+  const text =
+    a.kind === 'waited'
+      ? t.ask.whyWaited(a.waitedBy ?? [])
+      : a.kind === 'stalled'
+        ? t.ask.whyStalled(roughDuration(a.at, now))
+        : a.blockedWhy === 'gone' || a.blockedWhy === 'missing'
+          ? t.ask.whyBlockedGone(r?.blocked_on ?? '')
+          : t.ask.whyBlocked
+  return (
+    <p data-why-here={a.kind} className="mx-4 mb-1 shrink-0 rounded-lg border border-wait/25 bg-wait-soft px-3 py-2 text-[13px] leading-relaxed text-fg-2 sm:mx-5">
+      {text}
+    </p>
+  )
 }
 
 function Scroll({ children, className }: { children: ReactNode; className?: string }) {

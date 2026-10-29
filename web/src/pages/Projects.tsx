@@ -412,6 +412,8 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const [policy, setPolicy] = useState(projects.data?.projects.find((x) => x.id === p.id)?.model_policy || 'balanced')
   const [idle, setIdle] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.dev_idle_minutes || 30))
   const idleMin = Math.min(720, Math.max(5, Math.round(Number(idle)) || 30))
+  const [stall, setStall] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.stall_minutes || 120))
+  const stallMin = Math.min(2880, Math.max(30, Math.round(Number(stall)) || 120))
   const { mergeProject } = useActions()
   const confirm = useConfirm()
   const navigate = useNavigate()
@@ -432,7 +434,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality', dev_idle_minutes: idleMin })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality', dev_idle_minutes: idleMin, stall_minutes: stallMin })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -471,6 +473,15 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
           <div className="flex items-center gap-2">
             <div className="w-28 shrink-0">
               <Input type="number" inputMode="numeric" min={5} max={720} value={idle} onChange={(e) => setIdle(e.target.value)} />
+            </div>
+            <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
+          </div>
+        </Field>
+        {/* 进行中停滞（R-243）：进行中的需求这么久没动静、又没有会话在跑，就进「要你处理」 */}
+        <Field label={t.projects.stall} hint={t.projects.stallHint}>
+          <div className="flex items-center gap-2">
+            <div className="w-28 shrink-0">
+              <Input type="number" inputMode="numeric" min={30} max={2880} value={stall} onChange={(e) => setStall(e.target.value)} />
             </div>
             <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
           </div>

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { History, RefreshCw } from 'lucide-react'
-import { api, errMsg, unwrap } from '../api/client'
+import { api, errReason, unwrap } from '../api/client'
 import { t } from '../i18n'
 import { absTime, cx } from '../lib/util'
 import { Button, Empty, ErrorState, Segmented, Skeleton } from '../ui/base'
@@ -107,7 +107,7 @@ export function RecapPanel({ open, onClose }: { open: boolean; onClose: () => vo
       const res = await unwrap(api.POST('/api/recap', { body: { from: from.toISOString(), to: to.toISOString() } }))
       setState({ text: res.markdown, from: res.from, to: res.to })
     } catch (e) {
-      setState({ error: errMsg(e) })
+      setState({ error: errReason(e) })
     }
   }
 

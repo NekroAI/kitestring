@@ -194,6 +194,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	go h.laneMaintenance(ctx)
 	go h.reviewWatch(ctx)  // 交给评审 30 分钟没动静的，照常弹给用户（R-237）
 	go h.devIdleWatch(ctx) // 待命超时的开发会话：提示收尾，不再送订阅事件（R-229）
+	go h.noticeWatch(ctx)  // 只告知的记录目标会话结束时直接关掉，不进待转交（R-265）
 	go h.awayLoop(ctx)     // 暂时离开：每分钟判断一次能处理的是否都处理完（R-210）
 	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)

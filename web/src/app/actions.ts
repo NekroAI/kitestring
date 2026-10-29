@@ -4,6 +4,8 @@ import { toast } from 'sonner'
 import { api, errMsg, unwrap, type NotifyConfig, type ReqFields } from '../api/client'
 import { qk } from '../api/queries'
 import { t } from '../i18n'
+
+const fail = t.fail // 每个写操作的中文说法，失败提示用（R-236）
 import { uploadsBusy } from '../ui/attach'
 
 const planKeys = ['plans', 'requirements', 'decisions', 'sessions']
@@ -23,58 +25,59 @@ export function useActions() {
   const qc = useQueryClient()
   const refresh = useCallback((...keys: string[]) => keys.forEach((k) => void qc.invalidateQueries({ queryKey: [k] })), [qc])
 
-  const run = useCallback(async <T,>(fn: () => Promise<T>, keys: string[]): Promise<T | undefined> => {
+  // what：这件事的中文说法（「关闭 D-964」），失败提示写成「关闭 D-964 没成功：原因。没有改动，可以再试一次。」（R-236）
+  const run = useCallback(async <T,>(fn: () => Promise<T>, keys: string[], what?: string): Promise<T | undefined> => {
     try {
       const r = await fn()
       refresh(...keys)
       return r
     } catch (e) {
-      toast.error(errMsg(e))
+      toast.error(errMsg(e, what), { duration: 8000 })
       return undefined
     }
   }, [refresh])
   // 带附件的发送：附件没传完就先不发，否则发出去的内容里少了它
-  const send = useCallback(<T,>(fn: () => Promise<T>, keys: string[]) => {
+  const send = useCallback(<T,>(fn: () => Promise<T>, keys: string[], what?: string) => {
     if (uploadsBusy()) {
       toast(t.attach.wait)
       return Promise.resolve(undefined)
     }
-    return run(fn, keys)
+    return run(fn, keys, what)
   }, [run])
 
   return {
     answer: (answers: { ref: string; answer: string; files?: string[]; choices?: number[]; reject?: boolean; reason?: string; verdict?: 'approved' | 'rejected' }[]) =>
-      send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements']),
+      send(() => unwrap(api.POST('/api/decisions/answers', { body: { answers } })), ['decisions', 'sessions', 'requirements'], fail.answer(answers.map((a) => a.ref))),
     reassign: (ref: string, sessionKey: string) =>
-      run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions']),
+      run(() => unwrap(api.POST('/api/decisions/{ref}/reassign', { params: { path: { ref } }, body: { session_key: sessionKey } })), ['decisions', 'sessions'], fail.reassign(ref)),
     openGrant: (body: { project_id: string; session_key: string; expires_at: string; max_risk: 'low' | 'medium' }) =>
-      run(() => unwrap(api.POST('/api/grants', { body })), ['grants', 'decisions']),
+      run(() => unwrap(api.POST('/api/grants', { body })), ['grants', 'decisions'], fail.openGrant),
     // 暂时离开（R-210）
     startAway: (body: { expect_minutes: 30 | 120 | 480 | 0; scope: 'none' | 'low' | 'medium'; hold_push?: boolean }) =>
-      run(() => unwrap(api.POST('/api/away', { body })), ['away', 'grants', 'decisions', 'morning']),
-    endAway: () => run(() => unwrap(api.POST('/api/away/end')), ['away', 'grants', 'decisions', 'morning']),
-    revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions', 'morning']),
+      run(() => unwrap(api.POST('/api/away', { body })), ['away', 'grants', 'decisions', 'morning'], fail.startAway),
+    endAway: () => run(() => unwrap(api.POST('/api/away/end')), ['away', 'grants', 'decisions', 'morning'], fail.endAway),
+    revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions', 'morning'], fail.revokeGrant(ref)),
     overrideDecision: (ref: string, answer: string) =>
-      send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions', 'morning']),
+      send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions', 'morning'], fail.override(ref)),
     withdrawRelease: (ref: string, reason = '') =>
-      run(() => unwrap(api.POST('/api/requirements/{ref}/release/withdraw', { params: { path: { ref } }, body: { reason } })), ['requirements', 'sessions', 'decisions', 'plans', 'morning']),
-    closeDecision: (ref: string, why: { reason?: string; replaced_by?: string } = {}) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: why })), ['decisions', 'sessions', 'requirements']),
+      run(() => unwrap(api.POST('/api/requirements/{ref}/release/withdraw', { params: { path: { ref } }, body: { reason } })), ['requirements', 'sessions', 'decisions', 'plans', 'morning'], fail.withdraw(ref)),
+    closeDecision: (ref: string, why: { reason?: string; replaced_by?: string } = {}) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: why })), ['decisions', 'sessions', 'requirements'], fail.close(ref)),
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
-      send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions', 'morning']),
+      send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions', 'morning'], fail.review(items)),
     note: (ref: string, comment: string, files: string[]) =>
-      send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions']),
+      send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions'], fail.note(ref)),
     assign: (ref: string, sessionKey: string, comment = '') =>
-      run(() => unwrap(api.POST('/api/requirements/{ref}/assign', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions', 'sessions']),
+      run(() => unwrap(api.POST('/api/requirements/{ref}/assign', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions', 'sessions'], fail.assign(ref)),
     askReview: (ref: string, sessionKey: string, comment = '') =>
-      run(() => unwrap(api.POST('/api/requirements/{ref}/reviewer', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions']),
+      run(() => unwrap(api.POST('/api/requirements/{ref}/reviewer', { params: { path: { ref } }, body: { session_key: sessionKey, comment } })), ['requirements', 'decisions'], fail.askReview(ref)),
     // 在会话面板上给会话发一句话（R-117、R-239）：送达方式同留言，挂着 ks wait 时立刻唤醒
     replySession: (key: string, comment: string, files: string[]) =>
-      send(() => unwrap(api.POST('/api/sessions/{key}/reply', { params: { path: { key } }, body: { comment, files } })), ['sessions', 'decisions']),
-    markDone: (key: string, done: boolean) => run(() => unwrap(api.POST('/api/sessions/{key}/done', { params: { path: { key } }, body: { done } })), ['sessions']),
-    resendDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/resend', { params: { path: { ref } }, body: {} })), ['decisions']),
+      send(() => unwrap(api.POST('/api/sessions/{key}/reply', { params: { path: { key } }, body: { comment, files } })), ['sessions', 'decisions'], fail.reply),
+    markDone: (key: string, done: boolean) => run(() => unwrap(api.POST('/api/sessions/{key}/done', { params: { path: { key } }, body: { done } })), ['sessions'], fail.markDone),
+    resendDecision: (ref: string) => run(() => unwrap(api.POST('/api/decisions/{ref}/resend', { params: { path: { ref } }, body: {} })), ['decisions'], fail.resend(ref)),
 
-    createReq: (body: ReqFields) => send(() => unwrap(api.POST('/api/requirements', { body })), ['requirements']),
-    updateReq: (ref: string, body: ReqFields) => run(() => unwrap(api.PUT('/api/requirements/{ref}', { params: { path: { ref } }, body })), ['requirements', 'sessions']),
+    createReq: (body: ReqFields) => send(() => unwrap(api.POST('/api/requirements', { body })), ['requirements'], fail.createReq),
+    updateReq: (ref: string, body: ReqFields) => run(() => unwrap(api.PUT('/api/requirements/{ref}', { params: { path: { ref } }, body })), ['requirements', 'sessions'], fail.updateReq(ref)),
     // 删除：先从列表缓存里拿掉这一条、丢掉它的详情，再刷新别的——否则展开着的那一行会先去拉详情，闪出“记录不存在”
     deleteReq: (ref: string) =>
       run(async () => {
@@ -82,34 +85,34 @@ export function useActions() {
         qc.setQueryData(qk.requirements, (d: { requirements?: { code: string }[] | null } | undefined) => d && { ...d, requirements: (d.requirements ?? []).filter((x) => x.code !== ref) })
         qc.removeQueries({ queryKey: qk.requirement(ref) })
         return r
-      }, ['sessions', 'plans']),
+      }, ['sessions', 'plans'], fail.deleteReq(ref)),
     linkReq: (ref: string, sessionKey: string, unlink = false) =>
-      run(() => unwrap(api.POST('/api/requirements/{ref}/links', { params: { path: { ref } }, body: { session_key: sessionKey, unlink } })), ['requirements', 'sessions']),
+      run(() => unwrap(api.POST('/api/requirements/{ref}/links', { params: { path: { ref } }, body: { session_key: sessionKey, unlink } })), ['requirements', 'sessions'], fail.link(ref, unlink)),
 
-    createPlan: (body: PlanBody & { start?: boolean }) => run(() => unwrap(api.POST('/api/plans', { body: { ...body, stages: body.stages ?? [] } })), planKeys),
-    updatePlan: (ref: string, body: PlanBody) => run(() => unwrap(api.PUT('/api/plans/{ref}', { params: { path: { ref } }, body })), planKeys),
-    deletePlan: (ref: string) => run(() => unwrap(api.DELETE('/api/plans/{ref}', { params: { path: { ref } } })), planKeys),
-    startPlan: (ref: string, comment = '', files: string[] = []) => send(() => unwrap(api.POST('/api/plans/{ref}/start', { params: { path: { ref } }, body: { comment, files } })), planKeys),
-    rejectPlan: (ref: string, comment = '', files: string[] = []) => send(() => unwrap(api.POST('/api/plans/{ref}/reject', { params: { path: { ref } }, body: { comment, files } })), planKeys),
+    createPlan: (body: PlanBody & { start?: boolean }) => run(() => unwrap(api.POST('/api/plans', { body: { ...body, stages: body.stages ?? [] } })), planKeys, fail.createPlan),
+    updatePlan: (ref: string, body: PlanBody) => run(() => unwrap(api.PUT('/api/plans/{ref}', { params: { path: { ref } }, body })), planKeys, fail.updatePlan(ref)),
+    deletePlan: (ref: string) => run(() => unwrap(api.DELETE('/api/plans/{ref}', { params: { path: { ref } } })), planKeys, fail.deletePlan(ref)),
+    startPlan: (ref: string, comment = '', files: string[] = []) => send(() => unwrap(api.POST('/api/plans/{ref}/start', { params: { path: { ref } }, body: { comment, files } })), planKeys, fail.startPlan(ref)),
+    rejectPlan: (ref: string, comment = '', files: string[] = []) => send(() => unwrap(api.POST('/api/plans/{ref}/reject', { params: { path: { ref } }, body: { comment, files } })), planKeys, fail.rejectPlan(ref)),
     passStage: (ref: string, seq: number, comment = '', files: string[] = []) =>
-      send(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/pass', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
+      send(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/pass', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys, fail.passStage(ref, seq)),
     reviseStage: (ref: string, seq: number, comment: string, files: string[] = []) =>
-      send(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/revise', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys),
+      send(() => unwrap(api.POST('/api/plans/{ref}/stages/{seq}/revise', { params: { path: { ref, seq } }, body: { comment, files } })), planKeys, fail.reviseStage(ref, seq)),
 
-    createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions']),
-    revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions']),
+    createDevice: (name: string) => run(() => unwrap(api.POST('/api/devices', { body: { name } })), ['devices', 'sessions'], fail.createDevice),
+    revokeDevice: (id: string) => run(() => unwrap(api.POST('/api/devices/{id}/revoke', { params: { path: { id } } })), ['devices', 'sessions'], fail.revokeDevice),
 
-    deleteDevice: (id: string) => run(() => unwrap(api.DELETE('/api/devices/{id}', { params: { path: { id } } })), ['devices', 'sessions']),
+    deleteDevice: (id: string) => run(() => unwrap(api.DELETE('/api/devices/{id}', { params: { path: { id } } })), ['devices', 'sessions'], fail.deleteDevice),
 
-    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean; agent_release?: boolean; commit_on_accept?: boolean; model_policy?: 'economy' | 'balanced' | 'quality'; dev_idle_minutes?: number }) =>
-      run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements']),
+    updateProject: (id: string, body: { name: string; workspace_id?: string; doc_root: string; auto_dispatch?: boolean; hidden?: boolean; agent_release?: boolean; commit_on_accept?: boolean; model_policy?: 'economy' | 'balanced' | 'quality'; dev_idle_minutes?: number; stall_minutes?: number }) =>
+      run(() => unwrap(api.PUT('/api/projects/{id}', { params: { path: { id } }, body })), ['projects', 'sessions', 'requirements'], fail.updateProject),
     mergeProject: (id: string, into: string) =>
-      run(() => unwrap(api.POST('/api/projects/{id}/merge', { params: { path: { id } }, body: { into } })), ['projects', 'sessions', 'requirements', 'decisions', 'plans']),
-    createWorkspace: (name: string, notify: NotifyConfig) => run(() => unwrap(api.POST('/api/workspaces', { body: { name, notify } })), ['projects']),
+      run(() => unwrap(api.POST('/api/projects/{id}/merge', { params: { path: { id } }, body: { into } })), ['projects', 'sessions', 'requirements', 'decisions', 'plans'], fail.mergeProject),
+    createWorkspace: (name: string, notify: NotifyConfig) => run(() => unwrap(api.POST('/api/workspaces', { body: { name, notify } })), ['projects'], fail.saveWorkspace),
     updateWorkspace: (id: string, name: string, notify: NotifyConfig) =>
-      run(() => unwrap(api.PUT('/api/workspaces/{id}', { params: { path: { id } }, body: { name, notify } })), ['projects']),
-    deleteWorkspace: (id: string) => run(() => unwrap(api.DELETE('/api/workspaces/{id}', { params: { path: { id } } })), ['projects']),
-    dismissNeedDevs: (id: string) => run(() => unwrap(api.DELETE('/api/projects/{id}/need', { params: { path: { id } } })), ['projects']),
+      run(() => unwrap(api.PUT('/api/workspaces/{id}', { params: { path: { id } }, body: { name, notify } })), ['projects'], fail.saveWorkspace),
+    deleteWorkspace: (id: string) => run(() => unwrap(api.DELETE('/api/workspaces/{id}', { params: { path: { id } } })), ['projects'], fail.deleteWorkspace),
+    dismissNeedDevs: (id: string) => run(() => unwrap(api.DELETE('/api/projects/{id}/need', { params: { path: { id } } })), ['projects'], fail.dismissNeed),
 
     logout: async () => {
       await api.POST('/api/auth/logout')

@@ -355,6 +355,8 @@ type projectIn struct {
 		ModelPolicy *string `json:"model_policy,omitempty" enum:"economy,balanced,quality" doc:"子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先"`
 		// DevIdleMinutes：开发会话待命超时（R-229）：待命超过这么多分钟、手上没有排给它的需求，就提示收尾、不再送订阅事件；不传表示不修改
 		DevIdleMinutes *int `json:"dev_idle_minutes,omitempty" minimum:"5" maximum:"720" doc:"开发会话待命超时的分钟数（5～720，默认 30）"`
+		// StallMinutes：进行中停滞（R-243）：进行中的需求这么久没动静、又没有会话在跑，就进「要你处理」；不传表示不修改
+		StallMinutes *int `json:"stall_minutes,omitempty" minimum:"30" maximum:"2880" doc:"进行中需求停滞的分钟数（30～2880，默认 120）"`
 	}
 }
 
@@ -647,6 +649,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.DevIdleMinutes != nil {
 				idle = *in.Body.DevIdleMinutes
 			}
+			stall := cur.StallMinutes
+			if in.Body.StallMinutes != nil {
+				stall = *in.Body.StallMinutes
+			}
 			if in.Body.AgentRelease != nil {
 				release = *in.Body.AgentRelease
 			}
@@ -656,7 +662,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.Hidden != nil {
 				hidden = *in.Body.Hidden
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy, DevIdleMinutes: idle})
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy, DevIdleMinutes: idle, StallMinutes: stall})
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -1253,8 +1259,12 @@ func (h *Hub) registerAgent(api huma.API) {
 				SessionKey string `json:"session_key,omitempty"`
 				Reason     string `json:"reason,omitempty" doc:"放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）；搁置（shelved）时必填的搁置原因（R-157）"`
 				ReasonKind string `json:"reason_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；不填按其他算"`
+				WaitingOn  string `json:"waiting_on,omitempty" doc:"设为 blocked 时在等的需求或决策编号（R-x / D-x，R-243）：顺着等待关系落到用户身上的那一条会在「要你处理」写明「R-x 在等这条」；不写时这条受阻需求本身进「要你处理」"`
 			}
 		}) (*reqOut, error) {
+			if in.Body.WaitingOn != "" && in.Body.Status != store.ReqBlocked {
+				return nil, huma.Error400BadRequest("waiting_on 只在设为 blocked（受阻）时用：写在等的需求或决策编号（R-x / D-x）")
+			}
 			if in.Body.Status == store.ReqDone {
 				return nil, huma.Error400BadRequest("“已完成”只能由用户在验收后设置；完成开发请设为 review（待验收）")
 			}
@@ -1286,6 +1296,13 @@ func (h *Hub) registerAgent(api huma.API) {
 				h.kick(ctx, r.ID)
 				return &reqOut{Body: r}, nil
 			}
+			waitOn := ""
+			if in.Body.Status == store.ReqBlocked {
+				if waitOn, err = h.checkWaitOn(ctx, before, in.Body.WaitingOn); err != nil {
+					return nil, err
+				}
+				ctx = store.WithActor(ctx, store.Actor{Ref: waitOn, Reason: in.Body.Reason})
+			}
 			sctx := ctx
 			if in.Body.Status == store.ReqDraft && before.Release != nil {
 				sctx = store.WithActor(ctx, store.Actor{Via: "withdraw", Ref: before.Release.Code}) // 改回草稿 = 撤回放行
@@ -1293,6 +1310,12 @@ func (h *Hub) registerAgent(api huma.API) {
 			r, err := h.store.SetRequirementStatus(sctx, before.ID, in.Body.Status)
 			if err != nil {
 				return nil, apiErr(err)
+			}
+			if r.Status == store.ReqBlocked {
+				if err := h.store.SetBlockedOn(ctx, r.ID, waitOn, in.Body.Reason); err != nil {
+					return nil, apiErr(err)
+				}
+				r, _ = h.store.GetRequirement(ctx, r.ID)
 			}
 			h.reopenStage(ctx, before, r.Status)
 			if r.Status == store.ReqDraft && before.Status != store.ReqDraft {

@@ -135,7 +135,7 @@ export function useRequestHandoff() {
       toast.success(out.waiting ? t.handoff.askedWait(out.waiting) : t.handoff.asked, { description: copied ? t.handoff.copiedCmd(out.command) : t.handoff.runCmd(out.command) })
       return out
     } catch (e) {
-      toast.error(errMsg(e))
+      toast.error(errMsg(e, t.fail.compact))
       return undefined
     }
   }

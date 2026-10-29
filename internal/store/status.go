@@ -136,8 +136,11 @@ func recordStatus(ctx context.Context, t *sql.Tx, reqID, from, to string) error 
 		}
 	}
 	rk, rs := "", ""
-	if to == ReqShelved { // 理由只跟搁置走（R-157）
+	switch to {
+	case ReqShelved: // 搁置的理由（R-157）
 		rk, rs = NormShelveReason(a.ReasonKind, a.Reason)
+	case ReqBlocked: // 受阻的原因（R-243）；在等的 R-x / D-x 记在 ref
+		_, rs = NormShelveReason("", a.Reason)
 	}
 	_, err := t.ExecContext(ctx, `INSERT INTO status_changes(id, requirement_id, from_status, to_status, actor, session_key, role, via, ref, reason_kind, reason, session_title, at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		protocol.NewID(), reqID, from, to, a.Kind, a.Session, a.Role, a.Via, a.Ref, rk, rs, title, now())

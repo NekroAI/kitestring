@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ButtonHT
 import { Switch as RSwitch, Tooltip } from 'radix-ui'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { cx } from '../lib/util'
+import { classify, reasonOf } from '../lib/fail'
 import { t } from '../i18n'
 import { G } from './gesture'
 
@@ -147,7 +148,7 @@ export function Empty({ icon, title, children, action, className }: { icon: Reac
 }
 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const msg = error instanceof Error ? error.message : t.common.requestFailed
+  const msg = reasonOf(classify(error)) // 中文白话，不显示英文原文（R-236）
   return (
     <Card className="flex items-start gap-3 border-danger/30 p-4">
       <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" />

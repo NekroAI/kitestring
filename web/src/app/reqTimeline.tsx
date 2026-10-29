@@ -635,7 +635,7 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
     if (c.to === 'review' && c.actor === 'agent') continue
     const accept = c.to === 'done' && c.actor === 'user'
     const start = c.via === 'link' && c.to === 'in_progress'
-    const via = start ? '' : t.timeline.via[c.via]
+    const via = start ? '' : c.to === 'blocked' && c.ref ? t.timeline.waitOn : t.timeline.via[c.via] // 受阻指向（R-243）：「改为 受阻 · 在等 R-212」
     entries.push({
       at: c.at,
       key: c.id,
@@ -673,6 +673,12 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
             <p className="text-sm leading-relaxed break-words text-fg-2">
               <span className="mr-1.5 text-fg-3">{t.timeline.shelveWhy}</span>
               <Linkify text={t.reqs.shelve.why(t.reqs.shelve.kinds[c.reason_kind ?? ''] ?? '', c.reason ?? '')} />
+            </p>
+          ) : c.to === 'blocked' && c.reason ? (
+            // 受阻的原因（R-243）；在等的 R-x / D-x 已画在上面的印记里
+            <p className="text-sm leading-relaxed break-words text-fg-2">
+              <span className="mr-1.5 text-fg-3">{t.timeline.blockedWhy}</span>
+              <Linkify text={c.reason} />
             </p>
           ) : undefined}
         </Node>

@@ -290,6 +290,7 @@ func runReq(args []string) error {
 	comment := fs.String("comment", "", "assign：交代给开发的话")
 	reason := fs.String("reason", "", "request：申请理由（必填）；status ready / assign 草稿：放行理由（只有 PM / Adv 能放行）；status draft：撤回原因；status shelved：搁置原因（必填）；edit：为什么改")
 	reasonKind := fs.String("reason-kind", "", "status shelved：搁置原因类别 duplicate（重复）/ changed（方向变了）/ dropped（不做了）/ other（其他，默认）")
+	waitingOn := fs.String("on", "", "status blocked：在等的需求或决策编号（R-x / D-x，R-243）；不写时这条受阻需求本身进用户的「要你处理」")
 	verdict := fs.String("verdict", "", "evidence / review：一句结论（40 字以内）")
 	details := fs.String("details", "", "evidence：实现细节（默认折叠）；review：怎么验的")
 	blocksArg := fs.String("blocks", "", "evidence / review：表达块，JSON 数组或 JSON 文件路径")
@@ -351,9 +352,9 @@ func runReq(args []string) error {
 		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/edit", body)
 	case "status":
 		if fs.NArg() < 2 {
-			return fmt.Errorf("用法：ks req status <R-编号> <状态> [--reason 理由] [--reason-kind duplicate|changed|dropped|other]（PM / Adv 放行草稿：ks req status R-x ready --reason ...；搁置必须写 --reason）")
+			return fmt.Errorf("用法：ks req status <R-编号> <状态> [--reason 理由] [--reason-kind duplicate|changed|dropped|other] [--on R-x|D-x]（PM / Adv 放行草稿：ks req status R-x ready --reason ...；搁置必须写 --reason；等别的需求 / 决策：ks req status R-x blocked --on R-y --reason 在等什么）")
 		}
-		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key, "reason": *reason, "reason_kind": *reasonKind}))
+		return agentCall("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/status", compact(map[string]any{"status": fs.Arg(1), "session_key": key, "reason": *reason, "reason_kind": *reasonKind, "waiting_on": *waitingOn}))
 	case "request":
 		// 申请改需求状态（R-188）：用户在审批抽屉里批准后由纸鸢改
 		if fs.NArg() < 2 || strings.TrimSpace(*reason) == "" {

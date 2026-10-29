@@ -168,6 +168,17 @@ func (p Project) DevIdleLimit() time.Duration {
 	return DevIdleDefault
 }
 
+// StallDefault 是进行中需求「停滞」的默认时长（R-243），项目设置里可调。
+const StallDefault = 120 * time.Minute
+
+// StallLimit：进行中的需求多久没动静、又没有会话在跑，就进「要你处理」（R-243）。
+func (p Project) StallLimit() time.Duration {
+	if p.StallMinutes > 0 {
+		return time.Duration(p.StallMinutes) * time.Minute
+	}
+	return StallDefault
+}
+
 // SetIdle 记下开发会话待命超时（R-229）。
 func (s *Store) SetIdle(ctx context.Context, key string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET idle_at = ? WHERE key = ?`, ts(at.UTC()), key)

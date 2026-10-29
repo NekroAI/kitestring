@@ -93,7 +93,7 @@ function OrphanBlock({ now, data }: { now: number; data: NonNullable<ReturnType<
           await qc.invalidateQueries({ queryKey: ['orphans'] })
           return true
         } catch (e) {
-          toast.error(errMsg(e))
+          toast.error(errMsg(e, t.fail.ignore))
           return false
         }
       },
@@ -103,7 +103,7 @@ function OrphanBlock({ now, data }: { now: number; data: NonNullable<ReturnType<
       await unwrap(api.POST('/api/orphans/ignore', { body: ignoreBody(o, true) }))
       void qc.invalidateQueries({ queryKey: ['orphans'] })
     } catch (e) {
-      toast.error(errMsg(e))
+      toast.error(errMsg(e, t.fail.ignore))
     }
   }
   const ignoredFooter = ignored.length > 0 && (
@@ -177,7 +177,7 @@ function OrphanBlock({ now, data }: { now: number; data: NonNullable<ReturnType<
       else if (r.result === 'running') toast(msg)
       else toast.error(msg)
     } catch (e) {
-      toast.error(errMsg(e))
+      toast.error(errMsg(e, t.fail.stop))
     } finally {
       setBusy(null)
     }

@@ -568,7 +568,7 @@ export interface paths {
         put?: never;
         /**
          * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
-         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）。按身份发给本项目现在没结束的那个会话，不认会话名；评审有多个时发给最近活跃的那个。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）。按身份发给本项目现在没结束的那个会话；评审、顾问有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。
          */
         post: operations["agent-tell-pm"];
         delete?: never;
@@ -1961,12 +1961,16 @@ export interface components {
             reply_to?: string;
             /** @description 相关需求编号（如 R-12），可省略 */
             requirement?: string;
+            /** @description session_key 是调用方用 --session 自报的（自动识别不到当前会话时，R-248）：hub 校验它是没结束、属于某个项目的会话，并在返回里注明按它认定发送方 */
+            session_claimed?: boolean;
             /** @description 调用者 */
             session_key: string;
             /** @description 要说的话 */
             text: string;
-            /** @description 收件身份：pm（默认）、aide、reviewer；也认中文名（主调度 / 主助理 / 评审）。回复时不填 */
+            /** @description 收件身份：pm（默认）、aide、reviewer、advisor；也认中文名（主调度 / 主助理 / 评审 / 顾问）。回复时不填 */
             to?: string;
+            /** @description 指定收件会话键（tool:id）：必须是本项目没结束、有身份的会话；与 to 同时填时身份要对得上。本项目有多个顾问 / 评审时用它点名；不填则发给该身份最近活跃的一个（R-248） */
+            to_session?: string;
         };
         "Agent-update-planRequest": {
             /** @description 不给表示不改目标 */
@@ -1988,6 +1992,8 @@ export interface components {
             session_key?: string;
             /** @enum {string} */
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
+            /** @description 设为 blocked 时在等的需求或决策编号（R-x / D-x，R-243）：顺着等待关系落到用户身上的那一条会在「要你处理」写明「R-x 在等这条」；不写时这条受阻需求本身进「要你处理」 */
+            waiting_on?: string;
         };
         "Agent-void-evidenceRequest": {
             /** @description 作废理由，一句话（必填） */
@@ -2883,6 +2889,10 @@ export interface components {
             advice?: components["schemas"]["Advice"];
             /** @description 没有保存的块及原因；证据本身已保存 */
             block_warnings?: string[] | null;
+            /** @description 受阻时在等的需求或决策编号（R-x / D-x，R-243） */
+            blocked_on?: string;
+            /** @description 受阻原因的一句话（R-243） */
+            blocked_reason?: string;
             code: string;
             /** Format: date-time */
             created_at: string;
@@ -3286,6 +3296,10 @@ export interface components {
         LinkOutBody: {
             acceptance: string;
             advice?: components["schemas"]["Advice"];
+            /** @description 受阻时在等的需求或决策编号（R-x / D-x，R-243） */
+            blocked_on?: string;
+            /** @description 受阻原因的一句话（R-243） */
+            blocked_reason?: string;
             code: string;
             /** Format: date-time */
             created_at: string;
@@ -3756,6 +3770,8 @@ export interface components {
             need_devs: number;
             need_reason: string;
             remote: string;
+            /** Format: int64 */
+            stall_minutes: number;
             workspace_id?: string;
         };
         ProjectInBody: {
@@ -3775,6 +3791,11 @@ export interface components {
              */
             model_policy?: "economy" | "balanced" | "quality";
             name: string;
+            /**
+             * Format: int64
+             * @description 进行中需求停滞的分钟数（30～2880，默认 120）
+             */
+            stall_minutes?: number;
             workspace_id?: string;
         };
         ProjectsOutBody: {
@@ -3833,6 +3854,10 @@ export interface components {
         ReqCreatedOutBody: {
             acceptance: string;
             advice?: components["schemas"]["Advice"];
+            /** @description 受阻时在等的需求或决策编号（R-x / D-x，R-243） */
+            blocked_on?: string;
+            /** @description 受阻原因的一句话（R-243） */
+            blocked_reason?: string;
             code: string;
             /** Format: date-time */
             created_at: string;
@@ -3902,6 +3927,10 @@ export interface components {
         Requirement: {
             acceptance: string;
             advice?: components["schemas"]["Advice"];
+            /** @description 受阻时在等的需求或决策编号（R-x / D-x，R-243） */
+            blocked_on?: string;
+            /** @description 受阻原因的一句话（R-243） */
+            blocked_reason?: string;
             code: string;
             /** Format: date-time */
             created_at: string;
@@ -4024,6 +4053,10 @@ export interface components {
             acceptance: string;
             advice?: components["schemas"]["Advice"];
             block_warnings?: string[] | null;
+            /** @description 受阻时在等的需求或决策编号（R-x / D-x，R-243） */
+            blocked_on?: string;
+            /** @description 受阻原因的一句话（R-243） */
+            blocked_reason?: string;
             code: string;
             /** Format: date-time */
             created_at: string;

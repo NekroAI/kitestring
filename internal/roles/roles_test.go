@@ -42,3 +42,15 @@ func TestPMPromptRework(t *testing.T) {
 		t.Fatal("开发提示词应写明待命超时")
 	}
 }
+
+// R-243：做事的身份都写明「原型 / 方案做完当场提决策」「等别的需求就设受阻并指向它」。
+func TestPromptWaitOn(t *testing.T) {
+	for _, r := range []string{PM, Dev, Aide, Advisor} {
+		p := Prompt(r)
+		for _, want := range []string{"做完原型 / 方案，当场用 decision_raise", "设为 blocked 并用 waiting_on 指向它", "不要一直标着进行中干等"} {
+			if !strings.Contains(p, want) {
+				t.Fatalf("%s 提示词缺 %q", r, want)
+			}
+		}
+	}
+}

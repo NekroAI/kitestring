@@ -191,6 +191,8 @@ type reqStatusIn struct {
 	Reason string `json:"reason,omitempty" jsonschema:"设为 ready（放行草稿）时必填：一句理由，说明为什么做法明确、可以直接排期；设为 shelved（搁置）时必填：一句话说明为什么搁置；改回草稿（撤回放行）时可写原因"`
 	// ReasonKind 是搁置原因的类别（R-157）
 	ReasonKind string `json:"reason_kind,omitempty" jsonschema:"搁置时的原因类别：duplicate 重复 / changed 方向变了 / dropped 不做了 / other 其他（默认）"`
+	// WaitingOn：受阻时在等什么（R-243）
+	WaitingOn string `json:"waiting_on,omitempty" jsonschema:"设为 blocked 时在等的需求或决策编号（R-x / D-x）。等别的需求定稿 / 验收 / 做完、等某条决策答复时写上：顺着等待关系落到用户身上的那一条会在「要你处理」写明「这条在等它」。不写时这条受阻需求本身进用户的「要你处理」；reason 写一句在等什么"`
 }
 
 type reqRequestStatusIn struct {
@@ -406,9 +408,9 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。放行：主调度 / 主助理可以把草稿设为 ready（待开始），必须写 reason，时间线记下谁放行、为什么，用户可一键撤回；项目设置没打开「允许主调度 / 主助理放行草稿」时会被拒绝，开发、顾问不能放行。搁置（shelved）必须写 reason（一句话说明为什么搁置，可用 reason_kind 标 duplicate / changed / dropped / other），状态历史和时间线会记下。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_update_status", Description: "更新需求状态并关联当前会话。开发完成设为 review（待验收），done 只能由用户验收后设置。等别的需求（定稿 / 验收 / 做完）或某条决策时设为 blocked 并用 waiting_on 指向它（R-243），不要一直标进行中干等。放行：主调度 / 主助理可以把草稿设为 ready（待开始），必须写 reason，时间线记下谁放行、为什么，用户可一键撤回；项目设置没打开「允许主调度 / 主助理放行草稿」时会被拒绝，开发、顾问不能放行。搁置（shelved）必须写 reason（一句话说明为什么搁置，可用 reason_kind 标 duplicate / changed / dropped / other），状态历史和时间线会记下。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqStatusIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"status": in.Status, "session_key": t.sessionKey(ctx, req), "reason": in.Reason, "reason_kind": in.ReasonKind}
+			body := map[string]any{"status": in.Status, "session_key": t.sessionKey(ctx, req), "reason": in.Reason, "reason_kind": in.ReasonKind, "waiting_on": in.WaitingOn}
 			dropEmpty(body)
 			var out reqView
 			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/status", body, &out); err != nil {
@@ -417,6 +419,13 @@ func (t *tools) register(s *mcp.Server) {
 			msg := fmt.Sprintf("%s「%s」→ %s", out.Code, out.Title, zh(out.Status))
 			if out.Status == "review" {
 				msg += fmt.Sprintf("（证据 %d 条）", out.evidenceCount())
+			}
+			if out.Status == "blocked" {
+				if out.BlockedOn != "" {
+					msg += "（在等 " + out.BlockedOn + "）"
+				} else {
+					msg += "。没写在等什么（waiting_on），这条会进用户的「要你处理」；等的是别的需求或决策时，用 waiting_on 指向它"
+				}
 			}
 			return text(msg), nil, nil
 		})

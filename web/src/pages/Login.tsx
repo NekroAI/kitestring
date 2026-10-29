@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { motion } from 'motion/react'
 import { useQueryClient } from '@tanstack/react-query'
-import { api, errMsg, unwrap } from '../api/client'
+import { api, errReason, unwrap } from '../api/client'
 import { qk } from '../api/queries'
 import { t } from '../i18n'
 import { Logo } from '../app/Shell'
@@ -28,7 +28,7 @@ export default function LoginPage({ initialized, passkey }: { initialized: boole
       await unwrap(initialized ? api.POST('/api/auth/login', { body: { password: pw } }) : api.POST('/api/auth/setup', { body: { password: pw } }))
       await qc.invalidateQueries({ queryKey: qk.auth })
     } catch (e) {
-      setErr(errMsg(e))
+      setErr(errReason(e))
       setBusy(false)
     }
   }
@@ -41,7 +41,7 @@ export default function LoginPage({ initialized, passkey }: { initialized: boole
       await loginWithPasskey()
       await qc.invalidateQueries({ queryKey: qk.auth })
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'NotAllowedError')) setErr(errMsg(e))
+      if (!(e instanceof DOMException && e.name === 'NotAllowedError')) setErr(errReason(e))
       setBusy(false)
     }
   }

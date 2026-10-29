@@ -18,6 +18,7 @@ import { composeAnswer, decKey, useOutbox } from './outbox'
 import { useWarmFlag } from './laneFeed'
 import { PendingCover, usePending, usePendingMap, useReqVerdict } from './verdict'
 import { ReviewMark } from './verify'
+import type { BlockedWhy } from '../lib/waiton'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
@@ -27,7 +28,7 @@ import { ReviewMark } from './verify'
 // s:会话键 会话在等授权 / 用提问工具在问你、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
 // 只认明确记录（R-239）：会话只在对话里写了问句、没提决策的，不进这里。
 
-export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy'
+export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy' | 'blocked' | 'waited' | 'stalled'
 
 export type Ask = {
   key: string
@@ -43,12 +44,15 @@ export type Ask = {
   d?: Decision
   plan?: Plan
   stage?: number // 阶段验收：等你验收的阶段
+  waitedBy?: string[] // 在等这一条的受阻需求（R-243）：「R-210 在等这条」
+  blockedWhy?: BlockedWhy // 受阻需求本身进来的原因（R-243）
 }
 
 type WB = ReturnType<typeof useWorkbench>
 
 // 越小越靠前：决策 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交；同类里等得越久越靠前。
-const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, orphan: 4, proxy: 9 }
+// 受阻 / 被等着定稿的草稿和计划同档（解开它工作才能往下走）；停滞和转交同档。
+const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, waited: 3, blocked: 3, orphan: 4, stalled: 4, proxy: 9 }
 
 // buildAsks：从工作台数据算出全部条目（工作台、侧栏角标、抽屉队列同一口径）。
 export function buildAsks(wb: WB): Ask[] {
@@ -78,10 +82,35 @@ export function buildAsks(wb: WB): Ask[] {
       if (k) push({ key: `s:${s.key}`, kind: k, title: sessionTitle(s), at: s.state_since || s.last_active_at, counted: true, s, projectId: s.project_id || '', projectName: s.project_name || '' })
     }
   }
+  // 等你的事（R-243，lib/waiton.ts）：归到最近活跃的关联会话，没有就归项目
+  const att = wb.attention
+  const byKey = new Map(wb.sessions.map((x) => [x.key, x]))
+  const ownerOf = (r: Requirement) => r.sessions.map((k) => byKey.get(k)).filter((x): x is Session => !!x).sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
+  const reqAsk = (r: Requirement, kind: AskKind, at: string, extra: Partial<Ask> = {}): Ask => {
+    const s = ownerOf(r)
+    return { key: `${kind[0]}:${r.code}`, kind, title: r.title, at, counted: true, code: r.code, s, req: r, projectId: r.project_id || s?.project_id || '', projectName: r.project_name || s?.project_name || '', ...extra }
+  }
+  const full = (code: string) => wb.reqs.find((r) => r.code === code)
+  for (const x of att.drafts) {
+    const r = full(x.code)
+    if (r) push({ ...reqAsk(r, 'waited', r.updated_at), key: `w:${r.code}`, s: undefined })
+  }
+  for (const x of att.blocked) {
+    const r = full(x.r.code)
+    if (r) push(reqAsk(r, 'blocked', r.updated_at, { blockedWhy: x.why }))
+  }
+  for (const x of att.stalled) {
+    const r = full(x.r.code)
+    if (r) push({ ...reqAsk(r, 'stalled', x.since), key: `t:${r.code}` })
+  }
   for (const x of wb.plans) {
     const st = gateStage(x)
     if (st) push({ key: `g:${x.code}`, kind: 'stage', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: st.seq, projectId: x.project_id || '', projectName: x.project_name || '' })
     else if (needsApproval(x)) push({ key: `p:${x.code}`, kind: 'plan', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, projectId: x.project_id || '', projectName: x.project_name || '' })
+  }
+  for (const a of out) {
+    const by = a.code ? att.waitedBy.get(a.code) : undefined
+    if (by?.length) a.waitedBy = by
   }
   return out.sort((a, b) => rank[a.kind] - rank[b.kind] || a.at.localeCompare(b.at))
 }
@@ -138,6 +167,12 @@ export function askTitle(d: Decision) {
   return titleOf(d)
 }
 
+// roughDuration：停滞多久，取整到小时（不到 1 小时写分钟），如「5 小时」（R-243）。
+export function roughDuration(iso: string, now: number) {
+  const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60000))
+  return m < 60 ? `${m} 分钟` : `${Math.floor(m / 60)} 小时`
+}
+
 // requestLeft：限时请求还剩多久到点（到点按规则视为拒绝）。
 export function requestLeft(d: Decision, now: number) {
   if (!d.expires_at) return ''
@@ -160,6 +195,9 @@ const kindTone: Record<AskKind, string> = {
   plan: 'text-accent',
   stage: 'text-seal',
   orphan: 'text-fg-2',
+  blocked: 'text-danger',
+  waited: 'text-wait',
+  stalled: 'text-reply',
   permit: 'text-wait',
   question: 'text-reply',
   proxy: 'text-accent',
@@ -222,6 +260,16 @@ function statusLine(a: Ask, now: number): React.ReactNode {
       return splitTool(a.s?.state_detail ?? '')[1] || t.session.asking
     case 'proxy':
       return d?.proxy_answer ?? ''
+    case 'waited':
+      return t.ask.waitedDraft(a.waitedBy ?? [])
+    case 'blocked': {
+      const r = a.req
+      if (a.blockedWhy === 'gone') return t.ask.blockedGone(r?.blocked_on ?? '')
+      if (a.blockedWhy === 'missing') return t.ask.blockedMissing(r?.blocked_on ?? '')
+      return r?.blocked_reason ? t.ask.blockedWhy(r.blocked_reason) : t.ask.blockedBare
+    }
+    case 'stalled':
+      return t.ask.stalledLine(roughDuration(a.at, now))
   }
 }
 
@@ -397,6 +445,11 @@ function AskCard({
         <StatusReqLines d={sr} />
       ) : (
         <span className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5 text-fg-2">
+          {a.kind !== 'waited' && !!a.waitedBy?.length && (
+            <span data-waited-by={a.waitedBy.join(',')} className="shrink-0 rounded bg-wait-soft px-1 text-[11px] leading-4 font-medium text-wait">
+              {t.ask.waitedBy(a.waitedBy)}
+            </span>
+          )}
           <span className="min-w-0 flex-1 truncate">{statusLine(a, now)}</span>
           <AskWarm a={a} now={now} />
           {a.kind === 'review' && <ReviewMark r={a.req} />}

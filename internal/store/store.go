@@ -170,6 +170,11 @@ var addedColumns = []struct{ table, column, ddl string }{
 	// 暂时离开（R-210）：决策上标的硬规则类别；授权窗口属于哪次离开
 	{"decisions", "hard", "TEXT NOT NULL DEFAULT ''"},
 	{"grants", "away_id", "TEXT NOT NULL DEFAULT ''"},
+	// 受阻指向（R-243）：受阻的需求在等哪条需求 / 决策（R-x / D-x）、为什么；离开受阻时清空
+	{"requirements", "blocked_on", "TEXT NOT NULL DEFAULT ''"},
+	{"requirements", "blocked_reason", "TEXT NOT NULL DEFAULT ''"},
+	// 进行中停滞（R-243）：进行中的需求多久没动静、也没有会话在跑，就进「要你处理」；0 按默认 2 小时
+	{"projects", "stall_minutes", "INTEGER NOT NULL DEFAULT 0"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

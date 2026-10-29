@@ -172,3 +172,42 @@ func (h *Hub) registerRelease(api huma.API) {
 			return &reqOut{Body: r}, nil
 		})
 }
+
+// checkWaitOn 校验受阻指向（R-243）：空串表示没写等什么；否则必须是存在的需求或决策编号、不能指向自己，
+// 指向需求时不能绕回自己（R-1 等 R-2、R-2 又等 R-1）。返回规范编号。
+func (h *Hub) checkWaitOn(ctx context.Context, self store.Requirement, ref string) (string, error) {
+	if strings.TrimSpace(ref) == "" {
+		return "", nil
+	}
+	on := store.NormWaitRef(ref)
+	if on == "" {
+		return "", huma.Error400BadRequest("waiting_on 要写在等的需求或决策编号，例如 R-212 或 D-30")
+	}
+	if on == self.Code {
+		return "", huma.Error400BadRequest("waiting_on 不能指向这条需求自己")
+	}
+	if strings.HasPrefix(on, "D-") {
+		if _, err := h.store.GetDecision(ctx, on); err != nil {
+			return "", huma.Error400BadRequest("决策 " + on + " 不存在")
+		}
+		return on, nil
+	}
+	cur := on
+	for i := 0; i < 32 && strings.HasPrefix(cur, "R-"); i++ {
+		r, err := h.store.GetRequirement(ctx, cur)
+		if err != nil {
+			if i == 0 {
+				return "", huma.Error400BadRequest("需求 " + on + " 不存在")
+			}
+			break
+		}
+		if r.Status != store.ReqBlocked || r.BlockedOn == "" {
+			break
+		}
+		if r.BlockedOn == self.Code {
+			return "", huma.Error400BadRequest(fmt.Sprintf("%s 已经在等 %s，再让 %s 等 %s 就互相等成了圈；先理清谁先做", on, self.Code, self.Code, on))
+		}
+		cur = r.BlockedOn
+	}
+	return on, nil
+}
