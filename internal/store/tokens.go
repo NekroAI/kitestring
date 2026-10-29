@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -171,6 +172,104 @@ func (s *Store) laneTokens(ctx context.Context, from, to int64, hourly bool) ([]
 // TokenModels 返回近 30 天有用量的模型（设置里按它列出可填价格的模型），按名字排。
 func (s *Store) TokenModels(ctx context.Context, now time.Time) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT model FROM lane_token_hours WHERE minute >= ? AND model <> '' ORDER BY model`, unixMinute(now.Add(-LaneKeep)))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// 缓存余温（R-207）：每个会话最近一次请求的时刻、缓存档位和上下文大小。剩余时间由网页按「档位 − 距最后一次请求」估算，
+// 接口不给过期时间，所以都是「约」。只看主会话（子任务有各自的缓存，不影响主会话下一次回复）。
+
+// warmKeep：往回找多久的用量；更早的会话不给余温（停了一周以上，说冷不冷都没有意义）。
+const warmKeep = 7 * 24 * time.Hour
+
+// LaneWarm 是一个会话最近一次请求的缓存状态。
+type LaneWarm struct {
+	Key   string `json:"k"`
+	Model string `json:"model"`
+	At    int64  `json:"at" doc:"最近一次请求，Unix 毫秒（只精确到分钟）"`
+	TTL   int    `json:"ttl" doc:"缓存档位（秒）：3600 / 300 来自用量里写缓存的档位；0 拿不到（没写过缓存，或来源不提供档位）"`
+	Ctx   int64  `json:"ctx" doc:"那一分钟平均每次请求的输入总量（读缓存 + 写缓存 + 未命中），下次冷启动要重算的量"`
+}
+
+// laneWarm 读近 7 天每个会话最近一次请求的缓存状态。档位只认 Claude Code 对话记录里的写缓存分档（1 小时档有写入记 3600，
+// 只有 5 分钟档记 300）；Codex 等来源不提供，记 0，由设置里手填的保留时长补。
+func (s *Store) laneWarm(ctx context.Context, now time.Time) ([]LaneWarm, error) {
+	from := unixMinute(now.Add(-warmKeep))
+	out := []LaneWarm{}
+	idx := map[string]int{}
+	rows, err := s.db.QueryContext(ctx, `SELECT t.session_key, t.model, t.minute, t.inp, t.cw, t.cr, t.n FROM lane_tokens t
+		JOIN (SELECT session_key k, MAX(minute) m FROM lane_tokens WHERE agent_id = '' AND n > 0 AND minute >= ? GROUP BY session_key) l ON t.session_key = l.k AND t.minute = l.m
+		WHERE t.agent_id = '' AND t.n > 0`, from)
+	if err != nil {
+		return nil, err
+	}
+	nowMs := now.UnixMilli()
+	for rows.Next() {
+		var k, model string
+		var m, in, cw, cr int64
+		var n int
+		if err := rows.Scan(&k, &model, &m, &in, &cw, &cr, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ctxTok := (in + cw + cr) / int64(n)
+		if i, ok := idx[k]; ok { // 同一分钟用了几个模型：取输入更大的
+			if ctxTok > out[i].Ctx {
+				out[i].Ctx, out[i].Model = ctxTok, model
+			}
+			continue
+		}
+		at := m*60000 + 59999
+		if at > nowMs {
+			at = nowMs
+		}
+		idx[k] = len(out)
+		out = append(out, LaneWarm{Key: k, Model: model, At: at, Ctx: ctxTok})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 档位：最近一次写过缓存的那一分钟，有 1 小时档的写入就是 1 小时档，否则 5 分钟档
+	trows, err := s.db.QueryContext(ctx, `SELECT t.session_key, SUM(t.cw1h) FROM lane_tokens t
+		JOIN (SELECT session_key k, MAX(minute) m FROM lane_tokens WHERE agent_id = '' AND cw > 0 AND minute >= ? GROUP BY session_key) l ON t.session_key = l.k AND t.minute = l.m
+		WHERE t.agent_id = '' GROUP BY t.session_key`, from)
+	if err != nil {
+		return nil, err
+	}
+	defer trows.Close()
+	for trows.Next() {
+		var k string
+		var h1 int64
+		if err := trows.Scan(&k, &h1); err != nil {
+			return nil, err
+		}
+		i, ok := idx[k]
+		if !ok || !strings.HasPrefix(k, protocol.ToolClaude+":") {
+			continue
+		}
+		out[i].TTL = 300
+		if h1 > 0 {
+			out[i].TTL = 3600
+		}
+	}
+	return out, trows.Err()
+}
+
+// TokenTools 返回近 30 天有用量的来源（会话键冒号前的部分，如 claude / codex），按名字排。设置里按它列出可手填缓存保留时长的来源。
+func (s *Store) TokenTools(ctx context.Context, now time.Time) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT substr(session_key, 1, instr(session_key, ':') - 1) AS tool FROM lane_token_hours WHERE minute >= ? AND instr(session_key, ':') > 1 ORDER BY tool`, unixMinute(now.Add(-LaneKeep)))
 	if err != nil {
 		return nil, err
 	}

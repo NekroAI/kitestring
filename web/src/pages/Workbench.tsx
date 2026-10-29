@@ -18,7 +18,7 @@ import { AskItem, askLine, useAsks, useOpenAsk, useStaying, type Ask } from '../
 import { BriefStrip } from '../app/brief'
 import { HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
 import { EndedLane, Lane, LaneAxis, laneTone, setLaneZoom, setOffline, ZoomSwitch, type LaneMode, type Tone } from '../app/lanes'
-import { ensureZoom, laneStore, prefetchLanes, useLanePrices, useLaneSnap } from '../app/laneFeed'
+import { ensureZoom, laneStore, prefetchLanes, useLaneHolds, useLanePrices, useLaneSnap } from '../app/laneFeed'
 import { coarse, makeAxis, ZOOMS, type SessionMeta, type Zoom } from '../lib/lanedata'
 import { serverNow, usePlans } from '../api/queries'
 import { useFillHeight } from '../app/pool'
@@ -249,6 +249,7 @@ export default function WorkbenchPage() {
   const zoom: Zoom = ZOOMS.includes(zoomPref) ? zoomPref : 'h1'
   const doneSig = useLaneSnap(() => activeEnded(zoom))
   useLanePrices() // 设置里填全了的模型价格（R-206，选填）
+  useLaneHolds() // 设置里手填的缓存保留时长（R-207，选填）
   const desk = useDesk(wb, asks, k, now, doneSig)
   const search = useRef<HTMLInputElement>(null)
   const [el, setEl, w] = useBox()

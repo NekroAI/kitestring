@@ -74,6 +74,8 @@ type LaneData struct {
 	// token 用量（R-206）：本机读得到对话记录的会话才有；没有的会话不画下半部分
 	Tokens []LaneTok  `json:"tok"`
 	Colds  []LaneCold `json:"colds" doc:"范围内的冷启动（缓存重建）"`
+	// 缓存余温（R-207）：每个会话最近一次请求的状态，与范围无关
+	Warm []LaneWarm `json:"warm"`
 	// 后台命令（R-208）：和范围有交集的；还在跑的一直算
 	Shells []protocol.ShellCmd `json:"shells"`
 }
@@ -492,6 +494,9 @@ func (s *Store) Lanes(ctx context.Context, from, to time.Time, hourly bool) (Lan
 		return out, err
 	}
 	if out.Tokens, out.Colds, err = s.laneTokens(ctx, out.From, out.To, hourly); err != nil {
+		return out, err
+	}
+	if out.Warm, err = s.laneWarm(ctx, time.Now()); err != nil {
 		return out, err
 	}
 	fromMs, toMs := out.From*60000, out.To*60000

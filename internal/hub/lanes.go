@@ -297,7 +297,71 @@ func (h *Hub) putTokenPrices(ctx context.Context, in *struct{ Body TokenPrices }
 	return h.getTokenPrices(ctx, nil)
 }
 
+// ---------- 缓存保留时长（R-207，选填） ----------
+// 缓存余温的档位取自 Claude Code 对话记录里的用量；拿不到档位的来源（Codex、去掉了用量字段的转接）默认不显示余温。
+// 设置里可以为某个来源手填一个大概的保留时长（分钟），填了才按它估算，界面标「按你设置的时长估算」。没填不替用户猜。
+
+const cacheHoldKey = "cache_hold"
+
+// CacheHold 是一个来源手填的缓存保留时长。
+type CacheHold struct {
+	Tool    string `json:"tool" minLength:"1" maxLength:"40" doc:"来源，会话键冒号前的部分，如 codex"`
+	Minutes int    `json:"minutes" minimum:"1" maximum:"10080" doc:"大概的保留时长（分钟）"`
+}
+
+type CacheHolds struct {
+	Holds []CacheHold `json:"holds" maxItems:"50"`
+}
+
+type cacheHoldsOut struct {
+	Body struct {
+		CacheHolds
+		Tools []string `json:"tools" doc:"近 30 天有用量的来源"`
+	}
+}
+
+func (h *Hub) getCacheHolds(ctx context.Context, _ *struct{}) (*cacheHoldsOut, error) {
+	out := &cacheHoldsOut{}
+	out.Body.Holds = []CacheHold{}
+	if raw, err := h.store.GetSetting(ctx, cacheHoldKey); err != nil {
+		return nil, err
+	} else if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &out.Body.CacheHolds)
+		if out.Body.Holds == nil {
+			out.Body.Holds = []CacheHold{}
+		}
+	}
+	var err error
+	if out.Body.Tools, err = h.store.TokenTools(ctx, time.Now()); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (h *Hub) putCacheHolds(ctx context.Context, in *struct{ Body CacheHolds }) (*cacheHoldsOut, error) {
+	p := CacheHolds{Holds: []CacheHold{}}
+	seen := map[string]bool{}
+	for _, x := range in.Body.Holds {
+		x.Tool = strings.TrimSpace(x.Tool)
+		if x.Tool == "" || x.Minutes <= 0 || seen[x.Tool] {
+			continue
+		}
+		seen[x.Tool] = true
+		p.Holds = append(p.Holds, x)
+	}
+	b, _ := json.Marshal(p)
+	if err := h.store.SetSetting(ctx, cacheHoldKey, string(b)); err != nil {
+		return nil, err
+	}
+	h.broker.publish("settings")
+	return h.getCacheHolds(ctx, nil)
+}
+
 func (h *Hub) registerLanesWeb(api huma.API) {
+	huma.Register(api, huma.Operation{OperationID: "get-cache-holds", Method: http.MethodGet, Path: "/api/cache-holds", Tags: []string{"settings"},
+		Summary: "各来源手填的缓存保留时长（选填，R-207）与近 30 天有用量的来源"}, h.getCacheHolds)
+	huma.Register(api, huma.Operation{OperationID: "put-cache-holds", Method: http.MethodPut, Path: "/api/cache-holds", Tags: []string{"settings"},
+		Summary: "保存各来源的缓存保留时长；没填的来源拿不到档位就不显示缓存余温（R-207）"}, h.putCacheHolds)
 	huma.Register(api, huma.Operation{OperationID: "get-lanes", Method: http.MethodGet, Path: "/api/lanes", Tags: []string{"sessions"},
 		Summary: "工作台泳道时间线：每个会话、每个子任务每分钟的调用次数，长命令与待命时段，子任务名单（R-205）；token 用量与冷启动（R-206）；后台命令（R-208）"}, h.getLanes)
 	huma.Register(api, huma.Operation{OperationID: "get-token-prices", Method: http.MethodGet, Path: "/api/token-prices", Tags: []string{"settings"},

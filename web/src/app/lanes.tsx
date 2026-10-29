@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { Hourglass, Snowflake } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
@@ -11,7 +12,7 @@ import { spring } from '../ui/gesture'
 import { Ctx } from '../ui/contextMenu'
 import { displayState, ProfileBadge, RoleBadge, RoleTag, ToolMark } from '../ui/marks'
 import { Linkify } from '../ui/refmark'
-import { laneStore, money, onLaneData, useLaneSnap } from './laneFeed'
+import { laneStore, money, onLaneData, useLaneSnap, useWarmFlag } from './laneFeed'
 import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
@@ -498,6 +499,20 @@ function TokLabel({ k, zoom, now, className, bare }: { k: string; zoom: Zoom; no
     <Tip truncated content={text}>
       <span data-tok-label className={cx('truncate text-[11.5px] leading-4 text-fg-3 tabular', className)}>
         {text}
+      </span>
+    </Tip>
+  )
+}
+
+// WarmChip：缓存临近过期 / 已冷却时，状态行里多一个小标签（R-207）；正常的不显示，细节在悬停提示里。
+function WarmChip({ k, now }: { k: string; now: number }) {
+  const w = useWarmFlag(k, now)
+  if (!w) return null
+  return (
+    <Tip content={w.title}>
+      <span data-warm={w.cold ? 'cold' : 'soon'} className={cx('inline-flex shrink-0 items-center gap-0.5 text-[11.5px] leading-4', w.cold ? 'text-fg-3' : 'text-reply')}>
+        {w.cold ? <Snowflake className="size-3" /> : <Hourglass className="size-3" />}
+        {w.label}
       </span>
     </Tip>
   )
@@ -1008,6 +1023,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still, you }:
       <div className="flex min-w-0 items-center gap-2">
         <StateTag s={s} tone={tone} now={now} />
         <IdleTag s={s} />
+        {!live && <WarmChip k={s.key} now={now} />}
         <Tip truncated content={req ? `${req.code} ${req.title}` : live ? s.summary || s.last_prompt : ''}>
           <span className="min-w-0 truncate text-[12px] text-fg-2">
             {req ? (

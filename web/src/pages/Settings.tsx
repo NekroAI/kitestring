@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
-import { qk, useDevices, useProjects, usePush, useSettings, useTokenPrices } from '../api/queries'
+import { qk, useDevices, useProjects, useCacheHolds, usePush, useSettings, useTokenPrices } from '../api/queries'
 import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
 import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
@@ -715,7 +715,69 @@ function Appearance() {
       <RoleNamesGroup />
       <AnnotateGroup />
       <TokenPricesGroup />
+      <CacheHoldsGroup />
     </>
+  )
+}
+
+// 缓存保留时长（R-207，选填）：默认不填。拿不到缓存档位的来源（Codex、去掉了用量字段的转接）不显示缓存余温，
+// 在这里填了大概的保留时长才按它估算，界面标「按你设置的时长估算」。取得到档位的会话仍按实际档位算。
+function CacheHoldsGroup() {
+  const q = useCacheHolds()
+  const qc = useQueryClient()
+  const [busy, wrap] = useBusy()
+  const [vals, setVals] = useState<Record<string, string>>({})
+  const L = t.settings.hold
+  const fromServer = () => {
+    const d = q.data
+    const by = new Map((d?.holds ?? []).map((h) => [h.tool, h.minutes]))
+    const names = [...new Set([...(d?.tools ?? []), ...by.keys()])]
+    return Object.fromEntries(names.map((n) => [n, by.has(n) ? String(by.get(n)) : '']))
+  }
+  useEffect(() => {
+    setVals(fromServer())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q.data])
+  const num = (v: string) => (v.trim() === '' || !Number.isFinite(Number(v)) || Number(v) < 1 ? undefined : Math.min(10080, Math.round(Number(v))))
+  const dirty = JSON.stringify(vals) !== JSON.stringify(fromServer())
+  const names = Object.keys(vals)
+  const save = () =>
+    wrap(async () => {
+      try {
+        await unwrap(api.PUT('/api/cache-holds', { body: { holds: names.filter((n) => num(vals[n]) != null).map((n) => ({ tool: n, minutes: num(vals[n])! })) } }))
+        await qc.invalidateQueries({ queryKey: qk.cacheHolds })
+        toast.success(t.common.saved)
+      } catch (e) {
+        toast.error(errMsg(e))
+      }
+    })
+  return (
+    <Group title={L.title} hint={L.hint}>
+      <Card className="space-y-3 p-4 sm:p-5" data-cache-holds>
+        {q.isPending ? (
+          <Skeleton className="h-16" />
+        ) : names.length === 0 ? (
+          <p className="text-[13px] text-fg-3">{L.empty}</p>
+        ) : (
+          <div className="space-y-2">
+            {names.map((n) => (
+              <div key={n} className="flex items-center gap-3">
+                <span className="min-w-0 flex-1 truncate text-[13px] text-fg">{t.tool[n] ?? n}</span>
+                <div className="w-40 shrink-0">
+                  <Input type="number" inputMode="numeric" min={1} max={10080} step={1} aria-label={`${t.tool[n] ?? n} ${L.minutes}`} placeholder={L.placeholder} value={vals[n] ?? ''} onChange={(e) => setVals({ ...vals, [n]: e.target.value })} className="h-8 tabular" />
+                </div>
+                <span className="w-8 text-[12px] text-fg-3">{t.common.minuteUnit}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex">
+          <Button variant="primary" className="ml-auto" loading={busy} disabled={!dirty} onClick={save}>
+            {t.common.save}
+          </Button>
+        </div>
+      </Card>
+    </Group>
   )
 }
 

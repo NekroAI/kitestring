@@ -711,6 +711,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cache-holds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 各来源手填的缓存保留时长（选填，R-207）与近 30 天有用量的来源 */
+        get: operations["get-cache-holds"];
+        /** 保存各来源的缓存保留时长；没填的来源拿不到档位就不显示缓存余温（R-207） */
+        put: operations["put-cache-holds"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/decisions": {
         parameters: {
             query?: never;
@@ -2383,6 +2401,23 @@ export interface components {
             state: "pending" | "success" | "failure";
             url?: string;
         };
+        CacheHold: {
+            /**
+             * Format: int64
+             * @description 大概的保留时长（分钟）
+             */
+            minutes: number;
+            /** @description 来源，会话键冒号前的部分，如 codex */
+            tool: string;
+        };
+        CacheHolds: {
+            holds: components["schemas"]["CacheHold"][] | null;
+        };
+        CacheHoldsOutBody: {
+            holds: components["schemas"]["CacheHold"][] | null;
+            /** @description 近 30 天有用量的来源 */
+            tools: string[] | null;
+        };
         ChainCommit: {
             /** Format: date-time */
             at: string;
@@ -3146,6 +3181,7 @@ export interface components {
              */
             to: number;
             tok: components["schemas"]["LaneTok"][] | null;
+            warm: components["schemas"]["LaneWarm"][] | null;
         };
         LaneRow: {
             /** @description 子任务的 agent_id；主会话为空 */
@@ -3217,6 +3253,25 @@ export interface components {
             n: number[] | null;
             /** @description 输出 */
             out: number[] | null;
+        };
+        LaneWarm: {
+            /**
+             * Format: int64
+             * @description 最近一次请求，Unix 毫秒（只精确到分钟）
+             */
+            at: number;
+            /**
+             * Format: int64
+             * @description 那一分钟平均每次请求的输入总量（读缓存 + 写缓存 + 未命中），下次冷启动要重算的量
+             */
+            ctx: number;
+            k: string;
+            model: string;
+            /**
+             * Format: int64
+             * @description 缓存档位（秒）：3600 / 300 来自用量里写缓存的档位；0 拿不到（没写过缓存，或来源不提供档位）
+             */
+            ttl: number;
         };
         LastReply: {
             /** Format: date-time */
@@ -5958,6 +6013,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AwayReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-cache-holds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheHoldsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "put-cache-holds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CacheHolds"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CacheHoldsOutBody"];
                 };
             };
             /** @description Error */

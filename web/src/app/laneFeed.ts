@@ -1,7 +1,9 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { api, unwrap } from '../api/client'
-import { laneSink, serverNow, useTokenPrices } from '../api/queries'
-import { LaneStore, makeAxis, priceComplete, zoomSpec, ZOOMS, type LaneData, type LanePush, type Prices, type Zoom } from '../lib/lanedata'
+import { t } from '../i18n'
+import { wan } from '../lib/util'
+import { laneSink, serverNow, useCacheHolds, useTokenPrices } from '../api/queries'
+import { LaneStore, makeAxis, priceComplete, zoomSpec, ZOOMS, WARM_SOON, type Holds, type LaneData, type LanePush, type Prices, type Zoom } from '../lib/lanedata'
 
 // 泳道时间线的数据源（R-205）：一份全局的 LaneStore。
 // 打开工作台先拉当前档位要的那段，再在空闲时把近 1 天的分钟和近 1 周的小时预取好，之后换档不再取数；
@@ -24,7 +26,7 @@ export function useLaneSnap<T extends string | number>(pick: () => T): T {
 }
 
 laneSink.push = (p: unknown) => {
-  laneStore.push(p as LanePush)
+  laneStore.push(p as LanePush, serverNow())
   bump()
 }
 laneSink.resync = () => {
@@ -88,10 +90,42 @@ export function useLanePrices() {
   }, [q.data])
 }
 
+// useLaneHolds：设置里各来源手填的缓存保留时长（R-207）；没填的来源拿不到档位就不显示缓存余温。
+export function useLaneHolds() {
+  const q = useCacheHolds()
+  useEffect(() => {
+    const h: Holds = {}
+    for (const x of q.data?.holds ?? []) if (x.minutes > 0) h[x.tool] = x.minutes
+    laneStore.setHolds(h)
+    bump()
+  }, [q.data])
+}
+
 let currency = '$'
 // money：金额文字（「约 $1.23」）；没有金额（没填价格、或这里面有模型没填全）时为空
 export function money(cost: number | null | undefined) {
   if (cost == null || !Object.keys(laneStore.prices).length) return ''
   if (cost > 0 && cost < 0.01) return `<${currency}0.01`
   return `${currency}${cost >= 100 ? cost.toFixed(0) : cost.toFixed(2)}`
+}
+
+// ---------- 缓存提示（R-207） ----------
+// 只在两种情况出现：缓存临近过期（剩不到 5 分钟）和已冷却；缓存正常、拿不到档位又没手填的来源什么都不显示。
+// 剩余分钟、重算 token 量、是否按设置估算都放在悬停提示里。
+export type WarmFlag = { cold: boolean; label: string; title: string }
+export function warmFlag(k: string, nowMs: number): WarmFlag | null {
+  const v = laneStore.warmOf(k, nowMs)
+  if (!v) return null
+  const L = t.warn
+  const tail = v.manual ? `${t.common.sep}${L.manual}` : ''
+  if (!v.warm) return { cold: true, label: L.cold, title: L.coldTip(wan(v.ctx)) + tail }
+  if (v.left >= WARM_SOON) return null
+  return { cold: false, label: L.soon, title: L.soonTip(Math.max(1, Math.round(v.left / 60000)), v.ctx > 0 ? wan(v.ctx) : '') + tail }
+}
+
+// 以分钟为单位的快照：剩余时间每分钟变一次，推送 / 拉取到了也变
+export function useWarmFlag(k: string | undefined, now: number) {
+  const minute = Math.floor(now / 60000)
+  const sig = useLaneSnap(() => (void minute, k ? JSON.stringify(warmFlag(k, serverNow())) : 'null'))
+  return sig === 'null' ? null : (JSON.parse(sig) as WarmFlag)
 }

@@ -54,7 +54,7 @@ export type LaneRowIn = { k: string; a: string; m: number[] | null; c: number[] 
 export type Span = { k: string; a: string; kind: 'tool' | 'wait' | string; ref: string; label: string; start: number; end?: number; until?: number }
 export type Agent = { k: string; a: string; label: string; type: string; start: number; end?: number }
 export type SessionMeta = { k: string; title: string; role: string; tool: string; project_id: string; project_name: string; cwd: string; background: boolean; ended_at?: string; last_active_at: string }
-export type LaneData = { now: number; step: number; from: number; to: number; rows: LaneRowIn[] | null; spans: Span[] | null; agents: Agent[] | null; sessions?: SessionMeta[] | null; tok?: TokRowIn[] | null; colds?: Cold[] | null; shells?: Shell[] | null }
+export type LaneData = { now: number; step: number; from: number; to: number; rows: LaneRowIn[] | null; spans: Span[] | null; agents: Agent[] | null; sessions?: SessionMeta[] | null; tok?: TokRowIn[] | null; colds?: Cold[] | null; warm?: Warm[] | null; shells?: Shell[] | null }
 export type LaneMinute = { k: string; a: string; m: number; c: number; hc: number }
 export type LanePush = { m: LaneMinute[] | null; s: Span[] | null; g: Agent[] | null; t?: TokMinute[] | null; c?: Cold[] | null; sh?: Shell[] | null }
 
@@ -137,6 +137,40 @@ export function priceComplete(p: Partial<Record<keyof Price, number | null | und
   return !!p && (['in', 'out', 'cw', 'cr'] as const).every((k) => typeof p[k] === 'number' && Number.isFinite(p[k]) && (p[k] as number) >= 0)
 }
 
+// ---------- 缓存余温（R-207） ----------
+// 会话最近一次请求的缓存状态：时刻（只精确到分钟）、档位（秒，0 = 拿不到）、那次请求的输入总量。
+// 剩余 ≈ 档位 − 距最后一次请求；接口不给过期时间，所以界面都写「约」。命中一次缓存就重新计时，所以总是取最近一次请求。
+export type Warm = { k: string; model: string; at: number; ttl: number; ctx: number }
+// 各来源手填的保留时长（分钟）；没填的来源拿不到档位就不算余温
+export type Holds = Record<string, number>
+export type WarmView = {
+  warm: boolean // 缓存还有效
+  left: number // 还剩多少毫秒（已冷却为 0）
+  ttl: number // 档位（秒）
+  manual: boolean // 档位是用户手填的，不是取自用量
+  ctx: number // 下次回复要重算（缓存冷了）/ 现在回复可免重算（缓存还热）的 token 数
+}
+export const toolOf = (k: string) => k.split(':')[0]
+
+// warmView：此刻这个会话的缓存状态；没有用量、或拿不到档位又没手填时为 null（不显示）。
+// 档位取自用量；只有取不到时才用手填的时长。
+export function warmView(w: Warm | undefined, holds: Holds, nowMs: number): WarmView | null {
+  if (!w || !(w.at > 0)) return null
+  let ttl = w.ttl
+  let manual = false
+  if (!(ttl > 0)) {
+    const m = holds[toolOf(w.k)]
+    if (!(m > 0)) return null
+    ttl = m * 60
+    manual = true
+  }
+  const left = Math.max(0, w.at + ttl * 1000 - nowMs)
+  return { warm: left > 0, left, ttl, manual, ctx: w.ctx }
+}
+
+// SOON：缓存还剩不到这么久，「要你处理」里的条目提醒现在回复可以免重算
+export const WARM_SOON = 5 * 60_000
+
 // 冷启动阈值：单次写缓存超过这么多才画（和 daemon 一致）
 export const COLD_MIN = 15000
 
@@ -165,6 +199,8 @@ export class LaneStore {
   tokHour = new Map<string, Map<string, Map<number, TokVals>>>()
   tokKeys = new Set<string>() // 有用量数据的会话（拿不到对话记录的会话不画下半部分）
   colds = new Map<string, Cold>()
+  warm = new Map<string, Warm>() // 会话 → 最近一次请求的缓存状态（R-207）
+  holds: Holds = {}
   shells = new Map<string, Shell>()
   prices: Prices = {}
   version = 0
@@ -203,6 +239,22 @@ export class LaneStore {
     let s = this.rowsOf.get(k)
     if (!s) this.rowsOf.set(k, (s = new Set()))
     s.add(a)
+  }
+
+  // 最近一次请求为准（更晚的盖掉更早的）；档位这次没看出来（只有读缓存、没写）就沿用之前的
+  private putWarm(w: Warm) {
+    const cur = this.warm.get(w.k)
+    if (cur && cur.at > w.at) return
+    this.warm.set(w.k, cur && !(w.ttl > 0) ? { ...w, ttl: cur.ttl } : w)
+  }
+
+  setHolds(h: Holds) {
+    this.holds = h
+    this.version++
+  }
+
+  warmOf(k: string, nowMs: number): WarmView | null {
+    return warmView(this.warm.get(k), this.holds, nowMs)
   }
 
   private putCold(c: Cold) {
@@ -266,11 +318,12 @@ export class LaneStore {
         this.putTok(tt, r.k, r.a, r.model, m[i], { in: r.in?.[i] ?? 0, cw: r.cw?.[i] ?? 0, cw1h: r.cw1h?.[i] ?? 0, cr: r.cr?.[i] ?? 0, out: r.out?.[i] ?? 0, n: r.n?.[i] ?? 0 })
     }
     for (const c of d.colds ?? []) this.putCold(c)
+    for (const w of d.warm ?? []) this.putWarm(w)
     for (const x of d.shells ?? []) this.putShell(x)
     this.version++
   }
 
-  push(p: LanePush) {
+  push(p: LanePush, nowMs = Date.now()) {
     for (const x of p.m ?? []) {
       this.put(this.min, x.k, x.a, x.m, x.c)
       this.put(this.hour, x.k, x.a, Math.floor(x.m / 60) * 60, x.hc)
@@ -280,6 +333,8 @@ export class LaneStore {
     for (const x of p.t ?? []) {
       this.putTok(this.tokMin, x.k, x.a, x.model, x.m, x.t)
       this.putTok(this.tokHour, x.k, x.a, x.model, Math.floor(x.m / 60) * 60, x.h)
+      // 主会话这一分钟有请求：缓存状态跟着更新（每次请求都重新计时）
+      if (!x.a && x.t.n > 0) this.putWarm({ k: x.k, model: x.model, at: Math.min(nowMs, x.m * 60000 + 59_999), ttl: x.t.cw1h > 0 ? 3600 : x.t.cw > 0 && toolOf(x.k) === 'claude' ? 300 : 0, ctx: Math.round((x.t.in + x.t.cw + x.t.cr) / x.t.n) })
     }
     for (const c of p.c ?? []) this.putCold(c)
     for (const x of p.sh ?? []) this.putShell(x)

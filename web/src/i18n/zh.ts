@@ -86,7 +86,16 @@ export const zh = {
     collapse: '收起侧边栏',
     expand: '展开侧边栏',
   },
+  // 缓存提示（R-207）：只在临近过期和已冷却时出现，短标签 + 悬停详情
+  warn: {
+    soon: '缓存将过期',
+    cold: '缓存已冷却',
+    soonTip: (min: number, n: string) => `约剩 ${min} 分钟${n ? `，现在回复可免重算约 ${n} token` : ''}`,
+    coldTip: (n: string) => `下次回复约要重算 ${n} token`,
+    manual: '按你设置的时长估算',
+  },
   common: {
+    minuteUnit: '分钟',
     save: '保存',
     saved: '已保存',
     cancel: '取消',
@@ -1628,6 +1637,15 @@ export const zh = {
       add: '添加模型',
       addPlaceholder: '模型名，如 claude-opus-5-5',
       empty: '还没有读到用量的模型。会话跑起来后，用到的模型会列在这里。',
+    },
+
+    hold: {
+      title: '缓存保留时长（选填）',
+      hint: '泳道会话停下后，缓存余温按对话记录里的缓存档位（5 分钟 / 1 小时）估算。拿不到档位的来源（Codex、去掉了用量字段的转接）默认不显示；想看的话在这里填一个大概的保留时长，界面会注明「按你设置的时长估算」。取得到档位的会话仍按实际档位算。',
+      source: '来源',
+      minutes: '保留时长（分钟）',
+      placeholder: '不填则不显示',
+      empty: '还没有读到用量的来源。会话跑起来后，用到的来源会列在这里。',
     },
 
     account: {

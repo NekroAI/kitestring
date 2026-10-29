@@ -1805,6 +1805,78 @@
         ],
         "type": "object"
       },
+      "CacheHold": {
+        "additionalProperties": false,
+        "properties": {
+          "minutes": {
+            "description": "大概的保留时长（分钟）",
+            "format": "int64",
+            "maximum": 10080,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tool": {
+            "description": "来源，会话键冒号前的部分，如 codex",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool",
+          "minutes"
+        ],
+        "type": "object"
+      },
+      "CacheHolds": {
+        "additionalProperties": false,
+        "properties": {
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/CacheHold"
+            },
+            "maxItems": 50,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "holds"
+        ],
+        "type": "object"
+      },
+      "CacheHoldsOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "holds": {
+            "items": {
+              "$ref": "#/components/schemas/CacheHold"
+            },
+            "maxItems": 50,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "tools": {
+            "description": "近 30 天有用量的来源",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "tools",
+          "holds"
+        ],
+        "type": "object"
+      },
       "ChainCommit": {
         "additionalProperties": false,
         "properties": {
@@ -4148,6 +4220,15 @@
               "array",
               "null"
             ]
+          },
+          "warm": {
+            "items": {
+              "$ref": "#/components/schemas/LaneWarm"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4161,6 +4242,7 @@
           "sessions",
           "tok",
           "colds",
+          "warm",
           "shells"
         ],
         "type": "object"
@@ -4408,6 +4490,40 @@
           "cr",
           "out",
           "n"
+        ],
+        "type": "object"
+      },
+      "LaneWarm": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "description": "最近一次请求，Unix 毫秒（只精确到分钟）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "ctx": {
+            "description": "那一分钟平均每次请求的输入总量（读缓存 + 写缓存 + 未命中），下次冷启动要重算的量",
+            "format": "int64",
+            "type": "integer"
+          },
+          "k": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "ttl": {
+            "description": "缓存档位（秒）：3600 / 300 来自用量里写缓存的档位；0 拿不到（没写过缓存，或来源不提供档位）",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "k",
+          "model",
+          "at",
+          "ttl",
+          "ctx"
         ],
         "type": "object"
       },
@@ -10686,6 +10802,76 @@
         "summary": "离开时段报告：替你定了什么、放行了什么、交付了什么、还在等你的、要你先看的、你在各设备上处理了什么（R-210）",
         "tags": [
           "away"
+        ]
+      }
+    },
+    "/api/cache-holds": {
+      "get": {
+        "operationId": "get-cache-holds",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheHoldsOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "各来源手填的缓存保留时长（选填，R-207）与近 30 天有用量的来源",
+        "tags": [
+          "settings"
+        ]
+      },
+      "put": {
+        "operationId": "put-cache-holds",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CacheHolds"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheHoldsOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "保存各来源的缓存保留时长；没填的来源拿不到档位就不显示缓存余温（R-207）",
+        "tags": [
+          "settings"
         ]
       }
     },

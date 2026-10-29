@@ -19,6 +19,7 @@ export const qk = {
   projects: ['projects'] as const,
   settings: ['settings'] as const,
   tokenPrices: ['settings', 'token-prices'] as const,
+  cacheHolds: ['settings', 'cache-holds'] as const,
   rolePrompts: ['role-prompts'] as const,
 }
 
@@ -217,6 +218,15 @@ export function useTokenPrices() {
   return useQuery({
     queryKey: qk.tokenPrices,
     queryFn: () => unwrap(api.GET('/api/token-prices')),
+    staleTime: 5 * 60_000,
+  })
+}
+
+// 各来源手填的缓存保留时长（R-207，选填）：拿不到档位的来源填了才显示缓存余温
+export function useCacheHolds() {
+  return useQuery({
+    queryKey: qk.cacheHolds,
+    queryFn: () => unwrap(api.GET('/api/cache-holds')),
     staleTime: 5 * 60_000,
   })
 }

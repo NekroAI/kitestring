@@ -11,10 +11,11 @@ import { gateStage, needsApproval } from './plans'
 import { sessionTitle, splitTool } from './SessionCard'
 import { isStatusReq, StatusReqLines } from './statusReq'
 import { DraftMark, dropDraft } from './draft'
-import { Check, Undo2 } from 'lucide-react'
+import { Check, Hourglass, Snowflake, Undo2 } from 'lucide-react'
 import { SwipeRow, type RowAction } from '../ui/gesture'
 import { useAskReason } from '../ui/overlay'
 import { composeAnswer, decKey, useOutbox } from './outbox'
+import { useWarmFlag } from './laneFeed'
 import { PendingCover, usePending, usePendingMap, useReqVerdict } from './verdict'
 import { ReviewMark } from './verify'
 
@@ -263,6 +264,18 @@ function Advice({ a }: { a: Ask }) {
   return null
 }
 
+// AskWarm：对应会话（停下的）缓存临近过期 / 已冷却时，状态行末尾的小图标，详情在悬停提示里（R-207）。
+function AskWarm({ a, now }: { a: Ask; now: number }) {
+  const s = a.s
+  const w = useWarmFlag(s && s.state !== 'ended' && displayState(s) !== 'running' ? s.key : undefined, now)
+  if (!w) return null
+  return (
+    <span data-ask-warm={w.cold ? 'cold' : 'soon'} title={`${w.label}${t.common.sep}${w.title}`} className={cx('shrink-0', w.cold ? 'text-fg-3' : 'text-reply')}>
+      {w.cold ? <Snowflake className="size-3.5" /> : <Hourglass className="size-3.5" />}
+    </span>
+  )
+}
+
 // swipeKey：这件事在撤销期里用的键（与审批抽屉、Verdict 一致）；没有左滑快捷操作的返回 undefined。
 function swipeKey(a: Ask) {
   if (a.kind === 'review' && a.code) return a.code
@@ -385,6 +398,7 @@ function AskCard({
       ) : (
         <span className="flex min-w-0 items-center gap-2 text-[12.5px] leading-5 text-fg-2">
           <span className="min-w-0 flex-1 truncate">{statusLine(a, now)}</span>
+          <AskWarm a={a} now={now} />
           {a.kind === 'review' && <ReviewMark r={a.req} />}
           <Advice a={a} />
         </span>

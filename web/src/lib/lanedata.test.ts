@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentEnd, axisX, barHeight, cellX, gridTicks, laneAxis, inWindow, LaneStore, makeAxis, sharedMax, ZOOMS, zoomSpec, type LaneData } from './lanedata.ts'
+import { agentEnd, axisX, barHeight, cellX, gridTicks, laneAxis, inWindow, LaneStore, makeAxis, sharedMax, warmView, ZOOMS, zoomSpec, WARM_SOON, type LaneData } from './lanedata.ts'
 
 const NOW = Date.UTC(2026, 9, 24, 11, 30, 20) // 19:30:20 北京时间
 const nowMin = Math.floor(NOW / 60000)
@@ -203,4 +203,50 @@ test('后台命令（R-208）：按范围取、整条覆盖、结束了的不被
   // 不知道结束时间的只算开始后 10 分钟：近 1 小时里看不到 5 小时前开始的
   const late = makeAxis('h6', 720, NOW + 2 * 3600e3)
   assert.ok(!st.shellsOf('claude:s', late, NOW + 2 * 3600e3).some((x) => x.ref === 'c'))
+})
+
+// 缓存余温（R-207）
+const tv = (o: Partial<{ in: number; cw: number; cw1h: number; cr: number; out: number; n: number }> = {}) => ({ in: 0, cw: 0, cw1h: 0, cr: 0, out: 0, n: 1, ...o })
+
+test('缓存余温：剩余 = 档位 − 距最后一次请求，到点后算已冷却', () => {
+  const w = { k: 'claude:s', model: 'm', at: NOW - 18 * 60_000, ttl: 3600, ctx: 180000 }
+  const v = warmView(w, {}, NOW)!
+  assert.equal(v.warm, true)
+  assert.equal(Math.round(v.left / 60000), 42)
+  assert.equal(v.manual, false)
+  const c = warmView({ ...w, ttl: 300 }, {}, NOW)!
+  assert.equal(c.warm, false)
+  assert.equal(c.left, 0)
+  assert.equal(c.ctx, 180000)
+  assert.ok(warmView({ ...w, at: NOW - 56 * 60_000 }, {}, NOW)!.left < WARM_SOON)
+})
+
+test('缓存余温：拿不到档位的来源默认不显示，手填了才按填的估算并标明', () => {
+  const w = { k: 'codex:s', model: 'm', at: NOW - 3 * 60_000, ttl: 0, ctx: 90000 }
+  assert.equal(warmView(w, {}, NOW), null)
+  assert.equal(warmView(undefined, {}, NOW), null)
+  const v = warmView(w, { codex: 10 }, NOW)!
+  assert.equal(v.manual, true)
+  assert.equal(Math.round(v.left / 60000), 7)
+  // 手填只补取不到的：取自用量的档位优先
+  assert.equal(warmView({ ...w, k: 'claude:s', ttl: 300 }, { claude: 60 }, NOW)!.manual, false)
+})
+
+test('缓存余温：推送里主会话的新请求重新计时，档位这次看不出时沿用之前的；子任务不算', () => {
+  const k = 'claude:s'
+  const st = new LaneStore()
+  st.merge(data([], 1, { warm: [{ k, model: 'm', at: NOW - 30 * 60_000, ttl: 3600, ctx: 100000 }] }))
+  st.push({ m: [], s: [], g: [], t: [{ k, a: '', model: 'm', m: nowMin, t: tv({ in: 10, cr: 120000, n: 2 }), h: tv() }] }, NOW)
+  const v = st.warmOf(k, NOW)!
+  assert.equal(v.ttl, 3600) // 只读缓存、没写：沿用 1 小时档
+  assert.equal(v.ctx, 60005)
+  assert.ok(v.left > 59 * 60_000) // 命中一次，重新计时
+  st.push({ m: [], s: [], g: [], t: [{ k, a: 'sub', model: 'm', m: nowMin, t: tv({ cw: 5000, n: 1 }), h: tv() }] }, NOW + 1000)
+  assert.equal(st.warmOf(k, NOW)!.ttl, 3600)
+  // 旧的拉取结果晚到，不盖掉新的
+  st.merge(data([], 1, { warm: [{ k, model: 'm', at: NOW - 30 * 60_000, ttl: 300, ctx: 1 }] }))
+  assert.equal(st.warmOf(k, NOW)!.ttl, 3600)
+  // 只有 5 分钟档写入 → 5 分钟档
+  st.push({ m: [], s: [], g: [], t: [{ k: 'claude:n', a: '', model: 'm', m: nowMin, t: tv({ cw: 8000, n: 1 }), h: tv() }] }, NOW)
+  assert.equal(st.warmOf('claude:n', NOW)!.ttl, 300)
 })
