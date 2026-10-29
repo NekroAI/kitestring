@@ -85,6 +85,20 @@ func currentSession(flagVal string) string {
 	return cliSession("")
 }
 
+// resolveTellSender 定 ks team tell 的发送方（R-248）：自动识别成功时以识别结果为准，--session 与它不一致就拒绝（防冒用）；
+// 识别不到（如 Codex 会话没认出来）时才接受 --session，claimed = true 让 hub 校验它是没结束的会话并在返回里注明。
+func resolveTellSender(flagVal, detected, agent string) (key, ag string, claimed bool, err error) {
+	switch {
+	case detected != "" && flagVal != "" && flagVal != detected:
+		return "", "", false, fmt.Errorf("--session %s 与自动识别的当前会话 %s 不一致：发送方只认当前对话，不能冒用别的会话；要点名收件会话请用 --to-session tool:id，或 --to 按身份发", flagVal, detected)
+	case detected != "":
+		return detected, agent, false, nil
+	case flagVal != "":
+		return flagVal, "", true, nil
+	}
+	return "", "", false, nil
+}
+
 // currentTeller 识别 ks team tell 所在的对话和发消息的子任务（R-191）：按父进程找到会话，
 // 再取这个会话最近一条 ks team tell 命令是哪个子任务发的（主线程发的为空）。认不出时退回 currentSession。
 func currentTeller() (key, agent string) {
@@ -174,7 +188,7 @@ func runMorning(args []string) error {
 // runTeam：ks team——列出本项目的 PM 与开发会话（R-86）。
 func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)
-	session := fs.String("session", "", "会话键（tool:session_id）：仅 tell 之外的子命令用来指定当前会话；tell 不接受（发送方只认 hook / 环境识别的当前会话，防冒用，R-248），点名收件会话用 --to-session")
+	session := fs.String("session", "", "会话键（tool:session_id）：仅 指定当前会话；tell 里只在自动识别不到时才接受，识别得到而与它不一致会被拒绝（防冒用，R-248），点名收件会话用 --to-session")
 	toSession := fs.String("to-session", "", "tell：点名收件会话键（tool:id），须是本项目没结束、有身份的会话；本项目有多个顾问 / 评审时用它指定，不填则发给最近活跃的那个")
 	reason := fs.String("reason", "", "recommend / need：为什么要开 Dev 会话（为什么要并行、为什么子代理不合适）")
 	work := fs.String("work", "", "recommend：开了做什么（需求编号）")
@@ -189,11 +203,13 @@ func runTeam(args []string) error {
 	}
 	tell := fs.NArg() > 0 && fs.Arg(0) == "tell"
 	key, agent := *session, ""
-	if tell && *session != "" {
-		return fmt.Errorf("ks team tell 不接受 --session：发送方只认当前对话（hook / 环境识别），不能指定或冒用别的会话；要点名收件会话请用 --to-session tool:id，或 --to advisor|aide|pm|reviewer 按身份发")
-	}
+	claimed := false
 	if tell {
-		key, agent = currentTeller()
+		dk, da := currentTeller()
+		var err error
+		if key, agent, claimed, err = resolveTellSender(*session, dk, da); err != nil {
+			return err
+		}
 	} else {
 		key = currentSession(key)
 	}
@@ -241,6 +257,9 @@ func runTeam(args []string) error {
 		}
 		if *fyi {
 			body["fyi"] = true
+		}
+		if claimed {
+			body["session_claimed"] = true
 		}
 		return agentCall("POST", "/agent/team/tell", body)
 	}

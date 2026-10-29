@@ -70,3 +70,37 @@ func TestTellToAdvisor(t *testing.T) {
 		t.Fatal("不存在的会话应拒绝")
 	}
 }
+
+// R-248：自动识别不到当前会话时，CLI 按 --session 自报发送方（session_claimed）：hub 要求它是没结束、属于项目的会话，并在返回里注明；
+// 已结束的、不存在的会话被拒。
+func TestTellClaimedSession(t *testing.T) {
+	e := setup(t)
+	cwd, _ := os.Getwd()
+	c := client.New(30 * time.Second)
+	ctx := context.Background()
+	for _, sid := range []string{"pm", "cx", "gone"} {
+		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
+		e.waitFor("会话入库", func() bool { return e.session("claude:"+sid).Key != "" })
+	}
+	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:pm", "role": "pm"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	hook(t, "claude", map[string]any{"session_id": "gone", "cwd": cwd, "hook_event_name": "SessionEnd"})
+	e.waitFor("会话结束", func() bool { return e.session("claude:gone").State == "ended" })
+
+	tell := func(key string) (tellRes, error) {
+		var out tellRes
+		err := c.Do(ctx, "POST", "/agent/team/tell", map[string]any{"session_key": key, "text": "进展", "session_claimed": true}, &out)
+		return out, err
+	}
+	out, err := tell("claude:cx")
+	if err != nil || !out.Delivered || !strings.Contains(out.Message, "按 --session claude:cx 认定发送方") {
+		t.Fatalf("识别不到时合法 --session 应可发并注明：%+v %v", out, err)
+	}
+	if _, err := tell("claude:gone"); err == nil || !strings.Contains(err.Error(), "没结束") {
+		t.Fatalf("已结束的会话应被拒：%v", err)
+	}
+	if _, err := tell("claude:nobody"); err == nil {
+		t.Fatalf("不存在的会话应被拒")
+	}
+}

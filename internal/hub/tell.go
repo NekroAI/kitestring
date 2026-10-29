@@ -271,19 +271,23 @@ func (h *Hub) registerAgentTell(api huma.API) {
 		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）。按身份发给本项目现在没结束的那个会话；评审、顾问有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。"},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				SessionKey  string `json:"session_key" minLength:"1" doc:"调用者"`
-				Text        string `json:"text" minLength:"1" doc:"要说的话"`
-				Requirement string `json:"requirement,omitempty" doc:"相关需求编号（如 R-12），可省略"`
-				To          string `json:"to,omitempty" doc:"收件身份：pm（默认）、aide、reviewer、advisor；也认中文名（主调度 / 主助理 / 评审 / 顾问）。回复时不填"`
-				ToSession   string `json:"to_session,omitempty" doc:"指定收件会话键（tool:id）：必须是本项目没结束、有身份的会话；与 to 同时填时身份要对得上。本项目有多个顾问 / 评审时用它点名；不填则发给该身份最近活跃的一个（R-248）"`
-				ReplyTo     string `json:"reply_to,omitempty" doc:"回复收到的团队消息：填它的编号（D-x）"`
-				FYI         bool   `json:"fyi,omitempty" doc:"只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、派活、回复，立刻叫醒）。部署 / 重启、进展通报这类用 true"`
-				AgentID     string `json:"agent_id,omitempty" doc:"发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上"`
+				SessionKey     string `json:"session_key" minLength:"1" doc:"调用者"`
+				Text           string `json:"text" minLength:"1" doc:"要说的话"`
+				Requirement    string `json:"requirement,omitempty" doc:"相关需求编号（如 R-12），可省略"`
+				To             string `json:"to,omitempty" doc:"收件身份：pm（默认）、aide、reviewer、advisor；也认中文名（主调度 / 主助理 / 评审 / 顾问）。回复时不填"`
+				ToSession      string `json:"to_session,omitempty" doc:"指定收件会话键（tool:id）：必须是本项目没结束、有身份的会话；与 to 同时填时身份要对得上。本项目有多个顾问 / 评审时用它点名；不填则发给该身份最近活跃的一个（R-248）"`
+				ReplyTo        string `json:"reply_to,omitempty" doc:"回复收到的团队消息：填它的编号（D-x）"`
+				FYI            bool   `json:"fyi,omitempty" doc:"只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、派活、回复，立刻叫醒）。部署 / 重启、进展通报这类用 true"`
+				SessionClaimed bool   `json:"session_claimed,omitempty" doc:"session_key 是调用方用 --session 自报的（自动识别不到当前会话时，R-248）：hub 校验它是没结束、属于某个项目的会话，并在返回里注明按它认定发送方"`
+				AgentID        string `json:"agent_id,omitempty" doc:"发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上"`
 			}
 		}) (*tellOut, error) {
 			me, err := h.store.GetSession(ctx, in.Body.SessionKey)
 			if err != nil {
 				return nil, apiErr(err)
+			}
+			if in.Body.SessionClaimed && (me.State == store.StateEnded || me.State == store.StateLost || me.DoneAt != nil || me.ProjectID == "") {
+				return nil, huma.Error409Conflict("--session " + me.Key + " 不是一个没结束、属于某个项目的会话，不能据此认定发送方，消息没有送出")
 			}
 			text := strings.TrimSpace(in.Body.Text)
 			if text == "" {
@@ -417,6 +421,9 @@ func (h *Hub) registerAgentTell(api huma.API) {
 				out.Body.Message += "对方的回复会送到你所属的会话（" + me.Key + "），由它转给你；不用 ks wait 等。"
 			} else if msg.ReplyTo == "" {
 				out.Body.Message += "对方回复时会自动送回你。"
+			}
+			if in.Body.SessionClaimed {
+				out.Body.Message += "（自动识别不到当前会话，已按 --session " + me.Key + " 认定发送方）"
 			}
 			return out, nil
 		})
