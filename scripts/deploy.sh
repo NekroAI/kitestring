@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # 纸鸢本机部署：构建 -> 备份 -> 替换 -> 重启 -> 核对，任一步不对就回滚并以非零状态退出。
+# 替换时一并更新 $KS_HOME/dsh-plugin（DSH 插件的稳定副本，install-dsh-plugin.sh 链接的就是它），
+# 回滚时恢复成上一份；这样仓库工作区里的开发改动不会被热加载进在用的 DSH Host。
 #
 # 用法：scripts/deploy.sh [--dry-run] [<git 提交>]
 #   不带提交参数时部署当前工作区（HEAD）；带提交参数时在临时 worktree 里构建该提交。
@@ -44,6 +46,10 @@ TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$KS_HOME/backups"
 ROLLBACK_BIN="$BACKUP_DIR/ks-$TS"
 DB_BACKUP="$BACKUP_DIR/hub-$TS.db"
+PLUGIN_DIR="$KS_HOME/dsh-plugin"
+PLUGIN_BACKUP="$BACKUP_DIR/dsh-plugin-$TS"
+HAD_PLUGIN=0
+PLUGIN_REPLACED=0
 WT=""
 HAD_OLD=0
 REPLACED=0
@@ -116,8 +122,21 @@ verify() {
   return 1
 }
 
+# rollback_plugin：把 DSH 插件副本恢复成部署前的样子（原先没有就删掉新放的）
+rollback_plugin() {
+  [ "$PLUGIN_REPLACED" = 1 ] || return 0
+  rm -rf "$PLUGIN_DIR"
+  if [ "$HAD_PLUGIN" = 1 ] && [ -d "$PLUGIN_BACKUP" ]; then
+    cp -R "$PLUGIN_BACKUP" "$PLUGIN_DIR"
+    log "已恢复 DSH 插件副本 $PLUGIN_BACKUP -> $PLUGIN_DIR"
+  else
+    log "已删除新放的 DSH 插件副本 ${PLUGIN_DIR}（原先没有）"
+  fi
+}
+
 rollback() {
   log "开始回滚"
+  rollback_plugin || log "恢复 DSH 插件副本失败，请人工处理：$PLUGIN_BACKUP"
   if [ "$HAD_OLD" = 1 ] && [ -f "$ROLLBACK_BIN" ]; then
     rm -f "$KS_BIN"
     cp "$ROLLBACK_BIN" "$KS_BIN"
@@ -218,17 +237,19 @@ prune_backups() {
   local pattern="$1" f
   [ -d "$BACKUP_DIR" ] || return 0
   # shellcheck disable=SC2010
-  ls -1 "$BACKUP_DIR" | grep -E "$pattern" | sort -r | tail -n +"$((KS_KEEP_BACKUPS + 1))" | while IFS= read -r f; do
+  # 一份都没有时 grep 不匹配会以 1 退出，pipefail 下会让部署中断（例如第一次部署插件副本时还没有 dsh-plugin-*）
+  ls -1 "$BACKUP_DIR" | { grep -E "$pattern" || true; } | sort -r | tail -n +"$((KS_KEEP_BACKUPS + 1))" | while IFS= read -r f; do
     if [ "$DRY" = 1 ]; then
       log "[dry-run] 删除旧备份 $BACKUP_DIR/$f"
     else
-      rm -f "${BACKUP_DIR:?}/$f"
+      rm -rf "${BACKUP_DIR:?}/$f"
       log "删除旧备份 $BACKUP_DIR/$f"
     fi
   done
 }
 prune_backups '^ks-[0-9]'
 prune_backups '^hub-[0-9].*\.db$'
+prune_backups '^dsh-plugin-[0-9]'
 
 # 4. 替换并重启（macOS 直接覆盖正在运行的二进制会被 SIGKILL，所以先 rm 再 cp）
 STEP="替换 $KS_BIN"
@@ -239,6 +260,25 @@ else
   rm -f "$KS_BIN"
   cp "$BUILD/bin/ks" "$KS_BIN"
   chmod +x "$KS_BIN"
+fi
+# DSH 插件副本：先在旁边放好新的，再把旧的挪进备份、新的换上（R-251）
+STEP="更新 DSH 插件副本 $PLUGIN_DIR"
+if [ ! -f "$BUILD/dsh-plugin/index.js" ]; then
+  log "构建目录里没有 dsh-plugin，跳过插件副本"
+elif [ "$DRY" = 1 ]; then
+  log "[dry-run] 复制 $BUILD/dsh-plugin（index.js、lib、package.json、README.md）-> ${PLUGIN_DIR}；原有的挪到 $PLUGIN_BACKUP"
+else
+  rm -rf "$PLUGIN_DIR.new"
+  mkdir -p "$PLUGIN_DIR.new"
+  cp -R "$BUILD/dsh-plugin/index.js" "$BUILD/dsh-plugin/lib" "$BUILD/dsh-plugin/package.json" "$BUILD/dsh-plugin/README.md" "$PLUGIN_DIR.new/"
+  if [ -d "$PLUGIN_DIR" ]; then
+    mv "$PLUGIN_DIR" "$PLUGIN_BACKUP"
+    HAD_PLUGIN=1
+    log "旧插件副本备份：$PLUGIN_BACKUP"
+  fi
+  PLUGIN_REPLACED=1
+  mv "$PLUGIN_DIR.new" "$PLUGIN_DIR"
+  log "DSH 插件副本：$PLUGIN_DIR"
 fi
 STEP="重启 hub 和 daemon"
 restart_services

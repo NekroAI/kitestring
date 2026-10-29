@@ -60,18 +60,20 @@ ks uninstall --claude-dir ~/.claude-x                      # 只移除这一个�
 
 ## DeepSeek Harness（DSH）
 
-DSH 会话也能上墙：用本仓库里的 Host 插件（`dsh-plugin/`）。它走 DSH 自己的会话事件和 `agent.followup()` / `inject()`，不需要 `ks wait` 进程——插件在会话空闲时挂着一个 `/wait`，你在纸鸢上答复时唤醒同一个 agent。
+DSH 会话也能上墙：用本仓库里的 Host 插件（`dsh-plugin/`）。它走 DSH 自己的会话事件和 `agent.followup()` / `steer()`，不需要 `ks wait` 进程——插件在两轮之间挂着一个 `/wait`，你在纸鸢上答复时唤醒同一个 agent（正在跑的一轮在下一步就收到）。
 
 要求 DSH 0.2.1-rc.4 和同机运行的 `ks daemon`。从源码目录安装：
 
 ```sh
-dsh plugin --profile web add link:"$PWD/dsh-plugin"
-scripts/install-dsh-plugin.sh --profile web
+scripts/deploy.sh                           # 部署时顺带把插件放到 $KS_HOME/dsh-plugin（稳定副本）
+scripts/install-dsh-plugin.sh --profile web # 链接这份副本，并在 profile 里启用
 ```
 
-web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --profile web`。之后会话会带 DSH 标记出现在看板上。DSH 的 shell 里能通过 `DSH_SESSION_ID` 正常使用 `ks role …`；不要在那里运行 `ks wait`——daemon 会立即返回并说明待命由插件负责。
+在用的 Host 链接的是 `$KS_HOME` 下的副本，只随部署更新、部署失败时一起回滚；仓库里改代码不会被热加载进去。开发插件本身时加 `--dev` 直接链接仓库。
 
-插件会报 token 用量和上下文大小（会话圆环），Host 进程消失时会结束会话。目前只在 `web` profile 上验证过；桌面版和 Windows 没有验证。从纸鸢创建/恢复 DSH 会话、原生审批双向同步还没有做。
+web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --profile web`。之后会话会带 DSH 标记出现在看板上。DSH 的 shell 里能正常使用 `ks role …`（插件注入根会话键 `DSH_KITESTRING_SESSION`，子代理里、从 Claude Code 终端启动的 DSH 里也认对）；不要在那里运行 `ks wait`——daemon 会立即返回并说明待命由插件负责。
+
+插件会报 token 用量和上下文大小（会话圆环），Host 进程消失时会结束它承载的所有会话。目前只在 `web` profile 上验证过；桌面版和 Windows 没有验证。从纸鸢创建/恢复 DSH 会话、原生审批双向同步还没有做。
 
 ## 会话交接
 

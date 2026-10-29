@@ -60,18 +60,20 @@ What is shared and what is separate: the Hub, the session list, requirement and 
 
 ## DeepSeek Harness (DSH)
 
-DSH sessions can join the board through the Host plugin in this repository (`dsh-plugin/`). It uses DSH's own session events and `agent.followup()` / `inject()`, so no `ks wait` process is involved: the plugin keeps a `/wait` request open while the session is idle and wakes the same agent when you answer in Kitestring.
+DSH sessions can join the board through the Host plugin in this repository (`dsh-plugin/`). It uses DSH's own session events and `agent.followup()` / `steer()`, so no `ks wait` process is involved: the plugin keeps a `/wait` request open between turns and wakes the same agent when you answer in Kitestring (a running turn receives the message at its next step).
 
 Requires DSH 0.2.1-rc.4 and a running `ks daemon` on the same machine. From a source checkout:
 
 ```sh
-dsh plugin --profile web add link:"$PWD/dsh-plugin"
-scripts/install-dsh-plugin.sh --profile web
+scripts/deploy.sh                           # also places a stable plugin copy in $KS_HOME/dsh-plugin
+scripts/install-dsh-plugin.sh --profile web # links that copy and enables it in the profile
 ```
 
-The web profile reloads profile patches by itself; otherwise restart `dsh --profile web`. Sessions then appear with the DSH mark. `ks role …` works inside DSH shells through `DSH_SESSION_ID`; do not run `ks wait` there — the daemon answers it immediately and explains that the plugin owns standby.
+The running Host links the copy under `$KS_HOME`, so it only changes when you deploy (and rolls back with a failed deploy); edits in the checkout are not hot-loaded into it. Use `--dev` to link the checkout while developing the plugin itself.
 
-The plugin reports token usage and context size (the session ring), and ends a session when the Host process disappears. It has been verified against the `web` profile; the desktop profile and Windows were not tested. Creating or resuming DSH sessions from Kitestring, and two-way native approval, are not implemented yet.
+The web profile reloads profile patches by itself; otherwise restart `dsh --profile web`. Sessions then appear with the DSH mark. `ks role …` works inside DSH shells (the plugin injects `DSH_KITESTRING_SESSION`, the root session, which also holds inside subagents and when DSH was started from a Claude Code terminal); do not run `ks wait` there — the daemon answers it immediately and explains that the plugin owns standby.
+
+The plugin reports token usage and context size (the session ring), and ends every session it hosted when the Host process disappears. It has been verified against the `web` profile; the desktop profile and Windows were not tested. Creating or resuming DSH sessions from Kitestring, and two-way native approval, are not implemented yet.
 
 ## Handoff
 
