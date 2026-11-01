@@ -44,7 +44,11 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.roleNotes(ctx, in.Body.SessionKey)+handoff, demoted
+			ov := ""
+			if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil && role != "" {
+				ov = h.overview(ctx, x, role, overviewHead, gitWait) // 接手概览（R-245）：按身份从记录生成，交接只写纸鸢里没有的
+			}
+			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.roleNotes(ctx, in.Body.SessionKey)+ov+handoff, demoted
 			out.Body.Handoff = handoff != ""
 			if out.Body.Demoted == nil {
 				out.Body.Demoted = []string{}

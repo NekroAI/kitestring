@@ -504,3 +504,20 @@ CREATE TABLE IF NOT EXISTS away_events (
 	normal     INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS away_events_away ON away_events(away_id, at);
+
+-- 当前安排（R-245）：用户口头交代的临时安排（如「额度紧，做完这几条就停」「这次可以 push」），落成项目上的一条短记录，
+-- 接任的会话从这里读到，不靠交接转述。by_session 为空表示用户在网页上加的；状态（生效中 / 已到期 / 已撤销）按 expires_at、revoked_at 推算，不删除，留痕
+CREATE TABLE IF NOT EXISTS arrangements (
+	id         TEXT PRIMARY KEY,
+	seq        INTEGER NOT NULL UNIQUE, -- N-<seq>
+	project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+	text       TEXT NOT NULL,
+	by_session TEXT NOT NULL DEFAULT '',
+	by_title   TEXT NOT NULL DEFAULT '',
+	by_role    TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL,
+	expires_at TEXT NOT NULL DEFAULT '',
+	revoked_at TEXT NOT NULL DEFAULT '',
+	revoked_by TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS arrangements_project ON arrangements(project_id, created_at);

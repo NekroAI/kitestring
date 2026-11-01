@@ -175,6 +175,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"requirements", "blocked_reason", "TEXT NOT NULL DEFAULT ''"},
 	// 进行中停滞（R-243）：进行中的需求多久没动静、也没有会话在跑，就进「要你处理」；0 按默认 2 小时
 	{"projects", "stall_minutes", "INTEGER NOT NULL DEFAULT 0"},
+	// 交接三栏（R-245）：做到一半的事沿用 doing；口头约定、注意事项是新的两栏。旧的 waiting / rules / next / notes 仍保留，老交接照样显示
+	{"handoffs", "agreements", "TEXT NOT NULL DEFAULT ''"},
+	{"handoffs", "caveats", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

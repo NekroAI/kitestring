@@ -16,6 +16,7 @@ import { sessionTitle } from '../app/SessionCard'
 import { SessionRow } from '../app/thread'
 import { AskItem, askLine, useAsks, useOpenAsk, useStaying, type Ask } from '../app/asks'
 import { BriefStrip } from '../app/brief'
+import { ArrangeStrip } from '../app/arrange'
 import { HandledLog, PlanChips, PlansRail, RecentRail, TeamRail, useHandled } from '../app/desk'
 import { EndedLane, Lane, LaneAxis, laneTone, setLaneZoom, setOffline, ZoomSwitch, type LaneMode, type Tone } from '../app/lanes'
 import { ensureZoom, laneStore, prefetchLanes, useLaneHolds, useLanePrices, useLaneSnap } from '../app/laneFeed'
@@ -548,6 +549,7 @@ export default function WorkbenchPage() {
             )}
           </div>
           <BriefStrip sessions={wb.sessions} now={now} zoom={zoom} asks={todo} />
+          <ArrangeStrip sessions={wb.sessions} className={cx(!phone && 'col-start-2')} />
           {!rail && <PlanChips className={cx(!phone && 'col-span-2')} />}
           {phone && (
             <div role="tablist" className="flex gap-1.5">

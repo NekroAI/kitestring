@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -77,11 +78,26 @@ type briefIn struct {
 }
 
 type handoffIn struct {
-	Doing   string `json:"doing" jsonschema:"在做的：每件事写需求编号、做到哪、分支 / worktree 在哪"`
-	Waiting string `json:"waiting,omitempty" jsonschema:"等用户的：待答决策、待验收的需求、要用户决策的事（写编号）"`
-	Rules   string `json:"rules,omitempty" jsonschema:"约定和规矩：用户定过的、团队里说好的、还没做成系统的口头约定"`
-	Next    string `json:"next" jsonschema:"下一步：接任后先做什么"`
-	Notes   string `json:"notes,omitempty" jsonschema:"注意事项：坑、在跑的进程、别碰的东西"`
+	Doing      string `json:"doing,omitempty" jsonschema:"做到一半的事：需求编号、做到哪、分支 / worktree 在哪"`
+	Agreements string `json:"agreements,omitempty" jsonschema:"口头约定：用户在对话里交代、还没落成记录的（临时安排先用 arrange_add 记成当前安排）"`
+	Caveats    string `json:"caveats,omitempty" jsonschema:"注意事项：坑、在跑的进程、别碰的东西"`
+	Waiting    string `json:"waiting,omitempty" jsonschema:"旧栏目：等用户的。纸鸢里已有（接任概览会列出），不必写"`
+	Rules      string `json:"rules,omitempty" jsonschema:"旧栏目：约定和规矩。纸鸢里已有，不必写；口头约定写 agreements"`
+	Next       string `json:"next,omitempty" jsonschema:"旧栏目：下一步。不必写"`
+	Notes      string `json:"notes,omitempty" jsonschema:"旧栏目：注意事项，等同 caveats"`
+}
+
+type arrangeAddIn struct {
+	Text  string `json:"text" jsonschema:"安排：一两句话，写清要怎样（如「额度紧，做完 R-12、R-13 就停」「这次可以 push」）"`
+	Until string `json:"until,omitempty" jsonschema:"到期：时长（30m、2h、1d）或日期（2026-11-02、2026-11-02 18:00、18:00）；不填表示撤销前一直有效"`
+}
+
+type arrangeListIn struct {
+	All bool `json:"all,omitempty" jsonschema:"true = 连已到期、已撤销的也列出（最近 50 条）"`
+}
+
+type arrangeRevokeIn struct {
+	Code string `json:"code" jsonschema:"要撤销的安排编号（N-x）"`
 }
 
 type morningAdviceIn struct {
@@ -126,7 +142,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(out.Message), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "handoff_write", Description: "交接（R-224）：用户点了「交接」、要换会话 / 换工具 / 换设备接任你的身份时，写一份结构化交接存进纸鸢（显示在你的会话时间线上）。新会话运行 ks role <身份> 时自动读到最新一份，你随即卸任：身份清除、不再被唤醒，之后不要再挂 ks wait。主调度有在跑的子任务时会被拒绝：先停派新活，等子任务交完再写。可以重复调用，覆盖还没被接任的那一份。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "handoff_write", Description: "交接（R-224、R-245）：用户点了「交接」、要换会话 / 换工具 / 换设备接任你的身份时，写一份交接存进纸鸢（显示在你的会话时间线上）。只写纸鸢里没有的三栏，几行即可（三栏合计超过 300 字照常保存并提示压缩）：doing 做到一半的事、agreements 口头约定、caveats 注意事项。需求状态、待验收、待答决策、放行队列、合入 / 推送情况，新会话接任时纸鸢按身份自动列出，不必写；用户口头交代的临时安排先用 arrange_add 记成当前安排。新会话运行 ks role <身份> 时自动读到最新一份，你随即卸任：身份清除、不再被唤醒，之后不要再挂 ks wait。主调度有在跑的子任务时会被拒绝：先停派新活，等子任务交完再写。可以重复调用，覆盖还没被接任的那一份。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in handoffIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -135,8 +151,80 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			var out struct {
 				Message string `json:"message"`
 			}
-			body := map[string]any{"session_key": key, "doing": in.Doing, "waiting": in.Waiting, "rules": in.Rules, "next": in.Next, "notes": in.Notes}
+			body := map[string]any{"session_key": key, "doing": in.Doing, "agreements": in.Agreements, "caveats": in.Caveats, "waiting": in.Waiting, "rules": in.Rules, "next": in.Next, "notes": in.Notes}
 			if err := t.c.Do(ctx, "POST", "/agent/handoff", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "arrange_add", Description: "记一条当前安排（R-245，命令行 ks arrange add）：用户在对话里口头交代的临时安排（如「额度紧，做完这几条就停」「这次可以 push」）落成项目上的记录 N-x，署你的名，可带到期时间。用户在工作台上看得到、能撤销；接任你身份的新会话、压缩上下文后都会自动读到，不靠交接转述。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in arrangeAddIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/arrangements", map[string]any{"session_key": key, "text": in.Text, "until": in.Until}, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "arrange_list", Description: "列出本项目的当前安排（R-245，命令行 ks arrange list）：默认只列生效中的，all = true 连已到期、已撤销的。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in arrangeListIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			q := url.Values{"session_key": {key}}
+			if in.All {
+				q.Set("all", "true")
+			}
+			var out struct {
+				Arrangements []struct {
+					Code      string     `json:"code"`
+					Text      string     `json:"text"`
+					BySession string     `json:"by_session"`
+					ByTitle   string     `json:"by_title"`
+					ExpiresAt *time.Time `json:"expires_at"`
+					Status    string     `json:"status"`
+				} `json:"arrangements"`
+			}
+			if err := t.c.Do(ctx, "GET", "/agent/arrangements?"+q.Encode(), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			if len(out.Arrangements) == 0 {
+				return text("本项目现在没有生效中的安排。"), nil, nil
+			}
+			var b strings.Builder
+			for _, a := range out.Arrangements {
+				who := "用户"
+				if a.BySession != "" {
+					who = a.ByTitle
+					if who == "" {
+						who = a.BySession
+					}
+				}
+				until := "撤销前一直有效"
+				if a.ExpiresAt != nil {
+					until = "至 " + a.ExpiresAt.Local().Format("01-02 15:04")
+				}
+				state := map[string]string{"expired": "［已到期］", "revoked": "［已撤销］"}[a.Status]
+				fmt.Fprintf(&b, "%s %s「%s」——%s记，%s\n", a.Code, state, a.Text, who, until)
+			}
+			return text(b.String()), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "arrange_revoke", Description: "撤销一条当前安排（R-245，命令行 ks arrange revoke N-x）：用户说这条不再适用、或事情已经做完时撤掉。留痕不删。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in arrangeRevokeIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/arrangements/"+url.PathEscape(in.Code)+"/revoke", map[string]any{"session_key": key}, &out); err != nil {
 				return nil, nil, err
 			}
 			return text(out.Message), nil, nil

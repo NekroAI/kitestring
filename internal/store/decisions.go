@@ -113,7 +113,7 @@ type Decision struct {
 	ByTitle string `json:"by_title,omitempty" doc:"写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话"`
 	// 团队消息（R-191）：AssignedBy 是发消息的会话，FromRole 是它当时的身份；FromAgent 是发消息的子任务（一次性子代理）的 agent_id，
 	// 主线程发的为空；ReplyTo 是这条回复的那条团队消息的 ID
-	FromRole  string `json:"from_role,omitempty" doc:"团队消息（R-191）：发消息的会话当时的身份"`
+	FromRole  string `json:"from_role,omitempty" doc:"团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份"`
 	FromAgent string `json:"from_agent,omitempty" doc:"团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空"`
 	ReplyTo   string `json:"reply_to,omitempty" doc:"团队消息（R-191）：这条回复的团队消息 ID"`
 }
@@ -238,8 +238,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		if d.Approval {
 			rec = -1
 		}
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to, rec_option, hard) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo, rec, d.Hard)
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to, rec_option, hard, from_role) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo, rec, d.Hard, d.FromRole)
 		if err != nil {
 			return err
 		}

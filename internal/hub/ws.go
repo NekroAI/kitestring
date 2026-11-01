@@ -136,6 +136,10 @@ func (h *Hub) handleDeviceMsg(ctx context.Context, c *deviceConn, e protocol.Env
 		if e.StopResult != nil {
 			h.stopDone(*e.StopResult)
 		}
+	case protocol.MsgGitResult:
+		if e.GitResult != nil {
+			h.gitDone(*e.GitResult)
+		}
 	case protocol.MsgDelivered:
 		changed := false
 		for _, d := range e.Delivered {

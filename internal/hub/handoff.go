@@ -12,6 +12,7 @@ import (
 
 	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
+	"github.com/NekroAI/kitestring/internal/writing"
 )
 
 // 会话交接（R-224）：上下文太长时以压缩为主，换会话 / 换工具 / 换设备时才完整交接。
@@ -103,7 +104,7 @@ func handoffAsk(role, project string, agents int) string {
 		}
 		n++
 	}
-	fmt.Fprintf(&b, "%d）用 handoff_write 写结构化交接：doing 在做的（需求编号、做到哪）、waiting 等用户的（待答决策、待验收）、rules 用户定过的约定和规矩、next 下一步、notes 注意事项（坑、在跑的进程、别碰的东西）；没有 handoff_write 工具（MCP 是旧版）时改用命令 ks handoff，字段相同，例：ks handoff --doing \"R-12 做到联调\" --next \"交验收\" --notes \"别停 5199\"（也可 --file 交接.json 或 .md）；", n)
+	fmt.Fprintf(&b, "%d）用 handoff_write 写交接，只写纸鸢里没有的三栏，几行即可：doing 做到一半的事（需求编号、做到哪、分支 / worktree）、agreements 口头约定（用户在对话里交代、还没落成记录的）、caveats 注意事项（坑、在跑的进程、别碰的东西）。需求状态、待验收、待答决策、放行队列、合入 / 推送情况新会话接任时纸鸢会自动列出，不必写；用户口头交代的临时安排（如「额度紧，做完这几条就停」「这次可以 push」）先用 ks arrange add 记成当前安排。没有 handoff_write 工具（MCP 是旧版）时改用命令 ks handoff，例：ks handoff --doing \"R-12 做到联调，分支 line3\" --caveats \"别停 5199\"；", n)
 	fmt.Fprintf(&b, "%d）写完照常待命。用户会在项目目录运行 %s 开新会话，新会话接任后你自动卸任，之后不用再挂 ks wait。", n+1, takeoverCmd(role))
 	return b.String()
 }
@@ -111,11 +112,14 @@ func handoffAsk(role, project string, agents int) string {
 type handoffWriteIn struct {
 	Body struct {
 		SessionKey string `json:"session_key" minLength:"1"`
-		Doing      string `json:"doing" doc:"在做的：需求编号、做到哪"`
-		Waiting    string `json:"waiting,omitempty" doc:"等用户的：待答决策、待验收、要用户决策的事"`
-		Rules      string `json:"rules,omitempty" doc:"约定和规矩：用户定过的、团队里说好的"`
-		Next       string `json:"next" doc:"下一步"`
-		Notes      string `json:"notes,omitempty" doc:"注意事项：坑、在跑的进程、别碰的东西"`
+		Doing      string `json:"doing,omitempty" doc:"做到一半的事：需求编号、做到哪、分支 / worktree"`
+		Agreements string `json:"agreements,omitempty" doc:"口头约定：用户在对话里交代、还没落成记录的（临时安排先用 ks arrange add 记成当前安排）"`
+		Caveats    string `json:"caveats,omitempty" doc:"注意事项：坑、在跑的进程、别碰的东西"`
+		// 旧栏目（R-224）：仍接受，返回里提示这些纸鸢里已有
+		Waiting string `json:"waiting,omitempty" doc:"旧栏目：等用户的（纸鸢里已有，不必写）"`
+		Rules   string `json:"rules,omitempty" doc:"旧栏目：约定和规矩（纸鸢里已有，不必写；口头约定写 agreements）"`
+		Next    string `json:"next,omitempty" doc:"旧栏目：下一步（不必写）"`
+		Notes   string `json:"notes,omitempty" doc:"旧栏目：注意事项，等同 caveats"`
 	}
 }
 
@@ -173,22 +177,38 @@ func (h *Hub) writeHandoff(ctx context.Context, in *handoffWriteIn) (string, err
 	if x.Role == "" || x.ProjectID == "" {
 		return "", huma.Error409Conflict("你没有身份，不需要交接（交接给的是主调度、主助理等身份）")
 	}
-	if strings.TrimSpace(b.Doing) == "" && strings.TrimSpace(b.Next) == "" {
-		return "", huma.Error400BadRequest("至少写上 doing（在做的）和 next（下一步）")
+	if strings.TrimSpace(b.Caveats) == "" {
+		b.Caveats, b.Notes = b.Notes, "" // 旧栏目 notes 就是注意事项
+	}
+	if strings.TrimSpace(b.Doing+b.Agreements+b.Caveats+b.Waiting+b.Rules+b.Next+b.Notes) == "" {
+		return "", huma.Error400BadRequest("交接是空的：至少写一栏——doing（做到一半的事）、agreements（口头约定）、caveats（注意事项）")
 	}
 	if x.Role == roles.PM {
 		if a := liveAgents(x); len(a) > 0 {
 			return "", huma.Error409Conflict(fmt.Sprintf("你还有 %d 个子任务在跑（%s）：先停派新活，等它们交完再写交接", len(a), strings.Join(a, "、")))
 		}
 	}
-	hd, err := h.store.WriteHandoff(ctx, x.ProjectID, x.Role, x.Key, store.Handoff{Doing: clip(b.Doing), Waiting: clip(b.Waiting), Rules: clip(b.Rules), Next: clip(b.Next), Notes: clip(b.Notes)})
+	hd, err := h.store.WriteHandoff(ctx, x.ProjectID, x.Role, x.Key, store.Handoff{Doing: clip(b.Doing), Agreements: clip(b.Agreements), Caveats: clip(b.Caveats), Waiting: clip(b.Waiting), Rules: clip(b.Rules), Next: clip(b.Next), Notes: clip(b.Notes)})
 	if err != nil {
 		return "", err
 	}
 	_ = hd
 	h.sessionChanged(x.Key)
 	h.broker.publish("sessions")
-	return fmt.Sprintf("交接已存，用户在你的会话时间线上能看到。用户会在项目目录运行 %s 开新会话；新会话声明%s时自动读到这份交接，你随即卸任。在那之前照常待命；要补充就再调一次 handoff_write（覆盖这一份）。", takeoverCmd(x.Role), roles.Display(x.Role)), nil
+	msg := fmt.Sprintf("交接已存，用户在你的会话时间线上能看到。用户会在项目目录运行 %s 开新会话；新会话声明%s时自动读到这份交接和纸鸢生成的接手概览，你随即卸任。在那之前照常待命；要补充就再调一次 handoff_write（覆盖这一份）。", takeoverCmd(x.Role), roles.Display(x.Role))
+	var old []string
+	for _, f := range []struct{ k, v string }{{"waiting（等用户的）", b.Waiting}, {"rules（约定和规矩）", b.Rules}, {"next（下一步）", b.Next}} {
+		if strings.TrimSpace(f.v) != "" {
+			old = append(old, f.k)
+		}
+	}
+	if len(old) > 0 {
+		msg += "这次写了旧栏目 " + strings.Join(old, "、") + "，照常存了；不过这些纸鸢里已有（待验收、待答决策、放行队列、用户定过的规矩接任概览会列出），不必写。下次只写三栏：doing、agreements、caveats。"
+	}
+	if hint := writing.HandoffHint(b.Doing, b.Agreements, b.Caveats); hint != "" {
+		msg += hint
+	}
+	return msg, nil
 }
 
 // handoffText：新会话接任时注入的交接内容。
@@ -203,12 +223,12 @@ func handoffText(hd store.Handoff, role string) string {
 		at = "，写于 " + hd.WrittenAt.Local().Format("01-02 15:04")
 	}
 	fmt.Fprintf(&b, "\n## 交接（上一任%s「%s」写的%s）\n\n", roles.Display(role), from, at)
-	for _, s := range []struct{ k, v string }{{"在做的", hd.Doing}, {"等用户的", hd.Waiting}, {"约定和规矩", hd.Rules}, {"下一步", hd.Next}, {"注意事项", hd.Notes}} {
+	for _, s := range []struct{ k, v string }{{"做到一半的事", hd.Doing}, {"口头约定", hd.Agreements}, {"注意事项", hd.Caveats}, {"注意事项（旧栏目）", hd.Notes}, {"等用户的（旧栏目）", hd.Waiting}, {"约定和规矩（旧栏目）", hd.Rules}, {"下一步（旧栏目）", hd.Next}} {
 		if strings.TrimSpace(s.v) != "" {
 			fmt.Fprintf(&b, "### %s\n%s\n\n", s.k, strings.TrimSpace(s.v))
 		}
 	}
-	b.WriteString("上一任已自动卸任。读完先回用户一句确认：已接任" + roles.Display(role) + "、接手了哪几件事、下一步做什么；然后按交接继续。\n")
+	b.WriteString("上一任已自动卸任。读完先回用户一句确认：已接任" + roles.Display(role) + "、接手了哪几件事、下一步做什么；然后按交接和上面的接手概览继续。\n")
 	return b.String()
 }
 
@@ -265,7 +285,8 @@ func retiredNote(project, role, by string, handed bool, pending []string) string
 	return s + "要恢复，在这个会话里重新运行 ks role <身份>。"
 }
 
-// stateNote：压缩上下文后补注入的关键状态——关联的需求、待答决策、在跑的子任务（R-224）。都没有时返回空。
+// stateNote：压缩上下文后补注入的关键状态——关联的需求、待答决策、在跑的子任务（R-224），
+// 以及按身份的接手概览和当前安排（R-245）。都没有时返回空。
 func (h *Hub) stateNote(ctx context.Context, key string) (string, error) {
 	x, err := h.store.GetSession(ctx, key)
 	if err != nil {
@@ -299,7 +320,8 @@ func (h *Hub) stateNote(ctx context.Context, key string) (string, error) {
 		}
 		tasks = append(tasks, fmt.Sprintf("%s「%s」（已跑 %d 分钟）", kind, oneLineClip(label, 60), int(now.Sub(t.StartedAt).Minutes())))
 	}
-	if len(reqs)+len(decs)+len(tasks) == 0 {
+	ov := h.overview(ctx, x, x.Role, "按身份要接着管的事", gitWaitQuick) // R-245：接手概览和当前安排压缩后也补上
+	if len(reqs)+len(decs)+len(tasks) == 0 && ov == "" {
 		return "", nil
 	}
 	var b strings.Builder
@@ -312,6 +334,7 @@ func (h *Hub) stateNote(ctx context.Context, key string) (string, error) {
 			fmt.Fprintf(&b, "- %s：%s\n", s.k, strings.Join(s.vs, "；"))
 		}
 	}
+	b.WriteString(ov)
 	return b.String(), nil
 }
 

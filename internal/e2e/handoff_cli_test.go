@@ -46,8 +46,8 @@ func TestHandoffCLI(t *testing.T) {
 	if out, err := ks("handoff", "--session", "claude:hc-none", "--doing", "x", "--next", "y"); err == nil || !strings.Contains(out, "没有身份") {
 		t.Fatalf("没有身份应拒收：%v %s", err, out)
 	}
-	if out, err := ks("handoff", "--session", "claude:hc-pm", "--waiting", "只写了等用户的"); err == nil || !strings.Contains(out, "--doing") {
-		t.Fatalf("doing 和 next 都空应拒收：%v %s", err, out)
+	if out, err := ks("handoff", "--session", "claude:hc-pm"); err == nil || !strings.Contains(out, "交接是空的") || !strings.Contains(out, "--caveats") {
+		t.Fatalf("什么都没写应拒收：%v %s", err, out)
 	}
 	sub := map[string]any{"agent_id": "a-hc", "agent_type": "general-purpose"}
 	ev("hc-pm", "SubagentStart", sub)
@@ -86,7 +86,22 @@ func TestHandoffCLI(t *testing.T) {
 	}
 	e.call("GET", "/api/sessions/claude:hc-pm", nil, &detail)
 	h := detail.Handoffs[0]
-	if h.Doing != "R-2 联调" || h.Waiting != "D-9" || h.Rules != "部署只走脚本" || h.Next != "命令行的下一步" || h.Notes != "别碰线上" {
+	if h.Doing != "R-2 联调" || h.Waiting != "D-9" || h.Rules != "部署只走脚本" || h.Next != "命令行的下一步" || h.Caveats != "别碰线上" {
 		t.Fatalf("markdown 分栏不对：%+v", h)
+	}
+
+	// R-245：三栏——做到一半的事、口头约定、注意事项；只写三栏时不提示旧栏目，写多了提示压缩
+	md3 := filepath.Join(t.TempDir(), "h3.md")
+	os.WriteFile(md3, []byte("## 做到一半的事\nR-4 做到联调\n## 口头约定\n用户说这次可以 push\n## 注意事项\n别停 5199\n"), 0o644)
+	out, err := ks("handoff", "--session", "claude:hc-pm", "--file", md3)
+	if err != nil || strings.Contains(out, "旧栏目") || strings.Contains(out, "字数提示") {
+		t.Fatalf("三栏交接应直接存下、不带提示：%v %s", err, out)
+	}
+	e.call("GET", "/api/sessions/claude:hc-pm", nil, &detail)
+	if h := detail.Handoffs[0]; h.Doing != "R-4 做到联调" || h.Agreements != "用户说这次可以 push" || h.Caveats != "别停 5199" {
+		t.Fatalf("三栏分栏不对：%+v", h)
+	}
+	if out, err := ks("handoff", "--session", "claude:hc-pm", "--doing", strings.Repeat("很长的交接", 70)); err != nil || !strings.Contains(out, "超过 300 字") {
+		t.Fatalf("写多了应照常保存并提示压缩：%v %s", err, out)
 	}
 }

@@ -19,17 +19,21 @@ const (
 
 // Handoff 是一份交接。
 type Handoff struct {
-	ID          string     `json:"id"`
-	ProjectID   string     `json:"project_id"`
-	Role        string     `json:"role"`
-	FromSession string     `json:"from_session"`
-	FromTitle   string     `json:"from_title"`
-	Status      string     `json:"status" enum:"requested,written,taken"`
-	Doing       string     `json:"doing" doc:"在做的：需求编号、做到哪"`
-	Waiting     string     `json:"waiting" doc:"等用户的：待答决策、待验收、要用户决策的事"`
-	Rules       string     `json:"rules" doc:"约定和规矩：用户定过的、团队里说好的"`
-	Next        string     `json:"next" doc:"下一步"`
-	Notes       string     `json:"notes" doc:"注意事项：坑、别碰的东西、在跑的进程"`
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
+	Role        string `json:"role"`
+	FromSession string `json:"from_session"`
+	FromTitle   string `json:"from_title"`
+	Status      string `json:"status" enum:"requested,written,taken"`
+	// 三栏（R-245）：只写纸鸢里没有的——做到一半的事、口头约定、注意事项
+	Doing      string `json:"doing" doc:"做到一半的事：需求编号、做到哪、分支 / worktree"`
+	Agreements string `json:"agreements" doc:"口头约定：用户在对话里交代、还没落成记录的（临时安排用 ks arrange add 记成当前安排）"`
+	Caveats    string `json:"caveats" doc:"注意事项：坑、在跑的进程、别碰的东西"`
+	// 旧栏目（R-224）：仍接受、照样显示，但这些纸鸢里已有，新交接不必写
+	Waiting     string     `json:"waiting" doc:"旧栏目：等用户的（纸鸢里已有）"`
+	Rules       string     `json:"rules" doc:"旧栏目：约定和规矩（纸鸢里已有）"`
+	Next        string     `json:"next" doc:"旧栏目：下一步"`
+	Notes       string     `json:"notes" doc:"旧栏目：注意事项（新交接写 caveats）"`
 	RequestedAt *time.Time `json:"requested_at,omitempty"`
 	WrittenAt   *time.Time `json:"written_at,omitempty"`
 	TakenBy     string     `json:"taken_by,omitempty"`
@@ -37,12 +41,12 @@ type Handoff struct {
 	TakenAt     *time.Time `json:"taken_at,omitempty"`
 }
 
-const handoffCols = `id, project_id, role, from_session, from_title, status, doing, waiting, rules, next, notes, requested_at, written_at, taken_by, taken_title, taken_at`
+const handoffCols = `id, project_id, role, from_session, from_title, status, doing, agreements, caveats, waiting, rules, next, notes, requested_at, written_at, taken_by, taken_title, taken_at`
 
 func scanHandoff(row interface{ Scan(...any) error }) (Handoff, error) {
 	var h Handoff
 	var req, wr, tk string
-	err := row.Scan(&h.ID, &h.ProjectID, &h.Role, &h.FromSession, &h.FromTitle, &h.Status, &h.Doing, &h.Waiting, &h.Rules, &h.Next, &h.Notes, &req, &wr, &h.TakenBy, &h.TakenTitle, &tk)
+	err := row.Scan(&h.ID, &h.ProjectID, &h.Role, &h.FromSession, &h.FromTitle, &h.Status, &h.Doing, &h.Agreements, &h.Caveats, &h.Waiting, &h.Rules, &h.Next, &h.Notes, &req, &wr, &h.TakenBy, &h.TakenTitle, &tk)
 	opt := func(s string) *time.Time {
 		if s == "" {
 			return nil
@@ -91,8 +95,8 @@ func (s *Store) WriteHandoff(ctx context.Context, projectID, role, from string, 
 	}
 	title, _ := sessionSnap(ctx, s.db, from)
 	now := time.Now().UTC()
-	if _, err := s.db.ExecContext(ctx, `UPDATE handoffs SET status = ?, from_title = ?, doing = ?, waiting = ?, rules = ?, next = ?, notes = ?, written_at = ? WHERE id = ?`,
-		HandoffWritten, title, c.Doing, c.Waiting, c.Rules, c.Next, c.Notes, ts(now), h.ID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE handoffs SET status = ?, from_title = ?, doing = ?, agreements = ?, caveats = ?, waiting = ?, rules = ?, next = ?, notes = ?, written_at = ? WHERE id = ?`,
+		HandoffWritten, title, c.Doing, c.Agreements, c.Caveats, c.Waiting, c.Rules, c.Next, c.Notes, ts(now), h.ID); err != nil {
 		return h, err
 	}
 	return s.GetHandoff(ctx, h.ID)

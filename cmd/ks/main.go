@@ -76,8 +76,10 @@ agent 调用：
   role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动卸任
   takeover <身份> [--tool claude|codex] [--print]
                          交接（R-224）：在项目目录启动新会话并带接任提示，新会话声明身份时自动读到上一任的交接
-  handoff --doing 在做的 --next 下一步 [--waiting ..] [--rules ..] [--notes ..] | --file 交接.json|.md
-                         交接（R-224）：没有 handoff_write 工具（MCP 是旧版）时用它写结构化交接，拒收条件相同
+  handoff [--doing 做到一半的事] [--agreements 口头约定] [--caveats 注意事项] | --file 交接.json|.md
+                         交接（R-224、R-245）：没有 handoff_write 工具（MCP 是旧版）时用它写交接，只写纸鸢里没有的三栏；接任时纸鸢自动列出要接手的事
+  arrange add <安排> [--until 2h|日期] | list [--all] | revoke N-x
+                         当前安排（R-245）：用户口头交代的临时安排（如「额度紧，做完这几条就停」「这次可以 push」）记在项目上，接任的会话自动读到
   wait [--timeout 1h] [--on decision,review,blocked,stage,settings,status]
                          挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）；
                          --on 另外订阅本项目别的会话的事件（提决策 / 交验收 / 受阻 / 阶段交小结 / 用户改项目设置 / 用户改需求状态），none 不订阅、default 按身份默认，不填沿用上次
@@ -125,6 +127,8 @@ func main() {
 		err = runRole(args)
 	case "handoff":
 		err = runHandoff(args)
+	case "arrange":
+		err = runArrange(args)
 	case "takeover":
 		err = runTakeover(args)
 	case "brief":

@@ -17,6 +17,8 @@ const (
 	QuestionMax = 60
 	// DecisionContextMax 是决策说明（context）的字数上限。
 	DecisionContextMax = 400
+	// HandoffMax 是交接三栏（做到一半的事、口头约定、注意事项）合计的字数上限（R-245）：纸鸢里有的不必写，几行即可。
+	HandoffMax = 300
 )
 
 // Count 按字计数（中英文都按字符算），忽略首尾空白。
@@ -58,6 +60,14 @@ func DecisionHint(question, context string) string {
 		tips = append(tips, fmt.Sprintf("说明 %d 字，超过 %d 字：按“结论 / 依据 / 细节”压缩，要决策的点拆成单独的决策", n, DecisionContextMax))
 	}
 	return hint(tips)
+}
+
+// HandoffHint 检查交接三栏的总字数（R-245）；不超标时返回空串。
+func HandoffHint(doing, agreements, caveats string) string {
+	if n := Count(doing) + Count(agreements) + Count(caveats); n > HandoffMax {
+		return hint([]string{fmt.Sprintf("三栏合计 %d 字，超过 %d 字：只写纸鸢里没有的——做到一半的事、口头约定、注意事项，各一两行；需求状态、待验收、待答决策、放行队列接任概览里都有", n, HandoffMax)})
+	}
+	return ""
 }
 
 func hint(tips []string) string {

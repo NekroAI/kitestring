@@ -96,6 +96,44 @@ type Commit struct {
 	Reverts string    `json:"reverts,omitempty"`
 }
 
+// GitCheck 是 Hub 请 daemon 在本机仓库里查的事（R-245）：Dir 是仓库里的一个目录（会话的工作目录），
+// SHAs 是要查的提交，Deploy 是正在运行的 ks 的构建提交（version.Commit，没有时为空）。只读，不改仓库。
+type GitCheck struct {
+	ReqID  string   `json:"req_id"`
+	Dir    string   `json:"dir"`
+	SHAs   []string `json:"shas,omitempty"`
+	Deploy string   `json:"deploy,omitempty"`
+}
+
+// 提交在某条线上的情况（R-245）。
+const (
+	PlaceAncestor = "ancestor" // 直接在这条线上（是它的祖先）
+	PlacePatch    = "patch"    // 不是祖先，但这条线上有补丁相同的提交（cherry-pick / rebase 过去的）
+	PlacePicked   = "picked"   // 补丁对不上（摘的时候解决过冲突），但这条线上有用 cherry-pick -x 摘它的提交（说明里写着来源）
+	PlaceNo       = "no"       // 不在
+	PlaceUnknown  = "unknown"  // 查不了：本机仓库里没有这个提交，或部署版本不明
+)
+
+// CommitPlace 是一个提交是否已在 main、是否已在部署的版本里。
+type CommitPlace struct {
+	SHA     string `json:"sha"`
+	Subject string `json:"subject,omitempty"` // 本机仓库里这个提交的标题（找不到提交时为空）
+	Main    string `json:"main" enum:"ancestor,patch,picked,no,unknown"`
+	Deploy  string `json:"deploy" enum:"ancestor,patch,picked,no,unknown"`
+}
+
+// GitResult 是 daemon 的查询结果。Main 是主线分支名（main / master，取不到时为空）；
+// Upstream 是它的上游（如 origin/main），没有上游时为空、NoRemote 为真；Ahead 是 main 比上游多几个提交。
+type GitResult struct {
+	ReqID    string        `json:"req_id"`
+	Main     string        `json:"main,omitempty"`
+	Upstream string        `json:"upstream,omitempty"`
+	NoRemote bool          `json:"no_remote,omitempty"`
+	Ahead    int           `json:"ahead"`
+	Commits  []CommitPlace `json:"commits,omitempty"`
+	Err      string        `json:"err,omitempty"`
+}
+
 // Task 是 daemon 从进程表认出的一个后台 shell（R-162）。
 type Task struct {
 	ID        string    `json:"id"`
@@ -158,6 +196,8 @@ const (
 	MsgUsageAck    = "usage_ack"    // hub → daemon：已存下的用量批次（Ack 里是批次号）
 	MsgShells      = "shells"       // daemon → hub：后台命令的起止、结果与最后一行输出摘要（R-208，有变化的才发）
 	MsgShellsAck   = "shells_ack"   // hub → daemon：已存下的后台命令批次（Ack 里是批次号）
+	MsgGitCheck    = "git_check"    // hub → daemon：在本机仓库查提交是否已合入 main / 已部署，以及 main 有几个没推送的提交（R-245）
+	MsgGitResult   = "git_result"   // daemon → hub：查询结果
 )
 
 // DeviceConfig 是 Hub 下发给 daemon 的运行配置。
@@ -182,6 +222,8 @@ type Envelope struct {
 	Orphans     []OrphanProc      `json:"orphans,omitempty"`
 	StopProc    *StopProc         `json:"stop_proc,omitempty"`
 	StopResult  *StopResult       `json:"stop_result,omitempty"`
+	GitCheck    *GitCheck         `json:"git_check,omitempty"`
+	GitResult   *GitResult        `json:"git_result,omitempty"`
 	// token 用量（R-206）：Batch 是批次号，Hub 存好后用 MsgUsageAck 回这个号
 	Batch string        `json:"batch,omitempty"`
 	Usage []UsageMinute `json:"usage,omitempty"`

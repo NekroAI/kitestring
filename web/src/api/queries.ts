@@ -116,6 +116,15 @@ export function useGrants(projectId?: string) {
   })
 }
 
+// 当前安排（R-245）：各项目生效中的安排，新的在前。
+export function useArrangements() {
+  return useQuery({
+    queryKey: ['arrangements'],
+    queryFn: () => unwrap(api.GET('/api/arrangements', { params: { query: {} } })),
+    select: (d) => d.arrangements ?? [],
+  })
+}
+
 // 离开期间小结（R-165）：各项目离开期间的汇总、待验收需求上的参谋建议、参谋没代答的原因。
 export function useMorning() {
   return useQuery({
@@ -244,6 +253,7 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning']],
   settings: [['settings']],
   orphans: [['orphans']],
+  arrangements: [['arrangements']],
 }
 
 // laneSink：泳道时间线（R-205）的实时推送与断线后补拉，由 app/laneFeed 接上。

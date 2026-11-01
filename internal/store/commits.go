@@ -404,3 +404,41 @@ func CommitHints(code string, cs []ChainCommit) []string {
 	}
 	return hints
 }
+
+// 合入判定（R-245）：只认明确记录的提交（commits 表里关联到需求的、Agent 手动关联的、commit 类证据），不按提交说明猜。
+// 一条需求可能交过几轮验收，只看「最近一轮」：最近一次交验收之前、最近一次被退回（从待验收 / 已完成退回去返工）之后的提交，
+// 也包括交验收之后才有的（合入 main 时 cherry-pick 出来的那份）。
+
+// RoundStart 是需求最近一轮从哪一刻算起：最近一次交验收之前的最近一次退回；没退回过时为零值（全部提交都算）。changes 按时间正序。
+func RoundStart(changes []StatusChange) time.Time {
+	end := len(changes)
+	for i, c := range changes {
+		if c.To == ReqReview {
+			end = i
+		}
+	}
+	var since time.Time
+	for _, c := range changes[:end] {
+		if (c.From == ReqReview || c.From == ReqDone) && c.To != ReqReview && c.To != ReqDone {
+			since = c.At
+		}
+	}
+	return since
+}
+
+// RoundCommits 是需求最近一轮关联的提交（哈希像样的、没被回滚的、不是回滚本身的），按时间正序。没有记录时为空。
+func (s *Store) RoundCommits(ctx context.Context, r Requirement) ([]ChainCommit, error) {
+	cs, err := s.reqCommits(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	since := RoundStart(r.StatusChanges)
+	out := []ChainCommit{}
+	for _, c := range cs {
+		if NormSHA(c.Link) == "" || c.Reverts != "" || c.RevertedBy != "" || !c.At.After(since) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}

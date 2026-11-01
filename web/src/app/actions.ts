@@ -56,6 +56,8 @@ export function useActions() {
     startAway: (body: { expect_minutes: 30 | 120 | 480 | 0; scope: 'none' | 'low' | 'medium'; hold_push?: boolean }) =>
       run(() => unwrap(api.POST('/api/away', { body })), ['away', 'grants', 'decisions', 'morning'], fail.startAway),
     endAway: () => run(() => unwrap(api.POST('/api/away/end')), ['away', 'grants', 'decisions', 'morning'], fail.endAway),
+    addArrangement: (body: { project_id: string; text: string; until?: string }) => run(() => unwrap(api.POST('/api/arrangements', { body })), ['arrangements'], fail.addArrange),
+    revokeArrangement: (code: string) => run(() => unwrap(api.POST('/api/arrangements/{code}/revoke', { params: { path: { code } } })), ['arrangements'], fail.revokeArrange(code)),
     revokeGrant: (ref: string) => run(() => unwrap(api.POST('/api/grants/{ref}/revoke', { params: { path: { ref } } })), ['grants', 'decisions', 'morning'], fail.revokeGrant(ref)),
     overrideDecision: (ref: string, answer: string) =>
       send(() => unwrap(api.POST('/api/decisions/{ref}/override', { params: { path: { ref } }, body: { answer } })), ['grants', 'decisions', 'requirements', 'sessions', 'morning'], fail.override(ref)),

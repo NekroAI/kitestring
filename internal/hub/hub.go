@@ -17,6 +17,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 	"github.com/NekroAI/kitestring/internal/summary"
+	"github.com/NekroAI/kitestring/internal/version"
 )
 
 const (
@@ -101,6 +102,8 @@ type Hub struct {
 	dirtyTmr *time.Timer
 	orphans  map[string]deviceOrphans            // deviceID → daemon 上报的孤儿 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
 	stops    map[string]chan protocol.StopResult // 停止请求 → 等 daemon 回结果
+	gits     map[string]chan protocol.GitResult  // 合入 / 部署查询（R-245）→ 等 daemon 回结果
+	deploy   string                              // 正在运行的 ks 的构建提交（version.Commit；测试可改）
 	lanes    *laneState                          // 泳道时间线（R-205）
 }
 
@@ -118,6 +121,8 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		dirty:    map[string]bool{},
 		orphans:  map[string]deviceOrphans{},
 		stops:    map[string]chan protocol.StopResult{},
+		gits:     map[string]chan protocol.GitResult{},
+		deploy:   version.Commit,
 		lanes:    newLaneState(),
 	}
 	if st != nil {

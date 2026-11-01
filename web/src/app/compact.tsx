@@ -152,6 +152,8 @@ export type Handoff = {
   from_title: string
   status: 'requested' | 'written' | 'taken'
   doing: string
+  agreements?: string
+  caveats?: string
   waiting: string
   rules: string
   next: string
@@ -163,13 +165,14 @@ export type Handoff = {
   taken_at?: string
 }
 
-// HandoffCard：会话面板里的交接进度与内容（R-224）：等它写 → 已写好（复制接任命令）→ 已由谁接任；内容按五栏列出。
+// HandoffCard：会话面板里的交接进度与内容（R-224）：等它写 → 已写好（复制接任命令）→ 已由谁接任；
+// 内容按三栏列出（R-245：做到一半的事、口头约定、注意事项），老交接的旧栏目照样显示。
 export function HandoffCard({ h, me }: { h: Handoff; me: string }) {
   const cmd = `ks takeover ${h.role}`
   const mine = h.from_session === me
   const head =
     h.status === 'requested' ? t.handoff.requested : h.status === 'written' ? t.handoff.written : mine ? t.handoff.taken(h.taken_title || h.taken_by || '') : t.handoff.takenFrom(h.from_title || h.from_session)
-  const parts = (['doing', 'waiting', 'rules', 'next', 'notes'] as const).filter((k) => h[k].trim())
+  const parts = (['doing', 'agreements', 'caveats', 'notes', 'waiting', 'rules', 'next'] as const).filter((k) => (h[k] ?? '').trim())
   return (
     <div className={cx('space-y-2.5 rounded-2xl border p-3.5', h.status === 'taken' ? 'border-line' : 'border-accent/40 bg-accent-soft/40')}>
       <div className="flex items-center gap-2">

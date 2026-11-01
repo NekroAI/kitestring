@@ -306,6 +306,13 @@ func (d *Daemon) handleHubMsg(e protocol.Envelope) {
 		if e.StopProc != nil {
 			go d.handleStop(*e.StopProc)
 		}
+	case protocol.MsgGitCheck:
+		if e.GitCheck != nil {
+			go func(q protocol.GitCheck) {
+				res := checkGit(q)
+				d.sendDirect(protocol.Envelope{Type: protocol.MsgGitResult, GitResult: &res})
+			}(*e.GitCheck)
+		}
 	case protocol.MsgRoles:
 		d.mu.Lock()
 		d.roles = e.Roles
@@ -839,7 +846,7 @@ const dshRoleNote = "[Kitestring] 你在 DeepSeek Harness（DSH）中：这一�
 
 // stateNote 向 Hub 取会话的关键状态（R-224）；取不到时返回空，不耽误 hook。
 func (d *Daemon) stateNote(key, source string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second) // Hub 可能要回头请本机查仓库（R-245，最多等 2 秒）
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/sessions/"+url.PathEscape(key)+"/state-note?source="+url.QueryEscape(source), nil)
 	if err != nil {

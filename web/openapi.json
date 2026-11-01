@@ -124,6 +124,28 @@
         ],
         "type": "object"
       },
+      "Add-arrangementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "until": {
+            "description": "到期：时长（30m、2h、1d）或日期；不填表示撤销前一直有效",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "text"
+        ],
+        "type": "object"
+      },
       "Advice": {
         "additionalProperties": false,
         "properties": {
@@ -200,6 +222,28 @@
         "required": [
           "requirement",
           "verdict"
+        ],
+        "type": "object"
+      },
+      "Agent-add-arrangementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "text": {
+            "description": "安排：一两句话，写清要怎样（如「额度紧，做完 R-12、R-13 就停」「这次可以 push」）",
+            "type": "string"
+          },
+          "until": {
+            "description": "到期：时长（30m、2h、1d）或日期（2026-11-02、2026-11-02 18:00、18:00）；不填表示撤销前一直有效",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "text"
         ],
         "type": "object"
       },
@@ -508,6 +552,19 @@
           "session_key",
           "to",
           "reason"
+        ],
+        "type": "object"
+      },
+      "Agent-revoke-arrangementRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
         ],
         "type": "object"
       },
@@ -1046,6 +1103,112 @@
         },
         "required": [
           "answers"
+        ],
+        "type": "object"
+      },
+      "ArrangeListOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "arrangements": {
+            "items": {
+              "$ref": "#/components/schemas/Arrangement"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "arrangements"
+        ],
+        "type": "object"
+      },
+      "ArrangeOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "arrangement": {
+            "$ref": "#/components/schemas/Arrangement"
+          },
+          "message": {
+            "description": "给 Agent 的一句话回执",
+            "type": "string"
+          }
+        },
+        "required": [
+          "arrangement"
+        ],
+        "type": "object"
+      },
+      "Arrangement": {
+        "additionalProperties": false,
+        "properties": {
+          "by_role": {
+            "description": "记下它的会话当时的身份",
+            "type": "string"
+          },
+          "by_session": {
+            "description": "记下它的会话；用户在网页上加的为空",
+            "type": "string"
+          },
+          "by_title": {
+            "description": "记下它的会话当时的标题；用户加的为空",
+            "type": "string"
+          },
+          "code": {
+            "description": "安排编号（N-x）",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "到期时间；不填表示一直有效，直到撤销",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "revoked_by": {
+            "description": "撤销它的会话键；user 表示用户在网页上撤的",
+            "type": "string"
+          },
+          "status": {
+            "description": "生效中 / 已到期 / 已撤销",
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "project_id",
+          "project_name",
+          "text",
+          "by_session",
+          "by_title",
+          "by_role",
+          "created_at",
+          "status"
         ],
         "type": "object"
       },
@@ -2293,7 +2456,7 @@
             "type": "string"
           },
           "from_role": {
-            "description": "团队消息（R-191）：发消息的会话当时的身份",
+            "description": "团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份",
             "type": "string"
           },
           "hard": {
@@ -2684,7 +2847,7 @@
             "type": "string"
           },
           "from_role": {
-            "description": "团队消息（R-191）：发消息的会话当时的身份",
+            "description": "团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份",
             "type": "string"
           },
           "hard": {
@@ -3782,8 +3945,16 @@
       "Handoff": {
         "additionalProperties": false,
         "properties": {
+          "agreements": {
+            "description": "口头约定：用户在对话里交代、还没落成记录的（临时安排用 ks arrange add 记成当前安排）",
+            "type": "string"
+          },
+          "caveats": {
+            "description": "注意事项：坑、在跑的进程、别碰的东西",
+            "type": "string"
+          },
           "doing": {
-            "description": "在做的：需求编号、做到哪",
+            "description": "做到一半的事：需求编号、做到哪、分支 / worktree",
             "type": "string"
           },
           "from_session": {
@@ -3796,11 +3967,11 @@
             "type": "string"
           },
           "next": {
-            "description": "下一步",
+            "description": "旧栏目：下一步",
             "type": "string"
           },
           "notes": {
-            "description": "注意事项：坑、别碰的东西、在跑的进程",
+            "description": "旧栏目：注意事项（新交接写 caveats）",
             "type": "string"
           },
           "project_id": {
@@ -3814,7 +3985,7 @@
             "type": "string"
           },
           "rules": {
-            "description": "约定和规矩：用户定过的、团队里说好的",
+            "description": "旧栏目：约定和规矩（纸鸢里已有）",
             "type": "string"
           },
           "status": {
@@ -3836,7 +4007,7 @@
             "type": "string"
           },
           "waiting": {
-            "description": "等用户的：待答决策、待验收、要用户决策的事",
+            "description": "旧栏目：等用户的（纸鸢里已有）",
             "type": "string"
           },
           "written_at": {
@@ -3852,6 +4023,8 @@
           "from_title",
           "status",
           "doing",
+          "agreements",
+          "caveats",
           "waiting",
           "rules",
           "next",
@@ -3885,20 +4058,28 @@
       "HandoffWriteInBody": {
         "additionalProperties": false,
         "properties": {
-          "doing": {
-            "description": "在做的：需求编号、做到哪",
+          "agreements": {
+            "description": "口头约定：用户在对话里交代、还没落成记录的（临时安排先用 ks arrange add 记成当前安排）",
             "type": "string"
           },
-          "next": {
-            "description": "下一步",
-            "type": "string"
-          },
-          "notes": {
+          "caveats": {
             "description": "注意事项：坑、在跑的进程、别碰的东西",
             "type": "string"
           },
+          "doing": {
+            "description": "做到一半的事：需求编号、做到哪、分支 / worktree",
+            "type": "string"
+          },
+          "next": {
+            "description": "旧栏目：下一步（不必写）",
+            "type": "string"
+          },
+          "notes": {
+            "description": "旧栏目：注意事项，等同 caveats",
+            "type": "string"
+          },
           "rules": {
-            "description": "约定和规矩：用户定过的、团队里说好的",
+            "description": "旧栏目：约定和规矩（纸鸢里已有，不必写；口头约定写 agreements）",
             "type": "string"
           },
           "session_key": {
@@ -3906,14 +4087,12 @@
             "type": "string"
           },
           "waiting": {
-            "description": "等用户的：待答决策、待验收、要用户决策的事",
+            "description": "旧栏目：等用户的（纸鸢里已有，不必写）",
             "type": "string"
           }
         },
         "required": [
-          "session_key",
-          "doing",
-          "next"
+          "session_key"
         ],
         "type": "object"
       },
@@ -8847,6 +9026,147 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/agent/arrangements": {
+      "get": {
+        "operationId": "agent-list-arrangements",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "session_key",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "true = 连已到期、已撤销的也列出（最近 50 条）",
+            "explode": false,
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "description": "true = 连已到期、已撤销的也列出（最近 50 条）",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrangeListOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "列出本项目的当前安排（R-245）",
+        "tags": [
+          "agent"
+        ]
+      },
+      "post": {
+        "operationId": "agent-add-arrangement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-add-arrangementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrangeOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "记一条当前安排（R-245）：用户口头交代的临时安排，接任的会话自动读到",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/arrangements/{code}/revoke": {
+      "post": {
+        "operationId": "agent-revoke-arrangement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-revoke-arrangementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrangeOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤销一条当前安排（R-245）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/away": {
       "get": {
         "operationId": "agent-get-away",
@@ -10557,6 +10877,139 @@
         "summary": "Hub 自己的模型调用用量：按功能统计本日 / 本周的次数、失败与 token（R-120）",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/arrangements": {
+      "get": {
+        "operationId": "list-arrangements",
+        "parameters": [
+          {
+            "description": "只列这个项目的；不填列全部项目",
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "description": "只列这个项目的；不填列全部项目",
+              "type": "string"
+            }
+          },
+          {
+            "description": "true = 连已到期、已撤销的也列出（最近 50 条）",
+            "explode": false,
+            "in": "query",
+            "name": "all",
+            "schema": {
+              "description": "true = 连已到期、已撤销的也列出（最近 50 条）",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrangeListOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "当前安排（R-245）：默认只列生效中的",
+        "tags": [
+          "arrangements"
+        ]
+      },
+      "post": {
+        "operationId": "add-arrangement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Add-arrangementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrangeOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "用户在网页上加一条当前安排（R-245），署名「用户」",
+        "tags": [
+          "arrangements"
+        ]
+      }
+    },
+    "/api/arrangements/{code}/revoke": {
+      "post": {
+        "operationId": "revoke-arrangement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArrangeOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "用户撤销一条当前安排（R-245）",
+        "tags": [
+          "arrangements"
         ]
       }
     },

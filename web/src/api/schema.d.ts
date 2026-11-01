@@ -4,6 +4,41 @@
  */
 
 export interface paths {
+    "/api/agent/arrangements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出本项目的当前安排（R-245） */
+        get: operations["agent-list-arrangements"];
+        put?: never;
+        /** 记一条当前安排（R-245）：用户口头交代的临时安排，接任的会话自动读到 */
+        post: operations["agent-add-arrangement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/arrangements/{code}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销一条当前安排（R-245） */
+        post: operations["agent-revoke-arrangement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/away": {
         parameters: {
             query?: never;
@@ -588,6 +623,41 @@ export interface paths {
         get: operations["get-ai-usage"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/arrangements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前安排（R-245）：默认只列生效中的 */
+        get: operations["list-arrangements"];
+        put?: never;
+        /** 用户在网页上加一条当前安排（R-245），署名「用户」 */
+        post: operations["add-arrangement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/arrangements/{code}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 用户撤销一条当前安排（R-245） */
+        post: operations["revoke-arrangement"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1784,6 +1854,12 @@ export interface components {
             /** Format: date-time */
             week_start: string;
         };
+        "Add-arrangementRequest": {
+            project_id: string;
+            text: string;
+            /** @description 到期：时长（30m、2h、1d）或日期；不填表示撤销前一直有效 */
+            until?: string;
+        };
         Advice: {
             /** Format: date-time */
             at: string;
@@ -1813,6 +1889,13 @@ export interface components {
              * @enum {string}
              */
             verdict: "pass" | "return" | "clear";
+        };
+        "Agent-add-arrangementRequest": {
+            session_key: string;
+            /** @description 安排：一两句话，写清要怎样（如「额度紧，做完 R-12、R-13 就停」「这次可以 push」） */
+            text: string;
+            /** @description 到期：时长（30m、2h、1d）或日期（2026-11-02、2026-11-02 18:00、18:00）；不填表示撤销前一直有效 */
+            until?: string;
         };
         "Agent-answer-decisionRequest": {
             /** @description 答复；有要决策的点时是附言，可空 */
@@ -1918,6 +2001,9 @@ export interface components {
             session_key: string;
             /** @description 目标状态：ready（草稿 / 已搁置 → 待开始）或 draft（已搁置 → 草稿） */
             to: string;
+        };
+        "Agent-revoke-arrangementRequest": {
+            session_key: string;
         };
         "Agent-set-briefRequest": {
             /** @description 一句话结论（建议 40 字以内）：常驻条上只显示它（R-212）；不写时网页取正文第一句 */
@@ -2092,6 +2178,44 @@ export interface components {
         };
         AnswersInBody: {
             answers: components["schemas"]["Item1"][] | null;
+        };
+        ArrangeListOutBody: {
+            arrangements: components["schemas"]["Arrangement"][] | null;
+        };
+        ArrangeOutBody: {
+            arrangement: components["schemas"]["Arrangement"];
+            /** @description 给 Agent 的一句话回执 */
+            message?: string;
+        };
+        Arrangement: {
+            /** @description 记下它的会话当时的身份 */
+            by_role: string;
+            /** @description 记下它的会话；用户在网页上加的为空 */
+            by_session: string;
+            /** @description 记下它的会话当时的标题；用户加的为空 */
+            by_title: string;
+            /** @description 安排编号（N-x） */
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description 到期时间；不填表示一直有效，直到撤销
+             */
+            expires_at?: string;
+            id: string;
+            project_id: string;
+            project_name: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            /** @description 撤销它的会话键；user 表示用户在网页上撤的 */
+            revoked_by?: string;
+            /**
+             * @description 生效中 / 已到期 / 已撤销
+             * @enum {string}
+             */
+            status: "active" | "expired" | "revoked";
+            text: string;
         };
         "Ask-reviewRequest": {
             /** @description 交代给 Rev 的话，例如重点看哪里 */
@@ -2556,7 +2680,7 @@ export interface components {
             /** @description 团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空 */
             from_agent?: string;
             from_decision?: string;
-            /** @description 团队消息（R-191）：发消息的会话当时的身份 */
+            /** @description 团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份 */
             from_role?: string;
             /** @enum {string} */
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
@@ -2663,7 +2787,7 @@ export interface components {
             /** @description 团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空 */
             from_agent?: string;
             from_decision?: string;
-            /** @description 团队消息（R-191）：发消息的会话当时的身份 */
+            /** @description 团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份 */
             from_role?: string;
             /** @enum {string} */
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
@@ -3007,20 +3131,24 @@ export interface components {
             proxied: components["schemas"]["Decision"][] | null;
         };
         Handoff: {
-            /** @description 在做的：需求编号、做到哪 */
+            /** @description 口头约定：用户在对话里交代、还没落成记录的（临时安排用 ks arrange add 记成当前安排） */
+            agreements: string;
+            /** @description 注意事项：坑、在跑的进程、别碰的东西 */
+            caveats: string;
+            /** @description 做到一半的事：需求编号、做到哪、分支 / worktree */
             doing: string;
             from_session: string;
             from_title: string;
             id: string;
-            /** @description 下一步 */
+            /** @description 旧栏目：下一步 */
             next: string;
-            /** @description 注意事项：坑、别碰的东西、在跑的进程 */
+            /** @description 旧栏目：注意事项（新交接写 caveats） */
             notes: string;
             project_id: string;
             /** Format: date-time */
             requested_at?: string;
             role: string;
-            /** @description 约定和规矩：用户定过的、团队里说好的 */
+            /** @description 旧栏目：约定和规矩（纸鸢里已有） */
             rules: string;
             /** @enum {string} */
             status: "requested" | "written" | "taken";
@@ -3028,7 +3156,7 @@ export interface components {
             taken_at?: string;
             taken_by?: string;
             taken_title?: string;
-            /** @description 等用户的：待答决策、待验收、要用户决策的事 */
+            /** @description 旧栏目：等用户的（纸鸢里已有） */
             waiting: string;
             /** Format: date-time */
             written_at?: string;
@@ -3044,16 +3172,20 @@ export interface components {
             waiting: number;
         };
         HandoffWriteInBody: {
-            /** @description 在做的：需求编号、做到哪 */
-            doing: string;
-            /** @description 下一步 */
-            next: string;
+            /** @description 口头约定：用户在对话里交代、还没落成记录的（临时安排先用 ks arrange add 记成当前安排） */
+            agreements?: string;
             /** @description 注意事项：坑、在跑的进程、别碰的东西 */
+            caveats?: string;
+            /** @description 做到一半的事：需求编号、做到哪、分支 / worktree */
+            doing?: string;
+            /** @description 旧栏目：下一步（不必写） */
+            next?: string;
+            /** @description 旧栏目：注意事项，等同 caveats */
             notes?: string;
-            /** @description 约定和规矩：用户定过的、团队里说好的 */
+            /** @description 旧栏目：约定和规矩（纸鸢里已有，不必写；口头约定写 agreements） */
             rules?: string;
             session_key: string;
-            /** @description 等用户的：待答决策、待验收、要用户决策的事 */
+            /** @description 旧栏目：等用户的（纸鸢里已有，不必写） */
             waiting?: string;
         };
         IgnoreOrphanInBody: {
@@ -4572,6 +4704,107 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "agent-list-arrangements": {
+        parameters: {
+            query?: {
+                session_key?: string;
+                /** @description true = 连已到期、已撤销的也列出（最近 50 条） */
+                all?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArrangeListOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-add-arrangement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-add-arrangementRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArrangeOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-revoke-arrangement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-revoke-arrangementRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArrangeOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-get-away": {
         parameters: {
             query?: {
@@ -5797,6 +6030,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AIUsageReport"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-arrangements": {
+        parameters: {
+            query?: {
+                /** @description 只列这个项目的；不填列全部项目 */
+                project_id?: string;
+                /** @description true = 连已到期、已撤销的也列出（最近 50 条） */
+                all?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArrangeListOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "add-arrangement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Add-arrangementRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArrangeOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "revoke-arrangement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArrangeOutBody"];
                 };
             };
             /** @description Error */

@@ -87,8 +87,15 @@ func TestHandoff(t *testing.T) {
 	}
 	ev("ho-1", "SubagentStop", sub)
 	e.waitFor("子任务交完", func() bool { return len(e.session("claude:ho-1").Tasks) == 0 })
-	if err := c.Do(ctx, "POST", "/agent/handoff", body, nil); err != nil {
+	var msg struct {
+		Message string `json:"message"`
+	}
+	if err := c.Do(ctx, "POST", "/agent/handoff", body, &msg); err != nil {
 		t.Fatal(err)
+	}
+	// R-245：旧栏目仍接受，但提示这些纸鸢里已有
+	if !strings.Contains(msg.Message, "交接已存") || !strings.Contains(msg.Message, "纸鸢里已有") || !strings.Contains(msg.Message, "waiting") {
+		t.Fatalf("写了旧栏目应提示不必写：%s", msg.Message)
 	}
 
 	// 新会话声明身份：自动注入交接；旧会话被唤醒、收到卸任通知
@@ -128,7 +135,7 @@ func TestHandoff(t *testing.T) {
 		Handoffs []store.Handoff `json:"handoffs"`
 	}
 	e.call("GET", "/api/sessions/claude:ho-1", nil, &detail)
-	if len(detail.Handoffs) != 1 || detail.Handoffs[0].Status != store.HandoffTaken || detail.Handoffs[0].TakenBy != "claude:ho-2" || detail.Handoffs[0].Notes == "" {
+	if len(detail.Handoffs) != 1 || detail.Handoffs[0].Status != store.HandoffTaken || detail.Handoffs[0].TakenBy != "claude:ho-2" || detail.Handoffs[0].Caveats == "" {
 		t.Fatalf("旧会话的交接记录不对：%+v", detail.Handoffs)
 	}
 	e.call("GET", "/api/sessions/claude:ho-2", nil, &detail)

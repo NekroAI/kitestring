@@ -68,6 +68,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerOrphansWeb(webAPI)
 	h.registerHandoffWeb(webAPI)
 	h.registerHandoffAgent(agentAPI)
+	h.registerArrangeWeb(webAPI)
+	h.registerAgentArrange(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -144,6 +146,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerOrphansWeb(api)
 	h.registerHandoffWeb(api)
 	h.registerHandoffAgent(api)
+	h.registerArrangeWeb(api)
+	h.registerAgentArrange(api)
 	return api.OpenAPI()
 }
 
@@ -1476,7 +1480,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			if b.SessionKey != "" {
 				if x, err := h.store.GetSession(ctx, b.SessionKey); err == nil {
-					d.ProjectID = x.ProjectID
+					d.ProjectID, d.FromRole = x.ProjectID, x.Role // 提问时的身份：接任概览据此找上一任主助理提的决策（R-245）
 				}
 			}
 			auto := false

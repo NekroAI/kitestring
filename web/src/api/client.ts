@@ -10,6 +10,7 @@ export type Session = NN<Schemas['Session'], 'requirements' | 'activity'>
 export type Device = Schemas['Device']
 export type Decision = Schemas['Decision']
 export type Grant = Schemas['Grant']
+export type Arrangement = Schemas['Arrangement']
 export type MorningReport = Schemas['MorningReport']
 export type Advice = Schemas['Advice']
 export type AwayStatus = Schemas['AwayStatus']

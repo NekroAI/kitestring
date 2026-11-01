@@ -21,17 +21,23 @@ func TestHandoffAsk(t *testing.T) {
 	}
 }
 
-// 注入的交接只列写了的栏目，并要求新会话回一句确认。
+// 注入的交接只列写了的栏目，并要求新会话回一句确认。R-245：三栏在前，旧栏目（老交接）照样显示、标明是旧栏目。
 func TestHandoffText(t *testing.T) {
 	at := time.Date(2026, 10, 25, 9, 30, 0, 0, time.Local)
-	got := handoffText(store.Handoff{FromTitle: "撤销遮罩验收", Doing: "R-1 做到一半", Next: "交验收", WrittenAt: &at}, "pm")
-	for _, want := range []string{"上一任主调度（PM）「撤销遮罩验收」", "10-25 09:30", "### 在做的\nR-1 做到一半", "### 下一步\n交验收", "先回用户一句确认"} {
+	got := handoffText(store.Handoff{FromTitle: "撤销遮罩验收", Doing: "R-1 做到一半", Agreements: "用户说这次可以 push", Caveats: "别停 5199", WrittenAt: &at}, "pm")
+	for _, want := range []string{"上一任主调度（PM）「撤销遮罩验收」", "10-25 09:30", "### 做到一半的事\nR-1 做到一半", "### 口头约定\n用户说这次可以 push", "### 注意事项\n别停 5199", "先回用户一句确认", "接手概览"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("交接内容缺 %q：\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "等用户的") || strings.Contains(got, "注意事项") {
+	if strings.Contains(got, "等用户的") || strings.Contains(got, "下一步（") {
 		t.Fatalf("没写的栏目不该出现：\n%s", got)
+	}
+	old := handoffText(store.Handoff{FromTitle: "老交接", Doing: "R-1", Next: "交验收", Notes: "坑"}, "aide")
+	for _, want := range []string{"### 做到一半的事\nR-1", "### 下一步（旧栏目）\n交验收", "### 注意事项（旧栏目）\n坑"} {
+		if !strings.Contains(old, want) {
+			t.Fatalf("老交接缺 %q：\n%s", want, old)
+		}
 	}
 }
 
@@ -48,7 +54,7 @@ func TestCompactTokens(t *testing.T) {
 func TestHandoffAskCLIFallback(t *testing.T) {
 	for _, role := range []string{"pm", "aide"} {
 		got := handoffAsk(role, "纸鸢", 0)
-		for _, want := range []string{"没有 handoff_write 工具", "ks handoff --doing", "--next"} {
+		for _, want := range []string{"没有 handoff_write 工具", "ks handoff --doing", "--caveats", "三栏", "ks arrange add", "自动列出"} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("%s 的交接通知缺 %q：%s", role, want, got)
 			}
