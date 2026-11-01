@@ -4,6 +4,8 @@
 // token 用量（R-206）也在这里合并，口径同上。
 // 只放纯计算，不碰 React，单测直接跑（lib/lanedata.test.ts）。
 
+import { modelShort, type ModelUse } from './model.ts'
+
 export type Zoom = 'h1' | 'h6' | 'd1' | 'w1'
 export const ZOOMS: Zoom[] = ['h1', 'h6', 'd1', 'w1']
 
@@ -428,6 +430,19 @@ export class LaneStore {
     const from = ax.start * 60000
     const to = ax.end * 60000
     return (this.spanIdx.get(k) ?? []).filter((s) => agents.includes(s.a) && s.start < to && spanEnd(s, nowMs) >= from)
+  }
+
+  // modelsOf：这一行（会话的某个子任务）实际用过的模型，按用量从多到少；没有用量为空
+  modelsOf(k: string, a: string): ModelUse[] {
+    const r = this.tokMin.get(rowKey(k, a)) ?? this.tokHour.get(rowKey(k, a))
+    const out: ModelUse[] = []
+    for (const [id, mm] of r ?? []) {
+      if (!id) continue
+      let tokens = 0
+      for (const v of mm.values()) tokens += v.in + v.cw + v.cr + v.out
+      out.push({ id, short: modelShort(id), tokens })
+    }
+    return out.sort((x, y) => y.tokens - x.tokens || x.id.localeCompare(y.id))
   }
 
   agentsOf(k: string): Agent[] {

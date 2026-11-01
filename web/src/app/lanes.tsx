@@ -6,6 +6,7 @@ import type { Session } from '../api/client'
 import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
 import { addCell, agentEnd, axisX, barHeight, cellX, coarse, emptyCell, gridTicks, hitRate, hitTone, inWindow, LONG_TOOL, laneAxis, makeAxis, shellEnd, shellLive, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type Cold, type SessionMeta, type Shell, type TokCell, type Zoom } from '../lib/lanedata'
+import { modelShort, type ModelUse } from '../lib/model'
 import { cx, duration, shortDuration, wan } from '../lib/util'
 import { Tip } from '../ui/base'
 import { spring } from '../ui/gesture'
@@ -796,7 +797,7 @@ const cols: Record<LaneMode, string> = {
 // 子任务按每分钟汇总画（R-205）：结束后不立刻删，变淡、标「已结束」，留到滑出窗口；近 1 / 6 小时每个会话最多列 6 个
 // （在跑的优先），多的合成一行「还有 n 个」；近 1 天 / 1 周合成一行「子任务（共 n 个）」。后台 shell 照旧只列在跑的（R-162）。
 // sh：shell 泳道的一条后台命令（R-208）；shmore：多出来的合成一行；shagg：近 1 天 / 1 周档只给计数。shell：没有记录的 R-162 后台 shell（旧版 daemon）。
-type SubRow = { id: string; kind: 'agent' | 'shell' | 'agg' | 'more' | 'sh' | 'shmore' | 'shagg'; label: string; guess: boolean; agents: string[]; ended: number; start: number; task?: BgTask; sh?: Shell }
+type SubRow = { id: string; kind: 'agent' | 'shell' | 'agg' | 'more' | 'sh' | 'shmore' | 'shagg'; label: string; guess: boolean; agents: string[]; ended: number; start: number; task?: BgTask; sh?: Shell; models?: ModelUse[] }
 
 const SUB_MAX = 6
 const SH_MAX = 5
@@ -833,7 +834,7 @@ function subRows(s: Session, zoom: Zoom, now: number): SubRow[] {
     pick.sort((a, b) => a.g.start - b.g.start)
     for (const x of pick) {
       const nm = agentName(x.g, x.task)
-      rows.push({ id: x.g.a, kind: 'agent', label: nm.text, guess: nm.guess, agents: [x.g.a], ended: x.end, start: x.g.start, task: x.task })
+      rows.push({ id: x.g.a, kind: 'agent', label: nm.text, guess: nm.guess, agents: [x.g.a], ended: x.end, start: x.g.start, task: x.task, models: laneStore.modelsOf(s.key, x.g.a) })
     }
     const rest = vis.filter((x) => !pick.includes(x))
     if (rest.length) rows.push({ id: 'more', kind: 'more', label: t.desk.tl.subMore(rest.length), guess: false, agents: rest.map((x) => x.g.a), ended: 1, start: Math.min(...rest.map((x) => x.g.start)) })
@@ -860,7 +861,7 @@ function subRows(s: Session, zoom: Zoom, now: number): SubRow[] {
 function useSubRows(s: Session, zoom: Zoom, now: number) {
   const sig = useLaneSnap(() =>
     subRows(s, zoom, serverNow())
-      .map((r) => `${r.id}:${r.ended ? 1 : 0}:${r.label}${r.sh ? `:${r.sh.status}:${r.sh.end ?? ''}:${r.sh.hot ?? ''}:${r.sh.exit ?? ''}:${r.sh.last ?? ''}` : ''}`)
+      .map((r) => `${r.id}:${r.ended ? 1 : 0}:${r.label}:${r.models?.map((m) => m.id).join(',') ?? ''}${r.sh ? `:${r.sh.status}:${r.sh.end ?? ''}:${r.sh.hot ?? ''}:${r.sh.exit ?? ''}:${r.sh.last ?? ''}` : ''}`)
       .join('|'),
   )
   const minute = Math.floor(now / 60000)
@@ -964,6 +965,13 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
             {row.label}
           </span>
         </Tip>
+        {row.kind === 'agent' && !!row.models?.length && (
+          <Tip content={t.desk.tl.modelTip(row.models.map((m) => modelShort(m.id)).join('、'))}>
+            <span data-sub-model className="shrink-0 text-[10.5px] text-fg-2">
+              {modelShort(row.models[0].id)}
+            </span>
+          </Tip>
+        )}
         {mode !== 'full' && when && (short ? <Tip content={when}><span className="shrink-0 text-[11px] tabular">{whenShort}</span></Tip> : <span className="shrink-0 text-[11px] tabular">{when}</span>)}
       </div>
       {mode !== 'phone' && <div className="h-6 min-w-0">{!count && <Timeline spec={spec} />}</div>}

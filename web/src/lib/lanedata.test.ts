@@ -250,3 +250,18 @@ test('缓存余温：推送里主会话的新请求重新计时，档位这次�
   st.push({ m: [], s: [], g: [], t: [{ k: 'claude:n', a: '', model: 'm', m: nowMin, t: tv({ cw: 8000, n: 1 }), h: tv() }] }, NOW)
   assert.equal(st.warmOf('claude:n', NOW)!.ttl, 300)
 })
+
+test('子任务用过的模型：按用量排序，没用量为空，主会话和别的子任务不混', () => {
+  const s = new LaneStore()
+  const v = (n: number) => ({ in: n, cw: 0, cw1h: 0, cr: 0, out: 0, n: 1 })
+  s.push({ m: null, s: null, g: null, t: [
+    { k: 'claude:x', a: 'g1', model: 'claude-sonnet-5-5', m: nowMin, t: v(10), h: v(10) },
+    { k: 'claude:x', a: 'g1', model: 'claude-opus-5-5', m: nowMin, t: v(500), h: v(500) },
+    { k: 'claude:x', a: 'g2', model: 'gpt-6-astra', m: nowMin, t: v(5), h: v(5) },
+    { k: 'claude:x', a: '', model: 'claude-haiku-4-5', m: nowMin, t: v(9000), h: v(9000) },
+  ] }, NOW)
+  assert.deepEqual(s.modelsOf('claude:x', 'g1').map((x) => x.id), ['claude-opus-5-5', 'claude-sonnet-5-5'])
+  assert.deepEqual(s.modelsOf('claude:x', 'g2').map((x) => x.short), ['GPT-6 Astra'])
+  assert.deepEqual(s.modelsOf('claude:x', 'g3'), [])
+  assert.equal(s.modelsOf('claude:x', 'g1')[0].tokens, 500)
+})

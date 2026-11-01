@@ -317,6 +317,7 @@ export const zh = {
       longRunning: (label: string, d: string) => `长命令 ${label}（已跑 ${d}，还在跑）`,
       moreLong: (n: number) => `另有 ${n} 个长命令`,
       wait: '待命（ks wait）',
+      modelTip: (list: string) => `实际用过的模型（按用量从多到少）：${list}`,
       subAgg: (n: number) => `子任务（共 ${n} 个）`,
       subMore: (n: number) => `还有 ${n} 个子任务在这段时间里跑过`,
       // 子任务行只写一个带含义的时间（R-214）：结束了写「多久前结束」，在跑的写「最近动作多久前」或「已跑多久」
