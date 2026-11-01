@@ -467,7 +467,7 @@ export function BottomSheet({
 // 点顶部撤销浮动条（R-201）不算点到抽屉外面：撤回时抽屉不关
 const keepForDock = { onInteractOutside: (e: Event) => (e.target as HTMLElement | null)?.closest?.('[data-undo-dock]') && e.preventDefault() }
 
-export function Modal({ open, onClose, title, description, children, footer }: { open: boolean; onClose: () => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode }) {
+export function Modal({ open, onClose, title, description, children, footer, wide }: { open: boolean; onClose: () => void; title: ReactNode; description?: ReactNode; children?: ReactNode; footer?: ReactNode; wide?: boolean }) {
   return (
     <RDialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
       <RDialog.Portal>
@@ -475,14 +475,14 @@ export function Modal({ open, onClose, title, description, children, footer }: {
         <RDialog.Content
           aria-describedby={undefined}
           data-ks-modal=""
-          className="modal-pop fixed top-1/2 left-1/2 z-50 flex max-h-[88dvh] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none"
+          className={cx('modal-pop fixed top-1/2 left-1/2 z-50 flex max-h-[88dvh] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none', wide ? 'max-w-xl' : 'max-w-md')}
         >
           <div className="px-5 pt-5">
             <RDialog.Title className="font-display text-[17px] font-semibold text-fg">{title}</RDialog.Title>
             {description && <RDialog.Description className="mt-1.5 text-sm leading-relaxed text-fg-2">{description}</RDialog.Description>}
           </div>
           {children && <div className="overflow-y-auto px-5 pt-4">{children}</div>}
-          <div className="flex justify-end gap-2 px-5 pt-5 pb-5">{footer}</div>
+          <div className="flex items-center justify-end gap-2 px-5 pt-5 pb-5">{footer}</div>
         </RDialog.Content>
       </RDialog.Portal>
     </RDialog.Root>

@@ -25,18 +25,60 @@ ks install --hub --claude=false --codex=false --daemon=false   # 注册为常驻
 
 ## 3. 每台开发设备
 
-1. 在网页「设置 → 设备」中新增设备，复制 token。
-2. 连接并安装：
+在网页「设置 → 设备」点「接入设备」，起个名字。弹出的接入指引按平台和你用的工具给出完整命令，照着执行就能连上；令牌只在这时显示一次。还没连上的设备，列表里显示「已创建，等它连上」，点「接入指引」可以再打开（不再显示令牌）。下面是同样的步骤。
 
-   ```sh
-   ks login --hub http://<hub 地址>:7310 --token kst_xxx
-   ks install --dry-run   # 预览将写入的 Claude Code / Codex hook、MCP 与 daemon 常驻服务
-   ks install             # 改动前自动备份；卸载：ks uninstall
-   ```
+**1. 安装 `ks`**，并把 `~/.local/bin` 加进 PATH（macOS 写 `~/.zshrc`，Linux 写 `~/.bashrc`）：
 
-3. 仅 Codex：在 Codex 里亲自执行一次 `/hooks`，信任 `ks` 的各条 hook。
+```sh
+curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.sh | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+```
 
-开一个 Claude Code 或 Codex 会话，几秒内就会出现在看板上。
+最小化的 Linux 可能没有 curl，先装上（如 `sudo apt update && sudo apt install -y curl`）。
+
+**2. 登录到 Hub**：地址填别的设备能访问的 Hub 地址，不要用 `127.0.0.1` 或 `localhost`。
+
+```sh
+ks login --hub http://<hub 地址>:7310 --token kst_xxx
+```
+
+**3. 接入工具，启动后台服务**：
+
+```sh
+ks install                    # 同时接入 Claude Code 和 Codex
+ks install --codex=false      # 只用 Claude Code
+ks install --claude=false     # 只用 Codex
+```
+
+`ks install` 写入 hook 和 MCP（改动前自动备份，`--dry-run` 先预览，`ks uninstall` 撤销），并把 daemon 注册成常驻服务：macOS 用 launchd，登录后自动启动；Linux 用 systemd 用户服务。接入 Claude Code 需要终端里能运行 `claude`。
+
+Linux 服务器上要开机就启动、退出登录也不停，再执行一次：
+
+```sh
+sudo loginctl enable-linger "$USER"
+```
+
+没有 systemd 的环境（如 Docker 容器）里，`ks install` 会报找不到 `systemctl`，hook 和 MCP 照常写入。这时手动启动 daemon，它不会开机自启：
+
+```sh
+nohup ks daemon >> ~/.kitestring/daemon.log 2>&1 &
+```
+
+**4. 仅 Codex**：打开 codex，输入 `/hooks`，把 `ks hook codex` 开头的各条都设为信任。不信任的话，Codex 会话不会出现在纸鸢。
+
+**5. 核对**：
+
+```sh
+ks status
+```
+
+输出里有 `"connected": true` 就连上了。网页设备列表里这台设备变成「在线」，带上主机名、平台和版本。之后开一个 Claude Code 或 Codex 会话，几秒内出现在工作台。
+
+- 报连不上 `daemon.sock`：daemon 没启动，回到第 3 步（容器里用 `nohup` 那行）。
+- `"connected": false`：Hub 地址或令牌不对。日志在 `~/.kitestring/logs/daemon.log`（macOS），Linux 用 `journalctl --user -u kitestring-daemon -n 50`。
+
+接入 DSH 见下面的 [DeepSeek Harness（DSH）](#deepseek-harnessdsh)。
 
 ## 多个 Claude 配置
 
@@ -62,7 +104,23 @@ ks uninstall --claude-dir ~/.claude-x                      # 只移除这一个�
 
 DSH 会话也能上墙：用本仓库里的 Host 插件（`dsh-plugin/`）。它走 DSH 自己的会话事件和 `agent.followup()` / `steer()`，不需要 `ks wait` 进程——插件在两轮之间挂着一个 `/wait`，你在纸鸢上答复时唤醒同一个 agent（正在跑的一轮在下一步就收到）。
 
-要求 DSH 0.2.1-rc.4 和同机运行的 `ks daemon`。从源码目录安装：
+要求 DSH 0.2.1-rc.4、同机运行的 `ks daemon`、`pnpm`（`dsh plugin add` 用它），并且运行过一次 `dsh --profile web`（初始化 profile）。
+
+新设备（用安装脚本装的 `ks`）：插件不在发布包里。取与本机 `ks` 同版本的源码，放到 `~/.kitestring/dsh-plugin` 再启用：
+
+```sh
+v=$(ks version | awk '{print $2}')
+git clone --depth 1 --branch "v$v" https://github.com/NekroAI/kitestring.git ~/.kitestring/src
+mkdir -p ~/.kitestring/dsh-plugin && cp -R ~/.kitestring/src/dsh-plugin/. ~/.kitestring/dsh-plugin/
+sed -i.bak '/^\[\]$/d' ~/.dsh/profiles/web/cordis.patch.yml
+bash ~/.kitestring/src/scripts/install-dsh-plugin.sh --profile web
+```
+
+`sed` 那行去掉新 profile 里的空数组 `[]`：0.2.0 的启用脚本会把记录接在它后面，DSH 启动时报 YAML 解析错误。之后的版本脚本自己处理，这行多余但无害。
+
+升级 `ks` 后先删掉 `~/.kitestring/src`，再按新版本做一遍。
+
+Hub 所在机器（从源码目录部署）：
 
 ```sh
 scripts/deploy.sh                           # 部署时顺带把插件放到 $KS_HOME/dsh-plugin（稳定副本）

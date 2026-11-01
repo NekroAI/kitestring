@@ -74,14 +74,22 @@ else
   if [ -s "$PATCH" ] && [ "$(tail -c 1 "$PATCH" | od -An -c | tr -d ' ')" != '\n' ]; then
     NEED_NL=1
   fi
+  # 新建的 profile 里是一行空数组 []，直接追加会变成非法 YAML（DSH 启动时报解析错误），先去掉它
+  EMPTY=0
+  grep -qx '[[:space:]]*\[\][[:space:]]*' "$PATCH" && EMPTY=1
   if [ "$DRY" = 1 ]; then
     echo "[dry-run] 备份 $PATCH -> $PATCH.bak-<时间>"
+    [ "$EMPTY" = 1 ] && echo "[dry-run] 去掉空数组 []"
     [ "$NEED_NL" = 1 ] && echo "[dry-run] 原文件末尾没有换行，先补一个"
     echo "[dry-run] 追加到 ${PATCH}："
     printf '%s\n' "$ENTRY"
   else
     cp "$PATCH" "$PATCH.bak-$(date +%Y%m%d-%H%M%S)"
-    [ "$NEED_NL" = 1 ] && printf '\n' >>"$PATCH"
+    if [ "$EMPTY" = 1 ]; then
+      grep -vx '[[:space:]]*\[\][[:space:]]*' "$PATCH" >"$PATCH.tmp" || true
+      mv "$PATCH.tmp" "$PATCH"
+    fi
+    [ "$NEED_NL" = 1 ] && [ "$EMPTY" = 0 ] && printf '\n' >>"$PATCH"
     printf '%s\n' "$ENTRY" >>"$PATCH"
     echo "[install] 已写入 $PATCH"
   fi

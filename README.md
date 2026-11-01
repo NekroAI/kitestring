@@ -109,13 +109,13 @@ curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/ins
 ks hub passwd && ks install --hub --claude=false --codex=false --daemon=false
 ```
 
-**3. Connect each machine** with a token from **Settings → Devices**:
+**3. Connect each machine**: click **Add device** under **Settings → Devices**; the guide that opens has the full commands for your platform (PATH, background service, check). The core of it:
 
 ```bash
 ks login --hub http://<hub>:7310 --token kst_xxx && ks install
 ```
 
-Open Claude Code or Codex and your session appears on the board. Updating, Codex setup and building from source: [Install guide](docs/install.md).
+When `ks status` shows `"connected": true`, open Claude Code or Codex and your session appears on the board. Step by step, Linux services, DSH, updating and building from source: [Install guide](docs/install.md#3-every-development-machine).
 
 ## Safe for your subscription
 

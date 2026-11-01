@@ -1,14 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BellRing, CheckCircle2, ChevronDown, Copy, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
+import { Bell, BellRing, CheckCircle2, ChevronDown, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
 import { qk, useDevices, useProjects, useCacheHolds, usePush, useSettings, useTokenPrices } from '../api/queries'
 import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
 import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
-import { absTime, copyText, cx, relTime, useNow } from '../lib/util'
+import { absTime, cx, relTime, useNow } from '../lib/util'
 import { useTheme, type ThemePref } from '../lib/theme'
 import { usePenOnly } from '../ui/annotate'
 import { roleNameIn, useRoleLang, type RoleLang } from '../i18n/roles'
@@ -16,6 +16,7 @@ import { RoleTag } from '../ui/marks'
 import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
+import { DeviceGuide } from '../app/deviceGuide'
 
 type Tab = 'devices' | 'notify' | 'prompts' | 'ai' | 'appearance' | 'account'
 const tabs: { id: Tab; icon: LucideIcon }[] = [
@@ -100,48 +101,6 @@ function useSaveSettings() {
 
 // ---------- 设备 ----------
 
-function CommandLine({ cmd }: { cmd: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-sunken px-3 py-2">
-      <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[12px] whitespace-nowrap text-fg">{cmd}</code>
-      <Tip content={t.common.copy}>
-        <Button size="icon-sm" variant="ghost" aria-label={t.common.copy} onClick={async () => (await copyText(cmd)) && toast.success(t.common.copied)}>
-          <Copy className="size-3.5" />
-        </Button>
-      </Tip>
-    </div>
-  )
-}
-
-function DeviceTokenModal({ token, name, onClose }: { token: string; name: string; onClose: () => void }) {
-  const cmds = [null, `ks login --hub ${window.location.origin} --token ${token}`, 'ks install', null]
-  return (
-    <Modal
-      open={!!token}
-      onClose={onClose}
-      title={`${t.settings.devices.created} · ${name}`}
-      description={t.settings.devices.tokenOnce}
-      footer={
-        <Button variant="primary" onClick={onClose}>
-          {t.common.close}
-        </Button>
-      }
-    >
-      <ol className="space-y-3.5 text-sm text-fg-2">
-        {t.settings.devices.steps.map((text, i) => (
-          <li key={i} className="flex gap-3">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">{i + 1}</span>
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <div>{text}</div>
-              {cmds[i] && <CommandLine cmd={cmds[i]!} />}
-            </div>
-          </li>
-        ))}
-      </ol>
-    </Modal>
-  )
-}
-
 function Devices() {
   const now = useNow()
   const q = useDevices()
@@ -150,7 +109,8 @@ function Devices() {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const [busy, wrap] = useBusy()
-  const [created, setCreated] = useState<{ token: string; name: string } | null>(null)
+  // 接入指引：新建后带令牌弹出；没连上过的设备从列表再打开时不带令牌（令牌只显示一次）
+  const [guide, setGuide] = useState<{ id: string; name: string; token: string | null } | null>(null)
 
   const add = () =>
     wrap(async () => {
@@ -158,7 +118,7 @@ function Devices() {
       if (r) {
         setAdding(false)
         setName('')
-        setCreated({ token: r.token, name: r.device.name })
+        setGuide({ id: r.device.id, name: r.device.name, token: r.token })
       }
     })
   const revoke = async (d: Device) => {
@@ -198,8 +158,13 @@ function Devices() {
                   {d.name}
                   {d.revoked && <Badge tone="danger">{t.settings.devices.revokedTag}</Badge>}
                 </div>
-                <div className="mt-0.5 truncate text-xs text-fg-3">{[d.online ? t.device.online : d.last_seen ? t.device.lastSeen(relTime(d.last_seen, now)) : t.device.never, d.hostname, d.platform, d.version].filter(Boolean).join(t.common.sep)}</div>
+                <div className="mt-0.5 truncate text-xs text-fg-3">{[d.online ? t.device.online : d.last_seen ? t.device.lastSeen(relTime(d.last_seen, now)) : d.revoked ? t.device.never : t.settings.devices.pending, d.hostname, d.platform, d.version].filter(Boolean).join(t.common.sep)}</div>
               </div>
+              {!d.revoked && !d.online && !d.last_seen && (
+                <Button size="sm" variant="ghost" className="text-fg-2" onClick={() => setGuide({ id: d.id, name: d.name, token: null })}>
+                  {t.settings.devices.guide}
+                </Button>
+              )}
               {!d.revoked && (
                 <Tip content={t.settings.devices.revoke}>
                   <Button size="icon-sm" variant="ghost" className="text-fg-3 hover:text-danger" aria-label={t.settings.devices.revoke} onClick={() => revoke(d)}>
@@ -231,7 +196,7 @@ function Devices() {
           )}
         </Row>
       </Card>
-      {created && <DeviceTokenModal token={created.token} name={created.name} onClose={() => setCreated(null)} />}
+      {guide && <DeviceGuide open deviceId={guide.id} name={guide.name} token={guide.token} onClose={() => setGuide(null)} />}
     </>
   )
 }

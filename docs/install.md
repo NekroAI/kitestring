@@ -25,18 +25,60 @@ Open `http://<hub address>:7310` in a browser and sign in. To reach the Hub from
 
 ## 3. Every development machine
 
-1. In the web UI, open **Settings → Devices**, add a device and copy its token.
-2. Connect and install:
+In the web UI, open **Settings → Devices** and click **Add device**. The setup guide that opens gives the full commands for your platform and tools; the token is shown only this once. A device that has never connected is listed as waiting to connect, with a button that reopens the guide (without the token). The same steps:
 
-   ```sh
-   ks login --hub http://<hub address>:7310 --token kst_xxx
-   ks install --dry-run   # preview the Claude Code / Codex hooks, MCP server and daemon service
-   ks install             # backs up every file it changes; undo with ks uninstall
-   ```
+**1. Install `ks`** and put `~/.local/bin` on your PATH (`~/.zshrc` on macOS, `~/.bashrc` on Linux):
 
-3. Codex only: run `/hooks` inside Codex once and trust the `ks` hooks.
+```sh
+curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.sh | sh
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+```
 
-Start a Claude Code or Codex session and it shows up on the board within seconds.
+Minimal Linux installs may lack curl; install it first (e.g. `sudo apt update && sudo apt install -y curl`).
+
+**2. Log in to the Hub** with an address other machines can reach — not `127.0.0.1` or `localhost`:
+
+```sh
+ks login --hub http://<hub address>:7310 --token kst_xxx
+```
+
+**3. Hook up your tools and start the background service:**
+
+```sh
+ks install                    # Claude Code and Codex
+ks install --codex=false      # Claude Code only
+ks install --claude=false     # Codex only
+```
+
+`ks install` writes the hooks and MCP server (backing up every file first; `--dry-run` previews, `ks uninstall` undoes) and registers the daemon as a service: launchd on macOS (starts at login), a systemd user service on Linux. Hooking up Claude Code needs `claude` on your PATH.
+
+On a Linux server, to start at boot and keep running after you log out:
+
+```sh
+sudo loginctl enable-linger "$USER"
+```
+
+Without systemd (a Docker container, for example) `ks install` reports that `systemctl` is missing; the hooks and MCP server are still written. Start the daemon by hand — it won't start at boot:
+
+```sh
+nohup ks daemon >> ~/.kitestring/daemon.log 2>&1 &
+```
+
+**4. Codex only:** open codex, run `/hooks` and trust every hook starting with `ks hook codex`. Untrusted hooks don't run, so Codex sessions won't show up.
+
+**5. Check:**
+
+```sh
+ks status
+```
+
+`"connected": true` means you're connected; the device turns **online** in the web device list, with its hostname, platform and version. Start a Claude Code or Codex session and it shows up within seconds.
+
+- Can't reach `daemon.sock`: the daemon isn't running — go back to step 3 (in a container, use the `nohup` line).
+- `"connected": false`: wrong Hub address or token. Logs: `~/.kitestring/logs/daemon.log` on macOS, `journalctl --user -u kitestring-daemon -n 50` on Linux.
+
+For DSH, see [DeepSeek Harness (DSH)](#deepseek-harness-dsh) below.
 
 ## Multiple Claude configs
 
@@ -62,7 +104,23 @@ What is shared and what is separate: the Hub, the session list, requirement and 
 
 DSH sessions can join the board through the Host plugin in this repository (`dsh-plugin/`). It uses DSH's own session events and `agent.followup()` / `steer()`, so no `ks wait` process is involved: the plugin keeps a `/wait` request open between turns and wakes the same agent when you answer in Kitestring (a running turn receives the message at its next step).
 
-Requires DSH 0.2.1-rc.4 and a running `ks daemon` on the same machine. From a source checkout:
+Requires DSH 0.2.1-rc.4, a running `ks daemon` on the same machine, `pnpm` (used by `dsh plugin add`), and a profile initialized by running `dsh --profile web` once.
+
+On a new machine (with `ks` from the install script) the plugin isn't in the release archive. Fetch the source at the same version as your `ks`, copy the plugin to `~/.kitestring/dsh-plugin` and enable it:
+
+```sh
+v=$(ks version | awk '{print $2}')
+git clone --depth 1 --branch "v$v" https://github.com/NekroAI/kitestring.git ~/.kitestring/src
+mkdir -p ~/.kitestring/dsh-plugin && cp -R ~/.kitestring/src/dsh-plugin/. ~/.kitestring/dsh-plugin/
+sed -i.bak '/^\[\]$/d' ~/.dsh/profiles/web/cordis.patch.yml
+bash ~/.kitestring/src/scripts/install-dsh-plugin.sh --profile web
+```
+
+The `sed` line removes the empty `[]` a new profile starts with: the 0.2.0 script appends after it and DSH then fails to parse the file. Later versions handle it themselves, so the line is redundant but harmless.
+
+After upgrading `ks`, delete `~/.kitestring/src` and repeat with the new version.
+
+On the Hub machine, from a source checkout:
 
 ```sh
 scripts/deploy.sh                           # also places a stable plugin copy in $KS_HOME/dsh-plugin

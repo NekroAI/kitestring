@@ -109,13 +109,13 @@ curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/ins
 ks hub passwd && ks install --hub --claude=false --codex=false --daemon=false
 ```
 
-**3. 接入每台设备**：token 在网页「设置 → 设备」里新增：
+**3. 接入每台设备**：在网页「设置 → 设备」点「接入设备」，弹出的指引按平台给出完整命令（PATH、后台服务、核对都在里面）。核心两步：
 
 ```bash
 ks login --hub http://<hub>:7310 --token kst_xxx && ks install
 ```
 
-打开 Claude Code 或 Codex，会话就会出现在看板上。升级、Codex 设置与从源码构建见[安装说明](docs/install.zh-CN.md)。
+`ks status` 显示 `"connected": true` 就连上了，打开 Claude Code 或 Codex，会话就会出现在看板上。逐步说明、Linux 后台服务、DSH、升级与从源码构建见[安装说明](docs/install.zh-CN.md#3-每台开发设备)。
 
 ## 不碰你的订阅
 

@@ -67,10 +67,10 @@ case ":$PATH:" in
 esac
 cat <<EOF
 
-接下来：
-  1. 在 Kitestring 网页「设置 → 设备」中新增设备，复制 token
-  2. ks login --hub http://<hub 地址>:7310 --token kst_xxx
-  3. ks install            # 写入 Claude Code / Codex 的 hook、MCP 与 daemon 常驻服务（--dry-run 先预览）
+接下来（网页「设置 → 设备 → 接入设备」弹出的指引里有按平台写好的完整命令）：
+  1. ks login --hub <Hub 地址> --token kst_xxx
+  2. ks install            # 写入 Claude Code / Codex 的 hook、MCP，并注册 daemon 常驻服务（--dry-run 先预览）
+  3. ks status             # 看到 "connected": true 就连上了
 EOF
 if [ "$os" = darwin ]; then
   echo "已接入过的设备：再次运行 ks install，即用新版本重启常驻服务"
