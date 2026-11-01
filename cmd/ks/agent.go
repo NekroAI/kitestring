@@ -270,7 +270,7 @@ func editBody(fs *flag.FlagSet, key, reason, approval string) map[string]any {
 
 func runReq(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("用法：ks req list|get|create|edit|status|request|evidence|assign|review ...")
+		return fmt.Errorf("用法：ks req list|get|create|edit|status|request|evidence|comment|watch|unwatch|watching|assign|review ...")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("req "+sub, flag.ContinueOnError)
@@ -293,18 +293,25 @@ func runReq(args []string) error {
 	waitingOn := fs.String("on", "", "status blocked：在等的需求或决策编号（R-x / D-x，R-243）；不写时这条受阻需求本身进用户的「要你处理」")
 	verdict := fs.String("verdict", "", "evidence / review：一句结论（40 字以内）")
 	details := fs.String("details", "", "evidence：实现细节（默认折叠）；review：怎么验的")
-	blocksArg := fs.String("blocks", "", "evidence / review：表达块，JSON 数组或 JSON 文件路径")
+	blocksArg := fs.String("blocks", "", "evidence / review / comment：表达块，JSON 数组或 JSON 文件路径")
 	var todo, aside stringList
 	fs.Var(&todo, "todo", "evidence：要你做的（机器验证不了的事），可重复")
 	fs.Var(&aside, "aside", "evidence：顺带改动，可重复")
 	var images, videos stringList
-	fs.Var(&images, "image", "create / evidence / review：附图路径，可重复；evidence / review 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
+	fs.Var(&images, "image", "create / evidence / review / comment：附图路径，可重复；evidence / review 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
 	shotsArg := fs.String("images", "", "evidence / review：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
+	actionOnly := fs.Bool("action-only", false, "watch：只收要动手的提醒（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）")
+	watchJSON := fs.Bool("json", false, "watch / unwatch / watching：输出原始 JSON")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	key := cliSession(*session)
+	if key == "" && sub != "list" && sub != "get" {
+		// Codex 没有会话环境变量：改需求的命令按父进程认出当前会话，变动才记在它名下，
+		// 订阅提醒也才不会发回给它自己（R-249 P4）
+		key = currentSession("")
+	}
 	switch sub {
 	case "list":
 		q := url.Values{}
@@ -426,6 +433,64 @@ func runReq(args []string) error {
 		printBlockWarnings(out)
 		printImageHints(out)
 		return nil
+	case "comment":
+		// 需求留言（R-249）：ks req comment R-x <文字> [--image 路径]... [--blocks 块.json]；细节写在这里，消息只放编号加一句话。
+		// 署名和 ks team tell 一样由当前会话决定（R-248），不能冒用别的会话
+		text := strings.TrimSpace(strings.Join(fs.Args()[min(1, fs.NArg()):], " "))
+		if fs.NArg() < 1 || text == "" && len(images) == 0 && *blocksArg == "" {
+			return fmt.Errorf("用法：ks req comment <R-编号> <留言> [--image 截图.png，可重复] [--blocks 块.json]（先结论再分条写细节，%d 字以内；订阅了这条需求的会话会收到一句只告知的提醒，要对方立刻来看再用 ks team tell 发一句话）\n表达块：%s", writing.CommentMax, writing.BlocksGuide)
+		}
+		dk, da := currentTeller()
+		sender, agent, claimed, err := resolveTellSender(*session, dk, da)
+		if err != nil {
+			return err
+		}
+		if sender == "" {
+			return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+		}
+		body := map[string]any{"session_key": sender, "text": text}
+		if agent != "" {
+			body["agent_id"] = agent
+		}
+		if claimed {
+			body["session_claimed"] = true
+		}
+		if err := attachFiles(body, images); err != nil {
+			return err
+		}
+		if _, err := attachBlocks(body, *blocksArg); err != nil {
+			return err
+		}
+		out, err := agentCallOut("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/comments", body)
+		if err != nil {
+			return err
+		}
+		printBlockWarnings(out)
+		if m, _ := out.(map[string]any); m != nil {
+			if h, _ := m["hint"].(string); h != "" {
+				printHint(h)
+			}
+		}
+		return nil
+	case "watch", "unwatch", "watching":
+		// 订阅需求（R-249 P4）：ks req watch R-x [--action-only] / ks req unwatch R-x / ks req watching，与 MCP req_watch / req_watching 一致。
+		// 订阅者和 ks team tell 的发送方一样只认当前会话（R-248）
+		if sub != "watching" && fs.NArg() < 1 {
+			return fmt.Errorf("用法：ks req watch <R-编号> [--action-only]   订阅（关联或在做的需求默认已订阅）\n      ks req unwatch <R-编号>                退订（含因关联而来的默认订阅）\n      ks req watching                       列出订阅了哪些")
+		}
+		dk, da := currentTeller()
+		sender, _, claimed, err := resolveTellSender(*session, dk, da)
+		if err != nil {
+			return err
+		}
+		if sender == "" {
+			return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+		}
+		if sub == "watching" {
+			return printText("/agent/watching?"+url.Values{"session_key": {sender}}.Encode(), *watchJSON)
+		}
+		body := watchBody(sender, sub == "unwatch", *actionOnly, claimed)
+		return printMessage("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/watch", body, *watchJSON)
 	case "link":
 		if fs.NArg() < 1 || key == "" {
 			return fmt.Errorf("用法：ks req link <R-编号> [--session tool:id]")
@@ -861,4 +926,20 @@ func runCommit(args []string) error {
 		return agentCall("POST", "/agent/commits", compact(map[string]any{"sha": fs.Arg(0), "ci": fs.Arg(1), "ci_url": *link, "session_key": key}))
 	}
 	return fmt.Errorf(use)
+}
+
+// watchBody 是 ks req watch / unwatch 的请求体（与 MCP req_watch 同一组参数：off、mode）。
+func watchBody(sender string, off, actionOnly, claimed bool) map[string]any {
+	body := map[string]any{"session_key": sender}
+	if off {
+		body["off"] = true
+	} else if actionOnly {
+		body["mode"] = "action"
+	} else {
+		body["mode"] = "all"
+	}
+	if claimed {
+		body["session_claimed"] = true
+	}
+	return body
 }

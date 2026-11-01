@@ -231,21 +231,9 @@ func (s *Store) ListSessions(ctx context.Context, activeWithin time.Duration, ba
 
 func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
 	for _, x := range list {
-		rows, err := s.db.QueryContext(ctx, `SELECT r.id, r.seq, r.title, r.status FROM requirement_sessions rs JOIN requirements r ON r.id = rs.requirement_id WHERE rs.session_key = ? ORDER BY rs.linked_at`, x.Key)
-		if err != nil {
+		if err := s.fillReqRefs(ctx, x); err != nil {
 			return err
 		}
-		for rows.Next() {
-			var r RequirementRef
-			var seq int
-			if err := rows.Scan(&r.ID, &seq, &r.Title, &r.Status); err != nil {
-				rows.Close()
-				return err
-			}
-			r.Code = reqCode(seq)
-			x.Requirements = append(x.Requirements, r)
-		}
-		rows.Close()
 		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM decisions WHERE session_key = ? AND status = 'pending'`, x.Key).Scan(&x.PendingDecisions); err != nil {
 			return err
 		}
@@ -262,6 +250,25 @@ func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
 		}
 	}
 	return nil
+}
+
+// fillReqRefs 补会话关联的需求（按关联先后）。
+func (s *Store) fillReqRefs(ctx context.Context, x *Session) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT r.id, r.seq, r.title, r.status FROM requirement_sessions rs JOIN requirements r ON r.id = rs.requirement_id WHERE rs.session_key = ? ORDER BY rs.linked_at`, x.Key)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r RequirementRef
+		var seq int
+		if err := rows.Scan(&r.ID, &seq, &r.Title, &r.Status); err != nil {
+			return err
+		}
+		r.Code = reqCode(seq)
+		x.Requirements = append(x.Requirements, r)
+	}
+	return rows.Err()
 }
 
 // fillRecentTools 取主会话最近 3 次工具调用，让工作台一打开就能看到它最近在做什么。

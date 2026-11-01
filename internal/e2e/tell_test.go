@@ -162,7 +162,7 @@ func TestTellPM(t *testing.T) {
 	e.call("GET", "/api/decisions", nil, &decs)
 	tells := 0
 	for _, d := range decs.Decisions {
-		if d.Kind == store.KindTell && d.RequirementID != "" {
+		if d.Kind == store.KindTell && d.RequirementID != "" && d.Question != "需求订阅" { // 需求订阅提醒（R-249 P4，PM 建的需求因关联而订阅）另算
 			tells++
 			if d.SessionKey != "claude:pm" {
 				t.Fatalf("团队消息只送给 PM：%+v", d)

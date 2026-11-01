@@ -19,6 +19,32 @@ func TestImageIDs(t *testing.T) {
 	}
 }
 
+// R-249：req_get 默认单列最新 3 条会话留言（署名身份 + 会话名），更早的只报条数、不带图；用户意见那段不再重复列留言。
+func TestReqViewComments(t *testing.T) {
+	var r reqView
+	raw := `{"code":"R-9","title":"登录页","status":"in_progress","feedback":[
+		{"code":"D-14","kind":"comment","answer":"第四条","from_role":"dev","by_title":"做登录页","assigned_by":"claude:d","answer_files":[{"id":"c4","mime":"image/png","name":"a.png","path":"/h/a.png"}],"blocks":[{"type":"table"}]},
+		{"code":"D-13","kind":"note","answer":"用户留言"},
+		{"code":"D-12","kind":"comment","answer":"第三条","from_role":"aide","assigned_by":"claude:a"},
+		{"code":"D-11","kind":"comment","answer":"第二条","from_role":"","assigned_by":"codex:x"},
+		{"code":"D-10","kind":"comment","answer":"第一条","from_role":"pm","assigned_by":"claude:p","answer_files":[{"id":"c1","mime":"image/png"}]}]}`
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		t.Fatal(err)
+	}
+	out := r.String()
+	for _, want := range []string{"会话留言（共 4 条，这里列最新 3 条；全部用 full = true）", "D-14 开发（Dev）「做登录页」（claude:d）：第四条（附 1 个表达块", "附件 a.png", "D-12 主助理（Aide）（claude:a）：第三条", "D-11 Agent（codex:x）：第二条", "D-13 留言：用户留言"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("缺少 %q：\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "第一条") || strings.Count(out, "第四条") != 1 {
+		t.Fatalf("只列最新 3 条、且不在用户意见里重复：\n%s", out)
+	}
+	if got := r.images(); !reflect.DeepEqual(got, []string{"c4"}) {
+		t.Fatalf("没列出的旧留言不带图，得到 %v", got)
+	}
+}
+
 func TestPlanViewIsCompact(t *testing.T) {
 	var p planView
 	raw := `{"code":"P-2","title":"支付回调重构","goal":"回调幂等","status":"active","paused":true,"stages":[

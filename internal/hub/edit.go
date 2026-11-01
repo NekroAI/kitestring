@@ -191,6 +191,12 @@ func (h *Hub) registerAgentEdit(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.tellEdited(ctx, r, x, note)
+			// 订阅了这条需求的会话（R-249 P4）：改了验收标准要动手，别的字段只告知；tellEdited 已告诉过的不重复送
+			ev := evDetail
+			if next.Acceptance != cur.Acceptance {
+				ev = evAcceptance
+			}
+			h.reqEvent(ctx, r, ev, x.Key, "改了"+strings.Join(names, "、"))
 			h.broker.publish("requirements", "sessions", "plans")
 			return &reqOut{Body: r}, nil
 		})

@@ -159,6 +159,12 @@ func (h *Hub) submitReview(ctx context.Context, ref string, b reviewBody) (*revi
 		return nil, apiErr(err)
 	}
 	h.onReviewSubmitted(ctx, r, x, added.ID)
+	// 订阅了这条需求的会话（R-249 P4）：有不通过的要动手，全部通过只告知；上面已告诉过的主调度、订阅交验收的不重复送
+	if n := reviewFails(payload); n > 0 {
+		h.reqEvent(ctx, r, evReviewFail, x.Key, fmt.Sprintf("评审意见：不通过 %d 条", n))
+	} else {
+		h.reqEvent(ctx, r, evReviewPass, x.Key, "评审意见：通过")
+	}
 	out := &reviewSubmitOut{}
 	out.Body.Requirement, out.Body.ReviewID, out.Body.BlockWarnings, out.Body.ImageHints = r, added.ID, warns, hints
 	return out, nil

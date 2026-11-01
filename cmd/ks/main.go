@@ -46,21 +46,35 @@ agent 调用：
   hook <claude|codex> <event>   由 agent 的 hook 调用
   mcp                    stdio MCP server
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力；evidence void <证据 id> --reason 作废交错的证据）
+  req comment <R-x> <留言> [--image 图] [--blocks 块]   在需求下留言（R-249）：细节写这里，消息只放编号加一句话
+  req watch <R-x> [--action-only] / req unwatch <R-x> / req watching
+                                 订阅需求（R-249）：有变动时收到一句话提醒（自己引起的不通知）；关联或在做的需求默认已订阅，unwatch 可退订；
+                                 --action-only 只收要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）；与 MCP req_watch / req_watching 一致
   req request <R-x> <ready|draft> --reason ...   申请改需求状态（草稿 → 待开始、重新打开已搁置的），用户在审批抽屉里批准后纸鸢直接改
   req assign <R-x> --to <会话|auto>   PM 把需求交给开发
   req review <R-x> [意见] [--verdict] [--blocks] [--image]   Rev 交审查意见 / 验证结果（不改需求状态）
   commit list|link|ci ...   需求关联的提交与 CI（R-156）：标题末尾写（R-x）的提交自动关联；link 手动关联，ci 上报 CI 结果（只记录，不改仓库）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
+  team sessions [--role 身份|none] [--all-projects] [--all] [--json]
+                                 在线会话列表（R-249）：本项目没结束的会话，带身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
+                                 待命 / 忙 / 在线 / 离线、手上的需求、能否立刻叫醒及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
-  team tell <文字> [--to aide|pm|reviewer|advisor] [--to-session tool:id] [--req R-x] [--fyi]
-                                 按身份给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），交接给顾问用 --to advisor（多个顾问时发给最近活跃的，或 --to-session 点名；没有在线顾问时报错退回）；
+  team tell <文字> [--to aide|pm|reviewer|advisor|dev|会话键] [--to-session tool:id] [--req R-x] [--fyi]
+                                 点对点给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），交接给顾问用 --to advisor（多个顾问时发给最近活跃的，或 --to-session 点名；没有在线顾问时报错退回）；
+                                 --to 也可直接填会话键（ks team sessions 里的 tool:id），没有身份的会话也能收；对方已结束或失联时报错退回；
+                                 返回逐个收件人的送达状态：已送达 / 等对方醒来（写明原因，如 Codex 要等用户下次发消息）/ 对方不在线；
                                  发送方只认自动识别的当前对话，--session 与之不一致会被拒绝，仅识别不到（如部分 Codex 会话）时才按 --session 认定发送方；
                                  进度和受阻告诉主调度；没有主助理时退回给主调度；交验收时主调度会自动收到通知；
                                  项目没有主调度时不送，返回「本项目当前没有主调度，消息未送达」（不算出错）
                                  --fyi 标明「只告知」（R-227）：对方不必动手，不唤醒它的 ks wait，下次因别的事被叫醒或用户发消息时一并带上；
                                  不标则按要对方动手处理（提问、求裁定、派活、回复），立刻叫醒；部署 / 重启、进展通报用 --fyi
+                                 消息只做通知：编号加一句话（120 字以内，超出照常发送并提示），细节先写进 ks req comment
   team tell --reply D-x <回复>   回复收到的团队消息，自动送回发消息的一方（子任务发的送到它所属的会话）
+  team broadcast <文字> [--role dev,reviewer] [--req R-x] [--fyi]
+                                 项目内广播（R-249）：发给本项目没结束的会话（不含你自己和后台任务会话），--role 按身份过滤（none 表示没身份的）；
+                                 --fyi 只告知，任何会话都能发；不加是「要动手」，只有主调度、主助理能发；离线的会话跳过；与 MCP team_broadcast 一致
+  team sent [D-x]                查你最近发的团队消息（广播算一条）现在的送达状态：已送达（带时间）/ 等对方醒来（原因）/ 对方不在线；与 MCP team_sent 一致
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
   away advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上

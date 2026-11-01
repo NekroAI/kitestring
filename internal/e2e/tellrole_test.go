@@ -68,8 +68,8 @@ func TestTellByRole(t *testing.T) {
 	if _, err := tell(map[string]any{"session_key": "claude:dev", "text": "帮我看看", "to": "reviewer"}); err == nil || !strings.Contains(err.Error(), "没有在线的评审") {
 		t.Fatalf("没有评审时应报清楚的错：%v", err)
 	}
-	// 不认识的身份：报错
-	if _, err := tell(map[string]any{"session_key": "claude:dev", "text": "在吗", "to": "dev"}); err == nil || !strings.Contains(err.Error(), "收件身份只能是") {
+	// 不认识的身份：报错（R-249 起开发也能收，见 TestTellP2P）
+	if _, err := tell(map[string]any{"session_key": "claude:dev", "text": "在吗", "to": "老板"}); err == nil || !strings.Contains(err.Error(), "收件身份只能是") {
 		t.Fatalf("收件身份不对应报错：%v", err)
 	}
 

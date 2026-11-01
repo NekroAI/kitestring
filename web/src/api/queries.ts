@@ -240,6 +240,28 @@ export function useCacheHolds() {
   })
 }
 
+// 通讯页（R-249）：项目里的在线会话、消息与广播、送达状态。挂在 decisions 主题下，团队消息一变就重取；
+// 送达状态还跟着会话状态变（会话待命 / 结束），会话推送不走 changed 主题，另外每 30 秒补拉一次。
+export function useComms(projectId: string, since: string, dayStart: string, ended: boolean) {
+  return useQuery({
+    queryKey: ['decisions', 'comms', projectId, since, dayStart, ended],
+    queryFn: () => unwrap(api.GET('/api/comms', { params: { query: { project_id: projectId, since, day_start: dayStart, ended: ended || undefined } } })),
+    enabled: !!projectId,
+    refetchInterval: 30_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+// 导航「通讯」旁的黄色数字：所有项目里还在等对方醒来的消息（发给已结束会话的不算，D-1071）。
+export function useCommsPending() {
+  return useQuery({
+    queryKey: ['decisions', 'comms-pending'],
+    queryFn: () => unwrap(api.GET('/api/comms/pending')),
+    select: (d) => d.count,
+    refetchInterval: 60_000,
+  })
+}
+
 // 主题 → 需要失效的查询前缀。
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],

@@ -9,6 +9,7 @@ import RequirementsPage from './pages/Requirements'
 import SettingsPage from './pages/Settings'
 import WorkbenchPage from './pages/Workbench'
 import ProjectsPage from './pages/Projects'
+import CommsPage from './pages/Comms'
 
 function Splash() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:id" element={<ProjectsPage />} />
         <Route path="requirements" element={<RequirementsPage />} />
+        <Route path="comms" element={<CommsPage />} />
         <Route path="settings" element={<SettingsPage version={version} />} />
         <Route path="decisions" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

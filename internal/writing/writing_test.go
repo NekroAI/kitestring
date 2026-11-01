@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestCommentAndMessageHint(t *testing.T) {
+	if CommentHint(strings.Repeat("字", CommentMax)) != "" || MessageHint(strings.Repeat("字", MessageMax)) != "" {
+		t.Fatal("没超标不该提示")
+	}
+	if h := CommentHint(strings.Repeat("字", CommentMax+1)); !strings.Contains(h, "601 字") || !strings.Contains(h, "已保存") {
+		t.Fatalf("留言超标提示不对：%s", h)
+	}
+	if h := MessageHint(strings.Repeat("字", MessageMax+1)); !strings.Contains(h, "121 字") || !strings.Contains(h, "细节写到 ks req comment") || !strings.Contains(h, "编号加一句话") {
+		t.Fatalf("消息超标提示不对：%s", h)
+	}
+}
+
 func TestFirstSentence(t *testing.T) {
 	cases := map[string]string{
 		"登录页支持记住我。单测 12 个通过":        "登录页支持记住我",

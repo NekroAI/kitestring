@@ -51,6 +51,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerStatusRequest(agentAPI)
 	h.registerAgentBrief(agentAPI)
 	h.registerAgentTell(agentAPI)
+	h.registerAgentComment(agentAPI)
+	h.registerAgentWatch(agentAPI)
 	h.registerAgentGrant(agentAPI)
 	h.registerAgentMorning(agentAPI)
 	h.registerAgentAway(agentAPI)
@@ -69,6 +71,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerHandoffWeb(webAPI)
 	h.registerHandoffAgent(agentAPI)
 	h.registerArrangeWeb(webAPI)
+	h.registerCommsWeb(webAPI)
 	h.registerAgentArrange(agentAPI)
 
 	root := http.NewServeMux()
@@ -91,7 +94,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	if web != nil {
 		root.Handle("/", web)
 	}
-	return withGzip(withClient(root))
+	return withGzip(withClient(withToldHandler(root)))
 }
 
 func apiConfig() huma.Config {
@@ -129,6 +132,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerStatusRequest(api)
 	h.registerAgentBrief(api)
 	h.registerAgentTell(api)
+	h.registerAgentComment(api)
+	h.registerAgentWatch(api)
 	h.registerAgentGrant(api)
 	h.registerAgentMorning(api)
 	h.registerAgentAway(api)
@@ -147,6 +152,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerHandoffWeb(api)
 	h.registerHandoffAgent(api)
 	h.registerArrangeWeb(api)
+	h.registerCommsWeb(api)
 	h.registerAgentArrange(api)
 	return api.OpenAPI()
 }
@@ -904,8 +910,9 @@ func (h *Hub) registerWeb(api huma.API) {
 				}
 				// 离开期间你在哪台设备上答的（R-210）
 				h.awayUser(ctx, "answer", d.ProjectID, d.Code, d.Question, brief(approvalText(d), 80))
-				h.onRequestAnswered(ctx, d)  // 批准开 Dev 会话 → 推送接入语（R-169）
-				h.applyStatusRequest(ctx, d) // 批准改状态申请 → 纸鸢改状态（R-188）
+				h.onRequestAnswered(ctx, d)         // 批准开 Dev 会话 → 推送接入语（R-169）
+				h.applyStatusRequest(ctx, d)        // 批准改状态申请 → 纸鸢改状态（R-188）
+				h.watchDecisionAnswered(ctx, d, "") // 关联决策被作答，告诉订阅了这条需求的会话（R-249 P4）
 				out.Body.Decisions = append(out.Body.Decisions, d)
 				if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 					devices[x.DeviceID] = true
@@ -1024,6 +1031,20 @@ func (h *Hub) registerWeb(api huma.API) {
 					told = withdrawTold(cur) // 撤回放行时已经告诉过在做的会话，不重复送
 				}
 				h.onUserStatusChanged(ctx, cur, r, told...) // 派活的 PM、关联会话和订阅者知道用户改了状态（R-171）
+			}
+			// 用户在网页上改了内容（R-249 P4）：改验收标准要动手，改标题 / 描述只告知
+			var changed []string
+			for _, f := range [][3]string{{"标题", cur.Title, r.Title}, {"描述", cur.Detail, r.Detail}, {"验收标准", cur.Acceptance, r.Acceptance}} {
+				if f[1] != f[2] {
+					changed = append(changed, f[0])
+				}
+			}
+			if len(changed) > 0 {
+				ev := evDetail
+				if cur.Acceptance != r.Acceptance {
+					ev = evAcceptance
+				}
+				h.reqEvent(ctx, r, ev, "", "改了"+strings.Join(changed, "、"))
 			}
 			return &reqOut{Body: r}, nil
 		})
@@ -1296,6 +1317,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				if err != nil {
 					return nil, err
 				}
+				h.reqStatusEvent(ctx, r, before.Status, in.Body.SessionKey) // 放行也是改状态（R-249 P4）
 				h.broker.publish("requirements", "sessions", "plans")
 				h.kick(ctx, r.ID)
 				return &reqOut{Body: r}, nil
@@ -1340,6 +1362,9 @@ func (h *Hub) registerAgent(api huma.API) {
 				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
 					h.onStatusEvent(ctx, full, in.Body.SessionKey, told) // 订阅了交验收 / 受阻的会话（R-164）
 				}
+			}
+			if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
+				h.reqStatusEvent(ctx, full, before.Status, in.Body.SessionKey) // 订阅了这条需求的会话（R-249 P4），上面通知过的不重复送
 			}
 			if r.Status == store.ReqReview {
 				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
@@ -1415,6 +1440,11 @@ func (h *Hub) registerAgent(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
+			ev := "附了证据"
+			if payload != nil && payload.Verdict != "" {
+				ev += "：" + brief(payload.Verdict, 30)
+			}
+			h.reqEvent(ctx, r, evEvidence, b.SessionKey, ev) // 订阅了这条需求的会话（R-249 P4）
 			h.broker.publish("requirements")
 			r, err = h.store.GetRequirement(ctx, r.ID)
 			out := &evidenceOut{}
@@ -1587,6 +1617,9 @@ func (h *Hub) registerAgent(api huma.API) {
 			}
 			h.broker.publish("requirements", "sessions")
 			out.Body.Requirement, err = h.store.GetRequirement(ctx, r.ID)
+			if err == nil {
+				h.reqStatusEvent(ctx, out.Body.Requirement, r.Status, x.Key) // 开始做（待开始 → 进行中）也告诉订阅者（R-249 P4）
+			}
 			return out, apiErr(err)
 		})
 }

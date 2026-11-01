@@ -111,7 +111,24 @@ type reqView struct {
 		AssignedBy   string     `json:"assigned_by"`
 		Context      string     `json:"context"`
 		CloseReason  string     `json:"close_reason"`
+		FromRole     string     `json:"from_role"`
+		ByTitle      string     `json:"by_title"`
+		Blocks       []any      `json:"blocks"`
 	} `json:"feedback"`
+}
+
+// commentShown 是 req_get 默认列出的会话留言条数（最新的几条，R-249）；full = true 给全部。
+const commentShown = 3
+
+// shownComments：feedback 第 i 条是不是默认视图里列出的会话留言（feedback 时间倒序，取前 commentShown 条留言）。
+func (r reqView) shownComments() map[int]bool {
+	out := map[int]bool{}
+	for i, f := range r.Feedback {
+		if f.Kind == "comment" && len(out) < commentShown {
+			out[i] = true
+		}
+	}
+	return out
 }
 
 var reqStatusZh = map[string]string{"draft": "草稿", "ready": "待开始", "in_progress": "进行中", "blocked": "阻塞", "review": "待验收", "done": "已完成", "shelved": "已搁置"}
@@ -228,6 +245,42 @@ func (r reqView) String() string {
 			b.WriteString(s + "\n")
 		}
 	}
+	shown, total := r.shownComments(), 0
+	var cm []string
+	for i, f := range r.Feedback {
+		if f.Kind != "comment" {
+			continue
+		}
+		total++
+		if !shown[i] {
+			continue
+		}
+		when := ""
+		if f.AnsweredAt != nil {
+			when = f.AnsweredAt.Local().Format("01-02 15:04") + " "
+		}
+		who := roleZh(f.FromRole)
+		if f.ByTitle != "" {
+			who += "「" + summary.Truncate(f.ByTitle, 30) + "」"
+		}
+		s := fmt.Sprintf("  - %s%s %s（%s）：%s", when, f.Code, who, f.AssignedBy, strings.ReplaceAll(strings.TrimSpace(f.Answer), "\n", "\n      ")) // 多行留言缩进，和列表对齐
+		if len(f.Blocks) > 0 {
+			s += fmt.Sprintf("（附 %d 个表达块，full = true 看全文）", len(f.Blocks))
+		}
+		if len(f.AnswerFiles) > 0 {
+			var fl strings.Builder
+			filesBlock(&fl, "      ", f.AnswerFiles)
+			s += "\n" + strings.TrimRight(fl.String(), "\n")
+		}
+		cm = append(cm, s)
+	}
+	if total > 0 {
+		head := fmt.Sprintf("会话留言（共 %d 条，新的在前）：\n", total)
+		if total > len(cm) {
+			head = fmt.Sprintf("会话留言（共 %d 条，这里列最新 %d 条；全部用 full = true）：\n", total, len(cm))
+		}
+		b.WriteString(head + strings.Join(cm, "\n") + "\n")
+	}
 	var fb []string
 	for _, f := range r.Feedback {
 		when := ""
@@ -245,8 +298,8 @@ func (r reqView) String() string {
 				}
 			}
 			s = fmt.Sprintf("  - %s%s 决策：%s → %s", when, f.Code, oneLine(f.Question), ans)
-		case "assign", "queue", "plan", "review_task":
-			continue // 流转记录，状态已在上面
+		case "assign", "queue", "plan", "review_task", "comment":
+			continue // 流转记录，状态已在上面；会话留言单列在上面
 		case "edit":
 			s = fmt.Sprintf("  - %s%s 修改：%s（%s）%s", when, f.Code, roleZh(f.Context), f.AssignedBy, f.Answer)
 		case "release":
@@ -273,7 +326,7 @@ func (r reqView) String() string {
 	return b.String()
 }
 
-// images 是默认随 req_get 返回的图：描述与用户意见里的附图（不含 Agent 自己交的证据截图），最多 8 张。
+// images 是默认随 req_get 返回的图：描述、用户意见与列出的会话留言里的附图（不含 Agent 自己交的证据截图），最多 8 张。
 func (r reqView) images() []string {
 	var ids []string
 	add := func(fs []fileView) {
@@ -284,7 +337,11 @@ func (r reqView) images() []string {
 		}
 	}
 	add(r.Files)
-	for _, f := range r.Feedback {
+	shown := r.shownComments()
+	for i, f := range r.Feedback {
+		if f.Kind == "comment" && !shown[i] {
+			continue // 没列出的旧留言不带图
+		}
 		add(f.AnswerFiles)
 	}
 	return ids

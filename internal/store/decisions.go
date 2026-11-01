@@ -36,6 +36,7 @@ const (
 	KindRelease    = "release"     // 放行记录（R-166）：PM / Adv 把草稿改为待开始，answer 是理由，assigned_by 是放行的会话；只留痕，不送达
 	KindTell       = "tell"        // 会话之间的团队消息（R-135 / R-116）：开发交验收、给 PM 留言、开发上线；只送给 Agent，不进你的收件箱
 	KindEdit       = "edit"        // 修改记录（R-134）：Agent 改了需求的标题 / 描述 / 验收标准 / 优先级 / 类型，blocks 里是改前改后；只留痕，不送达
+	KindComment    = "comment"     // 会话留言（R-249）：会话在需求下写的细节，answer 是正文、answer_files 是附图、blocks 是表达块，assigned_by / from_role 是留言的会话和它当时的身份；进时间线，不送达
 )
 
 // Decision 是一条待用户决策的问题。
@@ -69,7 +70,7 @@ type Decision struct {
 	RecOption        int        `json:"rec_option" doc:"推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）"`
 	RecPick          *int       `json:"-"`           // 只用于创建：提问方明确给的推荐序号；CreateDecision 据此和推荐文字定 RecOption
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell,release,edit"`
+	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell,release,edit,comment"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
@@ -116,6 +117,10 @@ type Decision struct {
 	FromRole  string `json:"from_role,omitempty" doc:"团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份"`
 	FromAgent string `json:"from_agent,omitempty" doc:"团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空"`
 	ReplyTo   string `json:"reply_to,omitempty" doc:"团队消息（R-191）：这条回复的团队消息 ID"`
+	// 团队消息（R-249）：FYI 为真是「只告知」，不唤醒对方挂着的 ks wait、不清除待命超时（取代原来用标题 QuietTellQuestion 区分）；
+	// BroadcastID 非空表示这条是一次广播拆给某个收件人的那一行，同一次广播的各行共用它
+	FYI         bool   `json:"fyi,omitempty" doc:"团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait"`
+	BroadcastID string `json:"broadcast_id,omitempty" doc:"团队消息（R-249）：一次广播拆成每个收件人一行，同一次广播共用这个 ID"`
 }
 
 // snapDecision 给刚写入的记录补上会话标题快照（R-195）。
@@ -144,7 +149,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
 	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
-	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option, x.hard
+	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option, x.hard, x.fyi, x.broadcast_id
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -162,7 +167,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
 		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
-		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption, &d.Hard)
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption, &d.Hard, &d.FYI, &d.BroadcastID)
 	d.ExpiresAt = parseNullTS(sql.NullString{String: expires, Valid: expires != ""})
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})
@@ -212,12 +217,12 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		n := now()
 		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole || d.Kind == KindReviewTask || d.Kind == KindTell {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
-			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by, from_role, from_agent, reply_to) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Context, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy, d.FromRole, d.FromAgent, d.ReplyTo)
+			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by, from_role, from_agent, reply_to, fyi, broadcast_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Context, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy, d.FromRole, d.FromAgent, d.ReplyTo, d.Kind == KindTell && d.FYI, d.BroadcastID)
 			if err != nil {
 				return err
 			}
-			if d.SessionKey != "" && d.Question != QuietTellQuestion {
+			if d.SessionKey != "" && !(d.Kind == KindTell && d.FYI) {
 				// 点名送给它的（派活、排队送达、留言、团队消息、身份通知）：待命超时的开发恢复正常（R-229）
 				if _, err := t.ExecContext(ctx, `UPDATE sessions SET idle_at = '' WHERE key = ? AND idle_at <> ''`, d.SessionKey); err != nil {
 					return err
@@ -599,4 +604,17 @@ func (s *Store) WithdrawDecision(ctx context.Context, ref, sessionKey, reason, r
 func (s *Store) DecisionsForDevice(ctx context.Context, deviceID string, since time.Time) ([]Decision, error) {
 	return s.queryDecs(ctx, decSelect+` WHERE s.device_id = ? AND (x.status = ? OR (x.status = ? AND x.delivered_at >= ?)) ORDER BY x.seq`,
 		deviceID, DecAnswered, DecDelivered, ts(since))
+}
+
+// SentTells 列出会话 key 发出的团队消息（R-249，ks team sent）：最近的在前，最多 limit 行（一次广播的每个收件人各一行）。
+func (s *Store) SentTells(ctx context.Context, key string, limit int) ([]Decision, error) {
+	return s.queryDecs(ctx, decSelect+` WHERE x.kind = ? AND x.assigned_by = ? ORDER BY x.seq DESC LIMIT ?`, KindTell, key, limit)
+}
+
+// BroadcastTells 列出同一次广播拆出的各行（R-249），按编号升序。
+func (s *Store) BroadcastTells(ctx context.Context, broadcastID string) ([]Decision, error) {
+	if broadcastID == "" {
+		return []Decision{}, nil
+	}
+	return s.queryDecs(ctx, decSelect+` WHERE x.kind = ? AND x.broadcast_id = ? ORDER BY x.seq`, KindTell, broadcastID)
 }

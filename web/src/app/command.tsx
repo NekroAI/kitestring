@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { titleOf } from '../lib/waiting'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Dialog as RDialog } from 'radix-ui'
-import { ArrowRight, Check, FilePlus2, FolderKanban, Keyboard, LayoutDashboard, LayoutGrid, List, ListTodo, Monitor, Moon, Search, Settings2, Sun, Undo2, X } from 'lucide-react'
+import { ArrowLeftRight, ArrowRight, Check, FilePlus2, FolderKanban, Keyboard, LayoutDashboard, LayoutGrid, List, ListTodo, Monitor, Moon, Search, Settings2, Sun, Undo2, X } from 'lucide-react'
 import { useDecisions, usePlans, useBackgroundSessions, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { helpGroups, isTyping, resolveKey, type KeyAction } from '../lib/keys'
@@ -97,6 +97,8 @@ export function CommandProvider({ children }: { children: ReactNode }) {
           return nav('/projects')
         case 'go-reqs':
           return nav('/requirements')
+        case 'go-comms':
+          return nav('/comms')
         case 'go-settings':
           return nav('/settings')
         case 'next':
@@ -196,6 +198,7 @@ function useItems(cur: { code: string; status: string } | undefined, onAction: (
       ['/', t.nav.home, 'go-home', <LayoutDashboard />, 'G H'],
       ['/projects', t.nav.projects, 'go-projects', <FolderKanban />, 'G P'],
       ['/requirements', t.nav.requirements, 'go-reqs', <ListTodo />, 'G R'],
+      ['/comms', t.nav.comms, 'go-comms', <ArrowLeftRight />, 'G C'],
       ['/settings', t.nav.settings, 'go-settings', <Settings2 />, 'G S'],
     ]
     for (const [to, label, a, icon, keys] of pages)

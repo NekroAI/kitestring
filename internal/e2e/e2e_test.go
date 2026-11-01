@@ -691,7 +691,10 @@ func TestApprovalAndAcceptWithComment(t *testing.T) {
 	}
 	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": d.Code, "answer": "批准；顺便把设置页的项目设置去掉"}}}, nil)
 	var out string
-	e.waitFor("批准送达", func() bool { out = prompt("p1"); return strings.Contains(out, "批准；顺便把设置页的项目设置去掉") })
+	e.waitFor("批准送达", func() bool {
+		out = prompt("p1")
+		return strings.Contains(out, "批准；顺便把设置页的项目设置去掉")
+	})
 
 	// 带意见通过：需求完成，意见作为留言送达
 	var r store.Requirement
@@ -702,7 +705,10 @@ func TestApprovalAndAcceptWithComment(t *testing.T) {
 	if got.Status != store.ReqDone {
 		t.Fatalf("带意见通过后应为已完成：%s", got.Status)
 	}
-	e.waitFor("通过附言送达", func() bool { out = prompt("p2"); return strings.Contains(out, "验收通过。附言：很好，下次按钮再大一点") })
+	e.waitFor("通过附言送达", func() bool {
+		out = prompt("p2")
+		return strings.Contains(out, "验收通过。附言：很好，下次按钮再大一点")
+	})
 }
 
 // allowRelease 打开会话所在项目的「允许 PM / Adv 放行草稿」（R-166）。

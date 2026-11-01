@@ -337,8 +337,12 @@ func (h *Hub) shippedSections(ctx context.Context, x store.Session, wait time.Du
 // 都认不到时兜底：main 上有关联到同一需求、标题相同、更晚的提交（没加 -x、合入时解决过冲突的 cherry-pick，或 rebase 后的同一提交），
 // 按那一份算——两者都是明确关联到这条需求的提交记录，不是从提交说明里猜编号。
 func roundPlaces(cs []store.ChainCommit, place map[string]protocol.CommitPlace) (notMain, missing, notDep []string) {
-	onMain := func(p protocol.CommitPlace) bool { return p.Main != protocol.PlaceNo && p.Main != protocol.PlaceUnknown }
-	deployed := func(p protocol.CommitPlace) bool { return p.Deploy != protocol.PlaceNo && p.Deploy != protocol.PlaceUnknown }
+	onMain := func(p protocol.CommitPlace) bool {
+		return p.Main != protocol.PlaceNo && p.Main != protocol.PlaceUnknown
+	}
+	deployed := func(p protocol.CommitPlace) bool {
+		return p.Deploy != protocol.PlaceNo && p.Deploy != protocol.PlaceUnknown
+	}
 	for _, c := range cs {
 		p, ok := place[c.Link]
 		if !ok || p.Main == protocol.PlaceUnknown {

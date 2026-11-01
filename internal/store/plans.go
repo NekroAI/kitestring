@@ -41,8 +41,8 @@ type Plan struct {
 	Status       string    `json:"status" enum:"draft,active,done,shelved"`
 	CreatedBy    string    `json:"created_by"`
 	Returned     bool      `json:"returned"` // 用户退回后回到草稿，等 Agent 修改并重新提交；重新提交后清除，回到待批准（R-176）
-	Paused       bool      `json:"paused"`  // 已通过阶段里有需求被重开，修好前不能继续往下
-	Current      int       `json:"current"` // 当前阶段序号（第一个未通过的阶段）；全部通过为 0
+	Paused       bool      `json:"paused"`   // 已通过阶段里有需求被重开，修好前不能继续往下
+	Current      int       `json:"current"`  // 当前阶段序号（第一个未通过的阶段）；全部通过为 0
 	Stages       []Stage   `json:"stages"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

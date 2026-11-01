@@ -92,6 +92,7 @@ func (h *Hub) team(ctx context.Context, sessionKey string) (store.Session, *Work
 }
 
 func (h *Hub) registerAgentTeam(api huma.API) {
+	h.registerAgentRoster(api)
 	tag := []string{"agent"}
 	huma.Register(api, huma.Operation{OperationID: "agent-team", Method: http.MethodGet, Path: "/api/agent/team", Tags: tag, Summary: "工人池：本项目的 PM 与 Dev 会话（R-86）"},
 		func(ctx context.Context, in *struct {

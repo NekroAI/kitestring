@@ -266,7 +266,7 @@ func (s *Store) GetRequirement(ctx context.Context, ref string) (Requirement, er
 	if r.StatusChanges, err = s.ListStatusChanges(ctx, StatusQuery{RequirementID: r.ID}); err != nil {
 		return r, err
 	}
-	if r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask, KindRelease, KindEdit); err != nil {
+	if r.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?, ?, ?, ?, ?, ?, ?) ORDER BY x.seq DESC`, r.ID, KindFeedback, KindNote, KindAssign, KindReviewTask, KindRelease, KindEdit, KindComment); err != nil {
 		return r, err
 	}
 	r.Review = s.ReviewOf(ctx, r, time.Now())

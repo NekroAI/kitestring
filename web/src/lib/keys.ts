@@ -10,6 +10,7 @@ export type KeyAction =
   | 'go-home'
   | 'go-projects'
   | 'go-reqs'
+  | 'go-comms'
   | 'go-settings'
   | 'next'
   | 'prev'
@@ -31,7 +32,7 @@ export type KeyCtx = {
 
 export type KeyResult = { action: KeyAction | null; pendingG: boolean }
 
-const goKeys: Record<string, KeyAction> = { h: 'go-home', p: 'go-projects', r: 'go-reqs', s: 'go-settings' }
+const goKeys: Record<string, KeyAction> = { h: 'go-home', p: 'go-projects', r: 'go-reqs', c: 'go-comms', s: 'go-settings' }
 
 export function resolveKey(e: KeyEv, c: KeyCtx): KeyResult {
   const none: KeyResult = { action: null, pendingG: false }
@@ -88,6 +89,7 @@ export const helpGroups: { id: 'global' | 'go' | 'list' | 'req'; rows: HelpRow[]
       { id: 'go-home', keys: ['G', 'H'], then: true },
       { id: 'go-projects', keys: ['G', 'P'], then: true },
       { id: 'go-reqs', keys: ['G', 'R'], then: true },
+      { id: 'go-comms', keys: ['G', 'C'], then: true },
       { id: 'go-settings', keys: ['G', 'S'], then: true },
     ],
   },

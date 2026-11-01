@@ -131,7 +131,9 @@ func TestTeamAssign(t *testing.T) {
 	for _, sid := range []string{"dev-a", "dev-b"} {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "SessionEnd"})
 	}
-	e.waitFor("开发都结束", func() bool { return e.session("claude:dev-a").State == store.StateEnded && e.session("claude:dev-b").State == store.StateEnded })
+	e.waitFor("开发都结束", func() bool {
+		return e.session("claude:dev-a").State == store.StateEnded && e.session("claude:dev-b").State == store.StateEnded
+	})
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r3.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "auto"}, &out); err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/NekroAI/kitestring/internal/summary"
+	"github.com/NekroAI/kitestring/internal/writing"
 )
 
 // 工人池（R-86）：PM 用 team 查看本项目的开发会话，用 req_assign 把需求交给开发。
@@ -113,34 +114,181 @@ type morningIn struct {
 	Advice   []morningAdviceIn `json:"advice,omitempty" jsonschema:"逐条验收建议，每条覆盖该需求上一份；只能写给待验收的需求"`
 }
 
+type commentIn struct {
+	Ref    string           `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	Text   string           `json:"text" jsonschema:"留言正文：先结论，再分条写细节（600 字以内，超出照常保存并提示压缩）；提到需求 / 决策写编号"`
+	Images []string         `json:"images,omitempty" jsonschema:"附图的本机路径（PNG/JPEG/GIF/WebP），会自动上传；同 ks req comment --image"`
+	Blocks []map[string]any `json:"blocks,omitempty" jsonschema:"表达块，字段同 evidence_attach（checklist / compare / figure / flow / metrics / scope / options / table）；同 ks req comment --blocks"`
+}
+
+type watchIn struct {
+	Ref  string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	Off  bool   `json:"off,omitempty" jsonschema:"true = 退订（同 ks req unwatch），含因关联而来的默认订阅；不填是订阅（同 ks req watch）"`
+	Mode string `json:"mode,omitempty" jsonschema:"订阅档位：all（默认）两档都收；action 只收要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻），同 ks req watch --action-only"`
+}
+
+type watchingIn struct{}
+
+type sessionsIn struct {
+	Role        string `json:"role,omitempty" jsonschema:"只看某个身份：aide / advisor / reviewer / pm / dev（也认中文名和别称）；none 只看无身份的会话。同 ks team sessions --role"`
+	AllProjects bool   `json:"all_projects,omitempty" jsonschema:"列所有项目的会话，不只本项目。同 --all-projects"`
+	All         bool   `json:"all,omitempty" jsonschema:"也列已结束的会话（最近活跃的 50 个）。同 --all"`
+}
+
 type tellIn struct {
-	Text        string `json:"text" jsonschema:"要说的话：一两句，先结论（例如：R-12 卡在接口没定，先做了 R-13；问取舍时写清选项和你倾向哪个）"`
-	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
-	ToSession   string `json:"to_session,omitempty" jsonschema:"点名收件会话键（tool:id）：本项目有多个顾问 / 评审时指定；不填发给该身份最近活跃的一个"`
+	Text        string `json:"text" jsonschema:"要说的话：编号加一句话（120 字以内，超出照常发送并提示），先结论（例如：R-12 卡在接口没定，先做了 R-13；问取舍时写清选项和你倾向哪个）；细节先用 req_comment 写进需求留言"`
+	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
+	ToSession   string `json:"to_session,omitempty" jsonschema:"点名收件会话键（tool:id）：本项目有多个顾问 / 评审 / 开发时指定，没有身份的会话也行；不填发给该身份最近活跃的一个"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"回复收到的团队消息时填它的编号（D-x）：回复自动送回发消息的一方"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
 	FYI         bool   `json:"fyi,omitempty" jsonschema:"只告知（R-227）：对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上。部署 / 重启、进展通报填 true；提问、求裁定、派活、回复不填（立刻叫醒）"`
 }
 
+type broadcastIn struct {
+	Text        string `json:"text" jsonschema:"要说的话：编号加一句话（120 字以内，超出照常发送并提示）；细节先用 req_comment 写进需求留言"`
+	Roles       string `json:"roles,omitempty" jsonschema:"只发给这些身份，逗号分隔（如 dev,reviewer），也认中文名和别称；none 表示没身份的会话。不填发给全体。同 ks team broadcast --role"`
+	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
+	FYI         bool   `json:"fyi,omitempty" jsonschema:"只告知：不唤醒对方挂着的 ks wait，任何会话都能发。不填是「要动手」，只有主调度、主助理能发，别的身份会被拒绝"`
+}
+
+type sentIn struct {
+	Ref   string `json:"ref,omitempty" jsonschema:"只看这一条（D-x；广播的任意一行会带出整次广播）。不填列最近 10 条"`
+	Limit int    `json:"limit,omitempty" jsonschema:"最多列几条（一次广播算一条），默认 10"`
+}
+
+// tellDesc 是 team_tell（旧名 pm_notify）的说明。
+const tellDesc = "点对点给本项目的团队成员发消息（命令行 ks team tell；旧名 pm_notify，参数相同）：按身份或会话键送给本项目没结束的那个会话。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回；to = dev（开发）：发给最近活跃的开发；to 也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收，对方已结束或失联时报错退回。返回逐个收件人的送达状态：已送达 / 等对方醒来（写明原因，如 Codex 要等用户下次发消息）/ 对方不在线，之后用 team_sent 查。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。消息只做通知：放编号加一句话（120 字以内，超出照常发送并提示），细节先用 req_comment 写进需求留言，再发消息请对方去看。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"
+
 func (t *tools) registerTeam(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "给本项目的团队成员发消息（命令行 ks team tell）：按身份送给本项目现在的那个会话，不认会话名。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"},
-		func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
+	tell := func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
+		key, agent := t.caller(ctx, req)
+		if key == "" {
+			return nil, nil, fmt.Errorf("无法识别当前会话")
+		}
+		var out struct {
+			Message string `json:"message"`
+		}
+		body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "to_session": in.ToSession, "reply_to": in.ReplyTo, "agent_id": agent}
+		dropEmpty(body)
+		if in.FYI {
+			body["fyi"] = true
+		}
+		if err := t.c.Do(ctx, "POST", "/agent/team/tell", body, &out); err != nil {
+			return nil, nil, err
+		}
+		return text(out.Message), nil, nil
+	}
+	mcp.AddTool(s, &mcp.Tool{Name: "team_tell", Description: tellDesc}, tell)
+	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "（旧名，等同 team_tell，参数相同）" + tellDesc}, tell)
+	mcp.AddTool(s, &mcp.Tool{Name: "team_broadcast", Description: "项目内广播（命令行 ks team broadcast，R-249）：发给本项目没结束的会话，不含你自己和后台任务会话；roles 按身份过滤。两档：fyi = true「只告知」任何会话都能发，不唤醒对方（部署 / 重启、进展通报）；不填是「要动手」，立刻叫醒对方，只有主调度、主助理能发，别的身份会被拒绝、请改用 fyi 或用 team_tell 点对点。离线的会话跳过。返回逐个收件人的送达状态（已送达 / 等对方醒来及原因 / 对方不在线）。消息只做通知：编号加一句话，细节先写进 req_comment。发送方永远是当前会话。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in broadcastIn) (*mcp.CallToolResult, any, error) {
 			key, agent := t.caller(ctx, req)
 			if key == "" {
 				return nil, nil, fmt.Errorf("无法识别当前会话")
 			}
-			var out struct {
-				Message string `json:"message"`
-			}
-			body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "to_session": in.ToSession, "reply_to": in.ReplyTo, "agent_id": agent}
+			body := map[string]any{"session_key": key, "text": in.Text, "roles": in.Roles, "requirement": in.Requirement, "agent_id": agent}
 			dropEmpty(body)
 			if in.FYI {
 				body["fyi"] = true
 			}
-			if err := t.c.Do(ctx, "POST", "/agent/team/tell", body, &out); err != nil {
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/team/broadcast", body, &out); err != nil {
 				return nil, nil, err
 			}
 			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "team_sent", Description: "查你最近发的团队消息现在的送达状态（命令行 ks team sent [D-x]，R-249）：一次广播算一条，逐个收件人列出已送达（带时间）/ 等对方醒来（原因，如 Codex 要等用户下次发消息）/ 对方不在线。ref 填 D-x 只看那一条。只能查自己发的。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in sentIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			q := url.Values{"session_key": {key}}
+			if in.Ref != "" {
+				q.Set("ref", in.Ref)
+			}
+			if in.Limit > 0 {
+				q.Set("limit", fmt.Sprint(in.Limit))
+			}
+			var out struct {
+				Text string `json:"text"`
+			}
+			if err := t.c.Do(ctx, "GET", "/agent/team/sent?"+q.Encode(), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Text), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "req_comment", Description: "在需求下留言（命令行 ks req comment，R-249）：要讲细节时写在这里——方案、取舍、发现的问题、给接手的人的交代；消息（pm_notify）只放编号加一句话请对方来看。留言进需求时间线，和用户留言放在一起，署名是当前会话（身份 + 会话名），不能指定别的会话；req_get 默认带最新 3 条会话留言（full = true 给全部），用户在网页上看得到。订阅了这条需求的会话（含关联它的）会收到一句只告知的提醒，要别人立刻来看另用 team_tell。先结论再分条，600 字以内，超出照常保存并提示压缩；可附图（images）和表达块（blocks）。\n" + writing.BlocksGuide},
+		func(ctx context.Context, req *mcp.CallToolRequest, in commentIn) (*mcp.CallToolResult, any, error) {
+			key, agent := t.caller(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			body := map[string]any{"session_key": key, "text": in.Text, "agent_id": agent}
+			dropEmpty(body)
+			cache := map[string]string{}
+			ids, err := t.uploadCached(ctx, in.Images, cache)
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(ids) > 0 {
+				body["files"] = ids
+			}
+			if err := t.addBlocks(ctx, body, in.Blocks, cache); err != nil {
+				return nil, nil, err
+			}
+			var out struct {
+				Message       string   `json:"message"`
+				Hint          string   `json:"hint"`
+				BlockWarnings []string `json:"block_warnings"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/comments", body, &out); err != nil {
+				return nil, nil, err
+			}
+			msg := out.Message + blockWarnings(out.BlockWarnings)
+			if out.Hint != "" {
+				msg += "\n" + out.Hint
+			}
+			return text(msg), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "req_watch", Description: "订阅 / 退订一条需求（命令行 ks req watch R-x [--action-only] / ks req unwatch R-x，R-249）：需求有变动（状态、描述 / 验收标准修改、留言、证据、评审意见、关联决策作答）时收到一句话提醒，细节自己去 req_get 看。两档：要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）立刻叫醒；只告知的（别的状态变化、描述、留言、证据、评审通过）不叫醒、60 秒内合并成一条。关联或正在做的需求默认已订阅，off = true 可以退订，退订优先。自己引起的变动不通知自己。订阅者永远是当前会话。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in watchIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			body := map[string]any{"session_key": key}
+			switch {
+			case in.Off:
+				body["off"] = true
+			case in.Mode == "action":
+				body["mode"] = "action"
+			default:
+				body["mode"] = "all"
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/requirements/"+url.PathEscape(in.Ref)+"/watch", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "req_watching", Description: "列出当前会话订阅的需求（命令行 ks req watching，R-249）：显式订阅的、因关联而订阅的（写明「因关联而订阅」）、退订掉的；与 ks req watching 同一段输出。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, _ watchingIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Text string `json:"text"`
+			}
+			if err := t.c.Do(ctx, "GET", "/agent/watching?"+url.Values{"session_key": {key}}.Encode(), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Text), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "handoff_write", Description: "交接（R-224、R-245）：用户点了「交接」、要换会话 / 换工具 / 换设备接任你的身份时，写一份交接存进纸鸢（显示在你的会话时间线上）。只写纸鸢里没有的三栏，几行即可（三栏合计超过 300 字照常保存并提示压缩）：doing 做到一半的事、agreements 口头约定、caveats 注意事项。需求状态、待验收、待答决策、放行队列、合入 / 推送情况，新会话接任时纸鸢按身份自动列出，不必写；用户口头交代的临时安排先用 arrange_add 记成当前安排。新会话运行 ks role <身份> 时自动读到最新一份，你随即卸任：身份清除、不再被唤醒，之后不要再挂 ks wait。主调度有在跑的子任务时会被拒绝：先停派新活，等子任务交完再写。可以重复调用，覆盖还没被接任的那一份。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in handoffIn) (*mcp.CallToolResult, any, error) {
@@ -342,6 +490,33 @@ func (t *tools) registerTeam(s *mcp.Server) {
 				}
 			}
 			return text(b.String()), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "team_sessions", Description: "在线会话列表（命令行 ks team sessions，R-249）：本项目所有没结束的会话，每个带身份（没有写「无身份」）、工具（Claude Code / claude-x 等启动命令 / Codex 终端 / Codex App / DSH）、状态（待命 / 忙 / 在线 / 离线）、手上的需求、现在发消息能否立刻叫醒及原因。叫醒规则只看会话记录：Claude 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立刻叫醒；正在跑的这一轮结束后收到；Codex 没挂 wait 不能后台叫醒，等用户下次发消息；已结束或失联为离线。role 只看某个身份（none 只看无身份的），all_projects 列所有项目，all 也列已结束的。不同于 team（PM 的工人池）。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in sessionsIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" && !in.AllProjects {
+				return nil, nil, fmt.Errorf("无法识别当前会话；要看所有项目的会话填 all_projects = true")
+			}
+			q := url.Values{}
+			if key != "" {
+				q.Set("session_key", key)
+			}
+			if in.Role != "" {
+				q.Set("role", in.Role)
+			}
+			if in.AllProjects {
+				q.Set("all_projects", "true")
+			}
+			if in.All {
+				q.Set("all", "true")
+			}
+			var out struct {
+				Text string `json:"text"`
+			}
+			if err := t.c.Do(ctx, "GET", "/agent/team/sessions?"+q.Encode(), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Text), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_assign", Description: "PM 用：把需求交给本项目的某个 Dev 会话（to 填 team 里的 key，或 auto 由 Kitestring 挑人）。Dev 在待命时立刻开工，在忙则这一轮结束后收到；看板上显示由它负责。派的是草稿时等于顺带放行：必须写 reason，项目没打开「允许主调度 / 主助理放行草稿」时会被拒绝。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in assignIn) (*mcp.CallToolResult, any, error) {

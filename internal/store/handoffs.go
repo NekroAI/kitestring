@@ -158,7 +158,7 @@ func (s *Store) SetRetired(ctx context.Context, key string, retired bool) error 
 	return err
 }
 
-// QuietTellQuestion 是只告知的团队消息的标题（R-198、R-227）：它不唤醒 ks wait，也不清除待命超时。
+// QuietTellQuestion 是只告知的团队消息的标题（R-198、R-227），只作显示；是否只告知看 decisions.fyi 列（R-249，老数据按这个标题回填）。
 const QuietTellQuestion = "团队消息（不唤醒）"
 
 // DevIdleDefault 是开发会话待命超时的默认时长（R-229），项目设置里可调。

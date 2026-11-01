@@ -44,25 +44,25 @@ type Daemon struct {
 	kick    chan struct{}
 	proxy   *httputil.ReverseProxy
 
-	mu            sync.Mutex
-	connected     bool
-	devCfg        protocol.DeviceConfig
-	decisions     []protocol.Decision
-	sessions      map[string]*sessionInfo
-	toolUses      map[string]toolUse  // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
-	toolCond      *sync.Cond          // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
-	seeded        map[string][]string // 终端实例 → Hub 记着的会话键（重启后据此继续盯进程，R-204）
-	instances     map[string]string   // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
+	mu        sync.Mutex
+	connected bool
+	devCfg    protocol.DeviceConfig
+	decisions []protocol.Decision
+	sessions  map[string]*sessionInfo
+	toolUses  map[string]toolUse  // tool_use_id → 发起调用的会话（用于 MCP 调用识别会话）
+	toolCond  *sync.Cond          // 工具调用登记、决策下发时广播（MCP 识别会话、ks wait 都在等它）
+	seeded    map[string][]string // 终端实例 → Hub 记着的会话键（重启后据此继续盯进程，R-204）
+	instances map[string]string   // 终端实例 → 会话键（ks wait 用来认出自己属于哪个会话）
 	// dshInst：DSH Host 实例 → 它承载的全部会话（R-251）。一个 Host 同时开多个会话共用同一个“进程号@启动时间”，
 	// instances 一对一只记得最后一个；Host 崩溃时要按这里把每个会话都结束。只有 DSH 用，Claude / Codex 不走这里。
-	dshInst map[string]map[string]bool
-	latest        map[string]string   // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
-	staleWarn     map[string]bool     // 较早终端 → 是否已提醒过
-	waiting       map[string]int64    // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
-	roles         map[string]string   // 会话键 → 身份（Hub 下发，R-82）
-	customPrompts map[string]string   // 身份 → 用户改写后的提示词正文（Hub 下发，R-98）
-	stopBlocks    map[string]int      // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
-	heldReply     map[string]string   // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
+	dshInst       map[string]map[string]bool
+	latest        map[string]string // 会话键 → 最新终端（R-70）：同一对话在多个终端打开时，只有它领活
+	staleWarn     map[string]bool   // 较早终端 → 是否已提醒过
+	waiting       map[string]int64  // 会话键 → 当前挂起等待的序号（同一会话只保留最新一个）
+	roles         map[string]string // 会话键 → 身份（Hub 下发，R-82）
+	customPrompts map[string]string // 身份 → 用户改写后的提示词正文（Hub 下发，R-98）
+	stopBlocks    map[string]int    // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
+	heldReply     map[string]string // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
 	waitSeq       int64
 	tools         toolsState             // 各会话的 Kitestring 工具版本（R-59）
 	tasks         taskState              // 后台 shell 与子代理线索（R-162）
@@ -478,7 +478,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		d.rememberToolUse(ev.ToolUseID, toolUse{session: key, agent: ev.AgentID})
 	}
 	if name == "PreToolUse" && ev.ToolUseID != "" && isShellTool(ev.ToolName) {
-		if in, ok := p["tool_input"].(map[string]any); ok && strings.Contains(str(in, "command"), "team tell") {
+		if in, ok := p["tool_input"].(map[string]any); ok && (strings.Contains(str(in, "command"), "team tell") || strings.Contains(str(in, "command"), "team broadcast")) {
 			d.rememberToolUse(ev.ToolUseID, toolUse{session: key, agent: ev.AgentID, tell: true})
 		}
 	}
@@ -897,7 +897,7 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 			}
 		}
 		if dec.Replyable {
-			fmt.Fprintf(b, "  要回复就用 ks team tell --reply %s <回复>（或 pm_notify 的 reply_to），会自动送回发消息的一方。\n", dec.Code)
+			fmt.Fprintf(b, "  要回复就用 ks team tell --reply %s <回复>（或 team_tell / pm_notify 的 reply_to），会自动送回发消息的一方。\n", dec.Code)
 		}
 	case "assign", "review_task":
 		fmt.Fprintf(b, "- %s「%s」\n", dec.ReqCode, oneLine(dec.ReqTitle))

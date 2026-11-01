@@ -47,7 +47,7 @@ func TestReadyFromAdvisorGoesToPM(t *testing.T) {
 	}
 	park := func(id string, timeout string) chan daemon.WaitResult {
 		done := wait(id, timeout)
-		e.waitFor(id+" 挂起", func() bool { return e.session("claude:"+id).Parked })
+		e.waitFor(id+" 挂起", func() bool { return e.session("claude:" + id).Parked })
 		hook(t, "claude", map[string]any{"session_id": id, "cwd": cwd, "hook_event_name": "Stop"})
 		e.waitFor(id+" 待命", func() bool { return e.session("claude:"+id).State == store.StateParked })
 		return done

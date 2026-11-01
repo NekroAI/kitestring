@@ -8,6 +8,7 @@ import { latestEvidence, roundsOf } from '../lib/proofs'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Tip } from '../ui/base'
 import { Thumbs } from '../ui/attach'
+import { BlockList } from '../ui/blocks'
 import { Md } from '../ui/markdown'
 import { Item, List } from '../ui/motion'
 import { Linkify, RefChip } from '../ui/refmark'
@@ -465,6 +466,39 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
               </>
             }
           />
+        ),
+      })
+      continue
+    }
+    // 会话留言（R-249）：会话在需求下写的细节，和你的留言在同一条时间线；署名是身份胶囊 + 会话名（你的留言写「你」），
+    // 底色用中性的灰，与你的留言区分；留言本身不送达任何会话，所以没有送达状态
+    if (f.kind === 'comment') {
+      entries.push({
+        at,
+        key: f.id,
+        round: roundOf(at),
+        node: (
+          <Node tone={dot.base} now={now}>
+            <Bubble
+              cls="border border-line bg-sunken/60"
+              at={at}
+              now={now}
+              head={
+                <>
+                  <Who actor="agent" session={f.assigned_by} role={f.from_role} title={f.by_title} className="max-w-[16em]" />
+                  <span className="font-semibold text-fg-2">{t.proof.noted}</span>
+                </>
+              }
+            >
+              {f.answer && <Md text={f.answer} />}
+              {!!f.blocks?.length && <BlockList blocks={f.blocks} className="mt-1.5" />}
+              {!!f.answer_files?.length && (
+                <div className="mt-1.5">
+                  <Thumbs files={f.answer_files} size="sm" />
+                </div>
+              )}
+            </Bubble>
+          </Node>
         ),
       })
       continue

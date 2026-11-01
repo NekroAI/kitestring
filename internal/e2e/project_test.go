@@ -12,7 +12,9 @@ func TestProjectHideAndMerge(t *testing.T) {
 	a, b := t.TempDir(), t.TempDir() // 两个不在 git 里的目录：各自成为一个项目
 	hook(t, "claude", map[string]any{"session_id": "pm-a", "cwd": a, "hook_event_name": "UserPromptSubmit", "prompt": "x", "prompt_id": "p"})
 	hook(t, "claude", map[string]any{"session_id": "pm-b", "cwd": b, "hook_event_name": "UserPromptSubmit", "prompt": "x", "prompt_id": "p"})
-	e.waitFor("两个会话都归了项目", func() bool { return e.session("claude:pm-a").ProjectID != "" && e.session("claude:pm-b").ProjectID != "" })
+	e.waitFor("两个会话都归了项目", func() bool {
+		return e.session("claude:pm-a").ProjectID != "" && e.session("claude:pm-b").ProjectID != ""
+	})
 	pa, pb := e.session("claude:pm-a").ProjectID, e.session("claude:pm-b").ProjectID
 	if pa == pb {
 		t.Fatal("两个目录应是两个项目")

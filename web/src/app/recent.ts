@@ -22,6 +22,7 @@ export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): 
         const at = f.answered_at ?? f.created_at
         if (f.kind === 'assign') out.push({ at, code: r.code, text: t.projects.evAssign(r.code), dot: 'bg-accent' })
         else if (f.kind === 'note') out.push({ at, code: r.code, text: t.projects.evNote(r.code, f.answer ?? ''), dot: 'bg-accent' })
+        else if (f.kind === 'comment') out.push({ at, code: r.code, text: t.projects.evComment(r.code, f.answer ?? ''), dot: 'bg-line-strong' })
         else out.push({ at, code: r.code, text: t.projects.evRevise(r.code, f.answer ?? ''), dot: 'bg-reply' })
       }
       if (r.status === 'done') out.push({ at: r.updated_at, code: r.code, text: t.projects.evDone(r.code), dot: 'bg-run' })

@@ -358,6 +358,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/requirements/{ref}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 在需求下留言（R-249）：会话把细节写在这里，消息只放编号加一句话
+         * @description 留言进需求时间线，和用户留言放在一起、署名区分（身份 + 会话名）；req_get 读得到最新几条，用户在网页上看得到。留言记录本身不送达；订阅了这条需求的会话（含关联它的）收到一句只告知的提醒，要别人立刻来看另用 ks team tell 发一句话。署名永远是当前会话（session_key），不能指定别的会话。超过 600 字照常保存，返回里提示压缩。
+         */
+        post: operations["agent-comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/requirements/{ref}/commits": {
         parameters: {
             query?: never;
@@ -452,6 +472,26 @@ export interface paths {
         put?: never;
         /** Agent 申请改需求状态：用户在审批抽屉里批准后由纸鸢改（R-188） */
         post: operations["agent-request-status"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/requirements/{ref}/watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 订阅 / 退订一条需求（R-249 P4）：需求有变动时收到一句话提醒
+         * @description off = false 订阅（mode = action 只收要动手的：验收标准被改、评审不通过、关联决策被作答、被退回或设为受阻；默认 all 两档都收，只告知的不叫醒）；off = true 退订。关联这条需求、或正在做它的会话默认订阅，退订优先于这种默认订阅。自己引起的变动不通知自己。订阅者永远是当前会话（session_key）。
+         */
+        post: operations["agent-watch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -558,6 +598,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/team/broadcast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 项目内广播（R-249）：发给本项目没结束的会话，可按身份过滤，逐个收件人返回送达状态
+         * @description 范围：本项目没结束的会话（不含桌面应用的后台任务会话、不含你自己），roles 按身份过滤（逗号分隔，none 表示没身份的会话）。一次广播拆成每个收件人一条团队消息（D 号），共用 broadcast_id。fyi = true 是「只告知」，任何会话都能发；不填是「要动手」，只有主调度、主助理能发，别的身份发会被拒绝并提示改用 fyi。失联 / 已标完成的会话跳过，在 recipients 里标 offline。送达状态：delivered 已送达、pending_wake 等对方醒来（写明原因）、offline 对方不在线。消息只做通知，超过 120 字照常发送并提示压缩。
+         */
+        post: operations["agent-team-broadcast"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/team/need": {
         parameters: {
             query?: never;
@@ -592,6 +652,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/team/sent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查自己最近发的团队消息现在的送达状态（R-249，ks team sent / team_sent）
+         * @description 默认列你最近发的 10 条（一次广播算一条，逐个收件人列状态）；ref 填 D-x 只看那一条（广播的任意一行都会带出整次广播）。只能查自己发的。送达状态只从记录推：delivered 已送达（带时间）、pending_wake 等对方醒来（写明原因，如 Codex 要等用户下次发消息）、offline 对方已结束或失联。
+         */
+        get: operations["agent-team-sent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/team/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立刻叫醒
+         * @description 状态与能否叫醒只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立刻叫醒；正在跑的这一轮结束后收到；Codex 没挂 wait 不能后台叫醒，等用户下次发消息；已结束或失联为离线。
+         */
+        get: operations["agent-team-sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/team/tell": {
         parameters: {
             query?: never;
@@ -603,9 +703,26 @@ export interface paths {
         put?: never;
         /**
          * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
-         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）。按身份发给本项目现在没结束的那个会话；评审、顾问有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 等对方醒来（写明原因，如 Codex 要等用户下次发消息）、offline 对方不在线；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。
          */
         post: operations["agent-tell-pm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/watching": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出当前会话订阅的需求（R-249 P4）：显式订阅的、因关联而订阅的、退订掉的 */
+        get: operations["agent-watching"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -792,6 +909,43 @@ export interface paths {
         get: operations["get-cache-holds"];
         /** 保存各来源的缓存保留时长；没填的来源拿不到档位就不显示缓存余温（R-207） */
         put: operations["put-cache-holds"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 通讯页（R-249）：项目里的在线会话、会话之间的消息与广播、送达状态（只读）
+         * @description messages 是 [since, until) 之间的消息，新的在前，含纸鸢自动发的提醒（system = true）；一次广播合成一条，recipients 逐个列送达状态。waiting 是还在等对方醒来的消息（不论多久），offline 是发给已结束 / 失联会话、永远送不到的消息。sessions 带今天（day_start 起）收发几条。
+         */
+        get: operations["get-comms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/comms/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 所有项目里还在等对方醒来的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算 */
+        get: operations["get-comms-pending"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2038,6 +2192,22 @@ export interface components {
             session_key?: string;
             summary: string;
         };
+        "Agent-team-broadcastRequest": {
+            /** @description 发广播的子任务的 agent_id；主线程发时为空 */
+            agent_id?: string;
+            /** @description 只告知：不唤醒对方挂着的 ks wait。任何会话都能发；要动手的广播（不填）只有主调度、主助理能发 */
+            fyi?: boolean;
+            /** @description 相关需求编号（如 R-12） */
+            requirement?: string;
+            /** @description 只发给这些身份：逗号分隔（如 dev,reviewer），认中文名和别称；none 表示没身份的会话。不填发给全体 */
+            roles?: string;
+            /** @description session_key 是用 --session 自报的（自动识别不到当前会话时，R-248） */
+            session_claimed?: boolean;
+            /** @description 调用者（发送方） */
+            session_key: string;
+            /** @description 要说的话：编号加一句话 */
+            text: string;
+        };
         "Agent-tell-pmRequest": {
             /** @description 发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上 */
             agent_id?: string;
@@ -2053,9 +2223,9 @@ export interface components {
             session_key: string;
             /** @description 要说的话 */
             text: string;
-            /** @description 收件身份：pm（默认）、aide、reviewer、advisor；也认中文名（主调度 / 主助理 / 评审 / 顾问）。回复时不填 */
+            /** @description 收件身份：pm（默认）、aide、reviewer、advisor、dev；也认中文名（主调度 / 主助理 / 评审 / 顾问 / 开发）；也可填会话键（tool:id），等同 to_session。回复时不填 */
             to?: string;
-            /** @description 指定收件会话键（tool:id）：必须是本项目没结束、有身份的会话；与 to 同时填时身份要对得上。本项目有多个顾问 / 评审时用它点名；不填则发给该身份最近活跃的一个（R-248） */
+            /** @description 指定收件会话键（tool:id）：本项目没结束的会话，没有身份的也行（R-249）；与 to（身份）同时填时身份要对得上。本项目有多个顾问 / 评审 / 开发时用它点名；不填则发给该身份最近活跃的一个（R-248） */
             to_session?: string;
         };
         "Agent-update-planRequest": {
@@ -2090,6 +2260,19 @@ export interface components {
         "Agent-wait-checkRequest": {
             /** @description 对话记录里最新的一段回复；不传时用上一轮结束时的最后回复 */
             text?: string;
+        };
+        "Agent-watchRequest": {
+            /**
+             * @description all（默认）两档都收；action 只收要动手的
+             * @enum {string}
+             */
+            mode?: "all" | "action" | "";
+            /** @description true = 退订 */
+            off?: boolean;
+            /** @description session_key 是调用方用 --session 自报的（自动识别不到当前会话时，R-248） */
+            session_claimed?: boolean;
+            /** @description 订阅的会话（调用者） */
+            session_key: string;
         };
         "Agent-withdraw-decisionRequest": {
             /** @description 撤回原因 */
@@ -2516,6 +2699,25 @@ export interface components {
             hint?: string;
             ok: boolean;
         };
+        BroadcastOutBody: {
+            /** @description 这次广播的 ID：拆给每个收件人的各行共用 */
+            broadcast_id?: string;
+            /** @description 拆出的各行消息编号（D-x） */
+            codes: string[] | null;
+            message: string;
+            /** @description 逐个收件人的送达状态，含跳过的离线会话 */
+            recipients: components["schemas"]["Delivery"][] | null;
+            /**
+             * Format: int64
+             * @description 送出的收件人数
+             */
+            sent: number;
+            /**
+             * Format: int64
+             * @description 跳过的离线会话数
+             */
+            skipped: number;
+        };
         CIState: {
             /** Format: date-time */
             at: string;
@@ -2611,6 +2813,31 @@ export interface components {
             /** @description 附言里的图片 ID（先上传到 /api/files） */
             files?: string[] | null;
         };
+        CommentInBody: {
+            /** @description 留言的子任务（一次性子代理）的 agent_id；会话主线程为空 */
+            agent_id?: string;
+            /** @description 表达块（R-97），同证据：checklist / compare / figure / flow / metrics / scope / options / table；不合法的块丢掉并在 block_warnings 里说明，留言照常保存 */
+            blocks?: unknown[] | null;
+            /** @description 附图 ID（先上传到 /api/agent/files） */
+            files?: string[] | null;
+            /** @description session_key 是调用方用 --session 自报的（自动识别不到当前会话时，R-248）：hub 校验它是没结束、属于某个项目的会话 */
+            session_claimed?: boolean;
+            /** @description 留言的会话（调用者） */
+            session_key: string;
+            /** @description 留言正文：先结论，再分条写细节 */
+            text?: string;
+        };
+        CommentOutBody: {
+            /** @description 没有保存的块及原因（其余内容已保存） */
+            block_warnings?: string[] | null;
+            /** @description 这条留言的编号（D-x） */
+            code: string;
+            /** @description 字数提示：超过 600 字时照常保存，提示压缩 */
+            hint?: string;
+            message: string;
+            /** @description 留言所在的需求编号 */
+            requirement: string;
+        };
         Commit: {
             /** Format: date-time */
             at: string;
@@ -2633,6 +2860,132 @@ export interface components {
             sha: string;
             /** @description 提交标题（本地还没采集到这个提交时显示用） */
             subject?: string;
+        };
+        CommsMsg: {
+            broadcast: boolean;
+            /** @description 消息编号（D-x）；广播是第一行的编号 */
+            code: string;
+            /** @description 广播拆出的各行编号 */
+            codes: string[] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description 发送方；纸鸢提醒为空 */
+            from?: components["schemas"]["CommsPeer"];
+            /** @description 原文 */
+            full: string;
+            /** @description 只告知；否则要动手 */
+            fyi: boolean;
+            /** @description 收件人与各自的送达状态 */
+            recipients: components["schemas"]["Delivery"][] | null;
+            /** @description 回复的是哪条（D-x） */
+            reply_to?: string;
+            requirement?: string;
+            requirement_title?: string;
+            /** @description 纸鸢自动发的订阅 / 状态提醒（没有发送方） */
+            system: boolean;
+            /** @description 纸鸢提醒的类别，如「交验收」「用户改需求状态」 */
+            system_label?: string;
+            /** @description 正文：去掉了发送方、需求编号这类前缀 */
+            text: string;
+        };
+        CommsOutBody: {
+            /** @description 时间范围内的消息，新的在前（含纸鸢提醒） */
+            messages: components["schemas"]["CommsMsg"][] | null;
+            /** @description 没送到、对方已结束或失联的消息，新的在前 */
+            offline: components["schemas"]["CommsMsg"][] | null;
+            project_id: string;
+            project_name: string;
+            /** @description 待命 → 忙 → 在线 → 离线 */
+            sessions: components["schemas"]["CommsSession"][] | null;
+            /**
+             * Format: int64
+             * @description 今天的会话消息条数（一次广播算一条，不含纸鸢提醒）
+             */
+            today: number;
+            /**
+             * Format: int64
+             * @description 今天的广播次数
+             */
+            today_broadcasts: number;
+            /**
+             * Format: int64
+             * @description 今天的纸鸢提醒条数
+             */
+            today_system: number;
+            /** @description 时间范围内的消息超过上限，只列了最近的 */
+            truncated: boolean;
+            /** @description 还在等对方醒来的消息（不论等了多久），新的在前 */
+            waiting: components["schemas"]["CommsMsg"][] | null;
+        };
+        CommsPeer: {
+            /** @description 发消息的子任务 agent_id；会话主线程发的为空 */
+            agent?: string;
+            /** @description 子任务的名字 */
+            agent_name?: string;
+            /** @description 会话已结束、失联或被标为已完成 */
+            ended?: boolean;
+            key: string;
+            /** @description 身份；空为无身份 */
+            role: string;
+            title: string;
+            /** @description 所用工具：Claude Code / claude-x / Codex 终端 / Codex App / DSH */
+            tool?: string;
+        };
+        CommsPendingOutBody: {
+            /**
+             * Format: int64
+             * @description 所有项目里还在等对方醒来的消息数（导航上的数字；一次广播算一条）
+             */
+            count: number;
+        };
+        CommsSession: {
+            client: string;
+            device: string;
+            /** @description 所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH */
+            harness: string;
+            /**
+             * Format: int64
+             * @description 今天收到的会话消息（不含纸鸢提醒）
+             */
+            in: number;
+            key: string;
+            last_active_at: string;
+            /** @description 就是调用者自己 */
+            me?: boolean;
+            /** @description 手上的需求：待开始、进行中、受阻 */
+            open: components["schemas"]["RequirementRef"][] | null;
+            /**
+             * Format: int64
+             * @description 今天发出的会话消息（一次广播算一条）
+             */
+            out: number;
+            project: string;
+            /** @description 身份；空为无身份 */
+            role: string;
+            /** @description 身份中文名；无身份写「无身份」 */
+            role_name: string;
+            /**
+             * @description standby 待命；busy 忙；online 在线（没挂 ks wait）；offline 离线
+             * @enum {string}
+             */
+            status: "standby" | "busy" | "online" | "offline";
+            status_label: string;
+            title: string;
+            tool: string;
+            /**
+             * Format: int64
+             * @description 发给它、还在等它醒来的消息数
+             */
+            waiting: number;
+            /**
+             * Format: date-time
+             * @description 最早那条的发送时间
+             */
+            waiting_since?: string;
+            /** @description 现在发消息能不能立刻叫醒它 */
+            wake_now: boolean;
+            /** @description 能 / 不能立刻叫醒的原因 */
+            wake_why: string;
         };
         "Create-deviceRequest": {
             name: string;
@@ -2662,6 +3015,8 @@ export interface components {
             approval: boolean;
             assigned_by?: string;
             blocks?: components["schemas"]["Block"][] | null;
+            /** @description 团队消息（R-249）：一次广播拆成每个收件人一行，同一次广播共用这个 ID */
+            broadcast_id?: string;
             /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话 */
             by_title?: string;
             choices?: number[] | null;
@@ -2682,11 +3037,13 @@ export interface components {
             from_decision?: string;
             /** @description 团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份 */
             from_role?: string;
+            /** @description 团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait */
+            fyi?: boolean;
             /** @enum {string} */
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -2769,6 +3126,8 @@ export interface components {
             /** @description 没有保存的块及原因；决策本身已提出 */
             block_warnings?: string[] | null;
             blocks?: components["schemas"]["Block"][] | null;
+            /** @description 团队消息（R-249）：一次广播拆成每个收件人一行，同一次广播共用这个 ID */
+            broadcast_id?: string;
             /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话 */
             by_title?: string;
             choices?: number[] | null;
@@ -2789,11 +3148,13 @@ export interface components {
             from_decision?: string;
             /** @description 团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份 */
             from_role?: string;
+            /** @description 团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait */
+            fyi?: boolean;
             /** @enum {string} */
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
@@ -2853,6 +3214,28 @@ export interface components {
         };
         "Delete-pushRequest": {
             ref: string;
+        };
+        Delivery: {
+            /** @description 这一行消息的编号（D-x）；广播跳过的离线会话没有 */
+            code?: string;
+            /** Format: date-time */
+            delivered_at?: string;
+            /** @description 送达状态的原因：已送达时间、等什么、为什么离线 */
+            reason: string;
+            /** @description 收件会话的身份；空为无身份 */
+            role?: string;
+            /**
+             * @description delivered 已送达；pending_wake 等对方醒来；offline 对方不在线
+             * @enum {string}
+             */
+            status: "delivered" | "pending_wake" | "offline";
+            status_label: string;
+            /** @description 收件会话标题 */
+            title?: string;
+            /** @description 收件会话键 */
+            to: string;
+            /** @description 收件会话所用工具：Claude Code / claude-x / Codex 终端 / Codex App / DSH */
+            tool: string;
         };
         Device: {
             /** Format: date-time */
@@ -4257,6 +4640,67 @@ export interface components {
             /** @description aide / advisor / reviewer / pm / dev */
             role: string;
         };
+        RosterEntry: {
+            client: string;
+            device: string;
+            /** @description 所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH */
+            harness: string;
+            key: string;
+            last_active_at: string;
+            /** @description 就是调用者自己 */
+            me?: boolean;
+            /** @description 手上的需求：待开始、进行中、受阻 */
+            open: components["schemas"]["RequirementRef"][] | null;
+            project: string;
+            /** @description 身份；空为无身份 */
+            role: string;
+            /** @description 身份中文名；无身份写「无身份」 */
+            role_name: string;
+            /**
+             * @description standby 待命；busy 忙；online 在线（没挂 ks wait）；offline 离线
+             * @enum {string}
+             */
+            status: "standby" | "busy" | "online" | "offline";
+            status_label: string;
+            title: string;
+            tool: string;
+            /** @description 现在发消息能不能立刻叫醒它 */
+            wake_now: boolean;
+            /** @description 能 / 不能立刻叫醒的原因 */
+            wake_why: string;
+        };
+        RosterOutBody: {
+            all_projects: boolean;
+            /**
+             * Format: int64
+             * @description 带上已结束的会话时，超出上限没列出的更早的会话数
+             */
+            omitted: number;
+            project_id?: string;
+            project_name?: string;
+            /** @description 待命 → 忙 → 在线 → 离线，同状态最近活跃的在前 */
+            sessions: components["schemas"]["RosterEntry"][] | null;
+            /** @description 给 Agent 读的列表（ks team sessions 与 team_sessions 输出同一段） */
+            text: string;
+        };
+        SentMsg: {
+            broadcast: boolean;
+            broadcast_id?: string;
+            /** @description 消息编号；广播是第一行的编号 */
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            fyi: boolean;
+            recipients: components["schemas"]["Delivery"][] | null;
+            requirement?: string;
+            text: string;
+        };
+        SentOutBody: {
+            /** @description 你最近发的团队消息，最近的在前；一次广播算一条 */
+            messages: components["schemas"]["SentMsg"][] | null;
+            /** @description 给 Agent 读的几行字（ks team sent 与 team_sent 输出同一段） */
+            text: string;
+        };
         Session: {
             activity: number[] | null;
             background: boolean;
@@ -4582,6 +5026,8 @@ export interface components {
             code?: string;
             delivered: boolean;
             message: string;
+            /** @description 逐个收件人的送达状态：delivered 已送达 / pending_wake 等对方醒来（带原因）/ offline 对方不在线 */
+            recipients: components["schemas"]["Delivery"][] | null;
             /** @description 收到的会话的身份：pm / aide / reviewer；回复时是提问方的身份（可能为空） */
             role?: string;
             /** @description 收到的会话键 */
@@ -4657,6 +5103,47 @@ export interface components {
             pending: number;
             /** @description 会话已被接任卸任（R-224、R-229）：ks wait 输出 hint 后直接返回，不再等待 */
             retired?: boolean;
+        };
+        Watch: {
+            /** @description 需求编号 R-x */
+            code: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** @description 因关联这条需求而订阅（没有显式订阅过） */
+            implicit: boolean;
+            /** @description 会话关联了这条需求 */
+            linked: boolean;
+            /**
+             * @description all 两档都收；action 只收「要动手」的
+             * @enum {string}
+             */
+            mode: "all" | "action";
+            /** @description 已退订 */
+            off?: boolean;
+            requirement_id: string;
+            session_key: string;
+            /** @description 需求现在的状态 */
+            status: string;
+            title: string;
+        };
+        WatchOutBody: {
+            /** @description 会话关联了这条需求（不显式订阅也会因关联而订阅） */
+            linked: boolean;
+            message: string;
+            /**
+             * @description all 两档都收；action 只收要动手的
+             * @enum {string}
+             */
+            mode: "all" | "action";
+            /** @description 现在是否订阅着 */
+            watching: boolean;
+        };
+        WatchingOutBody: {
+            /** @description 已退订的 */
+            off: components["schemas"]["Watch"][] | null;
+            /** @description 写给会话读的一段：订阅了哪些需求、哪些是因关联而订阅、退订了哪些 */
+            text: string;
+            watching: components["schemas"]["Watch"][] | null;
         };
         WeComConfig: {
             webhook: string;
@@ -5502,6 +5989,41 @@ export interface operations {
             };
         };
     };
+    "agent-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-get-requirement-commits": {
         parameters: {
             query?: never;
@@ -5695,6 +6217,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusRequestOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-watchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchOutBody"];
                 };
             };
             /** @description Error */
@@ -5915,6 +6472,39 @@ export interface operations {
             };
         };
     };
+    "agent-team-broadcast": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-team-broadcastRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-need-devs": {
         parameters: {
             query?: never;
@@ -5981,6 +6571,80 @@ export interface operations {
             };
         };
     };
+    "agent-team-sent": {
+        parameters: {
+            query: {
+                /** @description 调用者（发送方） */
+                session_key: string;
+                /** @description 只看这一条（D-x） */
+                ref?: string;
+                /** @description 最多列几条（一次广播算一条），默认 10、最多 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SentOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-team-sessions": {
+        parameters: {
+            query?: {
+                /** @description 调用者会话键；不跨项目时用它定项目 */
+                session_key?: string;
+                /** @description 只看某个身份（aide / advisor / reviewer / pm / dev，也认中文名和别称）；none 只看无身份的会话 */
+                role?: string;
+                /** @description 列所有项目的会话 */
+                all_projects?: boolean;
+                /** @description 也列已结束的会话（最近活跃的 50 个） */
+                all?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-tell-pm": {
         parameters: {
             query?: never;
@@ -6001,6 +6665,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TellOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-watching": {
+        parameters: {
+            query: {
+                session_key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchingOutBody"];
                 };
             };
             /** @description Error */
@@ -6444,6 +7139,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CacheHoldsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-comms": {
+        parameters: {
+            query: {
+                project_id: string;
+                /** @description 开始时间（RFC3339），不填为 24 小时前 */
+                since?: string;
+                /** @description 结束时间（RFC3339），不填为现在 */
+                until?: string;
+                /** @description 今天从几点算（浏览器本地零点，RFC3339），不填为 24 小时前 */
+                day_start?: string;
+                /** @description 左栏也列已结束的会话（最近 50 个） */
+                ended?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-comms-pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommsPendingOutBody"];
                 };
             };
             /** @description Error */

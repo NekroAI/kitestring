@@ -505,6 +505,19 @@ CREATE TABLE IF NOT EXISTS away_events (
 );
 CREATE INDEX IF NOT EXISTS away_events_away ON away_events(away_id, at);
 
+-- 订阅需求（R-249 P4）：会话 watch 某条需求，有变动时收到一句话提醒。
+-- 实际订阅者 = 这里 off = 0 的行 ∪ 关联这条需求（requirement_sessions）且没结束的会话（隐式订阅，不写行），再去掉 off = 1 的行：
+-- 显式退订优先于隐式订阅。mode = all 两档都收；action 只收「要动手」那一档。
+CREATE TABLE IF NOT EXISTS req_watches (
+	requirement_id TEXT NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+	session_key    TEXT NOT NULL,
+	mode           TEXT NOT NULL DEFAULT 'all', -- all | action
+	off            INTEGER NOT NULL DEFAULT 0,  -- 1 = 退订（含退掉因关联而来的隐式订阅）
+	created_at     TEXT NOT NULL,
+	PRIMARY KEY (requirement_id, session_key)
+);
+CREATE INDEX IF NOT EXISTS req_watches_session ON req_watches(session_key);
+
 -- 当前安排（R-245）：用户口头交代的临时安排（如「额度紧，做完这几条就停」「这次可以 push」），落成项目上的一条短记录，
 -- 接任的会话从这里读到，不靠交接转述。by_session 为空表示用户在网页上加的；状态（生效中 / 已到期 / 已撤销）按 expires_at、revoked_at 推算，不删除，留痕
 CREATE TABLE IF NOT EXISTS arrangements (

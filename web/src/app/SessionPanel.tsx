@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
+import { ArrowLeftRight, ChevronDown, ChevronRight, Copy, MonitorDot, Plus, RefreshCw, Send, Unlink } from 'lucide-react'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router'
 import type { HubEvent, Session } from '../api/client'
 import { useDecisions, useRequirements, useSessionDetail } from '../api/queries'
 import { t } from '../i18n'
@@ -208,6 +209,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
     return extra.length ? [...events, ...extra].sort((a, b) => (b.time ?? '').localeCompare(a.time ?? '')) : events
   }, [events, handoffs, sessionKey])
   const requestHandoff = useRequestHandoff()
+  const navigate = useNavigate()
   const lastAt = events.reduce((m, e) => (e.time && e.time > m ? e.time : m), '')
   const reqRow = (r: Session['requirements'][number]) => (
     <div key={r.id} className="flex items-center gap-2 px-3 py-2">
@@ -236,13 +238,22 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
       onClose={onClose}
       wide
       actions={
-        s &&
-        canHandoff(s) && (
-          <Tip content={t.menu.handoffHint}>
-            <Button size="sm" variant="ghost" icon={<HandoffIcon className="size-3.5" />} onClick={() => void requestHandoff(s)}>
-              {t.handoff.action}
-            </Button>
-          </Tip>
+        s && (
+          <>
+            {/* 通讯页入口（R-249）：面板里不列往来消息，只放这一个入口 */}
+            {s.project_id && (
+              <Button size="sm" variant="ghost" icon={<ArrowLeftRight className="size-3.5" />} onClick={() => navigate(`/comms?project=${encodeURIComponent(s.project_id ?? "")}&session=${encodeURIComponent(s.key)}`)}>
+                {t.comms.open}
+              </Button>
+            )}
+            {canHandoff(s) && (
+              <Tip content={t.menu.handoffHint}>
+                <Button size="sm" variant="ghost" icon={<HandoffIcon className="size-3.5" />} onClick={() => void requestHandoff(s)}>
+                  {t.handoff.action}
+                </Button>
+              </Tip>
+            )}
+          </>
         )
       }
       title={

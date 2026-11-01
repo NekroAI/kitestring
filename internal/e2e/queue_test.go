@@ -25,7 +25,9 @@ func TestQueueDispatch(t *testing.T) {
 		}
 		return hook(t, "claude", p)
 	}
-	prompt := func(turn string) string { return ev("UserPromptSubmit", map[string]any{"prompt": "继续", "prompt_id": turn}) }
+	prompt := func(turn string) string {
+		return ev("UserPromptSubmit", map[string]any{"prompt": "继续", "prompt_id": turn})
+	}
 	prompt("p0")
 	c := client.New(10 * time.Second)
 	create := func(title, prio string) store.Requirement {

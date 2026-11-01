@@ -13,6 +13,7 @@ import (
 
 	"github.com/NekroAI/kitestring/internal/client"
 	"github.com/NekroAI/kitestring/internal/roles"
+	"github.com/NekroAI/kitestring/internal/writing"
 )
 
 // runRole：ks role <身份>——声明当前会话的身份（R-82、R-190）。标识、中文名、英文简写和别称都认：
@@ -202,16 +203,24 @@ func runTeam(args []string) error {
 	duration := fs.String("duration", "", "recommend：预计用多久")
 	minutes := fs.Int("minutes", 0, "recommend：批准时限（分钟），默认用设置里的（30）")
 	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
-	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）| advisor（顾问）；也认中文名和别称")
+	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）| advisor（顾问）| dev（开发），也认中文名和别称；也可直接填会话键 tool:id（没有身份的会话也行）")
 	reply := fs.String("reply", "", "tell：回复收到的团队消息（填它的编号 D-x），回复会送回发消息的一方")
-	fyi := fs.Bool("fyi", false, "tell：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、派活、回复），立刻叫醒。部署 / 重启、进展通报用 --fyi")
+	role := fs.String("role", "", "sessions：只看某个身份（aide / advisor / reviewer / pm / dev，也认中文名和别称）；none 只看无身份的会话。broadcast：只发给这些身份，逗号分隔（如 dev,reviewer）")
+	allProjects := fs.Bool("all-projects", false, "sessions：列所有项目的会话（不只本项目）")
+	all := fs.Bool("all", false, "sessions：也列已结束的会话（最近活跃的 50 个）")
+	asJSON := fs.Bool("json", false, "sessions / tell / broadcast / sent：输出原始 JSON")
+	fyi := fs.Bool("fyi", false, "tell / broadcast：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、派活、回复），立刻叫醒。部署 / 重启、进展通报用 --fyi")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	tell := fs.NArg() > 0 && fs.Arg(0) == "tell"
+	broadcast := fs.NArg() > 0 && fs.Arg(0) == "broadcast"
+	sent := fs.NArg() > 0 && fs.Arg(0) == "sent"
 	key, agent := *session, ""
 	claimed := false
-	if tell {
+	if tell || broadcast || sent {
+		// 发送方只认识别到的当前会话（R-248）；查自己发过的消息也一样，不能看别的会话的
+
 		dk, da := currentTeller()
 		var err error
 		if key, agent, claimed, err = resolveTellSender(*session, dk, da); err != nil {
@@ -219,6 +228,13 @@ func runTeam(args []string) error {
 		}
 	} else {
 		key = currentSession(key)
+	}
+	if fs.NArg() > 0 && fs.Arg(0) == "sessions" {
+		// ks team sessions [--role ..] [--all-projects] [--all]：在线会话列表（R-249），与 MCP team_sessions 同一接口、同一段输出
+		if key == "" && !*allProjects {
+			return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定；要看所有项目的会话加 --all-projects")
+		}
+		return runTeamSessions(key, *role, *allProjects, *all, *asJSON)
 	}
 	if key == "" {
 		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
@@ -249,12 +265,40 @@ func runTeam(args []string) error {
 		}
 		return agentCall("POST", "/agent/team/need", map[string]any{"session_key": key, "count": n, "reason": *reason})
 	}
+	if broadcast {
+		// ks team broadcast <文字> [--role dev,reviewer] [--req R-x] [--fyi]：项目内广播（R-249），与 MCP team_broadcast 同一接口
+		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
+		if text == "" {
+			return fmt.Errorf("用法：ks team broadcast <要说的话> [--role dev,reviewer] [--req R-x] [--fyi]\n「要动手」的广播只有主调度、主助理能发；只是告知加 --fyi（任何会话都能发）。消息只做通知：编号加一句话（%d 字以内），细节先写进 ks req comment", writing.MessageMax)
+		}
+		body := map[string]any{"session_key": key, "text": text}
+		for k, v := range map[string]string{"requirement": *req, "roles": *role, "agent_id": agent} {
+			if v != "" {
+				body[k] = v
+			}
+		}
+		if *fyi {
+			body["fyi"] = true
+		}
+		if claimed {
+			body["session_claimed"] = true
+		}
+		return printMessage("POST", "/agent/team/broadcast", body, *asJSON)
+	}
+	if sent {
+		// ks team sent [D-x]：查自己最近发的团队消息现在的送达状态（R-249），与 MCP team_sent 同一段输出
+		q := url.Values{"session_key": {key}}
+		if fs.NArg() > 1 {
+			q.Set("ref", fs.Arg(1))
+		}
+		return printText("/agent/team/sent?"+q.Encode(), *asJSON)
+	}
 	if tell {
 		// ks team tell <文字> [--to aide|pm|reviewer] [--reply D-x] [--req R-x]：按身份给本项目的团队成员发消息，
 		// 或回复收到的团队消息；只送给 Agent、不进用户收件箱（R-135 / R-191）
 		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
 		if text == "" {
-			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer|advisor] [--req R-x]\n      ks team tell --reply D-x <回复>")
+			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer|advisor] [--req R-x]\n      ks team tell --reply D-x <回复>\n消息只做通知：编号加一句话（%d 字以内），细节先写进 ks req comment", writing.MessageMax)
 		}
 		body := map[string]any{"session_key": key, "text": text}
 		for k, v := range map[string]string{"requirement": *req, "to": *to, "to_session": *toSession, "reply_to": *reply, "agent_id": agent} {
@@ -268,9 +312,79 @@ func runTeam(args []string) error {
 		if claimed {
 			body["session_claimed"] = true
 		}
-		return agentCall("POST", "/agent/team/tell", body)
+		return printMessage("POST", "/agent/team/tell", body, *asJSON)
 	}
 	return agentCall("GET", "/agent/team?"+url.Values{"session_key": {key}}.Encode(), nil)
+}
+
+// printMessage 调用接口并打印返回里的 message（ks team tell / broadcast：与 MCP 同一段文字，含逐个收件人的送达状态）；asJSON 打印原始结果。
+func printMessage(method, path string, body any, asJSON bool) error {
+	if asJSON {
+		return agentCall(method, path, body)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var out struct {
+		Message string `json:"message"`
+	}
+	if err := client.New(20*time.Second).Do(ctx, method, path, body, &out); err != nil {
+		return err
+	}
+	fmt.Println(out.Message)
+	return nil
+}
+
+// printText 调用 GET 接口并打印返回里的 text；asJSON 打印原始结果。
+func printText(path string, asJSON bool) error {
+	if asJSON {
+		return agentCall("GET", path, nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var out struct {
+		Text string `json:"text"`
+	}
+	if err := client.New(20*time.Second).Do(ctx, "GET", path, nil, &out); err != nil {
+		return err
+	}
+	fmt.Println(out.Text)
+	return nil
+}
+
+// teamSessionsPath 是在线会话列表的接口地址（ks team sessions 与 MCP team_sessions 共用参数）。
+func teamSessionsPath(key, role string, allProjects, all bool) string {
+	q := url.Values{}
+	if key != "" {
+		q.Set("session_key", key)
+	}
+	if role != "" {
+		q.Set("role", role)
+	}
+	if allProjects {
+		q.Set("all_projects", "true")
+	}
+	if all {
+		q.Set("all", "true")
+	}
+	return "/agent/team/sessions?" + q.Encode()
+}
+
+// runTeamSessions 打印在线会话列表：默认打印 hub 写好的那段文字（与 MCP team_sessions 相同），--json 打印原始结果。
+func runTeamSessions(key, role string, allProjects, all, asJSON bool) error {
+	path := teamSessionsPath(key, role, allProjects, all)
+	if asJSON {
+		return agentCall("GET", path, nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var out struct {
+		Text string `json:"text"`
+	}
+	if err := client.New(20*time.Second).Do(ctx, "GET", path, nil, &out); err != nil {
+		return err
+	}
+	fmt.Println(out.Text)
+	return nil
 }
 
 // runAwayReport：ks away status —— 用户是否暂时离开、离开多久、主助理处理几件、推送几条；

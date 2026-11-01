@@ -125,3 +125,9 @@ func fillRecOption(db *sql.DB) error {
 	}
 	return nil
 }
+
+// fillTellFYI：老的「只告知」团队消息只靠标题 QuietTellQuestion 区分（R-198、R-227），补上 fyi 列时按标题回填一次（R-249）。
+func fillTellFYI(db *sql.DB) error {
+	_, err := db.Exec(`UPDATE decisions SET fyi = 1 WHERE kind = ? AND question = ?`, KindTell, QuietTellQuestion)
+	return err
+}

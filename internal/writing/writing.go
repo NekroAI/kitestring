@@ -17,6 +17,10 @@ const (
 	QuestionMax = 60
 	// DecisionContextMax 是决策说明（context）的字数上限。
 	DecisionContextMax = 400
+	// CommentMax 是一条需求留言（R-249）的字数上限：细节写在留言里，但也要先结论、分条。
+	CommentMax = 600
+	// MessageMax 是一条团队消息（ks team tell / pm_notify，R-249）的字数上限：消息只做通知，放编号加一句话。
+	MessageMax = 120
 	// HandoffMax 是交接三栏（做到一半的事、口头约定、注意事项）合计的字数上限（R-245）：纸鸢里有的不必写，几行即可。
 	HandoffMax = 300
 )
@@ -60,6 +64,22 @@ func DecisionHint(question, context string) string {
 		tips = append(tips, fmt.Sprintf("说明 %d 字，超过 %d 字：按“结论 / 依据 / 细节”压缩，要决策的点拆成单独的决策", n, DecisionContextMax))
 	}
 	return hint(tips)
+}
+
+// CommentHint 检查需求留言（R-249）；不超标时返回空串。
+func CommentHint(text string) string {
+	if n := Count(text); n > CommentMax {
+		return hint([]string{fmt.Sprintf("留言 %d 字，超过 %d 字：先写结论，再分条写要点；截图、清单放进 blocks，内容多就拆成几条留言", n, CommentMax)})
+	}
+	return ""
+}
+
+// MessageHint 检查团队消息（R-249）；不超标时返回空串。消息照常发送。
+func MessageHint(text string) string {
+	if n := Count(text); n > MessageMax {
+		return fmt.Sprintf("已发送。字数提示：消息 %d 字，超过 %d 字：细节写到 ks req comment（MCP 用 req_comment），消息只放编号加一句话。", n, MessageMax)
+	}
+	return ""
 }
 
 // HandoffHint 检查交接三栏的总字数（R-245）；不超标时返回空串。

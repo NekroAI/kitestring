@@ -203,6 +203,10 @@ func (h *Hub) note(ctx context.Context, ref, comment string, fileIDs []string) (
 	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 		h.pushDecisions(ctx, x.DeviceID)
 	}
+	// 订阅了这条需求的会话（R-249 P4）：收到这条留言的会话不重复送
+	ctx = withTold(ctx)
+	markTold(ctx, r.ID, d.SessionKey)
+	h.reqEvent(ctx, r, evComment, "", "用户留言 "+d.Code)
 	h.broker.publish("requirements", "decisions", "sessions")
 	return d, nil
 }

@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { RefIndexProvider } from '../ui/refmark'
-import { FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, WifiOff } from 'lucide-react'
-import { useLiveUpdates } from '../api/queries'
+import { ArrowLeftRight, FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, WifiOff } from 'lucide-react'
+import { useCommsPending, useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow, usePref } from '../lib/util'
 import { Tip } from '../ui/base'
@@ -25,6 +25,7 @@ const nav = [
   { to: '/', label: t.nav.home, icon: LayoutDashboard, end: true, keys: 'G H' },
   { to: '/projects', label: t.nav.projects, icon: FolderKanban, keys: 'G P' },
   { to: '/requirements', label: t.nav.requirements, icon: ListTodo, keys: 'G R' },
+  { to: '/comms', label: t.nav.comms, icon: ArrowLeftRight, keys: 'G C' },
   { to: '/settings', label: t.nav.settings, icon: Settings2, keys: 'G S' },
 ]
 
@@ -42,13 +43,20 @@ export function Logo({ className }: { className?: string }) {
   )
 }
 
-function Count({ n }: { n: number }) {
+function Count({ n, tone = 'seal' }: { n: number; tone?: 'seal' | 'wait' }) {
   if (!n) return null
-  return <span key={n} className="pop flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-seal px-1 text-[11px] leading-none font-semibold text-seal-fg tabular">{n > 99 ? '99+' : n}</span>
+  return <span key={n} className={cx('pop flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] leading-none font-semibold tabular', tone === 'wait' ? 'bg-wait text-white dark:text-bg' : 'bg-seal text-seal-fg')}>{n > 99 ? '99+' : n}</span>
+}
+
+// 通讯旁的黄色数字（R-249）：还在等对方醒来的消息。只是提示，不进「要你处理」，所以用黄色而不是朱砂
+function navCount(to: string, todo: number, unsent: number): { n: number; tone: 'seal' | 'wait'; tip?: string } {
+  if (to === '/') return { n: todo, tone: 'seal' }
+  if (to === '/comms') return { n: unsent, tone: 'wait', tip: unsent ? t.nav.commsTip(unsent) : undefined }
+  return { n: 0, tone: 'seal' }
 }
 
 // 侧边栏可折叠成图标栏（R-18）：⌘\ 或底部按钮切换，记在本机。折叠后名称在悬停提示里。
-function Sidebar({ todo, connected, collapsed, onToggle }: { todo: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
+function Sidebar({ todo, unsent, connected, collapsed, onToggle }: { todo: number; unsent: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
   const wb = useWorkbench()
   const now = useNow()
   const { openPalette } = useCommand()
@@ -81,8 +89,10 @@ function Sidebar({ todo, connected, collapsed, onToggle }: { todo: number; conne
         </button>
       </Tip>
       <nav className="space-y-0.5">
-        {nav.map((n) => (
-          <Tip key={n.to} side="right" content={c ? withKey(n.label, n.keys) : null}>
+        {nav.map((n) => {
+          const k = navCount(n.to, todo, unsent)
+          return (
+          <Tip key={n.to} side="right" content={c ? withKey(k.tip ? `${n.label} · ${k.tip}` : n.label, n.keys) : null}>
             {/* 外面包一层：Tip 的 asChild 会把 NavLink 的函数 className 拼成字符串 */}
             <div>
               <NavLink
@@ -94,11 +104,12 @@ function Sidebar({ todo, connected, collapsed, onToggle }: { todo: number; conne
               >
                 <n.icon className="size-[18px] shrink-0" />
                 {!c && <span className="flex-1">{n.label}</span>}
-                {n.to === '/' && (c ? todo > 0 && <span className="absolute top-1.5 right-2 size-2 rounded-full bg-seal" /> : <Count n={todo} />)}
+                {c ? k.n > 0 && <span className={cx('absolute top-1.5 right-2 size-2 rounded-full', k.tone === 'wait' ? 'bg-wait' : 'bg-seal')} /> : <Count n={k.n} tone={k.tone} />}
               </NavLink>
             </div>
           </Tip>
-        ))}
+          )
+        })}
       </nav>
 
       {!c && <div className="mt-8 px-2.5 text-xs font-medium whitespace-nowrap text-fg-3">{t.settings.sections.devices}</div>}
@@ -140,19 +151,17 @@ function Sidebar({ todo, connected, collapsed, onToggle }: { todo: number; conne
   )
 }
 
-function TabBar({ todo }: { todo: number }) {
+function TabBar({ todo, unsent }: { todo: number; unsent: number }) {
   return (
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-md grid-cols-4">
+      <div className="mx-auto grid max-w-md grid-cols-5">
         {nav.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} viewTransition className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive ? 'text-accent' : 'text-fg-3')}>
             <span className="relative">
               <n.icon className="size-[22px]" strokeWidth={1.8} />
-              {n.to === '/' && (
-                <span className="absolute -top-1.5 -right-2.5">
-                  <Count n={todo} />
-                </span>
-              )}
+              <span className="absolute -top-1.5 -right-2.5">
+                <Count n={navCount(n.to, todo, unsent).n} tone={navCount(n.to, todo, unsent).tone} />
+              </span>
             </span>
             {n.label}
           </NavLink>
@@ -191,6 +200,7 @@ export function Shell() {
   useCompactSync() // 上下文圆环 / 建议压缩用设置里的阈值（R-224、R-225）
   const wb = useWorkbench()
   const todo = useTodo(wb).length // 与工作台「待你处理」同一口径
+  const unsent = useCommsPending().data ?? 0
   const { session, req, plan, ask, close } = usePanelParams()
   // 在等你的计划（待批准、待阶段验收）一律在审批抽屉里处理（R-177）：?plan= 打开它时落到审批抽屉
   const plans = usePlans()
@@ -218,7 +228,7 @@ export function Shell() {
     <RefIndexProvider>
     <CommandProvider>
     <div className="min-h-dvh">
-      <Sidebar todo={todo} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      <Sidebar todo={todo} unsent={unsent} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
       <main className={cx('pb-24 transition-[padding] duration-200 ease-out', pathname === '/' ? 'lg:pb-5' : 'lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
         {/* 工作台是一屏驾驶舱，用满任意宽度（R-170，去掉原来 1880px 的上限）、需求池盘面随屏幕一直放宽到 3600px（R-133，2K / 4K / 21:9 用满），其余页面保持 1360px 的阅读宽度 */}
@@ -227,7 +237,7 @@ export function Shell() {
           <Outlet />
         </div>
       </main>
-      <TabBar todo={todo} />
+      <TabBar todo={todo} unsent={unsent} />
       <SessionPanel sessionKey={session} onClose={close} />
       <ReqPanel refId={req} onClose={close} />
       <PlanPanel code={planAsk ? null : plan} onClose={close} />

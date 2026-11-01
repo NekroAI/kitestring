@@ -197,6 +197,10 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 	if before.Status == after.Status || after.ProjectID == "" {
 		return
 	}
+	// 订阅了这条需求的会话（R-249 P4）：在下面这些通知之后送，已经被告知的（含 skip 里的）不重复送
+	ctx = withTold(ctx)
+	markTold(ctx, after.ID, skip...)
+	defer h.reqStatusEvent(ctx, after, before.Status, "")
 	text := fmt.Sprintf("用户把 %s「%s」从%s改为%s。", after.Code, brief(after.Title, 40), reqStatusZh[before.Status], reqStatusZh[after.Status])
 	h.awayUser(ctx, "status", after.ProjectID, after.Code, after.Title, userStatusZh(before.Status, after.Status)) // 离开期间你在哪台设备上处理的（R-210）
 	told := slices.Clone(skip)

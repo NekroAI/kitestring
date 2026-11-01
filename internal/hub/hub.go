@@ -93,37 +93,39 @@ type Hub struct {
 	ai       aiGuard
 	filesDir string
 
-	mu       sync.Mutex
-	conns    map[string]*deviceConn // deviceID → 连接
-	lostTmr  map[string]*time.Timer
-	notified map[string]time.Time   // 通知去重键 → 上次发送时间
-	kicks    map[string]*time.Timer // 会话 → 待送达的整批需求（攒几秒再送，R-66）
-	dirty    map[string]bool        // 待推送最新数据的会话（R-56，300ms 内合并）
-	dirtyTmr *time.Timer
-	orphans  map[string]deviceOrphans            // deviceID → daemon 上报的孤儿 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
-	stops    map[string]chan protocol.StopResult // 停止请求 → 等 daemon 回结果
-	gits     map[string]chan protocol.GitResult  // 合入 / 部署查询（R-245）→ 等 daemon 回结果
-	deploy   string                              // 正在运行的 ks 的构建提交（version.Commit；测试可改）
-	lanes    *laneState                          // 泳道时间线（R-205）
+	mu          sync.Mutex
+	conns       map[string]*deviceConn // deviceID → 连接
+	lostTmr     map[string]*time.Timer
+	notified    map[string]time.Time   // 通知去重键 → 上次发送时间
+	kicks       map[string]*time.Timer // 会话 → 待送达的整批需求（攒几秒再送，R-66）
+	dirty       map[string]bool        // 待推送最新数据的会话（R-56，300ms 内合并）
+	dirtyTmr    *time.Timer
+	orphans     map[string]deviceOrphans            // deviceID → daemon 上报的孤儿 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
+	stops       map[string]chan protocol.StopResult // 停止请求 → 等 daemon 回结果
+	gits        map[string]chan protocol.GitResult  // 合入 / 部署查询（R-245）→ 等 daemon 回结果
+	deploy      string                              // 正在运行的 ks 的构建提交（version.Commit；测试可改）
+	lanes       *laneState                          // 泳道时间线（R-205）
+	watchMerges map[string]*watchMerge              // 需求|会话 → 60 秒内可并入的只告知订阅提醒（R-249 P4，只在内存里）
 }
 
 // New 创建 Hub。
 func New(st *store.Store, log *slog.Logger) *Hub {
 	h := &Hub{
-		store:    st,
-		log:      log,
-		broker:   newBroker(),
-		logins:   newLoginLimiter(),
-		conns:    map[string]*deviceConn{},
-		lostTmr:  map[string]*time.Timer{},
-		notified: map[string]time.Time{},
-		kicks:    map[string]*time.Timer{},
-		dirty:    map[string]bool{},
-		orphans:  map[string]deviceOrphans{},
-		stops:    map[string]chan protocol.StopResult{},
-		gits:     map[string]chan protocol.GitResult{},
-		deploy:   version.Commit,
-		lanes:    newLaneState(),
+		store:       st,
+		log:         log,
+		broker:      newBroker(),
+		logins:      newLoginLimiter(),
+		conns:       map[string]*deviceConn{},
+		lostTmr:     map[string]*time.Timer{},
+		notified:    map[string]time.Time{},
+		kicks:       map[string]*time.Timer{},
+		dirty:       map[string]bool{},
+		orphans:     map[string]deviceOrphans{},
+		stops:       map[string]chan protocol.StopResult{},
+		gits:        map[string]chan protocol.GitResult{},
+		deploy:      version.Commit,
+		lanes:       newLaneState(),
+		watchMerges: map[string]*watchMerge{},
 	}
 	if st != nil {
 		st.OnRequestVoided = h.onStatusRequestVoided // 改状态申请因状态被改动而作废，送回申请方（R-188）
@@ -411,7 +413,7 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 			continue
 		}
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: proxyText(d), Delivered: d.Status == store.DecDelivered,
-			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: d.Kind == store.KindTell && d.Question == quietTellQ,
+			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: d.Kind == store.KindTell && d.FYI,
 			Replyable: d.Kind == store.KindTell && d.AssignedBy != ""}
 		if d.Kind == store.KindFeedback {
 			pd.Advice = d.Context
@@ -508,7 +510,7 @@ func (h *Hub) decisionsChanged(ctx context.Context, d store.Decision) {
 	if d.SessionKey == "" {
 		return
 	}
-	if d.Question != quietTellQ {
+	if !(d.Kind == store.KindTell && d.FYI) {
 		h.clearIdle(ctx, d.SessionKey) // 点名给它的（派活、答复、指名消息）照常叫醒，同时恢复待命超时的开发（R-229）
 	}
 	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {

@@ -175,6 +175,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"requirements", "blocked_reason", "TEXT NOT NULL DEFAULT ''"},
 	// 进行中停滞（R-243）：进行中的需求多久没动静、也没有会话在跑，就进「要你处理」；0 按默认 2 小时
 	{"projects", "stall_minutes", "INTEGER NOT NULL DEFAULT 0"},
+	// 会话通信（R-249）：团队消息「只告知」改用明确的列（老数据按标题回填）；一次广播拆成每个收件人一行，用 broadcast_id 归组
+	{"decisions", "fyi", "INTEGER NOT NULL DEFAULT 0"},
+	{"decisions", "broadcast_id", "TEXT NOT NULL DEFAULT ''"},
 	// 交接三栏（R-245）：做到一半的事沿用 doing；口头约定、注意事项是新的两栏。旧的 waiting / rules / next / notes 仍保留，老交接照样显示
 	{"handoffs", "agreements", "TEXT NOT NULL DEFAULT ''"},
 	{"handoffs", "caveats", "TEXT NOT NULL DEFAULT ''"},
@@ -185,6 +188,7 @@ var columnFills = map[string]func(*sql.DB) error{
 	"sessions.wait_kind":   fillWaitKind,
 	"decisions.verdict":    fillVerdict,
 	"decisions.rec_option": fillRecOption,
+	"decisions.fyi":        fillTellFYI,
 }
 
 // sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。
