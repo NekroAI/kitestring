@@ -18,13 +18,14 @@ func parkWaitOn(t *testing.T, e *env, c *client.Client, key, on string) chan dae
 	if on == "" {
 		return parkWait(t, e, c, key)
 	}
+	prev := e.session(key).ParkedUntil
 	done := make(chan daemon.WaitResult, 1)
 	go func() {
 		var res daemon.WaitResult
 		_ = c.Do(context.Background(), "GET", "/wait?session_key="+key+"&timeout=20s&on="+on, nil, &res)
 		done <- res
 	}()
-	e.waitFor(key+" 挂起", func() bool { return len(done) > 0 || e.session(key).Parked })
+	waitParked(e, key, prev, done)
 	return done
 }
 

@@ -543,7 +543,7 @@ func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 		if !ok {
 			continue
 		}
-		ev := protocol.Event{ID: protocol.NewID(), Time: now.UTC(), Tool: tool, Name: protocol.EventTasks, SessionID: sid, Tasks: r.tasks}
+		ev := protocol.Event{ID: eventID(), Time: now.UTC(), Tool: tool, Name: protocol.EventTasks, SessionID: sid, Tasks: r.tasks}
 		if err := d.q.pushEvent(ev); err != nil {
 			d.log.Warn("上报后台任务失败", "err", err)
 			continue

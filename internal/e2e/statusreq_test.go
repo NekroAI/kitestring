@@ -30,6 +30,9 @@ func TestStatusRequest(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:adv", "role": "advisor"}, nil); err != nil {
 		t.Fatal(err)
 	}
+	// 顾问第一次挂 ks wait、项目又没有主助理时，Hub 会发一次身份调整提示（R-190）。先收掉它，
+	// 否则它可能晚到一点、没赶上第一次唤醒，下一次等待就被它叫醒，而不是被要验证的答复叫醒。
+	woke(t, parkWait(t, e, c, "claude:adv"), "身份调整")
 	newReq := func(title string) store.Requirement {
 		t.Helper()
 		var r store.Requirement

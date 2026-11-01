@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	_ "modernc.org/sqlite"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -43,6 +45,15 @@ func openQueue(path string) (*queue, error) {
 }
 
 func (q *queue) close() error { return q.db.Close() }
+
+// eventEntropy：同一毫秒内单调递增的随机源。上送队列按 ID 排序，Hub 又按事件时间丢弃乱序的旧事件；
+// protocol.NewID 每次取全新随机数，同一毫秒生成的两个 ID 先后随机，会把先发生的事件排到后面（R-108）。
+var eventEntropy = &ulid.LockedMonotonicReader{MonotonicReader: ulid.Monotonic(rand.Reader, 0)}
+
+// eventID 是上送事件的 ID：按生成先后严格递增（同一进程内），并发安全。
+func eventID() string {
+	return ulid.MustNew(ulid.Timestamp(time.Now()), eventEntropy).String()
+}
 
 func (q *queue) pushEvent(ev protocol.Event) error {
 	b, _ := json.Marshal(ev)

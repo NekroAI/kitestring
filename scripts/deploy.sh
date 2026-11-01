@@ -236,8 +236,9 @@ STEP="清理旧备份"
 prune_backups() {
   local pattern="$1" f
   [ -d "$BACKUP_DIR" ] || return 0
-  # shellcheck disable=SC2010
   # 一份都没有时 grep 不匹配会以 1 退出，pipefail 下会让部署中断（例如第一次部署插件副本时还没有 dsh-plugin-*）
+  # 备份文件名由本脚本生成（名字 + 时间戳），没有特殊字符，用 ls 列名即可
+  # shellcheck disable=SC2010,SC2012
   ls -1 "$BACKUP_DIR" | { grep -E "$pattern" || true; } | sort -r | tail -n +"$((KS_KEEP_BACKUPS + 1))" | while IFS= read -r f; do
     if [ "$DRY" = 1 ]; then
       log "[dry-run] 删除旧备份 $BACKUP_DIR/$f"

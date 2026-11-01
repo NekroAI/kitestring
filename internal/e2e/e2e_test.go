@@ -109,7 +109,7 @@ func (e *env) call(method, path string, in, out any) {
 
 func (e *env) waitFor(what string, cond func() bool) {
 	e.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(10 * time.Second) // CI 机器忙时 5 秒偶尔不够；条件满足即返回，只拖慢失败的情形
 	for time.Now().Before(deadline) {
 		if cond() {
 			return
@@ -125,7 +125,24 @@ func hook(t *testing.T, tool string, payload map[string]any) string {
 	b, _ := json.Marshal(payload)
 	var out bytes.Buffer
 	hookcli.Run([]string{tool, payload["hook_event_name"].(string)}, bytes.NewReader(b), &out)
+	flushed()
 	return out.String()
+}
+
+// flushed 等 daemon 把事件上送、Hub 处理完（Hub 处理后才 ack，ack 后出队），最多等 3 秒。
+// 真实使用里 hook 总比之后的接口调用早很久到 Hub；测试里紧接着就调接口，事件可能还在队列里，
+// 例如会话还没入库就建需求，关联落空（Linux 上的 CI 偶发失败多是这一类）。daemon 不在或没连上 Hub 时直接返回。
+func flushed() {
+	c := client.New(time.Second)
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		var st map[string]any
+		if err := c.Do(context.Background(), "GET", "/status", nil, &st); err != nil || st["connected"] != true {
+			return
+		}
+		if n, _ := st["queue"].(float64); n == 0 {
+			return
+		}
+	}
 }
 
 func (e *env) session(key string) store.Session {

@@ -61,6 +61,8 @@ func TestParkedSurvivesTurnOrder(t *testing.T) {
 	// 你在终端里直接插话：ks wait 仍在后台跑，结束这一轮后照样待命
 	prompt("pm-1", "p2", "顺便看看这个")
 	tool("pm-1")
+	// hook 事件经 daemon 队列异步上送，先等这句插话到 Hub 再查
+	e.waitFor("插话入库", func() bool { return e.session("claude:pm-1").LastPrompt == "顺便看看这个" })
 	if s := e.session("claude:pm-1"); !s.Parked || s.Presence() != "standby" {
 		t.Fatalf("ks wait 仍在后台，应保留挂起、显示待命：parked=%v presence=%s", s.Parked, s.Presence())
 	}

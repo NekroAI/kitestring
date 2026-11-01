@@ -386,7 +386,10 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 	if ev.Name == "Stop" {
 		// 常驻会话的 Stop 可能在宽限期里等了一会儿 ks wait 登记；这期间上报的 KsWait 时间更晚，
 		// Stop 若仍用收到时的时间，到了 Hub 会被当成乱序的旧事件丢掉，状态停在“运行中”（R-108）。
+		// ID 也要重取：上送队列按 ID（ULID，按生成时刻）排序，沿用收到时的 ID 会排在 KsWait 前面先发，
+		// 到了 Hub 反倒是 KsWait 成了“更早的旧事件”被丢掉，挂着 ks wait 却显示等你回复。
 		ev.Time = time.Now().UTC()
+		ev.ID = eventID()
 	}
 	ev.Tools = d.toolsForEvent(protocol.SessionKey(ev.Tool, ev.SessionID))
 	if err := d.q.pushEvent(ev); err != nil {
@@ -442,7 +445,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	}
 	key := protocol.SessionKey(req.Tool, sid)
 	ev := protocol.Event{
-		ID: protocol.NewID(), Time: time.Now().UTC(), Tool: req.Tool, Name: name, SessionID: sid,
+		ID: eventID(), Time: time.Now().UTC(), Tool: req.Tool, Name: name, SessionID: sid,
 		Cwd: str(p, "cwd"), Model: str(p, "model"), Source: str(p, "source"), Reason: str(p, "reason"),
 		ToolName: str(p, "tool_name"), ToolUseID: str(p, "tool_use_id"), NotifType: str(p, "notification_type"),
 		PermMode: str(p, "permission_mode"), AgentType: str(p, "agent_type"), AgentID: str(p, "agent_id"),

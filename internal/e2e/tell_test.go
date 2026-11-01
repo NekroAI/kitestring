@@ -15,14 +15,29 @@ import (
 // parkWait 让会话挂上 ks wait，返回结果通道。
 func parkWait(t *testing.T, e *env, c *client.Client, key string) chan daemon.WaitResult {
 	t.Helper()
+	prev := e.session(key).ParkedUntil
 	done := make(chan daemon.WaitResult, 1)
 	go func() {
 		var res daemon.WaitResult
 		_ = c.Do(context.Background(), "GET", "/wait?session_key="+key+"&timeout=20s", nil, &res)
 		done <- res
 	}()
-	e.waitFor(key+" 挂起", func() bool { return len(done) > 0 || e.session(key).Parked }) // 已有消息时会立刻返回
+	waitParked(e, key, prev, done) // 已有消息时会立刻返回
 	return done
+}
+
+// waitParked 等 Hub 记下这一次新的 ks wait（或它已经返回）。只看 Parked 不够：上一次等待刚被唤醒时，
+// 结束等待的事件还在 daemon 上送队列里，Hub 上 Parked 仍是 true，这时就当成已挂上，
+// 新等待带的 --on 还没生效，紧接着的事件会按旧订阅送进来（10-24 CI 上 TestWaitSubscribe 偶发失败即此）。
+// 每次等待的 parked_until 都不同，以它变了为准。
+func waitParked(e *env, key string, prev *time.Time, done chan daemon.WaitResult) {
+	e.waitFor(key+" 挂起", func() bool {
+		if len(done) > 0 {
+			return true
+		}
+		s := e.session(key)
+		return s.Parked && s.ParkedUntil != nil && (prev == nil || !s.ParkedUntil.Equal(*prev))
+	})
 }
 
 func woke(t *testing.T, done chan daemon.WaitResult, want ...string) string {

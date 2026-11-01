@@ -93,8 +93,10 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	d.waiting[key] = my
 	delete(d.stopBlocks, key) // 已按要求挂上，不再算连续拦下
 	d.toolCond.Broadcast()    // 让同一会话较早的等待退出
-	d.mu.Unlock()
+	// 在锁里入队：Stop 的宽限期（stopGuard）一看到挂上就放行并重新打时间戳、取新 ID，
+	// 这样 KsWait 一定先入队、时间更早，Hub 不会把它当成乱序的旧事件丢掉（R-108）。
 	d.reportWait(tool, sid, protocol.EventWait, "", &until, waitOn(q.Get("on")))
+	d.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
@@ -162,7 +164,7 @@ func (d *Daemon) hasFreshLocked(key string) bool {
 // reportWait 把等待开始 / 结束作为合成事件上报，Hub 据此显示“挂起等你”。
 // waitOn 是 ks wait 开始时随事件上报的订阅（R-164）；不认识的值当作没给（沿用上次）。
 func (d *Daemon) reportWait(tool, sid, name, reason string, until *time.Time, waitOn string) {
-	ev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: tool, Name: name, SessionID: sid, Reason: reason, Until: until, WaitOn: waitOn}
+	ev := protocol.Event{ID: eventID(), Time: time.Now().UTC(), Tool: tool, Name: name, SessionID: sid, Reason: reason, Until: until, WaitOn: waitOn}
 	if err := d.q.pushEvent(ev); err != nil {
 		d.log.Warn("上报挂起等待失败", "err", err)
 	}
@@ -257,7 +259,7 @@ func (d *Daemon) checkInstances(alive func(string) bool) {
 			if !ok {
 				continue
 			}
-			ev := protocol.Event{ID: protocol.NewID(), Time: time.Now().UTC(), Tool: tool, Name: "SessionEnd", SessionID: sid, Reason: "process_gone", Instance: inst}
+			ev := protocol.Event{ID: eventID(), Time: time.Now().UTC(), Tool: tool, Name: "SessionEnd", SessionID: sid, Reason: "process_gone", Instance: inst}
 			if err := d.q.pushEvent(ev); err != nil {
 				d.log.Warn("补发会话结束失败", "err", err)
 				continue

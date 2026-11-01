@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,10 +100,15 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	}
 
 	// 1. 点对点发给顾问：顾问挂着后台 ks wait，马上被叫醒；返回逐个收件人的送达状态
+	// 设身份时留下的通知先收掉；顾问第一次挂 ks wait 时 Hub 还会补发一次身份调整提示（R-190），
+	// 它是挂上之后才生成的，可能晚到，所以一直收到它为止，免得它在后面把顾问叫醒。
 	advWait := parkWait(t, e, c, "claude:adv")
-	for i := 0; i < 5 && len(advWait) > 0; i++ { // 设身份时留下的通知先收掉
-		<-advWait
+	for i := 0; i < 5; i++ {
+		got := woke(t, advWait)
 		advWait = parkWait(t, e, c, "claude:adv")
+		if strings.Contains(got, "身份调整") {
+			break
+		}
 	}
 	hook(t, "claude", map[string]any{"session_id": "adv", "cwd": cwd, "hook_event_name": "Stop"})
 	e.waitFor("顾问待命", func() bool { return e.session("claude:adv").State == store.StateParked })
@@ -141,9 +147,13 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	if !strings.Contains(out, cxCode+" 点对点 · 要动手") || !strings.Contains(out, "无身份会话 codex:cx") || !strings.Contains(out, "等对方醒来——Codex 不能后台叫醒") {
 		t.Fatalf("ks team sent 应显示等对方醒来：\n%s", out)
 	}
-	if got := hook(t, "codex", map[string]any{"session_id": "cx", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "继续", "turn_id": "t1"}); !strings.Contains(got, "帮忙跑一下 Codex") {
-		t.Fatalf("用户下次发消息时应注入：%s", got)
-	}
+	// Hub 建好消息后异步推给 daemon，用户这次发消息时 daemon 可能还没收到：重试到注入出现为止
+	turn := 0
+	e.waitFor("用户下次发消息时注入", func() bool {
+		turn++
+		got := hook(t, "codex", map[string]any{"session_id": "cx", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "继续", "turn_id": fmt.Sprintf("t1-%d", turn)})
+		return strings.Contains(got, "帮忙跑一下 Codex")
+	})
 	e.waitFor("Codex 已送达", func() bool {
 		var s sentRes
 		_ = c.Do(ctx, "GET", "/agent/team/sent?session_key=claude:pm&ref="+cxCode, nil, &s)

@@ -27,6 +27,14 @@ jobs:
       - name: 前端类型检查与构建
         working-directory: web
         run: pnpm build
+      - name: 前端单测与类型检查
+        working-directory: web
+        run: |
+          pnpm test
+          pnpm exec tsc --noEmit
+      - name: DSH 插件测试
+        working-directory: dsh-plugin
+        run: node --test test/*.test.js
       - name: OpenAPI 契约与前端类型一致
         run: |
           go run ./cmd/ks hub openapi > web/openapi.json
