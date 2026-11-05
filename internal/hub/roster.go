@@ -17,7 +17,7 @@ import (
 )
 
 // 在线会话列表（R-249 P2）：ks team sessions / MCP team_sessions。
-// 列本项目（或所有项目）的会话：身份、所用工具、待命 / 忙 / 在线 / 离线、手上的需求、能否立刻叫醒及原因。
+// 列本项目（或所有项目）的会话：身份、所用工具、待命 / 忙 / 在线 / 离线、手上的需求、能否立即送达及原因。
 // 全部从会话记录推（原则第 11 条）：状态用 store.Session.Availability，能否叫醒用 wakeAbility。
 // 这两个函数之后的点对点消息、广播的送达状态（P3）会直接复用：wakeAbility 的 now 为真即「已送达 / 马上叫醒」，
 // 为假时 why 就是要写给发送方的「等对方下次醒来 / 对方不在线」原因。
@@ -29,12 +29,12 @@ const rosterLimit = 50
 var availLabel = map[string]string{store.AvailStandby: "待命", store.AvailBusy: "运行中", store.AvailOnline: "空闲", store.AvailOffline: "已结束"}
 var availRank = map[string]int{store.AvailStandby: 0, store.AvailBusy: 1, store.AvailOnline: 2, store.AvailOffline: 3}
 
-// wakeAbility 判断现在发给会话 x 的消息能不能立刻叫醒它，why 是一句给发送方看的原因。
+// wakeAbility 判断现在发给会话 x 的消息能否立即送达，why 是一句给发送方看的原因。
 // 只看会话记录：状态、是否挂着 ks wait（Parked / ParkedUntil）、工具（tool）、是否已被接任（RetiredAt）。
 //   - 已结束 / 失联：离线，不能叫醒；
 //   - 已被接任卸任：不再挂 ks wait、不再被唤醒；
 //   - 正在跑（含等授权、在问用户、后台任务）：这一轮结束后收到；
-//   - Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 没过 ParkedUntil、DSH 插件待命：能立刻叫醒；
+//   - Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 没过 ParkedUntil、DSH 插件待命：能立即送达；
 //   - 一轮结束没挂 ks wait：等用户下次发消息；Codex 写明它不能后台叫醒。
 func wakeAbility(x store.Session) (now bool, why string) { return wakeAbilityAt(x, time.Now()) }
 
@@ -101,8 +101,8 @@ type RosterEntry struct {
 	Project      string                 `json:"project"`
 	Status       string                 `json:"status" enum:"standby,busy,online,offline" doc:"standby 待命；busy 运行中；online 空闲（没挂 ks wait）；offline 已结束（含失联）"`
 	StatusLabel  string                 `json:"status_label"`
-	WakeNow      bool                   `json:"wake_now" doc:"现在发消息能不能立刻叫醒它"`
-	WakeWhy      string                 `json:"wake_why" doc:"能 / 不能立刻叫醒的原因"`
+	WakeNow      bool                   `json:"wake_now" doc:"现在发消息能否立即送达"`
+	WakeWhy      string                 `json:"wake_why" doc:"能 / 不能立即送达的原因"`
 	Open         []store.RequirementRef `json:"open" doc:"手上的需求：待开始、进行中、受阻"`
 	Me           bool                   `json:"me,omitempty" doc:"就是调用者自己"`
 	LastActiveAt string                 `json:"last_active_at"`
@@ -242,9 +242,9 @@ func rosterText(out *rosterOut, role string, withEnded bool) string {
 		}
 		fmt.Fprintf(&sb, " · %s · ", e.StatusLabel)
 		if e.WakeNow {
-			sb.WriteString("能立刻叫醒：" + e.WakeWhy)
+			sb.WriteString("能立即送达：" + e.WakeWhy)
 		} else {
-			sb.WriteString("不能立刻叫醒：" + e.WakeWhy)
+			sb.WriteString("不能立即送达：" + e.WakeWhy)
 		}
 		if len(e.Open) == 0 {
 			sb.WriteString(" · 手上没有需求")
@@ -272,8 +272,8 @@ type rosterIn struct {
 
 func (h *Hub) registerAgentRoster(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-team-sessions", Method: http.MethodGet, Path: "/api/agent/team/sessions", Tags: []string{"agent"},
-		Summary:     "在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立刻叫醒",
-		Description: "状态与能否叫醒只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立刻叫醒；正在跑的这一轮结束后收到；Codex 没挂 wait 不能后台叫醒，等用户下次发消息；已结束或失联为离线。"},
+		Summary:     "在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立即送达",
+		Description: "状态与能否立即送达只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。"},
 		func(ctx context.Context, in *rosterIn) (*rosterOut, error) {
 			return h.roster(ctx, in.SessionKey, in.Role, in.AllProjects, in.All)
 		})

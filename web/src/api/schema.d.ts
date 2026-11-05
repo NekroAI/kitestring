@@ -680,8 +680,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立刻叫醒
-         * @description 状态与能否叫醒只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立刻叫醒；正在跑的这一轮结束后收到；Codex 没挂 wait 不能后台叫醒，等用户下次发消息；已结束或失联为离线。
+         * 在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立即送达
+         * @description 状态与能否立即送达只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。
          */
         get: operations["agent-team-sessions"];
         put?: never;
@@ -1870,7 +1870,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢叫醒它的消息、纸鸢动作、工具汇总、回复；附对象索引 */
+        /** 会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢送达的消息、纸鸢动作、工具汇总、回复；附对象索引 */
         get: operations["session-turns"];
         put?: never;
         post?: never;
@@ -3010,7 +3010,7 @@ export interface components {
             tool: string;
             /**
              * Format: int64
-             * @description 发给它、还在等它醒来的消息数
+             * @description 发给该会话、待送达的消息数
              */
             waiting: number;
             /**
@@ -3018,9 +3018,9 @@ export interface components {
              * @description 最早那条的发送时间
              */
             waiting_since?: string;
-            /** @description 现在发消息能不能立刻叫醒它 */
+            /** @description 现在发消息能否立即送达 */
             wake_now: boolean;
-            /** @description 能 / 不能立刻叫醒的原因 */
+            /** @description 能 / 不能立即送达的原因 */
             wake_why: string;
         };
         "Create-deviceRequest": {
@@ -4807,9 +4807,9 @@ export interface components {
             status_label: string;
             title: string;
             tool: string;
-            /** @description 现在发消息能不能立刻叫醒它 */
+            /** @description 现在发消息能否立即送达 */
             wake_now: boolean;
-            /** @description 能 / 不能立刻叫醒的原因 */
+            /** @description 能 / 不能立即送达的原因 */
             wake_why: string;
         };
         RosterOutBody: {
@@ -5293,7 +5293,7 @@ export interface components {
             inbox: components["schemas"]["TurnItem"][] | null;
             /** @description 这一轮里纸鸢的动作，时间正序 */
             items: components["schemas"]["TurnItem"][] | null;
-            /** @description 你在终端说的话（截断）；纸鸢叫醒时为空 */
+            /** @description 你在终端说的话（截断）；纸鸢送达的消息开启的一轮为空 */
             prompt?: string;
             prompt_id?: string;
             /** @description 它在这一轮最后的回复（Markdown） */

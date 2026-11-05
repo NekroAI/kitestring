@@ -84,10 +84,10 @@ func TestTeamSessions(t *testing.T) {
 	}
 	for _, want := range []string{
 		"4 个没结束的会话（待命 2 · 运行中 1 · 空闲 1）",
-		"claude:ts-pm（你）「", "主调度 · Claude Code@test-device · 待命 · 能立刻叫醒：后台待命 · 手上没有需求",
-		"开发 · Claude Code@test-device · 运行中 · 不能立刻叫醒：运行中，本轮结束后送达 · 手上：" + r.Code + "「会话通信」",
-		"codex:ts-cx「", "· 待命 · 能立刻叫醒：终端前台待命（至 ",
-		"codex:ts-cx2「", "· 空闲 · 不能立刻叫醒：Codex 无法在后台接收，等用户下次发消息",
+		"claude:ts-pm（你）「", "主调度 · Claude Code@test-device · 待命 · 能立即送达：后台待命 · 手上没有需求",
+		"开发 · Claude Code@test-device · 运行中 · 不能立即送达：运行中，本轮结束后送达 · 手上：" + r.Code + "「会话通信」",
+		"codex:ts-cx「", "· 待命 · 能立即送达：终端前台待命（至 ",
+		"codex:ts-cx2「", "· 空闲 · 不能立即送达：Codex 无法在后台接收，等用户下次发消息",
 		"无身份",
 	} {
 		if !strings.Contains(out, want) {
@@ -126,7 +126,7 @@ func TestTeamSessions(t *testing.T) {
 	for _, s := range got.Sessions {
 		byKey[s.Key] = s.Status + "/" + s.Harness
 		if (s.Status == store.AvailStandby) != s.WakeNow {
-			t.Errorf("%s：待命才能立刻叫醒：%+v", s.Key, s)
+			t.Errorf("%s：待命才能立即送达：%+v", s.Key, s)
 		}
 	}
 	if !got.AllProjects || byKey["codex:ts-cx"] != "standby/Codex 终端" || byKey["claude:ts-dev"] != "busy/Claude Code" || byKey["codex:ts-cx2"] != "online/Codex 终端" {

@@ -143,7 +143,7 @@ test('老格式证据第一句当结论', () => {
   assert.deepEqual(splitLegacy('只有一句'), { first: '只有一句', rest: '' })
 })
 
-// 谁做的：你 / 纸鸢 / 某个会话；Agent 做的但没记录会话（老数据）单独一类，界面写「Agent（没记录是哪个会话）」。
+// 谁做的：你 / 纸鸢 / 某个会话；Agent 做的但没记录会话（老数据）单独一类，界面写「Agent（未记录会话）」。
 test('记录的会话归属与老数据兜底', () => {
   assert.deepEqual(actorOf({ actor: 'user' }), { kind: 'user' })
   assert.deepEqual(actorOf({ actor: 'system' }), { kind: 'system' })
@@ -166,6 +166,6 @@ test('记录的会话归属与老数据兜底', () => {
     role: undefined,
   })
   assert.deepEqual(actorOf({ session: 'claude:2' }), { kind: 'session', key: 'claude:2', role: undefined, title: undefined }, '证据只有会话键，没有 actor')
-  assert.equal(zh.who.unknown, 'Agent（没记录是哪个会话）')
-  assert.equal(zh.who.now('新标题'), '现在叫「新标题」')
+  assert.equal(zh.who.unknown, 'Agent（未记录会话）')
+  assert.equal(zh.who.now('新标题'), '现名「新标题」')
 })

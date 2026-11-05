@@ -2807,7 +2807,7 @@
             "type": "string"
           },
           "waiting": {
-            "description": "发给它、还在等它醒来的消息数",
+            "description": "发给该会话、待送达的消息数",
             "format": "int64",
             "type": "integer"
           },
@@ -2817,11 +2817,11 @@
             "type": "string"
           },
           "wake_now": {
-            "description": "现在发消息能不能立刻叫醒它",
+            "description": "现在发消息能否立即送达",
             "type": "boolean"
           },
           "wake_why": {
-            "description": "能 / 不能立刻叫醒的原因",
+            "description": "能 / 不能立即送达的原因",
             "type": "string"
           }
         },
@@ -8448,11 +8448,11 @@
             "type": "string"
           },
           "wake_now": {
-            "description": "现在发消息能不能立刻叫醒它",
+            "description": "现在发消息能否立即送达",
             "type": "boolean"
           },
           "wake_why": {
-            "description": "能 / 不能立刻叫醒的原因",
+            "description": "能 / 不能立即送达的原因",
             "type": "string"
           }
         },
@@ -10011,7 +10011,7 @@
             ]
           },
           "prompt": {
-            "description": "你在终端说的话（截断）；纸鸢叫醒时为空",
+            "description": "你在终端说的话（截断）；纸鸢送达的消息开启的一轮为空",
             "type": "string"
           },
           "prompt_id": {
@@ -12623,7 +12623,7 @@
     },
     "/api/agent/team/sessions": {
       "get": {
-        "description": "状态与能否叫醒只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立刻叫醒；正在跑的这一轮结束后收到；Codex 没挂 wait 不能后台叫醒，等用户下次发消息；已结束或失联为离线。",
+        "description": "状态与能否立即送达只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。",
         "operationId": "agent-team-sessions",
         "parameters": [
           {
@@ -12689,7 +12689,7 @@
             "description": "Error"
           }
         },
-        "summary": "在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立刻叫醒",
+        "summary": "在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立即送达",
         "tags": [
           "agent"
         ]
@@ -16380,7 +16380,7 @@
             "description": "Error"
           }
         },
-        "summary": "会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢叫醒它的消息、纸鸢动作、工具汇总、回复；附对象索引",
+        "summary": "会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢送达的消息、纸鸢动作、工具汇总、回复；附对象索引",
         "tags": [
           "sessions"
         ]

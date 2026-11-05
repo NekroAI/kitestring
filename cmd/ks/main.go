@@ -57,7 +57,7 @@ agent 调用：
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team sessions [--role 身份|none] [--all-projects] [--all] [--json]
                                  在线会话列表（R-249）：本项目没结束的会话，带身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
-                                 待命 / 运行中 / 空闲 / 已结束、手上的需求、能否立刻叫醒及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
+                                 待命 / 运行中 / 空闲 / 已结束、手上的需求、能否立即送达及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
   team tell <文字> [--to aide|pm|reviewer|advisor|dev|会话键] [--to-session tool:id] [--req R-x] [--fyi]

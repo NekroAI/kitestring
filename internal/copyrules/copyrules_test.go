@@ -24,6 +24,13 @@ func TestRulesFile(t *testing.T) {
 	if got := r.ForbiddenIn("有 3 件要你处理，2 个在跑"); len(got) != 2 {
 		t.Errorf("禁用词检查不对：%v", got)
 	}
+	// 标准词含禁用词（「指派给」含「派给」）时不误报，单独的「派给」照常拦
+	if got := r.ForbiddenIn("已指派给「x」"); len(got) != 0 {
+		t.Errorf("「指派给」不应算禁用词：%v", got)
+	}
+	if got := r.ForbiddenIn("派给「x」"); len(got) != 1 {
+		t.Errorf("「派给」应算禁用词：%v", got)
+	}
 	if bad := r.CheckLabels("x", map[string]string{"a": "受阻", "b": "阻塞"}, false, "req"); len(bad) != 2 {
 		t.Errorf("状态标签检查不对：%v", bad)
 	}

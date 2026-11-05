@@ -20,11 +20,11 @@ test('撤销条、印章、快捷键提示随场景', () => {
   assert.equal(v.stamp(v.pass('accept')), '已通过')
   assert.equal(v.stamp(v.back('approval')), '已拒绝')
   assert.equal(v.stamp(v.pass('plan')), '已批准')
-  assert.equal(v.keyPass('accept'), '通过 · ⌘↵')
-  assert.equal(v.keyBack('approval'), '拒绝 · ⌘⌫')
-  assert.equal(v.keyPass('answer'), '回答 · ⌘↵')
-  assert.equal(v.needNote('approval'), '拒绝要写下理由')
-  assert.equal(v.needNote('plan'), '退回要写下意见：哪里要改')
+  assert.equal(v.keyPass('accept'), '通过 ⌘↵')
+  assert.equal(v.keyBack('approval'), '拒绝 ⌘⌫')
+  assert.equal(v.keyPass('answer'), '回答 ⌘↵')
+  assert.equal(v.needNote('approval'), '拒绝需写明理由')
+  assert.equal(v.needNote('plan'), '退回需写明修改意见')
 })
 
 test('⌘K 命令与验收相关文案用「通过」', () => {

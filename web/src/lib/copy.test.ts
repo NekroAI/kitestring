@@ -83,7 +83,8 @@ const RULES: Rule[] = [
   {
     id: 'forbidden',
     check: (s) => {
-      const hit = rules.forbidden.filter((f) => s.includes(f.word))
+      // 标准词本身含禁用词时（「指派给」含「派给」）先去掉标准词再查
+      const hit = rules.forbidden.filter((f) => (f.use.includes(f.word) ? s.split(f.use).join('') : s).includes(f.word))
       return hit.length ? hit.map((f) => `「${f.word}」→「${f.use}」`).join('，') : null
     },
   },

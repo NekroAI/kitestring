@@ -47,7 +47,7 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 决策后果链：按用户在某条决策里的答复新建需求时，req_create 带 from_decision（D-x）；接着某条决策往下问、或要推翻它的结论时，decision_raise 带 from_decision（推翻时再加 overturns = true）。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。界面类证据的截图用真实数据，改到证据 / 决策显示时新旧两种格式都要截图。
 - 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
-- 会话之间：细节用 req_comment 写进需求留言，team_tell（旧名 pm_notify）的消息只放编号加一句话请对方去看；本项目有哪些会话、谁现在能立刻叫醒，用 team_sessions（ks team sessions）查。点对点用 team_tell（to 填身份或会话键），好几个会话都要知道用 team_broadcast（要动手的广播只有主调度、主助理能发，别人用 fyi = true 只告知）；发出后用 team_sent 看已送达 / 待送达 / 无法送达。关联或在做的需求默认订阅，有变动时收到一句话提醒（自己引起的不通知）；别的需求要跟进用 req_watch 订阅，不想收用 req_watch off = true 退订，req_watching 看订阅了哪些。
+- 会话之间：细节用 req_comment 写进需求留言，team_tell（旧名 pm_notify）的消息只放编号加一句话请对方去看；本项目有哪些会话、谁现在能立即送达，用 team_sessions（ks team sessions）查。点对点用 team_tell（to 填身份或会话键），好几个会话都要知道用 team_broadcast（要动手的广播只有主调度、主助理能发，别人用 fyi = true 只告知）；发出后用 team_sent 看已送达 / 待送达 / 无法送达。关联或在做的需求默认订阅，有变动时收到一句话提醒（自己引起的不通知）；别的需求要跟进用 req_watch 订阅，不想收用 req_watch off = true 退订，req_watching 看订阅了哪些。
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图，用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。

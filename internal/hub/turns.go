@@ -15,7 +15,7 @@ import (
 )
 
 // 会话详情页按轮的时间线（R-273）。
-// 一轮 = 主线程的一次提问（UserPromptSubmit）到下一次提问之前：你说的话（终端 / 网页）或纸鸢叫醒它的消息 →
+// 一轮 = 主线程的一次提问（UserPromptSubmit）到下一次提问之前：你说的话（终端 / 网页）或纸鸢送达的消息 →
 // 这一轮里纸鸢的动作（只认明确记录：需求状态、证据、决策、团队消息、留言、派子任务、简报、交接）→ 工具调用（收成一行）→ 它的回复。
 // 这一轮结束（Stop）之后、下一轮开始之前发生的（多半是子任务做的）单独放在 after。
 
@@ -24,10 +24,10 @@ type Turn struct {
 	ID    string     `json:"id" doc:"轮的标识：turn_id；没有时用提问事件的 ID"`
 	Start time.Time  `json:"start"`
 	End   *time.Time `json:"end,omitempty" doc:"这一轮结束（Stop）的时间；还在跑时省略"`
-	// Source：terminal 你在终端说的；web 你在网页上发的话叫醒 / 送进了这一轮；wake 纸鸢叫醒它（团队消息、你的答复……）；
+	// Source：terminal 你在终端说的；web 你在网页上发的话叫醒 / 送进了这一轮；wake 纸鸢送达（团队消息、你的答复……）；
 	// 空 = 没有提问记录（老会话、或这一页最早的半轮）
 	Source string `json:"source" enum:",terminal,web,wake"`
-	Prompt string `json:"prompt,omitempty" doc:"你在终端说的话（截断）；纸鸢叫醒时为空"`
+	Prompt string `json:"prompt,omitempty" doc:"你在终端说的话（截断）；纸鸢送达的消息开启的一轮为空"`
 	// 提问 / 回复事件的 ID：对象索引里 p:<ID> / r:<ID> 指的就是它们
 	PromptID string     `json:"prompt_id,omitempty"`
 	ReplyID  string     `json:"reply_id,omitempty"`
@@ -524,7 +524,7 @@ type repliesOut struct {
 
 func (h *Hub) registerSessionTurns(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "session-turns", Method: http.MethodGet, Path: "/api/sessions/{key}/turns", Tags: []string{"sessions"},
-		Summary: "会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢叫醒它的消息、纸鸢动作、工具汇总、回复；附对象索引"},
+		Summary: "会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢送达的消息、纸鸢动作、工具汇总、回复；附对象索引"},
 		func(ctx context.Context, in *struct {
 			Key    string `path:"key"`
 			Before string `query:"before" doc:"只要这个时间之前开始的轮（上一页返回的 before）；不传是最新一页"`

@@ -121,8 +121,8 @@ func TestRoster(t *testing.T) {
 	if o := got["claude:dev"].Open; len(o) != 1 || o[0].Code != r.Code {
 		t.Errorf("开发手上应有 %s：%+v", r.Code, o)
 	}
-	for _, s := range []string{"项目「kite」：5 个没结束的会话（待命 3 · 运行中 1 · 空闲 1）", "claude:pm（你）「会话 claude:pm」 主调度 · Claude Code@mac · 待命 · 能立刻叫醒：后台待命",
-		"codex:app「会话 codex:app」 无身份 · Codex App@mac · 空闲 · 不能立刻叫醒：Codex 无法在后台接收，等用户下次发消息", "手上：" + r.Code + "「会话通信」"} {
+	for _, s := range []string{"项目「kite」：5 个没结束的会话（待命 3 · 运行中 1 · 空闲 1）", "claude:pm（你）「会话 claude:pm」 主调度 · Claude Code@mac · 待命 · 能立即送达：后台待命",
+		"codex:app「会话 codex:app」 无身份 · Codex App@mac · 空闲 · 不能立即送达：Codex 无法在后台接收，等用户下次发消息", "手上：" + r.Code + "「会话通信」"} {
 		if !strings.Contains(out.Body.Text, s) {
 			t.Errorf("文字里应有「%s」：\n%s", s, out.Body.Text)
 		}

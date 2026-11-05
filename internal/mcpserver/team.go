@@ -492,7 +492,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(b.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "team_sessions", Description: "在线会话列表（命令行 ks team sessions，R-249）：本项目所有没结束的会话，每个带身份（没有写「无身份」）、工具（Claude Code / claude-x 等启动命令 / Codex 终端 / Codex App / DSH）、状态（待命 / 运行中 / 空闲 / 已结束）、手上的需求、现在发消息能否立刻叫醒及原因。叫醒规则只看会话记录：Claude 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立刻叫醒；正在跑的这一轮结束后收到；Codex 没挂 wait 不能后台叫醒，等用户下次发消息；已结束或失联为离线。role 只看某个身份（none 只看无身份的），all_projects 列所有项目，all 也列已结束的。不同于 team（PM 的工人池）。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "team_sessions", Description: "在线会话列表（命令行 ks team sessions，R-249）：本项目所有没结束的会话，每个带身份（没有写「无身份」）、工具（Claude Code / claude-x 等启动命令 / Codex 终端 / Codex App / DSH）、状态（待命 / 运行中 / 空闲 / 已结束）、手上的需求、现在发消息能否立即送达及原因。送达规则只看会话记录：Claude 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。role 只看某个身份（none 只看无身份的），all_projects 列所有项目，all 也列已结束的。不同于 team（PM 的工人池）。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in sessionsIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" && !in.AllProjects {

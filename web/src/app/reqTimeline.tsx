@@ -669,7 +669,7 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
     if (c.to === 'review' && c.actor === 'agent') continue
     const accept = c.to === 'done' && c.actor === 'user'
     const start = c.via === 'link' && c.to === 'in_progress'
-    const via = start ? '' : c.to === 'blocked' && c.ref ? t.timeline.waitOn : t.timeline.via[c.via] // 受阻指向（R-243）：「改为 受阻 · 在等 R-212」
+    const via = start ? '' : c.to === 'blocked' && c.ref ? t.timeline.waitOn : t.timeline.via[c.via] // 受阻指向（R-243）：「改为 受阻 · 等待 R-212」
     entries.push({
       at: c.at,
       key: c.id,
@@ -693,6 +693,7 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
                     <StatusFlow c={c} />
                     {(via || c.ref) && (
                       <span className="inline-flex items-center gap-1">
+                        {via && <span aria-hidden>·</span>}
                         {via}
                         {c.ref && <RefChip code={c.ref} label="title" />}
                       </span>

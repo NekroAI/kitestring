@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence } from 'motion/react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, PowerOff, Settings2, UserPlus } from 'lucide-react'
+import { ArrowRight, ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, PowerOff, Settings2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Requirement, Session } from '../api/client'
 import { useProjects, useRequirements, useSessions } from '../api/queries'
@@ -347,9 +347,10 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
               savePref('ks.reqs.view2', 'pool')
               navigate('/requirements')
             }}
-            className="text-xs text-fg-3 hover:text-accent"
+            className="inline-flex items-center gap-0.5 text-xs text-fg-3 hover:text-accent"
           >
             {t.projects.allReqs}
+            <ArrowRight size={12} aria-hidden />
           </button>
         }
       >

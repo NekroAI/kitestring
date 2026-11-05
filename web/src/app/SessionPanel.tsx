@@ -150,7 +150,16 @@ function Head({ s, hs, running, now, menu, onClose }: { s: Session; hs: Handoff[
   const st = stateLine(s, hs, now)
   const working = (s.requirements ?? []).filter((r) => r.status === 'in_progress' || r.status === 'review' || r.status === 'blocked')
   const meta = [t.tool[s.tool] ?? s.tool, s.model && modelShort(s.model), s.device_name].filter(Boolean).join(t.common.sep)
-  const sep = <span className="text-fg-3/70">·</span>
+  // 每一段前都带「·」，整行左移一个「点 + 间距」再裁掉左侧：每行行首那一段的点被裁掉，折行时既不悬在行尾也不顶在行首
+  // 引用印记之间不画点，只留同样宽的空位，间距和其它段一致
+  const seg = (key: string, children: ReactNode, cls = '', dot = true) => (
+    <span key={key} className={cx('inline-flex items-center gap-1.5', cls)}>
+      <span aria-hidden className={cx('w-1.5 shrink-0 text-center text-fg-3/70', !dot && 'invisible')}>
+        ·
+      </span>
+      {children}
+    </span>
+  )
   return (
     <div className="shrink-0 border-b border-line px-4 pt-2.5 pb-2 sm:px-5 sm:pt-3.5 sm:pb-3">
       <div className="flex items-center gap-2">
@@ -169,34 +178,42 @@ function Head({ s, hs, running, now, menu, onClose }: { s: Session; hs: Handoff[
           <X className="size-4" />
         </Button>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-fg-3" data-state-line>
-        <span className="inline-flex items-center gap-1.5 font-medium text-fg">
-          <StatusDot state={st.dot} />
-          {st.label}
-        </span>
-        {st.detail && <span>{st.detail}</span>}
-        {working.length > 0 && (
-          <>
-            {sep}
-            <span>{t.turns.working}</span>
-            {working.slice(0, 2).map((r) => (
-              <RefChip key={r.id} code={r.code} title={r.title} status={r.status} label="title" />
-            ))}
-            {working.length > 2 && <span>+{working.length - 2}</span>}
-          </>
-        )}
-        {/* 手机宽度下时长、工具、模型、设备收进「会话信息」，头部只留状态（D-1171） */}
-        <span className="contents max-sm:hidden">
-          {sep}
-          <Tip content={absTime(s.started_at)}>
-            <span className="tabular">{t.turns.age(duration(s.started_at, s.state === 'ended' && s.last_active_at ? Date.parse(s.last_active_at) : now))}</span>
-          </Tip>
-          {sep}
-          <span className="inline-flex min-w-0 items-center gap-1">
-            <ToolMark tool={s.tool} size="sm" />
-            <span className="truncate">{meta}</span>
-          </span>
-        </span>
+      <div className="mt-1.5 -ml-1 overflow-x-clip pl-1">
+        <div className="-ml-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-fg-3" data-state-line>
+          {seg(
+            'state',
+            <>
+              <span className="inline-flex items-center gap-1.5 font-medium text-fg">
+                <StatusDot state={st.dot} />
+                {st.label}
+              </span>
+              {st.detail && <span>{st.detail}</span>}
+            </>,
+          )}
+          {working.length > 0 && (
+            <>
+              {seg('working', <span>{t.turns.working}</span>)}
+              {working.slice(0, 2).map((r) => seg(r.id, <RefChip code={r.code} title={r.title} status={r.status} label="title" />, 'min-w-0', false))}
+              {working.length > 2 && seg('more', <span>+{working.length - 2}</span>, '', false)}
+            </>
+          )}
+          {/* 手机宽度下时长、工具、模型、设备收进「会话信息」，头部只留状态（D-1171） */}
+          {seg(
+            'age',
+            <Tip content={absTime(s.started_at)}>
+              <span className="tabular">{t.turns.age(duration(s.started_at, s.state === 'ended' && s.last_active_at ? Date.parse(s.last_active_at) : now))}</span>
+            </Tip>,
+            'max-sm:hidden',
+          )}
+          {seg(
+            'meta',
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <ToolMark tool={s.tool} size="sm" />
+              <span className="truncate">{meta}</span>
+            </span>,
+            'max-w-full max-sm:hidden',
+          )}
+        </div>
       </div>
       {s.summary && (
         <div className="mt-1.5 flex items-start gap-1.5 text-[13px] leading-relaxed text-fg-2">

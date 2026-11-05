@@ -51,7 +51,11 @@ func Load() (*Rules, error) {
 func (r *Rules) ForbiddenIn(s string) []string {
 	var out []string
 	for _, f := range r.Forbidden {
-		if strings.Contains(s, f.Word) {
+		t := s
+		if strings.Contains(f.Use, f.Word) { // 标准词本身含禁用词时（「指派给」含「派给」）先去掉标准词再查
+			t = strings.ReplaceAll(s, f.Use, "")
+		}
+		if strings.Contains(t, f.Word) {
 			out = append(out, "「"+f.Word+"」→「"+f.Use+"」")
 		}
 	}

@@ -51,12 +51,12 @@ type CommsMsg struct {
 	Full             string     `json:"full" doc:"原文"`
 }
 
-// CommsSession 是左栏的一个会话：在线会话列表的一项，加今天收发几条、有几条在等它醒来。
+// CommsSession 是左栏的一个会话：在线会话列表的一项，加今天收发几条、有几条待送达。
 type CommsSession struct {
 	RosterEntry
 	In           int        `json:"in" doc:"今天收到的会话消息（不含纸鸢提醒）"`
 	Out          int        `json:"out" doc:"今天发出的会话消息（一次广播算一条）"`
-	Waiting      int        `json:"waiting" doc:"发给它、还在等它醒来的消息数"`
+	Waiting      int        `json:"waiting" doc:"发给该会话、待送达的消息数"`
 	WaitingSince *time.Time `json:"waiting_since,omitempty" doc:"最早那条的发送时间"`
 }
 
