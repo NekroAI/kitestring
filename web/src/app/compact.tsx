@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Copy, TimerOff } from 'lucide-react'
+import { ArrowRightLeft, Copy, PowerOff, TimerOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Session } from '../api/client'
 import { t } from '../i18n'
@@ -120,6 +120,61 @@ export function IdleRow({ s, now }: { s: Session; now: number }) {
   )
 }
 
+// ---------- 空等下线（R-272） ----------
+
+// 常驻会话连续空等累计超过项目设置的时长：Hub 记下 offline_at（明确记录），身份还在、等新会话接任。
+export const offlineOf = (s: Session) => (s.offline_at && s.role ? s.offline_at : '')
+
+export const takeoverCommand = (role: string) => `ks takeover ${role}`
+
+// OfflineTag：泳道状态标后面的「已交接下线」；窄处只留图标。
+export function OfflineTag({ s }: { s: Session }) {
+  if (!offlineOf(s)) return null
+  return (
+    <Tip content={t.session.offlineTip}>
+      <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] leading-4 font-medium whitespace-nowrap text-fg-3" aria-label={t.session.offline}>
+        <PowerOff className="size-3.5" />
+        <span className="@max-[12rem]:hidden">{t.session.offline}</span>
+      </span>
+    </Tip>
+  )
+}
+
+// OfflineCmd：接任命令 + 复制按钮。
+export function OfflineCmd({ role }: { role: string }) {
+  const cmd = takeoverCommand(role)
+  return (
+    <div className="flex items-center gap-1.5">
+      <code className="min-w-0 flex-1 truncate rounded-md bg-surface px-2 py-1.5 font-mono text-[12px] text-fg">{cmd}</code>
+      <Button size="sm" variant="ghost" onClick={async () => (await copyText(cmd)) && toast.success(t.common.copied)}>
+        <Copy className="size-3.5" />
+        {t.handoff.copyCmd}
+      </Button>
+    </div>
+  )
+}
+
+// OfflineRow：会话面板顶部一行「主调度已空等交接下线」+ 说明 + 接任命令。
+export function OfflineRow({ s, now, handed }: { s: Session; now: number; handed: boolean }) {
+  if (!offlineOf(s)) return null
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl bg-sunken px-3 py-2.5">
+      <PowerOff className="mt-0.5 size-4 shrink-0 text-fg-2" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 text-[13px] font-medium text-fg">{t.session.offlineLine(s.role)}</span>
+          <span className="shrink-0 text-[11.5px] text-fg-3 tabular">{t.session.offlineSince(relTime(s.offline_at, now))}</span>
+        </div>
+        <div className="text-[12px] leading-relaxed text-fg-2">
+          {t.session.offlineTip}
+          {!handed && <span className="text-wait">{'。' + t.session.offlineNoHandoff}</span>}
+        </div>
+        <OfflineCmd role={s.role} />
+      </div>
+    </div>
+  )
+}
+
 // ---------- 交接 ----------
 
 type HandoffOut = { command: string; waiting: number }
@@ -141,7 +196,7 @@ export function useRequestHandoff() {
   }
 }
 
-export const canHandoff = (s: Session) => !!s.role && !!s.project_id && s.state !== 'ended' && !s.retired_at
+export const canHandoff = (s: Session) => !!s.role && !!s.project_id && s.state !== 'ended' && !s.retired_at && !s.offline_at
 
 export const HandoffIcon = ArrowRightLeft
 

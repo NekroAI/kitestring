@@ -39,6 +39,9 @@ func wakeAbility(x store.Session) (now bool, why string) { return wakeAbilityAt(
 
 // wakeAbilityAt 同 wakeAbility，时间由调用方给。
 func wakeAbilityAt(x store.Session, at time.Time) (now bool, why string) {
+	if x.OfflineAt != nil && x.Role != "" {
+		return false, "已空等交接下线，消息照常入队，用户开新会话接任时转给新会话"
+	}
 	switch x.State {
 	case store.StateEnded:
 		return false, "会话已结束，离线"

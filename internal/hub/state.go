@@ -214,6 +214,11 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.State, x.StateDetail = store.StateParked, ""
 			break
 		}
+		if x.OfflineAt != nil && x.Role != "" {
+			// 空等交接下线后结束这一轮（R-272）：不是在等你回复，记为空闲、不推送
+			x.State, x.StateDetail, x.WaitKind = store.StateIdle, "", ""
+			break
+		}
 		if ev.BgTasks > 0 {
 			// 还有后台任务在跑：结束后 Claude Code 会自动继续，并不是在等你。
 			x.State, x.StateDetail = store.StateBackground, bgDetail(ev.BgTasks, ev.BgBrief)

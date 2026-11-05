@@ -154,6 +154,11 @@ var addedColumns = []struct{ table, column, ddl string }{
 	// 待命超时（R-229）：开发会话待命超过项目设置的时长、手上没有排给它的需求时记下；派活 / 点名给它的消息 / 你给它发消息时清除
 	{"sessions", "idle_at", "TEXT NOT NULL DEFAULT ''"},
 	{"projects", "dev_idle_minutes", "INTEGER NOT NULL DEFAULT 0"},
+	// 空等下线（R-272）：常驻会话连续空等的起点；累计超过项目设置的时长后写交接下线（offline_at），新会话接任时清除
+	{"sessions", "idle_wait_since", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "offline_at", "TEXT NOT NULL DEFAULT ''"},
+	{"projects", "idle_offline_minutes", "INTEGER NOT NULL DEFAULT 0"},
+	{"projects", "wait_max_minutes", "INTEGER NOT NULL DEFAULT 0"},
 	// 状态只认明确记录（R-239）：等待类型、批准 / 拒绝、推荐选项存成字段，老数据补列时一次性回填
 	{"sessions", "wait_kind", "TEXT NOT NULL DEFAULT ''"},
 	// Claude 配置来源（R-240）：非默认 CLAUDE_CONFIG_DIR 的显示名、目录和启动命令

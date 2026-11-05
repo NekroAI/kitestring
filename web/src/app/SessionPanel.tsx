@@ -19,7 +19,7 @@ import { AskItem, decisionAsk } from './asks'
 import { decKey } from './outbox'
 import { usePendingMap } from './verdict'
 import { CtxRing, ctxLoad, useAssign } from './assign'
-import { canHandoff, CompactRow, HandoffCard, HandoffIcon, IdleRow, useRequestHandoff, type Handoff } from './compact'
+import { canHandoff, CompactRow, HandoffCard, HandoffIcon, IdleRow, OfflineRow, useRequestHandoff, type Handoff } from './compact'
 import { NewReqModal } from './requirements'
 import { OwnBadge, useOwnership } from './ownership'
 import { Callout, sessionTitle, toolIcon } from './SessionCard'
@@ -293,6 +293,9 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
           </div>
           <div className="mb-5 empty:hidden">
             <IdleRow s={s} now={now} />
+          </div>
+          <div className="mb-5 empty:hidden">
+            <OfflineRow s={s} now={now} handed={handoffs.some((h) => h.from_session === s.key && h.status === 'written')} />
           </div>
           {handoffs.length > 0 && (
             <Section title={t.handoff.title}>

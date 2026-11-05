@@ -2258,6 +2258,8 @@ export interface components {
             session_key: string;
         };
         "Agent-wait-checkRequest": {
+            /** @description ks wait 超时醒来后的复查（R-272）：常驻会话空等累计到点时记为下线、返回写交接下线的指示 */
+            after_timeout?: boolean;
             /** @description 对话记录里最新的一段回复；不传时用上一轮结束时的最后回复 */
             text?: string;
         };
@@ -4277,6 +4279,8 @@ export interface components {
             doc_root: string;
             hidden: boolean;
             id: string;
+            /** Format: int64 */
+            idle_offline_minutes: number;
             model_policy: string;
             name: string;
             /** Format: date-time */
@@ -4287,6 +4291,8 @@ export interface components {
             remote: string;
             /** Format: int64 */
             stall_minutes: number;
+            /** Format: int64 */
+            wait_max_minutes: number;
             workspace_id?: string;
         };
         ProjectInBody: {
@@ -4301,6 +4307,11 @@ export interface components {
             doc_root: string;
             hidden?: boolean;
             /**
+             * Format: int64
+             * @description 空等下线时长的分钟数（60～1440，默认 240）
+             */
+            idle_offline_minutes?: number;
+            /**
              * @description 子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先
              * @enum {string}
              */
@@ -4311,6 +4322,11 @@ export interface components {
              * @description 进行中需求停滞的分钟数（30～2880，默认 120）
              */
             stall_minutes?: number;
+            /**
+             * Format: int64
+             * @description ks wait 单次最长等待的分钟数（5～55，默认 55）
+             */
+            wait_max_minutes?: number;
             workspace_id?: string;
         };
         ProjectsOutBody: {
@@ -4724,6 +4740,8 @@ export interface components {
             ended_at?: string;
             /** Format: date-time */
             idle_at?: string;
+            /** Format: date-time */
+            idle_wait_since?: string;
             key: string;
             /** Format: date-time */
             last_active_at: string;
@@ -4733,6 +4751,8 @@ export interface components {
             last_tool_at?: string;
             launcher?: string;
             model: string;
+            /** Format: date-time */
+            offline_at?: string;
             other_terminal: boolean;
             parked: boolean;
             /** Format: date-time */
@@ -5094,14 +5114,20 @@ export interface components {
             asking: boolean;
             /** @description 要输出给 Agent 的提示；有待处理事项时为空 */
             hint?: string;
+            /** @description 常驻会话离空等下线还剩多久：ks wait 最多等这么久，醒来时正好到点 */
+            idle_left?: string;
             /** @description 这些事项，如「D-12 待你答复」「R-3 待验收」 */
             items: string[] | null;
+            /** @description Claude Code 会话这次 ks wait 最长等多久（项目设置，默认 55m，不超过 55m） */
+            max_wait?: string;
+            /** @description 空等累计到了项目设置的时长：已记为下线，hint 是写交接下线的指示，不再等待 */
+            offline?: boolean;
             /**
              * Format: int64
              * @description 名下等用户处理的事项件数
              */
             pending: number;
-            /** @description 会话已被接任卸任（R-224、R-229）：ks wait 输出 hint 后直接返回，不再等待 */
+            /** @description 会话已被接任卸任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待 */
             retired?: boolean;
         };
         Watch: {

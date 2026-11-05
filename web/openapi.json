@@ -862,6 +862,10 @@
       "Agent-wait-checkRequest": {
         "additionalProperties": false,
         "properties": {
+          "after_timeout": {
+            "description": "ks wait 超时醒来后的复查（R-272）：常驻会话空等累计到点时记为下线、返回写交接下线的指示",
+            "type": "boolean"
+          },
           "text": {
             "description": "对话记录里最新的一段回复；不传时用上一轮结束时的最后回复",
             "type": "string"
@@ -6951,6 +6955,10 @@
           "id": {
             "type": "string"
           },
+          "idle_offline_minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
           "model_policy": {
             "type": "string"
           },
@@ -6975,6 +6983,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "wait_max_minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
           "workspace_id": {
             "type": "string"
           }
@@ -6991,6 +7003,8 @@
           "model_policy",
           "dev_idle_minutes",
           "stall_minutes",
+          "idle_offline_minutes",
+          "wait_max_minutes",
           "created_at",
           "need_devs",
           "need_reason",
@@ -7024,6 +7038,13 @@
           "hidden": {
             "type": "boolean"
           },
+          "idle_offline_minutes": {
+            "description": "空等下线时长的分钟数（60～1440，默认 240）",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": 60,
+            "type": "integer"
+          },
           "model_policy": {
             "description": "子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先",
             "enum": [
@@ -7042,6 +7063,13 @@
             "format": "int64",
             "maximum": 2880,
             "minimum": 30,
+            "type": "integer"
+          },
+          "wait_max_minutes": {
+            "description": "ks wait 单次最长等待的分钟数（5～55，默认 55）",
+            "format": "int64",
+            "maximum": 55,
+            "minimum": 5,
             "type": "integer"
           },
           "workspace_id": {
@@ -8491,6 +8519,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "idle_wait_since": {
+            "format": "date-time",
+            "type": "string"
+          },
           "key": {
             "type": "string"
           },
@@ -8512,6 +8544,10 @@
             "type": "string"
           },
           "model": {
+            "type": "string"
+          },
+          "offline_at": {
+            "format": "date-time",
             "type": "string"
           },
           "other_terminal": {
@@ -9678,6 +9714,10 @@
             "description": "要输出给 Agent 的提示；有待处理事项时为空",
             "type": "string"
           },
+          "idle_left": {
+            "description": "常驻会话离空等下线还剩多久：ks wait 最多等这么久，醒来时正好到点",
+            "type": "string"
+          },
           "items": {
             "description": "这些事项，如「D-12 待你答复」「R-3 待验收」",
             "items": {
@@ -9688,13 +9728,21 @@
               "null"
             ]
           },
+          "max_wait": {
+            "description": "Claude Code 会话这次 ks wait 最长等多久（项目设置，默认 55m，不超过 55m）",
+            "type": "string"
+          },
+          "offline": {
+            "description": "空等累计到了项目设置的时长：已记为下线，hint 是写交接下线的指示，不再等待",
+            "type": "boolean"
+          },
           "pending": {
             "description": "名下等用户处理的事项件数",
             "format": "int64",
             "type": "integer"
           },
           "retired": {
-            "description": "会话已被接任卸任（R-224、R-229）：ks wait 输出 hint 后直接返回，不再等待",
+            "description": "会话已被接任卸任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待",
             "type": "boolean"
           }
         },

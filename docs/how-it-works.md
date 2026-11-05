@@ -50,11 +50,13 @@ When an agent finishes a piece of work and needs your review or answer to contin
 | | Claude Code | Codex |
 |---|---|---|
 | How it runs | background task: the turn ends normally, and Claude Code wakes the session when `ks wait` exits | foreground command: Codex can't wake on background exit, so the turn stays open until the command ends |
-| Longest wait | 1 hour by default, adjustable with `--timeout`, up to 12 hours | 30 minutes, which is also the default |
+| Longest wait | 55 minutes, which is also the cap (the prompt cache is still warm on wake-up; a project setting can lower it, and a larger `--timeout` is clamped) | 30 minutes, which is also the default |
 | Usage cost | none while waiting | Codex polls the command output, costing a little each time (mostly cache reads), hence the 30-minute cap |
 | On timeout | ends quietly; continue in the conversation when you're back | tells the agent to wrap up — report progress and what it's waiting for, then end the turn; later answers arrive in the next conversation |
 
 Waiting sessions show as "standing by" on the board, with how long they have waited and until when.
+
+Resident sessions (manager / aide / developer) re-wait after a timeout. Once they have idled in a row (nothing to act on, no message from you) longer than the project's "go offline after idling" setting (4 hours by default), the next wake-up tells them to write a handoff and go offline instead of waiting again; the board marks them "handed off, offline". Messages addressed to them keep queuing; when you're back, run `ks takeover <role>` in the project directory to start a new session, which receives the handoff, the takeover overview and the queued messages.
 
 ## Agent tools
 

@@ -22,7 +22,7 @@ const aideHintQ = "身份调整：代答等已移到主助理"
 
 const aideHintText = "身份调整（R-190）：代答、放行、验收建议、离开期间小结已移到主助理；本项目还没有主助理，要接手请运行 ks role aide。顾问只答问题、做设计，不常驻、不订阅事件。"
 
-// liveAide 返回项目里没结束的主助理会话键，没有时为空。
+// liveAide 返回项目里在岗（没结束、没空等下线）的主助理会话键，没有时为空。
 func (h *Hub) liveAide(ctx context.Context, projectID string) string {
 	if projectID == "" {
 		return ""
@@ -32,7 +32,7 @@ func (h *Hub) liveAide(ctx context.Context, projectID string) string {
 		return ""
 	}
 	for _, x := range list {
-		if x.Role == roles.Aide && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil {
+		if x.Role == roles.Aide && seatHolder(x) && x.OfflineAt == nil { // 空等下线的主助理不在岗（R-272）
 			return x.Key
 		}
 	}

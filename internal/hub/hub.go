@@ -293,7 +293,8 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 			return err
 		}
 	}
-	defer h.sessionChanged(key) // 存完工具版本、上下文占用等再推
+	defer h.sessionChanged(key)          // 存完工具版本、上下文占用等再推
+	h.trackIdleWait(ctx, prev, next, ev) // 常驻会话的连续空等起点（R-272）
 	if ev.Name == "Stop" && reply != "" {
 		if err := h.store.SetLastReply(ctx, key, reply, ev.Time); err != nil {
 			return err

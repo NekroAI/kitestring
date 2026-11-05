@@ -80,6 +80,11 @@ type Session struct {
 	PendingDecisions int              `json:"pending_decisions"`
 	RetiredAt        *time.Time       `json:"retired_at,omitempty"` // 被新会话接任后卸任的时间（R-224、R-229）：不再挂 ks wait、不再被唤醒
 	IdleAt           *time.Time       `json:"idle_at,omitempty"`    // 开发会话待命超时的时间（R-229）：待命超过项目设置的时长、没有排给它的需求；提示收尾，不再送订阅事件
+	// 空等下线（R-272）：常驻会话连续空等（ks wait 超时续等，期间没有要动手的事、你也没发消息）的起点
+	IdleWaitSince *time.Time `json:"idle_wait_since,omitempty"`
+	// OfflineAt：空等累计超过项目设置的时长后，纸鸢叫它写交接下线的时间（R-272）。身份保留（点名给它的消息照常入队，接任时转给新会话），
+	// 不再挂 ks wait、Stop hook 不拦、不送订阅事件；新会话 ks role 接任或它自己重新 ks role 时清除
+	OfflineAt *time.Time `json:"offline_at,omitempty"`
 }
 
 // BgTask 是会话下一个在跑的后台任务（R-162）：只有类型、标签、开始时间与最近动作，不含命令输出与对话内容。
@@ -139,18 +144,18 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.profile, s.profile_dir, s.launcher, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.wait_kind, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at, s.idle_at,
+	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at, s.idle_at, s.idle_wait_since, s.offline_at,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired, idle string
+	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired, idle, idleWait, offline string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Profile, &x.ProfileDir, &x.Launcher, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.WaitKind, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired, &idle,
+		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired, &idle, &idleWait, &offline,
 		&started, &active, &ended)
 	x.Tasks = []BgTask{}
 	if tasks != "" && tasks != "[]" {
@@ -183,6 +188,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 		t := parseTS(idle)
 		x.IdleAt = &t
 	}
+	x.IdleWaitSince, x.OfflineAt = optTS(idleWait), optTS(offline)
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
 	x.Requirements = []RequirementRef{}
@@ -438,7 +444,7 @@ type Subscriber struct {
 func (s *Store) WaitSubscribers(ctx context.Context, projectID string) ([]Subscriber, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT key, role, wait_on FROM sessions
 		WHERE project_id = ? AND (role <> '' OR wait_on <> '') AND done_at = '' AND state NOT IN (?, ?)
-			AND retired_at = '' AND idle_at = ''
+			AND retired_at = '' AND idle_at = '' AND offline_at = ''
 			AND (parked = 1 OR state IN (?, ?, ?, ?))
 		ORDER BY last_active_at DESC`, projectID, StateEnded, StateLost, StateParked, StateRunning, StateBackground, StateWaitApproval)
 	if err != nil {
@@ -734,7 +740,7 @@ func (s *Store) SetRole(ctx context.Context, key, role string) (demoted []string
 
 // RolesForDevice 返回该设备上有身份的会话：会话键 → 身份，下发给 daemon 用于注入与常驻检查。
 func (s *Store) RolesForDevice(ctx context.Context, deviceID string) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT key, role FROM sessions WHERE device_id = ? AND role <> ''`, deviceID)
+	rows, err := s.db.QueryContext(ctx, `SELECT key, role FROM sessions WHERE device_id = ? AND role <> '' AND offline_at = ''`, deviceID)
 	if err != nil {
 		return nil, err
 	}

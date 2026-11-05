@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -40,7 +41,7 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 				return nil, huma.Error400BadRequest(roleUsage)
 			}
 			out.Body.SessionKey, out.Body.Role = in.Body.SessionKey, role
-			demoted, handoff, err := h.setRole(ctx, in.Body.SessionKey, role)
+			demoted, handoff, backlog, err := h.setRole(ctx, in.Body.SessionKey, role)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -48,7 +49,7 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 			if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil && role != "" {
 				ov = h.overview(ctx, x, role, overviewHead, gitWait) // 接手概览（R-245）：按身份从记录生成，交接只写纸鸢里没有的
 			}
-			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.roleNotes(ctx, in.Body.SessionKey)+ov+handoff, demoted
+			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.roleNotes(ctx, in.Body.SessionKey)+ov+handoff+offlineBacklogNote(backlog), demoted
 			out.Body.Handoff = handoff != ""
 			if out.Body.Demoted == nil {
 				out.Body.Demoted = []string{}
@@ -61,23 +62,45 @@ const roleUsage = "身份只能是 aide（主助理）、advisor（顾问）、r
 
 // setRole 设置会话身份；接任主调度 / 主助理时通知被降级的旧会话，并把身份下发给相关设备。
 // 同项目同身份有上一任写好的交接时一并接任（R-224）：返回要注入的交接内容，上一任卸任。
-func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, error) {
+// 上一任是空等下线的（R-272）：它积压的点名消息和未答决策转给本会话，返回转了几条。
+func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, int, error) {
 	if !roles.Valid(role) {
-		return nil, "", huma.Error400BadRequest(roleUsage)
+		return nil, "", 0, huma.Error400BadRequest(roleUsage)
 	}
 	x, err := h.store.GetSession(ctx, key)
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
+	}
+	// 先记下接任前各个下线会话（SetRole 会清掉被接任者的身份）
+	offline := map[string]store.Session{}
+	if role != "" && x.ProjectID != "" {
+		if list, err := h.store.RoleSessions(ctx, x.ProjectID); err == nil {
+			for _, o := range list {
+				if o.Key != key && o.Role == role && o.OfflineAt != nil {
+					offline[o.Key] = o
+				}
+			}
+		}
 	}
 	demoted, err := h.store.SetRole(ctx, key, role)
 	if err != nil {
-		return nil, "", err
+		return nil, "", 0, err
 	}
 	if role != "" && x.RetiredAt != nil {
 		_ = h.store.SetRetired(ctx, key, false) // 卸任的会话重新声明身份：回到正常
 	}
+	if _, err := h.store.SetOffline(ctx, key, nil); err != nil { // 空等下线的会话重新声明身份：回到在线，空等从头算（R-272）
+		h.log.Warn("清除下线标记失败", "err", err)
+	}
+	_ = h.store.ResetIdleWait(ctx, key, time.Time{})
 	h.clearIdle(ctx, key) // 重新声明身份：待命超时从头算（R-229）
 	handoff, demoted := h.takeOver(ctx, x, role, demoted)
+	backlog := 0
+	for _, k := range demoted {
+		if o, ok := offline[k]; ok {
+			backlog += h.takeOverOffline(ctx, o, x)
+		}
+	}
 	devices := map[string]bool{x.DeviceID: true}
 	name := x.Title
 	if name == "" {
@@ -121,7 +144,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 		h.devUp(ctx, key, x.Role != roles.Dev) // 新声明的开发报上线；够数时清除 need_devs 提醒并告诉 PM（R-116）
 	}
 	h.sessionChanged(key)
-	return demoted, handoff, nil
+	return demoted, handoff, backlog, nil
 }
 
 // pendingCodes 列出会话提的、还等用户答复的决策编号（卸任通知里写明它们的去向，R-229）。

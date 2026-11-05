@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { AnimatePresence } from 'motion/react'
 import { useNavigate, useParams } from 'react-router'
-import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, Settings2, UserPlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, PowerOff, Settings2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Requirement, Session } from '../api/client'
 import { useProjects, useRequirements, useSessions } from '../api/queries'
@@ -20,6 +20,7 @@ import { SessionRow } from '../app/thread'
 import { RefLine, ReqGlyph } from '../ui/refmark'
 import { useRecent } from '../app/recent'
 import { reviewHeld } from '../app/verify'
+import { OfflineCmd } from '../app/compact'
 
 // 项目：左侧项目列表常驻，右侧回答“这个项目现在怎样”（D-20 选定 B 主从双栏；窄屏退化为列表 → 详情）。
 
@@ -161,24 +162,26 @@ function Section({ title, right, children }: { title: string; right?: ReactNode;
 // Team：这个项目有没有 PM、几个开发在线（R-84）。没有任何身份会话时不显示；Dev 离线不当异常（R-169）。
 export function Team({ sessions }: { sessions: Session[] }) {
   const pm = sessions.filter((s) => s.role === 'pm').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
-  const aide = sessions.filter((s) => s.role === 'aide' && s.state !== 'ended').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
+  const aide = sessions.filter((s) => s.role === 'aide' && (s.state !== 'ended' || !!s.offline_at)).sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
   const devs = sessions.filter((s) => s.role === 'dev' && s.state !== 'ended')
   const online = devs.filter((s) => presence(s) !== 'offline').length
   if (!pm && !devs.length && !aide) return null
   const pp = pm ? presence(pm) : 'offline'
   const ap = aide ? presence(aide) || 'offline' : 'offline'
+  // 空等下线（R-272）：身份还在、等新会话接任，写「已交接下线」而不是「离线」
+  const label = (role: 'pm' | 'aide', x: Session | undefined, st: string) => (x?.offline_at ? t.projects.offlineSeat(role) : role === 'pm' ? t.projects.pm(t.presence[st]) : t.projects.aide(t.presence[st]))
   return (
     <span className="flex shrink-0 items-center gap-3 text-xs text-fg-3">
       {/* 主助理（R-190）：有才显示，和主调度一样每项目一个 */}
       {aide && (
         <span className="flex items-center gap-1.5">
           <span className={cx('size-1.5 rounded-full', presenceDot[ap])} />
-          {t.projects.aide(t.presence[ap])}
+          {label('aide', aide, ap)}
         </span>
       )}
       <span className="flex items-center gap-1.5">
         <span className={cx('size-1.5 rounded-full', presenceDot[pp])} />
-        {pm ? t.projects.pm(t.presence[pp]) : t.projects.noPm}
+        {pm ? label('pm', pm, pp) : t.projects.noPm}
       </span>
       {/* 开发会话按需才开（R-169）：离线不算缺人，只在有在线的 Dev 时显示 */}
       {online > 0 && (
@@ -188,6 +191,29 @@ export function Team({ sessions }: { sessions: Session[] }) {
         </span>
       )}
     </span>
+  )
+}
+
+// OfflineSeats：主调度 / 主助理空等交接下线了（R-272）：说明一句，给出接任命令。新会话接任后身份转走，这里自动消失。
+function OfflineSeats({ sessions, now }: { sessions: Session[]; now: number }) {
+  const list = sessions.filter((s) => s.offline_at && (s.role === 'pm' || s.role === 'aide'))
+  if (!list.length) return null
+  return (
+    <div className="mb-3 space-y-2">
+      {list.map((s) => (
+        <div key={s.key} className="flex items-start gap-2.5 rounded-xl bg-sunken px-3.5 py-3">
+          <PowerOff className="mt-0.5 size-4 shrink-0 text-fg-2" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-fg">
+              {t.projects.offlineSeat(s.role)}
+              <span className="ml-2 text-xs font-normal text-fg-3">{t.session.offlineSince(relTime(s.offline_at, now))}</span>
+            </div>
+            <div className="mt-0.5 mb-1.5 text-[12.5px] leading-relaxed text-fg-2">{t.projects.offlineSeatHint}</div>
+            <OfflineCmd role={s.role} />
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -294,6 +320,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
       <ProjectAsks id={p.id} now={now} />
 
       <Section title={t.projects.now} right={<Team sessions={p.sessions} />}>
+        <OfflineSeats sessions={p.sessions} now={now} />
         <NeedDevs p={p} now={now} />
         {live.length ? (
           <Card className="@container p-1.5">
@@ -414,6 +441,10 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const idleMin = Math.min(720, Math.max(5, Math.round(Number(idle)) || 30))
   const [stall, setStall] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.stall_minutes || 120))
   const stallMin = Math.min(2880, Math.max(30, Math.round(Number(stall)) || 120))
+  const [offline, setOffline] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.idle_offline_minutes || 240))
+  const offlineMin = Math.min(1440, Math.max(60, Math.round(Number(offline)) || 240))
+  const [waitMax, setWaitMax] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.wait_max_minutes || 55))
+  const waitMaxMin = Math.min(55, Math.max(5, Math.round(Number(waitMax)) || 55))
   const { mergeProject } = useActions()
   const confirm = useConfirm()
   const navigate = useNavigate()
@@ -434,7 +465,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality', dev_idle_minutes: idleMin, stall_minutes: stallMin })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality', dev_idle_minutes: idleMin, stall_minutes: stallMin, idle_offline_minutes: offlineMin, wait_max_minutes: waitMaxMin })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -482,6 +513,23 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
           <div className="flex items-center gap-2">
             <div className="w-28 shrink-0">
               <Input type="number" inputMode="numeric" min={30} max={2880} value={stall} onChange={(e) => setStall(e.target.value)} />
+            </div>
+            <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
+          </div>
+        </Field>
+        {/* 空等下线（R-272）：常驻会话连续空等累计超过它就写交接下线；单次等待不超过 55 分钟，醒来时提示缓存还在 */}
+        <Field label={t.projects.idleOffline} hint={t.projects.idleOfflineHint}>
+          <div className="flex items-center gap-2">
+            <div className="w-28 shrink-0">
+              <Input type="number" inputMode="numeric" min={60} max={1440} value={offline} onChange={(e) => setOffline(e.target.value)} />
+            </div>
+            <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
+          </div>
+        </Field>
+        <Field label={t.projects.waitMax} hint={t.projects.waitMaxHint}>
+          <div className="flex items-center gap-2">
+            <div className="w-28 shrink-0">
+              <Input type="number" inputMode="numeric" min={5} max={55} value={waitMax} onChange={(e) => setWaitMax(e.target.value)} />
             </div>
             <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
           </div>

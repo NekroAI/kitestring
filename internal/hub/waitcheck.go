@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -24,7 +25,11 @@ type waitCheck struct {
 	Asking  bool     `json:"asking" doc:"最后一条回复看起来在问用户"`
 	Ask     string   `json:"ask,omitempty" doc:"判断依据：最后一条回复的最后一段"`
 	Hint    string   `json:"hint,omitempty" doc:"要输出给 Agent 的提示；有待处理事项时为空"`
-	Retired bool     `json:"retired,omitempty" doc:"会话已被接任卸任（R-224、R-229）：ks wait 输出 hint 后直接返回，不再等待"`
+	Retired bool     `json:"retired,omitempty" doc:"会话已被接任卸任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待"`
+	// 空等下线（R-272）
+	MaxWait  string `json:"max_wait,omitempty" doc:"Claude Code 会话这次 ks wait 最长等多久（项目设置，默认 55m，不超过 55m）"`
+	IdleLeft string `json:"idle_left,omitempty" doc:"常驻会话离空等下线还剩多久：ks wait 最多等这么久，醒来时正好到点"`
+	Offline  bool   `json:"offline,omitempty" doc:"空等累计到了项目设置的时长：已记为下线，hint 是写交接下线的指示，不再等待"`
 }
 
 // pendingFor 列出会话 key 名下等用户处理的事项。
@@ -70,19 +75,41 @@ func (h *Hub) pendingFor(ctx context.Context, key string) ([]string, error) {
 
 // checkWait 算出 ks wait 开始时要不要提示、提示什么。text 是 daemon 从对话记录里读到的最新一段回复（可能为空），
 // 为空时用 Hub 存的上一轮最后回复。
-func (h *Hub) checkWait(ctx context.Context, key, text string) (waitCheck, error) {
+// afterTimeout 为真时是 ks wait 超时醒来后的复查（R-272）：常驻会话空等累计到点就记为下线，返回写交接下线的指示。
+func (h *Hub) checkWait(ctx context.Context, key, text string, afterTimeout bool) (waitCheck, error) {
 	x, err := h.store.GetSession(ctx, key)
 	if err != nil {
 		return waitCheck{}, apiErr(err)
 	}
+	if x.OfflineAt != nil && x.Role != "" {
+		return waitCheck{Items: []string{}, Retired: true, Offline: true, Hint: offlineDoneHint(x.Role, h.handedOff(ctx, x))}, nil
+	}
 	if x.RetiredAt != nil {
 		return waitCheck{Items: []string{}, Retired: true, Hint: "[Kitestring] 你已卸任（身份已由新会话接任），不要再挂 ks wait：用一两句话收尾后结束本轮。纸鸢不会再唤醒你。\n"}, nil
+	}
+	maxWait := store.WaitMaxDefault
+	if x.ProjectID != "" {
+		if p, err := h.store.GetProject(ctx, x.ProjectID); err == nil {
+			maxWait = p.WaitMax()
+		}
+	}
+	now := time.Now()
+	idle, limit, idleOK := h.idleState(ctx, x, now)
+	if afterTimeout {
+		if idleOK && idle+idleSlack >= limit {
+			h.goOffline(ctx, x, idle, now)
+			return waitCheck{Items: []string{}, Retired: true, Offline: true, Hint: offlineHint(x.Role, idle)}, nil
+		}
+		return waitCheck{Items: []string{}, MaxWait: maxWait.String()}, nil
 	}
 	items, err := h.pendingFor(ctx, key)
 	if err != nil {
 		return waitCheck{}, err
 	}
-	out := waitCheck{Pending: len(items), Items: items}
+	out := waitCheck{Pending: len(items), Items: items, MaxWait: maxWait.String()}
+	if idleOK {
+		out.IdleLeft = max(limit-idle, time.Minute).Round(time.Second).String()
+	}
 	if out.Items == nil {
 		out.Items = []string{}
 	}
@@ -111,10 +138,11 @@ func (h *Hub) registerAgentWaitCheck(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Key  string `path:"key"`
 			Body struct {
-				Text string `json:"text,omitempty" doc:"对话记录里最新的一段回复；不传时用上一轮结束时的最后回复"`
+				Text         string `json:"text,omitempty" doc:"对话记录里最新的一段回复；不传时用上一轮结束时的最后回复"`
+				AfterTimeout bool   `json:"after_timeout,omitempty" doc:"ks wait 超时醒来后的复查（R-272）：常驻会话空等累计到点时记为下线、返回写交接下线的指示"`
 			}
 		}) (*struct{ Body waitCheck }, error) {
-			c, err := h.checkWait(ctx, in.Key, in.Body.Text)
+			c, err := h.checkWait(ctx, in.Key, in.Body.Text, in.Body.AfterTimeout)
 			if err != nil {
 				return nil, err
 			}

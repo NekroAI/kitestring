@@ -177,6 +177,12 @@ func projectSettingsChanges(before, after store.Project) []string {
 	if before.StallLimit() != after.StallLimit() {
 		out = append(out, fmt.Sprintf("用户把项目 %s 的「进行中停滞」从 %d 分钟改为 %d 分钟：进行中的需求这么久没动静、又没有会话在跑，就进用户的「要你处理」。", before.Name, int(before.StallLimit()/time.Minute), int(after.StallLimit()/time.Minute)))
 	}
+	if before.IdleOfflineLimit() != after.IdleOfflineLimit() {
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「空等下线时长」从 %s 改为 %s：常驻会话连续空等累计超过它，醒来时写交接下线。", before.Name, humanMinutes(before.IdleOfflineLimit()), humanMinutes(after.IdleOfflineLimit())))
+	}
+	if before.WaitMax() != after.WaitMax() {
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「单次等待上限」从 %d 分钟改为 %d 分钟：ks wait 每次最多等这么久。", before.Name, int(before.WaitMax()/time.Minute), int(after.WaitMax()/time.Minute)))
+	}
 	if before.DevIdleLimit() != after.DevIdleLimit() {
 		out = append(out, fmt.Sprintf("用户把项目 %s 的「开发待命超时」从 %d 分钟改为 %d 分钟：开发会话待命超过它、手上没有排给它的需求时，纸鸢提示收尾，不再给它送订阅事件。", before.Name, int(before.DevIdleLimit()/time.Minute), int(after.DevIdleLimit()/time.Minute)))
 	}

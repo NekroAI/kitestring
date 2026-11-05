@@ -201,8 +201,10 @@ func TestTakeoverOverview(t *testing.T) {
 			t.Fatalf("主助理接手概览缺 %q：\n%s", want, p)
 		}
 	}
-	if strings.Contains(p, other.Code) || strings.Contains(p, "### 已放行待排") {
-		t.Fatalf("主助理概览不该列别人提的决策、主调度的栏目：\n%s", p)
+	// 别人提的决策不进「主助理提的」，单列在「别的会话提的」（R-272：下线期间新提的决策接任时一并查冲突）
+	mine, others, _ := strings.Cut(p, "### 别的会话提的、还没答的决策")
+	if strings.Contains(mine, other.Code) || !strings.Contains(others, other.Code) || strings.Contains(p, "### 已放行待排") {
+		t.Fatalf("主助理概览：别人提的决策应单列在「别的会话提的」，不该有主调度的栏目：\n%s", p)
 	}
 
 	// 撤销安排后接任不再读到；压缩后的关键状态带上概览和安排

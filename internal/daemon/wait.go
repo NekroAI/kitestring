@@ -21,8 +21,10 @@ import (
 // 超过最长等待时间安静结束。同一会话只保留最新的一个等待。
 
 const (
-	DefaultWait = time.Hour
-	MaxWait     = 12 * time.Hour
+	// DefaultWait / MaxWait：Claude Code 的 ks wait 单次等待默认、也最多 55 分钟（R-272）——Claude 的提示缓存 1 小时有效，
+	// 醒来时缓存还在，只重写几百 token；超过 1 小时醒来要把整段上下文重写一遍缓存。项目设置可以调得更短（ks wait 从 Hub 拿）。
+	DefaultWait = 55 * time.Minute
+	MaxWait     = 55 * time.Minute
 	// CodexWait：Codex 在前台运行 ks wait（它没有后台任务），整段等待都占着这一轮；
 	// 默认、也最多等 30 分钟，超时后收尾结束本轮（R-74）。
 	CodexWait = 30 * time.Minute
@@ -309,7 +311,8 @@ func (d *Daemon) handleWaitCheck(w http.ResponseWriter, r *http.Request) {
 		tp = info.transcript
 	}
 	d.mu.Unlock()
-	body, _ := json.Marshal(map[string]string{"text": latestReply(tp)})
+	after := q.Get("after") == "timeout" // ks wait 超时醒来后的复查（R-272）：空等累计到点时 Hub 记为下线
+	body, _ := json.Marshal(map[string]any{"text": latestReply(tp), "after_timeout": after})
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(d.cfg.HubURL, "/")+"/api/agent/sessions/"+url.PathEscape(key)+"/wait-check", bytes.NewReader(body))
@@ -329,7 +332,18 @@ func (d *Daemon) handleWaitCheck(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("{}"))
 		return
 	}
-	_, _ = io.Copy(w, io.LimitReader(resp.Body, 1<<20))
+	out, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var c struct {
+		Offline bool `json:"offline"`
+	}
+	if json.Unmarshal(out, &c) == nil && c.Offline {
+		// 空等下线（R-272）：不等 Hub 重新下发身份，先在本机去掉，会话写完交接结束本轮时 Stop hook 不再拦
+		d.mu.Lock()
+		delete(d.roles, key)
+		delete(d.stopBlocks, key)
+		d.mu.Unlock()
+	}
+	_, _ = w.Write(out)
 }
 
 // latestReply 从对话记录尾部读出 Agent 最新的一段文字回复（Claude Code 与 Codex 的格式都认）；读不到时返回空。

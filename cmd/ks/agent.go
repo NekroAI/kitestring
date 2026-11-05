@@ -672,12 +672,13 @@ func compact(m map[string]any) map[string]any {
 }
 
 // runWait：ks wait——等用户在 Kitestring 上的答复、修改意见或留言，收到后打印出来并退出。
-// Claude Code：后台运行，默认最长 1 小时（--timeout 可调，最长 12h），工具超时设得比它长。
+// Claude Code：后台运行，默认、也最多等 55 分钟（项目设置可调得更短，R-272：醒来时提示缓存还有效），工具超时设得比它长。
+// 常驻会话连续空等累计超过项目设置的时长（默认 4 小时）后，超时醒来时收到写交接下线的指示，不再续等。
 // Codex：前台运行（它没有后台任务），默认、也最多等 30 分钟，超时后收尾结束本轮（R-74）。
 func runWait(args []string) error {
 	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
-	timeout := fs.Duration("timeout", 0, "最长等待时间，如 30m、2h。不填：Claude Code 1 小时（最长 12h），Codex 30 分钟（也是上限）")
+	timeout := fs.Duration("timeout", 0, "最长等待时间，如 30m。不填：Claude Code 55 分钟（也是上限，项目设置可调得更短），Codex 30 分钟（也是上限）；超过上限按上限截断")
 	on := fs.String("on", "", "还要被哪些项目事件唤醒（R-164）：decision（有人提决策）、review（交验收）、blocked（需求受阻）、stage（阶段交小结）、settings（用户在网页改了项目设置：放行开关、自动派发、参谋授权窗口）、status（用户在网页改了需求状态），逗号分隔；none 不订阅，default 按身份默认（Adv：decision,review,settings；PM：review,blocked,settings；其它不订阅）。不填沿用上次")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
@@ -703,9 +704,11 @@ func runWait(args []string) error {
 	dsh := strings.HasPrefix(key, protocol.ToolDSH+":")
 	// 先自查（R-117）：名下没有用户能在面板上推进的事时先提示，再照常等待；查不到时不提示
 	var check struct {
-		Hint    string `json:"hint"`
-		Ask     string `json:"ask"`
-		Retired bool   `json:"retired"`
+		Hint     string `json:"hint"`
+		Ask      string `json:"ask"`
+		Retired  bool   `json:"retired"`
+		MaxWait  string `json:"max_wait"`
+		IdleLeft string `json:"idle_left"`
 	}
 	if !dsh {
 		cctx, ccancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -716,7 +719,19 @@ func runWait(args []string) error {
 		ccancel()
 	}
 	if check.Retired {
-		return nil // 已交接卸任（R-224）：不再挂起等待
+		return nil // 已交接卸任（R-224）或空等下线（R-272）：不再挂起等待
+	}
+	// 单次等待上限（R-272）：Claude Code 不超过 55 分钟（项目设置可更短），常驻会话最多等到空等下线的时刻
+	codexKey := strings.HasPrefix(key, protocol.ToolCodex+":")
+	if !dsh && !codexKey {
+		maxWait, _ := time.ParseDuration(check.MaxWait)
+		idleLeft, _ := time.ParseDuration(check.IdleLeft)
+		want, limit, clipped := waitTimeout(*timeout, maxWait, idleLeft)
+		if clipped {
+			fmt.Printf("[Kitestring] --timeout %s 超过单次等待上限，按 %s 等（醒来时提示缓存还有效；超时后再挂 ks wait 续等即可）。\n", humanDuration(*timeout), humanDuration(limit))
+		}
+		*timeout = want
+		q.Set("timeout", want.String())
 	}
 	if !dsh {
 		fmt.Fprintln(os.Stderr, "[Kitestring] 正在等用户在 Kitestring 上答复、验收或留言；命令运行期间请一直等着，不要中断。")
@@ -750,6 +765,11 @@ func runWait(args []string) error {
 		fmt.Print(res.Text)
 	case "timeout":
 		if res.Resident {
+			// 空等累计到点（R-272）：Hub 记为下线，给出写交接下线的指示，不再续等
+			if hint := offlineCheck(q); hint != "" {
+				fmt.Print(hint)
+				break
+			}
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。你需要常驻在线：重新运行 ks wait 继续待命%s。\n", waited, map[bool]string{true: "", false: "（在后台运行）"}[codex])
 		} else if codex {
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。请结束本轮：用一两句话说明做到哪、在等用户什么；不要再运行 ks wait 续等。用户在 Kitestring 上答复后，会在下次对话时送达给你。\n", waited)
@@ -771,6 +791,44 @@ func runWait(args []string) error {
 		}
 	}
 	return nil
+}
+
+// waitTimeout 算出 Claude Code 这次 ks wait 实际等多久（R-272）：want 是 --timeout（0 为没给），maxWait 是项目设置的单次上限
+// （0 或超过 55 分钟时按 55 分钟），idleLeft 是离空等下线还剩多久（0 为不适用）。返回实际等待、单次上限，以及 --timeout 是否被截断。
+func waitTimeout(want, maxWait, idleLeft time.Duration) (time.Duration, time.Duration, bool) {
+	limit := daemon.MaxWait
+	if maxWait > 0 {
+		limit = min(maxWait, daemon.MaxWait)
+	}
+	clipped := want > limit
+	if want <= 0 || clipped {
+		want = limit
+	}
+	if idleLeft > 0 && idleLeft < want {
+		want = idleLeft // 最后一段空等：等到空等下线的时刻正好醒来
+	}
+	return want, limit, clipped
+}
+
+// offlineCheck：ks wait 超时醒来后复查空等（R-272）。常驻会话空等累计到了项目设置的时长时返回写交接下线的指示，否则返回空。
+func offlineCheck(q url.Values) string {
+	cq := url.Values{}
+	for _, k := range []string{"ppid", "session_key"} {
+		if v := q.Get(k); v != "" {
+			cq.Set(k, v)
+		}
+	}
+	cq.Set("after", "timeout")
+	var c struct {
+		Hint    string `json:"hint"`
+		Offline bool   `json:"offline"`
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if err := client.New(8*time.Second).Do(ctx, "GET", "/wait/check?"+cq.Encode(), nil, &c); err != nil || !c.Offline {
+		return ""
+	}
+	return c.Hint
 }
 
 // waitLoop 反复调用 call 挂起等待，直到拿到一个真正的结果或到截止时间（R-227）。

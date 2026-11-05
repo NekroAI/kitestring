@@ -29,7 +29,20 @@ func (h *Hub) livePM(ctx context.Context, key, projectID string) bool {
 		return false
 	}
 	x, err := h.store.GetSession(ctx, key)
-	return err == nil && x.Role == roles.PM && x.ProjectID == projectID && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil
+	return err == nil && x.Role == roles.PM && x.ProjectID == projectID && seatHolder(x)
+}
+
+// seatHolder：会话还占着它的身份——没结束、没失联、没被你标为已完成；
+// 主调度 / 主助理空等下线后（R-272）即使终端关了也还占着：点名给它的消息照常入队，接任时转给新会话。
+// 顾问 / 评审 / 开发可能有多个，下线的不再选它。
+func seatHolder(x store.Session) bool {
+	if x.DoneAt != nil {
+		return false
+	}
+	if x.OfflineAt != nil {
+		return roles.Unique(x.Role)
+	}
+	return x.State != store.StateEnded && x.State != store.StateLost
 }
 
 // tell 给会话 to 送一条团队消息；to 为空时不送。
@@ -218,7 +231,7 @@ func (h *Hub) liveRoleExcept(ctx context.Context, projectID, role, except string
 		return ""
 	}
 	for _, x := range list {
-		if x.Key != except && x.Role == role && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil {
+		if x.Key != except && x.Role == role && seatHolder(x) {
 			return x.Key
 		}
 	}

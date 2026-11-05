@@ -15,7 +15,7 @@ import (
 // 接手概览（R-245）：ks role 接任主调度 / 主助理时，纸鸢按身份从记录生成要接手的事，附在身份提示词后；
 // 压缩上下文后补注入的关键状态（stateNote）也带上。交接因此只需写纸鸢里没有的几句（做到一半的事、口头约定、注意事项）。
 //   - 主调度：进行中 / 受阻的需求；已放行待排（按优先级）；在跑的子任务；已验收但没合入 main / 没部署的需求；main 上没推送的提交数
-//   - 主助理：待验收的需求和写过的验收建议；上一任（和自己）提的、还没答的决策；在等评审的需求
+//   - 主助理：待验收的需求和写过的验收建议；上一任（和自己）提的、还没答的决策；别的会话提的、还没答的决策（R-272）；在等评审的需求
 //   - 所有身份：项目上生效中的当前安排
 // 合入 / 部署只认明确记录的提交（原则第 11 条）：取需求最近一轮关联的提交，由会话所在设备的 daemon 在本机仓库查。
 
@@ -420,22 +420,30 @@ func (h *Hub) aideOverview(ctx context.Context, x store.Session) []ovSection {
 		once = map[string]bool{}
 	}
 	once[x.Key] = true
-	var decs []string
+	var decs, others []string
 	if list, err := h.store.ListDecisions(ctx, []string{store.DecPending}, -1); err == nil {
 		for _, d := range list {
 			if d.ProjectID != x.ProjectID || (d.Kind != store.KindDecision && d.Kind != "") {
 				continue
 			}
+			l := fmt.Sprintf("%s「%s」", d.Code, oneLineClip(store.DecisionTitle(d), 50))
 			if d.FromRole == roles.Aide || (d.FromRole == "" && once[d.SessionKey]) {
-				l := fmt.Sprintf("%s「%s」", d.Code, oneLineClip(store.DecisionTitle(d), 50))
 				if d.SessionKey != x.Key {
 					l += "（" + h.sessionName(ctx, d.SessionKey) + "提的，答复会送到那个会话）"
 				}
 				decs = append(decs, l)
+				continue
 			}
+			// 别的会话提的（R-272）：主助理订阅 decision 是为了查冲突，上一任下线期间新提的不会再叫醒谁，接任时一并列出
+			by := roles.Label(d.FromRole)
+			if by != "" {
+				by += " "
+			}
+			others = append(others, l+"（"+by+h.sessionName(ctx, d.SessionKey)+"提的）")
 		}
 	}
 	out = append(out, ovSection{title: "主助理提的、还没答的决策", lines: decs})
+	out = append(out, ovSection{title: "别的会话提的、还没答的决策（查一遍有没有和用户定过的规矩、别的决策冲突）", lines: others})
 	out = append(out, ovSection{title: "在等评审的需求", lines: waiting})
 	return out
 }

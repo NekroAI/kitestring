@@ -59,7 +59,7 @@ func (h *Hub) projectPM(ctx context.Context, projectID string) string {
 		return ""
 	}
 	for _, x := range list {
-		if x.Role == roles.PM && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil {
+		if x.Role == roles.PM && seatHolder(x) {
 			return x.Key
 		}
 	}
