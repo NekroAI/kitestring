@@ -214,7 +214,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 查看本项目当前的参谋授权窗口（R-163） */
+        /** 查看本项目当前的授权窗口（R-163） */
         get: operations["agent-get-grant"];
         put?: never;
         post?: never;
@@ -1125,10 +1125,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 参谋授权窗口与代答记录（R-163） */
+        /** 授权窗口与代答记录（R-163） */
         get: operations["list-grants"];
         put?: never;
-        /** 开一个参谋授权窗口（R-163） */
+        /** 开一个授权窗口（R-163） */
         post: operations["create-grant"];
         delete?: never;
         options?: never;
@@ -1145,7 +1145,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 撤销参谋授权窗口（R-163） */
+        /** 撤销授权窗口（R-163） */
         post: operations["revoke-grant"];
         delete?: never;
         options?: never;
@@ -1907,6 +1907,247 @@ export interface paths {
         put?: never;
         /** 用一段固定的示例对话调用摘要模型，验证配置是否可用 */
         post: operations["test-summary"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：分享名称、要不要输密码 */
+        get: operations["guest-share"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/decisions/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：决策（只限分享里需求上的） */
+        get: operations["guest-decision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：概览 */
+        get: operations["guest-overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/plans/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：计划与阶段（只含分享里的阶段，范围外的需求只给编号） */
+        get: operations["guest-plan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/requirements/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：需求详情（决策、证据、留言、进展） */
+        get: operations["guest-requirement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/sessions/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：会话详情（每轮提问和回复全文、工具调用摘要；主调度只给状态） */
+        get: operations["guest-session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 访客：输访问密码 */
+        post: operations["guest-unlock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分享列表 */
+        get: operations["list-shares"];
+        put?: never;
+        /** 新建分享 */
+        post: operations["create-share"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 按挂载项算出分享实际包含的内容（新建 / 编辑时画关系图） */
+        post: operations["preview-share"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get-share"];
+        /** 修改分享：名称、密码、有效期、挂载项 */
+        put: operations["update-share"];
+        post?: never;
+        /** 删除分享和它的全部链接 */
+        delete: operations["delete-share"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares/{id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重新启用已撤回或已失效的分享 */
+        post: operations["enable-share"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares/{id}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 给一个访客加一条链接 */
+        post: operations["create-share-link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares/{id}/links/{link}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 改访客名字，或撤回 / 恢复这条链接 */
+        put: operations["update-share-link"];
+        post?: never;
+        /** 删除一条访客链接 */
+        delete: operations["delete-share-link"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shares/{id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤回分享：所有链接下一次访问即拒绝 */
+        post: operations["revoke-share"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3564,6 +3805,160 @@ export interface components {
             /** @description 参谋代答过的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
         };
+        GuestItem: {
+            /** Format: date-time */
+            at: string;
+            dec?: string;
+            from?: string;
+            kind: string;
+            label?: string;
+            peer_role?: string;
+            refs: string[] | null;
+            req?: string;
+            text?: string;
+            to?: string;
+        };
+        GuestMetaOutBody: {
+            /** Format: date-time */
+            expires_at?: string;
+            /** @description 这条链接的访客名字 */
+            guest: string;
+            /** @description 分享名称 */
+            name: string;
+            needs_password: boolean;
+            /** @description 已输过密码（或没设密码），可以看内容 */
+            unlocked: boolean;
+        };
+        GuestOverviewOutBody: {
+            /** @description 最近动态（只收有明确记录的事件），新的在前，最多 50 条 */
+            activity: components["schemas"]["ShareActivity"][] | null;
+            /** @description 分享里的计划、需求编号：文字里提到的其它编号只显示编号、不能点开 */
+            codes: string[] | null;
+            /** @description 需求状态分布：状态 → 条数 */
+            counts: {
+                [key: string]: number;
+            };
+            guest: string;
+            name: string;
+            /** @description 分享里的内容，计划 → 阶段 → 需求 → 会话 */
+            nodes: components["schemas"]["ShareNode"][] | null;
+            /**
+             * Format: date-time
+             * @description 服务端时间，网页据此算「多久前」
+             */
+            now: string;
+            /** @description 分享里的会话，运行中的在前 */
+            sessions: components["schemas"]["GuestSession"][] | null;
+        };
+        GuestReqOutBody: {
+            /** @description 这条需求的进展，新的在前 */
+            activity: components["schemas"]["ShareActivity"][] | null;
+            /** @description 需求上的决策，新的在前 */
+            decisions: components["schemas"]["Decision"][] | null;
+            /** @description 需求，含证据、评审意见、修改意见与留言（feedback）、状态变化；范围外的会话键已去掉 */
+            requirement: components["schemas"]["Requirement"];
+            /** @description 关联的、在分享里的会话 */
+            sessions: components["schemas"]["GuestSession"][] | null;
+        };
+        GuestSession: {
+            /**
+             * Format: int64
+             * @description 在跑的后台命令和子任务个数
+             */
+            background: number;
+            /** @description 访客能不能点进对话：主调度只给状态和当前一句话，为 false */
+            conversation: boolean;
+            /** Format: date-time */
+            done_at?: string;
+            /** Format: date-time */
+            ended_at?: string;
+            key: string;
+            /**
+             * Format: date-time
+             * @description 最近一次有动静的时间：「3 分钟前」
+             */
+            last_active_at: string;
+            /** @description 最近一次工具动作（主调度不给） */
+            last_tool?: string;
+            /** Format: date-time */
+            last_tool_at?: string;
+            /** @description 当前这一轮的一句话（这一轮的提问第一行，没有时用会话摘要） */
+            line: string;
+            model?: string;
+            requirements: components["schemas"]["RequirementRef"][] | null;
+            /** @enum {string} */
+            role: "" | "aide" | "advisor" | "reviewer" | "pm" | "dev";
+            /** Format: date-time */
+            started_at: string;
+            /** @description 原始状态，网页按 displayState 换成显示状态 */
+            state: string;
+            /**
+             * Format: date-time
+             * @description 当前状态开始的时间：「运行中 12 分钟」
+             */
+            state_since: string;
+            title: string;
+            tool: string;
+            /** Format: int64 */
+            turns: number;
+            /** @enum {string} */
+            wait_kind: "" | "approval" | "question";
+        };
+        GuestSessionOutBody: {
+            before?: string;
+            more: boolean;
+            session: components["schemas"]["GuestSession"];
+            /** @description 时间正序；主调度不给对话，为空 */
+            turns: components["schemas"]["GuestTurn"][] | null;
+        };
+        GuestTool: {
+            /** Format: date-time */
+            at: string;
+            /** @description 一句说明：命令（截断）、文件名、搜索词等 */
+            brief?: string;
+            name: string;
+            /** @description 子任务调用的 */
+            sub?: boolean;
+        };
+        GuestTurn: {
+            /**
+             * Format: date-time
+             * @description 这一轮结束的时间；正在运行的一轮省略
+             */
+            end?: string;
+            /** @description 这一轮改过的文件（文件名） */
+            files: string[] | null;
+            id: string;
+            /** @description 这一轮收到的消息（网页上发的话、答复、指派等） */
+            inbox: components["schemas"]["GuestItem"][] | null;
+            /** @description 这一轮里的明确记录：改状态、证据、决策、留言…… */
+            items: components["schemas"]["GuestItem"][] | null;
+            /** @description 提问全文 */
+            prompt?: string;
+            /** @description 这一轮最后的回复全文（Markdown） */
+            reply?: string;
+            /** @enum {string} */
+            reply_kind: "full" | "brief" | "none";
+            /** @description 正在运行的一轮（最新一轮且还没结束） */
+            running: boolean;
+            /**
+             * @description terminal 在终端提的问 / web 网页上发的话 / wake 纸鸢送达的消息
+             * @enum {string}
+             */
+            source: "" | "terminal" | "web" | "wake";
+            /** Format: date-time */
+            start: string;
+            /** Format: int64 */
+            tool_count: number;
+            /** @description 工具调用，时间正序（最多 200 条） */
+            tools: components["schemas"]["GuestTool"][] | null;
+        };
+        GuestUnlockInBody: {
+            password: string;
+        };
+        GuestUnlockOutBody: {
+            ok: boolean;
+        };
         Handoff: {
             /** @description 口头约定：用户在对话里交代、还没落成记录的（临时安排用 ks arrange add 记成当前安排） */
             agreements: string;
@@ -5032,6 +5427,189 @@ export interface components {
              * @description 录屏大小上限（MB）
              */
             upload_video_mb: number;
+        };
+        ShareActivity: {
+            /** @enum {string} */
+            actor: "user" | "agent" | "system";
+            /** Format: date-time */
+            at: string;
+            /** @description 会话当时的标题快照 */
+            by?: string;
+            /** @description 决策 / 留言编号 D-x */
+            dec?: string;
+            /** @description 改状态：原状态 */
+            from?: string;
+            /**
+             * @description status 改状态 / evidence 提交证据 / review 评审意见 / decision 提决策 / answer 决策作答 / comment 留言 / link 关联会话
+             * @enum {string}
+             */
+            kind: "status" | "evidence" | "review" | "decision" | "answer" | "comment" | "link";
+            /** @description 需求编号 R-x */
+            req: string;
+            /** @description 会话当时的身份 */
+            role?: string;
+            session?: string;
+            /** @description 一句话：证据结论、决策问题、留言第一行（截断） */
+            text?: string;
+            /** @description 改状态：新状态 */
+            to?: string;
+        };
+        ShareCreateInBody: {
+            /**
+             * Format: date-time
+             * @description 到期时间；省略表示永久。7 天 / 30 天 / 自定义由网页换算成时间
+             */
+            expires_at?: string;
+            items: components["schemas"]["ShareItemIn"][] | null;
+            /** @description 同时建好的访客链接名字（每个访客一条） */
+            links?: string[] | null;
+            name: string;
+            /** @description 访问密码，可选；所有链接共用 */
+            password?: string;
+            project_id?: string;
+        };
+        ShareEnableInBody: {
+            /**
+             * Format: date-time
+             * @description 已到期的分享重新启用时要给新的到期时间（或 forever）
+             */
+            expires_at?: string;
+            forever?: boolean;
+        };
+        ShareItem: {
+            /** @description 包含以后新增的：计划后来新增的阶段和需求、阶段后来放进的需求、需求后来关联的会话自动纳入 */
+            auto: boolean;
+            /** @description 被单独取消：上级开着「包含以后新增的」也不会把它带回来 */
+            excluded: boolean;
+            /** @enum {string} */
+            kind: "plan" | "stage" | "req" | "session";
+            ref: string;
+        };
+        ShareItemIn: {
+            /** @description 包含以后新增的 */
+            auto?: boolean;
+            /** @description 单独取消：上级开着「包含以后新增的」也不纳入 */
+            excluded?: boolean;
+            /** @enum {string} */
+            kind: "plan" | "stage" | "req" | "session";
+            /** @description 计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键 */
+            ref: string;
+        };
+        ShareLinkInBody: {
+            /** @description 访客的名字，如「小王」 */
+            name: string;
+        };
+        ShareLinkUpdateInBody: {
+            name?: string;
+            /** @description true 撤回（下一次访问即拒绝）/ false 恢复 */
+            revoked?: boolean;
+        };
+        ShareLinkView: {
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            /** Format: date-time */
+            last_visit_at?: string;
+            name: string;
+            /** @description 访客页路径 /s/<token> */
+            path: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            share_id: string;
+            token: string;
+            /** @description 按设置里的对外地址拼好的完整链接；没填对外地址时为空，网页用当前地址拼 */
+            url?: string;
+            /** Format: int64 */
+            visits: number;
+        };
+        ShareNode: {
+            /** @description 计划、需求的编号；阶段是所属计划的编号 */
+            code?: string;
+            /** @enum {string} */
+            kind: "plan" | "stage" | "req" | "session";
+            parents: string[] | null;
+            /** @description 计划 / 阶段 / 需求的 ID，会话键 */
+            ref: string;
+            /** @description 会话的身份 */
+            role?: string;
+            /**
+             * Format: int64
+             * @description 阶段：第几阶段
+             */
+            seq?: number;
+            /** @description 计划 / 阶段 / 需求的状态；会话是显示状态的原始值（state） */
+            status?: string;
+            title: string;
+        };
+        SharePreviewInBody: {
+            items: components["schemas"]["ShareItemIn"][] | null;
+        };
+        ShareScopeView: {
+            nodes: components["schemas"]["ShareNode"][] | null;
+            /** Format: int64 */
+            plans: number;
+            /** Format: int64 */
+            reqs: number;
+            /** Format: int64 */
+            sessions: number;
+            /** Format: int64 */
+            stages: number;
+        };
+        ShareUpdateInBody: {
+            /** Format: date-time */
+            expires_at?: string;
+            /** @description 改成永久 */
+            forever?: boolean;
+            /** @description 不传 = 不改；传了就整组替换 */
+            items?: components["schemas"]["ShareItemIn"][] | null;
+            name?: string;
+            /** @description 不传 = 不改；空串 = 去掉密码；改密码后已输过密码的访客要重新输 */
+            password?: string;
+        };
+        ShareView: {
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description 到期时间；省略表示永久
+             */
+            expires_at?: string;
+            /** @description 设了访问密码（所有链接共用） */
+            has_password: boolean;
+            /** @description 范围里有会话：新建 / 编辑时提醒「会话对话全文对访客可见」 */
+            has_sessions: boolean;
+            id: string;
+            items: components["schemas"]["ShareItem"][] | null;
+            /**
+             * Format: date-time
+             * @description 所有链接里最近一次访问
+             */
+            last_visit_at?: string;
+            links: components["schemas"]["ShareLinkView"][] | null;
+            name: string;
+            project_id?: string;
+            /**
+             * Format: date-time
+             * @description 撤回的时间；重新启用时清除
+             */
+            revoked_at?: string;
+            scope: components["schemas"]["ShareScopeView"];
+            /**
+             * @description active 生效中 / expired 已失效（到期）/ revoked 已撤回
+             * @enum {string}
+             */
+            status: "active" | "expired" | "revoked";
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * Format: int64
+             * @description 所有链接的访问次数合计
+             */
+            visits: number;
+        };
+        SharesOutBody: {
+            /** @description 生效中的在前，其余按新建时间倒序 */
+            shares: components["schemas"]["ShareView"][] | null;
         };
         ShellCmd: {
             a?: string;
@@ -9741,6 +10319,608 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SummaryTestOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestMetaOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                ref: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestOverviewOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                ref: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-requirement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                ref: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestReqOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-session": {
+        parameters: {
+            query?: {
+                /** @description 往上加载更早一页：上一页返回的 before */
+                before?: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+                key: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestSessionOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestUnlockInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestUnlockOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharesOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareCreateInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "preview-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharePreviewInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareScopeView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "update-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareUpdateInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "enable-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ShareEnableInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-share-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareLinkInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLinkView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "update-share-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                link: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareLinkUpdateInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLinkView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-share-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                link: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "revoke-share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareView"];
                 };
             };
             /** @description Error */

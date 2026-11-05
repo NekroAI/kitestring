@@ -207,6 +207,24 @@ func handoffHow(by string, handed bool) string {
 }
 
 // copyTexts 列出本文件的全部文字（函数用占位参数取一次），给 copy_test.go 检查。
+// ---------- 分享访客页（R-281）：免登录访客看到的提示 ----------
+
+const (
+	shareLinkInvalid    = "链接无效，请向分享者确认链接"
+	shareLinkRevoked    = "这条链接已撤回"
+	shareRevokedText    = "分享已撤回"
+	shareExpiredText    = "分享已到期"
+	sharePasswordNeeded = "请输入访问密码"
+	sharePasswordWrong  = "访问密码错误"
+	shareNotIncluded    = "不在这个分享里"
+	shareReadOnly       = "分享只能查看，不能修改"
+)
+
+// sharePasswordLocked 是访问密码错误次数过多后的提示。
+func sharePasswordLocked(minutes int) string {
+	return fmt.Sprintf("访问密码错误次数过多，请 %d 分钟后再试", minutes)
+}
+
 func copyTexts() map[string]string {
 	out := map[string]string{}
 	add := func(prefix string, m map[string]string) {
@@ -244,6 +262,8 @@ func copyTexts() map[string]string {
 		"userStatusZhRelease": userStatusZh(store.ReqDraft, store.ReqReady), "userStatusZhOther": userStatusZh(store.ReqReady, store.ReqBlocked),
 		"holdHard": holdHard("验收只由用户决策"), "holdScope": holdScope("高风险", false, "中风险"), "holdScopeUnmarked": holdScope("", true, "低风险"),
 		"holdEnded": holdEnded("G-3"), "handoffHow": handoffHow("甲", false), "handoffHowHanded": handoffHow("甲", true),
+		"shareLinkInvalid": shareLinkInvalid, "shareLinkRevoked": shareLinkRevoked, "shareRevokedText": shareRevokedText, "shareExpiredText": shareExpiredText,
+		"sharePasswordNeeded": sharePasswordNeeded, "sharePasswordWrong": sharePasswordWrong, "shareNotIncluded": shareNotIncluded, "shareReadOnly": shareReadOnly, "sharePasswordLocked": sharePasswordLocked(15),
 	} {
 		out[k] = v
 	}

@@ -545,3 +545,40 @@ CREATE TABLE IF NOT EXISTS turn_replies (
 	text        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS turn_replies_session ON turn_replies(session_key, at);
+
+-- 分享（R-281）：把计划、阶段、需求、会话挂到一个分享上，给熟人 / 团队成员免登录只读访问。
+-- 状态（生效中 / 已失效 / 已撤回）按 expires_at、revoked_at 推算；expires_at 为空表示永久。密码可选，所有链接共用（bcrypt）
+CREATE TABLE IF NOT EXISTS shares (
+	id            TEXT PRIMARY KEY,
+	name          TEXT NOT NULL,
+	project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
+	password_hash TEXT NOT NULL DEFAULT '',
+	expires_at    TEXT NOT NULL DEFAULT '',
+	revoked_at    TEXT NOT NULL DEFAULT '',
+	created_at    TEXT NOT NULL,
+	updated_at    TEXT NOT NULL
+);
+
+-- 分享的挂载项：kind = plan | stage | req | session，ref 是计划 / 阶段 / 需求的 ID 或会话键。
+-- auto：包含以后新增的（计划后来新增的阶段和需求、需求后来关联的会话）；excluded：被单独取消，上级的 auto 不会把它带回来
+CREATE TABLE IF NOT EXISTS share_items (
+	share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+	kind     TEXT NOT NULL,
+	ref      TEXT NOT NULL,
+	auto     INTEGER NOT NULL DEFAULT 0,
+	excluded INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (share_id, kind, ref)
+);
+
+-- 访客链接：每个访客一条，带名字；token 要能随时复制，存原文。撤回后下一次访问即拒绝
+CREATE TABLE IF NOT EXISTS share_links (
+	id            TEXT PRIMARY KEY,
+	share_id      TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+	name          TEXT NOT NULL,
+	token         TEXT NOT NULL UNIQUE,
+	created_at    TEXT NOT NULL,
+	revoked_at    TEXT NOT NULL DEFAULT '',
+	last_visit_at TEXT NOT NULL DEFAULT '',
+	visits        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS share_links_share ON share_links(share_id);

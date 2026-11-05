@@ -4563,6 +4563,502 @@
         ],
         "type": "object"
       },
+      "GuestItem": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dec": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "peer_role": {
+            "type": "string"
+          },
+          "refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "req": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "at",
+          "refs"
+        ],
+        "type": "object"
+      },
+      "GuestMetaOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "guest": {
+            "description": "这条链接的访客名字",
+            "type": "string"
+          },
+          "name": {
+            "description": "分享名称",
+            "type": "string"
+          },
+          "needs_password": {
+            "type": "boolean"
+          },
+          "unlocked": {
+            "description": "已输过密码（或没设密码），可以看内容",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "guest",
+          "needs_password",
+          "unlocked"
+        ],
+        "type": "object"
+      },
+      "GuestOverviewOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "description": "最近动态（只收有明确记录的事件），新的在前，最多 50 条",
+            "items": {
+              "$ref": "#/components/schemas/ShareActivity"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "codes": {
+            "description": "分享里的计划、需求编号：文字里提到的其它编号只显示编号、不能点开",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "counts": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "需求状态分布：状态 → 条数",
+            "type": "object"
+          },
+          "guest": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nodes": {
+            "description": "分享里的内容，计划 → 阶段 → 需求 → 会话",
+            "items": {
+              "$ref": "#/components/schemas/ShareNode"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "now": {
+            "description": "服务端时间，网页据此算「多久前」",
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessions": {
+            "description": "分享里的会话，运行中的在前",
+            "items": {
+              "$ref": "#/components/schemas/GuestSession"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "guest",
+          "nodes",
+          "codes",
+          "counts",
+          "sessions",
+          "activity",
+          "now"
+        ],
+        "type": "object"
+      },
+      "GuestReqOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "description": "这条需求的进展，新的在前",
+            "items": {
+              "$ref": "#/components/schemas/ShareActivity"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "decisions": {
+            "description": "需求上的决策，新的在前",
+            "items": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "requirement": {
+            "$ref": "#/components/schemas/Requirement",
+            "description": "需求，含证据、评审意见、修改意见与留言（feedback）、状态变化；范围外的会话键已去掉"
+          },
+          "sessions": {
+            "description": "关联的、在分享里的会话",
+            "items": {
+              "$ref": "#/components/schemas/GuestSession"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "requirement",
+          "decisions",
+          "sessions",
+          "activity"
+        ],
+        "type": "object"
+      },
+      "GuestSession": {
+        "additionalProperties": false,
+        "properties": {
+          "background": {
+            "description": "在跑的后台命令和子任务个数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "conversation": {
+            "description": "访客能不能点进对话：主调度只给状态和当前一句话，为 false",
+            "type": "boolean"
+          },
+          "done_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_active_at": {
+            "description": "最近一次有动静的时间：「3 分钟前」",
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_tool": {
+            "description": "最近一次工具动作（主调度不给）",
+            "type": "string"
+          },
+          "last_tool_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "line": {
+            "description": "当前这一轮的一句话（这一轮的提问第一行，没有时用会话摘要）",
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/RequirementRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "role": {
+            "enum": [
+              "",
+              "aide",
+              "advisor",
+              "reviewer",
+              "pm",
+              "dev"
+            ],
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "description": "原始状态，网页按 displayState 换成显示状态",
+            "type": "string"
+          },
+          "state_since": {
+            "description": "当前状态开始的时间：「运行中 12 分钟」",
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "turns": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "wait_kind": {
+            "enum": [
+              "",
+              "approval",
+              "question"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "tool",
+          "role",
+          "title",
+          "state",
+          "wait_kind",
+          "state_since",
+          "started_at",
+          "last_active_at",
+          "turns",
+          "background",
+          "line",
+          "requirements",
+          "conversation"
+        ],
+        "type": "object"
+      },
+      "GuestSessionOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "before": {
+            "type": "string"
+          },
+          "more": {
+            "type": "boolean"
+          },
+          "session": {
+            "$ref": "#/components/schemas/GuestSession"
+          },
+          "turns": {
+            "description": "时间正序；主调度不给对话，为空",
+            "items": {
+              "$ref": "#/components/schemas/GuestTurn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "session",
+          "turns",
+          "more"
+        ],
+        "type": "object"
+      },
+      "GuestTool": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brief": {
+            "description": "一句说明：命令（截断）、文件名、搜索词等",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sub": {
+            "description": "子任务调用的",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "at"
+        ],
+        "type": "object"
+      },
+      "GuestTurn": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "description": "这一轮结束的时间；正在运行的一轮省略",
+            "format": "date-time",
+            "type": "string"
+          },
+          "files": {
+            "description": "这一轮改过的文件（文件名）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "inbox": {
+            "description": "这一轮收到的消息（网页上发的话、答复、指派等）",
+            "items": {
+              "$ref": "#/components/schemas/GuestItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "items": {
+            "description": "这一轮里的明确记录：改状态、证据、决策、留言……",
+            "items": {
+              "$ref": "#/components/schemas/GuestItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "prompt": {
+            "description": "提问全文",
+            "type": "string"
+          },
+          "reply": {
+            "description": "这一轮最后的回复全文（Markdown）",
+            "type": "string"
+          },
+          "reply_kind": {
+            "enum": [
+              "full",
+              "brief",
+              "none"
+            ],
+            "type": "string"
+          },
+          "running": {
+            "description": "正在运行的一轮（最新一轮且还没结束）",
+            "type": "boolean"
+          },
+          "source": {
+            "description": "terminal 在终端提的问 / web 网页上发的话 / wake 纸鸢送达的消息",
+            "enum": [
+              "",
+              "terminal",
+              "web",
+              "wake"
+            ],
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tool_count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tools": {
+            "description": "工具调用，时间正序（最多 200 条）",
+            "items": {
+              "$ref": "#/components/schemas/GuestTool"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "running",
+          "source",
+          "inbox",
+          "items",
+          "tools",
+          "tool_count",
+          "files",
+          "reply_kind"
+        ],
+        "type": "object"
+      },
+      "GuestUnlockInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object"
+      },
+      "GuestUnlockOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
       "Handoff": {
         "additionalProperties": false,
         "properties": {
@@ -9163,6 +9659,536 @@
         ],
         "type": "object"
       },
+      "ShareActivity": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "enum": [
+              "user",
+              "agent",
+              "system"
+            ],
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "description": "会话当时的标题快照",
+            "type": "string"
+          },
+          "dec": {
+            "description": "决策 / 留言编号 D-x",
+            "type": "string"
+          },
+          "from": {
+            "description": "改状态：原状态",
+            "type": "string"
+          },
+          "kind": {
+            "description": "status 改状态 / evidence 提交证据 / review 评审意见 / decision 提决策 / answer 决策作答 / comment 留言 / link 关联会话",
+            "enum": [
+              "status",
+              "evidence",
+              "review",
+              "decision",
+              "answer",
+              "comment",
+              "link"
+            ],
+            "type": "string"
+          },
+          "req": {
+            "description": "需求编号 R-x",
+            "type": "string"
+          },
+          "role": {
+            "description": "会话当时的身份",
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "text": {
+            "description": "一句话：证据结论、决策问题、留言第一行（截断）",
+            "type": "string"
+          },
+          "to": {
+            "description": "改状态：新状态",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "req",
+          "actor"
+        ],
+        "type": "object"
+      },
+      "ShareCreateInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "description": "到期时间；省略表示永久。7 天 / 30 天 / 自定义由网页换算成时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ShareItemIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "links": {
+            "description": "同时建好的访客链接名字（每个访客一条）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "description": "访问密码，可选；所有链接共用",
+            "maxLength": 128,
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ShareEnableInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "description": "已到期的分享重新启用时要给新的到期时间（或 forever）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "forever": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ShareItem": {
+        "additionalProperties": false,
+        "properties": {
+          "auto": {
+            "description": "包含以后新增的：计划后来新增的阶段和需求、阶段后来放进的需求、需求后来关联的会话自动纳入",
+            "type": "boolean"
+          },
+          "excluded": {
+            "description": "被单独取消：上级开着「包含以后新增的」也不会把它带回来",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "plan",
+              "stage",
+              "req",
+              "session"
+            ],
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "auto",
+          "excluded"
+        ],
+        "type": "object"
+      },
+      "ShareItemIn": {
+        "additionalProperties": false,
+        "properties": {
+          "auto": {
+            "description": "包含以后新增的",
+            "type": "boolean"
+          },
+          "excluded": {
+            "description": "单独取消：上级开着「包含以后新增的」也不纳入",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "plan",
+              "stage",
+              "req",
+              "session"
+            ],
+            "type": "string"
+          },
+          "ref": {
+            "description": "计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "type": "object"
+      },
+      "ShareLinkInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "访客的名字，如「小王」",
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "ShareLinkUpdateInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "revoked": {
+            "description": "true 撤回（下一次访问即拒绝）/ false 恢复",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "ShareLinkView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_visit_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "description": "访客页路径 /s/\u003ctoken\u003e",
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "share_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          },
+          "url": {
+            "description": "按设置里的对外地址拼好的完整链接；没填对外地址时为空，网页用当前地址拼",
+            "type": "string"
+          },
+          "visits": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "id",
+          "share_id",
+          "name",
+          "token",
+          "created_at",
+          "visits"
+        ],
+        "type": "object"
+      },
+      "ShareNode": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "计划、需求的编号；阶段是所属计划的编号",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "plan",
+              "stage",
+              "req",
+              "session"
+            ],
+            "type": "string"
+          },
+          "parents": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ref": {
+            "description": "计划 / 阶段 / 需求的 ID，会话键",
+            "type": "string"
+          },
+          "role": {
+            "description": "会话的身份",
+            "type": "string"
+          },
+          "seq": {
+            "description": "阶段：第几阶段",
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "description": "计划 / 阶段 / 需求的状态；会话是显示状态的原始值（state）",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "title",
+          "parents"
+        ],
+        "type": "object"
+      },
+      "SharePreviewInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ShareItemIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ShareScopeView": {
+        "additionalProperties": false,
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/ShareNode"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "plans": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reqs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sessions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stages": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "nodes",
+          "plans",
+          "stages",
+          "reqs",
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "ShareUpdateInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "forever": {
+            "description": "改成永久",
+            "type": "boolean"
+          },
+          "items": {
+            "description": "不传 = 不改；传了就整组替换",
+            "items": {
+              "$ref": "#/components/schemas/ShareItemIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "description": "不传 = 不改；空串 = 去掉密码；改密码后已输过密码的访客要重新输",
+            "maxLength": 128,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ShareView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "description": "到期时间；省略表示永久",
+            "format": "date-time",
+            "type": "string"
+          },
+          "has_password": {
+            "description": "设了访问密码（所有链接共用）",
+            "type": "boolean"
+          },
+          "has_sessions": {
+            "description": "范围里有会话：新建 / 编辑时提醒「会话对话全文对访客可见」",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ShareItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "last_visit_at": {
+            "description": "所有链接里最近一次访问",
+            "format": "date-time",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/ShareLinkView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "description": "撤回的时间；重新启用时清除",
+            "format": "date-time",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ShareScopeView"
+          },
+          "status": {
+            "description": "active 生效中 / expired 已失效（到期）/ revoked 已撤回",
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "visits": {
+            "description": "所有链接的访问次数合计",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "links",
+          "scope",
+          "has_sessions",
+          "visits",
+          "id",
+          "name",
+          "has_password",
+          "status",
+          "items",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "SharesOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "shares": {
+            "description": "生效中的在前，其余按新建时间倒序",
+            "items": {
+              "$ref": "#/components/schemas/ShareView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "shares"
+        ],
+        "type": "object"
+      },
       "ShellCmd": {
         "additionalProperties": false,
         "properties": {
@@ -11246,7 +12272,7 @@
             "description": "Error"
           }
         },
-        "summary": "查看本项目当前的参谋授权窗口（R-163）",
+        "summary": "查看本项目当前的授权窗口（R-163）",
         "tags": [
           "agent"
         ]
@@ -13982,7 +15008,7 @@
             "description": "Error"
           }
         },
-        "summary": "参谋授权窗口与代答记录（R-163）",
+        "summary": "授权窗口与代答记录（R-163）",
         "tags": [
           "grants"
         ]
@@ -14021,7 +15047,7 @@
             "description": "Error"
           }
         },
-        "summary": "开一个参谋授权窗口（R-163）",
+        "summary": "开一个授权窗口（R-163）",
         "tags": [
           "grants"
         ]
@@ -14062,7 +15088,7 @@
             "description": "Error"
           }
         },
-        "summary": "撤销参谋授权窗口（R-163）",
+        "summary": "撤销授权窗口（R-163）",
         "tags": [
           "grants"
         ]
@@ -16482,6 +17508,881 @@
         "summary": "用一段固定的示例对话调用摘要模型，验证配置是否可用",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/share/{token}": {
+      "get": {
+        "operationId": "guest-share",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestMetaOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：分享名称、要不要输密码",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/decisions/{ref}": {
+      "get": {
+        "operationId": "guest-decision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：决策（只限分享里需求上的）",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/overview": {
+      "get": {
+        "operationId": "guest-overview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestOverviewOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：概览",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/plans/{ref}": {
+      "get": {
+        "operationId": "guest-plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Plan"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：计划与阶段（只含分享里的阶段，范围外的需求只给编号）",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/requirements/{ref}": {
+      "get": {
+        "operationId": "guest-requirement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestReqOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：需求详情（决策、证据、留言、进展）",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/sessions/{key}": {
+      "get": {
+        "operationId": "guest-session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "往上加载更早一页：上一页返回的 before",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "往上加载更早一页：上一页返回的 before",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestSessionOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：会话详情（每轮提问和回复全文、工具调用摘要；主调度只给状态）",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/unlock": {
+      "post": {
+        "operationId": "guest-unlock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestUnlockInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestUnlockOutBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：输访问密码",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/shares": {
+      "get": {
+        "operationId": "list-shares",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "分享列表",
+        "tags": [
+          "shares"
+        ]
+      },
+      "post": {
+        "operationId": "create-share",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareCreateInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "新建分享",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/shares/preview": {
+      "post": {
+        "operationId": "preview-share",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharePreviewInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareScopeView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "按挂载项算出分享实际包含的内容（新建 / 编辑时画关系图）",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/shares/{id}": {
+      "delete": {
+        "operationId": "delete-share",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "删除分享和它的全部链接",
+        "tags": [
+          "shares"
+        ]
+      },
+      "get": {
+        "operationId": "get-share",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "tags": [
+          "shares"
+        ]
+      },
+      "put": {
+        "operationId": "update-share",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareUpdateInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "修改分享：名称、密码、有效期、挂载项",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/shares/{id}/enable": {
+      "post": {
+        "operationId": "enable-share",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareEnableInBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "重新启用已撤回或已失效的分享",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/shares/{id}/links": {
+      "post": {
+        "operationId": "create-share-link",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareLinkInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLinkView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "给一个访客加一条链接",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/shares/{id}/links/{link}": {
+      "delete": {
+        "operationId": "delete-share-link",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "link",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "删除一条访客链接",
+        "tags": [
+          "shares"
+        ]
+      },
+      "put": {
+        "operationId": "update-share-link",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "link",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareLinkUpdateInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLinkView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "改访客名字，或撤回 / 恢复这条链接",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/shares/{id}/revoke": {
+      "post": {
+        "operationId": "revoke-share",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤回分享：所有链接下一次访问即拒绝",
+        "tags": [
+          "shares"
         ]
       }
     },

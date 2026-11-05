@@ -90,6 +90,7 @@ type Hub struct {
 	log      *slog.Logger
 	broker   *broker
 	logins   *loginLimiter
+	guests   *loginLimiter // 分享访问密码的错误次数（R-281），和网页登录分开计
 	ai       aiGuard
 	filesDir string
 
@@ -106,6 +107,7 @@ type Hub struct {
 	deploy      string                              // 正在运行的 ks 的构建提交（version.Commit；测试可改）
 	lanes       *laneState                          // 泳道时间线（R-205）
 	watchMerges map[string]*watchMerge              // 需求|会话 → 60 秒内可并入的只告知订阅提醒（R-249 P4，只在内存里）
+	shareKey    []byte                              // 访客输对密码后的 cookie 签名密钥（R-281），首次用到时生成并存进设置
 }
 
 // New 创建 Hub。
@@ -115,6 +117,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		log:         log,
 		broker:      newBroker(),
 		logins:      newLoginLimiter(),
+		guests:      newLoginLimiter(),
 		conns:       map[string]*deviceConn{},
 		lostTmr:     map[string]*time.Timer{},
 		notified:    map[string]time.Time{},

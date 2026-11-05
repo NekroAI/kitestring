@@ -19,10 +19,22 @@ import (
 // 序号更新的会话推送重新叠加上去，旧的列表结果不会盖掉新的推送。
 // 慢客户端的缓冲区满了丢消息时，记下“欠账”，缓过来后补发一次全量重拉，不会漏。
 type broker struct {
-	mu   sync.Mutex
-	rev  int64
-	subs map[*sub]struct{}
+	mu     sync.Mutex
+	rev    int64
+	subs   map[*sub]struct{}
+	guests map[*guestSub]struct{} // 分享访客的实时通道（R-281）：只收「有变化」的信号，不带数据
 }
+
+// guestSub 是一个访客的实时连接：任何变化都只往 ch 里放一个信号（满了就是已有信号待处理，天然合并），
+// 访客页收到后重新拉取它看得到的内容；gone 关闭表示链接被撤回 / 分享失效，连接要立刻断开。
+type guestSub struct {
+	shareID, linkID string
+	ch              chan struct{}
+	gone            chan struct{}
+	once            sync.Once
+}
+
+func (g *guestSub) close() { g.once.Do(func() { close(g.gone) }) }
 
 type sub struct {
 	ch    chan string // 已编码好的 SSE 消息
@@ -43,9 +55,9 @@ func (s *sub) settle(w http.ResponseWriter) {
 }
 
 // allTopics 是全量重拉时让网页失效的全部数据类型。
-const allTopics = "sessions,requirements,decisions,projects,devices,plans,settings,lanes"
+const allTopics = "sessions,requirements,decisions,projects,devices,plans,settings,lanes,shares"
 
-func newBroker() *broker { return &broker{subs: map[*sub]struct{}{}} }
+func newBroker() *broker { return &broker{subs: map[*sub]struct{}{}, guests: map[*guestSub]struct{}{}} }
 
 // Rev 返回当前序号（会话列表在查询前读取）。
 func (b *broker) Rev() int64 {
@@ -66,6 +78,35 @@ func (b *broker) send(msg func(rev int64) string) {
 			s.owedM.Lock()
 			s.owed = true
 			s.owedM.Unlock()
+		}
+	}
+	for g := range b.guests {
+		select {
+		case g.ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (b *broker) addGuest(g *guestSub) {
+	b.mu.Lock()
+	b.guests[g] = struct{}{}
+	b.mu.Unlock()
+}
+
+func (b *broker) removeGuest(g *guestSub) {
+	b.mu.Lock()
+	delete(b.guests, g)
+	b.mu.Unlock()
+}
+
+// dropGuests 断开分享（linkID 为空时是整个分享）的访客实时连接：撤回、改密码、删除后立刻生效。
+func (b *broker) dropGuests(shareID, linkID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for g := range b.guests {
+		if g.shareID == shareID && (linkID == "" || g.linkID == linkID) {
+			g.close()
 		}
 	}
 }
