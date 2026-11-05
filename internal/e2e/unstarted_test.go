@@ -19,11 +19,11 @@ func TestUnstartedNudge(t *testing.T) {
 	cwd, _ := os.Getwd()
 	c := client.New(30 * time.Second)
 	ctx := context.Background()
-	for _, sid := range []string{"us-pm", "us-dev"} {
+	for _, sid := range []string{"us-pm", "us-dev", "us-aide", "us-adv"} {
 		hook(t, "claude", map[string]any{"session_id": sid, "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "上线", "prompt_id": "p0"})
 	}
 	e.waitFor("会话入库", func() bool { return e.session("claude:us-dev").ProjectID != "" })
-	for _, kr := range [][2]string{{"claude:us-pm", "pm"}, {"claude:us-dev", "dev"}} {
+	for _, kr := range [][2]string{{"claude:us-pm", "pm"}, {"claude:us-dev", "dev"}, {"claude:us-aide", "aide"}, {"claude:us-adv", "advisor"}} {
 		if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": kr[0], "role": kr[1]}, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -166,6 +166,23 @@ func TestUnstartedNudge(t *testing.T) {
 	text = woke(pw, "用户在等你开始处理", "网页改为进行中")
 	if !strings.Contains(text, r3.Code) {
 		t.Fatalf("叫醒的消息应写明需求：%s", text)
+	}
+
+	// 4b. 主助理 / 顾问关联了需求，用户在网页把它从待开始改为进行中：不叫醒他们（R-198 的约定，R-279 补断言）
+	r5 := newReq("未开始演示五")
+	e.call("PUT", "/api/requirements/"+r5.Code, map[string]any{"title": r5.Title, "status": "ready", "project_id": pid}, nil)
+	for _, key := range []string{"claude:us-aide", "claude:us-adv"} {
+		if err := c.Do(ctx, "POST", "/agent/sessions/"+key+"/link", map[string]any{"requirement": r5.Code}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.call("PUT", "/api/requirements/"+r5.Code, map[string]any{"title": r5.Title, "status": "ready", "project_id": pid}, nil)
+	aideW, advW := parkWait(t, e, c, "claude:us-aide"), parkWait(t, e, c, "claude:us-adv")
+	e.call("PUT", "/api/requirements/"+r5.Code, map[string]any{"title": r5.Title, "status": "in_progress", "project_id": pid}, nil)
+	asleep(t, aideW, "主助理（关联的需求被改为进行中）")
+	asleep(t, advW, "顾问（关联的需求被改为进行中）")
+	if n := len(nudges("claude:us-aide", r5.Code)) + len(nudges("claude:us-adv", r5.Code)); n != 0 {
+		t.Fatalf("主助理 / 顾问不该收到未开始处理的提醒：%d", n)
 	}
 
 	// 5. 紧接着重挂等待：上一次等待送来、还没开始处理的指派，在新等待开头再列一次（只一次）；已开始处理的不列

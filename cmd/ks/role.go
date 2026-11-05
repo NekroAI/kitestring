@@ -213,6 +213,25 @@ func runTeam(args []string) error {
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
+	teamFlags := map[string][]string{
+		"tell":      {"to-session", "req", "to", "reply", "json", "fyi"},
+		"broadcast": {"role", "req", "json", "fyi"},
+		"sent":      {"json"},
+		"sessions":  {"role", "all-projects", "all", "json"},
+		"recommend": {"reason", "work", "duration", "minutes"},
+		"need":      {"reason"},
+	}
+	teamSub := ""
+	if fs.NArg() > 0 {
+		teamSub = fs.Arg(0)
+	}
+	if allowed, known := teamFlags[teamSub]; known {
+		if err := onlyFlags(fs, "ks team "+teamSub, allowed...); err != nil {
+			return err
+		}
+	} else if err := onlyFlags(fs, "ks team"); err != nil {
+		return err
+	}
 	tell := fs.NArg() > 0 && fs.Arg(0) == "tell"
 	broadcast := fs.NArg() > 0 && fs.Arg(0) == "broadcast"
 	sent := fs.NArg() > 0 && fs.Arg(0) == "sent"

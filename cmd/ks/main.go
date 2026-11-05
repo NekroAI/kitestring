@@ -291,8 +291,11 @@ func runLogin(args []string) error {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	hubURL := fs.String("hub", "", "Hub 地址，例：http://hub.local:7310")
 	token := fs.String("token", "", "设备 token（kst_ 开头）")
-	if err := fs.Parse(args); err != nil {
+	if err := parseAnywhere(fs, args); err != nil {
 		return err
+	}
+	if fs.NArg() > 0 {
+		return fmt.Errorf("ks login 不接受多余的参数：%s", strings.Join(fs.Args(), " "))
 	}
 	if *hubURL == "" || *token == "" {
 		return fmt.Errorf("用法：ks login --hub <地址> --token <token>")

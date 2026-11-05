@@ -54,6 +54,44 @@ func parseAnywhere(fs *flag.FlagSet, args []string) error {
 	return fs.Parse(append([]string{"--"}, pos...))
 }
 
+// onlyFlags 拒绝这条子命令用不上的选项（R-279）：flag 集合是各子命令共用的，
+// 写了别的子命令的选项（如 ks req comment 带 --on）不会被 flag 包拒绝，会被静默丢掉，这里补上报错。
+// --session 所有子命令都认。
+func onlyFlags(fs *flag.FlagSet, name string, allowed ...string) error {
+	ok := map[string]bool{"session": true}
+	for _, a := range allowed {
+		ok[a] = true
+	}
+	var bad []string
+	fs.Visit(func(f *flag.Flag) {
+		if !ok[f.Name] {
+			bad = append(bad, "--"+f.Name)
+		}
+	})
+	if len(bad) > 0 {
+		return fmt.Errorf("%s 不接受选项 %s（写错了？这个选项不会生效）", name, strings.Join(bad, "、"))
+	}
+	return nil
+}
+
+// reqFlags 是 ks req 各子命令认的选项（--session 除外）。
+var reqFlags = map[string][]string{
+	"list":     {"all"},
+	"get":      {},
+	"create":   {"title", "detail", "acceptance", "status", "from-decision", "priority", "image"},
+	"edit":     {"title", "detail", "acceptance", "priority", "type", "approval", "reason", "from-decision"},
+	"status":   {"reason", "reason-kind", "on"},
+	"request":  {"reason"},
+	"evidence": {"kind", "link", "verdict", "details", "blocks", "todo", "aside", "image", "images", "video", "reason"},
+	"assign":   {"to", "comment", "reason"},
+	"review":   {"verdict", "details", "blocks", "image", "images"},
+	"comment":  {"blocks", "image"},
+	"watch":    {"action-only", "json"},
+	"unwatch":  {"json"},
+	"watching": {"json"},
+	"link":     {},
+}
+
 // cliSession 推断 CLI 调用所在会话：显式参数优先，其次 agent 注入的环境变量。
 // DSH 排在 Claude 前面：从 Claude Code 终端里启动的 DSH 会继承 CLAUDE_CODE_SESSION_ID，
 // 而 DSH 的 shell 每次调用都会重建 DSH_* 变量，能看到它就一定是在 DSH 里（R-251）。
@@ -305,6 +343,11 @@ func runReq(args []string) error {
 	watchJSON := fs.Bool("json", false, "watch / unwatch / watching：输出原始 JSON")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
+	}
+	if allowed, known := reqFlags[sub]; known {
+		if err := onlyFlags(fs, "ks req "+sub, allowed...); err != nil {
+			return err
+		}
 	}
 	key := cliSession(*session)
 	if key == "" && sub != "list" && sub != "get" {
@@ -886,6 +929,12 @@ func runPlan(args []string) error {
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
+	planFlags := map[string][]string{"create": {"file"}, "update": {"file"}, "get": {}, "submit": {"blocks"}}
+	if allowed, known := planFlags[sub]; known {
+		if err := onlyFlags(fs, "ks plan "+sub, allowed...); err != nil {
+			return err
+		}
+	}
 	key := cliSession(*session)
 	switch sub {
 	case "create":
@@ -977,6 +1026,12 @@ func runCommit(args []string) error {
 	link := fs.String("url", "", "ci：CI 结果链接")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
+	}
+	commitFlags := map[string][]string{"list": {}, "link": {"subject"}, "ci": {"url"}}
+	if allowed, known := commitFlags[sub]; known {
+		if err := onlyFlags(fs, "ks commit "+sub, allowed...); err != nil {
+			return err
+		}
 	}
 	key := cliSession(*session)
 	switch {

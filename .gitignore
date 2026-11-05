@@ -8,3 +8,4 @@ notes/private/
 web/dist/*
 !web/dist/.keep
 web/node_modules/
+/cmd/ks/ks
