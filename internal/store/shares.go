@@ -728,6 +728,15 @@ func (s *Store) ReqDecisions(ctx context.Context, reqID string) ([]Decision, err
 	return s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind = ? ORDER BY x.seq DESC`, reqID, KindDecision)
 }
 
+// GuestReqDecisions 列出需求上访客看得到的全部记录（GuestDecisionKinds：决策、留言、修改意见、修改、放行……），新的在前。
+func (s *Store) GuestReqDecisions(ctx context.Context, reqID string) ([]Decision, error) {
+	args := []any{reqID}
+	for _, k := range GuestDecisionKinds {
+		args = append(args, k)
+	}
+	return s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind IN (?`+strings.Repeat(", ?", len(GuestDecisionKinds)-1)+`) ORDER BY x.seq DESC`, args...)
+}
+
 // FileOwner 是引用了某个附件的记录：需求（描述附图、证据）、决策（附图、表达块）或阶段（小结的表达块）。
 type FileOwner struct {
 	ReqID   string // 需求描述或证据里的

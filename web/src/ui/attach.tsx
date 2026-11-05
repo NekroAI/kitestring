@@ -21,7 +21,12 @@ import { fmtSize, isImage, isMedia, isText, isVideo, kindOf, limitFor, previewTe
 // title / boxes：证据截图的一句话标题与改动框（R-183），只有证据的附图有
 export type FileRef = { id: string; name: string; mime: string; size: number; title?: string | null; boxes?: Box[] | null }
 
-export const fileUrl = (id: string) => `/api/files/${encodeURIComponent(id)}`
+// 附件地址的前缀：访客页（R-281）换成 /api/share/<token>/files/，只取分享里的附件。
+let fileBase = '/api/files/'
+export const setFileBase = (base: string) => {
+  fileBase = base
+}
+export const fileUrl = (id: string) => `${fileBase}${encodeURIComponent(id)}`
 // 缩小版（R-246）：w 取 480 / 960 / 1920，Hub 首次请求时生成；生成不了会回落原图。点开大图时仍用 fileUrl 加载原图。
 export const thumbUrl = (id: string, w: ThumbTier = 480) => `${fileUrl(id)}?w=${w}`
 

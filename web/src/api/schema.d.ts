@@ -3822,18 +3822,32 @@ export interface components {
             /** @description 参谋代答过的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
         };
+        GuestDecRef: {
+            code: string;
+            /** @description 所属需求编号 */
+            req: string;
+            status: string;
+            title: string;
+        };
         GuestItem: {
             /** Format: date-time */
             at: string;
             dec?: string;
             from?: string;
+            id: string;
             kind: string;
             label?: string;
+            /** @description 证据：voided 已作废；决策：已撤回 */
+            note?: string;
             peer_role?: string;
             refs: string[] | null;
             req?: string;
             text?: string;
             to?: string;
+            /** @description 改状态：link 关联时开始处理；收到的消息：tell / decision / assign 等类别 */
+            via?: string;
+            /** @description 网页上发给会话的话（这一轮的提问） */
+            web?: boolean;
         };
         GuestMetaOutBody: {
             /** Format: date-time */
@@ -3855,6 +3869,8 @@ export interface components {
             counts: {
                 [key: string]: number;
             };
+            /** @description 分享里需求上的决策：文字里提到这些 D-x 时能点开（落到所属需求） */
+            decs: components["schemas"]["GuestDecRef"][] | null;
             guest: string;
             name: string;
             /** @description 分享里的内容，计划 → 阶段 → 需求 → 会话 */

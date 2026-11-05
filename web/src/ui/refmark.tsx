@@ -148,7 +148,9 @@ export type RefInfo = {
   project?: string
 }
 
-const RefIndexContext = createContext<Map<string, RefInfo> | null>(null)
+export const RefIndexContext = createContext<Map<string, RefInfo> | null>(null)
+// DeadRefContext（R-281 访客页）：为真时，索引里没有的编号画成虚线框、不能点（不在分享里的内容只显示编号）。
+export const DeadRefContext = createContext(false)
 
 // RefIndexProvider：把需求、计划、决策按编号建一次索引（挂在 Shell），所有印记共用。
 export function RefIndexProvider({ children }: { children: ReactNode }) {
@@ -281,6 +283,8 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
   const open = useOpenRef()
   const on = useLit(code)
   const [count, setCount] = useState(1)
+  const dead = useContext(DeadRefContext)
+  if (dead && !info) return <DeadRef code={code} />
   const st = status ?? info?.status ?? ''
   const name = title ?? info?.title ?? ''
   const isTurn = turn ?? info?.turn ?? false
@@ -377,7 +381,14 @@ export const refPattern = /(?<![A-Za-z0-9_-])([RPD]-\d+)(?![A-Za-z0-9_-])/g
 // 文本里的编号都是在引用别的对象，默认显示短标题（R-151）。
 export function RefText({ code, label = 'title', flow }: { code: string; label?: 'code' | 'title'; flow?: boolean }) {
   const info = useRefInfo(code)
-  return info ? <RefChip code={code} className="mx-0.5" label={label} flow={flow} /> : <>{code}</>
+  const dead = useContext(DeadRefContext)
+  if (info) return <RefChip code={code} className="mx-0.5" label={label} flow={flow} />
+  return dead ? <DeadRef code={code} /> : <>{code}</>
+}
+
+// DeadRef：不在分享里的编号，只显示编号，不能点开。
+export function DeadRef({ code }: { code: string }) {
+  return <span className="mx-0.5 inline-flex items-center rounded-md border border-dashed border-line-strong px-1.5 align-[-3px] font-mono text-[11px] leading-4 font-semibold whitespace-nowrap text-fg-3">{code}</span>
 }
 
 // Linkify：把一段纯文本里的 R-/P-/D- 编号换成印记。

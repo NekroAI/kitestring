@@ -85,7 +85,8 @@
     "menu.status", "menu.priority", "menu.copyCode", "menu.copyLink", "ask.open", "ask.prev", "ask.next", "ask.openSession", "session.give", "session.message",
     "turns.give", "turns.send", "orphans.ignore", "handoff.copyCmd", "brief.reportOpen", "away.start", "away.confirm", "away.end", "morning.withdraw",
     "share.create", "share.menu", "share.enable", "share.revoke", "share.revokeOk", "share.preview", "share.copyLink", "share.revokeLink", "share.restoreLink",
-    "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk"
+    "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk",
+    "guest.enter", "guest.toolsAll", "guest.toolsFold"
   ],
   "buttonMax": 6,
   "allow": [

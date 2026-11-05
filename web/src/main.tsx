@@ -1,6 +1,6 @@
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router'
 import { Toaster } from 'sonner'
 import { ApiError, setUnauthorizedHandler } from './api/client'
@@ -44,6 +44,36 @@ document.addEventListener(
   { passive: false },
 )
 
+// 访客页（R-281）：/s/<token> 走单独的根，不挂所有者的登录、导航、草稿和撤销条，也不调所有者的接口。
+const GuestApp = lazy(() => import('./guest/GuestApp'))
+const guestMode = window.location.pathname.startsWith('/s/')
+
+function renderGuest() {
+  const qc: QueryClient = new QueryClient({
+    // 访客的接口返回 401（要重新输密码）或 410（链接已失效）时，重新确认访问信息，页面随之换成输密码或被拒绝
+    queryCache: new QueryCache({
+      onError: (err, q) => {
+        if (q.queryKey[2] !== 'meta' && err instanceof ApiError && (err.status === 401 || err.status === 410)) void qc.invalidateQueries({ queryKey: ['guest', q.queryKey[1], 'meta'] })
+      },
+    }),
+    defaultOptions: { queries: { staleTime: 15_000, refetchOnWindowFocus: true } },
+  })
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <QueryClientProvider client={qc}>
+        <BrowserRouter>
+          <TipProvider delayDuration={700} skipDelayDuration={300}>
+            <Suspense fallback={null}>
+              <GuestApp />
+            </Suspense>
+          </TipProvider>
+          <Toaster position="top-center" richColors closeButton toastOptions={{ className: 'font-sans' }} />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -63,7 +93,8 @@ setUnauthorizedHandler(() => {
   if (cur?.logged_in !== false) queryClient.setQueryData(qk.auth, { initialized: true, version: cur?.version ?? '', logged_in: false })
 })
 
-createRoot(document.getElementById('root')!).render(
+if (guestMode) renderGuest()
+else createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

@@ -4563,6 +4563,31 @@
         ],
         "type": "object"
       },
+      "GuestDecRef": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "req": {
+            "description": "所属需求编号",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "req",
+          "title",
+          "status"
+        ],
+        "type": "object"
+      },
       "GuestItem": {
         "additionalProperties": false,
         "properties": {
@@ -4576,10 +4601,17 @@
           "from": {
             "type": "string"
           },
+          "id": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
           "label": {
+            "type": "string"
+          },
+          "note": {
+            "description": "证据：voided 已作废；决策：已撤回",
             "type": "string"
           },
           "peer_role": {
@@ -4602,9 +4634,18 @@
           },
           "to": {
             "type": "string"
+          },
+          "via": {
+            "description": "改状态：link 关联时开始处理；收到的消息：tell / decision / assign 等类别",
+            "type": "string"
+          },
+          "web": {
+            "description": "网页上发给会话的话（这一轮的提问）",
+            "type": "boolean"
           }
         },
         "required": [
+          "id",
           "kind",
           "at",
           "refs"
@@ -4673,6 +4714,16 @@
             "description": "需求状态分布：状态 → 条数",
             "type": "object"
           },
+          "decs": {
+            "description": "分享里需求上的决策：文字里提到这些 D-x 时能点开（落到所属需求）",
+            "items": {
+              "$ref": "#/components/schemas/GuestDecRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "guest": {
             "type": "string"
           },
@@ -4713,6 +4764,7 @@
           "counts",
           "sessions",
           "activity",
+          "decs",
           "now"
         ],
         "type": "object"

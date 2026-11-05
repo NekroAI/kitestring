@@ -364,6 +364,13 @@ func TestShareGuestBoundary(t *testing.T) {
 		t.Fatalf("关联会话只留范围内的：%v", rq.Body.Requirement.Sessions)
 	}
 	e.do(g, "GET", base+"/decisions/"+decIn.Code, nil, nil, 200)
+	// 概览列出分享里需求上的决策（正文里的 D-x 能点开），范围外需求上的不列
+	var ovd guestOverviewOut
+	e.do(g, "GET", base+"/overview", nil, &ovd.Body, 200)
+	if !slices.ContainsFunc(ovd.Body.Decs, func(d GuestDecRef) bool { return d.Code == decIn.Code && d.Req == e.ra.Code }) ||
+		slices.ContainsFunc(ovd.Body.Decs, func(d GuestDecRef) bool { return d.Code == decOut.Code || d.Code == tell.Code }) {
+		t.Fatalf("概览的决策不对：%+v", ovd.Body.Decs)
+	}
 	e.do(g, "GET", base+"/files/"+fIn.ID, nil, nil, 200)
 	e.do(g, "GET", base+"/plans/"+e.plan.Code, nil, nil, 200)
 

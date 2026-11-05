@@ -327,6 +327,7 @@ type GuestTool struct {
 
 // GuestItem 是轮里的一条记录。
 type GuestItem struct {
+	ID       string    `json:"id"`
 	Kind     string    `json:"kind"`
 	At       time.Time `json:"at"`
 	Label    string    `json:"label,omitempty"`
@@ -336,6 +337,9 @@ type GuestItem struct {
 	From     string    `json:"from,omitempty"`
 	To       string    `json:"to,omitempty"`
 	PeerRole string    `json:"peer_role,omitempty"`
+	Via      string    `json:"via,omitempty" doc:"改状态：link 关联时开始处理；收到的消息：tell / decision / assign 等类别"`
+	Note     string    `json:"note,omitempty" doc:"证据：voided 已作废；决策：已撤回"`
+	Web      bool      `json:"web,omitempty" doc:"网页上发给会话的话（这一轮的提问）"`
 	Refs     []string  `json:"refs"`
 }
 
@@ -348,7 +352,7 @@ func guestItems(in []TurnItem) []GuestItem {
 		if refs == nil {
 			refs = []string{}
 		}
-		out = append(out, GuestItem{Kind: it.Kind, At: it.At, Label: it.Label, Text: it.Text, Req: it.Req, Dec: it.Dec, From: it.From, To: it.To, PeerRole: it.PeerRole, Refs: refs})
+		out = append(out, GuestItem{ID: it.ID, Via: it.Via, Note: it.Note, Web: it.Web, Kind: it.Kind, At: it.At, Label: it.Label, Text: it.Text, Req: it.Req, Dec: it.Dec, From: it.From, To: it.To, PeerRole: it.PeerRole, Refs: refs})
 	}
 	return out
 }
@@ -406,8 +410,17 @@ type guestOverviewOut struct {
 		Counts   map[string]int        `json:"counts" doc:"需求状态分布：状态 → 条数"`
 		Sessions []GuestSession        `json:"sessions" doc:"分享里的会话，运行中的在前"`
 		Activity []store.ShareActivity `json:"activity" doc:"最近动态（只收有明确记录的事件），新的在前，最多 50 条"`
+		Decs     []GuestDecRef         `json:"decs" doc:"分享里需求上访客看得到的决策和留言等记录：文字里提到这些 D-x 时能点开（落到所属需求）"`
 		Now      time.Time             `json:"now" doc:"服务端时间，网页据此算「多久前」"`
 	}
+}
+
+// GuestDecRef 是分享里需求上的一个决策（或留言、修改意见等记录）：编号、所属需求、标题和状态，网页据此把正文里的 D-x 画成能点的印记。
+type GuestDecRef struct {
+	Code   string `json:"code"`
+	Req    string `json:"req" doc:"所属需求编号"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
 }
 
 type guestRefIn struct {
@@ -520,6 +533,23 @@ func (h *Hub) registerShareGuest(api huma.API) {
 				}
 			}
 			b.Sessions = h.guestSessions(ctx, g, keys)
+			b.Decs = []GuestDecRef{}
+			for _, n := range sv.Nodes {
+				if n.Kind != store.ShareKindReq {
+					continue
+				}
+				ds, err := h.store.GuestReqDecisions(ctx, n.Ref)
+				if err != nil {
+					return nil, err
+				}
+				for _, d := range ds {
+					title := d.ShortTitle
+					if title == "" {
+						title = guestLine(d.Question)
+					}
+					b.Decs = append(b.Decs, GuestDecRef{Code: d.Code, Req: n.Code, Title: title, Status: d.Status})
+				}
+			}
 			as, err := h.store.ShareActivities(ctx, reqIDs, 50)
 			if err != nil {
 				return nil, err

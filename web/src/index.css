@@ -235,6 +235,45 @@
   }
 }
 
+/* ---------- 访客页（R-281）：「实时」的呼吸点、最近动态的竖线节点、新动态淡淡闪一下 ---------- */
+.guest-breathe {
+  animation: guest-breathe 1.8s ease-in-out infinite;
+}
+@keyframes guest-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+.guest-feed::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 11px;
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--surface);
+  border: 1.5px solid var(--fg-3);
+}
+.guest-fresh {
+  animation: guest-fresh 2.4s ease-out;
+}
+.guest-fresh::before {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+@keyframes guest-fresh {
+  from {
+    background: var(--lit);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
