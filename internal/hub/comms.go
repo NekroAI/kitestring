@@ -64,9 +64,9 @@ type commsOut struct {
 	Body struct {
 		ProjectID   string         `json:"project_id"`
 		ProjectName string         `json:"project_name"`
-		Sessions    []CommsSession `json:"sessions" doc:"待命 → 忙 → 在线 → 离线"`
+		Sessions    []CommsSession `json:"sessions" doc:"待命 → 运行中 → 空闲 → 已结束"`
 		Messages    []CommsMsg     `json:"messages" doc:"时间范围内的消息，新的在前（含纸鸢提醒）"`
-		Waiting     []CommsMsg     `json:"waiting" doc:"还在等对方醒来的消息（不论等了多久），新的在前"`
+		Waiting     []CommsMsg     `json:"waiting" doc:"待送达的消息（不论等了多久），新的在前"`
 		Offline     []CommsMsg     `json:"offline" doc:"没送到、对方已结束或失联的消息，新的在前"`
 		Today       int            `json:"today" doc:"今天的会话消息条数（一次广播算一条，不含纸鸢提醒）"`
 		TodayCasts  int            `json:"today_broadcasts" doc:"今天的广播次数"`
@@ -77,7 +77,7 @@ type commsOut struct {
 
 type commsPendingOut struct {
 	Body struct {
-		Count int `json:"count" doc:"所有项目里还在等对方醒来的消息数（导航上的数字；一次广播算一条）"`
+		Count int `json:"count" doc:"所有项目里待送达的消息数（导航上的数字；一次广播算一条）"`
 	}
 }
 
@@ -277,7 +277,7 @@ func (h *Hub) registerCommsWeb(api huma.API) {
 	tag := []string{"comms"}
 	huma.Register(api, huma.Operation{OperationID: "get-comms", Method: http.MethodGet, Path: "/api/comms", Tags: tag,
 		Summary:     "通讯页（R-249）：项目里的在线会话、会话之间的消息与广播、送达状态（只读）",
-		Description: "messages 是 [since, until) 之间的消息，新的在前，含纸鸢自动发的提醒（system = true）；一次广播合成一条，recipients 逐个列送达状态。waiting 是还在等对方醒来的消息（不论多久），offline 是发给已结束 / 失联会话、永远送不到的消息。sessions 带今天（day_start 起）收发几条。"},
+		Description: "messages 是 [since, until) 之间的消息，新的在前，含纸鸢自动发的提醒（system = true）；一次广播合成一条，recipients 逐个列送达状态。waiting 是待送达的消息（不论多久），offline 是发给已结束 / 失联会话、无法送达的消息。sessions 带今天（day_start 起）收发几条。"},
 		func(ctx context.Context, in *struct {
 			ProjectID string `query:"project_id" required:"true"`
 			Since     string `query:"since" doc:"开始时间（RFC3339），不填为 24 小时前"`
@@ -398,7 +398,7 @@ func (h *Hub) registerCommsWeb(api huma.API) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "get-comms-pending", Method: http.MethodGet, Path: "/api/comms/pending", Tags: tag,
-		Summary: "所有项目里还在等对方醒来的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算"},
+		Summary: "所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算"},
 		func(ctx context.Context, _ *struct{}) (*commsPendingOut, error) {
 			unsent, err := h.store.UnsentTells(ctx, "", 1000)
 			if err != nil {

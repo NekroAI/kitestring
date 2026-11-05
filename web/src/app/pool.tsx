@@ -392,7 +392,7 @@ const createdAt = (iso: string) => {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-// Tile：需求块。编号、标记（设计 / 计划）、两行标题；左侧 3px 色条按着色取值；右上角常驻写从创建算起放了多久（3d 前 / 5h 前 / 20m 前 / 刚刚），悬停看创建时间。
+// Tile：需求块。编号、标记（设计 / 计划）、两行标题；左侧 3px 色条按着色取值；右上角常驻写从创建算起放了多久（3 天前 / 5 小时前 / 20 分钟前 / 刚刚），悬停看创建时间。
 export function Tile({ r, faded }: { r: Requirement; faded?: boolean }) {
   const c = usePoolCtx()
   const open = useOpenReq()

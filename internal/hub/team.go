@@ -22,7 +22,7 @@ type Worker struct {
 	Title         string                 `json:"title"`
 	Tool          string                 `json:"tool"`
 	Device        string                 `json:"device"`
-	Presence      string                 `json:"presence" enum:"standby,working,offline" doc:"standby 在线待命；working 工作中；offline 离线"`
+	Presence      string                 `json:"presence" enum:"standby,working,offline" doc:"standby 待命；working 运行中；offline 空闲（没挂 ks wait）"`
 	ContextTokens int                    `json:"context_tokens"`
 	ContextMax    int                    `json:"context_max"`
 	Open          []store.RequirementRef `json:"open" doc:"手上的需求：待开始、进行中、受阻"`
@@ -111,7 +111,7 @@ func (h *Hub) registerAgentTeam(api huma.API) {
 			Ref  string `path:"ref"`
 			Body struct {
 				SessionKey string `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 PM）"`
-				To         string `json:"to" minLength:"1" doc:"Dev 会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻"`
+				To         string `json:"to" minLength:"1" doc:"Dev 会话键；auto 表示由 hub 挑：待命优先，其次手上需求少、上下文轻"`
 				Comment    string `json:"comment,omitempty" doc:"交代给开发的话，例如为什么交给它、和哪条需求相关"`
 				Reason     string `json:"reason,omitempty" doc:"派的是草稿时必填：放行理由（派活会顺带把草稿放行为待开始，R-166）"`
 			}

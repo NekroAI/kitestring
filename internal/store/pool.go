@@ -41,7 +41,7 @@ type Pool struct {
 	DoneYesterday   int            `json:"done_yesterday" doc:"昨天进入已完成、现在仍是已完成的条数"`
 	Drafts          int            `json:"drafts"`
 	DraftOldestDays int            `json:"draft_oldest_days"`
-	Flowing         int            `json:"flowing" doc:"待开始 + 进行中 + 阻塞 + 待验收"`
+	Flowing         int            `json:"flowing" doc:"待开始 + 进行中 + 受阻 + 待验收"`
 	OpenByUser      int            `json:"open_by_user" doc:"未关闭需求里由你提出的条数"`
 	OpenByAgent     int            `json:"open_by_agent" doc:"未关闭需求里由 Agent 记下的条数"`
 	DoneDaily       []PoolDay      `json:"done_daily" doc:"近 7 天（含今天）每日完成数，日期正序"`

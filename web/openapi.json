@@ -312,7 +312,7 @@
             "type": "string"
           },
           "to": {
-            "description": "Dev 会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻",
+            "description": "Dev 会话键；auto 表示由 hub 挑：待命优先，其次手上需求少、上下文轻",
             "minLength": 1,
             "type": "string"
           }
@@ -1590,7 +1590,7 @@
             "type": "boolean"
           },
           "kind": {
-            "description": "待决策 / 待批准计划 / 待验收 / 受阻",
+            "description": "待答复决策 / 待批准计划 / 待验收 / 受阻",
             "enum": [
               "decision",
               "plan",
@@ -2629,7 +2629,7 @@
             "type": "string"
           },
           "sessions": {
-            "description": "待命 → 忙 → 在线 → 离线",
+            "description": "待命 → 运行中 → 空闲 → 已结束",
             "items": {
               "$ref": "#/components/schemas/CommsSession"
             },
@@ -2658,7 +2658,7 @@
             "type": "boolean"
           },
           "waiting": {
-            "description": "还在等对方醒来的消息（不论等了多久），新的在前",
+            "description": "待送达的消息（不论等了多久），新的在前",
             "items": {
               "$ref": "#/components/schemas/CommsMsg"
             },
@@ -2723,7 +2723,7 @@
         "additionalProperties": false,
         "properties": {
           "count": {
-            "description": "所有项目里还在等对方醒来的消息数（导航上的数字；一次广播算一条）",
+            "description": "所有项目里待送达的消息数（导航上的数字；一次广播算一条）",
             "format": "int64",
             "type": "integer"
           }
@@ -2788,7 +2788,7 @@
             "type": "string"
           },
           "status": {
-            "description": "standby 待命；busy 忙；online 在线（没挂 ks wait）；offline 离线",
+            "description": "standby 待命；busy 运行中；online 空闲（没挂 ks wait）；offline 已结束（含失联）",
             "enum": [
               "standby",
               "busy",
@@ -3669,7 +3669,7 @@
             "type": "string"
           },
           "status": {
-            "description": "delivered 已送达；pending_wake 等对方醒来；offline 对方不在线",
+            "description": "delivered 已送达；pending_wake 待送达；offline 无法送达",
             "enum": [
               "delivered",
               "pending_wake",
@@ -3789,7 +3789,7 @@
             "type": "string"
           },
           "approval": {
-            "description": "进行中 / 阻塞 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x）",
+            "description": "进行中 / 受阻 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x）",
             "type": "string"
           },
           "detail": {
@@ -6669,7 +6669,7 @@
             "type": "integer"
           },
           "flowing": {
-            "description": "待开始 + 进行中 + 阻塞 + 待验收",
+            "description": "待开始 + 进行中 + 受阻 + 待验收",
             "format": "int64",
             "type": "integer"
           },
@@ -8342,7 +8342,7 @@
             "type": "string"
           },
           "status": {
-            "description": "standby 待命；busy 忙；online 在线（没挂 ks wait）；offline 离线",
+            "description": "standby 待命；busy 运行中；online 空闲（没挂 ks wait）；offline 已结束（含失联）",
             "enum": [
               "standby",
               "busy",
@@ -8406,7 +8406,7 @@
             "type": "string"
           },
           "sessions": {
-            "description": "待命 → 忙 → 在线 → 离线，同状态最近活跃的在前",
+            "description": "待命 → 运行中 → 空闲 → 已结束，同状态最近活跃的在前",
             "items": {
               "$ref": "#/components/schemas/RosterEntry"
             },
@@ -9630,7 +9630,7 @@
             "type": "string"
           },
           "recipients": {
-            "description": "逐个收件人的送达状态：delivered 已送达 / pending_wake 等对方醒来（带原因）/ offline 对方不在线",
+            "description": "逐个收件人的送达状态：delivered 已送达 / pending_wake 待送达（带原因）/ offline 无法送达",
             "items": {
               "$ref": "#/components/schemas/Delivery"
             },
@@ -10452,7 +10452,7 @@
             ]
           },
           "presence": {
-            "description": "standby 在线待命；working 工作中；offline 离线",
+            "description": "standby 待命；working 运行中；offline 空闲（没挂 ks wait）",
             "enum": [
               "standby",
               "working",
@@ -12463,7 +12463,7 @@
     },
     "/api/agent/team/sent": {
       "get": {
-        "description": "默认列你最近发的 10 条（一次广播算一条，逐个收件人列状态）；ref 填 D-x 只看那一条（广播的任意一行都会带出整次广播）。只能查自己发的。送达状态只从记录推：delivered 已送达（带时间）、pending_wake 等对方醒来（写明原因，如 Codex 要等用户下次发消息）、offline 对方已结束或失联。",
+        "description": "默认列你最近发的 10 条（一次广播算一条，逐个收件人列状态）；ref 填 D-x 只看那一条（广播的任意一行都会带出整次广播）。只能查自己发的。送达状态只从记录推：delivered 已送达（带时间）、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达（对方已结束或失联）。",
         "operationId": "agent-team-sent",
         "parameters": [
           {
@@ -13245,7 +13245,7 @@
     },
     "/api/comms": {
       "get": {
-        "description": "messages 是 [since, until) 之间的消息，新的在前，含纸鸢自动发的提醒（system = true）；一次广播合成一条，recipients 逐个列送达状态。waiting 是还在等对方醒来的消息（不论多久），offline 是发给已结束 / 失联会话、永远送不到的消息。sessions 带今天（day_start 起）收发几条。",
+        "description": "messages 是 [since, until) 之间的消息，新的在前，含纸鸢自动发的提醒（system = true）；一次广播合成一条，recipients 逐个列送达状态。waiting 是待送达的消息（不论多久），offline 是发给已结束 / 失联会话、无法送达的消息。sessions 带今天（day_start 起）收发几条。",
         "operationId": "get-comms",
         "parameters": [
           {
@@ -13351,7 +13351,7 @@
             "description": "Error"
           }
         },
-        "summary": "所有项目里还在等对方醒来的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算",
+        "summary": "所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算",
         "tags": [
           "comms"
         ]

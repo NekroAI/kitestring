@@ -164,11 +164,11 @@ export function Team({ sessions }: { sessions: Session[] }) {
   const pm = sessions.filter((s) => s.role === 'pm').sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
   const aide = sessions.filter((s) => s.role === 'aide' && (s.state !== 'ended' || !!s.offline_at)).sort((a, b) => b.last_active_at.localeCompare(a.last_active_at))[0]
   const devs = sessions.filter((s) => s.role === 'dev' && s.state !== 'ended')
-  const online = devs.filter((s) => presence(s) !== 'offline').length
+  const online = devs.filter((s) => ['standby', 'working'].includes(presence(s))).length
   if (!pm && !devs.length && !aide) return null
-  const pp = pm ? presence(pm) : 'offline'
-  const ap = aide ? presence(aide) || 'offline' : 'offline'
-  // 空等下线（R-272）：身份还在、等新会话接任，写「已交接下线」而不是「离线」
+  const pp = pm ? presence(pm) : 'ended'
+  const ap = aide ? presence(aide) || 'ended' : 'ended'
+  // 空等下线（R-272）：身份还在、等新会话接任，写「已下线」而不是在线状态
   const label = (role: 'pm' | 'aide', x: Session | undefined, st: string) => (x?.offline_at ? t.projects.offlineSeat(role) : role === 'pm' ? t.projects.pm(t.presence[st]) : t.projects.aide(t.presence[st]))
   return (
     <span className="flex shrink-0 items-center gap-3 text-xs text-fg-3">

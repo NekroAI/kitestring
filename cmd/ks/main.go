@@ -57,13 +57,13 @@ agent 调用：
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team sessions [--role 身份|none] [--all-projects] [--all] [--json]
                                  在线会话列表（R-249）：本项目没结束的会话，带身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
-                                 待命 / 忙 / 在线 / 离线、手上的需求、能否立刻叫醒及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
+                                 待命 / 运行中 / 空闲 / 已结束、手上的需求、能否立刻叫醒及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
   team tell <文字> [--to aide|pm|reviewer|advisor|dev|会话键] [--to-session tool:id] [--req R-x] [--fyi]
                                  点对点给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），交接给顾问用 --to advisor（多个顾问时发给最近活跃的，或 --to-session 点名；没有在线顾问时报错退回）；
                                  --to 也可直接填会话键（ks team sessions 里的 tool:id），没有身份的会话也能收；对方已结束或失联时报错退回；
-                                 返回逐个收件人的送达状态：已送达 / 等对方醒来（写明原因，如 Codex 要等用户下次发消息）/ 对方不在线；
+                                 返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达；
                                  发送方只认自动识别的当前对话，--session 与之不一致会被拒绝，仅识别不到（如部分 Codex 会话）时才按 --session 认定发送方；
                                  进度和受阻告诉主调度；没有主助理时退回给主调度；交验收时主调度会自动收到通知；
                                  项目没有主调度时不送，返回「本项目当前没有主调度，消息未送达」（不算出错）
@@ -74,7 +74,7 @@ agent 调用：
   team broadcast <文字> [--role dev,reviewer] [--req R-x] [--fyi]
                                  项目内广播（R-249）：发给本项目没结束的会话（不含你自己和后台任务会话），--role 按身份过滤（none 表示没身份的）；
                                  --fyi 只告知，任何会话都能发；不加是「要动手」，只有主调度、主助理能发；离线的会话跳过；与 MCP team_broadcast 一致
-  team sent [D-x]                查你最近发的团队消息（广播算一条）现在的送达状态：已送达（带时间）/ 等对方醒来（原因）/ 对方不在线；与 MCP team_sent 一致
+  team sent [D-x]                查你最近发的团队消息（广播算一条）现在的送达状态：已送达（带时间）/ 待送达（原因）/ 无法送达；与 MCP team_sent 一致
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
   away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
   away advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上

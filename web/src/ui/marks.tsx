@@ -52,27 +52,27 @@ export function StatusPill({ state, since, now, compact, bg }: { state: string; 
   return show ? <Tip content={t.stateSince(label, duration(since, now), absTime(since))}>{pill}</Tip> : pill
 }
 
-// presence：常驻身份（主调度 / 开发 / 主助理）的在线状态（R-84、R-190）。挂着 ks wait 为在线待命；在跑、等授权、在问你为工作中；
-// 结束了一轮却没挂上 ks wait、已结束或失联为离线。其它身份不需要常驻，返回空。
+// presence：常驻身份（主调度 / 开发 / 主助理）的在线状态（R-84、R-190，用词按 docs/copywriting.md 5.2）。挂着 ks wait 为待命；
+// 在跑、等授权、在问你为运行中；结束了一轮却没挂上 ks wait 为空闲；已结束或失联为已结束。其它身份不需要常驻，返回空。
 type RoleSession = { role?: string; state: string; wait_kind?: string; parked?: boolean; done_at?: string | null; last_active_at?: string }
 // anyRole：离开期间小结等需要给 Adv 也标在线点时传 true（R-165）
-export function presence(s: RoleSession, anyRole = false): '' | 'standby' | 'working' | 'offline' {
+export function presence(s: RoleSession, anyRole = false): '' | 'standby' | 'working' | 'idle' | 'ended' {
   if (!anyRole && s.role !== 'pm' && s.role !== 'dev' && s.role !== 'aide') return ''
-  if (s.state === 'ended' || s.state === 'lost') return 'offline'
+  if (s.state === 'ended' || s.state === 'lost') return 'ended'
   if (s.parked || s.state === 'parked') return 'standby'
   const ds = displayState(s)
   if (ds === 'running' || ds === 'background' || ds === 'waiting_approval' || ds === 'waiting_answer') return 'working'
-  return 'offline'
+  return 'idle'
 }
 
-export const presenceDot: Record<string, string> = { standby: 'bg-run', working: 'bg-accent', offline: 'bg-fg-3/50' }
+export const presenceDot: Record<string, string> = { standby: 'bg-run', working: 'bg-accent', idle: 'bg-fg-3/50', ended: 'bg-fg-3/50' }
 
 // RoleTag：会话身份标（R-124，D-117 方案 B）：描边胶囊写身份名（中文 / 英文按设置，R-190），常驻身份前面一个在线点
-// （在线待命绿、工作中蓝、离线灰）。描边与阶段、状态这类实底标签一眼分开；离线不写出来，悬停再说。
+// （待命绿、运行中蓝、空闲 / 已结束灰）。描边与阶段、状态这类实底标签一眼分开；灰的不写出来，悬停再说。
 export function RoleTag({ role, presence, className }: { role: string; presence?: string; className?: string }) {
   if (!t.role[role]) return null
   return (
-    <span className={cx('inline-flex shrink-0 items-center gap-1 rounded-full border border-line-strong px-2 text-[11px] leading-[18px] font-medium whitespace-nowrap', presence === 'offline' ? 'text-fg-3' : 'text-fg-2', className)}>
+    <span className={cx('inline-flex shrink-0 items-center gap-1 rounded-full border border-line-strong px-2 text-[11px] leading-[18px] font-medium whitespace-nowrap', presence === 'idle' || presence === 'ended' ? 'text-fg-3' : 'text-fg-2', className)}>
       {presence && <span className={cx('size-1.5 shrink-0 rounded-full', presenceDot[presence])} />}
       {t.role[role]}
     </span>

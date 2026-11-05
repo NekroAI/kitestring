@@ -47,15 +47,15 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 决策后果链：按用户在某条决策里的答复新建需求时，req_create 带 from_decision（D-x）；接着某条决策往下问、或要推翻它的结论时，decision_raise 带 from_decision（推翻时再加 overturns = true）。
 - 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。界面类证据的截图用真实数据，改到证据 / 决策显示时新旧两种格式都要截图。
 - 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
-- 会话之间：细节用 req_comment 写进需求留言，team_tell（旧名 pm_notify）的消息只放编号加一句话请对方去看；本项目有哪些会话、谁现在能立刻叫醒，用 team_sessions（ks team sessions）查。点对点用 team_tell（to 填身份或会话键），好几个会话都要知道用 team_broadcast（要动手的广播只有主调度、主助理能发，别人用 fyi = true 只告知）；发出后用 team_sent 看已送达 / 等对方醒来 / 对方不在线。关联或在做的需求默认订阅，有变动时收到一句话提醒（自己引起的不通知）；别的需求要跟进用 req_watch 订阅，不想收用 req_watch off = true 退订，req_watching 看订阅了哪些。
+- 会话之间：细节用 req_comment 写进需求留言，team_tell（旧名 pm_notify）的消息只放编号加一句话请对方去看；本项目有哪些会话、谁现在能立刻叫醒，用 team_sessions（ks team sessions）查。点对点用 team_tell（to 填身份或会话键），好几个会话都要知道用 team_broadcast（要动手的广播只有主调度、主助理能发，别人用 fyi = true 只告知）；发出后用 team_sent 看已送达 / 待送达 / 无法送达。关联或在做的需求默认订阅，有变动时收到一句话提醒（自己引起的不通知）；别的需求要跟进用 req_watch 订阅，不想收用 req_watch off = true 退订，req_watching 看订阅了哪些。
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图，用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
-- 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开工。计划开始或阶段解锁时，该阶段的需求会交给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动交给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
+- 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开始。计划开始或阶段解锁时，该阶段的需求会指派给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动指派给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认、也最多等 55 分钟，醒来时提示缓存还有效；项目设置可调得更短，--timeout 超过上限按上限截断；后台任务的超时要设得比它长）。主调度 / 主助理 / 开发连续空等累计到项目设置的时长（默认 4 小时）时，醒来会收到写交接下线的指示：handoff_write 写交接后结束本轮，不再挂 ks wait，它结束时你会被唤醒。
   - Codex：没有“后台命令结束后唤醒”的机制，要在前台运行 ks wait（自动最多等 30 分钟，不用加 --timeout；shell 工具的超时设成 35 分钟以上）。命令还在运行时继续等它结束，不要中断、不要重复运行。超时时它会提示你收尾：照做，用一两句话说明进度和在等什么，然后结束本轮，不要再运行 ks wait 续等。前台等待期间这一轮一直开着，Codex 会定期查看命令输出，每次消耗少量额度（主要是缓存读取），所以最多 30 分钟。
-  - 订阅事件（--on）：主助理 / 主调度挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、参谋授权窗口）时是 settings，改需求状态时是 status（status 之外，派活的主调度和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：主助理订阅 decision,review,settings，主调度订阅 review,blocked,settings，顾问、开发等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是派活；不进用户收件箱、不推送。`
+  - 订阅事件（--on）：主助理 / 主调度挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、参谋授权窗口）时是 settings，改需求状态时是 status（status 之外，指派需求的主调度和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：主助理订阅 decision,review,settings，主调度订阅 review,blocked,settings，顾问、开发等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是指派；不进用户收件箱、不推送。`
 
 // Run 以 stdio 运行 MCP server。clientName 是调用方（目前只区分 dsh），影响呈现给模型的说明。
 func Run(ctx context.Context, clientName string) error {
@@ -193,7 +193,7 @@ type reqStatusIn struct {
 	// ReasonKind 是搁置原因的类别（R-157）
 	ReasonKind string `json:"reason_kind,omitempty" jsonschema:"搁置时的原因类别：duplicate 重复 / changed 方向变了 / dropped 不做了 / other 其他（默认）"`
 	// WaitingOn：受阻时在等什么（R-243）
-	WaitingOn string `json:"waiting_on,omitempty" jsonschema:"设为 blocked 时在等的需求或决策编号（R-x / D-x）。等别的需求定稿 / 验收 / 做完、等某条决策答复时写上：顺着等待关系落到用户身上的那一条会在「要你处理」写明「这条在等它」。不写时这条受阻需求本身进用户的「要你处理」；reason 写一句在等什么"`
+	WaitingOn string `json:"waiting_on,omitempty" jsonschema:"设为 blocked 时在等的需求或决策编号（R-x / D-x）。等别的需求定稿 / 验收 / 做完、等某条决策答复时写上：顺着等待关系落到用户身上的那一条会在「待处理」写明「这条在等它」。不写时这条受阻需求本身进用户的「待处理」；reason 写一句在等什么"`
 }
 
 type reqRequestStatusIn struct {
@@ -206,7 +206,7 @@ type reqEditIn struct {
 	Ref          string  `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
 	Title        *string `json:"title,omitempty" jsonschema:"新标题；不要把编号写进标题，开头的编号前缀会被去掉；不传表示不改"`
 	Detail       *string `json:"detail,omitempty" jsonschema:"新描述（整段替换）；不传表示不改"`
-	Acceptance   *string `json:"acceptance,omitempty" jsonschema:"新验收标准（整段替换）；需求进行中 / 阻塞 / 待验收时要同时给 approval；不传表示不改"`
+	Acceptance   *string `json:"acceptance,omitempty" jsonschema:"新验收标准（整段替换）；需求进行中 / 受阻 / 待验收时要同时给 approval；不传表示不改"`
 	Priority     *string `json:"priority,omitempty" jsonschema:"新优先级 P0 到 P3；不传表示不改"`
 	Kind         *string `json:"kind,omitempty" jsonschema:"新类型：design = 设计类，feature = 普通；不传表示不改"`
 	Reason       string  `json:"reason,omitempty" jsonschema:"为什么改，一句话，会显示在时间线上"`
@@ -241,7 +241,7 @@ type decisionWithdrawIn struct {
 
 type decisionIn struct {
 	Question          string           `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，脱离对话也能读懂——用户没看过你们的对话，不要写「刚才那个」「按上面说的」，把要定的事和它会带来什么写进这一句（建议 60 字以内）"`
-	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的待决策的点，那些另开决策。建议 400 字以内"`
+	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的要决策的点，那些另开决策。建议 400 字以内"`
 	Options           []string         `json:"options,omitempty" jsonschema:"候选选项"`
 	OptionImages      []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
 	Approval          bool             `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
@@ -425,12 +425,12 @@ func (t *tools) register(s *mcp.Server) {
 				if out.BlockedOn != "" {
 					msg += "（在等 " + out.BlockedOn + "）"
 				} else {
-					msg += "。没写在等什么（waiting_on），这条会进用户的「要你处理」；等的是别的需求或决策时，用 waiting_on 指向它"
+					msg += "。没写在等什么（waiting_on），这条会进用户的「待处理」；等的是别的需求或决策时，用 waiting_on 指向它"
 				}
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_request_status", Description: "申请改需求状态（R-188）：要用户确认某条需求时用它——把草稿改为待开始，或重新打开已搁置的需求（已搁置 → 待开始 / 草稿）。写一句 reason。申请出现在用户的「要你处理」，用户在审批抽屉里批准后由纸鸢直接改状态（不用你再改），时间线记成「用户批准了 Agent 的申请」；拒绝、或批准前状态已被改动而自动作废，结果都会送到你这里。不推送、不限时；同一条需求已有在等的申请时不重复建。不要再在对话里写「请在面板上把 R-x 设为待开始」。项目开了「允许主调度 / 主助理放行草稿」时，PM / Adv 对做法明确的草稿仍可直接用 req_update_status 放行，不用申请。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_request_status", Description: "申请改需求状态（R-188）：要用户确认某条需求时用它——把草稿改为待开始，或重新打开已搁置的需求（已搁置 → 待开始 / 草稿）。写一句 reason。申请出现在用户的「待处理」，用户在审批抽屉里批准后由纸鸢直接改状态（不用你再改），时间线记成「用户批准了 Agent 的申请」；拒绝、或批准前状态已被改动而自动作废，结果都会送到你这里。不推送、不限时；同一条需求已有在等的申请时不重复建。不要再在对话里写「请在面板上把 R-x 设为待开始」。项目开了「允许主调度 / 主助理放行草稿」时，PM / Adv 对做法明确的草稿仍可直接用 req_update_status 放行，不用申请。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqRequestStatusIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -444,7 +444,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.Message), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目主调度 / 主助理 / 顾问；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 阻塞 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目主调度 / 主助理 / 顾问；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 受阻 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqEditIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"session_key": t.sessionKey(ctx, req), "reason": in.Reason, "approval": in.Approval, "from_decision": in.FromDecision}
 			dropEmpty(body)
@@ -647,7 +647,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "plan_create", Description: "把较大的目标拆成计划：按顺序的阶段，阶段内可放多条需求（已有或新建；新建的与同项目未关闭需求同名时，直接关联已有需求并在返回里说明，已有的请用 ref 引用）。提交后进入用户的“待批准”，批准后第一阶段的需求会交给本会话。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "plan_create", Description: "把较大的目标拆成计划：按顺序的阶段，阶段内可放多条需求（已有或新建；新建的与同项目未关闭需求同名时，直接关联已有需求并在返回里说明，已有的请用 ref 引用）。提交后进入用户的“待批准”，批准后第一阶段的需求会指派给本会话。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in planCreateIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"title": in.Title, "goal": in.Goal, "stages": in.Stages, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
@@ -655,7 +655,7 @@ func (t *tools) register(s *mcp.Server) {
 			if err := t.c.Do(ctx, "POST", "/agent/plans", body, &out); err != nil {
 				return nil, nil, err
 			}
-			msg := out.Code + " 已提交，等待用户批准；批准后第一阶段的需求会交给你。\n" + out.String()
+			msg := out.Code + " 已提交，等待用户批准；批准后第一阶段的需求会指派给你。\n" + out.String()
 			for _, n := range out.Notices {
 				msg += "\n注意：" + n
 			}
@@ -683,7 +683,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "stage_submit", Description: "计划当前阶段的需求都做完（待验收）后调用：交阶段小结，阶段进入“待阶段验收”。小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据，可附表达块（blocks）。用户通过后下一阶段会自动交给你；退回会附意见送达。\n" + writing.BlocksGuide},
+	mcp.AddTool(s, &mcp.Tool{Name: "stage_submit", Description: "计划当前阶段的需求都做完（待验收）后调用：交阶段小结，阶段进入“待阶段验收”。小结只写跨需求的整体效果、遗留问题和你需要做的，不重复各条需求的证据，可附表达块（blocks）。用户通过后下一阶段会自动指派给你；退回会附意见送达。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in stageSubmitIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"summary": in.Summary, "session_key": t.sessionKey(ctx, req)}
 			if err := t.addBlocks(ctx, body, in.Blocks, map[string]string{}); err != nil {

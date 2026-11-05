@@ -5,7 +5,7 @@ import { useComms, useProjects } from '../api/queries'
 import type { Schemas } from '../api/client'
 import { t } from '../i18n'
 import { matches, rangeStart, dayStart, type CommsFilter, type CommsKind, type CommsRange } from '../lib/comms'
-import { cx, shortDuration, useNow, usePref } from '../lib/util'
+import { cx, duration, shortDuration, useNow, usePref } from '../lib/util'
 import { Button, Card, ErrorState, Input, PageHeader, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
@@ -181,7 +181,7 @@ function SessionItem({ s, now, active, onClick }: { s: Sess; now: number; active
       </div>
       <Tip content={s.wake_why} truncated>
         <div className={cx('mt-1 truncate text-[12px]', s.waiting ? 'text-wait' : 'text-fg-3')}>
-          {s.waiting && s.waiting_since ? t.comms.waitingOn(s.waiting, shortDuration(s.waiting_since, now)) : `${s.wake_now ? t.comms.wakeNow : t.comms.wakeLater} · ${s.wake_why}`}
+          {s.waiting && s.waiting_since ? t.comms.waitingOn(s.waiting, duration(s.waiting_since, now)) : `${s.wake_now ? t.comms.wakeNow : t.comms.wakeLater} · ${s.wake_why}`}
         </div>
       </Tip>
       <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-fg-3">

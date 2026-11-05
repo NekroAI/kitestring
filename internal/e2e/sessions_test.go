@@ -83,11 +83,11 @@ func TestTeamSessions(t *testing.T) {
 		t.Fatalf("ks team sessions 失败：%v\n%s", err, out)
 	}
 	for _, want := range []string{
-		"4 个没结束的会话（待命 2 · 忙 1 · 在线 1）",
+		"4 个没结束的会话（待命 2 · 运行中 1 · 空闲 1）",
 		"claude:ts-pm（你）「", "主调度 · Claude Code@test-device · 待命 · 能立刻叫醒：挂着后台 ks wait · 手上没有需求",
-		"开发 · Claude Code@test-device · 忙 · 不能立刻叫醒：正在跑，这一轮结束后收到 · 手上：" + r.Code + "「会话通信」",
+		"开发 · Claude Code@test-device · 运行中 · 不能立刻叫醒：正在跑，这一轮结束后收到 · 手上：" + r.Code + "「会话通信」",
 		"codex:ts-cx「", "· 待命 · 能立刻叫醒：挂着前台 ks wait（到 ",
-		"codex:ts-cx2「", "· 在线 · 不能立刻叫醒：Codex 不能后台叫醒，等用户下次发消息",
+		"codex:ts-cx2「", "· 空闲 · 不能立刻叫醒：Codex 不能后台叫醒，等用户下次发消息",
 		"无身份",
 	} {
 		if !strings.Contains(out, want) {

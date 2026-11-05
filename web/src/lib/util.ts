@@ -12,7 +12,7 @@ function ts(iso?: string | null): number {
   return Number.isNaN(v) || v <= 0 ? 0 : v
 }
 
-// relTime：“3 分钟前”。
+// relTime：「3 分钟前」。
 export function relTime(iso?: string | null, now = Date.now()): string {
   const v = ts(iso)
   if (!v) return t.time.never
@@ -26,7 +26,7 @@ export function relTime(iso?: string | null, now = Date.now()): string {
   return t.time.daysAgo(Math.floor(h / 24))
 }
 
-// duration：从 iso 到 now 的时长，“12 分钟”“1 小时 5 分”。
+// duration：从 iso 到 now 的时长，「12 分钟」「1 小时 5 分钟」。
 export function duration(iso?: string | null, now = Date.now()): string {
   const v = ts(iso)
   if (!v) return ''
@@ -39,17 +39,17 @@ export function duration(iso?: string | null, now = Date.now()): string {
   return t.time.durDays(Math.floor(h / 24), h % 24)
 }
 
-// shortDuration：只保留最大单位，用在状态胶囊等狭窄位置（完整时长放在悬停提示里）。
+// shortDuration：只保留最大单位、用 d h m s 缩写，只用在状态胶囊等放不下汉字单位的位置（完整时长放在悬停提示里，D-1162）。
 export function shortDuration(iso?: string | null, now = Date.now()): string {
   const v = ts(iso)
   if (!v) return ''
   const s = Math.max(0, Math.round((now - v) / 1000))
-  if (s < 60) return t.time.durSeconds(s)
+  if (s < 60) return t.time.shortSeconds(s)
   const m = Math.floor(s / 60)
-  if (m < 60) return t.time.durMinutes(m)
+  if (m < 60) return t.time.shortMinutes(m)
   const h = Math.floor(m / 60)
-  if (h < 24) return t.time.durHours(h, 0)
-  return t.time.durDays(Math.floor(h / 24), 0)
+  if (h < 24) return t.time.shortHours(h)
+  return t.time.shortDays(Math.floor(h / 24))
 }
 
 export function absTime(iso?: string | null): string {

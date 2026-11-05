@@ -1,0 +1,30 @@
+package copyrules
+
+import "testing"
+
+// 规则文件能读、状态集合齐全、豁免都写了理由（R-274）。豁免是否失效由前端 copy.test.ts 检查（它遍历全部界面文案）。
+func TestRulesFile(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"session", "sessionMark", "presence", "roster", "device", "req", "decision", "delivery"} {
+		if len(r.StatusSets[s]) == 0 {
+			t.Errorf("statusSets 缺少 %s", s)
+		}
+	}
+	if len(r.Forbidden) == 0 {
+		t.Error("forbidden 为空")
+	}
+	for _, a := range r.Allow {
+		if a.Key == "" || a.Reason == "" {
+			t.Errorf("豁免必须写 key 和 reason：%+v", a)
+		}
+	}
+	if got := r.ForbiddenIn("有 3 件要你处理，2 个在跑"); len(got) != 2 {
+		t.Errorf("禁用词检查不对：%v", got)
+	}
+	if bad := r.CheckLabels("x", map[string]string{"a": "受阻", "b": "阻塞"}, false, "req"); len(bad) != 2 {
+		t.Errorf("状态标签检查不对：%v", bad)
+	}
+}

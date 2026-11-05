@@ -33,7 +33,7 @@ func TestResolve(t *testing.T) {
 // R-229：主调度提示词写明小验证与二次退回复盘；主调度、开发写明待命超时。
 func TestPMPromptRework(t *testing.T) {
 	pm := Prompt(PM)
-	for _, want := range []string{"小验证子任务", "这条路行不行", "附证据", "验证通过再派全套实现", "第二次被退回", "先停下复盘做法", "不要接着在原做法上修补", "待命超时 · 建议收尾"} {
+	for _, want := range []string{"小验证子任务", "这条路行不行", "附证据", "验证通过再派全套实现", "第二次被退回", "先停下复盘做法", "不要接着在原做法上修补", "纸鸢在泳道上标「待命超时」"} {
 		if !strings.Contains(pm, want) {
 			t.Fatalf("主调度提示词缺 %q", want)
 		}

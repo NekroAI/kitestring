@@ -48,7 +48,7 @@ func TestDeliveryOf(t *testing.T) {
 		t.Errorf("工具应写显示名：%+v", e)
 	}
 	line := deliveryLine(deliveryOf(queued, store.Session{Key: "k", Tool: "codex", Client: "app-server", Role: "advisor", State: store.StateWaitReply}, true, now))
-	if line != "- D-1 → 顾问 k（Codex App）：等对方醒来——Codex 不能后台叫醒，等用户下次发消息" {
+	if line != "- D-1 → 顾问 k（Codex App）：待送达——Codex 不能后台叫醒，等用户下次发消息" {
 		t.Errorf("收件人一行：%s", line)
 	}
 }

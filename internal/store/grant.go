@@ -212,7 +212,7 @@ func (s *Store) ProxyAnswerDecision(ctx context.Context, id, by, answer, reason,
 		return Decision{}, err
 	}
 	if k, _ := res.RowsAffected(); k == 0 {
-		return Decision{}, errors.New("这条决策已经不是待决策（可能用户刚答复或已撤回）")
+		return Decision{}, errors.New("这条决策已不在待答复状态（可能用户刚答复或已撤回）")
 	}
 	return s.GetDecision(ctx, id)
 }

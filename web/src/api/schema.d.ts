@@ -661,7 +661,7 @@ export interface paths {
         };
         /**
          * 查自己最近发的团队消息现在的送达状态（R-249，ks team sent / team_sent）
-         * @description 默认列你最近发的 10 条（一次广播算一条，逐个收件人列状态）；ref 填 D-x 只看那一条（广播的任意一行都会带出整次广播）。只能查自己发的。送达状态只从记录推：delivered 已送达（带时间）、pending_wake 等对方醒来（写明原因，如 Codex 要等用户下次发消息）、offline 对方已结束或失联。
+         * @description 默认列你最近发的 10 条（一次广播算一条，逐个收件人列状态）；ref 填 D-x 只看那一条（广播的任意一行都会带出整次广播）。只能查自己发的。送达状态只从记录推：delivered 已送达（带时间）、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达（对方已结束或失联）。
          */
         get: operations["agent-team-sent"];
         put?: never;
@@ -925,7 +925,7 @@ export interface paths {
         };
         /**
          * 通讯页（R-249）：项目里的在线会话、会话之间的消息与广播、送达状态（只读）
-         * @description messages 是 [since, until) 之间的消息，新的在前，含纸鸢自动发的提醒（system = true）；一次广播合成一条，recipients 逐个列送达状态。waiting 是还在等对方醒来的消息（不论多久），offline 是发给已结束 / 失联会话、永远送不到的消息。sessions 带今天（day_start 起）收发几条。
+         * @description messages 是 [since, until) 之间的消息，新的在前，含纸鸢自动发的提醒（system = true）；一次广播合成一条，recipients 逐个列送达状态。waiting 是待送达的消息（不论多久），offline 是发给已结束 / 失联会话、无法送达的消息。sessions 带今天（day_start 起）收发几条。
          */
         get: operations["get-comms"];
         put?: never;
@@ -943,7 +943,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 所有项目里还在等对方醒来的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算 */
+        /** 所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算 */
         get: operations["get-comms-pending"];
         put?: never;
         post?: never;
@@ -2110,7 +2110,7 @@ export interface components {
             reason?: string;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
-            /** @description Dev 会话键；auto 表示由 hub 挑：在线待命优先，其次手上需求少、上下文轻 */
+            /** @description Dev 会话键；auto 表示由 hub 挑：待命优先，其次手上需求少、上下文轻 */
             to: string;
         };
         "Agent-attach-evidenceRequest": {
@@ -2585,7 +2585,7 @@ export interface components {
             /** @description 要你先看 */
             first: boolean;
             /**
-             * @description 待决策 / 待批准计划 / 待验收 / 受阻
+             * @description 待答复决策 / 待批准计划 / 待验收 / 受阻
              * @enum {string}
              */
             kind: "decision" | "plan" | "review" | "blocked";
@@ -2931,7 +2931,7 @@ export interface components {
             offline: components["schemas"]["CommsMsg"][] | null;
             project_id: string;
             project_name: string;
-            /** @description 待命 → 忙 → 在线 → 离线 */
+            /** @description 待命 → 运行中 → 空闲 → 已结束 */
             sessions: components["schemas"]["CommsSession"][] | null;
             /**
              * Format: int64
@@ -2950,7 +2950,7 @@ export interface components {
             today_system: number;
             /** @description 时间范围内的消息超过上限，只列了最近的 */
             truncated: boolean;
-            /** @description 还在等对方醒来的消息（不论等了多久），新的在前 */
+            /** @description 待送达的消息（不论等了多久），新的在前 */
             waiting: components["schemas"]["CommsMsg"][] | null;
         };
         CommsPeer: {
@@ -2970,7 +2970,7 @@ export interface components {
         CommsPendingOutBody: {
             /**
              * Format: int64
-             * @description 所有项目里还在等对方醒来的消息数（导航上的数字；一次广播算一条）
+             * @description 所有项目里待送达的消息数（导航上的数字；一次广播算一条）
              */
             count: number;
         };
@@ -3001,7 +3001,7 @@ export interface components {
             /** @description 身份中文名；无身份写「无身份」 */
             role_name: string;
             /**
-             * @description standby 待命；busy 忙；online 在线（没挂 ks wait）；offline 离线
+             * @description standby 待命；busy 运行中；online 空闲（没挂 ks wait）；offline 已结束（含失联）
              * @enum {string}
              */
             status: "standby" | "busy" | "online" | "offline";
@@ -3261,7 +3261,7 @@ export interface components {
             /** @description 收件会话的身份；空为无身份 */
             role?: string;
             /**
-             * @description delivered 已送达；pending_wake 等对方醒来；offline 对方不在线
+             * @description delivered 已送达；pending_wake 待送达；offline 无法送达
              * @enum {string}
              */
             status: "delivered" | "pending_wake" | "offline";
@@ -3296,7 +3296,7 @@ export interface components {
         EditInBody: {
             /** @description 新验收标准；进行中之后改要带 approval；不传表示不改 */
             acceptance?: string;
-            /** @description 进行中 / 阻塞 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x） */
+            /** @description 进行中 / 受阻 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x） */
             approval?: string;
             /** @description 新描述；不传表示不改 */
             detail?: string;
@@ -4210,7 +4210,7 @@ export interface components {
             drafts: number;
             /**
              * Format: int64
-             * @description 待开始 + 进行中 + 阻塞 + 待验收
+             * @description 待开始 + 进行中 + 受阻 + 待验收
              */
             flowing: number;
             items: components["schemas"]["PoolItem"][] | null;
@@ -4718,7 +4718,7 @@ export interface components {
             /** @description 身份中文名；无身份写「无身份」 */
             role_name: string;
             /**
-             * @description standby 待命；busy 忙；online 在线（没挂 ks wait）；offline 离线
+             * @description standby 待命；busy 运行中；online 空闲（没挂 ks wait）；offline 已结束（含失联）
              * @enum {string}
              */
             status: "standby" | "busy" | "online" | "offline";
@@ -4739,7 +4739,7 @@ export interface components {
             omitted: number;
             project_id?: string;
             project_name?: string;
-            /** @description 待命 → 忙 → 在线 → 离线，同状态最近活跃的在前 */
+            /** @description 待命 → 运行中 → 空闲 → 已结束，同状态最近活跃的在前 */
             sessions: components["schemas"]["RosterEntry"][] | null;
             /** @description 给 Agent 读的列表（ks team sessions 与 team_sessions 输出同一段） */
             text: string;
@@ -5117,7 +5117,7 @@ export interface components {
             code?: string;
             delivered: boolean;
             message: string;
-            /** @description 逐个收件人的送达状态：delivered 已送达 / pending_wake 等对方醒来（带原因）/ offline 对方不在线 */
+            /** @description 逐个收件人的送达状态：delivered 已送达 / pending_wake 待送达（带原因）/ offline 无法送达 */
             recipients: components["schemas"]["Delivery"][] | null;
             /** @description 收到的会话的身份：pm / aide / reviewer；回复时是提问方的身份（可能为空） */
             role?: string;
@@ -5378,7 +5378,7 @@ export interface components {
             /** @description 手上的需求：待开始、进行中、受阻 */
             open: components["schemas"]["RequirementRef"][] | null;
             /**
-             * @description standby 在线待命；working 工作中；offline 离线
+             * @description standby 待命；working 运行中；offline 空闲（没挂 ks wait）
              * @enum {string}
              */
             presence: "standby" | "working" | "offline";

@@ -64,9 +64,9 @@ func eventClass(event string) (pushClass, string) {
 	case notify.EventWaitingReply:
 		return pushSkip, "会话在等回复"
 	case notify.EventWaitingApproval:
-		return pushUnsure, "终端里在等你授权"
+		return pushUnsure, "终端里等待授权"
 	case notify.EventDeviceLost:
-		return pushUnsure, "设备失联"
+		return pushUnsure, "设备离线"
 	}
 	return pushUnsure, ""
 }
@@ -407,7 +407,7 @@ type awayCounts struct {
 
 // awayItem 是一件还在等你的事。
 type awayItem struct {
-	Kind        string `json:"kind" enum:"decision,plan,review,blocked" doc:"待决策 / 待批准计划 / 待验收 / 受阻"`
+	Kind        string `json:"kind" enum:"decision,plan,review,blocked" doc:"待答复决策 / 待批准计划 / 待验收 / 受阻"`
 	Ref         string `json:"ref"`
 	Title       string `json:"title"`
 	ProjectName string `json:"project_name"`
@@ -797,13 +797,13 @@ func (h *Hub) registerAgentAway(api huma.API) {
 				return nil, huma.Error403Forbidden(d.Code + " 不在你所在的项目里")
 			}
 			if d.Kind != store.KindDecision || d.Status != store.DecPending {
-				return nil, huma.Error400BadRequest(d.Code + " 不是待决策，不用推")
+				return nil, huma.Error400BadRequest(d.Code + " 不是待答复的决策，不用推")
 			}
 			reason := strings.TrimSpace(b.Reason)
 			if reason == "" {
 				return nil, huma.Error400BadRequest("要写理由：reason（ks 用 --reason），一句话说明为什么要用户尽快看")
 			}
-			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: brief(d.Question, 80) + "（主助理：" + brief(reason, 60) + "）", Group: "kitestring"}, decisionPath(d),
+			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "新决策 " + d.Code, Body: brief(d.Question, 80) + "（主助理：" + brief(reason, 60) + "）", Group: "kitestring"}, decisionPath(d),
 				pushMeta{Class: pushUnsure, Ref: d.Code, Reason: "主助理拿不准：" + brief(reason, 60)})
 			out := &morningSetOut{}
 			out.Body.Message = "已推给用户：" + d.Code + "。"

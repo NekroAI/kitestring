@@ -25,7 +25,7 @@ export function useActions() {
   const qc = useQueryClient()
   const refresh = useCallback((...keys: string[]) => keys.forEach((k) => void qc.invalidateQueries({ queryKey: [k] })), [qc])
 
-  // what：这件事的中文说法（「关闭 D-964」），失败提示写成「关闭 D-964 没成功：原因。没有改动，可以再试一次。」（R-236）
+  // what：这件事的中文说法（「关闭 D-964」），失败提示写成「关闭 D-964 未成功：原因。未做改动，可重试。」（R-236）
   const run = useCallback(async <T,>(fn: () => Promise<T>, keys: string[], what?: string): Promise<T | undefined> => {
     try {
       const r = await fn()

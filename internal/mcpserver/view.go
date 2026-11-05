@@ -131,7 +131,7 @@ func (r reqView) shownComments() map[int]bool {
 	return out
 }
 
-var reqStatusZh = map[string]string{"draft": "草稿", "ready": "待开始", "in_progress": "进行中", "blocked": "阻塞", "review": "待验收", "done": "已完成", "shelved": "已搁置"}
+var reqStatusZh = map[string]string{"draft": "草稿", "ready": "待开始", "in_progress": "进行中", "blocked": "受阻", "review": "待验收", "done": "已完成", "shelved": "已搁置"}
 
 func zh(st string) string {
 	if s, ok := reqStatusZh[st]; ok {
@@ -178,7 +178,7 @@ func roleZh(role string) string {
 	return role
 }
 
-var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "交给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给评审"}
+var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "指派给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给评审"}
 
 // String 是 req_get 的默认输出：要点按行，附图另以图片返回。
 func (r reqView) String() string {

@@ -282,7 +282,7 @@ type tellOut struct {
 		Code      string `json:"code,omitempty" doc:"这条团队消息的编号（D-x）"`
 		Message   string `json:"message"`
 		// 送达状态（R-249）：逐个收件人列出，点对点只有一个
-		Recipients []Delivery `json:"recipients" doc:"逐个收件人的送达状态：delivered 已送达 / pending_wake 等对方醒来（带原因）/ offline 对方不在线"`
+		Recipients []Delivery `json:"recipients" doc:"逐个收件人的送达状态：delivered 已送达 / pending_wake 待送达（带原因）/ offline 无法送达"`
 	}
 }
 

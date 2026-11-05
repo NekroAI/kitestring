@@ -158,7 +158,6 @@ function AllClear({ run, park, now }: { run: number; park: number; now: number }
         </span>
         <div className="min-w-0">
           <div className="font-display text-[17px] font-bold tracking-wide text-fg">{t.desk.allClear}</div>
-          <div className="truncate text-[12.5px] text-fg-3">{t.desk.allClearSub}</div>
         </div>
       </div>
       <ul className="mt-3.5 space-y-1.5 border-t border-dashed border-line pt-3 text-[13px] text-fg-2 tabular">

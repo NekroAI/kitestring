@@ -91,7 +91,7 @@ func (h *Hub) onReviewSubmitted(ctx context.Context, r store.Requirement, x stor
 		if st.Total > 0 {
 			body = fmt.Sprintf("评审通过 %d/%d · %s", st.Pass, st.Total, r.Title)
 		}
-		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: body, Group: "kitestring"}, "/requirements?r="+r.Code)
+		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 " + r.Code, Body: body, Group: "kitestring"}, "/requirements?r="+r.Code)
 	}
 }
 
@@ -161,7 +161,7 @@ func (h *Hub) reviewOverdue(ctx context.Context, now time.Time) {
 				h.log.Warn("通知主调度评审未完成失败", "err", err)
 			}
 		}
-		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: "评审未完成 · " + r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 " + r.Code, Body: "评审未完成 · " + r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
 	}
 	if changed {
 		h.broker.publish("requirements")

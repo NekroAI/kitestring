@@ -25,7 +25,8 @@ import (
 // rosterLimit：带上已结束的会话时最多列多少个（最近活跃的在前）。
 const rosterLimit = 50
 
-var availLabel = map[string]string{store.AvailStandby: "待命", store.AvailBusy: "忙", store.AvailOnline: "在线", store.AvailOffline: "离线"}
+// 会话可用状态的中文名，按 docs/copywriting.md 5.2（statusSets.roster）：「在线」并入「空闲」，会话不用「离线」
+var availLabel = map[string]string{store.AvailStandby: "待命", store.AvailBusy: "运行中", store.AvailOnline: "空闲", store.AvailOffline: "已结束"}
 var availRank = map[string]int{store.AvailStandby: 0, store.AvailBusy: 1, store.AvailOnline: 2, store.AvailOffline: 3}
 
 // wakeAbility 判断现在发给会话 x 的消息能不能立刻叫醒它，why 是一句给发送方看的原因。
@@ -98,7 +99,7 @@ type RosterEntry struct {
 	Client       string                 `json:"client"`
 	Device       string                 `json:"device"`
 	Project      string                 `json:"project"`
-	Status       string                 `json:"status" enum:"standby,busy,online,offline" doc:"standby 待命；busy 忙；online 在线（没挂 ks wait）；offline 离线"`
+	Status       string                 `json:"status" enum:"standby,busy,online,offline" doc:"standby 待命；busy 运行中；online 空闲（没挂 ks wait）；offline 已结束（含失联）"`
 	StatusLabel  string                 `json:"status_label"`
 	WakeNow      bool                   `json:"wake_now" doc:"现在发消息能不能立刻叫醒它"`
 	WakeWhy      string                 `json:"wake_why" doc:"能 / 不能立刻叫醒的原因"`
@@ -112,7 +113,7 @@ type rosterOut struct {
 		ProjectID   string        `json:"project_id,omitempty"`
 		ProjectName string        `json:"project_name,omitempty"`
 		AllProjects bool          `json:"all_projects"`
-		Sessions    []RosterEntry `json:"sessions" doc:"待命 → 忙 → 在线 → 离线，同状态最近活跃的在前"`
+		Sessions    []RosterEntry `json:"sessions" doc:"待命 → 运行中 → 空闲 → 已结束，同状态最近活跃的在前"`
 		Omitted     int           `json:"omitted" doc:"带上已结束的会话时，超出上限没列出的更早的会话数"`
 		Text        string        `json:"text" doc:"给 Agent 读的列表（ks team sessions 与 team_sessions 输出同一段）"`
 	}

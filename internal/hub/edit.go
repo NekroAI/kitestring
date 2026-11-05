@@ -31,7 +31,7 @@ type editIn struct {
 		Priority   *string `json:"priority,omitempty" enum:"P0,P1,P2,P3" doc:"新优先级；不传表示不改"`
 		Kind       *string `json:"kind,omitempty" enum:"feature,design" doc:"新类型：design = 设计类，feature = 普通；不传表示不改"`
 		Reason     string  `json:"reason,omitempty" doc:"为什么改（建议写，会显示在时间线上）"`
-		Approval   string  `json:"approval,omitempty" doc:"进行中 / 阻塞 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x）"`
+		Approval   string  `json:"approval,omitempty" doc:"进行中 / 受阻 / 待验收时改验收标准必填：这条需求上用户已批准的批准类决策编号（D-x）"`
 		// R-241：这次修改依据的决策，时间线上连在那条决策下面（因此改了…）；带了 approval 时就是它，可不写
 		FromDecision string `json:"from_decision,omitempty" doc:"这次修改是按哪条决策的答复改的（D-x）：时间线上连在那条决策下面；带了 approval 时默认就是它"`
 	}
@@ -68,7 +68,7 @@ func (h *Hub) editCheck(ctx context.Context, r store.Requirement, callerKey stri
 func (h *Hub) editApproved(ctx context.Context, r store.Requirement, ref string) error {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return huma.Error403Forbidden(fmt.Sprintf("%s 已在%s，改验收标准要用户批准。%s", r.Code, map[string]string{store.ReqInProgress: "进行中", store.ReqBlocked: "阻塞中", store.ReqReview: "待验收"}[r.Status], editApprovalHint(r)))
+		return huma.Error403Forbidden(fmt.Sprintf("%s 已在%s，改验收标准要用户批准。%s", r.Code, map[string]string{store.ReqInProgress: "进行中", store.ReqBlocked: "受阻", store.ReqReview: "待验收"}[r.Status], editApprovalHint(r)))
 	}
 	d, err := h.store.GetDecision(ctx, ref)
 	if err != nil {

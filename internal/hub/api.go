@@ -1383,7 +1383,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				}
 				// 交给了评审的，等评审交意见（或 30 分钟到点）再推给用户（R-237）
 				if !r.Review.Holding() {
-					h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 · " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+					h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
 				}
 			}
 			return &reqOut{Body: r}, nil
@@ -1554,7 +1554,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			go h.aiOnDecision(d)
 			h.onDecisionRaised(ctx, d) // 订阅了 decision 的会话（R-164）
 			// 授权窗口开着、参谋可以代答的决策先不推送（不吵醒你，R-163）；仍留在收件箱里。离开期间按硬规则 / 拿不准分级（R-210）
-			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待决策 · " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d), h.decisionPush(ctx, d))
+			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "新决策 " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d), h.decisionPush(ctx, d))
 			out := &decisionRaisedOut{}
 			out.Body.Decision = d
 			out.Body.BlockWarnings = warns

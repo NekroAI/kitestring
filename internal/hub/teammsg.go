@@ -26,7 +26,8 @@ const (
 	OfflineSt     = "offline"      // 对方不在线：会话已结束或失联；点对点报错退回，广播跳过
 )
 
-var deliveryLabel = map[string]string{DeliveredSt: "已送达", PendingWakeSt: "等对方醒来", OfflineSt: "对方不在线"}
+// 送达状态的中文名，按 docs/copywriting.md 5.5（docs/copywriting-rules.json 的 statusSets.delivery）
+var deliveryLabel = map[string]string{DeliveredSt: "已送达", PendingWakeSt: "待送达", OfflineSt: "无法送达"}
 
 // Delivery 是一条团队消息对一个收件人的送达状态。
 type Delivery struct {
@@ -35,7 +36,7 @@ type Delivery struct {
 	Title       string     `json:"title,omitempty" doc:"收件会话标题"`
 	Role        string     `json:"role,omitempty" doc:"收件会话的身份；空为无身份"`
 	Tool        string     `json:"tool" doc:"收件会话所用工具：Claude Code / claude-x / Codex 终端 / Codex App / DSH"`
-	Status      string     `json:"status" enum:"delivered,pending_wake,offline" doc:"delivered 已送达；pending_wake 等对方醒来；offline 对方不在线"`
+	Status      string     `json:"status" enum:"delivered,pending_wake,offline" doc:"delivered 已送达；pending_wake 待送达；offline 无法送达"`
 	StatusLabel string     `json:"status_label"`
 	Reason      string     `json:"reason" doc:"送达状态的原因：已送达时间、等什么、为什么离线"`
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
@@ -298,7 +299,7 @@ func (h *Hub) registerAgentBroadcast(api huma.API) {
 
 	huma.Register(api, huma.Operation{OperationID: "agent-team-sent", Method: http.MethodGet, Path: "/api/agent/team/sent", Tags: []string{"agent"},
 		Summary:     "查自己最近发的团队消息现在的送达状态（R-249，ks team sent / team_sent）",
-		Description: "默认列你最近发的 10 条（一次广播算一条，逐个收件人列状态）；ref 填 D-x 只看那一条（广播的任意一行都会带出整次广播）。只能查自己发的。送达状态只从记录推：delivered 已送达（带时间）、pending_wake 等对方醒来（写明原因，如 Codex 要等用户下次发消息）、offline 对方已结束或失联。"},
+		Description: "默认列你最近发的 10 条（一次广播算一条，逐个收件人列状态）；ref 填 D-x 只看那一条（广播的任意一行都会带出整次广播）。只能查自己发的。送达状态只从记录推：delivered 已送达（带时间）、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达（对方已结束或失联）。"},
 		func(ctx context.Context, in *struct {
 			SessionKey string `query:"session_key" required:"true" doc:"调用者（发送方）"`
 			Ref        string `query:"ref" doc:"只看这一条（D-x）"`

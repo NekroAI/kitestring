@@ -33,7 +33,7 @@ type sentRes struct {
 }
 
 // R-249 P3：点对点（发给顾问、发给无身份的会话、发给离线会话被退回）、广播（按身份过滤、跳过自己 / 后台任务 / 失联会话、
-// 开发发「要动手」广播被拒）、送达状态在 等对方醒来 → 已送达 / 对方不在线 之间转换、不能冒用发送方。真实编译 ks 跑命令行一侧。
+// 开发发「要动手」广播被拒）、送达状态在 待送达 → 已送达 / 无法送达 之间转换、不能冒用发送方。真实编译 ks 跑命令行一侧。
 func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	e := setup(t)
 	bin := filepath.Join(t.TempDir(), "ks")
@@ -127,7 +127,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 		t.Fatalf("送达状态：%+v", r)
 	}
 
-	// 2. 点对点发给没有身份的 Codex 会话（--to 填会话键）：等对方醒来，写明 Codex 要等用户下次发消息；用户发消息后变为已送达
+	// 2. 点对点发给没有身份的 Codex 会话（--to 填会话键）：待送达，写明 Codex 要等用户下次发消息；用户发消息后变为已送达
 	var tr struct {
 		Code       string     `json:"code"`
 		Message    string     `json:"message"`
@@ -139,13 +139,13 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	if len(tr.Recipients) != 1 || tr.Recipients[0].Status != "pending_wake" || !strings.Contains(tr.Recipients[0].Reason, "Codex 不能后台叫醒，等用户下次发消息") || tr.Recipients[0].Tool != "Codex 终端" && tr.Recipients[0].Tool != "Codex" {
 		t.Fatalf("发给无身份 Codex 会话：%+v", tr)
 	}
-	if !strings.Contains(tr.Message, "已送给会话 codex:cx") || !strings.Contains(tr.Message, "等对方醒来") {
+	if !strings.Contains(tr.Message, "已送给会话 codex:cx") || !strings.Contains(tr.Message, "待送达") {
 		t.Fatalf("返回文字：%s", tr.Message)
 	}
 	cxCode := tr.Code
 	out, _ = ks("pm", "team", "sent", cxCode)
-	if !strings.Contains(out, cxCode+" 点对点 · 要动手") || !strings.Contains(out, "无身份会话 codex:cx") || !strings.Contains(out, "等对方醒来——Codex 不能后台叫醒") {
-		t.Fatalf("ks team sent 应显示等对方醒来：\n%s", out)
+	if !strings.Contains(out, cxCode+" 点对点 · 要动手") || !strings.Contains(out, "无身份会话 codex:cx") || !strings.Contains(out, "待送达——Codex 不能后台叫醒") {
+		t.Fatalf("ks team sent 应显示待送达：\n%s", out)
 	}
 	// Hub 建好消息后异步推给 daemon，用户这次发消息时 daemon 可能还没收到：重试到注入出现为止
 	turn := 0
@@ -175,7 +175,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("广播失败：%v\n%s", err, out)
 	}
-	for _, want := range []string{"已按「要动手」广播给身份为「dev,评审」的会话 2 个", "跳过离线 1 个", "开发 claude:dev（Claude Code）：等对方醒来", "评审 claude:rev（Claude Code）：等对方醒来", "开发 claude:lost（Claude Code）：对方不在线——失联"} {
+	for _, want := range []string{"已按「要动手」广播给身份为「dev,评审」的会话 2 个", "跳过离线 1 个", "开发 claude:dev（Claude Code）：待送达", "评审 claude:rev（Claude Code）：待送达", "开发 claude:lost（Claude Code）：无法送达——失联"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("广播输出应包含「%s」：\n%s", want, out)
 		}
@@ -221,7 +221,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 		t.Fatalf("开发发只告知广播应可以：%v\n%s", err, out)
 	}
 
-	// 6. 送达状态 等对方醒来 → 对方不在线：评审没收到就结束了
+	// 6. 送达状态 待送达 → 无法送达：评审没收到就结束了
 	var s sentRes
 	if err := c.Do(ctx, "GET", "/agent/team/sent?session_key=claude:pm", nil, &s); err != nil {
 		t.Fatal(err)
@@ -241,8 +241,8 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	hook(t, "claude", map[string]any{"session_id": "rev", "cwd": cwd, "hook_event_name": "SessionEnd"})
 	e.waitFor("评审结束", func() bool { return e.session("claude:rev").State == store.StateEnded })
 	out, _ = ks("pm", "team", "sent", revCode)
-	if !strings.Contains(out, "广播（2 个收件人）") || !strings.Contains(out, "评审 claude:rev（Claude Code）：对方不在线——会话已结束") {
-		t.Fatalf("评审结束后应显示对方不在线：\n%s", out)
+	if !strings.Contains(out, "广播（2 个收件人）") || !strings.Contains(out, "评审 claude:rev（Claude Code）：无法送达——会话已结束") {
+		t.Fatalf("评审结束后应显示无法送达：\n%s", out)
 	}
 
 	// 7. 不能冒用发送方：识别到当前会话时 --session 写成别的会话被拒；只能查自己发的

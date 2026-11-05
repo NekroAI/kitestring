@@ -674,7 +674,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划 · " + x.Code, Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
+			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划 " + x.Code, Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
 			x, err = h.planChanged(ctx, x.ID)
 			out := &planCreatedOut{}
 			out.Body.Plan, out.Body.Notices = x, notices
@@ -719,7 +719,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			if err := h.store.SetPlanReturned(ctx, x.ID, false); err != nil {
 				return nil, err
 			}
-			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划（已按意见修改） · " + x.Code, Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
+			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划 " + x.Code + "（已按意见修改）", Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
 			x, err = h.planChanged(ctx, x.ID)
 			out := &planCreatedOut{}
 			out.Body.Plan, out.Body.Notices = x, notices

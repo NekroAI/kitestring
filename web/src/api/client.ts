@@ -49,7 +49,7 @@ const authMiddleware: Middleware = {
 }
 
 // 写操作最多等 30 秒（R-236 / R-265）：纸鸢重启、代理挂住时请求可能一直没有回音，按钮转着、什么提示都没有，像是「点了没反应」；
-// 到点按失败处理，提示写明「纸鸢太久没有回应，没有改动，可以再试一次」。读取（GET）和实时推送不受影响；上传附件走 XHR，另有进度和超时。
+// 到点按失败处理，提示写明「纸鸢长时间未响应。未做改动，可重试。」。读取（GET）和实时推送不受影响；上传附件走 XHR，另有进度和超时。
 const WRITE_TIMEOUT_MS = 30_000
 const timedFetch = (req: Request) => (req.method === 'GET' || req.signal.aborted ? fetch(req) : fetch(new Request(req, { signal: AbortSignal.timeout(WRITE_TIMEOUT_MS) })))
 
@@ -79,13 +79,13 @@ export async function unwrap<T>(p: Promise<Result<T>>): Promise<T> {
   return data as T
 }
 
-// errMsg：失败提示（R-236）。what 写这件事（「关闭 D-964」），提示成「关闭 D-964 没成功：连不上纸鸢……没有改动，可以再试一次。」；
+// errMsg：失败提示（R-236）。what 写这件事（「关闭 D-964」），提示成「关闭 D-964 未成功：无法连接纸鸢……未做改动，可重试。」；
 // 不直接显示英文原文（Failed to fetch、Not Found 之类），纸鸢自己写的中文说明照用。规则在 lib/fail.ts。
 export function errMsg(e: unknown, what?: string): string {
   return failText(classify(e), what)
 }
 
-// errReason：只要原因（读取失败、登录页这类不必写「没有改动，可以再试一次」的地方），同样不显示英文原文（R-236）。
+// errReason：只要原因（读取失败、登录页这类不必写「未做改动，可重试」的地方），同样不显示英文原文（R-236）。
 export function errReason(e: unknown): string {
   return reasonOf(classify(e))
 }
