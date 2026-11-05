@@ -10027,6 +10027,9 @@
           "kind": {
             "type": "string"
           },
+          "label": {
+            "type": "string"
+          },
           "model": {
             "description": "派子任务：用量最多的模型 id",
             "type": "string"

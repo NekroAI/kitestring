@@ -118,6 +118,9 @@ func shrinkReqs(text string) string {
 
 var reqRef = regexp.MustCompile(`R-\d+「`)
 
+// sysLabel 把提醒前缀里写给会话的事件名换成网页上的类别名（docs/copywriting.md 3.7、5.4）。
+var sysLabel = map[string]string{"有人提决策": "新决策", "交验收": "待验收", "需求受阻": "受阻", "阶段交小结": "阶段小结", "用户改项目设置": "项目设置变更", "用户改需求状态": "需求状态变更"}
+
 // sysText 拆出纸鸢提醒的类别和正文。
 func sysText(d store.Decision) (label, text string) {
 	a := strings.TrimSpace(d.Answer)
@@ -125,6 +128,9 @@ func sysText(d store.Decision) (label, text string) {
 	case sysHead.MatchString(a):
 		m := sysHead.FindStringSubmatchIndex(a)
 		label, text = a[m[2]:m[3]], a[m[1]:]
+		if v, ok := sysLabel[label]; ok {
+			label = v
+		}
 	case watchHead.MatchString(a):
 		label, text = "订阅提醒", a[len(watchHead.FindString(a)):]
 	case d.Question == watchTellQ:
@@ -138,6 +144,37 @@ func sysText(d store.Decision) (label, text string) {
 		}
 	}
 	return label, strings.TrimSpace(text)
+}
+
+// inboxText 把送进会话的团队消息、纸鸢提醒整理成会话详情时间线上的一句话（D-1171）：纸鸢提醒拆出类别，
+// 会话发的去掉发送方前缀（身份另画成标记），去掉会话键和写给会话的操作提示，开头的「R-12「标题」」交给印记，只取第一句。
+// 原文照旧送给会话，这里只改网页上的显示。
+func inboxText(a store.Act) (label, text string) {
+	if a.Via != store.KindTell {
+		return "", a.Text
+	}
+	if a.Peer == "" && a.PeerRole == "" {
+		label, text = sysText(store.Decision{Answer: strings.TrimSpace(a.Text)})
+		text = strings.TrimSpace(shrinkReqs(stripReq(strings.TrimSpace(keyParen.ReplaceAllString(text, "")), a.Req)))
+	} else {
+		text = sentBody(a.Text, a.Req)
+	}
+	if i := strings.Index(text, "。"); i > 0 {
+		text = text[:i+len("。")]
+	}
+	return label, text
+}
+
+// sentBody 是会话发出的团队消息在时间线上显示的正文：去掉「身份「标题」（会话键）……：」这段发送方前缀和会话键，
+// 开头的需求标题交给印记（D-1171）。
+func sentBody(text, req string) string {
+	text = strings.TrimSpace(text)
+	if loc := keyParen.FindStringIndex(text); loc != nil {
+		if j := strings.Index(text[loc[1]:], "："); j >= 0 {
+			text = text[loc[1]+j+len("："):]
+		}
+	}
+	return strings.TrimSpace(shrinkReqs(stripReq(strings.TrimSpace(keyParen.ReplaceAllString(text, "")), req)))
 }
 
 // stripReq 去掉正文开头的「R-12「标题」」：需求单独显示成印记。标题里可能套着「」，按层数找收尾。

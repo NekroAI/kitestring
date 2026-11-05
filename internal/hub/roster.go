@@ -41,51 +41,51 @@ func wakeAbility(x store.Session) (now bool, why string) { return wakeAbilityAt(
 // wakeAbilityAt 同 wakeAbility，时间由调用方给。
 func wakeAbilityAt(x store.Session, at time.Time) (now bool, why string) {
 	if x.OfflineAt != nil && x.Role != "" {
-		return false, "已空等交接下线，消息照常入队，用户开新会话接任时转给新会话"
+		return false, "已下线，消息照常排队，接任的新会话会收到"
 	}
 	switch x.State {
 	case store.StateEnded:
-		return false, "会话已结束，离线"
+		return false, "会话已结束"
 	case store.StateLost:
-		return false, "失联（设备断开），离线"
+		return false, "会话失联（设备断开）"
 	}
 	if x.RetiredAt != nil {
-		return false, "已被新会话接任卸任，不再被叫醒"
+		return false, "身份已由新会话接任，不再接收消息"
 	}
 	switch x.AvailabilityAt(at) {
 	case store.AvailBusy:
 		switch {
 		case x.State == store.StateWaitApproval:
-			return false, "在等用户授权，这一轮结束后收到"
+			return false, "等待授权，本轮结束后送达"
 		case x.State == store.StateWaitReply:
-			return false, "在用提问工具问用户，这一轮结束后收到"
+			return false, "等待回答，本轮结束后送达"
 		case x.Tool == protocol.ToolCodex:
-			return false, "正在跑，这一轮结束后收到（Codex 要这一轮里再挂 ks wait，否则等用户下次发消息）"
+			return false, "运行中，本轮结束后送达（Codex 需在本轮再次待命，否则等用户下次发消息）"
 		}
-		return false, "正在跑，这一轮结束后收到"
+		return false, "运行中，本轮结束后送达"
 	case store.AvailStandby:
 		switch x.Tool {
 		case protocol.ToolCodex:
 			if x.ParkedUntil != nil {
-				return true, fmt.Sprintf("挂着前台 ks wait（到 %s）", x.ParkedUntil.Local().Format("15:04"))
+				return true, fmt.Sprintf("终端前台待命（至 %s）", x.ParkedUntil.Local().Format("15:04"))
 			}
-			return true, "挂着前台 ks wait"
+			return true, "终端前台待命"
 		case protocol.ToolDSH:
 			return true, "DSH 插件待命"
 		}
-		return true, "挂着后台 ks wait"
+		return true, "后台待命"
 	}
 	// 在线：一轮结束、没挂 ks wait
 	switch x.Tool {
 	case protocol.ToolCodex:
 		if x.CodexWaitExpired(at) {
-			return false, fmt.Sprintf("前台 ks wait 已到期（%s）；Codex 不能后台叫醒，等用户下次发消息", x.ParkedUntil.Local().Format("15:04"))
+			return false, fmt.Sprintf("终端前台待命已到期（%s）；Codex 无法在后台接收，等用户下次发消息", x.ParkedUntil.Local().Format("15:04"))
 		}
-		return false, "Codex 不能后台叫醒，等用户下次发消息"
+		return false, "Codex 无法在后台接收，等用户下次发消息"
 	case protocol.ToolDSH:
-		return false, "DSH 插件没在待命，等用户下次发消息"
+		return false, "DSH 插件未待命，等用户下次发消息"
 	}
-	return false, "没挂 ks wait，等用户下次发消息"
+	return false, "未待命，等用户下次发消息"
 }
 
 // RosterEntry 是在线会话列表里的一个会话。

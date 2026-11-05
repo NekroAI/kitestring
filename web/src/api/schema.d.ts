@@ -5243,6 +5243,7 @@ export interface components {
             fyi?: boolean;
             id: string;
             kind: string;
+            label?: string;
             /** @description 派子任务：用量最多的模型 id */
             model?: string;
             note?: string;

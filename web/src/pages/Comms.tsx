@@ -181,7 +181,7 @@ function SessionItem({ s, now, active, onClick }: { s: Sess; now: number; active
       </div>
       <Tip content={s.wake_why} truncated>
         <div className={cx('mt-1 truncate text-[12px]', s.waiting ? 'text-wait' : 'text-fg-3')}>
-          {s.waiting && s.waiting_since ? t.comms.waitingOn(s.waiting, duration(s.waiting_since, now)) : `${s.wake_now ? t.comms.wakeNow : t.comms.wakeLater} · ${s.wake_why}`}
+          {s.waiting && s.waiting_since ? t.comms.waitingOn(s.waiting, duration(s.waiting_since, now)) : s.wake_now ? `${t.comms.wakeNow} · ${s.wake_why}` : s.wake_why}
         </div>
       </Tip>
       <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-fg-3">

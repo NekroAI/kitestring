@@ -40,7 +40,7 @@ function stateLine(s: Session, hs: Handoff[], now: number): { dot: string; label
   const label = t.turns.st[ds] ?? t.state[ds] ?? ds
   if (ds === 'parked') return { dot: ds, label, detail: s.parked_until ? t.turns.parkedUntil(hm(s.parked_until)) : t.turns.parkedPlain }
   if (ds === 'ended' || ds === 'done') return { dot: ds, label, detail: '' }
-  return { dot: ds, label, detail: s.state_since ? shortDuration(s.state_since, now) : '' }
+  return { dot: ds, label, detail: s.state_since ? duration(s.state_since, now) : '' }
 }
 
 // Notice：头部的细提醒（版本旧、另一个终端开着、上下文过长、待命超时、等你授权 / 在问你）。
@@ -49,7 +49,7 @@ function Notice({ icon, tone, children, action }: { icon: ReactNode; tone: 'wait
   return (
     <div className={cx('flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-[12.5px] leading-relaxed', cls)}>
       <span className="mt-[3px] shrink-0">{icon}</span>
-      <div className="min-w-0 flex-1 text-fg-2">{children}</div>
+      <div className="min-w-0 flex-1 text-fg-2 max-sm:line-clamp-2">{children}</div>
       {action}
     </div>
   )
@@ -152,7 +152,7 @@ function Head({ s, hs, running, now, menu, onClose }: { s: Session; hs: Handoff[
   const meta = [t.tool[s.tool] ?? s.tool, s.model && modelShort(s.model), s.device_name].filter(Boolean).join(t.common.sep)
   const sep = <span className="text-fg-3/70">·</span>
   return (
-    <div className="shrink-0 border-b border-line px-4 pt-3.5 pb-3 sm:px-5">
+    <div className="shrink-0 border-b border-line px-4 pt-2.5 pb-2 sm:px-5 sm:pt-3.5 sm:pb-3">
       <div className="flex items-center gap-2">
         <RoleBadge s={s} />
         <h2 className="min-w-0 flex-1 truncate font-display text-[17px] font-semibold text-fg">{sessionTitle(s)}</h2>
@@ -185,14 +185,17 @@ function Head({ s, hs, running, now, menu, onClose }: { s: Session; hs: Handoff[
             {working.length > 2 && <span>+{working.length - 2}</span>}
           </>
         )}
-        {sep}
-        <Tip content={absTime(s.started_at)}>
-          <span className="tabular">{t.turns.age(duration(s.started_at, s.state === 'ended' && s.last_active_at ? Date.parse(s.last_active_at) : now))}</span>
-        </Tip>
-        {sep}
-        <span className="inline-flex min-w-0 items-center gap-1">
-          <ToolMark tool={s.tool} size="sm" />
-          <span className="truncate">{meta}</span>
+        {/* 手机宽度下时长、工具、模型、设备收进「会话信息」，头部只留状态（D-1171） */}
+        <span className="contents max-sm:hidden">
+          {sep}
+          <Tip content={absTime(s.started_at)}>
+            <span className="tabular">{t.turns.age(duration(s.started_at, s.state === 'ended' && s.last_active_at ? Date.parse(s.last_active_at) : now))}</span>
+          </Tip>
+          {sep}
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <ToolMark tool={s.tool} size="sm" />
+            <span className="truncate">{meta}</span>
+          </span>
         </span>
       </div>
       {s.summary && (
@@ -200,7 +203,7 @@ function Head({ s, hs, running, now, menu, onClose }: { s: Session; hs: Handoff[
           <Tip content={t.turns.guessTip}>
             <span className="mt-[2px] shrink-0 rounded border border-line px-1 text-[11px] leading-4 text-fg-3">{t.turns.guess}</span>
           </Tip>
-          <span className="min-w-0">
+          <span className="min-w-0 max-sm:line-clamp-1">
             <Linkify text={s.summary} />
           </span>
         </div>
@@ -268,7 +271,10 @@ function Index({ objs, sel, onPick }: { objs: Obj[]; sel: string | null; onPick:
                   {t.turns.pendingMark}
                 </span>
               )}
-              <RefChip code={o.code} title={o.title} status={o.kind === 'req' ? o.status : undefined} label="title" onOpen={() => onPick(o)} className="max-w-full" />
+              {/* 外包一层可收缩的盒子：带「待答复」标时印记不超出 15rem，不压住后面的「+n」 */}
+              <span className="flex min-w-0">
+                <RefChip code={o.code} title={o.title} status={o.kind === 'req' ? o.status : undefined} label="title" onOpen={() => onPick(o)} className="max-w-full" />
+              </span>
             </span>
           )
         })}
@@ -367,7 +373,9 @@ function Timeline({ s, pages, more, loadingOlder, loadOlder, hit, filterKey, mod
   const pending = pages[0]?.pending ?? []
   const ds = displayState(s)
   const busy = ds === 'running' || ds === 'background' || ds === 'waiting_approval' || ds === 'waiting_answer'
-  const who = s.role && t.role[s.role] ? t.role[s.role] : t.turns.it
+  const who = s.role && t.role[s.role] ? t.role[s.role] : t.turns.self
+  // 「只记录了开头一段」只在最早出现的那一轮提示一次（D-1171），老会话不必每轮重复
+  const briefAt = turns.findIndex((x) => !!x.reply && x.reply_kind === 'brief')
   // 加载了更早的一页：保持视线位置；否则在底部时跟到底
   useLayoutEffect(() => {
     const el = box.current
@@ -405,7 +413,7 @@ function Timeline({ s, pages, more, loadingOlder, loadOlder, hit, filterKey, mod
       </div>
       {!turns.length && !pending.length && <p className="py-8 text-center text-sm text-fg-3">{t.turns.noTurns}</p>}
       {turns.map((x, i) => (
-        <TurnView key={`${x.id}@${x.start}`} x={x} last={i === turns.length - 1} who={who} busy={busy} models={models} hit={hit} now={now} />
+        <TurnView key={`${x.id}@${x.start}`} x={x} last={i === turns.length - 1} who={who} busy={busy} models={models} hit={hit} now={now} briefNote={i === briefAt} />
       ))}
       {pending.length > 0 && (
         <div className="pb-3">
@@ -521,7 +529,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
               <Timeline s={s} pages={pages} more={!!tq.hasNextPage} loadingOlder={tq.isFetchingNextPage} loadOlder={loadOlder} hit={hit} filterKey={sel} models={models} now={now} />
             )}
             {canMessage(s) ? (
-              <MessageBox s={s} who={s.role && t.role[s.role] ? t.role[s.role] : t.turns.it} onNew={() => setCreating(true)} />
+              <MessageBox s={s} who={s.role && t.role[s.role] ? t.role[s.role] : t.turns.self} onNew={() => setCreating(true)} />
             ) : (
               <div className="shrink-0 border-t border-line px-5 py-3 text-center text-[12.5px] text-fg-3">{t.turns.phEnded}</div>
             )}

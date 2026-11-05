@@ -185,7 +185,7 @@ func TestIdleOffline(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/team/tell", map[string]any{"session_key": "claude:io-aide", "to": "pm", "text": "R-9 用户说先别合"}, &told); err != nil {
 		t.Fatal(err)
 	}
-	if !told.Delivered || told.To != "claude:io-pm" || len(told.Recipients) != 1 || !strings.Contains(told.Recipients[0].Reason, "交接下线") {
+	if !told.Delivered || told.To != "claude:io-pm" || len(told.Recipients) != 1 || !strings.Contains(told.Recipients[0].Reason, "已下线") {
 		t.Fatalf("下线后点名消息应照常入队：%+v", told)
 	}
 	// 会话面板 / 工作台：会话带 offline_at

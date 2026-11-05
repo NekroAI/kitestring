@@ -7,11 +7,12 @@ import { modelShort } from '../lib/model'
 import { promptKey, replyKey, toolLine } from '../lib/turns'
 import { absTime, copyText, cx, shortDuration } from '../lib/util'
 import { Badge, Tip } from '../ui/base'
+import { RoleTag } from '../ui/marks'
 import { Md } from '../ui/markdown'
 import { DecGlyph, Linkify, RefChip, ReqGlyph } from '../ui/refmark'
 import { statusTone } from './statusReq'
 
-// 会话详情页按轮的时间线（R-273）：你说的话（终端 / 网页）→ 纸鸢叫醒它的消息、纸鸢动作（印记 + 一句话，点印记开第二层纸）→
+// 会话详情页按轮的时间线（R-273）：你说的话（终端 / 网页）→ 纸鸢送达的消息、纸鸢动作（印记 + 一句话，点印记开第二层纸）→
 // 工具调用收成一行 → 它的回复（Markdown，长的收起）；这一轮结束后子任务做的事单独一小段。
 // 动作只来自纸鸢的明确记录（服务端 /api/sessions/{key}/turns），不从工具参数猜（设计原则第 11 条）。
 
@@ -189,14 +190,22 @@ export function ItemNode({ x, models, now }: { x: TurnItem; models?: Record<stri
   return null
 }
 
-// InboxLine：纸鸢送进这一轮的一条消息（团队消息、你的答复、交给它的需求……）。网页上发的话另画成「你」的气泡。
+// InboxLine：纸鸢送进这一轮的一条消息（团队消息、你的答复、指派的需求……）。网页上发的话另画成「你」的气泡。
+// 身份标记 + 类别 + 一句话（D-1171）：发消息的会话画成身份标，纸鸢提醒写类别（服务端已拆好，正文整理成一句话）。
 function InboxLine({ x }: { x: TurnItem }) {
-  const kind = x.via === 'tell' && x.fyi ? t.turns.inbox.fyi : (t.turns.inbox[x.via ?? ''] ?? '')
+  const kind = x.label || (x.via === 'tell' && x.fyi ? t.turns.inbox.fyi : (t.turns.inbox[x.via ?? ''] ?? ''))
+  const role = x.peer_role && x.peer_role !== 'user' && t.role[x.peer_role] ? x.peer_role : ''
   return (
     <div className="text-[12.5px] leading-relaxed break-words text-fg-2">
+      {role && (
+        <Tip content={x.peer || t.role[role]}>
+          <span className="mr-1 inline-flex align-[-3px]">
+            <RoleTag role={role} />
+          </span>
+        </Tip>
+      )}
       <span className="text-fg-3">
-        {who(x)}
-        {kind && t.common.sep + kind}
+        {role ? kind : who(x) + (kind ? t.common.sep + kind : '')}
         {(x.dec || x.req) && ' '}
       </span>
       {x.via === 'decision' ? chip(x.dec, x.dec_title) : chip(x.req, x.req_title)}
@@ -251,7 +260,7 @@ function Rail({ children }: { children: ReactNode }) {
 
 // Reply：它的回复，长的收起；只有摘要用的前一段或没有记录时写明。
 const FOLD = 360
-function Reply({ text, kind }: { text: string; kind: string }) {
+function Reply({ text, note }: { text: string; note: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const [long, setLong] = useState(false)
   const [open, setOpen] = useState(false)
@@ -270,7 +279,7 @@ function Reply({ text, kind }: { text: string; kind: string }) {
           {open ? t.turns.fold : t.turns.expand}
         </button>
       )}
-      {kind === 'brief' && <p className="mt-1 text-[11.5px] text-fg-3">{t.turns.briefReply}</p>}
+      {note && <p className="mt-1 text-[11.5px] text-fg-3">{t.turns.briefReply}</p>}
     </div>
   )
 }
@@ -328,7 +337,8 @@ function You({ text, web, at, files, children }: { text: string; web?: boolean; 
 }
 
 // TurnView：一轮。
-export function TurnView({ x, last, who: name, busy, models, hit, now }: { x: Turn; last: boolean; who: string; busy: boolean; models: Record<string, string>; hit: Hit; now: number }) {
+// briefNote：这一轮是最早一条只记了开头一段的回复，在这里提示一次（D-1171）。
+export function TurnView({ x, last, who: name, busy, models, hit, now, briefNote }: { x: Turn; last: boolean; who: string; busy: boolean; models: Record<string, string>; hit: Hit; now: number; briefNote?: boolean }) {
   const inbox = x.inbox ?? []
   const web = inbox.filter((i) => i.web)
   const other = inbox.filter((i) => !i.web)
@@ -383,7 +393,7 @@ export function TurnView({ x, last, who: name, busy, models, hit, now }: { x: Tu
               </>
             )}
           </div>
-          <Reply text={x.reply} kind={x.reply_kind} />
+          <Reply text={x.reply} note={!!briefNote && x.reply_kind === 'brief'} />
         </Dim>
       ) : running ? (
         <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-run">
@@ -429,7 +439,7 @@ export function PendingWeb({ x, busy, hit }: { x: TurnItem; busy: boolean; hit: 
   )
 }
 
-// KiteMark：纸鸢叫醒它的小风筝。
+// KiteMark：纸鸢送达消息的小风筝。
 function KiteMark() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden className="size-3.5 text-seal">

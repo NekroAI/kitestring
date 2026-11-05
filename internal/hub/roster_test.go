@@ -23,18 +23,18 @@ func TestWakeAbility(t *testing.T) {
 		now  bool
 		why  string
 	}{
-		{"Claude 后台 wait", store.Session{Tool: "claude", State: store.StateParked, Parked: true}, true, "后台 ks wait"},
-		{"claude-x 后台 wait", store.Session{Tool: "claude", Launcher: "claude-x", State: store.StateParked, Parked: true}, true, "后台 ks wait"},
-		{"Codex 前台 wait 未到期", store.Session{Tool: "codex", Client: "cli", State: store.StateParked, Parked: true, ParkedUntil: &later}, true, "前台 ks wait（到 "},
+		{"Claude 后台 wait", store.Session{Tool: "claude", State: store.StateParked, Parked: true}, true, "后台待命"},
+		{"claude-x 后台 wait", store.Session{Tool: "claude", Launcher: "claude-x", State: store.StateParked, Parked: true}, true, "后台待命"},
+		{"Codex 前台 wait 未到期", store.Session{Tool: "codex", Client: "cli", State: store.StateParked, Parked: true, ParkedUntil: &later}, true, "前台待命（至 "},
 		{"Codex 前台 wait 已到期", store.Session{Tool: "codex", Client: "cli", State: store.StateParked, Parked: true, ParkedUntil: &earlier}, false, "已到期"},
-		{"Codex 没挂 wait", store.Session{Tool: "codex", Client: "app-server", State: store.StateWaitReply}, false, "Codex 不能后台叫醒，等用户下次发消息"},
-		{"Codex 在跑", store.Session{Tool: "codex", State: store.StateRunning}, false, "这一轮结束后收到"},
+		{"Codex 没挂 wait", store.Session{Tool: "codex", Client: "app-server", State: store.StateWaitReply}, false, "Codex 无法在后台接收，等用户下次发消息"},
+		{"Codex 在跑", store.Session{Tool: "codex", State: store.StateRunning}, false, "本轮结束后送达"},
 		{"DSH 插件待命", store.Session{Tool: "dsh", State: store.StateParked, Parked: true}, true, "DSH 插件待命"},
-		{"DSH 没待命", store.Session{Tool: "dsh", State: store.StateWaitReply}, false, "DSH 插件没在待命"},
-		{"Claude 在跑（挂着 wait 也先算忙）", store.Session{Tool: "claude", State: store.StateRunning, Parked: true}, false, "正在跑，这一轮结束后收到"},
-		{"等授权", store.Session{Tool: "claude", State: store.StateWaitApproval}, false, "等用户授权"},
-		{"提问工具在问", store.Session{Tool: "claude", State: store.StateWaitReply, WaitKind: store.WaitQuestion}, false, "提问工具"},
-		{"Claude 没挂 wait", store.Session{Tool: "claude", State: store.StateWaitReply}, false, "没挂 ks wait"},
+		{"DSH 没待命", store.Session{Tool: "dsh", State: store.StateWaitReply}, false, "DSH 插件未待命"},
+		{"Claude 在跑（挂着 wait 也先算忙）", store.Session{Tool: "claude", State: store.StateRunning, Parked: true}, false, "运行中，本轮结束后送达"},
+		{"等授权", store.Session{Tool: "claude", State: store.StateWaitApproval}, false, "等待授权"},
+		{"提问工具在问", store.Session{Tool: "claude", State: store.StateWaitReply, WaitKind: store.WaitQuestion}, false, "等待回答"},
+		{"Claude 没挂 wait", store.Session{Tool: "claude", State: store.StateWaitReply}, false, "未待命"},
 		{"已结束", store.Session{Tool: "claude", State: store.StateEnded}, false, "已结束"},
 		{"失联", store.Session{Tool: "codex", State: store.StateLost, Parked: true}, false, "失联"},
 		{"被接任卸任", store.Session{Tool: "claude", State: store.StateParked, Parked: true, RetiredAt: &retired}, false, "接任"},
@@ -121,8 +121,8 @@ func TestRoster(t *testing.T) {
 	if o := got["claude:dev"].Open; len(o) != 1 || o[0].Code != r.Code {
 		t.Errorf("开发手上应有 %s：%+v", r.Code, o)
 	}
-	for _, s := range []string{"项目「kite」：5 个没结束的会话（待命 3 · 运行中 1 · 空闲 1）", "claude:pm（你）「会话 claude:pm」 主调度 · Claude Code@mac · 待命 · 能立刻叫醒：挂着后台 ks wait",
-		"codex:app「会话 codex:app」 无身份 · Codex App@mac · 空闲 · 不能立刻叫醒：Codex 不能后台叫醒，等用户下次发消息", "手上：" + r.Code + "「会话通信」"} {
+	for _, s := range []string{"项目「kite」：5 个没结束的会话（待命 3 · 运行中 1 · 空闲 1）", "claude:pm（你）「会话 claude:pm」 主调度 · Claude Code@mac · 待命 · 能立刻叫醒：后台待命",
+		"codex:app「会话 codex:app」 无身份 · Codex App@mac · 空闲 · 不能立刻叫醒：Codex 无法在后台接收，等用户下次发消息", "手上：" + r.Code + "「会话通信」"} {
 		if !strings.Contains(out.Body.Text, s) {
 			t.Errorf("文字里应有「%s」：\n%s", s, out.Body.Text)
 		}
@@ -142,7 +142,7 @@ func TestRoster(t *testing.T) {
 	}
 	// 带已结束
 	out, err = h.roster(ctx, "claude:pm", "", false, true)
-	if err != nil || len(out.Body.Sessions) != 6 || out.Body.Sessions[5].Key != "claude:old" || !strings.Contains(out.Body.Text, "会话已结束，离线") {
+	if err != nil || len(out.Body.Sessions) != 6 || out.Body.Sessions[5].Key != "claude:old" || !strings.Contains(out.Body.Text, "会话已结束") {
 		t.Fatalf("带已结束：%+v %v", out, err)
 	}
 	// 跨项目：认不出会话也能看

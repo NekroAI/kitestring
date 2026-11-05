@@ -50,7 +50,7 @@ func PolicyNote(role, policy string) string {
 	var b strings.Builder
 	b.WriteString("[Kitestring] 子任务模型策略（项目设置）：本项目设为「" + policyNames[p] + "」。派子任务（子代理）时按任务难度选模型，倾向——" + policyLean[p] + "\n")
 	b.WriteString("纸鸢只给倾向，不指定模型：你所用的工具有哪些模型档位，就在那里对应出相对的「便宜小模型」和「最强模型」，不照抄别家的模型名。")
-	b.WriteString("派子任务时写明用了哪档、一句理由：在派活说明第一行写「模型：<档位> — <一句理由>」，事后好对账（泳道上子任务行会按用量记录显示实际用的模型，名字里不必再写档位）。")
+	b.WriteString("派子任务时写明用了哪档、一句理由：在任务说明第一行写「模型：<档位> — <一句理由>」，事后好对账（泳道上子任务行会按用量记录显示实际用的模型，名字里不必再写档位）。")
 	b.WriteString("你的工具没有子代理能力，或派子任务时不能指定模型，这一项忽略。\n")
 	return b.String()
 }

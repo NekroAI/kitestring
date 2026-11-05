@@ -73,6 +73,8 @@ type TurnItem struct {
 	store.Act
 	Refs  []string `json:"refs" doc:"相关的需求 / 决策编号"`
 	Model string   `json:"model,omitempty" doc:"派子任务：用量最多的模型 id"`
+	// 收到的纸鸢提醒的类别（「待验收」「订阅提醒」……），text 已整理成一句话（D-1171）
+	Label string `json:"label,omitempty"`
 	// 网页上发的话的送达状态（只有 web 为真时）
 	Delivery *WebDelivery `json:"delivery,omitempty"`
 }
@@ -143,19 +145,19 @@ func webDelivery(a store.Act, x store.Session, turnOpen bool) *WebDelivery {
 	case a.Status == store.DecClosed:
 		return &WebDelivery{Status: "closed", Reason: "已关闭，不再送达"}
 	case a.Status == store.DecDelivered && turnOpen:
-		return &WebDelivery{Status: "woke", Reason: "已送达，它在处理"}
+		return &WebDelivery{Status: "woke", Reason: "已送达，处理中"}
 	case a.Status == store.DecDelivered:
 		return &WebDelivery{Status: "delivered", Reason: "已送达"}
 	case x.OfflineAt != nil && x.Role != "":
-		return &WebDelivery{Status: "offline", Reason: "它已空等交接下线：消息已排队，新会话接任时转给它", Command: takeoverCmd(x.Role)}
+		return &WebDelivery{Status: "offline", Reason: "会话已下线，消息已排队，新会话接任时转交", Command: takeoverCmd(x.Role)}
 	case x.RetiredAt != nil:
-		return &WebDelivery{Status: "offline", Reason: "它已被新会话接任卸任，不会再收到"}
+		return &WebDelivery{Status: "offline", Reason: "身份已由新会话接任，这个会话不会再收到"}
 	case sessionOffline(x):
-		return &WebDelivery{Status: "offline", Reason: offlineWhy(x) + "，会话恢复时才收到"}
+		return &WebDelivery{Status: "offline", Reason: offlineWhy(x) + "，会话恢复后才会收到"}
 	}
 	now, why := wakeAbility(x)
 	if now {
-		return &WebDelivery{Status: "woke", Reason: "已叫醒（" + why + "）"}
+		return &WebDelivery{Status: "woke", Reason: "已送达（" + why + "）"}
 	}
 	return &WebDelivery{Status: "queued", Reason: why}
 }
@@ -287,6 +289,9 @@ func (h *Hub) sessionTurns(ctx context.Context, key string, before time.Time, li
 		if a.Kind == store.ActAgent {
 			it.Model = out.Body.Models[a.Agent]
 		}
+		if a.Kind == store.ActTellOut {
+			it.Text = sentBody(a.Text, a.Req)
+		}
 		if a.Kind == store.ActInbox {
 			// 收到的消息落在送达的那一轮：送达时记了轮 ID 的按 ID，经 ks wait 送达的落在送达之后开始的第一轮
 			var t *Turn
@@ -329,6 +334,7 @@ func (h *Hub) sessionTurns(ctx context.Context, key string, before time.Time, li
 					t.Source = "web"
 				}
 			}
+			it.Label, it.Text = inboxText(a)
 			t.Inbox = append(t.Inbox, it)
 			continue
 		}

@@ -136,7 +136,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/team/tell", map[string]any{"session_key": "claude:pm", "text": "R-249 帮忙跑一下 Codex", "to": "codex:cx"}, &tr); err != nil {
 		t.Fatal(err)
 	}
-	if len(tr.Recipients) != 1 || tr.Recipients[0].Status != "pending_wake" || !strings.Contains(tr.Recipients[0].Reason, "Codex 不能后台叫醒，等用户下次发消息") || tr.Recipients[0].Tool != "Codex 终端" && tr.Recipients[0].Tool != "Codex" {
+	if len(tr.Recipients) != 1 || tr.Recipients[0].Status != "pending_wake" || !strings.Contains(tr.Recipients[0].Reason, "Codex 无法在后台接收，等用户下次发消息") || tr.Recipients[0].Tool != "Codex 终端" && tr.Recipients[0].Tool != "Codex" {
 		t.Fatalf("发给无身份 Codex 会话：%+v", tr)
 	}
 	if !strings.Contains(tr.Message, "已送给会话 codex:cx") || !strings.Contains(tr.Message, "待送达") {
@@ -144,7 +144,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	}
 	cxCode := tr.Code
 	out, _ = ks("pm", "team", "sent", cxCode)
-	if !strings.Contains(out, cxCode+" 点对点 · 要动手") || !strings.Contains(out, "无身份会话 codex:cx") || !strings.Contains(out, "待送达——Codex 不能后台叫醒") {
+	if !strings.Contains(out, cxCode+" 点对点 · 要动手") || !strings.Contains(out, "无身份会话 codex:cx") || !strings.Contains(out, "待送达——Codex 无法在后台接收") {
 		t.Fatalf("ks team sent 应显示待送达：\n%s", out)
 	}
 	// Hub 建好消息后异步推给 daemon，用户这次发消息时 daemon 可能还没收到：重试到注入出现为止
@@ -175,7 +175,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("广播失败：%v\n%s", err, out)
 	}
-	for _, want := range []string{"已按「要动手」广播给身份为「dev,评审」的会话 2 个", "跳过离线 1 个", "开发 claude:dev（Claude Code）：待送达", "评审 claude:rev（Claude Code）：待送达", "开发 claude:lost（Claude Code）：无法送达——失联"} {
+	for _, want := range []string{"已按「要动手」广播给身份为「dev,评审」的会话 2 个", "跳过离线 1 个", "开发 claude:dev（Claude Code）：待送达", "评审 claude:rev（Claude Code）：待送达", "开发 claude:lost（Claude Code）：无法送达——会话失联"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("广播输出应包含「%s」：\n%s", want, out)
 		}
@@ -204,7 +204,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 		t.Fatalf("全体广播范围不对：%+v", br)
 	}
 	for _, r := range br.Recipients {
-		if r.Status == "pending_wake" && !strings.Contains(r.Reason, "只告知") {
+		if r.Status == "pending_wake" && !strings.Contains(r.Reason, "仅告知") {
 			t.Errorf("只告知的广播应写明不叫醒：%+v", r)
 		}
 	}

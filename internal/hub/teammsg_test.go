@@ -26,15 +26,15 @@ func TestDeliveryOf(t *testing.T) {
 		why    string
 	}{
 		{"已送达", done, store.Session{Tool: "claude", State: store.StateEnded}, true, DeliveredSt, "已送达（"},
-		{"Claude 挂后台 wait：马上叫醒", queued, store.Session{Tool: "claude", State: store.StateParked, Parked: true}, true, PendingWakeSt, "马上叫醒（挂着后台 ks wait）"},
-		{"Codex 前台 wait：马上叫醒", queued, store.Session{Tool: "codex", Client: "cli", State: store.StateParked, Parked: true, ParkedUntil: &later}, true, PendingWakeSt, "马上叫醒（挂着前台 ks wait"},
-		{"Codex 没挂 wait：等用户下次发消息", queued, store.Session{Tool: "codex", Client: "app-server", State: store.StateWaitReply}, true, PendingWakeSt, "Codex 不能后台叫醒，等用户下次发消息"},
-		{"在跑：这一轮结束后", queued, store.Session{Tool: "claude", State: store.StateRunning}, true, PendingWakeSt, "这一轮结束后收到"},
-		{"只告知 + 待命：不叫醒", fyi, store.Session{Tool: "claude", State: store.StateParked, Parked: true}, true, PendingWakeSt, "只告知、不叫醒它（它挂着后台 ks wait）"},
-		{"只告知 + Codex 没挂 wait", fyi, store.Session{Tool: "codex", State: store.StateWaitReply}, true, PendingWakeSt, "只告知、不叫醒：Codex 不能后台叫醒"},
-		{"对方已结束", queued, store.Session{Tool: "claude", State: store.StateEnded}, true, OfflineSt, "会话已结束，离线"},
+		{"Claude 挂后台 wait：马上叫醒", queued, store.Session{Tool: "claude", State: store.StateParked, Parked: true}, true, PendingWakeSt, "立即送达（后台待命）"},
+		{"Codex 前台 wait：马上叫醒", queued, store.Session{Tool: "codex", Client: "cli", State: store.StateParked, Parked: true, ParkedUntil: &later}, true, PendingWakeSt, "立即送达（终端前台待命"},
+		{"Codex 没挂 wait：等用户下次发消息", queued, store.Session{Tool: "codex", Client: "app-server", State: store.StateWaitReply}, true, PendingWakeSt, "Codex 无法在后台接收，等用户下次发消息"},
+		{"在跑：这一轮结束后", queued, store.Session{Tool: "claude", State: store.StateRunning}, true, PendingWakeSt, "本轮结束后送达"},
+		{"只告知 + 待命：不叫醒", fyi, store.Session{Tool: "claude", State: store.StateParked, Parked: true}, true, PendingWakeSt, "仅告知，不唤醒（会话后台待命）"},
+		{"只告知 + Codex 没挂 wait", fyi, store.Session{Tool: "codex", State: store.StateWaitReply}, true, PendingWakeSt, "仅告知，不唤醒：Codex 无法在后台接收"},
+		{"对方已结束", queued, store.Session{Tool: "claude", State: store.StateEnded}, true, OfflineSt, "会话已结束"},
 		{"对方失联", queued, store.Session{Tool: "codex", State: store.StateLost}, true, OfflineSt, "失联"},
-		{"用户标完成", queued, store.Session{Tool: "claude", State: store.StateWaitReply, DoneAt: &got}, true, OfflineSt, "标为已完成"},
+		{"用户标完成", queued, store.Session{Tool: "claude", State: store.StateWaitReply, DoneAt: &got}, true, OfflineSt, "已归档"},
 		{"会话不存在", queued, store.Session{}, false, OfflineSt, "不存在"},
 		{"已关闭", store.Decision{Code: "D-4", SessionKey: "k", Status: store.DecClosed}, store.Session{Tool: "claude", State: store.StateParked, Parked: true}, true, OfflineSt, "已关闭"},
 	}
@@ -48,7 +48,7 @@ func TestDeliveryOf(t *testing.T) {
 		t.Errorf("工具应写显示名：%+v", e)
 	}
 	line := deliveryLine(deliveryOf(queued, store.Session{Key: "k", Tool: "codex", Client: "app-server", Role: "advisor", State: store.StateWaitReply}, true, now))
-	if line != "- D-1 → 顾问 k（Codex App）：待送达——Codex 不能后台叫醒，等用户下次发消息" {
+	if line != "- D-1 → 顾问 k（Codex App）：待送达——Codex 无法在后台接收，等用户下次发消息" {
 		t.Errorf("收件人一行：%s", line)
 	}
 }

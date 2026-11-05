@@ -50,7 +50,7 @@ func sessionOffline(x store.Session) bool {
 // offlineWhy 是离线会话的原因。
 func offlineWhy(x store.Session) string {
 	if x.DoneAt != nil && x.State != store.StateEnded && x.State != store.StateLost {
-		return "用户已把它标为已完成，离线"
+		return "会话已归档"
 	}
 	_, why := wakeAbility(x)
 	return why
@@ -77,19 +77,19 @@ func deliveryOf(d store.Decision, x store.Session, ok bool, at time.Time) Delive
 	case !ok:
 		out.Status, out.Reason = OfflineSt, "收件会话不存在"
 	case x.OfflineAt != nil && x.Role != "":
-		out.Status, out.Reason = PendingWakeSt, "它已空等交接下线：消息照常入队，用户开新会话接任（"+takeoverCmd(x.Role)+"）时转给新会话"
+		out.Status, out.Reason = PendingWakeSt, "会话已下线，消息照常排队，用户开启新会话接任（"+takeoverCmd(x.Role)+"）时转交"
 	case sessionOffline(x):
-		out.Status, out.Reason = OfflineSt, offlineWhy(x)+"；还没收到，会话恢复时才收到"
+		out.Status, out.Reason = OfflineSt, offlineWhy(x)+"；会话恢复后才会收到"
 	default:
 		now, why := wakeAbilityAt(x, at)
 		out.Status = PendingWakeSt
 		switch {
 		case d.FYI && now:
-			out.Reason = "只告知、不叫醒它（它" + why + "），等它下次被叫醒或用户发消息时一并收到"
+			out.Reason = "仅告知，不唤醒（会话" + why + "），下次唤醒或用户发消息时一并送达"
 		case d.FYI:
-			out.Reason = "只告知、不叫醒：" + why
+			out.Reason = "仅告知，不唤醒：" + why
 		case now:
-			out.Reason = "马上叫醒（" + why + "）"
+			out.Reason = "立即送达（" + why + "）"
 		default:
 			out.Reason = why
 		}
