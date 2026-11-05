@@ -158,7 +158,7 @@ export function useWorkbench() {
       plans, // 在等你的计划：待批准、待阶段验收
       attention: att,
       reqs: rs,
-      todo: all.reduce((n, th) => n + th.items, 0) + plans.length + att.blocked.length + att.drafts.length + att.stalled.length,
+      todo: all.reduce((n, th) => n + th.items, 0) + plans.length + att.blocked.length + att.drafts.length + att.stalled.length + att.unstarted.length,
     }
   }, [sessions, decisions, reqs, plans, plansQ.isPending, projectsQ.data, minute])
 }

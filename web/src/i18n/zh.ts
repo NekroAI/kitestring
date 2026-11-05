@@ -494,7 +494,7 @@ export const zh = {
   },
   // 审批抽屉与「待处理」条目（R-177）
   ask: {
-    kind: { review: '验收', decide: '决策', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答', blocked: '受阻', waited: '待定稿', stalled: '停滞' } as Record<string, string>,
+    kind: { review: '验收', decide: '决策', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答', blocked: '受阻', waited: '待定稿', stalled: '停滞', unstarted: '未开始' } as Record<string, string>,
     // 待处理里的等待关系（R-243）：受阻指向、被等着定稿的草稿、停滞的进行中需求
     waitedBy: (by: string[]) => `${joinCodes(by)} 在等这条需求`,
     waitedDraft: (by: string[]) => `${joinCodes(by)} 在等这条草稿定稿`,
@@ -503,9 +503,12 @@ export const zh = {
     blockedGone: (on: string) => `等待的 ${on} 已结束，仍标为受阻`,
     blockedMissing: (on: string) => `等待的 ${on} 不存在，仍标为受阻`,
     stalledLine: (dur: string) => `进行中，已 ${dur}无进展，且无会话处理`,
+    // 指派后未开始处理（R-278）：哪条需求（条目标题）、指派给了谁（条目头上的会话）、等了多久
+    unstartedLine: (dur: string) => `已指派，送达 ${dur}仍未开始处理`,
     whyWaited: (by: string[]) => `${joinCodes(by)} 受阻，在等这条草稿定稿。定稿（改为待开始或补充清楚）后，相关工作才能继续。`,
     whyBlocked: '这条需求标为受阻，但未指明在等哪条需求或决策，不会自动推进。条件已满足就修改状态；在等其他需求时，让会话把受阻指向那条需求。',
     whyBlockedGone: (on: string) => `这条需求等待的 ${on} 已结束，但仍标为受阻。确认能否继续，或修改状态。`,
+    whyUnstarted: (who: string, dur: string) => `这条需求已指派${who ? `，指派对象「${who}」` : ''}在送达 ${dur}后仍未开始处理，纸鸢已提醒过一次。可以给会话发送消息、改为指派其他会话，或修改状态。提醒时长在项目设置中调整。`,
     whyStalled: (dur: string) => `这条需求标为进行中，但需求和关联会话已 ${dur}无进展，且无会话处理。可以给会话发送消息让其继续，或修改状态。停滞时长在项目设置中调整。`,
     score: (pass: number, total: number) => `达标 ${pass} / ${total}`,
     rec: (rec: string) => `推荐：${rec}`,
@@ -1076,6 +1079,8 @@ export const zh = {
     devIdleHint: '开发会话待命超过这么久、手上又没有排给它的需求时，泳道上标「待命超时 · 建议收尾」并告诉主调度，之后不再给它送订阅事件；派活、点名给它的消息照常送到，派活后自动恢复。默认 30 分钟',
     stall: '进行中停滞',
     stallHint: '进行中的需求超过这个时长无进展、也没有会话在运行，就放进「待处理」，避免工作停在看不到的地方。只按记录计算，不唤醒会话。默认 120 分钟。',
+    startNudge: '指派后未开始处理',
+    startNudgeHint: '指派的需求送达后超过这个时长仍未开始处理，纸鸢再提醒接收方一次；再过同样时长仍未开始，放进「待处理」。默认 10 分钟。',
     minutes: '分钟',
     modelPolicyOptions: { economy: '经济', balanced: '均衡', quality: '质量优先' } as Record<string, string>,
     modelPolicyHints: {

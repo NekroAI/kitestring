@@ -177,6 +177,9 @@ func projectSettingsChanges(before, after store.Project) []string {
 	if before.StallLimit() != after.StallLimit() {
 		out = append(out, fmt.Sprintf("用户把项目 %s 的「进行中停滞」从 %d 分钟改为 %d 分钟：进行中的需求这么久没动静、又没有会话在跑，就进用户的「要你处理」。", before.Name, int(before.StallLimit()/time.Minute), int(after.StallLimit()/time.Minute)))
 	}
+	if before.StartNudgeLimit() != after.StartNudgeLimit() {
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「指派后未开始处理」从 %d 分钟改为 %d 分钟：指派送达后这么久没开始处理，纸鸢再提醒接收方一次；再过同样时长仍没开始，进用户的「待处理」。", before.Name, int(before.StartNudgeLimit()/time.Minute), int(after.StartNudgeLimit()/time.Minute)))
+	}
 	if before.IdleOfflineLimit() != after.IdleOfflineLimit() {
 		out = append(out, fmt.Sprintf("用户把项目 %s 的「空等下线时长」从 %s 改为 %s：常驻会话连续空等累计超过它，醒来时写交接下线。", before.Name, humanMinutes(before.IdleOfflineLimit()), humanMinutes(after.IdleOfflineLimit())))
 	}
@@ -221,6 +224,10 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 			return
 		}
 	}
+	// 用户把已指派的需求从待开始改为进行中（R-278）：用户在等执行方开始处理，要动手那一档叫醒它（主调度自己是接收方时同样）
+	if before.Status == store.ReqReady && after.Status == store.ReqInProgress {
+		told = append(told, h.wakeExecutors(ctx, before, after, text, told)...)
+	}
 	if a := h.assigner(ctx, after); a != "" && !slices.Contains(told, a) {
 		if to := h.notifyAssigner(ctx, protocol.OnStatus, after, "", text); to != "" {
 			told = append(told, to)
@@ -255,6 +262,41 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 		told = append(told, k)
 	}
 	h.broadcast(ctx, protocol.OnStatus, after.ProjectID, after.ID, text, told...)
+}
+
+// wakeExecutors：用户在网页上把已指派的需求从待开始改为进行中时，叫醒执行方（R-278）——
+// 指派的接收方（before.OfferedTo），以及关联这条需求、负责做的会话（主助理 / 顾问这种只是记下需求的除外）。返回叫醒了谁。
+func (h *Hub) wakeExecutors(ctx context.Context, before, after store.Requirement, text string, told []string) []string {
+	keys := []string{}
+	if before.OfferedTo != "" {
+		keys = append(keys, before.OfferedTo)
+	}
+	for _, k := range after.Sessions {
+		if !slices.Contains(keys, k) {
+			keys = append(keys, k)
+		}
+	}
+	msg := fmt.Sprintf("指派给你的需求有变化（status · %s）：%s这条需求指派给了你，用户在等你开始处理："+
+		"先用 session_link_req %s 关联需求再开始；手上有别的事、暂时没法开始的，在回复里说明原因和打算何时开始。", waitOnZh[protocol.OnStatus], text, after.Code)
+	var woke []string
+	for _, k := range keys {
+		if slices.Contains(told, k) {
+			continue
+		}
+		x, err := h.store.GetSession(ctx, k)
+		if err != nil || x.State == store.StateEnded || x.State == store.StateLost || x.DoneAt != nil {
+			continue
+		}
+		if k != before.OfferedTo && recorderOnly(x.Role) {
+			continue
+		}
+		if _, err := h.tell(ctx, k, after.ProjectID, after.ID, msg); err != nil {
+			h.log.Warn("叫醒执行方失败", "err", err, "to", k)
+			continue
+		}
+		woke = append(woke, k)
+	}
+	return woke
 }
 
 // recorderOnly（R-198）：这种身份关联需求只因为需求是它记下的（记需求时自动关联），不负责做——主助理、顾问。

@@ -705,6 +705,7 @@ func runWait(args []string) error {
 	// 先自查（R-117）：名下没有用户能在面板上推进的事时先提示，再照常等待；查不到时不提示
 	var check struct {
 		Hint     string `json:"hint"`
+		Replay   string `json:"replay"` // 紧接着重挂等待时重列上一次等待送来、还没开始处理的内容（R-278）
 		Ask      string `json:"ask"`
 		Retired  bool   `json:"retired"`
 		MaxWait  string `json:"max_wait"`
@@ -712,9 +713,12 @@ func runWait(args []string) error {
 	}
 	if !dsh {
 		cctx, ccancel := context.WithTimeout(context.Background(), 8*time.Second)
-		if err := client.New(8*time.Second).Do(cctx, "GET", "/wait/check?"+q.Encode(), nil, &check); err == nil && check.Hint != "" {
-			fmt.Print(check.Hint)
-			fmt.Print(askQuote(check.Ask))
+		if err := client.New(8*time.Second).Do(cctx, "GET", "/wait/check?"+q.Encode(), nil, &check); err == nil {
+			fmt.Print(check.Replay)
+			if check.Hint != "" {
+				fmt.Print(check.Hint)
+				fmt.Print(askQuote(check.Ask))
+			}
 		}
 		ccancel()
 	}

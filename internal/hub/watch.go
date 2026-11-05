@@ -217,6 +217,7 @@ func (h *Hub) reqStatusEvent(ctx context.Context, r store.Requirement, before, b
 	if r.Status == before || r.ID == "" {
 		return
 	}
+	h.clearStartNudge(ctx, r, before) // 开始处理了：还没送达的「未开始处理」提醒不再送（R-278）
 	kind, text := statusEvent(before, r.Status)
 	h.reqEvent(ctx, r, kind, byKey, text)
 }

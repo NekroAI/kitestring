@@ -367,6 +367,8 @@ type projectIn struct {
 		DevIdleMinutes *int `json:"dev_idle_minutes,omitempty" minimum:"5" maximum:"720" doc:"开发会话待命超时的分钟数（5～720，默认 30）"`
 		// StallMinutes：进行中停滞（R-243）：进行中的需求这么久没动静、又没有会话在跑，就进「要你处理」；不传表示不修改
 		StallMinutes *int `json:"stall_minutes,omitempty" minimum:"30" maximum:"2880" doc:"进行中需求停滞的分钟数（30～2880，默认 120）"`
+		// StartNudgeMinutes：指派后未开始处理（R-278）：送达后这么久没开始处理就再提醒接收方一次，再过同样时长进「待处理」；不传表示不修改
+		StartNudgeMinutes *int `json:"start_nudge_minutes,omitempty" minimum:"2" maximum:"240" doc:"指派送达后未开始处理的提醒分钟数（2～240，默认 10）"`
 		// IdleOfflineMinutes：空等下线（R-272）：常驻会话连续空等累计超过这么多分钟，就写交接下线；不传表示不修改
 		IdleOfflineMinutes *int `json:"idle_offline_minutes,omitempty" minimum:"60" maximum:"1440" doc:"空等下线时长的分钟数（60～1440，默认 240）"`
 		// WaitMaxMinutes：Claude Code 会话 ks wait 单次最长等待（R-272），不超过 55 分钟；不传表示不修改
@@ -667,6 +669,10 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.StallMinutes != nil {
 				stall = *in.Body.StallMinutes
 			}
+			nudge := cur.StartNudgeMinutes
+			if in.Body.StartNudgeMinutes != nil {
+				nudge = *in.Body.StartNudgeMinutes
+			}
 			offline, waitMax := cur.IdleOfflineMinutes, cur.WaitMaxMinutes
 			if in.Body.IdleOfflineMinutes != nil {
 				offline = *in.Body.IdleOfflineMinutes
@@ -683,7 +689,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			if in.Body.Hidden != nil {
 				hidden = *in.Body.Hidden
 			}
-			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy, DevIdleMinutes: idle, StallMinutes: stall, IdleOfflineMinutes: offline, WaitMaxMinutes: waitMax})
+			err = h.store.UpdateProject(ctx, store.Project{ID: in.ID, Name: in.Body.Name, WorkspaceID: in.Body.WorkspaceID, DocRoot: in.Body.DocRoot, AutoDispatch: auto, Hidden: hidden, AgentRelease: release, CommitOnAccept: commit, ModelPolicy: policy, DevIdleMinutes: idle, StallMinutes: stall, StartNudgeMinutes: nudge, IdleOfflineMinutes: offline, WaitMaxMinutes: waitMax})
 			if err != nil {
 				return nil, apiErr(err)
 			}

@@ -441,6 +441,8 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
   const idleMin = Math.min(720, Math.max(5, Math.round(Number(idle)) || 30))
   const [stall, setStall] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.stall_minutes || 120))
   const stallMin = Math.min(2880, Math.max(30, Math.round(Number(stall)) || 120))
+  const [nudge, setNudge] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.start_nudge_minutes || 10))
+  const nudgeMin = Math.min(240, Math.max(2, Math.round(Number(nudge)) || 10))
   const [offline, setOffline] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.idle_offline_minutes || 240))
   const offlineMin = Math.min(1440, Math.max(60, Math.round(Number(offline)) || 240))
   const [waitMax, setWaitMax] = useState(String(projects.data?.projects.find((x) => x.id === p.id)?.wait_max_minutes || 55))
@@ -465,7 +467,7 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
       footer={
         <>
           <Button onClick={onClose}>{t.common.cancel}</Button>
-          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality', dev_idle_minutes: idleMin, stall_minutes: stallMin, idle_offline_minutes: offlineMin, wait_max_minutes: waitMaxMin })) && onClose()}>
+          <Button variant="primary" disabled={!name.trim()} onClick={async () => (await updateProject(p.id, { name: name.trim(), doc_root: doc, workspace_id: ws || undefined, auto_dispatch: auto, hidden, agent_release: release, commit_on_accept: commitOnAccept, model_policy: policy as 'economy' | 'balanced' | 'quality', dev_idle_minutes: idleMin, stall_minutes: stallMin, start_nudge_minutes: nudgeMin, idle_offline_minutes: offlineMin, wait_max_minutes: waitMaxMin })) && onClose()}>
             {t.common.save}
           </Button>
         </>
@@ -513,6 +515,15 @@ function ProjectSettings({ p, open, onClose }: { p: Stat; open: boolean; onClose
           <div className="flex items-center gap-2">
             <div className="w-28 shrink-0">
               <Input type="number" inputMode="numeric" min={30} max={2880} value={stall} onChange={(e) => setStall(e.target.value)} />
+            </div>
+            <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
+          </div>
+        </Field>
+        {/* 指派后未开始处理（R-278）：送达后这么久没开始处理就再提醒一次，再过同样时长进「待处理」 */}
+        <Field label={t.projects.startNudge} hint={t.projects.startNudgeHint}>
+          <div className="flex items-center gap-2">
+            <div className="w-28 shrink-0">
+              <Input type="number" inputMode="numeric" min={2} max={240} value={nudge} onChange={(e) => setNudge(e.target.value)} />
             </div>
             <span className="shrink-0 text-sm text-fg-2">{t.projects.minutes}</span>
           </div>

@@ -25,6 +25,7 @@ type waitCheck struct {
 	Asking  bool     `json:"asking" doc:"最后一条回复看起来在问用户"`
 	Ask     string   `json:"ask,omitempty" doc:"判断依据：最后一条回复的最后一段"`
 	Hint    string   `json:"hint,omitempty" doc:"要输出给 Agent 的提示；有待处理事项时为空"`
+	Replay  string   `json:"replay,omitempty" doc:"紧接着重挂等待时，上一次等待送来、对应需求还没开始处理的内容（R-278），ks wait 开头输出"`
 	Retired bool     `json:"retired,omitempty" doc:"会话已被接任卸任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待"`
 	// 空等下线（R-272）
 	MaxWait  string `json:"max_wait,omitempty" doc:"Claude Code 会话这次 ks wait 最长等多久（项目设置，默认 55m，不超过 55m）"`
@@ -106,7 +107,7 @@ func (h *Hub) checkWait(ctx context.Context, key, text string, afterTimeout bool
 	if err != nil {
 		return waitCheck{}, err
 	}
-	out := waitCheck{Pending: len(items), Items: items, MaxWait: maxWait.String()}
+	out := waitCheck{Pending: len(items), Items: items, MaxWait: maxWait.String(), Replay: h.waitReplay(ctx, key, now)}
 	if idleOK {
 		out.IdleLeft = max(limit-idle, time.Minute).Round(time.Second).String()
 	}

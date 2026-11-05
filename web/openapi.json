@@ -4216,6 +4216,21 @@
           "next_actor": {
             "type": "string"
           },
+          "offer_delivered_at": {
+            "description": "指派送达接收方的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_nudged_at": {
+            "description": "送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_overdue_at": {
+            "description": "提醒后仍没开始处理、进「待处理」的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
           "offered_at": {
             "format": "date-time",
             "type": "string"
@@ -5448,6 +5463,21 @@
               "array",
               "null"
             ]
+          },
+          "offer_delivered_at": {
+            "description": "指派送达接收方的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_nudged_at": {
+            "description": "送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_overdue_at": {
+            "description": "提醒后仍没开始处理、进「待处理」的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
           },
           "offered_at": {
             "format": "date-time",
@@ -6983,6 +7013,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "start_nudge_minutes": {
+            "format": "int64",
+            "type": "integer"
+          },
           "wait_max_minutes": {
             "format": "int64",
             "type": "integer"
@@ -7003,6 +7037,7 @@
           "model_policy",
           "dev_idle_minutes",
           "stall_minutes",
+          "start_nudge_minutes",
           "idle_offline_minutes",
           "wait_max_minutes",
           "created_at",
@@ -7063,6 +7098,13 @@
             "format": "int64",
             "maximum": 2880,
             "minimum": 30,
+            "type": "integer"
+          },
+          "start_nudge_minutes": {
+            "description": "指派送达后未开始处理的提醒分钟数（2～240，默认 10）",
+            "format": "int64",
+            "maximum": 240,
+            "minimum": 2,
             "type": "integer"
           },
           "wait_max_minutes": {
@@ -7405,6 +7447,21 @@
               "null"
             ]
           },
+          "offer_delivered_at": {
+            "description": "指派送达接收方的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_nudged_at": {
+            "description": "送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_overdue_at": {
+            "description": "提醒后仍没开始处理、进「待处理」的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
           "offered_at": {
             "format": "date-time",
             "type": "string"
@@ -7683,6 +7740,21 @@
             "type": "string"
           },
           "next_actor": {
+            "type": "string"
+          },
+          "offer_delivered_at": {
+            "description": "指派送达接收方的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_nudged_at": {
+            "description": "送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_overdue_at": {
+            "description": "提醒后仍没开始处理、进「待处理」的时间（R-278）",
+            "format": "date-time",
             "type": "string"
           },
           "offered_at": {
@@ -8102,6 +8174,21 @@
             "type": "string"
           },
           "next_actor": {
+            "type": "string"
+          },
+          "offer_delivered_at": {
+            "description": "指派送达接收方的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_nudged_at": {
+            "description": "送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）",
+            "format": "date-time",
+            "type": "string"
+          },
+          "offer_overdue_at": {
+            "description": "提醒后仍没开始处理、进「待处理」的时间（R-278）",
+            "format": "date-time",
             "type": "string"
           },
           "offered_at": {
@@ -10240,6 +10327,10 @@
             "description": "名下等用户处理的事项件数",
             "format": "int64",
             "type": "integer"
+          },
+          "replay": {
+            "description": "紧接着重挂等待时，上一次等待送来、对应需求还没开始处理的内容（R-278），ks wait 开头输出",
+            "type": "string"
           },
           "retired": {
             "description": "会话已被接任卸任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待",

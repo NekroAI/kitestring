@@ -88,3 +88,15 @@ test('停滞阈值按项目设置，0 = 默认 2 小时', () => {
   assert.deepEqual(a.stalled.map((x) => x.r.code), ['R-1'])
   assert.equal(stallLimit(0), 120 * 60_000)
 })
+
+test('指派后未开始处理（R-278）：只认 Hub 记下的 offer_overdue_at，开始处理（不再待开始）就不进', () => {
+  const reqs = [
+    req('R-1', 'ready', { offered_to: 'claude:a', offer_delivered_at: ago(25), offer_overdue_at: ago(1) }),
+    req('R-2', 'ready', { offered_to: 'claude:a', offer_delivered_at: ago(12) }), // 只提醒过一次，还没进
+    req('R-3', 'in_progress', { offered_to: 'claude:a', offer_overdue_at: ago(1) }), // 已开始处理
+    req('R-4', 'ready'),
+  ]
+  const a = attention(reqs, [], [], now)
+  assert.deepEqual(a.unstarted.map((x) => x.r.code), ['R-1'])
+  assert.equal(a.unstarted[0].since, ago(25)) // 等了多久从送达算
+})

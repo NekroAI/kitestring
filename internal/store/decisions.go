@@ -618,3 +618,10 @@ func (s *Store) BroadcastTells(ctx context.Context, broadcastID string) ([]Decis
 	}
 	return s.queryDecs(ctx, decSelect+` WHERE x.kind = ? AND x.broadcast_id = ? ORDER BY x.seq`, KindTell, broadcastID)
 }
+
+// WaitDeliveredSince 列出送给会话 key、经 ks wait 送达（delivered_turn = ks-wait）、要动手（不是只告知）、挂在需求上、
+// 送达时间不早于 since 的记录，按编号升序（R-278：紧接着重挂等待时重列还没开始处理的指派）。
+func (s *Store) WaitDeliveredSince(ctx context.Context, key string, since time.Time) ([]Decision, error) {
+	return s.queryDecs(ctx, decSelect+` WHERE x.session_key = ? AND x.status = ? AND x.delivered_turn = ? AND x.fyi = 0
+		AND COALESCE(x.requirement_id, '') <> '' AND x.delivered_at >= ? ORDER BY x.seq`, key, DecDelivered, "ks-wait", ts(since))
+}

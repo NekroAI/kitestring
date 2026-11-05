@@ -4,6 +4,7 @@
 //   走到草稿，那条草稿以「R-210 在等它定稿」进来（普通草稿不进）；走到待验收 / 待答决策，原本就在列表里，标上谁在等。
 // - 受阻但没写等什么、或等的那条已经结束（决策已答、需求已完成 / 搁置 / 不存在）仍标受阻的，这条受阻需求本身进来。
 // - 进行中、没有待答决策、没有会话在跑，而且这条需求和关联会话都很久没动静（项目设置，默认 2 小时）：算停滞，本身进来。
+// - 已指派、已送达的待开始需求，纸鸢再提醒一次后仍没开始处理（Hub 记下 offer_overdue_at，R-278）：本身进来。
 
 export type WReq = {
   code: string
@@ -14,6 +15,9 @@ export type WReq = {
   updated_at: string
   project_id?: string
   pending_decisions?: number
+  offered_to?: string
+  offer_delivered_at?: string
+  offer_overdue_at?: string
 }
 export type WDec = { code: string; status: string; requirement_code?: string }
 export type WSes = { key: string; state: string; last_active_at: string }
@@ -26,6 +30,7 @@ export type Attention = {
   blocked: { r: WReq; why: BlockedWhy }[]
   drafts: WReq[] // 被受阻需求等着定稿的草稿
   stalled: { r: WReq; since: string }[] // since：最后一次动静
+  unstarted: { r: WReq; since: string }[] // 指派后未开始处理（R-278）；since：指派送达的时间
 }
 
 // 会话在跑：正在干活或在后台干活；等你授权的另算一件（会话本身在「要你处理」里）
@@ -97,7 +102,13 @@ export function attention(reqs: WReq[], decs: WDec[], sessions: WSes[], now: num
     if (now - Date.parse(last) >= stallMs(r.project_id ?? '')) stalled.push({ r, since: last })
   }
 
-  return { waitedBy, blocked: blocked.sort((a, b) => byCode(a.r.code, b.r.code)), drafts: [...drafts.values()].sort((a, b) => byCode(a.code, b.code)), stalled }
+  // 指派后未开始处理（R-278）：Hub 按项目设置的时长再提醒一次、仍没开始才记下 offer_overdue_at，这里只认这条记录
+  const unstarted: Attention['unstarted'] = []
+  for (const r of reqs) {
+    if (r.status === 'ready' && r.offered_to && r.offer_overdue_at) unstarted.push({ r, since: r.offer_delivered_at || r.offer_overdue_at })
+  }
+
+  return { waitedBy, blocked: blocked.sort((a, b) => byCode(a.r.code, b.r.code)), drafts: [...drafts.values()].sort((a, b) => byCode(a.code, b.code)), stalled, unstarted: unstarted.sort((a, b) => byCode(a.r.code, b.r.code)) }
 }
 
 function byCode(a: string, b: string) {

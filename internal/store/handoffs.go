@@ -183,6 +183,17 @@ func (p Project) StallLimit() time.Duration {
 	return StallDefault
 }
 
+// StartNudgeDefault 是指派的需求送达后、多久没开始处理就再提醒一次的默认时长（R-278），项目设置里可调。
+const StartNudgeDefault = 10 * time.Minute
+
+// StartNudgeLimit：指派的需求送达后这么久没开始处理，再提醒接收方一次；提醒后再过同样时长仍没开始，进「待处理」（R-278）。
+func (p Project) StartNudgeLimit() time.Duration {
+	if p.StartNudgeMinutes > 0 {
+		return time.Duration(p.StartNudgeMinutes) * time.Minute
+	}
+	return StartNudgeDefault
+}
+
 // SetIdle 记下开发会话待命超时（R-229）。
 func (s *Store) SetIdle(ctx context.Context, key string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET idle_at = ? WHERE key = ?`, ts(at.UTC()), key)

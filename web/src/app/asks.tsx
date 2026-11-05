@@ -28,7 +28,7 @@ import type { BlockedWhy } from '../lib/waiton'
 // s:会话键 会话在等授权 / 用提问工具在问你、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
 // 只认明确记录（R-239）：会话只在对话里写了问句、没提决策的，不进这里。
 
-export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy' | 'blocked' | 'waited' | 'stalled'
+export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy' | 'blocked' | 'waited' | 'stalled' | 'unstarted'
 
 export type Ask = {
   key: string
@@ -52,7 +52,7 @@ type WB = ReturnType<typeof useWorkbench>
 
 // 越小越靠前：决策 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交；同类里等得越久越靠前。
 // 受阻 / 被等着定稿的草稿和计划同档（解开它工作才能往下走）；停滞和转交同档。
-const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, waited: 3, blocked: 3, orphan: 4, stalled: 4, proxy: 9 }
+const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, waited: 3, blocked: 3, orphan: 4, stalled: 4, unstarted: 3, proxy: 9 }
 
 // buildAsks：从工作台数据算出全部条目（工作台、侧栏角标、抽屉队列同一口径）。
 export function buildAsks(wb: WB): Ask[] {
@@ -102,6 +102,12 @@ export function buildAsks(wb: WB): Ask[] {
   for (const x of att.stalled) {
     const r = full(x.r.code)
     if (r) push({ ...reqAsk(r, 'stalled', x.since), key: `t:${r.code}` })
+  }
+  // 指派后未开始处理（R-278）：归到指派的接收方
+  for (const x of att.unstarted) {
+    const r = full(x.r.code)
+    const s = r?.offered_to ? byKey.get(r.offered_to) : undefined
+    if (r) push({ ...reqAsk(r, 'unstarted', x.since), key: `u:${r.code}`, ...(s ? { s } : {}) })
   }
   for (const x of wb.plans) {
     const st = gateStage(x)
@@ -167,6 +173,12 @@ export function askTitle(d: Decision) {
   return titleOf(d)
 }
 
+// offeredName：指派后未开始处理的条目上写的接收方（R-278）：会话名，找不到会话时为空。
+export function offeredName(a: Ask) {
+  const s = a.s && a.s.key === a.req?.offered_to ? a.s : undefined
+  return s ? sessionTitle(s) : ''
+}
+
 // roughDuration：停滞多久，取整到小时（不到 1 小时写分钟），如「5 小时」（R-243）。
 export function roughDuration(iso: string, now: number) {
   const m = Math.max(0, Math.floor((now - Date.parse(iso)) / 60000))
@@ -198,6 +210,7 @@ const kindTone: Record<AskKind, string> = {
   blocked: 'text-danger',
   waited: 'text-wait',
   stalled: 'text-reply',
+  unstarted: 'text-wait',
   permit: 'text-wait',
   question: 'text-reply',
   proxy: 'text-accent',
@@ -270,6 +283,8 @@ function statusLine(a: Ask, now: number): React.ReactNode {
     }
     case 'stalled':
       return t.ask.stalledLine(roughDuration(a.at, now))
+    case 'unstarted':
+      return t.ask.unstartedLine(roughDuration(a.at, now))
   }
 }
 

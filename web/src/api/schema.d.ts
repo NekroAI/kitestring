@@ -3453,6 +3453,21 @@ export interface components {
             image_hints?: string[] | null;
             kind: string;
             next_actor: string;
+            /**
+             * Format: date-time
+             * @description 指派送达接收方的时间（R-278）
+             */
+            offer_delivered_at?: string;
+            /**
+             * Format: date-time
+             * @description 送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）
+             */
+            offer_nudged_at?: string;
+            /**
+             * Format: date-time
+             * @description 提醒后仍没开始处理、进「待处理」的时间（R-278）
+             */
+            offer_overdue_at?: string;
             /** Format: date-time */
             offered_at?: string;
             offered_to?: string;
@@ -3866,6 +3881,21 @@ export interface components {
             next_actor: string;
             /** @description 提示，例如草稿没放行、只关联未开工（R-166） */
             notices?: string[] | null;
+            /**
+             * Format: date-time
+             * @description 指派送达接收方的时间（R-278）
+             */
+            offer_delivered_at?: string;
+            /**
+             * Format: date-time
+             * @description 送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）
+             */
+            offer_nudged_at?: string;
+            /**
+             * Format: date-time
+             * @description 提醒后仍没开始处理、进「待处理」的时间（R-278）
+             */
+            offer_overdue_at?: string;
             /** Format: date-time */
             offered_at?: string;
             offered_to?: string;
@@ -4326,6 +4356,8 @@ export interface components {
             /** Format: int64 */
             stall_minutes: number;
             /** Format: int64 */
+            start_nudge_minutes: number;
+            /** Format: int64 */
             wait_max_minutes: number;
             workspace_id?: string;
         };
@@ -4356,6 +4388,11 @@ export interface components {
              * @description 进行中需求停滞的分钟数（30～2880，默认 120）
              */
             stall_minutes?: number;
+            /**
+             * Format: int64
+             * @description 指派送达后未开始处理的提醒分钟数（2～240，默认 10）
+             */
+            start_nudge_minutes?: number;
             /**
              * Format: int64
              * @description ks wait 单次最长等待的分钟数（5～55，默认 55）
@@ -4449,6 +4486,21 @@ export interface components {
             next_actor: string;
             /** @description 同项目已有同名未关闭需求时的提示；仍照常新建 */
             notices?: string[] | null;
+            /**
+             * Format: date-time
+             * @description 指派送达接收方的时间（R-278）
+             */
+            offer_delivered_at?: string;
+            /**
+             * Format: date-time
+             * @description 送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）
+             */
+            offer_nudged_at?: string;
+            /**
+             * Format: date-time
+             * @description 提醒后仍没开始处理、进「待处理」的时间（R-278）
+             */
+            offer_overdue_at?: string;
             /** Format: date-time */
             offered_at?: string;
             offered_to?: string;
@@ -4520,6 +4572,21 @@ export interface components {
             id: string;
             kind: string;
             next_actor: string;
+            /**
+             * Format: date-time
+             * @description 指派送达接收方的时间（R-278）
+             */
+            offer_delivered_at?: string;
+            /**
+             * Format: date-time
+             * @description 送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）
+             */
+            offer_nudged_at?: string;
+            /**
+             * Format: date-time
+             * @description 提醒后仍没开始处理、进「待处理」的时间（R-278）
+             */
+            offer_overdue_at?: string;
             /** Format: date-time */
             offered_at?: string;
             offered_to?: string;
@@ -4647,6 +4714,21 @@ export interface components {
             image_hints?: string[] | null;
             kind: string;
             next_actor: string;
+            /**
+             * Format: date-time
+             * @description 指派送达接收方的时间（R-278）
+             */
+            offer_delivered_at?: string;
+            /**
+             * Format: date-time
+             * @description 送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）
+             */
+            offer_nudged_at?: string;
+            /**
+             * Format: date-time
+             * @description 提醒后仍没开始处理、进「待处理」的时间（R-278）
+             */
+            offer_overdue_at?: string;
             /** Format: date-time */
             offered_at?: string;
             offered_to?: string;
@@ -5310,6 +5392,8 @@ export interface components {
              * @description 名下等用户处理的事项件数
              */
             pending: number;
+            /** @description 紧接着重挂等待时，上一次等待送来、对应需求还没开始处理的内容（R-278），ks wait 开头输出 */
+            replay?: string;
             /** @description 会话已被接任卸任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待 */
             retired?: boolean;
         };

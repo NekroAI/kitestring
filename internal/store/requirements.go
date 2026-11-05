@@ -64,6 +64,11 @@ type Requirement struct {
 	StageStatus      string     `json:"stage_status,omitempty"` // locked = 前一阶段还没通过
 	OfferedTo        string     `json:"offered_to,omitempty"`   // 待开始时已交给哪个会话（交出或排队送达）；状态一变就清空
 	OfferedAt        *time.Time `json:"offered_at,omitempty"`
+	// 指派后未开始处理（R-278）：OfferDeliveredAt 是指派送达接收方的时间；OfferNudgedAt 是纸鸢再提醒一次的时间；
+	// OfferOverdueAt 是提醒后仍没开始处理、进「待处理」的时间。状态一变或重新指派就清空
+	OfferDeliveredAt *time.Time `json:"offer_delivered_at,omitempty" doc:"指派送达接收方的时间（R-278）"`
+	OfferNudgedAt    *time.Time `json:"offer_nudged_at,omitempty" doc:"送达后迟迟没开始处理，纸鸢再提醒一次的时间（R-278）"`
+	OfferOverdueAt   *time.Time `json:"offer_overdue_at,omitempty" doc:"提醒后仍没开始处理、进「待处理」的时间（R-278）"`
 	Evidence         []Evidence `json:"evidence,omitempty"`
 	Reviews          []Evidence `json:"reviews,omitempty"`  // 审查员的审查意见（R-88）：不改状态、不算验收证据
 	Feedback         []Decision `json:"feedback,omitempty"` // 用户的修改意见（时间倒序）
@@ -125,7 +130,7 @@ func parseRef(ref, prefix string) (seq int, isSeq bool) {
 
 const reqSelect = `SELECT r.id, r.seq, COALESCE(r.project_id, ''), COALESCE(p.name, ''), r.title, r.detail, r.status, r.priority, r.source, r.acceptance, r.doc_link, r.files, r.created_by, r.created_at, r.updated_at, r.kind,
 	(SELECT COUNT(*) FROM decisions d WHERE d.requirement_id = r.id AND d.status = 'pending'),
-	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, ''), r.offered_to, r.offered_at,
+	COALESCE(ps.plan_id, ''), COALESCE(pl.seq, 0), COALESCE(ps.seq, 0), COALESCE(ps.title, ''), COALESCE(ps.status, ''), r.offered_to, r.offered_at, r.offer_delivered_at, r.offer_nudged_at, r.offer_overdue_at,
 	COALESCE((SELECT x.seq || char(31) || x.assigned_by || char(31) || x.context || char(31) || x.answer || char(31) || x.created_at FROM decisions x
 		WHERE x.requirement_id = r.id AND x.kind = 'release' AND x.close_reason = '' ORDER BY x.seq DESC LIMIT 1), ''), r.from_decision, r.blocked_on, r.blocked_reason
 	FROM requirements r LEFT JOIN projects p ON p.id = r.project_id
@@ -142,11 +147,14 @@ func normKind(k string) string {
 func scanReq(row interface{ Scan(...any) error }) (Requirement, error) {
 	var r Requirement
 	var seq, planSeq int
-	var created, updated, files, offeredAt, release string
+	var created, updated, files, offeredAt, release, offerDelivered, offerNudged, offerOverdue string
 	err := row.Scan(&r.ID, &seq, &r.ProjectID, &r.ProjectName, &r.Title, &r.Detail, &r.Status, &r.Priority, &r.Source, &r.Acceptance, &r.DocLink, &files, &r.CreatedBy, &created, &updated, &r.Kind, &r.PendingDecisions,
-		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt, &release, &r.FromDecision, &r.BlockedOn, &r.BlockedReason)
+		&r.PlanID, &planSeq, &r.StageSeq, &r.StageTitle, &r.StageStatus, &r.OfferedTo, &offeredAt, &offerDelivered, &offerNudged, &offerOverdue, &release, &r.FromDecision, &r.BlockedOn, &r.BlockedReason)
 	r.Release = parseRelease(release)
 	r.OfferedAt = parseNullTS(sql.NullString{String: offeredAt, Valid: offeredAt != ""})
+	r.OfferDeliveredAt = parseNullTS(sql.NullString{String: offerDelivered, Valid: offerDelivered != ""})
+	r.OfferNudgedAt = parseNullTS(sql.NullString{String: offerNudged, Valid: offerNudged != ""})
+	r.OfferOverdueAt = parseNullTS(sql.NullString{String: offerOverdue, Valid: offerOverdue != ""})
 	r.Files = parseFiles(files)
 	r.Code = reqCode(seq)
 	r.NextActor = nextActor(r.Status, r.PendingDecisions)
@@ -374,7 +382,9 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 	var voided []string
 	err = s.tx(ctx, func(t *sql.Tx) error {
 		// 状态一变，“已交给某会话”的记录就作废：再回到待开始时重新排队
-		if _, err := t.ExecContext(ctx, `UPDATE requirements SET status = ?, offered_to = CASE WHEN status = ? THEN offered_to ELSE '' END, offered_at = CASE WHEN status = ? THEN offered_at ELSE '' END, updated_at = ? WHERE id = ?`, status, status, status, now(), cur.ID); err != nil {
+		if _, err := t.ExecContext(ctx, `UPDATE requirements SET status = ?, offered_to = CASE WHEN status = ? THEN offered_to ELSE '' END, offered_at = CASE WHEN status = ? THEN offered_at ELSE '' END,
+			offer_delivered_at = CASE WHEN status = ? THEN offer_delivered_at ELSE '' END, offer_nudged_at = CASE WHEN status = ? THEN offer_nudged_at ELSE '' END,
+			offer_overdue_at = CASE WHEN status = ? THEN offer_overdue_at ELSE '' END, updated_at = ? WHERE id = ?`, status, status, status, status, status, status, now(), cur.ID); err != nil {
 			return err
 		}
 		if status != ReqBlocked && (cur.BlockedOn != "" || cur.BlockedReason != "") {
@@ -432,8 +442,38 @@ func (s *Store) SetBlockedOn(ctx context.Context, id, on, reason string) error {
 
 // SetOffered 记下待开始的需求已交给哪个会话（交出或排队送达）。
 func (s *Store) SetOffered(ctx context.Context, id, sessionKey string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE requirements SET offered_to = ?, offered_at = ? WHERE id = ?`, sessionKey, now(), id)
+	_, err := s.db.ExecContext(ctx, `UPDATE requirements SET offered_to = ?, offered_at = ?, offer_delivered_at = '', offer_nudged_at = '', offer_overdue_at = '' WHERE id = ?`, sessionKey, now(), id)
 	return err
+}
+
+// OfferDelivery 返回待开始的需求 reqID 交给 sessionKey 的那条指派 / 排队送达（offered_at 之后写的）被送达的时间；还没送达时为 nil（R-278）。
+func (s *Store) OfferDelivery(ctx context.Context, reqID, sessionKey string, since time.Time) (*time.Time, error) {
+	var at sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT delivered_at FROM decisions WHERE requirement_id = ? AND session_key = ? AND kind IN (?, ?)
+		AND delivered_at IS NOT NULL AND delivered_at <> '' AND created_at >= ? ORDER BY seq DESC LIMIT 1`, reqID, sessionKey, KindAssign, KindQueue, ts(since.Add(-2*time.Second))).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return parseNullTS(at), nil
+}
+
+// SetOfferStage 记下指派后未开始处理的进度（R-278）：col 是 offer_delivered_at / offer_nudged_at / offer_overdue_at 之一。
+// 只在需求仍待开始、仍交给 sessionKey、这一列还没记时写；写了返回 true。
+func (s *Store) SetOfferStage(ctx context.Context, reqID, sessionKey, col string, at time.Time) (bool, error) {
+	switch col {
+	case "offer_delivered_at", "offer_nudged_at", "offer_overdue_at":
+	default:
+		return false, fmt.Errorf("未知的列：%s", col)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE requirements SET `+col+` = ? WHERE id = ? AND status = ? AND offered_to = ? AND `+col+` = ''`, ts(at.UTC()), reqID, ReqReady, sessionKey)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // RequirementsUpdatedBetween 返回时间窗内有变化的需求。

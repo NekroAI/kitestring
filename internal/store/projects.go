@@ -61,6 +61,8 @@ type Project struct {
 	DevIdleMinutes int `json:"dev_idle_minutes"`
 	// StallMinutes：进行中的需求多久没动静、又没有会话在跑，就进「要你处理」（R-243）；0 按默认 120 分钟
 	StallMinutes int `json:"stall_minutes"`
+	// StartNudgeMinutes：指派的需求送达后多久没开始处理，就再提醒接收方一次（要动手那一档），再过同样时长进「待处理」（R-278）；0 按默认 10 分钟
+	StartNudgeMinutes int `json:"start_nudge_minutes"`
 	// IdleOfflineMinutes：常驻会话（主调度 / 主助理 / 开发）连续空等累计超过多少分钟，就叫它写交接下线（R-272）；0 按默认 240 分钟
 	IdleOfflineMinutes int `json:"idle_offline_minutes"`
 	// WaitMaxMinutes：Claude Code 会话 ks wait 单次最长等多少分钟（R-272），不超过 55（Claude 的提示缓存 1 小时有效）；0 按默认 55
@@ -186,7 +188,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 
 // ListProjects 列出全部项目。
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, dev_idle_minutes, stall_minutes, idle_offline_minutes, wait_max_minutes, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, dev_idle_minutes, stall_minutes, start_nudge_minutes, idle_offline_minutes, wait_max_minutes, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +197,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		var created, needAt, briefAt, briefLook string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &p.DevIdleMinutes, &p.StallMinutes, &p.IdleOfflineMinutes, &p.WaitMaxMinutes, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &p.DevIdleMinutes, &p.StallMinutes, &p.StartNudgeMinutes, &p.IdleOfflineMinutes, &p.WaitMaxMinutes, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook); err != nil {
 			return nil, err
 		}
 		p.CreatedAt = parseTS(created)
@@ -213,8 +215,8 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	var p Project
 	var created, needAt, briefAt, briefLook string
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, dev_idle_minutes, stall_minutes, idle_offline_minutes, wait_max_minutes, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects WHERE id = ?`, id).
-		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &p.DevIdleMinutes, &p.StallMinutes, &p.IdleOfflineMinutes, &p.WaitMaxMinutes, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook)
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, remote, COALESCE(workspace_id, ''), doc_root, auto_dispatch, hidden, agent_release, commit_on_accept, model_policy, dev_idle_minutes, stall_minutes, start_nudge_minutes, idle_offline_minutes, wait_max_minutes, created_at, need_devs, need_reason, need_at, brief, brief_by, brief_at, brief_headline, brief_look FROM projects WHERE id = ?`, id).
+		Scan(&p.ID, &p.Name, &p.Remote, &p.WorkspaceID, &p.DocRoot, &p.AutoDispatch, &p.Hidden, &p.AgentRelease, &p.CommitOnAccept, &p.ModelPolicy, &p.DevIdleMinutes, &p.StallMinutes, &p.StartNudgeMinutes, &p.IdleOfflineMinutes, &p.WaitMaxMinutes, &created, &p.NeedDevs, &p.NeedReason, &needAt, &p.Brief, &p.BriefBy, &briefAt, &p.BriefHeadline, &briefLook)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -229,7 +231,7 @@ func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 
 // UpdateProject 修改项目名称、所属工作空间与方案文档根路径。
 func (s *Store) UpdateProject(ctx context.Context, p Project) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ?, hidden = ?, agent_release = ?, commit_on_accept = ?, model_policy = ?, dev_idle_minutes = ?, stall_minutes = ?, idle_offline_minutes = ?, wait_max_minutes = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.Hidden, p.AgentRelease, p.CommitOnAccept, p.ModelPolicy, p.DevIdleMinutes, p.StallMinutes, p.IdleOfflineMinutes, p.WaitMaxMinutes, p.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, workspace_id = ?, doc_root = ?, auto_dispatch = ?, hidden = ?, agent_release = ?, commit_on_accept = ?, model_policy = ?, dev_idle_minutes = ?, stall_minutes = ?, start_nudge_minutes = ?, idle_offline_minutes = ?, wait_max_minutes = ? WHERE id = ?`, p.Name, nullStr(p.WorkspaceID), p.DocRoot, p.AutoDispatch, p.Hidden, p.AgentRelease, p.CommitOnAccept, p.ModelPolicy, p.DevIdleMinutes, p.StallMinutes, p.StartNudgeMinutes, p.IdleOfflineMinutes, p.WaitMaxMinutes, p.ID)
 	if err != nil {
 		return err
 	}
