@@ -72,7 +72,7 @@ func TestReviewer(t *testing.T) {
 		return daemon.WaitResult{}
 	}
 	res := wait()
-	for _, want := range []string{"审查", r.Code, "导出 CSV", "不要改代码", "不要改需求状态", "review_submit", "自动派给你验证", "表头冻结", "ks req review"} {
+	for _, want := range []string{"审查", r.Code, "导出 CSV", "不要改代码", "不要改需求状态", "review_submit", "纸鸢自动提交评审、请你验证", "表头冻结", "ks req review"} {
 		if !strings.Contains(res.Text, want) {
 			t.Fatalf("自动派的验证任务缺「%s」：%s", want, res.Text)
 		}

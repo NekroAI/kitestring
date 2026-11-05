@@ -10,10 +10,10 @@ import (
 )
 
 // 指派后未开始处理（R-278）：已指派（交出或排队送达）、已送达的待开始需求，接收方迟迟没开始处理时纸鸢兜底。
-//   - 送达后过了项目设置的时长（默认 10 分钟）仍在待开始：用「要动手」那一档再提醒接收方一次（叫醒它挂着的等待）；
+//   - 送达后过了项目设置的时长（默认 10 分钟）仍在待开始：用「要动手」那一档再提醒接收方一次（唤醒它挂着的等待）；
 //   - 提醒后再过同样时长仍没开始：需求上记下 offer_overdue_at，进用户的「待处理」，写明哪条需求、指派给了谁、等了多久；
 //   - 开始处理（关联需求、状态改为进行中）或状态有任何变化、重新指派：记录随之清空；还没送达的提醒直接关掉，不再送。
-// 接收方会话已结束 / 失联、没法叫醒的，不发提醒，直接在同一时刻进「待处理」。
+// 接收方会话已结束 / 失联、没法唤醒的，不发提醒，直接在同一时刻进「待处理」。
 // 只认明确记录（设计原则第 11 条）：送达时间取那条指派 / 排队送达的 delivered_at，提醒、进「待处理」都记在需求上。
 
 // startNudgeQ 是提醒的标题（只用于显示）。
@@ -80,7 +80,7 @@ func (h *Hub) startSweep(ctx context.Context, now time.Time) {
 		switch {
 		case r.OfferNudgedAt == nil && now.Sub(*delivered) >= limit:
 			if gone {
-				// 没法叫醒：不发提醒，直接进「待处理」
+				// 没法唤醒：不发提醒，直接进「待处理」
 				if ok, _ := h.store.SetOfferStage(ctx, r.ID, key, "offer_nudged_at", now); ok {
 					_, _ = h.store.SetOfferStage(ctx, r.ID, key, "offer_overdue_at", now)
 					changed = true

@@ -51,7 +51,7 @@ agent 调用：
                                  订阅需求（R-249）：有变动时收到一句话提醒（自己引起的不通知）；关联或在做的需求默认已订阅，unwatch 可退订；
                                  --action-only 只收要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）；与 MCP req_watch / req_watching 一致
   req request <R-x> <ready|draft> --reason ...   申请改需求状态（草稿 → 待开始、重新打开已搁置的），用户在审批抽屉里批准后纸鸢直接改
-  req assign <R-x> --to <会话|auto>   PM 把需求交给开发
+  req assign <R-x> --to <会话|auto>   PM 把需求指派给开发
   req review <R-x> [意见] [--verdict] [--blocks] [--image]   Rev 交审查意见 / 验证结果（不改需求状态）
   commit list|link|ci ...   需求关联的提交与 CI（R-156）：标题末尾写（R-x）的提交自动关联；link 手动关联，ci 上报 CI 结果（只记录，不改仓库）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
@@ -59,7 +59,7 @@ agent 调用：
                                  在线会话列表（R-249）：本项目没结束的会话，带身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
                                  待命 / 运行中 / 空闲 / 已结束、手上的需求、能否立即送达及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
   team recommend <数量> --reason ... [--work ...] [--duration ...]
-                                 PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子代理）
+                                 PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子任务）
   team tell <文字> [--to aide|pm|reviewer|advisor|dev|会话键] [--to-session tool:id] [--req R-x] [--fyi]
                                  点对点给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），交接给顾问用 --to advisor（多个顾问时发给最近活跃的，或 --to-session 点名；没有在线顾问时报错退回）；
                                  --to 也可直接填会话键（ks team sessions 里的 tool:id），没有身份的会话也能收；对方已结束或失联时报错退回；
@@ -67,8 +67,8 @@ agent 调用：
                                  发送方只认自动识别的当前对话，--session 与之不一致会被拒绝，仅识别不到（如部分 Codex 会话）时才按 --session 认定发送方；
                                  进度和受阻告诉主调度；没有主助理时退回给主调度；交验收时主调度会自动收到通知；
                                  项目没有主调度时不送，返回「本项目当前没有主调度，消息未送达」（不算出错）
-                                 --fyi 标明「只告知」（R-227）：对方不必动手，不唤醒它的 ks wait，下次因别的事被叫醒或用户发消息时一并带上；
-                                 不标则按要对方动手处理（提问、求裁定、派活、回复），立刻叫醒；部署 / 重启、进展通报用 --fyi
+                                 --fyi 标明「只告知」（R-227）：对方不必动手，不唤醒它的 ks wait，下次因别的事被唤醒或用户发消息时一并带上；
+                                 不标则按要对方动手处理（提问、求裁定、指派、回复），立刻唤醒；部署 / 重启、进展通报用 --fyi
                                  消息只做通知：编号加一句话（120 字以内，超出照常发送并提示），细节先写进 ks req comment
   team tell --reply D-x <回复>   回复收到的团队消息，自动送回发消息的一方（子任务发的送到它所属的会话）
   team broadcast <文字> [--role dev,reviewer] [--req R-x] [--fyi]
@@ -76,18 +76,18 @@ agent 调用：
                                  --fyi 只告知，任何会话都能发；不加是「要动手」，只有主调度、主助理能发；离线的会话跳过；与 MCP team_broadcast 一致
   team sent [D-x]                查你最近发的团队消息（广播算一条）现在的送达状态：已送达（带时间）/ 待送达（原因）/ 无法送达；与 MCP team_sent 一致
   brief <简报>           PM 写给用户的简报，显示在工作台顶部
-  away <总述>            Adv 写离开期间小结的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
-  away advise <R-x> <pass|return|clear> <理由>   Adv 给待验收需求写验收建议，挂在「要你处理」的验收卡上
+  away <总述>            Aide 写离开报告的总述（用户回来时工作台顶部先看到；代答、放行、交付由纸鸢自动汇总；旧名 morning 仍可用）
+  away advise <R-x> <pass|return|clear> <理由>   Aide 给待验收需求写验收建议，挂在「待处理」的验收卡上
   away status            用户是否暂时离开：离开多久、主助理处理几件、推送几条
-  away report [A-x]      离开时段报告（默认最近一次）：替用户定了什么、放行、交付、还在等用户的、用户在各设备上处理了什么
-  away escalate <D-x> --reason 理由   Adv 把拿不准、要用户尽快看的待决策推给用户
+  away report [A-x]      离开报告（默认最近一次）：代答了什么、放行、交付、等待用户处理的、用户在各设备上处理了什么
+  away escalate <D-x> --reason 理由   Aide 把不确定、要用户尽快看的待答复决策推给用户
   plan create|get|submit ...   计划：拆阶段（等用户批准）、查看进度、交阶段小结（只写跨需求的效果和遗留问题）
   decision raise ...     提出决策（一次只问一件事）
   decision withdraw <D-x> [--reason 原因] [--replaced-by D-y]   撤回自己提的、用户还没答复的决策（--replaced-by 的目标须仍待答，已关闭 / 回环会被拒）
-  decision answer <D-x> --answer 答复 --reason 理由 --risk low   Adv 在用户的授权窗口内代答（R-163）
+  decision answer <D-x> --answer 答复 --reason 理由 --risk low   Aide 在用户的授权窗口内代答（R-163）
   写作规范：证据第一句是结论（40 字以内），再逐条写验收判定；证据超 600 字、决策说明超 400 字时照常保存并提示压缩
   表达块：req evidence / decision raise / plan submit 可加 --blocks 块.json（清单、对比、截图、流程、指标、改动范围、选项、表格），纸鸢统一渲染
-  role <pm|dev|advisor|reviewer|none>   声明本会话的身份（PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动卸任
+  role <aide|pm|dev|advisor|reviewer|none>   声明本会话的身份（Aide / PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动交出身份
   takeover <身份> [--tool claude|codex] [--print]
                          交接（R-224）：在项目目录启动新会话并带接任提示，新会话声明身份时自动读到上一任的交接
   handoff [--doing 做到一半的事] [--agreements 口头约定] [--caveats 注意事项] | --file 交接.json|.md

@@ -13,15 +13,15 @@ import (
 // 空等下线（R-272）：Claude 的提示缓存 1 小时有效，ks wait 单次等待不超过 55 分钟（项目设置可调），醒来时缓存还在。
 // 常驻会话（主调度 / 主助理 / 开发）连续空等累计超过项目设置的时长（默认 4 小时）后，在那次 ks wait 超时醒来时
 // 纸鸢叫它写交接（handoff_write）、下线：不再挂 ks wait，Stop hook 不拦（身份不再下发给 daemon），订阅事件不再送。
-// 身份保留：点名给它的消息（团队消息、答复、派活）照常入队；你回来后在项目目录运行 ks takeover <身份> 开新会话，
+// 身份保留：点名给它的消息（团队消息、答复、指派）照常入队；你回来后在项目目录运行 ks takeover <身份> 开新会话，
 // 新会话接任时拿到交接和接手概览，积压的消息转给新会话。
 //
 // 「连续空等」的起点记在 sessions.idle_wait_since：
 //   - 挂上 ks wait 时没有起点就记下（一段空等开始）；
-//   - ks wait 被要动手的事叫醒（delivered）、你在终端发消息时清除；
+//   - ks wait 被要动手的事唤醒（delivered）、你在终端发消息时清除；
 //   - 上一个 ks wait 还挂着就又挂了一个（被子任务交回等唤醒、干了活再挂）时从这次重新算；
 //   - 手上有在跑的子任务时不算空等（主调度在等子任务交回）。
-// 只告知的消息（fyi、settings 等）不叫醒，也就不打断空等。
+// 只告知的消息（fyi、settings 等）不唤醒，也就不打断空等。
 
 // idleSlack：判断累计空等是否到点时的余量。最后一次等待按剩余时长截短，醒来时差几秒也算到点。
 const idleSlack = time.Minute
@@ -34,7 +34,7 @@ func (h *Hub) trackIdleWait(ctx context.Context, prev *store.Session, next store
 	var err error
 	switch {
 	case ev.Name == protocol.EventWait && prev != nil && prev.Parked:
-		err = h.store.ResetIdleWait(ctx, next.Key, ev.Time) // 上一个等待没结束就又挂上：中间被别的事叫醒干过活
+		err = h.store.ResetIdleWait(ctx, next.Key, ev.Time) // 上一个等待没结束就又挂上：中间被别的事唤醒干过活
 	case ev.Name == protocol.EventWait:
 		err = h.store.MarkIdleWait(ctx, next.Key, ev.Time)
 	case ev.Name == protocol.EventWaitEnd && ev.Reason == "delivered",
@@ -84,7 +84,7 @@ func (h *Hub) goOffline(ctx context.Context, x store.Session, idle time.Duration
 		to = h.liveRoleExcept(ctx, x.ProjectID, roles.Aide, x.Key)
 	}
 	if to != "" {
-		text := fmt.Sprintf("%s %s 已连续空等 %s，按项目设置写交接下线；点名给它的消息照常入队，用户开新会话（%s）接任时转给新会话。", roles.Label(x.Role), sessionName(x), humanMinutes(idle), takeoverCmd(x.Role))
+		text := fmt.Sprintf("%s %s 已连续待命 %s，按项目设置写交接后下线。点名给这个会话的消息照常排队，用户开新会话（%s）接任时转给新会话。", roles.Label(x.Role), sessionName(x), humanMinutes(idle), takeoverCmd(x.Role))
 		if _, err := h.tellQuiet(ctx, to, x.ProjectID, "", text); err != nil {
 			h.log.Warn("通知空等下线失败", "err", err)
 		}
@@ -150,5 +150,5 @@ func offlineBacklogNote(n int) string {
 	if n == 0 {
 		return ""
 	}
-	return fmt.Sprintf("\n[Kitestring] 上一任下线期间积压的 %d 条点名消息（团队消息、答复、派活等）和它提的未答决策已转给你，稍后随下一条消息或 ks wait 送达。\n", n)
+	return fmt.Sprintf("\n[Kitestring] 上一任下线期间积压的 %d 条点名消息（团队消息、答复、指派等）和它提的未答决策已转给你，稍后随下一条消息或 ks wait 送达。\n", n)
 }

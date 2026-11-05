@@ -214,7 +214,7 @@ func (h *Hub) note(ctx context.Context, ref, comment string, fileIDs []string) (
 // assign 把需求交给某个会话：关联会话、放到待开始，并把需求内容作为一条送达交给它（D-14）。
 // 不直接改为进行中——Agent 真正开始做时调用 session_link_req，才进入进行中，看板反映的是实际进度。
 // 会话正在待命（ks wait）时会立刻被唤醒。
-// by 是派活的会话（PM 派活时），你在网页上交出时为空。
+// by 是指派的会话（PM 指派时），你在网页上交出时为空。
 func (h *Hub) assign(ctx context.Context, ref, sessionKey, comment, by string) (store.Decision, error) {
 	d, err := h.assignQuiet(ctx, ref, sessionKey, comment, by)
 	if err != nil {
@@ -247,7 +247,7 @@ func (h *Hub) assignQuiet(ctx context.Context, ref, sessionKey, comment, by stri
 	if r.Status == store.ReqDraft || r.Status == store.ReqDone {
 		actx := store.WithActor(ctx, store.Actor{Via: "assign"})
 		if by != "" {
-			actx = store.WithActor(ctx, store.Actor{Kind: store.ActorAgent, Session: by, Via: "assign"}) // PM 派活
+			actx = store.WithActor(ctx, store.Actor{Kind: store.ActorAgent, Session: by, Via: "assign"}) // PM 指派
 		}
 		if r, err = h.store.SetRequirementStatus(actx, r.ID, store.ReqReady); err != nil {
 			return store.Decision{}, apiErr(err)

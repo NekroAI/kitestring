@@ -13,7 +13,7 @@ const (
 	OnReview   = "review"   // 需求进入待验收
 	OnBlocked  = "blocked"  // 需求被设为受阻
 	OnStage    = "stage"    // 计划阶段交了小结
-	OnSettings = "settings" // 用户在网页上改了项目设置（放行开关、自动派发、参谋授权窗口）（R-171）
+	OnSettings = "settings" // 用户在网页上改了项目设置（放行开关、自动派发、授权窗口）（R-171）
 	OnStatus   = "status"   // 用户在网页上改了需求状态（R-171）
 	OnNone     = "none"     // 不订阅
 	OnDefault  = "default"  // 按身份的默认订阅

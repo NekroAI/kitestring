@@ -100,7 +100,7 @@ type Hub struct {
 	kicks       map[string]*time.Timer // 会话 → 待送达的整批需求（攒几秒再送，R-66）
 	dirty       map[string]bool        // 待推送最新数据的会话（R-56，300ms 内合并）
 	dirtyTmr    *time.Timer
-	orphans     map[string]deviceOrphans            // deviceID → daemon 上报的孤儿 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
+	orphans     map[string]deviceOrphans            // deviceID → daemon 上报的残留进程 / 已脱离进程（R-209，只在内存里，daemon 连上就重报）
 	stops       map[string]chan protocol.StopResult // 停止请求 → 等 daemon 回结果
 	gits        map[string]chan protocol.GitResult  // 合入 / 部署查询（R-245）→ 等 daemon 回结果
 	deploy      string                              // 正在运行的 ks 的构建提交（version.Commit；测试可改）
@@ -199,7 +199,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	h.resumeGrantExpiry(ctx)
 	h.resumeRequestExpiry(ctx)
 	go h.laneMaintenance(ctx)
-	go h.reviewWatch(ctx)  // 交给评审 30 分钟没动静的，照常弹给用户（R-237）
+	go h.reviewWatch(ctx)  // 提交评审 30 分钟没动静的，照常弹给用户（R-237）
 	go h.devIdleWatch(ctx) // 待命超时的开发会话：提示收尾，不再送订阅事件（R-229）
 	go h.startWatch(ctx)   // 指派送达后迟迟没开始处理：再提醒一次，仍没开始就进「待处理」（R-278）
 	go h.noticeWatch(ctx)  // 只告知的记录目标会话结束时直接关掉，不进待转交（R-265）
@@ -331,9 +331,9 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 			return err
 		}
 		if full.State == store.StateWaitApproval {
-			h.notifySession(full, notify.EventWaitingApproval, "等待授权", full.StateDetail)
+			h.notifySession(full, notify.EventWaitingApproval, pushWaitApproval, full.StateDetail)
 		} else {
-			h.notifySession(full, notify.EventWaitingReply, "等待回复", full.Summary)
+			h.notifySession(full, notify.EventWaitingReply, pushWaitReply, full.Summary)
 		}
 	}
 	switch {
@@ -519,7 +519,7 @@ func (h *Hub) decisionsChanged(ctx context.Context, d store.Decision) {
 		return
 	}
 	if !(d.Kind == store.KindTell && d.FYI) {
-		h.clearIdle(ctx, d.SessionKey) // 点名给它的（派活、答复、指名消息）照常叫醒，同时恢复待命超时的开发（R-229）
+		h.clearIdle(ctx, d.SessionKey) // 点名给它的（指派、答复、指名消息）照常唤醒，同时恢复待命超时的开发（R-229）
 	}
 	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 		h.pushDecisions(ctx, x.DeviceID)
@@ -542,8 +542,8 @@ func (h *Hub) notifySession(x store.Session, event, title, body string) {
 	}
 	h.sendNotify(x.ProjectID, notify.Message{
 		Event: event,
-		Title: fmt.Sprintf("%s · %s", title, name),
-		Body:  fmt.Sprintf("%s @ %s %s", x.Tool, x.DeviceName, body),
+		Title: pushSessionTitle(title, name),
+		Body:  pushSessionBody(x.Tool, x.DeviceName, body),
 		Group: "kitestring",
 	}, "/?s="+url.QueryEscape(x.Key))
 }

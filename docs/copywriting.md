@@ -396,6 +396,7 @@
 
 - 前端 `web/src/lib/copy.test.ts`（`cd web && npm test` 会跑）遍历 `zh.ts` 的全部文案（函数用占位参数调用，身份名中英文各取一次），以及 `fail.ts` 的提示。
 - 后端用 `internal/copyrules` 读同一份 JSON：`internal/hub`、`internal/mcpserver` 的 `copy_test.go` 检查后端生成的状态标签（送达状态、会话可用状态、需求状态、在线状态），`go test ./...` 会跑。
+- 只给网页和推送看的后端文字（推送标题与正文、离开报告、通讯页类别、状态标签、会话时间线上的接任）集中在 `internal/hub/copy.go`，`copy_test.go` 用 `copyrules.Check` 逐条检查（规则同前端，按钮长度除外）。新加这类文字写进 `copy.go` 并登记到 `copyTexts`；网页和会话都读的纸鸢提醒、团队消息按 1.3 节写在各自的文件里。
 
 检查项：禁用词（`forbidden`，与第 5 节「不用」列对应）、「它」、「·」连句、引号、省略号、感叹号、中英文与数字间空格、相对时间缩写、按钮长度（`buttons` 里登记的键）、状态集合（`statusSets`）。
 

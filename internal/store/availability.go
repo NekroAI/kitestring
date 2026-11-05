@@ -8,7 +8,7 @@ import (
 )
 
 // 在线会话列表（R-249）：每个会话的状态与所用工具，只从会话记录推（原则第 11 条），不看对话文字。
-// 和 Presence() 分开：Presence 只管常驻身份（工人池、自动派活依赖它，不改）；Availability 管所有会话。
+// 和 Presence() 分开：Presence 只管常驻身份（工人池、自动指派依赖它，不改）；Availability 管所有会话。
 
 // Availability 的取值。
 const (

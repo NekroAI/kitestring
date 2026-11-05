@@ -81,10 +81,10 @@ type Requirement struct {
 	// Advice：待验收时主助理当前有效的验收建议（R-242）；req_get 带上它，没有建议或不在待验收时为空
 	Advice *Advice `json:"advice,omitempty"`
 	// BlockedOn / BlockedReason：受阻时在等什么（R-243）——等的需求 / 决策编号（R-x / D-x）和一句话说明；
-	// 没写等什么的受阻需求本身进「要你处理」，指向了的顺着等待关系落到你身上的那一条上写明「R-x 在等这条」。离开受阻时清空
+	// 没写等什么的受阻需求本身进「待处理」，指向了的顺着等待关系落到你身上的那一条上写明「R-x 在等这条」。离开受阻时清空
 	BlockedOn     string `json:"blocked_on,omitempty" doc:"受阻时在等的需求或决策编号（R-x / D-x，R-243）"`
 	BlockedReason string `json:"blocked_reason,omitempty" doc:"受阻原因的一句话（R-243）"`
-	// Review：待验收时这一轮的评审验证情况（R-232、R-237），推导得出；没交给评审、也没收到审查意见时为空
+	// Review：待验收时这一轮的评审验证情况（R-232、R-237），推导得出；没提交评审、也没收到审查意见时为空
 	Review    *ReviewState `json:"review,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`
 	UpdatedAt time.Time    `json:"updated_at"`

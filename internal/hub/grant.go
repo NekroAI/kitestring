@@ -13,7 +13,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 参谋授权窗口（R-163）：你不在时在网页上授权主助理会话，到期前代你答复决策。规则：
+// 授权窗口（R-163）：你不在时在网页上授权主助理会话，到期前代你答复决策。规则：
 //   - 窗口按项目开，同一项目同时只有一个；有到期时间（最长 24 小时）和范围（最高风险档：low 或 medium）；随时可撤销，到期自动失效。
 //   - 只有被授权的那个主助理会话能代答，别的身份、别的会话一律拒绝；必须写理由，并给出自己的风险判断——
 //     风险档只升不降：取提问方标的和参谋判断中更高的一档，超出窗口范围就拒绝。提问方没标风险档按 high 算。
@@ -24,8 +24,6 @@ import (
 //   - 窗口开着时，参谋可以代答的决策先不推送通知（不吵醒你），但仍留在收件箱里；参谋答了就移走。
 
 const grantMaxSpan = 24 * time.Hour
-
-var riskZh = map[string]string{store.RiskLow: "低风险", store.RiskMedium: "中风险", store.RiskHigh: "高风险"}
 
 // proxyHard 返回 d 命中的硬规则或不能代答的原因；adv 是参谋的会话键。没命中时为空。
 func proxyHard(d store.Decision, adv string) string {
@@ -145,7 +143,7 @@ type grantOut struct{ Body store.Grant }
 
 func (h *Hub) registerGrantWeb(api huma.API) {
 	tag := []string{"grants"}
-	huma.Register(api, huma.Operation{OperationID: "list-grants", Method: http.MethodGet, Path: "/api/grants", Tags: tag, Summary: "参谋授权窗口与代答记录（R-163）"},
+	huma.Register(api, huma.Operation{OperationID: "list-grants", Method: http.MethodGet, Path: "/api/grants", Tags: tag, Summary: "授权窗口与代答记录（R-163）"},
 		func(ctx context.Context, in *struct {
 			ProjectID string `query:"project_id" doc:"只看这个项目；不填为全部"`
 		}) (*grantsOut, error) {
@@ -157,7 +155,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			out.Body.Proxied, err = h.store.ProxiedDecisions(ctx, in.ProjectID, 100)
 			return out, err
 		})
-	huma.Register(api, huma.Operation{OperationID: "create-grant", Method: http.MethodPost, Path: "/api/grants", Tags: tag, Summary: "开一个参谋授权窗口（R-163）"},
+	huma.Register(api, huma.Operation{OperationID: "create-grant", Method: http.MethodPost, Path: "/api/grants", Tags: tag, Summary: "开一个授权窗口（R-163）"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				ProjectID  string    `json:"project_id" minLength:"1"`
@@ -194,7 +192,7 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 			h.broker.publish("grants", "decisions")
 			return &grantOut{Body: g}, nil
 		})
-	huma.Register(api, huma.Operation{OperationID: "revoke-grant", Method: http.MethodPost, Path: "/api/grants/{ref}/revoke", Tags: tag, Summary: "撤销参谋授权窗口（R-163）"},
+	huma.Register(api, huma.Operation{OperationID: "revoke-grant", Method: http.MethodPost, Path: "/api/grants/{ref}/revoke", Tags: tag, Summary: "撤销授权窗口（R-163）"},
 		func(ctx context.Context, in *struct {
 			Ref string `path:"ref"`
 		}) (*grantOut, error) {
@@ -205,8 +203,8 @@ func (h *Hub) registerGrantWeb(api huma.API) {
 				}
 				return nil, huma.Error400BadRequest(err.Error())
 			}
-			h.tellGrant(ctx, g, fmt.Sprintf("用户撤销了参谋授权窗口 %s：从现在起不能再代答决策。", g.Code))
-			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户撤销了参谋授权窗口 %s（授权给 %s），不能再代答决策。", g.Code, h.actorName(ctx, g.SessionKey)), g.SessionKey)
+			h.tellGrant(ctx, g, fmt.Sprintf("用户撤销了授权窗口 %s：从现在起不能再代答决策。", g.Code))
+			h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户撤销了授权窗口 %s（授权给%s），不能再代答决策。", g.Code, h.actorName(ctx, g.SessionKey)), g.SessionKey)
 			h.broker.publish("grants", "decisions")
 			return &grantOut{Body: g}, nil
 		})
@@ -276,7 +274,7 @@ type agentGrantOut struct {
 
 func (h *Hub) registerAgentGrant(api huma.API) {
 	tag := []string{"agent"}
-	huma.Register(api, huma.Operation{OperationID: "agent-get-grant", Method: http.MethodGet, Path: "/api/agent/grant", Tags: tag, Summary: "查看本项目当前的参谋授权窗口（R-163）"},
+	huma.Register(api, huma.Operation{OperationID: "agent-get-grant", Method: http.MethodGet, Path: "/api/agent/grant", Tags: tag, Summary: "查看本项目当前的授权窗口（R-163）"},
 		func(ctx context.Context, in *struct {
 			SessionKey string `query:"session_key"`
 		}) (*agentGrantOut, error) {
@@ -287,7 +285,7 @@ func (h *Hub) registerAgentGrant(api huma.API) {
 			}
 			g, err := h.proxyGrant(ctx, x.ProjectID)
 			if err != nil {
-				out.Body.Notice = "本项目没有生效中的参谋授权窗口：决策都等用户答复"
+				out.Body.Notice = "本项目没有生效中的授权窗口：决策都等用户答复"
 				return out, nil
 			}
 			out.Body.Grant, out.Body.Mine = &g, g.SessionKey == x.Key
@@ -349,8 +347,8 @@ func (h *Hub) scheduleGrantExpiry(g store.Grant) {
 		if err != nil || cur.Status != store.GrantExpired {
 			return
 		}
-		h.tellGrant(ctx, cur, fmt.Sprintf("参谋授权窗口 %s 已到期：从现在起不能再代答决策。", cur.Code))
-		h.onSettingsChanged(ctx, cur.ProjectID, fmt.Sprintf("参谋授权窗口 %s（授权给 %s）已到期，不能再代答决策。", cur.Code, h.actorName(ctx, cur.SessionKey)), cur.SessionKey)
+		h.tellGrant(ctx, cur, fmt.Sprintf("授权窗口 %s 已到期：从现在起不能再代答决策。", cur.Code))
+		h.onSettingsChanged(ctx, cur.ProjectID, fmt.Sprintf("授权窗口 %s（授权给%s）已到期，不能再代答决策。", cur.Code, h.actorName(ctx, cur.SessionKey)), cur.SessionKey)
 	})
 }
 

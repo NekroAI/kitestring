@@ -82,9 +82,9 @@ func TestRequestText(t *testing.T) {
 		d          store.Decision
 		want, deny []string
 	}{
-		{ok, []string{"批准（用户批准了开 2 个 Dev 会话的推荐）", "附言：先做 R-3", "req_assign"}, []string{"拒绝", "超时"}},
-		{no, []string{"拒绝（用户明确拒绝了开 2 个 Dev 会话的推荐）", "子代理够了", "继续用一次性子代理"}, []string{"超时", "批准（"}},
-		{late, []string{"超时未批，按规则视为拒绝开 2 个 Dev 会话的推荐", "不是用户明确拒绝", "继续用一次性子代理"}, []string{"明确拒绝了", "批准（"}},
+		{ok, []string{"批准（用户批准了开启 2 个开发会话的推荐）", "附言：先做 R-3", "req_assign"}, []string{"拒绝", "超时"}},
+		{no, []string{"拒绝（用户明确拒绝了开启 2 个开发会话的推荐）", "子代理够了", "继续用一次性子任务"}, []string{"超时", "批准（"}},
+		{late, []string{"超时未批，按规则视为拒绝开启 2 个开发会话的推荐", "不是用户明确拒绝", "继续用一次性子任务"}, []string{"明确拒绝了", "批准（"}},
 	} {
 		got := proxyText(c.d)
 		for _, w := range c.want {

@@ -112,5 +112,5 @@ func TestEventTiers(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review", "session_key": "claude:dev"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	woke(t, aideW, "已交验收", r.Code)
+	woke(t, aideW, "已提交验收", r.Code)
 }

@@ -13,7 +13,7 @@ import (
 )
 
 // 工人池（R-86）：PM 查看本项目的开发会话，把需求交给指定开发，或交给 hub 按规则挑人（auto）。
-// 派活复用“交给会话”（assign）：开发待命时立刻被唤醒，在忙就等这一轮结束、挂上 ks wait 时收到。
+// 指派复用“交给会话”（assign）：开发待命时立刻被唤醒，在忙就等这一轮结束、挂上 ks wait 时收到。
 
 // Worker 是工人池里的一个会话。
 type Worker struct {
@@ -113,7 +113,7 @@ func (h *Hub) registerAgentTeam(api huma.API) {
 				SessionKey string `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 PM）"`
 				To         string `json:"to" minLength:"1" doc:"Dev 会话键；auto 表示由 hub 挑：待命优先，其次手上需求少、上下文轻"`
 				Comment    string `json:"comment,omitempty" doc:"交代给开发的话，例如为什么交给它、和哪条需求相关"`
-				Reason     string `json:"reason,omitempty" doc:"派的是草稿时必填：放行理由（派活会顺带把草稿放行为待开始，R-166）"`
+				Reason     string `json:"reason,omitempty" doc:"派的是草稿时必填：放行理由（指派会顺带把草稿放行为待开始，R-166）"`
 			}
 		}) (*assignOut, error) {
 			return h.pmAssign(ctx, in.Ref, in.Body.SessionKey, in.Body.To, in.Body.Comment, in.Body.Reason)
@@ -130,14 +130,14 @@ type assignOut struct {
 	}
 }
 
-// pmAssign：PM 派活。只有本项目的 PM 能派；只能派给本项目、未结束的开发会话。
+// pmAssign：PM 指派。只有本项目的 PM 能派；只能指派给本项目、未结束的开发会话。
 func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment, reason string) (*assignOut, error) {
 	me, _, devs, err := h.team(ctx, caller)
 	if err != nil {
 		return nil, apiErr(err)
 	}
 	if me.Role != roles.PM {
-		return nil, huma.Error403Forbidden("只有 PM 能派活；当前会话不是本项目的 PM（用 ks role pm 接管）")
+		return nil, huma.Error403Forbidden("只有 PM 能指派；当前会话不是本项目的 PM（用 ks role pm 接管）")
 	}
 	r, err := h.store.GetRequirement(ctx, ref)
 	if err != nil {
@@ -163,8 +163,8 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment, reason str
 			w = &devs[0]
 		}
 		if w == nil {
-			// 不再自动提醒用户开 Dev 会话（R-169）：默认交给一次性子代理，确实要并行再 dev_recommend
-			out.Body.Message = fmt.Sprintf("没有在线的 Dev，%s 未派出。默认交给后台一次性子代理做；确实适合并行、需要多轮沟通时，再用 dev_recommend 推荐开 Dev 会话，由用户限时批准。", r.Code)
+			// 不再自动提醒用户开 Dev 会话（R-169）：默认交给一次性子任务，确实要并行再 dev_recommend
+			out.Body.Message = fmt.Sprintf("没有在线的开发会话，%s 未指派。默认交给后台一次性子任务做；确实适合并行、需要多轮沟通时，再用 dev_recommend 推荐开 Dev 会话，由用户限时批准。", r.Code)
 			return out, nil
 		}
 	} else {
@@ -174,7 +174,7 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment, reason str
 			}
 		}
 		if w == nil {
-			return nil, huma.Error400BadRequest("找不到这个 Dev 会话：只能派给本项目、未结束、身份为 Dev 的会话（用 team 查看）")
+			return nil, huma.Error400BadRequest("找不到这个 Dev 会话：只能指派给本项目、未结束、身份为 Dev 的会话（用 team 查看）")
 		}
 	}
 	if draft {
@@ -188,11 +188,11 @@ func (h *Hub) pmAssign(ctx context.Context, ref, caller, to, comment, reason str
 	out.Body.Assigned, out.Body.To, out.Body.Title, out.Body.Presence = true, w.Key, w.Title, w.Presence
 	switch w.Presence {
 	case "standby":
-		out.Body.Message = fmt.Sprintf("%s 已交给 %s，它正在待命，马上开工。", r.Code, w.Key)
+		out.Body.Message = fmt.Sprintf("%s 已指派给 %s，会话正在待命，马上开始处理。", r.Code, w.Key)
 	case "working":
-		out.Body.Message = fmt.Sprintf("%s 已交给 %s，它手上在忙，这一轮结束挂上 ks wait 时收到。", r.Code, w.Key)
+		out.Body.Message = fmt.Sprintf("%s 已指派给 %s，会话正在运行，这一轮结束挂上 ks wait 时收到。", r.Code, w.Key)
 	default:
-		out.Body.Message = fmt.Sprintf("%s 已交给 %s，但它现在离线，用户下次和它对话时才会收到。", r.Code, w.Key)
+		out.Body.Message = fmt.Sprintf("%s 已指派给 %s，但会话已失联，用户下次和这个会话对话时才会收到。", r.Code, w.Key)
 	}
 	return out, nil
 }

@@ -178,7 +178,7 @@ func roleZh(role string) string {
 	return role
 }
 
-var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "指派给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "交给评审"}
+var fbLabel = map[string]string{"feedback": "修改意见", "note": "留言", "assign": "指派给会话", "queue": "排队送达", "plan": "计划进展", "review_task": "提交评审"}
 
 // String 是 req_get 的默认输出：要点按行，附图另以图片返回。
 func (r reqView) String() string {

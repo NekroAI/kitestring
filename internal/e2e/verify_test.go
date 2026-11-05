@@ -51,7 +51,7 @@ func TestReviewVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 主调度收到的交验收通知写明已自动交给评审
-	woke(t, pmW, r.Code, "已交验收", "已自动交给评审", "不进用户的「要你处理」")
+	woke(t, pmW, r.Code, "已提交验收", "已自动交给评审", "不进用户的「待处理」")
 
 	// 评审中：需求详情和列表都带评审状态，写明谁在审
 	var got store.Requirement

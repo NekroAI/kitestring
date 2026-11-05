@@ -421,14 +421,14 @@ func taskSig(ts []protocol.Task) string {
 func (d *Daemon) watchTasks(ctx context.Context) {
 	t := time.NewTicker(taskScanEvery)
 	defer t.Stop()
-	n := orphanEvery - 1 // 启动后第一轮就扫孤儿
+	n := orphanEvery - 1 // 启动后第一轮就扫残留进程
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		case <-d.orphanKick:
-			n = orphanEvery // 停止进程后、重连 Hub 后马上重扫一次孤儿
+			n = orphanEvery // 停止进程后、重连 Hub 后马上重扫一次残留进程
 		}
 		now := time.Now()
 		ps, err := listProcs()

@@ -13,12 +13,12 @@ import (
 
 // Agent 申请改需求状态（R-188）：要用户确认某条需求时（主要是草稿 → 待开始，也可以重新打开已搁置的需求），
 // Agent 不再在对话里写「请在面板上把 R-x 设为待开始」，而是发一条申请——复用 R-169 的请求类审批（request_kind = status），
-// 出现在「要你处理」，点开在审批抽屉里批准 / 拒绝（R-176 请求类用词）。批准后由纸鸢直接改状态，时间线记成「用户批准了 Agent 的申请」
+// 出现在「待处理」，点开在审批抽屉里批准 / 拒绝（R-176 请求类用词）。批准后由纸鸢直接改状态，时间线记成「用户批准了 Agent 的申请」
 // （status_changes.via = request，ref = 申请的 D-x）。批准前需求状态被任何人改动过，申请自动作废，结果送回申请方。
 // 申请不限时、不推送、不能代答（批准类本来就不能代答）；同一条需求只留一条在等的申请。
 // 项目开了「允许 主调度 / 主助理 放行草稿」时，做法明确的草稿仍可由 主调度 / 主助理 直接放行（R-166），不用申请。
 
-// statusRequestAllowed：可以申请的状态变化。done / review / in_progress / blocked 不走申请（验收、开工有各自的路）。
+// statusRequestAllowed：可以申请的状态变化。done / review / in_progress / blocked 不走申请（验收、开始处理有各自的路）。
 var statusRequestAllowed = map[string][]string{
 	store.ReqDraft:   {store.ReqReady},
 	store.ReqShelved: {store.ReqReady, store.ReqDraft},
@@ -155,7 +155,7 @@ func (h *Hub) registerStatusRequest(api huma.API) {
 				return nil, huma.Error400BadRequest(fmt.Sprintf("%s 已经是%s，不用申请", r.Code, reqStatusZh[to]))
 			}
 			if !statusRequestOK(r.Status, to) {
-				return nil, huma.Error400BadRequest(fmt.Sprintf("不能申请把 %s 从%s改为%s。可以申请的只有：草稿 → 待开始、已搁置 → 待开始、已搁置 → 草稿；开工用 session_link_req，做完设为 review，已完成只由用户验收", r.Code, reqStatusZh[r.Status], reqStatusZh[to]))
+				return nil, huma.Error400BadRequest(fmt.Sprintf("不能申请把 %s 从%s改为%s。可以申请的只有：草稿 → 待开始、已搁置 → 待开始、已搁置 → 草稿；开始处理用 session_link_req，做完设为 review，已完成只由用户验收", r.Code, reqStatusZh[r.Status], reqStatusZh[to]))
 			}
 			reason := strings.TrimSpace(in.Body.Reason)
 			if reason == "" {
@@ -180,7 +180,7 @@ func (h *Hub) registerStatusRequest(api huma.API) {
 			}
 			h.broker.publish("decisions", "sessions", "requirements")
 			out.Body.Decision = &d
-			out.Body.Message = fmt.Sprintf("已申请（%s）：%s，在用户的「要你处理」里等批准，不推送、不限时。批准后纸鸢直接改状态，不用你再改；拒绝或作废（批准前状态被改动）也会送到你这里。不要再在对话里请用户去面板上改。", d.Code, statusRequestWhat(d))
+			out.Body.Message = fmt.Sprintf("已申请（%s）：%s，在用户的「待处理」里等待批准，不推送、不限时。批准后纸鸢直接改状态，不用你再改；拒绝或作废（批准前状态被改动）也会送到你这里。不要再在对话里请用户去面板上改。", d.Code, statusRequestWhat(d))
 			return out, nil
 		})
 }

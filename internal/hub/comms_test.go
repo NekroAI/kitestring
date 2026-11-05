@@ -26,6 +26,19 @@ func TestCommsText(t *testing.T) {
 		t.Fatalf("watch = %q %q", label, shrinkReqs(text))
 	}
 
+	// R-277 之后的写法：结尾「只是告知」、指派的需求、提出决策、项目设置变更拆分照常
+	for _, c := range []struct{ in, label, text string }{
+		{"你关联的需求有变化（status · 用户改需求状态）：用户把 R-12「标题」从待验收改为已完成。 只是告知，不是指派；需要时自己查看，不必回复。", "需求状态变更", "用户把 R-12 从待验收改为已完成。"},
+		{"这条需求是你指派的（review · 交验收）：R-12「标题」已提交验收（claude:19189640-d44a）：做完了；达标 4 / 5。等用户验收，不必回复；需要细节用 req_get。 只是告知，不是指派；不必回复。", "待验收", "R-12 已提交验收：做完了；达标 4 / 5。"},
+		{"你订阅的事件（decision · 有人提决策）：主调度「x」提出了决策 D-3「要不要拆」，等待用户答复。 只是告知，不是指派；需要时自己查看，不必回复。", "新决策", "主调度「x」提出了决策 D-3「要不要拆」，等待用户答复。"},
+		{"你订阅的事件（settings · 用户改项目设置）：用户把项目 纸鸢 的「单次等待上限」从 30 分钟改为 55 分钟。之后 ks wait 每次最多等这么久。 只是告知，不是指派；需要时自己查看，不必回复。", "项目设置变更", "用户把项目 纸鸢 的「单次等待上限」从 30 分钟改为 55 分钟。之后 ks wait 每次最多等这么久。"},
+	} {
+		label, text := sysText(store.Decision{Answer: c.in})
+		if got := shrinkReqs(keyParen.ReplaceAllString(text, "")); label != c.label || got != c.text {
+			t.Errorf("sysText(%q) = %q %q", c.in, label, got)
+		}
+	}
+
 	// 会话发的：去掉发送方前缀和开头的需求标题
 	body := sentText("PM 「设计通讯」（claude:a） 留言：R-249「纸鸢做跨 harness 的会话通信：查在线会话、…」已合并，开始做通讯页", "claude:a")
 	if got := stripReq(body, "R-249"); got != "已合并，开始做通讯页" {

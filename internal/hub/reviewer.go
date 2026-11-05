@@ -17,8 +17,8 @@ import (
 
 // 审查员（R-88）：你在网页上把一条需求交给本项目的审查员会话，它做审查分析，结果作为“审查意见”挂在需求上。
 // 审查是旁路：不改需求状态、不关联会话（不会因此成为需求的负责会话或排队对象）、不拦截验收；审查员也不是必须参与。
-// R-232 起评审还做验证（逐条实测、截图，checklist 挂到需求上），交验收时自动派给在线评审；交给评审的待验收需求，
-// 评审交意见前不进用户的「要你处理」，最多等 30 分钟（R-237，见 verify.go）。
+// R-232 起评审还做验证（逐条实测、截图，checklist 挂到需求上），交验收时自动指派给在线评审；提交评审的待验收需求，
+// 评审交意见前不进用户的「待处理」，最多等 30 分钟（R-237，见 verify.go）。
 // 审查意见存在 evidence 表里（kind = review），读出时和证据分开（store.ListReviews）。
 
 // reviewTaskNote 是送达给审查员的说明，提醒它这是审查任务。
@@ -48,7 +48,7 @@ func (h *Hub) askReview(ctx context.Context, ref, sessionKey, comment string, au
 	}
 	body := []string{reviewTaskNote, "需求当前状态：" + reqStatusZh[r.Status] + "（保持不变）。"}
 	if r.Status == store.ReqReview {
-		body = append(body, fmt.Sprintf("你交意见前，这条需求不进用户的「要你处理」；%d 分钟内没交意见会照常弹给用户，标「评审未完成」。", int(store.ReviewWaitLimit/time.Minute)))
+		body = append(body, fmt.Sprintf("你交意见前，这条需求不进用户的「待处理」；%d 分钟内没交意见会照常弹给用户，标「评审未完成」。", int(store.ReviewWaitLimit/time.Minute)))
 	}
 	if c := strings.TrimSpace(comment); c != "" && auto {
 		body = append(body, c)
@@ -73,8 +73,6 @@ func (h *Hub) askReview(ctx context.Context, ref, sessionKey, comment string, au
 	h.broker.publish("requirements", "decisions", "sessions")
 	return d, nil
 }
-
-var reqStatusZh = map[string]string{store.ReqDraft: "草稿", store.ReqReady: "待开始", store.ReqInProgress: "进行中", store.ReqBlocked: "受阻", store.ReqReview: "待验收", store.ReqDone: "已完成", store.ReqShelved: "已搁置"}
 
 func autoMark(auto bool) string {
 	if auto {
@@ -198,7 +196,7 @@ func (h *Hub) registerReviewerWeb(api huma.API) {
 }
 
 func (h *Hub) registerReviewerAgent(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "agent-submit-review", Method: http.MethodPost, Path: "/api/agent/requirements/{ref}/reviews", Tags: []string{"agent"}, Summary: "Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；交给评审的待验收需求这时进用户的验收卡，有不通过的通知主调度"},
+	huma.Register(api, huma.Operation{OperationID: "agent-submit-review", Method: http.MethodPost, Path: "/api/agent/requirements/{ref}/reviews", Tags: []string{"agent"}, Summary: "Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；提交评审的待验收需求这时进用户的验收卡，有不通过的通知主调度"},
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body reviewBody

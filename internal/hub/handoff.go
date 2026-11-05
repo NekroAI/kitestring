@@ -18,7 +18,7 @@ import (
 // 会话交接（R-224）：上下文太长时以压缩为主，换会话 / 换工具 / 换设备时才完整交接。
 // 流程：用户在会话泳道或面板点「交接」→ 纸鸢通知旧会话用 handoff_write 写结构化交接（主调度先停派新活、等子任务交完）
 // → 用户在项目目录运行 ks takeover <身份> → 新会话 ks role 声明身份时自动注入最新交接、回一句确认
-// → 旧会话自动卸任：身份清除（Stop hook 不再拦）、标记卸任（ks wait 直接返回，不再被唤醒）。
+// → 旧会话自动交出身份：身份清除（Stop hook 不再拦）、标记交出身份（ks wait 直接返回，不再被唤醒）。
 
 const handoffFieldMax = 4000 // 每一栏的字数上限，超出截断
 
@@ -105,7 +105,7 @@ func handoffAsk(role, project string, agents int) string {
 		n++
 	}
 	fmt.Fprintf(&b, "%d）用 handoff_write 写交接，只写纸鸢里没有的三栏，几行即可：doing 做到一半的事（需求编号、做到哪、分支 / worktree）、agreements 口头约定（用户在对话里交代、还没落成记录的）、caveats 注意事项（坑、在跑的进程、别碰的东西）。需求状态、待验收、待答决策、放行队列、合入 / 推送情况新会话接任时纸鸢会自动列出，不必写；用户口头交代的临时安排（如「额度紧，做完这几条就停」「这次可以 push」）先用 ks arrange add 记成当前安排。没有 handoff_write 工具（MCP 是旧版）时改用命令 ks handoff，例：ks handoff --doing \"R-12 做到联调，分支 line3\" --caveats \"别停 5199\"；", n)
-	fmt.Fprintf(&b, "%d）写完照常待命。用户会在项目目录运行 %s 开新会话，新会话接任后你自动卸任，之后不用再挂 ks wait。", n+1, takeoverCmd(role))
+	fmt.Fprintf(&b, "%d）写完照常待命。用户会在项目目录运行 %s 开新会话，新会话接任后你自动交出身份，之后不用再挂 ks wait。", n+1, takeoverCmd(role))
 	return b.String()
 }
 
@@ -195,7 +195,7 @@ func (h *Hub) writeHandoff(ctx context.Context, in *handoffWriteIn) (string, err
 	_ = hd
 	h.sessionChanged(x.Key)
 	h.broker.publish("sessions")
-	msg := fmt.Sprintf("交接已存，用户在你的会话时间线上能看到。用户会在项目目录运行 %s 开新会话；新会话声明%s时自动读到这份交接和纸鸢生成的接手概览，你随即卸任。在那之前照常待命；要补充就再调一次 handoff_write（覆盖这一份）。", takeoverCmd(x.Role), roles.Display(x.Role))
+	msg := fmt.Sprintf("交接已存，用户在你的会话时间线上能看到。用户会在项目目录运行 %s 开新会话；新会话声明%s时自动读到这份交接和纸鸢生成的接手概览，你随即交出身份。在那之前照常待命；要补充就再调一次 handoff_write（覆盖这一份）。", takeoverCmd(x.Role), roles.Display(x.Role))
 	var old []string
 	for _, f := range []struct{ k, v string }{{"waiting（等用户的）", b.Waiting}, {"rules（约定和规矩）", b.Rules}, {"next（下一步）", b.Next}} {
 		if strings.TrimSpace(f.v) != "" {
@@ -228,11 +228,11 @@ func handoffText(hd store.Handoff, role string) string {
 			fmt.Fprintf(&b, "### %s\n%s\n\n", s.k, strings.TrimSpace(s.v))
 		}
 	}
-	b.WriteString("上一任已自动卸任。读完先回用户一句确认：已接任" + roles.Display(role) + "、接手了哪几件事、下一步做什么；然后按交接和上面的接手概览继续。\n")
+	b.WriteString("上一任已自动交出身份。读完先回用户一句确认：已接任" + roles.Display(role) + "、接手了哪几件事、下一步做什么；然后按交接和上面的接手概览继续。\n")
 	return b.String()
 }
 
-// takeOver：会话声明身份后接任同项目同身份的最新交接；旧会话卸任（身份清除、标记卸任）并收到通知。返回要注入的交接内容。
+// takeOver：会话声明身份后接任同项目同身份的最新交接；旧会话交出身份（身份清除、标记交出身份）并收到通知。返回要注入的交接内容。
 func (h *Hub) takeOver(ctx context.Context, x store.Session, role string, demoted []string) (string, []string) {
 	if role == "" || x.ProjectID == "" {
 		return "", demoted
@@ -260,7 +260,7 @@ func (h *Hub) takeOver(ctx context.Context, x store.Session, role string, demote
 			}
 		}
 		if err := h.store.SetRetired(ctx, old.Key, true); err != nil {
-			h.log.Warn("标记旧会话卸任失败", "err", err)
+			h.log.Warn("标记旧会话已交接失败", "err", err)
 		}
 		h.pushRoles(ctx, old.DeviceID)
 		h.sessionChanged(old.Key)
@@ -268,19 +268,16 @@ func (h *Hub) takeOver(ctx context.Context, x store.Session, role string, demote
 	return handoffText(hd, role), demoted
 }
 
-// retiredNote：被接任后卸任的旧会话收到的通知（R-224；R-229 起没写交接直接 ks role 接任也卸任）。
+// retiredNote：被接任后交出身份的旧会话收到的通知（R-224；R-229 起没写交接直接 ks role 接任也交出身份）。
 // handed 为写了交接再接任；pending 是它提的、还等用户答复的决策，写明答复改为下次对话时送达。
 func retiredNote(project, role, by string, handed bool, pending []string) string {
-	how := "已由「" + by + "」接任"
-	if handed {
-		how = "已交接给「" + by + "」"
-	}
-	s := fmt.Sprintf("你在项目「%s」的%s身份%s，你已卸任：不要再挂 ks wait，用一两句话收尾后结束本轮。之后纸鸢不会再唤醒你（订阅事件也不再送），也不会再拦你结束。", project, roles.Display(role), how)
+	how := handoffHow(by, handed)
+	s := fmt.Sprintf("你在项目「%s」的%s身份%s。不要再挂 ks wait，用一两句话说明后结束本轮。之后纸鸢不会再唤醒你（订阅事件也不再送），也不会再拦你结束。", project, roles.Display(role), how)
 	if !handed {
 		s += handover[role]
 	}
 	if len(pending) > 0 {
-		s += "你提的待答决策（" + strings.Join(pending, "、") + "）仍留在用户的「要你处理」里，用户答复后会在下次对话时送达给你。"
+		s += "你提的待答决策（" + strings.Join(pending, "、") + "）仍留在用户的「待处理」里，用户答复后会在下次对话时送达给你。"
 	}
 	return s + "要恢复，在这个会话里重新运行 ks role <身份>。"
 }

@@ -10,11 +10,11 @@ import (
 
 // 主助理（R-190）：每项目唯一、常驻，替用户判断。看证据写验收建议、代答（R-163）、离开期间小结（R-165）、放行草稿（R-166，与主调度共有）
 // 从顾问移到主助理；顾问只答问题、做设计，不常驻、不订阅事件。项目没有主助理时不退回给顾问：代答、放行（主调度仍可放行）直接不可用，
-// 事情照旧进用户的「要你处理」，验收建议和小结就不写。
+// 事情照旧进用户的「待处理」，验收建议和小结就不写。
 //
 // 过渡迁移做在系统里，不靠会话自己记得：
-//   - 授权窗口跟着主助理走：绑在非主助理会话上的生效窗口（老的顾问窗口、卸任的主助理）直接失效，被授权的会话和订阅了 settings 的会话收到说明，
-//     设置里的授权面板提示给主助理重新开。Hub 启动时清一次存量，之后在接任 / 卸任主助理时清。
+//   - 授权窗口跟着主助理走：绑在非主助理会话上的生效窗口（老的顾问窗口、交出身份的主助理）直接失效，被授权的会话和订阅了 settings 的会话收到说明，
+//     设置里的授权面板提示给主助理重新开。Hub 启动时清一次存量，之后在接任 / 交出身份主助理时清。
 //   - 项目还没有主助理、却有顾问会话持有授权窗口或挂着 ks wait 常驻时，给那个顾问会话发一次提示（团队消息，标题 aideHintQ）；
 //     按标题查重，同一会话只发一次，Hub 重启后也不重复。
 
@@ -73,7 +73,7 @@ func (h *Hub) revokeGrantsOf(ctx context.Context, key, why string) {
 		return
 	}
 	h.tellGrant(ctx, g, fmt.Sprintf("授权窗口 %s 已失效：%s，代答只由本项目主助理做。要继续代答，请用户在设置里给主助理重新开。", g.Code, why))
-	h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("授权窗口 %s（授权给 %s）已失效：%s；代答只由主助理做，需要时请用户给主助理重新开。", g.Code, h.actorName(ctx, g.SessionKey), why), g.SessionKey)
+	h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("授权窗口 %s（授权给%s）已失效：%s；代答只由主助理做，需要时请用户给主助理重新开。", g.Code, h.actorName(ctx, g.SessionKey), why), g.SessionKey)
 	h.broker.publish("grants", "decisions")
 }
 

@@ -14,14 +14,14 @@ import (
 )
 
 // 评审验证（R-232、R-237，D-679、D-714）：
-//   - 需求交验收时，本项目有在线评审就自动派一条验证任务（审查任务，Context = auto），不用用户点「交给评审」；没有评审时照旧。
-//   - 交给了评审的需求，评审交意见前不进用户的「要你处理」（store.ReviewState，推导得出，不是关卡、不加项目开关）；
+//   - 需求交验收时，本项目有在线评审就自动派一条验证任务（审查任务，Context = auto），不用用户点「提交评审」；没有评审时照旧。
+//   - 交给了评审的需求，评审交意见前不进用户的「待处理」（store.ReviewState，推导得出，不是关卡、不加项目开关）；
 //     评审交了意见进验收卡，卡上带结论；有不通过的，用「要动手」那一档通知主调度退回给开发修。
 //   - 30 分钟（store.ReviewWaitLimit）没动静、或评审会话结束了，照常弹给用户，标「评审未完成」。需求页上随时可以直接验收。
 //   - 评审只验证：不改代码、不改需求状态（hub 拒绝评审改状态、交验收证据）。
 //   - 开发减负：有在线评审时，开发交验收前只保证编译、单测通过，附改动说明和一张主截图；没有时开发照旧全做（verifyNote）。
 
-// autoReview：r 刚交验收，本项目有在线评审（不是交验收的会话自己）就自动派验证任务。返回派给的评审，没派时为空。
+// autoReview：r 刚交验收，本项目有在线评审（不是交验收的会话自己）就自动派验证任务。返回指派给的评审，没派时为空。
 func (h *Hub) autoReview(ctx context.Context, r store.Requirement, by string) string {
 	if r.ProjectID == "" {
 		return ""
@@ -30,9 +30,9 @@ func (h *Hub) autoReview(ctx context.Context, r store.Requirement, by string) st
 	if key == "" || key == by {
 		return ""
 	}
-	note := fmt.Sprintf("%s 刚交验收，纸鸢自动派给你验证（本项目有在线评审时交验收即自动派）。", r.Code)
+	note := fmt.Sprintf("%s 刚交验收，纸鸢自动提交评审、请你验证（本项目有在线评审时交验收即自动提交）。", r.Code)
 	if by != "" {
-		note = fmt.Sprintf("%s 刚由 %s 交验收，纸鸢自动派给你验证（本项目有在线评审时交验收即自动派）。", r.Code, h.actorName(ctx, by))
+		note = fmt.Sprintf("%s 刚由%s提交验收，纸鸢自动提交评审、请你验证（本项目有在线评审时交验收即自动提交）。", r.Code, h.actorName(ctx, by))
 	}
 	if _, err := h.askReview(ctx, r.ID, key, note, true); err != nil {
 		h.log.Warn("自动派验证任务失败", "err", err, "req", r.Code, "to", key)
@@ -41,7 +41,7 @@ func (h *Hub) autoReview(ctx context.Context, r store.Requirement, by string) st
 	return key
 }
 
-// reviewWaitNote：交验收通知里补一句「已交给评审，评审交意见前不进用户的要你处理」；没交给评审时为空。
+// reviewWaitNote：交验收通知里补一句「已提交评审，评审交意见前不进用户的待处理」；没提交评审时为空。
 func reviewWaitNote(r store.Requirement) string {
 	if !r.Review.Holding() {
 		return ""
@@ -50,10 +50,10 @@ func reviewWaitNote(r store.Requirement) string {
 	if r.Review.Auto {
 		how = "已自动交给"
 	}
-	return fmt.Sprintf("%s评审「%s」验证，评审交意见前不进用户的「要你处理」（最多等 %d 分钟，过了照常弹给用户）；评审有不通过的会再通知。", how, reviewerName(r.Review), int(store.ReviewWaitLimit/time.Minute))
+	return fmt.Sprintf("%s评审「%s」验证，评审交意见前不进用户的「待处理」（最多等 %d 分钟，过了照常弹给用户）；评审有不通过的会再通知。", how, reviewerName(r.Review), int(store.ReviewWaitLimit/time.Minute))
 }
 
-// onReviewSubmitted：评审交了这一轮的验证意见（r 是交完之后重新读的）。有不通过的，用「要动手」那一档告诉派活的主调度退回给开发修；
+// onReviewSubmitted：评审交了这一轮的验证意见（r 是交完之后重新读的）。有不通过的，用「要动手」那一档告诉指派的主调度退回给开发修；
 // 全部通过 / 没交清单时只告知主调度；订阅了交验收的（主助理写建议要参考）照常收到；先前压着没推的验收通知这时推给用户。
 func (h *Hub) onReviewSubmitted(ctx context.Context, r store.Requirement, x store.Session, reviewID string) {
 	st := r.Review
@@ -86,12 +86,8 @@ func (h *Hub) onReviewSubmitted(ctx context.Context, r store.Requirement, x stor
 		pm = ""
 	}
 	h.broadcast(ctx, protocol.OnReview, r.ProjectID, r.ID, text+"需求已进用户的验收卡；写验收建议时参考评审结论（req_get 看清单）。", x.Key, pm)
-	if st.AskedAt != nil { // 交给评审时压着没推的验收通知
-		body := r.Title
-		if st.Total > 0 {
-			body = fmt.Sprintf("评审通过 %d/%d · %s", st.Pass, st.Total, r.Title)
-		}
-		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 " + r.Code, Body: body, Group: "kitestring"}, "/requirements?r="+r.Code)
+	if st.AskedAt != nil { // 提交评审时压着没推的验收通知
+		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: pushReviewTitle(r.Code), Body: pushReviewBody(r.Title, st.Pass, st.Total), Group: "kitestring"}, "/requirements?r="+r.Code)
 	}
 }
 
@@ -114,8 +110,8 @@ func failItems(r store.Requirement, reviewID string) string {
 	return ""
 }
 
-// reviewWatch：每分钟看一遍交给评审还没交意见的待验收需求，等满 30 分钟（或评审会话结束了）就照常弹给用户：
-// 刷新网页（需求回到「要你处理」，标「评审未完成」）、推送待验收，并只告知派活的主调度。每条每轮只报一次；
+// reviewWatch：每分钟看一遍提交评审还没交意见的待验收需求，等满 30 分钟（或评审会话结束了）就照常弹给用户：
+// 刷新网页（需求回到「待处理」，标「评审未完成」）、推送待验收，并只告知指派的主调度。每条每轮只报一次；
 // 只报刚过期 10 分钟以内的，Hub 重启后不把早就过期的再推一遍。
 func (h *Hub) reviewWatch(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
@@ -161,7 +157,7 @@ func (h *Hub) reviewOverdue(ctx context.Context, now time.Time) {
 				h.log.Warn("通知主调度评审未完成失败", "err", err)
 			}
 		}
-		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 " + r.Code, Body: "评审未完成 · " + r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+		h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: pushReviewTitle(r.Code), Body: pushReviewUnfinishedBody(r.Title), Group: "kitestring"}, "/requirements?r="+r.Code)
 	}
 	if changed {
 		h.broker.publish("requirements")
@@ -169,7 +165,7 @@ func (h *Hub) reviewOverdue(ctx context.Context, now time.Time) {
 }
 
 // verifyNote：写给开发、主调度的「验证分工」（R-232）：本项目此刻有没有在线评审，决定开发交验收前要做到哪一步。
-// 写进身份提示词（ks role、恢复 / 压缩后补发）和派活内容；其它身份、没有项目时为空。
+// 写进身份提示词（ks role、恢复 / 压缩后补发）和指派内容；其它身份、没有项目时为空。
 func (h *Hub) verifyNote(ctx context.Context, projectID, role string) string {
 	if projectID == "" || (role != roles.Dev && role != roles.PM) {
 		return ""
@@ -182,12 +178,12 @@ func (h *Hub) verifyNote(ctx context.Context, projectID, role string) string {
 	}
 	if role == roles.PM {
 		if rev != "" {
-			return "[Kitestring] 验证分工：本项目现在有在线评审 " + rev + "，需求交验收后纸鸢自动派给它逐条实测。派活时交代开发 / 子任务：交验收前只保证编译、单测通过，证据附改动说明（verdict + checklist，按验收标准写自测到哪一步）和一张主截图（界面类）；逐条实测和完整验收截图由评审做。评审有不通过的会以团队消息通知你，按意见退回给开发修。评审下线后交验收的，回到开发全做。\n"
+			return "[Kitestring] 验证分工：本项目现在有在线评审 " + rev + "，需求交验收后纸鸢自动提交评审、由评审逐条实测。指派时交代开发 / 子任务：交验收前只保证编译、单测通过，证据附改动说明（verdict + checklist，按验收标准写自测到哪一步）和一张主截图（界面类）；逐条实测和完整验收截图由评审做。评审有不通过的会以团队消息通知你，按意见退回给开发修。评审下线后交验收的，回到开发全做。\n"
 		}
-		return "[Kitestring] 验证分工：本项目现在没有在线评审，派活时照旧交代开发 / 子任务全做：逐条实测、真实数据截图、checklist 逐条判定。\n"
+		return "[Kitestring] 验证分工：本项目现在没有在线评审，指派时照旧交代开发 / 子任务全做：逐条实测、真实数据截图、checklist 逐条判定。\n"
 	}
 	if rev != "" {
-		return "[Kitestring] 验证分工：本项目现在有在线评审 " + rev + "，交验收后纸鸢自动派给它逐条实测。你交验收前只保证编译、单测通过，证据附改动说明（verdict + checklist，按验收标准写自测到哪一步）和一张主截图（界面类）；逐条实测和完整验收截图由评审做。\n"
+		return "[Kitestring] 验证分工：本项目现在有在线评审 " + rev + "，交验收后纸鸢自动提交评审、由评审逐条实测。你交验收前只保证编译、单测通过，证据附改动说明（verdict + checklist，按验收标准写自测到哪一步）和一张主截图（界面类）；逐条实测和完整验收截图由评审做。\n"
 	}
 	return "[Kitestring] 验证分工：本项目现在没有在线评审，交验收前照旧全做：逐条实测、真实数据截图、checklist 逐条判定。\n"
 }

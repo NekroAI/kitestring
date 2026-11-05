@@ -178,7 +178,7 @@ func TestProxyAnswerGrant(t *testing.T) {
 	if code, body := e.webTry("POST", "/api/decisions/"+dMid.Code+"/override", map[string]any{"answer": "50"}); code != 400 || !strings.Contains(body, "不是参谋代答") {
 		t.Fatalf("不是代答的不能推翻：%d %s", code, body)
 	}
-	woke(t, parkWait(t, e, c, "claude:adv"), "用户开了参谋授权窗口", "只告知") // 先收掉开窗口时送来的说明：只告知不叫醒（R-227），随之前提决策的事件一并送达
+	woke(t, parkWait(t, e, c, "claude:adv"), "用户开了授权窗口", "只告知") // 先收掉开窗口时送来的说明：只告知不叫醒（R-227），随之前提决策的事件一并送达
 	done = parkWait(t, e, c, "claude:dev")
 	advDone := parkWait(t, e, c, "claude:adv")
 	e.call("POST", "/api/decisions/"+d1.Code+"/override", map[string]any{"answer": "正序"}, nil)

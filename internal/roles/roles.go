@@ -69,7 +69,7 @@ func Display(role string) string {
 // Aliases 返回身份的别称（不含标识、英文简写、中文名）。
 func Aliases(role string) []string { return aliases[role] }
 
-// Unique 判断该身份是否每个项目只有一个（主调度、主助理）：新会话接任时，旧的自动卸任并收到通知（R-82、R-190）。
+// Unique 判断该身份是否每个项目只有一个（主调度、主助理）：新会话接任时，旧的自动交出身份并收到通知（R-82、R-190）。
 func Unique(role string) bool { return role == PM || role == Aide }
 
 // Resident 判断该身份是否要求常驻在线（挂着 ks wait，R-83）。

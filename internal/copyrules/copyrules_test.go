@@ -34,4 +34,22 @@ func TestRulesFile(t *testing.T) {
 	if bad := r.CheckLabels("x", map[string]string{"a": "受阻", "b": "阻塞"}, false, "req"); len(bad) != 2 {
 		t.Errorf("状态标签检查不对：%v", bad)
 	}
+	// 通用检查与前端 copy.test.ts 的规则一致（R-277）
+	for s, n := range map[string]int{
+		"待验收 R-12":        0,
+		"「x」上的 Codex：摘要。": 0,
+		"它在跑":             2, // 「它」+ 禁用词
+		"待验收 · R-12":      0,
+		"评审未完成 · 标题，再说":   1, // 「·」连句
+		"5m 前":            1,
+		"已交付3条":           1,
+		"“引号”":            1,
+		"好！":              1,
+		"等等……":            1,
+		"其它":              0,
+	} {
+		if got := r.Check(s); len(got) != n {
+			t.Errorf("Check(%q) = %v，应有 %d 处问题", s, got, n)
+		}
+	}
 }

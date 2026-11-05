@@ -94,7 +94,7 @@ func TestDevIdle(t *testing.T) {
 		t.Fatal("待命超过 60 分钟、没有排给它的需求，应记下待命超时")
 	}
 	tells := tellsTo(e, "claude:idle-pm")
-	if len(tells) != pmBefore+1 || !strings.Contains(tells[0].Answer+tells[len(tells)-1].Answer, "待命超时 · 建议收尾") {
+	if len(tells) != pmBefore+1 || !strings.Contains(tells[0].Answer+tells[len(tells)-1].Answer, "泳道上标了「待命超时」") {
 		t.Fatalf("主调度应收到一条待命超时的说明：%+v", tells)
 	}
 	for _, d := range tells {
@@ -229,7 +229,7 @@ func TestTakeoverRetires(t *testing.T) {
 	if out.Handoff || len(out.Demoted) != 1 || out.Demoted[0] != "claude:tr-old" {
 		t.Fatalf("应直接接任、卸下旧主调度：%+v", out)
 	}
-	woke(t, oldW, "你已卸任", "不会再唤醒你", d.Code, "下次对话时送达", "ks role")
+	woke(t, oldW, "不要再挂 ks wait", "不会再唤醒你", d.Code, "下次对话时送达", "ks role")
 	old := e.session("claude:tr-old")
 	if old.Role != "" || old.RetiredAt == nil {
 		t.Fatalf("没写交接的接任也应卸任：role=%q retired=%v", old.Role, old.RetiredAt)

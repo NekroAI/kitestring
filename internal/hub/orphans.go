@@ -14,8 +14,8 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 孤儿进程（R-209）：各设备 daemon 上报会话结束后还在跑（或已脱离 Agent）的后台进程，工作台列出，可确认后停止。
-// 停止只经 Hub 发给进程所在设备的 daemon，由 daemon 核对 pid + 启动时间、确认是它记过的孤儿 / 已脱离进程后才发信号；
+// 残留进程（R-209）：各设备 daemon 上报会话结束后还在跑（或已脱离 Agent）的后台进程，工作台列出，可确认后停止。
+// 停止只经 Hub 发给进程所在设备的 daemon，由 daemon 核对 pid + 启动时间、确认是它记过的残留进程 / 已脱离进程后才发信号；
 // Hub 这边也只转发自己列表里有的条目。每次停止都写进 proc_stops 留痕。
 
 const stopWait = 15 * time.Second // SIGTERM 后 daemon 最多等 5 秒，留足余量
@@ -61,14 +61,14 @@ type Orphan struct {
 	ProjectName  string `json:"project_name,omitempty"`
 	SessionTitle string `json:"session_title,omitempty"`
 	SessionEnded bool   `json:"session_ended"`
-	// IgnoredAt：你忽略了这个孤儿的时间（只在 ignored 列表里有）
+	// IgnoredAt：你忽略了这个残留进程的时间（只在 ignored 列表里有）
 	IgnoredAt *time.Time `json:"ignored_at,omitempty"`
 }
 
 type orphansOut struct {
 	Body struct {
 		Orphans []Orphan         `json:"orphans"`
-		Ignored []Orphan         `json:"ignored" doc:"你忽略了的孤儿（还在跑；不在 orphans 里、不提醒）"`
+		Ignored []Orphan         `json:"ignored" doc:"你忽略了的残留进程（还在跑；不在 orphans 里、不提醒）"`
 		Stops   []store.ProcStop `json:"stops" doc:"最近 24 小时的停止记录（新的在前）"`
 	}
 }
@@ -145,7 +145,7 @@ func (h *Hub) enrichOrphan(ctx context.Context, x *Orphan) {
 }
 
 func sortOrphans(list []Orphan) {
-	// 孤儿在前，同类按开始时间（久的在前）
+	// 残留进程在前，同类按开始时间（久的在前）
 	rank := func(o Orphan) int {
 		if o.State == protocol.ProcOrphan {
 			return 0
@@ -241,7 +241,7 @@ type ignoreOrphanOut struct {
 	Body store.ProcIgnore
 }
 
-// ignoreOrphan 忽略 / 取消忽略一个孤儿（R-209）：只对孤儿（会话已结束），已脱离的不行；按“进程号@启动时间”记，进程退出后失效。
+// ignoreOrphan 忽略 / 取消忽略一个残留进程（R-209）：只对残留进程（会话已结束），已脱离的不行；按“进程号@启动时间”记，进程退出后失效。
 func (h *Hub) ignoreOrphan(ctx context.Context, in *ignoreOrphanIn) (*ignoreOrphanOut, error) {
 	b := in.Body
 	if b.Undo {
@@ -267,7 +267,7 @@ func (h *Hub) ignoreOrphan(ctx context.Context, in *ignoreOrphanIn) (*ignoreOrph
 		return nil, huma.Error404NotFound("列表里没有这个进程（可能已经结束），刷新看看")
 	}
 	if target.State != protocol.ProcOrphan {
-		return nil, huma.Error400BadRequest("只能忽略孤儿（会话已结束）；会话还在的进程不能忽略")
+		return nil, huma.Error400BadRequest("只能忽略残留进程（会话已结束）；会话还在的进程不能忽略")
 	}
 	dev, _ := h.store.GetDevice(ctx, b.DeviceID)
 	x := Orphan{OrphanProc: *target, DeviceID: b.DeviceID}
@@ -282,7 +282,7 @@ func (h *Hub) ignoreOrphan(ctx context.Context, in *ignoreOrphanIn) (*ignoreOrph
 }
 
 func (h *Hub) registerOrphansWeb(api huma.API) {
-	huma.Register(api, huma.Operation{OperationID: "ignore-orphan", Method: http.MethodPost, Path: "/api/orphans/ignore", Tags: []string{"sessions"}, Summary: "忽略 / 取消忽略一个孤儿进程：不再列出、不提醒；按进程号 + 启动时间记，进程退出后失效（R-209）"}, h.ignoreOrphan)
+	huma.Register(api, huma.Operation{OperationID: "ignore-orphan", Method: http.MethodPost, Path: "/api/orphans/ignore", Tags: []string{"sessions"}, Summary: "忽略 / 取消忽略一个残留进程：不再列出、不提醒；按进程号 + 启动时间记，进程退出后失效（R-209）"}, h.ignoreOrphan)
 	huma.Register(api, huma.Operation{OperationID: "list-orphans", Method: http.MethodGet, Path: "/api/orphans", Tags: []string{"sessions"}, Summary: "会话结束后还在跑（或已脱离 Agent）的后台进程，与最近的停止记录（R-209）"}, h.listOrphans)
-	huma.Register(api, huma.Operation{OperationID: "stop-orphan", Method: http.MethodPost, Path: "/api/orphans/stop", Tags: []string{"sessions"}, Summary: "停止一个孤儿 / 已脱离的后台进程：经 Hub 交给所在设备的 daemon 核对后发信号（R-209）"}, h.stopOrphan)
+	huma.Register(api, huma.Operation{OperationID: "stop-orphan", Method: http.MethodPost, Path: "/api/orphans/stop", Tags: []string{"sessions"}, Summary: "停止一个残留进程 / 已脱离的后台进程：经 Hub 交给所在设备的 daemon 核对后发信号（R-209）"}, h.stopOrphan)
 }

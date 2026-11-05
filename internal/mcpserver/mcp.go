@@ -55,7 +55,7 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认、也最多等 55 分钟，醒来时提示缓存还有效；项目设置可调得更短，--timeout 超过上限按上限截断；后台任务的超时要设得比它长）。主调度 / 主助理 / 开发连续空等累计到项目设置的时长（默认 4 小时）时，醒来会收到写交接下线的指示：handoff_write 写交接后结束本轮，不再挂 ks wait，它结束时你会被唤醒。
   - Codex：没有“后台命令结束后唤醒”的机制，要在前台运行 ks wait（自动最多等 30 分钟，不用加 --timeout；shell 工具的超时设成 35 分钟以上）。命令还在运行时继续等它结束，不要中断、不要重复运行。超时时它会提示你收尾：照做，用一两句话说明进度和在等什么，然后结束本轮，不要再运行 ks wait 续等。前台等待期间这一轮一直开着，Codex 会定期查看命令输出，每次消耗少量额度（主要是缓存读取），所以最多 30 分钟。
-  - 订阅事件（--on）：主助理 / 主调度挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、参谋授权窗口）时是 settings，改需求状态时是 status（status 之外，指派需求的主调度和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：主助理订阅 decision,review,settings，主调度订阅 review,blocked,settings，顾问、开发等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是指派；不进用户收件箱、不推送。`
+  - 订阅事件（--on）：主助理 / 主调度挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、授权窗口）时是 settings，改需求状态时是 status（status 之外，指派需求的主调度和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：主助理订阅 decision,review,settings，主调度订阅 review,blocked,settings，顾问、开发等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是指派；不进用户收件箱、不推送。`
 
 // Run 以 stdio 运行 MCP server。clientName 是调用方（目前只区分 dsh），影响呈现给模型的说明。
 func Run(ctx context.Context, clientName string) error {

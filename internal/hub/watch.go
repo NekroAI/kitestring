@@ -17,8 +17,8 @@ import (
 
 // 订阅需求（R-249 P4，D-1027）：会话 watch 一条需求，需求有变动时收到一句话提醒，细节自己去需求下看。
 //   - 订阅者 = 显式订阅 ∪ 关联这条需求且没结束的会话（隐式，不写行），去掉退订的；显式退订优先于隐式订阅。
-//   - 两档（R-227）：要动手的立刻叫醒（验收标准被改、评审不通过、关联决策被作答、需求被退回或设为受阻）；
-//     其余只告知（别的状态变化、描述修改、留言、证据、评审通过），不叫醒。mode = action 的只收要动手那一档。
+//   - 两档（R-227）：要动手的立刻唤醒（验收标准被改、评审不通过、关联决策被作答、需求被退回或设为受阻）；
+//     其余只告知（别的状态变化、描述修改、留言、证据、评审通过），不唤醒。mode = action 的只收要动手那一档。
 //   - 自己引起的不通知自己；同一次操作里已经被 tellEdited / onReview / notifyAssigner / 用户留言 / ks wait --on 订阅事件
 //     通知过的会话不重复送（记在请求的 told 集合里）；同一需求、同一收件人 60 秒内的只告知合并成一条。
 //   - 统一入口 reqEvent，送达沿用团队消息（KindTell，fyi 列分档）。
@@ -190,7 +190,7 @@ func (h *Hub) watchMergeInto(ctx context.Context, r store.Requirement, key, item
 	return true
 }
 
-// watchSend 送一条订阅提醒（纸鸢自动发的，没有发送方，不能回复）。fyi = 只告知，不叫醒。
+// watchSend 送一条订阅提醒（纸鸢自动发的，没有发送方，不能回复）。fyi = 只告知，不唤醒。
 func (h *Hub) watchSend(ctx context.Context, r store.Requirement, to string, fyi bool, text string) (store.Decision, error) {
 	d, err := h.store.CreateDecision(ctx, store.Decision{Kind: store.KindTell, SessionKey: to, ProjectID: r.ProjectID, RequirementID: r.ID, Question: watchTellQ, Answer: text, FYI: fyi})
 	if err != nil {
@@ -276,7 +276,7 @@ type watchingOut struct {
 func (h *Hub) registerAgentWatch(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-watch", Method: http.MethodPost, Path: "/api/agent/requirements/{ref}/watch", Tags: []string{"agent"},
 		Summary:     "订阅 / 退订一条需求（R-249 P4）：需求有变动时收到一句话提醒",
-		Description: "off = false 订阅（mode = action 只收要动手的：验收标准被改、评审不通过、关联决策被作答、被退回或设为受阻；默认 all 两档都收，只告知的不叫醒）；off = true 退订。关联这条需求、或正在做它的会话默认订阅，退订优先于这种默认订阅。自己引起的变动不通知自己。订阅者永远是当前会话（session_key）。"},
+		Description: "off = false 订阅（mode = action 只收要动手的：验收标准被改、评审不通过、关联决策被作答、被退回或设为受阻；默认 all 两档都收，只告知的不唤醒）；off = true 退订。关联这条需求、或正在做它的会话默认订阅，退订优先于这种默认订阅。自己引起的变动不通知自己。订阅者永远是当前会话（session_key）。"},
 		func(ctx context.Context, in *struct {
 			Ref  string `path:"ref"`
 			Body struct {
@@ -308,13 +308,13 @@ func (h *Hub) registerAgentWatch(api huma.API) {
 			if b.Off {
 				out.Body.Message = "已退订 " + name + "：之后它的变动不再通知你。"
 				if w.Linked {
-					out.Body.Message += "你关联了它，退订优先于因关联而来的默认订阅；派活、交验收这类跟你职责有关的通知照常送。"
+					out.Body.Message += "你关联了它，退订优先于因关联而来的默认订阅；指派、交验收这类跟你职责有关的通知照常送。"
 				}
 				out.Body.Message += "要重新订阅用 ks req watch " + r.Code + "（MCP req_watch）。"
 			} else {
-				tier := "两档都收：要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）立刻叫醒，只告知的（别的状态变化、描述、留言、证据、评审通过）等你下次醒来一并带上"
+				tier := "两档都收：要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）立刻唤醒，只告知的（别的状态变化、描述、留言、证据、评审通过）等你下次醒来一并带上"
 				if w.Mode == store.WatchAction {
-					tier = "只收要动手的：验收标准被改、评审不通过、关联决策被作答、被退回或受阻，立刻叫醒"
+					tier = "只收要动手的：验收标准被改、评审不通过、关联决策被作答、被退回或受阻，立刻唤醒"
 				}
 				out.Body.Message = "已订阅 " + name + "，" + tier + "；自己引起的变动不通知你。退订用 ks req unwatch " + r.Code + "（MCP req_watch off = true），看订阅了哪些用 ks req watching。"
 			}

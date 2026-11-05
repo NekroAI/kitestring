@@ -114,7 +114,7 @@ func TestHandoff(t *testing.T) {
 	if len(out.Demoted) != 1 || out.Demoted[0] != "claude:ho-1" {
 		t.Fatalf("应卸下旧主调度：%+v", out.Demoted)
 	}
-	recv(ch, "你已卸任")
+	recv(ch, "身份已交接给")
 	old := e.session("claude:ho-1")
 	if old.Role != "" || old.RetiredAt == nil {
 		t.Fatalf("旧会话应已卸任：role=%q retired=%v", old.Role, old.RetiredAt)

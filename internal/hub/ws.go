@@ -200,7 +200,7 @@ func (h *Hub) scheduleLostLocked(dev store.Device) {
 		}
 		h.broker.publish("devices", "sessions")
 		if len(keys) > 0 {
-			h.sendNotify("", notify.Message{Event: notify.EventDeviceLost, Title: "设备离线 " + dev.Name, Body: "设备上有未结束的会话", Group: "kitestring"}, "/")
+			h.sendNotify("", notify.Message{Event: notify.EventDeviceLost, Title: pushDeviceLostTitle(dev.Name), Body: pushDeviceLostBody, Group: "kitestring"}, "/")
 		}
 	})
 }

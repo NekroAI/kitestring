@@ -71,7 +71,7 @@ func approvalText(d store.Decision) string {
 // requestWhat：限时请求在文字里怎么称呼，例如「开 2 个 Dev 会话的推荐」。
 func requestWhat(d store.Decision) string {
 	if d.RequestKind == store.RequestDevs {
-		return fmt.Sprintf("开 %d 个 Dev 会话的推荐", max(d.RequestCount, 1))
+		return fmt.Sprintf("开启 %d 个开发会话的推荐", max(d.RequestCount, 1))
 	}
 	if d.RequestKind == store.RequestStatus {
 		return statusRequestWhat(d)
@@ -94,7 +94,7 @@ func requestText(d store.Decision) string {
 	if d.TimedOut {
 		t := timeoutRejectText(what)
 		if devs {
-			t += "。不开 Dev 会话，继续用一次性子代理做。"
+			t += "。不开开发会话，继续用一次性子任务做。"
 		}
 		return t
 	}
@@ -102,7 +102,7 @@ func requestText(d store.Decision) string {
 	case store.VerdictRejected:
 		t := rejectedText(what, answerNote(d.Answer, "拒绝"))
 		if devs {
-			t += "。不开 Dev 会话，继续用一次性子代理做，不要再催用户开。"
+			t += "。不开开发会话，继续用一次性子任务做，不要再催用户开。"
 		}
 		return t
 	case store.VerdictApproved:
@@ -111,7 +111,7 @@ func requestText(d store.Decision) string {
 	}
 	t := "批准（用户批准了" + what + "）"
 	if devs {
-		t += "。接入语已推送给用户；Dev 上线待命时你会收到通知，再用 req_assign 派活，在那之前照常用一次性子代理。"
+		t += "。接入语已推送给用户；开发会话上线待命时你会收到通知，再用 req_assign 指派，在那之前照常用一次性子任务。"
 	}
 	if note := answerNote(d.Answer, "批准"); note != "" {
 		t += "附言：" + note

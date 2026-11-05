@@ -157,7 +157,7 @@ func (h *Hub) pmOverview(ctx context.Context, x store.Session, wait time.Duratio
 			l := fmt.Sprintf("%d. %s%s", i+1, reqName(r), r.Priority)
 			switch {
 			case r.OfferedTo != "":
-				l += "（已送给 " + h.sessionName(ctx, r.OfferedTo) + "，还没开工）"
+				l += "（已送给 " + h.sessionName(ctx, r.OfferedTo) + "，还没开始处理）"
 			case r.StageStatus == store.StageLocked:
 				l += "（计划里前一阶段还没通过）"
 			}
@@ -194,7 +194,7 @@ func (h *Hub) pmOverview(ctx context.Context, x store.Session, wait time.Duratio
 	return out
 }
 
-// sortQueue：按优先级、编号排（和派活顺序一致）。
+// sortQueue：按优先级、编号排（和指派顺序一致）。
 func sortQueue(list []store.Requirement) {
 	sort.SliceStable(list, func(i, j int) bool {
 		a, b := prioRank[list[i].Priority], prioRank[list[j].Priority]
@@ -409,7 +409,7 @@ func (h *Hub) aideOverview(ctx context.Context, x store.Session) []ovSection {
 			case store.ReviewReviewing:
 				waiting = append(waiting, reqName(r)+"：评审"+reviewerName(full.Review)+"在审")
 			case store.ReviewOverdue:
-				waiting = append(waiting, reqName(r)+"：评审"+reviewerName(full.Review)+"没按时交意见（已照常进用户的「要你处理」）")
+				waiting = append(waiting, reqName(r)+"：评审"+reviewerName(full.Review)+"没按时交意见（已照常进用户的「待处理」）")
 			}
 		}
 	}
@@ -434,7 +434,7 @@ func (h *Hub) aideOverview(ctx context.Context, x store.Session) []ovSection {
 				decs = append(decs, l)
 				continue
 			}
-			// 别的会话提的（R-272）：主助理订阅 decision 是为了查冲突，上一任下线期间新提的不会再叫醒谁，接任时一并列出
+			// 别的会话提的（R-272）：主助理订阅 decision 是为了查冲突，上一任下线期间新提的不会再唤醒谁，接任时一并列出
 			by := roles.Label(d.FromRole)
 			if by != "" {
 				by += " "

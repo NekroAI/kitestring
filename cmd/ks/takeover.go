@@ -12,7 +12,7 @@ import (
 )
 
 // runTakeover：ks takeover <身份>——在当前目录（项目目录）启动一个新的 claude（或 --tool codex）会话并带上接任提示（R-224）。
-// 新会话按提示运行 ks role <身份>，纸鸢在输出里附上上一任写好的交接，上一任自动卸任。
+// 新会话按提示运行 ks role <身份>，纸鸢在输出里附上上一任写好的交接，上一任自动交出身份。
 func runTakeover(args []string) error {
 	fs := flag.NewFlagSet("takeover", flag.ContinueOnError)
 	tool := fs.String("tool", "claude", "用哪个工具开新会话：claude | codex")

@@ -156,7 +156,7 @@ func TestIdleOffline(t *testing.T) {
 	// 主助理收到一条只告知
 	e.waitFor("主助理收到下线通知", func() bool {
 		for _, d := range tellsTo(e, "claude:io-aide") {
-			if d.FYI && strings.Contains(d.Answer, "交接下线") {
+			if d.FYI && strings.Contains(d.Answer, "交接后下线") {
 				return true
 			}
 		}

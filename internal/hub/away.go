@@ -58,15 +58,15 @@ type pushMeta struct {
 func eventClass(event string) (pushClass, string) {
 	switch event {
 	case notify.EventDecisionRaised:
-		return pushHard, "要你决策"
+		return pushHard, awayEventReason["decision"]
 	case notify.EventRequirementReview:
-		return pushMerge, "待验收"
+		return pushMerge, awayEventReason["review"]
 	case notify.EventWaitingReply:
-		return pushSkip, "会话在等回复"
+		return pushSkip, awayEventReason["reply"]
 	case notify.EventWaitingApproval:
-		return pushUnsure, "终端里等待授权"
+		return pushUnsure, awayEventReason["approval"]
 	case notify.EventDeviceLost:
-		return pushUnsure, "设备离线"
+		return pushUnsure, awayEventReason["device"]
 	}
 	return pushUnsure, ""
 }
@@ -130,15 +130,15 @@ func (h *Hub) awayGate(projectID string, m notify.Message, path string, pm pushM
 // decisionPush 给一条刚提出的决策定推送分级。
 func (h *Hub) decisionPush(ctx context.Context, d store.Decision) pushMeta {
 	if h.proxyQuiet(ctx, d) {
-		return pushMeta{Class: pushSkip, Ref: d.Code, Reason: "在授权范围内，主助理可以代答", Quiet: true}
+		return pushMeta{Class: pushSkip, Ref: d.Code, Reason: awayProxyQuiet, Quiet: true}
 	}
 	if why := hardOf(d); why != "" {
 		return pushMeta{Class: pushHard, Ref: d.Code, Reason: why}
 	}
 	if w := unsureOf(d); w != "" {
-		return pushMeta{Class: pushUnsure, Ref: d.Code, Reason: "提到「" + w + "」，主助理拿不准"}
+		return pushMeta{Class: pushUnsure, Ref: d.Code, Reason: awayUnsure(w)}
 	}
-	why := "主助理没有代答授权"
+	why := awayNoGrant
 	if d.ProjectID != "" {
 		if g, err := h.proxyGrant(ctx, d.ProjectID); err == nil {
 			if _, r := holdReason(d, g, time.Now()); r != "" {
@@ -258,7 +258,7 @@ func (h *Hub) openAwayGrants(ctx context.Context, a store.Away) []string {
 			continue
 		}
 		if a.Scope == store.AwayScopeNone {
-			if _, err := h.tell(ctx, key, p.ID, "", fmt.Sprintf("用户暂时离开了（%s，预估%s）。这次不代答：决策都留给用户；待验收的需求请照常写验收建议（away_set / ks away advise），拿不准、要用户尽快看的决策用 ks away escalate 推给用户。", a.Code, expect)); err != nil {
+			if _, err := h.tell(ctx, key, p.ID, "", fmt.Sprintf("用户暂时离开了（%s，预估 %s）。这次不代答：决策都留给用户；待验收的需求请照常写验收建议（away_set / ks away advise），拿不准、要用户尽快看的决策用 ks away escalate 推给用户。", a.Code, expect)); err != nil {
 				h.log.Warn("通知主助理离开开始失败", "err", err)
 			}
 			continue
@@ -267,14 +267,14 @@ func (h *Hub) openAwayGrants(ctx context.Context, a store.Away) []string {
 			note := fmt.Sprintf("%s 已有生效中的授权窗口 %s（至 %s），沿用", p.Name, g.Code, g.ExpiresAt.Local().Format("01-02 15:04"))
 			if cg, _ := clampGrantByAway(g, a.Scope); cg.MaxRisk != g.MaxRisk {
 				note += fmt.Sprintf("；离开期间代答上限收窄到%s（离开结束后恢复为%s）", riskZh[cg.MaxRisk], riskZh[g.MaxRisk])
-				if _, err := h.tell(ctx, key, p.ID, "", fmt.Sprintf("用户暂时离开了（%s，预估%s）。离开期间你的代答上限收窄到%s（取离开范围与窗口 %s 中较严的）；离开结束后恢复。", a.Code, expect, riskZh[cg.MaxRisk], g.Code)); err != nil {
+				if _, err := h.tell(ctx, key, p.ID, "", fmt.Sprintf("用户暂时离开了（%s，预估 %s）。离开期间你的代答上限收窄到%s（取离开范围与窗口 %s 中较严的）；离开结束后恢复。", a.Code, expect, riskZh[cg.MaxRisk], g.Code)); err != nil {
 					h.log.Warn("通知主助理代答上限收窄失败", "err", err)
 				}
 			}
 			notices = append(notices, note)
 			continue
 		}
-		intro := fmt.Sprintf("用户暂时离开了（%s，预估%s）。", a.Code, expect)
+		intro := fmt.Sprintf("用户暂时离开了（%s，预估 %s）。", a.Code, expect)
 		if _, err := h.openGrant(ctx, p.ID, key, a.Scope, a.StartedAt.Add(grantMaxSpan), a.ID, intro); err != nil {
 			h.log.Warn("离开时开授权窗口失败", "err", err, "project", p.Name)
 		}
@@ -293,10 +293,10 @@ func (h *Hub) openGrant(ctx context.Context, projectID, key, maxRisk string, exp
 			return g, err
 		}
 	}
-	h.tellGrant(ctx, g, intro+fmt.Sprintf("用户开了参谋授权窗口 %s：到 %s 前，你可以代用户答复本项目%s以内的决策（decision_answer / ks decision answer，必须写理由、你自己的风险判断和硬规则核对 hard_check，风险档取提问方与你判断中更高的一档）。硬规则永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、门禁 / 评测、不可逆或对外操作、验收。拿不准的留给用户，要用户尽快看的用 ks away escalate 推给用户。",
+	h.tellGrant(ctx, g, intro+fmt.Sprintf("用户开了授权窗口 %s：到 %s 前，你可以代用户答复本项目%s以内的决策（decision_answer / ks decision answer，必须写理由、你自己的风险判断和硬规则核对 hard_check，风险档取提问方与你判断中更高的一档）。硬规则永不代答：批准方案 / 计划、设计选型、产品方向、语义 / 接口 / 权限变更、门禁 / 评测、不可逆或对外操作、验收。拿不准的留给用户，要用户尽快看的用 ks away escalate 推给用户。",
 		g.Code, g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]))
 	h.scheduleGrantExpiry(g)
-	h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户开了参谋授权窗口 %s：授权给 %s，到 %s 前可代答%s以内的决策。", g.Code, h.actorName(ctx, g.SessionKey), g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]), g.SessionKey) // 被授权的主助理已由 tellGrant 告诉（R-171）
+	h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户开了授权窗口 %s：授权给%s，到 %s 前可代答%s以内的决策。", g.Code, h.actorName(ctx, g.SessionKey), g.ExpiresAt.Local().Format("01-02 15:04"), riskZh[g.MaxRisk]), g.SessionKey) // 被授权的主助理已由 tellGrant 告诉（R-171）
 	return g, nil
 }
 
@@ -316,7 +316,7 @@ func (h *Hub) closeAwayGrants(ctx context.Context, a store.Away) {
 			continue
 		}
 		h.tellGrant(ctx, g, fmt.Sprintf("用户结束了离开（%s），授权窗口 %s 随之撤销：从现在起不能再代答决策。", a.Code, g.Code))
-		h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户结束了离开，授权窗口 %s（授权给 %s）随之撤销，不能再代答决策。", g.Code, h.actorName(ctx, g.SessionKey)), g.SessionKey)
+		h.onSettingsChanged(ctx, g.ProjectID, fmt.Sprintf("用户结束了离开，授权窗口 %s（授权给%s）随之撤销，不能再代答决策。", g.Code, h.actorName(ctx, g.SessionKey)), g.SessionKey)
 	}
 }
 
@@ -372,21 +372,11 @@ func (h *Hub) awayTick(ctx context.Context, now time.Time) {
 		return
 	}
 	text := settledText(r.Counts)
-	_ = h.store.AddAwayEvent(ctx, a.ID, store.AwayEvent{At: now, Tier: store.AwaySettled, Event: "settled", Title: "能处理的都处理完了", Body: text})
+	_ = h.store.AddAwayEvent(ctx, a.ID, store.AwayEvent{At: now, Tier: store.AwaySettled, Event: "settled", Title: awaySettledTitle, Body: text})
 	h.broker.publish("away")
 	if first {
-		h.sendNotify("", notify.Message{Event: notify.EventAwaySettled, Title: "离开期间能处理的都处理完了", Body: text, Group: "kitestring"}, "/", pushMeta{Class: pushUnsure, Reason: "阶段性报告"})
+		h.sendNotify("", notify.Message{Event: notify.EventAwaySettled, Title: awaySettledPushTitle, Body: text, Group: "kitestring"}, "/", pushMeta{Class: pushUnsure, Reason: awaySettledReason})
 	}
-}
-
-func settledText(c awayCounts) string {
-	parts := []string{fmt.Sprintf("交付 %d 条", c.Delivered), fmt.Sprintf("主助理替你处理 %d 件", c.Proxied+c.Released+c.Advised)}
-	if c.Waiting > 0 {
-		parts = append(parts, fmt.Sprintf("还在等你 %d 件", c.Waiting))
-	} else {
-		parts = append(parts, "没有等你的事")
-	}
-	return strings.Join(parts, "，") + "。"
 }
 
 // ---------- 时段报告 ----------
@@ -552,7 +542,7 @@ func trimPeriod(pr *MorningReport, until time.Time) {
 	pr.Releases = rel
 }
 
-// awayWaiting 列出项目里还在等你的事：待决策、待批准的计划、受阻、待验收。
+// awayWaiting 列出项目里还在等你的事：待答复决策、待批准的计划、受阻、待验收。
 func (h *Hub) awayWaiting(ctx context.Context, p store.Project, g *store.Grant, adv map[string]store.Advice, pushed map[string]bool) ([]awayItem, error) {
 	out := []awayItem{}
 	pending, err := h.store.PendingDecisions(ctx, p.ID)
@@ -565,9 +555,9 @@ func (h *Hub) awayWaiting(ctx context.Context, p store.Project, g *store.Grant, 
 		case hardOf(d) != "":
 			it.First, it.Reason = true, hardOf(d)
 		case unsureOf(d) != "":
-			it.First, it.Reason = true, "提到「"+unsureOf(d)+"」，主助理拿不准"
+			it.First, it.Reason = true, awayUnsure(unsureOf(d))
 		case g == nil || g.Status != store.GrantActive:
-			it.First, it.Reason = true, "主助理没有代答授权"
+			it.First, it.Reason = true, awayNoGrant
 		default:
 			if _, why := holdReason(d, *g, time.Now()); why != "" {
 				it.First, it.Reason = true, why
@@ -581,7 +571,7 @@ func (h *Hub) awayWaiting(ctx context.Context, p store.Project, g *store.Grant, 
 	}
 	for _, x := range plans {
 		if x.Status == store.PlanDraft && x.CreatedBy == "agent" {
-			out = append(out, awayItem{Kind: "plan", Ref: x.Code, Title: x.Title, ProjectName: p.Name, First: true, Reason: "批准计划只由用户操作", Pushed: pushed[x.Code]})
+			out = append(out, awayItem{Kind: "plan", Ref: x.Code, Title: x.Title, ProjectName: p.Name, First: true, Reason: awayPlanUserOnly, Pushed: pushed[x.Code]})
 		}
 	}
 	reqs, err := h.store.ListRequirements(ctx, p.ID, []string{store.ReqReview, store.ReqBlocked})
@@ -596,11 +586,11 @@ func (h *Hub) awayWaiting(ctx context.Context, p store.Project, g *store.Grant, 
 		it := awayItem{Kind: "review", Ref: x.Code, Title: x.Title, ProjectName: p.Name}
 		switch a, ok := adv[x.Code]; {
 		case !ok:
-			it.First, it.Reason = true, "还没有主助理的验收建议"
+			it.First, it.Reason = true, awayNoAdvice
 		case a.Verdict == store.AdviceReturn:
-			it.First, it.Reason = true, "主助理建议退回："+a.Reason
+			it.First, it.Reason = true, awayAdvice(false, a.Reason)
 		default:
-			it.Reason = "主助理建议通过：" + a.Reason
+			it.Reason = awayAdvice(true, a.Reason)
 		}
 		out = append(out, it)
 	}
@@ -803,23 +793,10 @@ func (h *Hub) registerAgentAway(api huma.API) {
 			if reason == "" {
 				return nil, huma.Error400BadRequest("要写理由：reason（ks 用 --reason），一句话说明为什么要用户尽快看")
 			}
-			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "新决策 " + d.Code, Body: brief(d.Question, 80) + "（主助理：" + brief(reason, 60) + "）", Group: "kitestring"}, decisionPath(d),
-				pushMeta{Class: pushUnsure, Ref: d.Code, Reason: "主助理拿不准：" + brief(reason, 60)})
+			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: pushDecisionTitle(d.Code), Body: awayEscalatedBody(d.Question, reason), Group: "kitestring"}, decisionPath(d),
+				pushMeta{Class: pushUnsure, Ref: d.Code, Reason: awayEscalatedReason(reason)})
 			out := &morningSetOut{}
 			out.Body.Message = "已推给用户：" + d.Code + "。"
 			return out, nil
 		})
-}
-
-// userStatusZh 是你改需求状态时报告里的一句话。
-func userStatusZh(from, to string) string {
-	switch {
-	case from == store.ReqReview && to == store.ReqDone:
-		return "验收通过"
-	case from == store.ReqReview && to == store.ReqInProgress:
-		return "退回修改"
-	case from == store.ReqDraft && to == store.ReqReady:
-		return "放行（草稿 → 待开始）"
-	}
-	return reqStatusZh[from] + " → " + reqStatusZh[to]
 }

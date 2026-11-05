@@ -15,7 +15,7 @@ import (
 // 事件订阅（R-164）：ks wait --on decision,review,blocked,stage 订阅本项目别的会话发生的事；不给 --on 时沿用上次，
 // 从没给过时按身份默认（主助理：decision、review、settings；主调度：review、blocked、settings；顾问（R-190 起）、开发等其它身份不订阅，和以前一样不被打扰）。
 // 发生时给在线的订阅者送一条团队消息（kind = tell，R-135 的通道）：挂着 ks wait 的立刻被唤醒，正在跑的下次挂上时收到；
-// 只是告诉，不是派活（R-150）；不进用户收件箱、不推送。事件是自己引起的不送；onReview 已经告诉过的 PM 不重复送。
+// 只是告诉，不是指派（R-150）；不进用户收件箱、不推送。事件是自己引起的不送；onReview 已经告诉过的 PM 不重复送。
 
 // defaultWaitOn 是各身份的默认订阅。
 func defaultWaitOn(role string) []string {
@@ -51,7 +51,7 @@ func (h *Hub) broadcast(ctx context.Context, kind, projectID, reqID, text string
 		h.log.Warn("查事件订阅者失败", "err", err)
 		return
 	}
-	msg := fmt.Sprintf("你订阅的事件（%s · %s）：%s 只是告诉你，不是派给你的活；需要时自己看，不必回复。", kind, waitOnZh[kind], text)
+	msg := fmt.Sprintf("你订阅的事件（%s · %s）：%s 只是告知，不是指派；需要时自己查看，不必回复。", kind, waitOnZh[kind], text)
 	for _, s := range subs {
 		if s.Key == "" || slices.Contains(skip, s.Key) || !slices.Contains(effectiveWaitOn(s.Role, s.WaitOn), kind) {
 			continue
@@ -62,7 +62,7 @@ func (h *Hub) broadcast(ctx context.Context, kind, projectID, reqID, text string
 	}
 }
 
-// notifyAssigner（R-160）：派活关系本身保证通知——事件 kind 发生在需求 r 上，派活的 PM（没有派活记录时为项目 PM）
+// notifyAssigner（R-160）：指派关系本身保证通知——事件 kind 发生在需求 r 上，指派的 PM（没有指派记录时为项目 PM）
 // 即使没订阅 kind 也要收到一条团队消息。订阅了的由 broadcast 照常送，这里不重复送。返回已处理的 PM 键（供 broadcast 跳过，没有为空）。
 func (h *Hub) notifyAssigner(ctx context.Context, kind string, r store.Requirement, by, text string) string {
 	to := h.assigner(ctx, r)
@@ -76,9 +76,9 @@ func (h *Hub) notifyAssigner(ctx context.Context, kind string, r store.Requireme
 			}
 		}
 	}
-	msg := fmt.Sprintf("这条需求是你派的（%s · %s）：%s 只是告诉你，不是派给你的活；不必回复。", kind, waitOnZh[kind], text)
+	msg := fmt.Sprintf("这条需求是你指派的（%s · %s）：%s 只是告知，不是指派；不必回复。", kind, waitOnZh[kind], text)
 	if _, err := h.tellFor(kind)(ctx, to, r.ProjectID, r.ID, msg); err != nil {
-		h.log.Warn("通知派活的 PM 失败", "err", err, "to", to)
+		h.log.Warn("通知指派的 PM 失败", "err", err, "to", to)
 	}
 	return to
 }
@@ -93,27 +93,27 @@ func (h *Hub) actorName(ctx context.Context, key string) string {
 		return "会话（" + key + "）"
 	}
 	who := "会话"
-	if l := roles.Label(x.Role); l != "" {
-		who = l
+	if n := roles.Name(x.Role); n != "" {
+		who = n
 	}
-	return who + " " + sessionName(x)
+	return who + sessionName(x)
 }
 
 // onDecisionRaised：有会话向用户提了决策。
 func (h *Hub) onDecisionRaised(ctx context.Context, d store.Decision) {
-	text := fmt.Sprintf("%s向用户提了决策 %s「%s」", h.actorName(ctx, d.SessionKey), d.Code, brief(d.Question, 60))
+	text := fmt.Sprintf("%s提出了决策 %s「%s」", h.actorName(ctx, d.SessionKey), d.Code, brief(d.Question, 60))
 	if d.RequirementID != "" {
 		if r, err := h.store.GetRequirement(ctx, d.RequirementID); err == nil {
 			text += "（" + r.Code + "）"
 		}
 	}
-	text += "，等用户在 Kitestring 上决策。"
+	text += "，等待用户答复。"
 	if h.proxyQuiet(ctx, d) {
-		text += "用户开着参谋授权窗口，这条在范围内：被授权的主助理可以用 decision_answer 代答（写理由和自己的风险判断），拿不准就留给用户。"
+		text += "用户开着授权窗口，这条在范围内：被授权的主助理可以用 decision_answer 代答（写理由和自己的风险判断），拿不准就留给用户。"
 	}
 	skip := []string{d.SessionKey}
 	if d.RequirementID != "" {
-		// 派活关系本身保证通知（R-160）：针对这条需求的决策一定告诉派活的 PM，不看它订阅了什么；之后不再按订阅重复送。
+		// 指派关系本身保证通知（R-160）：针对这条需求的决策一定告诉指派的 PM，不看它订阅了什么；之后不再按订阅重复送。
 		if r, err := h.store.GetRequirement(ctx, d.RequirementID); err == nil {
 			skip = append(skip, h.notifyAssigner(ctx, protocol.OnDecision, r, d.SessionKey, text))
 		}
@@ -128,9 +128,9 @@ func (h *Hub) onStatusEvent(ctx context.Context, r store.Requirement, by, told s
 		h.broadcast(ctx, protocol.OnReview, r.ProjectID, r.ID, reviewNote(r, by), by, told)
 	case store.ReqBlocked:
 		text := fmt.Sprintf("%s把 %s「%s」设为受阻。", h.actorName(ctx, by), r.Code, brief(r.Title, 40))
-		text += "卡在哪见需求时间线 / 证据（req_get）。"
+		text += "受阻原因见需求时间线 / 证据（req_get）。"
 		skip := []string{by}
-		// 派活关系本身保证通知（R-160）：受阻一定告诉派活的 PM，不看它订阅了什么；之后不再按订阅重复送。
+		// 指派关系本身保证通知（R-160）：受阻一定告诉指派的 PM，不看它订阅了什么；之后不再按订阅重复送。
 		skip = append(skip, h.notifyAssigner(ctx, protocol.OnBlocked, r, by, text))
 		h.broadcast(ctx, protocol.OnBlocked, r.ProjectID, r.ID, text, skip...)
 	}
@@ -144,11 +144,11 @@ func (h *Hub) onStageSubmitted(ctx context.Context, x store.Plan, seq int, by st
 			title = "「" + brief(st.Title, 30) + "」"
 		}
 	}
-	text := fmt.Sprintf("%s交了计划 %s「%s」第 %d 阶段%s的阶段小结，等用户验收（plan_get 查看）。", h.actorName(ctx, by), x.Code, brief(x.Title, 30), seq, title)
+	text := fmt.Sprintf("%s提交了计划 %s「%s」第 %d 阶段%s的阶段小结，等待用户验收。用 plan_get 查看。", h.actorName(ctx, by), x.Code, brief(x.Title, 30), seq, title)
 	h.broadcast(ctx, protocol.OnStage, x.ProjectID, "", text, by)
 }
 
-// 用户在网页上做的事（R-171）：R-164 的订阅只覆盖会话引起的事件，用户改设置 / 改需求状态也要让相关会话知道，不必再回终端手动叫醒。
+// 用户在网页上做的事（R-171）：R-164 的订阅只覆盖会话引起的事件，用户改设置 / 改需求状态也要让相关会话知道，不必再回终端手动唤醒。
 // 同样是团队消息：不进用户收件箱、不推送；已经被别的通知告诉过的会话不重复送。
 
 // onSettingsChanged：用户改了项目 p 的设置，text 写清楚改了什么。送给订阅了 settings 的在线会话（主调度、主助理默认订阅）；skip 里是已被告知的。
@@ -172,22 +172,22 @@ func projectSettingsChanges(before, after store.Project) []string {
 	flip(before.CommitOnAccept, after.CommitOnAccept, "「验收通过后自动提交」（需求验收通过时提示主调度提交属于它的改动，不推送）")
 	flip(before.AutoDispatch, after.AutoDispatch, "「自动派发」（会话空闲时自动送达排给它的待开始需求）")
 	if roles.NormPolicy(before.ModelPolicy) != roles.NormPolicy(after.ModelPolicy) {
-		out = append(out, fmt.Sprintf("用户把项目 %s 的「子任务模型策略」从「%s」改为「%s」：之后派子任务按新的倾向选模型（身份提示词已更新，ks role 重新读到的就是新的）。", before.Name, roles.PolicyName(before.ModelPolicy), roles.PolicyName(after.ModelPolicy)))
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「子任务模型策略」从「%s」改为「%s」。之后派子任务按新的倾向选模型（身份提示词已更新，ks role 重新读到的就是新的）。", before.Name, roles.PolicyName(before.ModelPolicy), roles.PolicyName(after.ModelPolicy)))
 	}
 	if before.StallLimit() != after.StallLimit() {
-		out = append(out, fmt.Sprintf("用户把项目 %s 的「进行中停滞」从 %d 分钟改为 %d 分钟：进行中的需求这么久没动静、又没有会话在跑，就进用户的「要你处理」。", before.Name, int(before.StallLimit()/time.Minute), int(after.StallLimit()/time.Minute)))
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「进行中停滞」从 %d 分钟改为 %d 分钟。进行中的需求这么久无进展、又没有会话运行，就进入用户的「待处理」。", before.Name, int(before.StallLimit()/time.Minute), int(after.StallLimit()/time.Minute)))
 	}
 	if before.StartNudgeLimit() != after.StartNudgeLimit() {
-		out = append(out, fmt.Sprintf("用户把项目 %s 的「指派后未开始处理」从 %d 分钟改为 %d 分钟：指派送达后这么久没开始处理，纸鸢再提醒接收方一次；再过同样时长仍没开始，进用户的「待处理」。", before.Name, int(before.StartNudgeLimit()/time.Minute), int(after.StartNudgeLimit()/time.Minute)))
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「指派后未开始处理」从 %d 分钟改为 %d 分钟。指派送达后这么久没开始处理，纸鸢再提醒接收方一次；再过同样时长仍没开始，进用户的「待处理」。", before.Name, int(before.StartNudgeLimit()/time.Minute), int(after.StartNudgeLimit()/time.Minute)))
 	}
 	if before.IdleOfflineLimit() != after.IdleOfflineLimit() {
-		out = append(out, fmt.Sprintf("用户把项目 %s 的「空等下线时长」从 %s 改为 %s：常驻会话连续空等累计超过它，醒来时写交接下线。", before.Name, humanMinutes(before.IdleOfflineLimit()), humanMinutes(after.IdleOfflineLimit())))
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「空等下线时长」从 %s 改为 %s。常驻会话连续待命累计超过这个时长，恢复时写交接后下线。", before.Name, humanMinutes(before.IdleOfflineLimit()), humanMinutes(after.IdleOfflineLimit())))
 	}
 	if before.WaitMax() != after.WaitMax() {
-		out = append(out, fmt.Sprintf("用户把项目 %s 的「单次等待上限」从 %d 分钟改为 %d 分钟：ks wait 每次最多等这么久。", before.Name, int(before.WaitMax()/time.Minute), int(after.WaitMax()/time.Minute)))
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「单次等待上限」从 %d 分钟改为 %d 分钟。之后 ks wait 每次最多等这么久。", before.Name, int(before.WaitMax()/time.Minute), int(after.WaitMax()/time.Minute)))
 	}
 	if before.DevIdleLimit() != after.DevIdleLimit() {
-		out = append(out, fmt.Sprintf("用户把项目 %s 的「开发待命超时」从 %d 分钟改为 %d 分钟：开发会话待命超过它、手上没有排给它的需求时，纸鸢提示收尾，不再给它送订阅事件。", before.Name, int(before.DevIdleLimit()/time.Minute), int(after.DevIdleLimit()/time.Minute)))
+		out = append(out, fmt.Sprintf("用户把项目 %s 的「开发待命超时」从 %d 分钟改为 %d 分钟。开发会话待命超过这个时长、又没有指派的需求时，纸鸢提示结束，不再送订阅事件。", before.Name, int(before.DevIdleLimit()/time.Minute), int(after.DevIdleLimit()/time.Minute)))
 	}
 	return out
 }
@@ -199,7 +199,7 @@ func onOff(b bool) string {
 	return "关"
 }
 
-// onUserStatusChanged：用户在网页上把需求 before 改成了 after.Status。送给派活的 PM、关联的在线会话和订阅了 status 的会话；
+// onUserStatusChanged：用户在网页上把需求 before 改成了 after.Status。送给指派的 PM、关联的在线会话和订阅了 status 的会话；
 // 关联的主助理 / 顾问只是记下需求的（R-198）：订阅了 status 的由 broadcast 照常送，没订阅的只静默入队、不唤醒 ks wait；
 // skip 里是别的通知已经告诉过的会话（比如撤回放行时已经通知了在做的会话）。
 func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requirement, skip ...string) {
@@ -224,7 +224,7 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 			return
 		}
 	}
-	// 用户把已指派的需求从待开始改为进行中（R-278）：用户在等执行方开始处理，要动手那一档叫醒它（主调度自己是接收方时同样）
+	// 用户把已指派的需求从待开始改为进行中（R-278）：用户在等执行方开始处理，要动手那一档唤醒它（主调度自己是接收方时同样）
 	if before.Status == store.ReqReady && after.Status == store.ReqInProgress {
 		told = append(told, h.wakeExecutors(ctx, before, after, text, told)...)
 	}
@@ -233,7 +233,7 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 			told = append(told, to)
 		}
 	}
-	msg := fmt.Sprintf("你关联的需求有变化（status · %s）：%s 只是告诉你，不是派给你的活；需要时自己看，不必回复。", waitOnZh[protocol.OnStatus], text)
+	msg := fmt.Sprintf("你关联的需求有变化（status · %s）：%s 只是告知，不是指派；需要时自己查看，不必回复。", waitOnZh[protocol.OnStatus], text)
 	statusSubs := map[string]bool{} // 会被下面 broadcast 送到 status 的会话
 	if subs, err := h.store.WaitSubscribers(ctx, after.ProjectID); err == nil {
 		for _, s := range subs {
@@ -253,7 +253,7 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 			continue // 订阅了 status：下面的 broadcast 送（同样不唤醒）
 		}
 		if !recorderOnly(x.Role) && (after.Status == store.ReqDraft || after.Status == store.ReqShelved) {
-			send = h.tell // 执行方手上的需求被用户撤回 / 搁置：要停下，照常叫醒
+			send = h.tell // 执行方手上的需求被用户撤回 / 搁置：要停下，照常唤醒
 		}
 		if _, err := send(ctx, k, after.ProjectID, after.ID, msg); err != nil {
 			h.log.Warn("通知关联会话需求状态变化失败", "err", err, "to", k)
@@ -264,8 +264,8 @@ func (h *Hub) onUserStatusChanged(ctx context.Context, before, after store.Requi
 	h.broadcast(ctx, protocol.OnStatus, after.ProjectID, after.ID, text, told...)
 }
 
-// wakeExecutors：用户在网页上把已指派的需求从待开始改为进行中时，叫醒执行方（R-278）——
-// 指派的接收方（before.OfferedTo），以及关联这条需求、负责做的会话（主助理 / 顾问这种只是记下需求的除外）。返回叫醒了谁。
+// wakeExecutors：用户在网页上把已指派的需求从待开始改为进行中时，唤醒执行方（R-278）——
+// 指派的接收方（before.OfferedTo），以及关联这条需求、负责做的会话（主助理 / 顾问这种只是记下需求的除外）。返回唤醒了谁。
 func (h *Hub) wakeExecutors(ctx context.Context, before, after store.Requirement, text string, told []string) []string {
 	keys := []string{}
 	if before.OfferedTo != "" {
@@ -291,7 +291,7 @@ func (h *Hub) wakeExecutors(ctx context.Context, before, after store.Requirement
 			continue
 		}
 		if _, err := h.tell(ctx, k, after.ProjectID, after.ID, msg); err != nil {
-			h.log.Warn("叫醒执行方失败", "err", err, "to", k)
+			h.log.Warn("唤醒执行方失败", "err", err, "to", k)
 			continue
 		}
 		woke = append(woke, k)
@@ -309,7 +309,7 @@ func (h *Hub) onUserPlanEvent(ctx context.Context, x store.Plan, text string) {
 	h.broadcast(ctx, protocol.OnStatus, x.ProjectID, "", text, x.OwnerSession)
 }
 
-// commitHint（R-192）：需求 r 刚被验收通过，项目开了「验收通过后自动提交」时，给负责的主调度（派活的 PM，没有时为项目 PM）送一条团队消息，
+// commitHint（R-192）：需求 r 刚被验收通过，项目开了「验收通过后自动提交」时，给负责的主调度（指派的 PM，没有时为项目 PM）送一条团队消息，
 // 请它按项目设置提交属于这条需求的改动、不推送。纸鸢自己不执行 git，只送消息；head 是同一事件已有的状态说明，合成一条送出，调用方不用再给它送 status 通知。
 // 返回已送到的会话键（没送为空）。
 func (h *Hub) commitHint(ctx context.Context, r store.Requirement, head string) string {
@@ -327,7 +327,7 @@ func (h *Hub) commitHint(ctx context.Context, r store.Requirement, head string) 
 	if head != "" {
 		head += " "
 	}
-	msg := fmt.Sprintf("团队消息（status · %s）：%s%s 已验收，按项目设置提交属于它的改动（不推送）。只提交这条需求的文件，提交说明用中文并带需求编号 %s；提交由你来做，纸鸢不动仓库。", waitOnZh[protocol.OnStatus], head, r.Code, r.Code)
+	msg := fmt.Sprintf("团队消息（status · %s）：%s%s 已验收，按项目设置提交这条需求的改动（不推送）。只提交这条需求的文件，提交说明用中文并带需求编号 %s；提交由你来做，纸鸢不动仓库。", waitOnZh[protocol.OnStatus], head, r.Code, r.Code)
 	if _, err := h.tell(ctx, to, r.ProjectID, r.ID, msg); err != nil {
 		h.log.Warn("送验收后提交提示失败", "err", err, "to", to)
 		return ""

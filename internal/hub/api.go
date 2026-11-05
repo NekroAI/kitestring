@@ -365,7 +365,7 @@ type projectIn struct {
 		ModelPolicy *string `json:"model_policy,omitempty" enum:"economy,balanced,quality" doc:"子任务模型策略：economy 经济 / balanced 均衡（默认）/ quality 质量优先"`
 		// DevIdleMinutes：开发会话待命超时（R-229）：待命超过这么多分钟、手上没有排给它的需求，就提示收尾、不再送订阅事件；不传表示不修改
 		DevIdleMinutes *int `json:"dev_idle_minutes,omitempty" minimum:"5" maximum:"720" doc:"开发会话待命超时的分钟数（5～720，默认 30）"`
-		// StallMinutes：进行中停滞（R-243）：进行中的需求这么久没动静、又没有会话在跑，就进「要你处理」；不传表示不修改
+		// StallMinutes：进行中停滞（R-243）：进行中的需求这么久没动静、又没有会话在跑，就进「待处理」；不传表示不修改
 		StallMinutes *int `json:"stall_minutes,omitempty" minimum:"30" maximum:"2880" doc:"进行中需求停滞的分钟数（30～2880，默认 120）"`
 		// StartNudgeMinutes：指派后未开始处理（R-278）：送达后这么久没开始处理就再提醒接收方一次，再过同样时长进「待处理」；不传表示不修改
 		StartNudgeMinutes *int `json:"start_nudge_minutes,omitempty" minimum:"2" maximum:"240" doc:"指派送达后未开始处理的提醒分钟数（2～240，默认 10）"`
@@ -851,7 +851,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				Sent int `json:"sent"`
 			}
 		}, error) {
-			n, err := h.sendPush(ctx, notify.Message{Event: "test", Title: "纸鸢 · 测试推送", Body: "如果你看到这条通知，说明这台设备的系统推送已开启。"}, "/settings?tab=notify", in.Body.Ref)
+			n, err := h.sendPush(ctx, notify.Message{Event: "test", Title: pushTestTitle, Body: pushTestBody}, "/settings?tab=notify", in.Body.Ref)
 			if err != nil {
 				return nil, huma.Error502BadGateway("推送服务拒绝了这条推送：" + err.Error())
 			}
@@ -873,7 +873,7 @@ func (h *Hub) registerWeb(api huma.API) {
 			if !notify.HasChannel(in.Body) {
 				return nil, huma.Error400BadRequest("未配置任何渠道")
 			}
-			if err := notify.Send(ctx, in.Body, notify.Message{Title: "Kitestring 测试通知", Body: "如果你看到这条消息，说明通知渠道配置正确。", Group: "kitestring"}); err != nil {
+			if err := notify.Send(ctx, in.Body, notify.Message{Title: notifyTestTitle, Body: notifyTestBody, Group: "kitestring"}); err != nil {
 				return nil, huma.Error502BadGateway(err.Error())
 			}
 			return ok(), nil
@@ -1047,7 +1047,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				if r.Status == store.ReqDraft && cur.Release != nil {
 					told = withdrawTold(cur) // 撤回放行时已经告诉过在做的会话，不重复送
 				}
-				h.onUserStatusChanged(ctx, cur, r, told...) // 派活的 PM、关联会话和订阅者知道用户改了状态（R-171）
+				h.onUserStatusChanged(ctx, cur, r, told...) // 指派的 PM、关联会话和订阅者知道用户改了状态（R-171）
 			}
 			// 用户在网页上改了内容（R-249 P4）：改验收标准要动手，改标题 / 描述只告知
 			var changed []string
@@ -1221,7 +1221,7 @@ type agentDecisionIn struct {
 type linkOut struct {
 	Body struct {
 		store.Requirement
-		Notices []string `json:"notices,omitempty" doc:"提示，例如草稿没放行、只关联未开工（R-166）"`
+		Notices []string `json:"notices,omitempty" doc:"提示，例如草稿没放行、只关联未开始处理（R-166）"`
 	}
 }
 
@@ -1301,7 +1301,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				SessionKey string `json:"session_key,omitempty"`
 				Reason     string `json:"reason,omitempty" doc:"放行（设为 ready）时必填的理由；改回草稿时可写撤回原因（R-166）；搁置（shelved）时必填的搁置原因（R-157）"`
 				ReasonKind string `json:"reason_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他；不填按其他算"`
-				WaitingOn  string `json:"waiting_on,omitempty" doc:"设为 blocked 时在等的需求或决策编号（R-x / D-x，R-243）：顺着等待关系落到用户身上的那一条会在「要你处理」写明「R-x 在等这条」；不写时这条受阻需求本身进「要你处理」"`
+				WaitingOn  string `json:"waiting_on,omitempty" doc:"设为 blocked 时在等的需求或决策编号（R-x / D-x，R-243）：顺着等待关系落到用户身上的那一条会在「待处理」写明「R-x 在等这条」；不写时这条受阻需求本身进「待处理」"`
 			}
 		}) (*reqOut, error) {
 			if in.Body.WaitingOn != "" && in.Body.Status != store.ReqBlocked {
@@ -1374,7 +1374,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				told := ""
 				if r.Status == store.ReqReview {
 					h.autoReview(ctx, r, in.Body.SessionKey)         // 本项目有在线评审就自动派验证任务（R-232）
-					told = h.onReview(ctx, r.ID, in.Body.SessionKey) // 告诉派活的 PM（R-135）
+					told = h.onReview(ctx, r.ID, in.Body.SessionKey) // 告诉指派的 PM（R-135）
 				}
 				if full, err := h.store.GetRequirement(ctx, r.ID); err == nil {
 					h.onStatusEvent(ctx, full, in.Body.SessionKey, told) // 订阅了交验收 / 受阻的会话（R-164）
@@ -1389,7 +1389,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				}
 				// 交给了评审的，等评审交意见（或 30 分钟到点）再推给用户（R-237）
 				if !r.Review.Holding() {
-					h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: "待验收 " + r.Code, Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
+					h.sendNotify(r.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: pushReviewTitle(r.Code), Body: r.Title, Group: "kitestring"}, "/requirements?r="+r.Code)
 				}
 			}
 			return &reqOut{Body: r}, nil
@@ -1560,7 +1560,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			go h.aiOnDecision(d)
 			h.onDecisionRaised(ctx, d) // 订阅了 decision 的会话（R-164）
 			// 授权窗口开着、参谋可以代答的决策先不推送（不吵醒你，R-163）；仍留在收件箱里。离开期间按硬规则 / 拿不准分级（R-210）
-			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "新决策 " + d.Code, Body: d.Question, Group: "kitestring"}, decisionPath(d), h.decisionPush(ctx, d))
+			h.sendNotify(d.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: pushDecisionTitle(d.Code), Body: d.Question, Group: "kitestring"}, decisionPath(d), h.decisionPush(ctx, d))
 			out := &decisionRaisedOut{}
 			out.Body.Decision = d
 			out.Body.BlockWarnings = warns

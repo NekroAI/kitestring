@@ -23,8 +23,8 @@ import (
 type Turn struct {
 	ID    string     `json:"id" doc:"轮的标识：turn_id；没有时用提问事件的 ID"`
 	Start time.Time  `json:"start"`
-	End   *time.Time `json:"end,omitempty" doc:"这一轮结束（Stop）的时间；还在跑时省略"`
-	// Source：terminal 你在终端说的；web 你在网页上发的话叫醒 / 送进了这一轮；wake 纸鸢送达（团队消息、你的答复……）；
+	End   *time.Time `json:"end,omitempty" doc:"这一轮结束（Stop）的时间；运行中时省略"`
+	// Source：terminal 你在终端说的；web 你在网页上发的话送达并开启了这一轮；wake 纸鸢送达（团队消息、你的答复……）；
 	// 空 = 没有提问记录（老会话、或这一页最早的半轮）
 	Source string `json:"source" enum:",terminal,web,wake"`
 	Prompt string `json:"prompt,omitempty" doc:"你在终端说的话（截断）；纸鸢送达的消息开启的一轮为空"`
@@ -86,7 +86,7 @@ const (
 )
 
 // WebDelivery 是网页上发的一句话的送达状态。
-// woke 已叫醒，它在处理；queued 排到下一轮（它在跑 / 没挂 ks wait）；offline 已下线或已结束；delivered 已送进某一轮；closed 已关闭不再送。
+// woke 已唤醒，它在处理；queued 排到下一轮（它在跑 / 没挂 ks wait）；offline 已下线或已结束；delivered 已送进某一轮；closed 已关闭不再送。
 type WebDelivery struct {
 	Status  string `json:"status" enum:"woke,queued,offline,delivered,closed"`
 	Reason  string `json:"reason"`

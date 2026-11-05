@@ -43,7 +43,7 @@ type commentIn struct {
 		Files          []string `json:"files,omitempty" doc:"附图 ID（先上传到 /api/agent/files）"`
 		Blocks         []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据：checklist / compare / figure / flow / metrics / scope / options / table；不合法的块丢掉并在 block_warnings 里说明，留言照常保存"`
 		SessionClaimed bool     `json:"session_claimed,omitempty" doc:"session_key 是调用方用 --session 自报的（自动识别不到当前会话时，R-248）：hub 校验它是没结束、属于某个项目的会话"`
-		AgentID        string   `json:"agent_id,omitempty" doc:"留言的子任务（一次性子代理）的 agent_id；会话主线程为空"`
+		AgentID        string   `json:"agent_id,omitempty" doc:"留言的子任务的 agent_id；会话主线程为空"`
 	}
 }
 

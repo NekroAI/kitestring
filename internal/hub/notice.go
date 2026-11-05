@@ -7,7 +7,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 只告知的记录不进「待转交」（R-265）：答复后目标会话已结束的记录，会出现在「要你处理」里等你转交或关闭。
+// 只告知的记录不进「待转交」（R-265）：答复后目标会话已结束的记录，会出现在「待处理」里等你转交或关闭。
 // 其中计划进展有一类只是告知、已经没有人要接着做什么——计划已全部完成（或已搁置）时的进展，
 // 以及同一计划后来又有了新进展的旧进展（新的那条才是现状；与 staleDelivered 不补发旧进展同一口径）。
 // 这类记录目标会话结束时纸鸢直接关掉，原因写明，不转给现任主调度：计划完成是你刚验收的结果，计划页上看得到，
@@ -63,7 +63,7 @@ func (h *Hub) noticeSweep(ctx context.Context) int {
 // NoticeSweep 供测试跑一次只告知记录的清理。
 func (h *Hub) NoticeSweep(ctx context.Context) int { return h.noticeSweep(ctx) }
 
-// noticeWatch 每分钟清一次（目标会话可能在记录产生之后才结束）；启动时先清一次，老数据（如 D-964）随之离开「要你处理」。
+// noticeWatch 每分钟清一次（目标会话可能在记录产生之后才结束）；启动时先清一次，老数据（如 D-964）随之离开「待处理」。
 func (h *Hub) noticeWatch(ctx context.Context) {
 	h.noticeSweep(ctx)
 	t := time.NewTicker(time.Minute)

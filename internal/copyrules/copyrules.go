@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -100,5 +101,55 @@ func (r *Rules) CheckLabels(name string, labels map[string]string, exact bool, s
 		}
 	}
 	sort.Strings(bad)
+	return bad
+}
+
+var (
+	itRe      = regexp.MustCompile(`(^|[^其])它`)
+	spacingRe = regexp.MustCompile(`\p{Han}[A-Za-z0-9]|[A-Za-z0-9]\p{Han}`)
+	abbrevRe  = regexp.MustCompile(`\d+\s?[smhd]\s?前`)
+	clauseRe  = regexp.MustCompile(`[，。；]`)
+)
+
+// Check 按 copywriting.md 第 6 节检查一段显示在网页上的文字（与前端 copy.test.ts 的 RULES 相同，按钮长度除外），
+// 返回全部问题，没有问题时为空。
+func (r *Rules) Check(s string) []string {
+	var bad []string
+	if f := r.ForbiddenIn(s); len(f) > 0 {
+		bad = append(bad, "禁用词 "+strings.Join(f, "，"))
+	}
+	if itRe.MatchString(s) {
+		bad = append(bad, "用了「它」，写会话名或省略")
+	}
+	rs := []rune(s)
+	for i, c := range rs {
+		if c != '·' {
+			continue
+		}
+		if i == 0 || i == len(rs)-1 || rs[i-1] != ' ' || rs[i+1] != ' ' {
+			bad = append(bad, "「·」两侧要各留一个半角空格")
+			break
+		}
+		lo, hi := max(0, i-8), min(len(rs), i+9)
+		if clauseRe.MatchString(string(rs[lo:i])) || clauseRe.MatchString(string(rs[i+1:hi])) {
+			bad = append(bad, "「·」连接了句子，改用逗号或句号")
+			break
+		}
+	}
+	if strings.ContainsAny(s, "“”\"") {
+		bad = append(bad, "引号用「」")
+	}
+	if strings.Contains(s, "……") || strings.Contains(s, "...") {
+		bad = append(bad, "省略号只用单个「…」，列举用「等」")
+	}
+	if strings.ContainsAny(s, "！!") {
+		bad = append(bad, "不用感叹号")
+	}
+	if m := spacingRe.FindString(s); m != "" {
+		bad = append(bad, "中英文 / 数字之间要留空格：「"+m+"」")
+	}
+	if abbrevRe.MatchString(s) {
+		bad = append(bad, "相对时间用中文单位：「5 分钟前」")
+	}
 	return bad
 }

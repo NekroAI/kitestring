@@ -59,7 +59,7 @@ type Project struct {
 	ModelPolicy string `json:"model_policy"`
 	// DevIdleMinutes：开发会话待命超过多少分钟、且没有排给它的需求，就算「待命超时」（R-229）：提示收尾、不再送订阅事件；0 按默认 30 分钟
 	DevIdleMinutes int `json:"dev_idle_minutes"`
-	// StallMinutes：进行中的需求多久没动静、又没有会话在跑，就进「要你处理」（R-243）；0 按默认 120 分钟
+	// StallMinutes：进行中的需求多久没动静、又没有会话在跑，就进「待处理」（R-243）；0 按默认 120 分钟
 	StallMinutes int `json:"stall_minutes"`
 	// StartNudgeMinutes：指派的需求送达后多久没开始处理，就再提醒接收方一次（要动手那一档），再过同样时长进「待处理」（R-278）；0 按默认 10 分钟
 	StartNudgeMinutes int `json:"start_nudge_minutes"`

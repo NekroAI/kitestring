@@ -132,7 +132,7 @@ func TestRecommendDevs(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "auto"}, &as); err != nil {
 		t.Fatal(err)
 	}
-	if as.Assigned || !strings.Contains(as.Message, "子代理") || !strings.Contains(as.Message, "dev_recommend") {
+	if as.Assigned || !strings.Contains(as.Message, "子任务") || !strings.Contains(as.Message, "dev_recommend") {
 		t.Fatalf("应未派出、引导用子代理：%+v", as)
 	}
 	quiet("auto 派活找不到开发")
@@ -161,11 +161,11 @@ func TestRecommendDevs(t *testing.T) {
 		t.Fatalf("批准前不应出现横幅：%+v", p.NeedDevs)
 	}
 	answer(d.Code, "批准")
-	got("已批准开 2 个 Dev 会话", "ks role dev", "https://ks.example/projects/")
+	got("已批准开启 2 个开发会话", "ks role dev", "https://ks.example/projects/")
 	if p := project(); p.NeedDevs != 2 || p.NeedAt == nil {
 		t.Fatalf("批准后项目页应显示接入语横幅：%+v", p)
 	}
-	approved := wakeFor(d.Code, "批准（用户批准了开 2 个 Dev 会话的推荐）", "req_assign")
+	approved := wakeFor(d.Code, "批准（用户批准了开启 2 个开发会话的推荐）", "req_assign")
 
 	// 两个开发上线：够数，横幅清除
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:dev", "role": "dev"}, nil); err != nil {
@@ -188,13 +188,13 @@ func TestRecommendDevs(t *testing.T) {
 	if p := project(); p.NeedDevs != 0 {
 		t.Fatalf("拒绝后不应出现横幅：%+v", p.NeedDevs)
 	}
-	rejected := wakeFor(d.Code, "拒绝（用户明确拒绝了开 1 个 Dev 会话的推荐）", "这两条子代理就够了", "继续用一次性子代理")
+	rejected := wakeFor(d.Code, "拒绝（用户明确拒绝了开启 1 个开发会话的推荐）", "这两条子代理就够了", "继续用一次性子任务")
 
 	// ③ 推荐 → 超时：PM 收到「超时未批，按规则视为拒绝」，之后不能再答
 	hub.SetRequestUnit(300 * time.Millisecond)
 	defer hub.SetRequestUnit(time.Minute)
 	d = recommend(map[string]any{"count": 1, "reason": "R-6 想并行", "minutes": 1}).Decision
-	timedOut := wakeFor(d.Code, "超时未批，按规则视为拒绝开 1 个 Dev 会话的推荐", "不是用户明确拒绝", "继续用一次性子代理")
+	timedOut := wakeFor(d.Code, "超时未批，按规则视为拒绝开启 1 个开发会话的推荐", "不是用户明确拒绝", "继续用一次性子任务")
 	var cur store.Decision
 	if err := c.Do(ctx, "GET", "/agent/decisions/"+d.Code, nil, &cur); err != nil {
 		t.Fatal(err)

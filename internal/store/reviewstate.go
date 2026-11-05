@@ -8,28 +8,28 @@ import (
 	"github.com/NekroAI/kitestring/internal/blocks"
 )
 
-// 评审验证（R-232、R-237，D-714）：待验收的需求交给了评审（交验收时纸鸢自动派给在线评审，或用户 / 主调度手动交），
-// 评审交意见前它不进用户的「要你处理」，需求上写「评审中」和谁在审；评审交了意见再进验收卡，卡上带评审结论。
-// 评审不是固定关卡：没有交给评审的需求照旧；ReviewWaitLimit 内没动静（或评审会话已结束）就照常弹给用户，标「评审未完成」；
+// 评审验证（R-232、R-237，D-714）：待验收的需求交给了评审（交验收时纸鸢自动指派给在线评审，或用户 / 主调度手动交），
+// 评审交意见前它不进用户的「待处理」，需求上写「评审中」和谁在审；评审交了意见再进验收卡，卡上带评审结论。
+// 评审不是固定关卡：没有提交评审的需求照旧；ReviewWaitLimit 内没动静（或评审会话已结束）就照常弹给用户，标「评审未完成」；
 // 需求页上随时可以直接验收。不加项目开关，状态全部从记录推出来（审查任务、审查意见、状态变更），不另存。
 
-// ReviewWaitLimit 是交给评审后最多等多久（30 分钟），过了照常弹给用户。测试里可以改短。
+// ReviewWaitLimit 是提交评审后最多等多久（30 分钟），过了照常弹给用户。测试里可以改短。
 var ReviewWaitLimit = 30 * time.Minute
 
 // 评审验证的三种状态。
 const (
-	ReviewReviewing = "reviewing" // 评审中：评审交意见前不进「要你处理」
+	ReviewReviewing = "reviewing" // 评审中：评审交意见前不进「待处理」
 	ReviewOverdue   = "overdue"   // 评审未完成：等满 ReviewWaitLimit 或评审会话已结束，照常弹给用户
 	ReviewDone      = "done"      // 评审交了意见：进验收卡，带结论
 )
 
-// ReviewState 是一条待验收需求这一轮的评审验证情况；没交给评审、也没收到审查意见时为空。
+// ReviewState 是一条待验收需求这一轮的评审验证情况；没提交评审、也没收到审查意见时为空。
 type ReviewState struct {
-	State        string     `json:"state" enum:"reviewing,overdue,done" doc:"reviewing 评审中（不进「要你处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见"`
+	State        string     `json:"state" enum:"reviewing,overdue,done" doc:"reviewing 评审中（不进「待处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见"`
 	SessionKey   string     `json:"session_key" doc:"在审的评审会话"`
 	SessionTitle string     `json:"session_title,omitempty" doc:"评审会话的标题"`
-	Auto         bool       `json:"auto,omitempty" doc:"交验收时纸鸢自动派给在线评审的（否则是手动交给评审）"`
-	AskedAt      *time.Time `json:"asked_at,omitempty" doc:"交给评审的时间"`
+	Auto         bool       `json:"auto,omitempty" doc:"交验收时纸鸢自动提交评审的（否则是用户手动提交评审）"`
+	AskedAt      *time.Time `json:"asked_at,omitempty" doc:"提交评审的时间"`
 	DueAt        *time.Time `json:"due_at,omitempty" doc:"等到什么时候：过了照常弹给用户，标「评审未完成」"`
 	ReviewID     string     `json:"review_id,omitempty" doc:"done：评审交的那条意见"`
 	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`
@@ -39,10 +39,10 @@ type ReviewState struct {
 	Total        int        `json:"total" doc:"done：验证清单总条数（没交清单为 0）"`
 }
 
-// Holding：评审交意见前，这条需求不进用户的「要你处理」。
+// Holding：评审交意见前，这条需求不进用户的「待处理」。
 func (s *ReviewState) Holding() bool { return s != nil && s.State == ReviewReviewing }
 
-// ReviewAuto 是自动派出的审查任务在 Decision.AssignedBy 上的标记（手动交给评审的为空）。
+// ReviewAuto 是自动派出的审查任务在 Decision.AssignedBy 上的标记（手动提交评审的为空）。
 const ReviewAuto = "auto"
 
 // reviewScore：审查意见的清单统计。

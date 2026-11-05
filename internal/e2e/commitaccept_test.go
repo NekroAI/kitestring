@@ -12,7 +12,7 @@ import (
 )
 
 // 验收通过后自动提交（R-192）：项目开关默认关；打开后需求验收通过，负责的主调度收到一条合成消息
-// （状态变化 + 「R-x 已验收，按项目设置提交属于它的改动（不推送）」），不再另收 status 通知；
+// （状态变化 + 「R-x 已验收，按项目设置提交这条需求的改动（不推送）」），不再另收 status 通知；
 // 被退回的不提示；关闭时验收通过只收到原来的状态通知、没有提交提示。
 func TestCommitOnAccept(t *testing.T) {
 	e := setup(t)
@@ -58,7 +58,7 @@ func TestCommitOnAccept(t *testing.T) {
 		if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review", "session_key": "claude:dev"}, nil); err != nil {
 			t.Fatal(err)
 		}
-		woke(t, pmW, "已交验收", r.Code)
+		woke(t, pmW, "已提交验收", r.Code)
 		return r
 	}
 	review := func(ref, verdict, comment string) {
@@ -94,7 +94,7 @@ func TestCommitOnAccept(t *testing.T) {
 	pmW = parkWait(t, e, c, "claude:pm")
 	n = tellCount(e, "claude:pm")
 	review(r2.Code, "accept", "")
-	text = woke(t, pmW, r2.Code+" 已验收，按项目设置提交属于它的改动（不推送）", "从待验收改为已完成", "中文", "需求编号")
+	text = woke(t, pmW, r2.Code+" 已验收，按项目设置提交这条需求的改动（不推送）", "从待验收改为已完成", "中文", "需求编号")
 	time.Sleep(200 * time.Millisecond)
 	if got := tellCount(e, "claude:pm"); got != n+1 {
 		t.Fatalf("验收通过 PM 只应收到一条（提交提示与状态通知合成）：%d → %d", n, got)

@@ -9,7 +9,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
-// 会话交接（R-224）：旧会话写结构化交接，新会话声明同一身份时自动注入，旧会话随之卸任。
+// 会话交接（R-224）：旧会话写结构化交接，新会话声明同一身份时自动注入，旧会话随之交出身份。
 
 const (
 	HandoffRequested = "requested" // 用户点了「交接」，等旧会话写
@@ -148,7 +148,7 @@ func (s *Store) HandoffsOf(ctx context.Context, key string) ([]Handoff, error) {
 	return out, rows.Err()
 }
 
-// SetRetired 标记会话已交接卸任（R-224）；retired = false 时清除（重新声明身份）。
+// SetRetired 标记会话已交接交出身份（R-224）；retired = false 时清除（重新声明身份）。
 func (s *Store) SetRetired(ctx context.Context, key string, retired bool) error {
 	v := ""
 	if retired {
@@ -175,7 +175,7 @@ func (p Project) DevIdleLimit() time.Duration {
 // StallDefault 是进行中需求「停滞」的默认时长（R-243），项目设置里可调。
 const StallDefault = 120 * time.Minute
 
-// StallLimit：进行中的需求多久没动静、又没有会话在跑，就进「要你处理」（R-243）。
+// StallLimit：进行中的需求多久没动静、又没有会话在跑，就进「待处理」（R-243）。
 func (p Project) StallLimit() time.Duration {
 	if p.StallMinutes > 0 {
 		return time.Duration(p.StallMinutes) * time.Minute
@@ -200,7 +200,7 @@ func (s *Store) SetIdle(ctx context.Context, key string, at time.Time) error {
 	return err
 }
 
-// ClearIdle 清除待命超时（派活、点名给它的消息、你给它发消息时）；返回原来是不是待命超时。
+// ClearIdle 清除待命超时（指派、点名给它的消息、你给它发消息时）；返回原来是不是待命超时。
 func (s *Store) ClearIdle(ctx context.Context, key string) (bool, error) {
 	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET idle_at = '' WHERE key = ? AND idle_at <> ''`, key)
 	if err != nil {

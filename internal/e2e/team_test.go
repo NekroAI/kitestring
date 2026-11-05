@@ -77,7 +77,7 @@ func TestTeamAssign(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r1.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "auto", "comment": "和导入是一套"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !out.Assigned || out.To != "claude:dev-b" || !strings.Contains(out.Message, "马上开工") {
+	if !out.Assigned || out.To != "claude:dev-b" || !strings.Contains(out.Message, "马上开始处理") {
 		t.Fatalf("auto 应派给待命的 dev-b：%+v", out)
 	}
 	select {
@@ -137,7 +137,7 @@ func TestTeamAssign(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r3.Code+"/assign", map[string]any{"session_key": "claude:pm", "reason": "做法明确", "to": "auto"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Assigned || !strings.Contains(out.Message, "没有在线的 Dev") {
+	if out.Assigned || !strings.Contains(out.Message, "没有在线的开发会话") {
 		t.Fatalf("没有在线开发时不应派出：%+v", out)
 	}
 }

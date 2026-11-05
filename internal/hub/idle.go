@@ -13,10 +13,10 @@ import (
 // （待开始 / 进行中 / 受阻）时，纸鸢记下「待命超时」：
 //   - 泳道和会话面板标「待命超时 · 建议收尾」，项目主调度收到一条只告知的说明，由主调度 / 用户决定收尾；
 //   - 之后不再给它送订阅事件（ks wait --on 的那些，store.WaitSubscribers 直接不列它）——不是降为只告知：
-//     再派活时不会一次灌进一堆过期事件；
-//   - 点名给它的照常叫醒：用户对它所提决策的答复、指名发给它的团队消息、派给它的活、你在终端给它发消息，这些同时清除待命超时，
+//     再指派时不会一次灌进一堆过期事件；
+//   - 点名给它的照常唤醒：用户对它所提决策的答复、指名发给它的团队消息、指派给它的活、你在终端给它发消息，这些同时清除待命超时，
 //     恢复正常；有排给它的需求时（自动派发、用户关联）每分钟的巡查也会清除。
-// 卸任（被 ks role 接任）的会话同样不在订阅者里，见 setRole（与 R-224 的交接卸任同一处，SetRetired）。
+// 交出身份（被 ks role 接任）的会话同样不在订阅者里，见 setRole（与 R-224 的交接交出身份同一处，SetRetired）。
 
 // devIdleWatch 每分钟查一次待命超时的开发会话。
 func (h *Hub) devIdleWatch(ctx context.Context) {
@@ -82,8 +82,8 @@ func (h *Hub) devIdleSweep(ctx context.Context, now time.Time) {
 		}
 		h.sessionChanged(x.Key)
 		if pm := h.projectPM(ctx, x.ProjectID); pm != "" {
-			text := fmt.Sprintf("Dev %s 已待命 %s、手上没有排给它的需求：纸鸢之后不再给它送订阅事件（点名给它的消息、派活照常送到），泳道上标了「待命超时 · 建议收尾」。"+
-				"近期没有要派给它的活，就请用户在它的终端里收尾结束；有新活照常 req_assign，派活后自动恢复。", sessionName(x), humanMinutes(now.Sub(x.StateSince)))
+			text := fmt.Sprintf("开发 %s 已待命 %s，没有指派的需求。纸鸢之后不再给这个会话送订阅事件（点名的消息、指派照常送到），泳道上标了「待命超时」。"+
+				"近期没有要指派的需求，就请用户在这个会话的终端里结束；有新需求照常 req_assign，指派后自动恢复。", sessionName(x), humanMinutes(now.Sub(x.StateSince)))
 			if _, err := h.tellQuiet(ctx, pm, x.ProjectID, "", text); err != nil {
 				h.log.Warn("通知主调度开发待命超时失败", "err", err)
 			}
@@ -91,7 +91,7 @@ func (h *Hub) devIdleSweep(ctx context.Context, now time.Time) {
 	}
 }
 
-// clearIdle 清除会话的待命超时（R-229）：派活、点名给它的消息、你在终端给它发消息、它重新声明身份时。
+// clearIdle 清除会话的待命超时（R-229）：指派、点名给它的消息、你在终端给它发消息、它重新声明身份时。
 func (h *Hub) clearIdle(ctx context.Context, key string) {
 	if key == "" {
 		return

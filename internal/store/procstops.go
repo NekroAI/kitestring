@@ -20,7 +20,7 @@ type ProcStop struct {
 	Cmd        string    `json:"cmd"`
 	Project    string    `json:"project"`
 	SessionKey string    `json:"session_key"`
-	State      string    `json:"state" doc:"停止时的状态：orphan 孤儿 / detached 已脱离"`
+	State      string    `json:"state" doc:"停止时的状态：orphan 残留进程 / detached 已脱离"`
 	By         string    `json:"by" doc:"谁停的：user = 你（网页）"`
 	Signal     string    `json:"signal" doc:"SIGTERM / SIGKILL；没发信号时为空"`
 	Result     string    `json:"result" enum:"exited,running,killed,failed,refused,gone"`
@@ -86,7 +86,7 @@ func (s *Store) ProjectForPath(ctx context.Context, deviceID, cwd string) (id, n
 	return id, name
 }
 
-// ProcIgnore 是一次忽略孤儿进程（R-209）。UndoneAt / EndedAt 都为空时有效。
+// ProcIgnore 是一次忽略残留进程（R-209）。UndoneAt / EndedAt 都为空时有效。
 type ProcIgnore struct {
 	ID         string     `json:"id"`
 	DeviceID   string     `json:"device_id"`

@@ -149,9 +149,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "from_role", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "from_agent", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "reply_to", "TEXT NOT NULL DEFAULT ''"},
-	// 交接卸任（R-224）：被新会话接任后不再挂 ks wait、不再被唤醒；重新声明身份时清除
+	// 交接交出身份（R-224）：被新会话接任后不再挂 ks wait、不再被唤醒；重新声明身份时清除
 	{"sessions", "retired_at", "TEXT NOT NULL DEFAULT ''"},
-	// 待命超时（R-229）：开发会话待命超过项目设置的时长、手上没有排给它的需求时记下；派活 / 点名给它的消息 / 你给它发消息时清除
+	// 待命超时（R-229）：开发会话待命超过项目设置的时长、手上没有排给它的需求时记下；指派 / 点名给它的消息 / 你给它发消息时清除
 	{"sessions", "idle_at", "TEXT NOT NULL DEFAULT ''"},
 	{"projects", "dev_idle_minutes", "INTEGER NOT NULL DEFAULT 0"},
 	// 空等下线（R-272）：常驻会话连续空等的起点；累计超过项目设置的时长后写交接下线（offline_at），新会话接任时清除
@@ -178,7 +178,7 @@ var addedColumns = []struct{ table, column, ddl string }{
 	// 受阻指向（R-243）：受阻的需求在等哪条需求 / 决策（R-x / D-x）、为什么；离开受阻时清空
 	{"requirements", "blocked_on", "TEXT NOT NULL DEFAULT ''"},
 	{"requirements", "blocked_reason", "TEXT NOT NULL DEFAULT ''"},
-	// 进行中停滞（R-243）：进行中的需求多久没动静、也没有会话在跑，就进「要你处理」；0 按默认 2 小时
+	// 进行中停滞（R-243）：进行中的需求多久没动静、也没有会话在跑，就进「待处理」；0 按默认 2 小时
 	{"projects", "stall_minutes", "INTEGER NOT NULL DEFAULT 0"},
 	// 会话通信（R-249）：团队消息「只告知」改用明确的列（老数据按标题回填）；一次广播拆成每个收件人一行，用 broadcast_id 归组
 	{"decisions", "fyi", "INTEGER NOT NULL DEFAULT 0"},

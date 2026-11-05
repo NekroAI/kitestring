@@ -57,7 +57,7 @@ type Session struct {
 	Activity    []int      `json:"activity"`    // 最近 60 分钟每 5 分钟的事件数，旧 → 新
 	Title       string     `json:"title"`       // 模型生成的会话标题
 	DigestDone  string     `json:"digest_done"` // 等你回复时：这一轮做了什么（模型摘要）
-	// ReplyAsk：最后一条回复像在问你时它的最后一段（R-117）。只给 ks wait 提醒会话「请提决策」用，不给网页（R-239：要你处理只认明确记录）
+	// ReplyAsk：最后一条回复像在问你时它的最后一段（R-117）。只给 ks wait 提醒会话「请提决策」用，不给网页（R-239：待处理只认明确记录）
 	ReplyAsk         string           `json:"-"`
 	StartedAt        time.Time        `json:"started_at"`
 	LastActiveAt     time.Time        `json:"last_active_at"`
@@ -71,14 +71,14 @@ type Session struct {
 	ToolsStale       string           `json:"tools_stale"`                               // 会话里的 Kitestring 工具（MCP）是升级前的版本时为该版本，最新时为空（R-59）
 	ContextTokens    int              `json:"context_tokens"`                            // 最近一轮结束时的上下文 token 数（R-60）
 	ContextMax       int              `json:"context_max"`                               // 上下文窗口；不知道时为 0
-	Background       bool             `json:"background"`                                // 桌面应用自己在后台发起的任务（如 Codex 的项目建议），不是你的对话：不进工作台与各种计数、不参与派活（R-179）
+	Background       bool             `json:"background"`                                // 桌面应用自己在后台发起的任务（如 Codex 的项目建议），不是你的对话：不进工作台与各种计数、不参与指派（R-179）
 	Role             string           `json:"role" enum:",aide,advisor,reviewer,pm,dev"` // 会话身份（R-82、R-190）：主助理 aide、顾问 advisor、评审 reviewer、主调度 pm、开发 dev，空为无身份
 	RecentTools      []ToolAct        `json:"recent_tools"`                              // 最近几次工具调用，旧 → 新（工作台滚动展示）
 	Ticks            []time.Time      `json:"ticks"`                                     // 主会话近 10 分钟的工具调用时刻，旧 → 新，最多 maxSessionTicks 个（工作台时间线，R-170）
 	Tasks            []BgTask         `json:"tasks"`                                     // 在跑的后台任务：后台 shell 与子代理（R-162），开始早的在前
 	Requirements     []RequirementRef `json:"requirements"`
 	PendingDecisions int              `json:"pending_decisions"`
-	RetiredAt        *time.Time       `json:"retired_at,omitempty"` // 被新会话接任后卸任的时间（R-224、R-229）：不再挂 ks wait、不再被唤醒
+	RetiredAt        *time.Time       `json:"retired_at,omitempty"` // 被新会话接任后交出身份的时间（R-224、R-229）：不再挂 ks wait、不再被唤醒
 	IdleAt           *time.Time       `json:"idle_at,omitempty"`    // 开发会话待命超时的时间（R-229）：待命超过项目设置的时长、没有排给它的需求；提示收尾，不再送订阅事件
 	// 空等下线（R-272）：常驻会话连续空等（ks wait 超时续等，期间没有要动手的事、你也没发消息）的起点
 	IdleWaitSince *time.Time `json:"idle_wait_since,omitempty"`
@@ -208,7 +208,7 @@ func (s *Store) GetSession(ctx context.Context, key string) (Session, error) {
 	return x, err
 }
 
-// ListSessions 列出 activeWithin 内活跃过的会话，以及更早但仍有待决策的会话。
+// ListSessions 列出 activeWithin 内活跃过的会话，以及更早但仍有待答复决策的会话。
 // background 为假时不含后台任务（工作台与各种计数用），为真时只列后台任务（⌘K 里找它们，R-179）。
 func (s *Store) ListSessions(ctx context.Context, activeWithin time.Duration, background bool) ([]Session, error) {
 	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.background = ? AND (s.last_active_at >= ? OR s.key IN (SELECT session_key FROM decisions WHERE status = 'pending'))
@@ -440,7 +440,7 @@ type Subscriber struct {
 
 // WaitSubscribers 列出项目里在线（挂着 ks wait 或正在跑）、有身份或给过 --on 的会话，最近活跃的在前。
 // 一轮结束没挂 ks wait、已结束、失联、你标为已完成的不算：不在线时不给它攒消息。
-// 被接任卸任的、待命超时的开发也不算（R-229）：订阅事件直接不送（不是降为只告知），点名给它的消息照常走 tell。
+// 被接任的、待命超时的开发也不算（R-229）：订阅事件直接不送（不是降为只告知），点名给它的消息照常走 tell。
 func (s *Store) WaitSubscribers(ctx context.Context, projectID string) ([]Subscriber, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT key, role, wait_on FROM sessions
 		WHERE project_id = ? AND (role <> '' OR wait_on <> '') AND done_at = '' AND state NOT IN (?, ?)

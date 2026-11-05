@@ -38,7 +38,7 @@ func ValidPolicy(p string) bool {
 // PolicyName 返回档位中文名。
 func PolicyName(p string) string { return policyNames[NormPolicy(p)] }
 
-// usesPolicy：会派子任务（一次性子代理）的身份才带这一项；顾问、评审不派。
+// usesPolicy：会派子任务的身份才带这一项；顾问、评审不派。
 func usesPolicy(role string) bool { return role == PM || role == Aide || role == Dev }
 
 // PolicyNote 是写进身份提示词的「子任务模型策略」一段；身份不派子任务时为空。

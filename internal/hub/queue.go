@@ -14,9 +14,9 @@ import (
 
 // 待开始的需求排进会话的待办（R-66）。
 // 一条待开始的需求，归它关联的会话里最近活跃、还没结束 / 没被你收起的那个；没有这样的会话时归项目的 PM（R-85），
-// 连 PM 也没有就是“没人接手”。顾问 / 审查员不写代码、不派活，关联的只有它们时同样交给项目 PM（R-150），
+// 连 PM 也没有就是“没人接手”。顾问 / 审查员不写代码、不指派，关联的只有它们时同样交给项目 PM（R-150），
 // 你在网页上手动交给某个会话（交出、交给审查员）不受影响，
-// 在网页上提示你交出，不自动派给别的会话。
+// 在网页上提示你交出，不自动指派给别的会话。
 // 会话空闲（一轮结束或挂起等待）时，把排给它的需求整批送过去（最多 maxBatch 条），让它先通读、
 // 合并能一起做的、标出重复和依赖再动手；挂着 ks wait 的会话会被立刻唤醒，其它会话在你下次和它对话时收到。
 // 只有你放到待开始（或交出）的需求会排进来：Agent 自己记下的需求停在草稿，等你确认。
@@ -34,7 +34,7 @@ func (h *Hub) queueOwner(ctx context.Context, r store.Requirement) string {
 			continue
 		}
 		if !queueRole(x.Role) {
-			continue // 顾问 / 审查员记下或关联的需求不排给它们，改由 PM 派活（R-150）
+			continue // 顾问 / 审查员记下或关联的需求不排给它们，改由 PM 指派（R-150）
 		}
 		if best.Key == "" || x.LastActiveAt.After(best.LastActiveAt) {
 			best = x
@@ -153,7 +153,7 @@ func (h *Hub) dispatch(ctx context.Context, sessionKey string) {
 	h.broker.publish("requirements", "decisions", "sessions")
 }
 
-// kickDelay：你连着把几条需求放到待开始时攒一攒，让空闲的会话一次收到整批，而不是被第一条叫醒。
+// kickDelay：你连着把几条需求放到待开始时攒一攒，让空闲的会话一次收到整批，而不是被第一条唤醒。
 var kickDelay = 4 * time.Second
 
 // SetKickDelay 调整攒批的等待时间（测试用）。

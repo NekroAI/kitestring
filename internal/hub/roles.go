@@ -22,7 +22,7 @@ type roleOut struct {
 		Label      string   `json:"label" doc:"身份英文简写（Aide / Adv / Rev / PM / Dev）；无身份时为空"`
 		Name       string   `json:"name" doc:"身份中文名（主助理 / 顾问 / 评审 / 主调度 / 开发）；无身份时为空"`
 		Prompt     string   `json:"prompt" doc:"身份提示词，ks role 直接打印给 Agent"`
-		Demoted    []string `json:"demoted" doc:"因本次接任主调度 / 主助理被降为无身份并卸任的会话（R-229）"`
+		Demoted    []string `json:"demoted" doc:"因本次接任主调度 / 主助理被降为无身份的会话（R-229）"`
 		Handoff    bool     `json:"handoff" doc:"接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾"`
 	}
 }
@@ -61,7 +61,7 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 const roleUsage = "身份只能是 aide（主助理）、advisor（顾问）、reviewer（评审）、pm（主调度）、dev（开发）之一，也认中文名和别称（清除身份用 none）"
 
 // setRole 设置会话身份；接任主调度 / 主助理时通知被降级的旧会话，并把身份下发给相关设备。
-// 同项目同身份有上一任写好的交接时一并接任（R-224）：返回要注入的交接内容，上一任卸任。
+// 同项目同身份有上一任写好的交接时一并接任（R-224）：返回要注入的交接内容，上一任交出身份。
 // 上一任是空等下线的（R-272）：它积压的点名消息和未答决策转给本会话，返回转了几条。
 func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, int, error) {
 	if !roles.Valid(role) {
@@ -87,7 +87,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 		return nil, "", 0, err
 	}
 	if role != "" && x.RetiredAt != nil {
-		_ = h.store.SetRetired(ctx, key, false) // 卸任的会话重新声明身份：回到正常
+		_ = h.store.SetRetired(ctx, key, false) // 交出身份的会话重新声明身份：回到正常
 	}
 	if _, err := h.store.SetOffline(ctx, key, nil); err != nil { // 空等下线的会话重新声明身份：回到在线，空等从头算（R-272）
 		h.log.Warn("清除下线标记失败", "err", err)
@@ -112,11 +112,11 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 			continue
 		}
 		devices[old.DeviceID] = true
-		// 被接任一律卸任（R-229）：有没有写交接都走 R-224 同一处标记——ks wait 直接返回、订阅事件不再送，重新 ks role 时恢复
+		// 被接任一律交出身份（R-229）：有没有写交接都走 R-224 同一处标记——ks wait 直接返回、订阅事件不再送，重新 ks role 时恢复
 		handed := old.RetiredAt != nil
 		if !handed {
 			if err := h.store.SetRetired(ctx, k, true); err != nil {
-				h.log.Warn("标记旧会话卸任失败", "err", err)
+				h.log.Warn("标记旧会话已交接失败", "err", err)
 			}
 		}
 		answer := retiredNote(old.ProjectName, role, name, handed, h.pendingCodes(ctx, k))
@@ -132,7 +132,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 		h.sessionChanged(k)
 	}
 	for _, k := range demoted {
-		h.revokeGrantsOf(ctx, k, "原来的主助理已卸任") // 授权窗口跟着主助理走：卸任即失效，请用户给新主助理重新开（R-190）
+		h.revokeGrantsOf(ctx, k, "原来的主助理已被接任") // 授权窗口跟着主助理走：交出身份即失效，请用户给新主助理重新开（R-190）
 	}
 	if x.Role == roles.Aide && role != roles.Aide {
 		h.revokeGrantsOf(ctx, key, "这个会话不再是主助理")
@@ -147,7 +147,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 	return demoted, handoff, backlog, nil
 }
 
-// pendingCodes 列出会话提的、还等用户答复的决策编号（卸任通知里写明它们的去向，R-229）。
+// pendingCodes 列出会话提的、还等用户答复的决策编号（交出身份通知里写明它们的去向，R-229）。
 func (h *Hub) pendingCodes(ctx context.Context, key string) []string {
 	decs, err := h.store.ListDecisions(ctx, []string{store.DecPending}, -1)
 	if err != nil {
@@ -162,7 +162,7 @@ func (h *Hub) pendingCodes(ctx context.Context, key string) []string {
 	return out
 }
 
-// handover：卸任时交代谁接手。
+// handover：交出身份时交代谁接手。
 var handover = map[string]string{
 	roles.PM:   "派出去的需求由新主调度接手跟进。",
 	roles.Aide: "代答、放行、验收建议、离开期间小结由新主助理接手；你名下的授权窗口已失效。",

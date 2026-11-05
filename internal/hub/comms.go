@@ -16,7 +16,7 @@ import (
 // 通讯页（R-249 P5，D-1063 方案 B）：网页上只读地看本项目会话之间的消息、广播和送达状态。
 // 左栏是在线会话（同 ks team sessions，加今天收发几条）；右栏按时间列消息，一次广播合成一条、逐个收件人带送达状态。
 // 纸鸢自动发的提醒（没有发送方的团队消息）标 system，网页默认收起。
-// 没送到的分两组：等对方醒来（还会变，置顶、导航上标数字）和对方已结束 / 失联（永远送不到，单独折叠，D-1071）。
+// 没送到的分两组：待送达（还会变，置顶、导航上标数字）和对方已结束 / 失联（永远送不到，单独折叠，D-1071）。
 // 送达状态只从记录推，和 ks team sent 同一套（deliveryOf）。
 
 // commsLimit：一次最多列多少条消息（广播按收件人算）。
@@ -67,7 +67,7 @@ type commsOut struct {
 		Sessions    []CommsSession `json:"sessions" doc:"待命 → 运行中 → 空闲 → 已结束"`
 		Messages    []CommsMsg     `json:"messages" doc:"时间范围内的消息，新的在前（含纸鸢提醒）"`
 		Waiting     []CommsMsg     `json:"waiting" doc:"待送达的消息（不论等了多久），新的在前"`
-		Offline     []CommsMsg     `json:"offline" doc:"没送到、对方已结束或失联的消息，新的在前"`
+		Offline     []CommsMsg     `json:"offline" doc:"无法送达（对方已结束或失联）的消息，新的在前"`
 		Today       int            `json:"today" doc:"今天的会话消息条数（一次广播算一条，不含纸鸢提醒）"`
 		TodayCasts  int            `json:"today_broadcasts" doc:"今天的广播次数"`
 		TodaySystem int            `json:"today_system" doc:"今天的纸鸢提醒条数"`
@@ -88,7 +88,8 @@ var sysHead = regexp.MustCompile(`^[^（：]{2,12}（[a-z_]+ · ([^）]+)）：`
 var watchHead = regexp.MustCompile(`^你订阅的需求有变动（[^）]*）：`)
 
 // sysTails 是纸鸢提醒结尾写给 Agent 的操作提示，网页上不显示。
-var sysTails = []string{"细节见 ks req get", " 只是告诉你", "需要细节用 req_get", "等用户验收，不必回复", "不必回复；"}
+// 「 只是告诉你」是 R-277 之前的写法，老记录照样去掉。
+var sysTails = []string{"细节见 ks req get", " 只是告知", " 只是告诉你", "需要细节用 req_get", "等用户验收，不必回复", "不必回复；"}
 
 // keyParen 是正文里写给 Agent 的会话键「（claude:xxxx）」，网页上发送方已单独显示，去掉。
 var keyParen = regexp.MustCompile(`（[a-z][a-z-]*:[0-9A-Za-z-]{6,}）`)
@@ -118,9 +119,6 @@ func shrinkReqs(text string) string {
 
 var reqRef = regexp.MustCompile(`R-\d+「`)
 
-// sysLabel 把提醒前缀里写给会话的事件名换成网页上的类别名（docs/copywriting.md 3.7、5.4）。
-var sysLabel = map[string]string{"有人提决策": "新决策", "交验收": "待验收", "需求受阻": "受阻", "阶段交小结": "阶段小结", "用户改项目设置": "项目设置变更", "用户改需求状态": "需求状态变更"}
-
 // sysText 拆出纸鸢提醒的类别和正文。
 func sysText(d store.Decision) (label, text string) {
 	a := strings.TrimSpace(d.Answer)
@@ -132,11 +130,11 @@ func sysText(d store.Decision) (label, text string) {
 			label = v
 		}
 	case watchHead.MatchString(a):
-		label, text = "订阅提醒", a[len(watchHead.FindString(a)):]
+		label, text = commsWatchLabel, a[len(watchHead.FindString(a)):]
 	case d.Question == watchTellQ:
-		label, text = "订阅提醒", a
+		label, text = commsWatchLabel, a
 	default:
-		label, text = "通知", a
+		label, text = commsNoticeLabel, a
 	}
 	for _, t := range sysTails {
 		if i := strings.Index(text, t); i > 0 {

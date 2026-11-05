@@ -18,24 +18,23 @@ import (
 
 // 在线会话列表（R-249 P2）：ks team sessions / MCP team_sessions。
 // 列本项目（或所有项目）的会话：身份、所用工具、待命 / 忙 / 在线 / 离线、手上的需求、能否立即送达及原因。
-// 全部从会话记录推（原则第 11 条）：状态用 store.Session.Availability，能否叫醒用 wakeAbility。
-// 这两个函数之后的点对点消息、广播的送达状态（P3）会直接复用：wakeAbility 的 now 为真即「已送达 / 马上叫醒」，
-// 为假时 why 就是要写给发送方的「等对方下次醒来 / 对方不在线」原因。
+// 全部从会话记录推（原则第 11 条）：状态用 store.Session.Availability，能否唤醒用 wakeAbility。
+// 这两个函数之后的点对点消息、广播的送达状态（P3）会直接复用：wakeAbility 的 now 为真即「已送达 / 马上唤醒」，
+// 为假时 why 就是要写给发送方的「等对方下次醒来 / 无法送达」原因。
 
 // rosterLimit：带上已结束的会话时最多列多少个（最近活跃的在前）。
 const rosterLimit = 50
 
-// 会话可用状态的中文名，按 docs/copywriting.md 5.2（statusSets.roster）：「在线」并入「空闲」，会话不用「离线」
-var availLabel = map[string]string{store.AvailStandby: "待命", store.AvailBusy: "运行中", store.AvailOnline: "空闲", store.AvailOffline: "已结束"}
+// availLabel（会话可用状态的中文名）在 copy.go
 var availRank = map[string]int{store.AvailStandby: 0, store.AvailBusy: 1, store.AvailOnline: 2, store.AvailOffline: 3}
 
 // wakeAbility 判断现在发给会话 x 的消息能否立即送达，why 是一句给发送方看的原因。
 // 只看会话记录：状态、是否挂着 ks wait（Parked / ParkedUntil）、工具（tool）、是否已被接任（RetiredAt）。
-//   - 已结束 / 失联：离线，不能叫醒；
-//   - 已被接任卸任：不再挂 ks wait、不再被唤醒；
+//   - 已结束 / 失联：离线，不能唤醒；
+//   - 已被接任：不再挂 ks wait、不再被唤醒；
 //   - 正在跑（含等授权、在问用户、后台任务）：这一轮结束后收到；
 //   - Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 没过 ParkedUntil、DSH 插件待命：能立即送达；
-//   - 一轮结束没挂 ks wait：等用户下次发消息；Codex 写明它不能后台叫醒。
+//   - 一轮结束没挂 ks wait：等用户下次发消息；Codex 写明它不能后台唤醒。
 func wakeAbility(x store.Session) (now bool, why string) { return wakeAbilityAt(x, time.Now()) }
 
 // wakeAbilityAt 同 wakeAbility，时间由调用方给。

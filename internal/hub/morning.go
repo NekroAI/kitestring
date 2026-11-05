@@ -2,7 +2,6 @@ package hub
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -21,8 +20,8 @@ import (
 //     没有这样的窗口时，以参谋写总述的时间往前 12 小时；两者都没有就不出小结。
 //   - 参谋只写两样（away_set / ks away，旧名 morning_set / ks morning 仍可用；只有主助理能写）：一段总述，和逐条验收建议（写进对应需求）。
 //   - 其余由 hub 汇总：① 完成了什么（期间交了证据、现在待验收 / 已完成的需求，附提交）、团队消息；
-//     ② 替你定了什么（期间的 主助理代答、主调度 / 主助理 放行）；③④ 只给计数——未答决策与待验收本来就在「要你处理」里，不重复列。
-//   - 「要你处理」里的卡片挂两种标注：参谋的验收建议（advice）、参谋没代答的原因（holds）。
+//     ② 替你定了什么（期间的 主助理代答、主调度 / 主助理 放行）；③④ 只给计数——未答决策与待验收本来就在「待处理」里，不重复列。
+//   - 「待处理」里的卡片挂两种标注：参谋的验收建议（advice）、参谋没代答的原因（holds）。
 
 const (
 	morningTTL     = 12 * time.Hour // 窗口结束 / 总述写下超过这么久，小结不再出现
@@ -75,12 +74,12 @@ type MorningReport struct {
 	TellCount   int                `json:"tell_count"`
 	Proxied     []store.Decision   `json:"proxied" doc:"② 参谋代答的决策（新的在前）"`
 	Releases    []morningRelease   `json:"releases" doc:"② 主调度 / 主助理 放行的草稿（新的在前）"`
-	Pending     int                `json:"pending" doc:"③ 留给你的：还没答的决策条数（在「要你处理」里）"`
+	Pending     int                `json:"pending" doc:"③ 留给你的：还没答的决策条数（在「待处理」里）"`
 	Blocked     []string           `json:"blocked" doc:"③ 受阻的需求编号"`
-	Review      int                `json:"review" doc:"④ 待验收需求条数（在「要你处理」里）"`
+	Review      int                `json:"review" doc:"④ 待验收需求条数（在「待处理」里）"`
 }
 
-// morningHold 是参谋没代答一条决策的原因，挂在「要你处理」的决策卡上。
+// morningHold 是参谋没代答一条决策的原因，挂在「待处理」的决策卡上。
 type morningHold struct {
 	DecisionCode string `json:"decision_code"`
 	Kind         string `json:"kind" enum:"hard,scope,ended" doc:"hard = 硬规则；scope = 超出授权的风险档；ended = 授权窗口已结束"`
@@ -124,17 +123,13 @@ func (h *Hub) morningWindow(ctx context.Context, projectID string, note *store.M
 // holdReason 说明参谋为什么没代答 d（窗口 g 生效或刚结束时）；空表示参谋还可以代答。
 func holdReason(d store.Decision, g store.Grant, at time.Time) (string, string) {
 	if why := proxyHard(d, g.SessionKey); why != "" {
-		return "hard", "硬规则 · " + why
+		return "hard", holdHard(why)
 	}
 	if store.RiskRank(store.NormRisk(d.Risk)) > store.RiskRank(g.MaxRisk) {
-		src := riskZh[store.NormRisk(d.Risk)]
-		if d.Risk == "" {
-			src = "提问方没标风险档，按高风险算"
-		}
-		return "scope", fmt.Sprintf("超出授权 · %s，只授权到%s", src, riskZh[g.MaxRisk])
+		return "scope", holdScope(riskZh[store.NormRisk(d.Risk)], d.Risk == "", riskZh[g.MaxRisk])
 	}
 	if !at.Before(grantEnd(g)) {
-		return "ended", "授权窗口 " + g.Code + " 已结束"
+		return "ended", holdEnded(g.Code)
 	}
 	return "", ""
 }
@@ -377,7 +372,7 @@ func (h *Hub) registerAgentMorning(api huma.API) {
 			}
 			h.broker.publish("morning")
 			out := &morningSetOut{}
-			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的离开期间小结、「要你处理」的验收卡上能看到。" + hint
+			out.Body.Message = strings.Join(done, "；") + "。用户在工作台顶部的离开期间小结、「待处理」的验收卡上能看到。" + hint
 			return out, nil
 		})
 }

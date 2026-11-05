@@ -142,7 +142,7 @@ type tellIn struct {
 	ToSession   string `json:"to_session,omitempty" jsonschema:"点名收件会话键（tool:id）：本项目有多个顾问 / 评审 / 开发时指定，没有身份的会话也行；不填发给该身份最近活跃的一个"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"回复收到的团队消息时填它的编号（D-x）：回复自动送回发消息的一方"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
-	FYI         bool   `json:"fyi,omitempty" jsonschema:"只告知（R-227）：对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上。部署 / 重启、进展通报填 true；提问、求裁定、指派、回复不填（立刻叫醒）"`
+	FYI         bool   `json:"fyi,omitempty" jsonschema:"只告知（R-227）：对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上。部署 / 重启、进展通报填 true；提问、求裁定、指派、回复不填（立刻唤醒）"`
 }
 
 type broadcastIn struct {
@@ -158,7 +158,7 @@ type sentIn struct {
 }
 
 // tellDesc 是 team_tell（旧名 pm_notify）的说明。
-const tellDesc = "点对点给本项目的团队成员发消息（命令行 ks team tell；旧名 pm_notify，参数相同）：按身份或会话键送给本项目没结束的那个会话。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回；to = dev（开发）：发给最近活跃的开发；to 也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收，对方已结束或失联时报错退回。返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达，之后用 team_sent 查。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻叫醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被叫醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。消息只做通知：放编号加一句话（120 字以内，超出照常发送并提示），细节先用 req_comment 写进需求留言，再发消息请对方去看。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"
+const tellDesc = "点对点给本项目的团队成员发消息（命令行 ks team tell；旧名 pm_notify，参数相同）：按身份或会话键送给本项目没结束的那个会话。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回；to = dev（开发）：发给最近活跃的开发；to 也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收，对方已结束或失联时报错退回。返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达，之后用 team_sent 查。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻唤醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被唤醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。消息只做通知：放编号加一句话（120 字以内，超出照常发送并提示），细节先用 req_comment 写进需求留言，再发消息请对方去看。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"
 
 func (t *tools) registerTeam(s *mcp.Server) {
 	tell := func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
@@ -181,7 +181,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 	}
 	mcp.AddTool(s, &mcp.Tool{Name: "team_tell", Description: tellDesc}, tell)
 	mcp.AddTool(s, &mcp.Tool{Name: "pm_notify", Description: "（旧名，等同 team_tell，参数相同）" + tellDesc}, tell)
-	mcp.AddTool(s, &mcp.Tool{Name: "team_broadcast", Description: "项目内广播（命令行 ks team broadcast，R-249）：发给本项目没结束的会话，不含你自己和后台任务会话；roles 按身份过滤。两档：fyi = true「只告知」任何会话都能发，不唤醒对方（部署 / 重启、进展通报）；不填是「要动手」，立刻叫醒对方，只有主调度、主助理能发，别的身份会被拒绝、请改用 fyi 或用 team_tell 点对点。离线的会话跳过。返回逐个收件人的送达状态（已送达 / 待送达及原因 / 无法送达）。消息只做通知：编号加一句话，细节先写进 req_comment。发送方永远是当前会话。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "team_broadcast", Description: "项目内广播（命令行 ks team broadcast，R-249）：发给本项目没结束的会话，不含你自己和后台任务会话；roles 按身份过滤。两档：fyi = true「只告知」任何会话都能发，不唤醒对方（部署 / 重启、进展通报）；不填是「要动手」，立刻唤醒对方，只有主调度、主助理能发，别的身份会被拒绝、请改用 fyi 或用 team_tell 点对点。离线的会话跳过。返回逐个收件人的送达状态（已送达 / 待送达及原因 / 无法送达）。消息只做通知：编号加一句话，细节先写进 req_comment。发送方永远是当前会话。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in broadcastIn) (*mcp.CallToolResult, any, error) {
 			key, agent := t.caller(ctx, req)
 			if key == "" {
@@ -254,7 +254,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_watch", Description: "订阅 / 退订一条需求（命令行 ks req watch R-x [--action-only] / ks req unwatch R-x，R-249）：需求有变动（状态、描述 / 验收标准修改、留言、证据、评审意见、关联决策作答）时收到一句话提醒，细节自己去 req_get 看。两档：要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）立刻叫醒；只告知的（别的状态变化、描述、留言、证据、评审通过）不叫醒、60 秒内合并成一条。关联或正在做的需求默认已订阅，off = true 可以退订，退订优先。自己引起的变动不通知自己。订阅者永远是当前会话。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_watch", Description: "订阅 / 退订一条需求（命令行 ks req watch R-x [--action-only] / ks req unwatch R-x，R-249）：需求有变动（状态、描述 / 验收标准修改、留言、证据、评审意见、关联决策作答）时收到一句话提醒，细节自己去 req_get 看。两档：要动手的（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）立刻唤醒；只告知的（别的状态变化、描述、留言、证据、评审通过）不唤醒、60 秒内合并成一条。关联或正在做的需求默认已订阅，off = true 可以退订，退订优先。自己引起的变动不通知自己。订阅者永远是当前会话。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in watchIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -291,7 +291,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(out.Text), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "handoff_write", Description: "交接（R-224、R-245）：用户点了「交接」、要换会话 / 换工具 / 换设备接任你的身份时，写一份交接存进纸鸢（显示在你的会话时间线上）。只写纸鸢里没有的三栏，几行即可（三栏合计超过 300 字照常保存并提示压缩）：doing 做到一半的事、agreements 口头约定、caveats 注意事项。需求状态、待验收、待答决策、放行队列、合入 / 推送情况，新会话接任时纸鸢按身份自动列出，不必写；用户口头交代的临时安排先用 arrange_add 记成当前安排。新会话运行 ks role <身份> 时自动读到最新一份，你随即卸任：身份清除、不再被唤醒，之后不要再挂 ks wait。主调度有在跑的子任务时会被拒绝：先停派新活，等子任务交完再写。可以重复调用，覆盖还没被接任的那一份。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "handoff_write", Description: "交接（R-224、R-245）：用户点了「交接」、要换会话 / 换工具 / 换设备接任你的身份时，写一份交接存进纸鸢（显示在你的会话时间线上）。只写纸鸢里没有的三栏，几行即可（三栏合计超过 300 字照常保存并提示压缩）：doing 做到一半的事、agreements 口头约定、caveats 注意事项。需求状态、待验收、待答决策、放行队列、合入 / 推送情况，新会话接任时纸鸢按身份自动列出，不必写；用户口头交代的临时安排先用 arrange_add 记成当前安排。新会话运行 ks role <身份> 时自动读到最新一份，你随即交出身份：身份清除、不再被唤醒，之后不要再挂 ks wait。主调度有在跑的子任务时会被拒绝：先停派新活，等子任务交完再写。可以重复调用，覆盖还没被接任的那一份。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in handoffIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {

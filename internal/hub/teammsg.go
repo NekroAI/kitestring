@@ -17,17 +17,14 @@ import (
 
 // 会话通信（R-249 P3）：点对点消息的送达状态、项目内广播、查自己发过的消息。
 // 送达状态只从记录推（原则第 11 条）：消息行已标送达 → delivered；收件会话已结束 / 失联 → offline；
-// 其余 → pending_wake，原因用 wakeAbility 写（马上叫醒 / 等这一轮结束 / Codex 等用户下次发消息……）。
+// 其余 → pending_wake，原因用 wakeAbility 写（马上唤醒 / 等这一轮结束 / Codex 等用户下次发消息……）。
 
 // 送达状态的取值。
 const (
 	DeliveredSt   = "delivered"    // 已送达：对方会话已收到（delivered_at）
-	PendingWakeSt = "pending_wake" // 等对方醒来：已入队，对方挂着 ks wait 时马上叫醒，否则等它这一轮结束 / 下次用户发消息
-	OfflineSt     = "offline"      // 对方不在线：会话已结束或失联；点对点报错退回，广播跳过
+	PendingWakeSt = "pending_wake" // 待送达：已入队，对方挂着 ks wait 时马上唤醒，否则等它这一轮结束 / 下次用户发消息
+	OfflineSt     = "offline"      // 无法送达：会话已结束或失联；点对点报错退回，广播跳过
 )
-
-// 送达状态的中文名，按 docs/copywriting.md 5.5（docs/copywriting-rules.json 的 statusSets.delivery）
-var deliveryLabel = map[string]string{DeliveredSt: "已送达", PendingWakeSt: "待送达", OfflineSt: "无法送达"}
 
 // Delivery 是一条团队消息对一个收件人的送达状态。
 type Delivery struct {
@@ -109,7 +106,7 @@ func (h *Hub) deliveries(ctx context.Context, list []store.Decision) []Delivery 
 	return out
 }
 
-// deliveryLine 是一个收件人的一行：「- D-12 → 顾问 claude:x（Claude Code）：等对方醒来——正在跑，这一轮结束后收到」。
+// deliveryLine 是一个收件人的一行：「- D-12 → 顾问 claude:x（Claude Code）：待送达——正在跑，这一轮结束后收到」。
 func deliveryLine(e Delivery) string {
 	who := roles.Name(e.Role)
 	if who == "" {
@@ -178,7 +175,7 @@ const sentLimit = 10
 func (h *Hub) registerAgentBroadcast(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-team-broadcast", Method: http.MethodPost, Path: "/api/agent/team/broadcast", Tags: []string{"agent"},
 		Summary:     "项目内广播（R-249）：发给本项目没结束的会话，可按身份过滤，逐个收件人返回送达状态",
-		Description: "范围：本项目没结束的会话（不含桌面应用的后台任务会话、不含你自己），roles 按身份过滤（逗号分隔，none 表示没身份的会话）。一次广播拆成每个收件人一条团队消息（D 号），共用 broadcast_id。fyi = true 是「只告知」，任何会话都能发；不填是「要动手」，只有主调度、主助理能发，别的身份发会被拒绝并提示改用 fyi。失联 / 已标完成的会话跳过，在 recipients 里标 offline。送达状态：delivered 已送达、pending_wake 等对方醒来（写明原因）、offline 对方不在线。消息只做通知，超过 120 字照常发送并提示压缩。"},
+		Description: "范围：本项目没结束的会话（不含桌面应用的后台任务会话、不含你自己），roles 按身份过滤（逗号分隔，none 表示没身份的会话）。一次广播拆成每个收件人一条团队消息（D 号），共用 broadcast_id。fyi = true 是「只告知」，任何会话都能发；不填是「要动手」，只有主调度、主助理能发，别的身份发会被拒绝并提示改用 fyi。失联 / 已标完成的会话跳过，在 recipients 里标 offline。送达状态：delivered 已送达、pending_wake 待送达（写明原因）、offline 无法送达。消息只做通知，超过 120 字照常发送并提示压缩。"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey     string `json:"session_key" minLength:"1" doc:"调用者（发送方）"`

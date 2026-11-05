@@ -66,7 +66,7 @@ func (s *Store) SetOffline(ctx context.Context, key string, at *time.Time) (bool
 	return n > 0, nil
 }
 
-// MoveUndelivered 把 from 名下还没送达的点名消息（团队消息、答复、留言、派活通知等），连同它提的、还等用户答复的决策，
+// MoveUndelivered 把 from 名下还没送达的点名消息（团队消息、答复、留言、指派通知等），连同它提的、还等用户答复的决策，
 // 改送给 to（R-272）：下线的会话被新会话接任时，下线期间积压的事项转给接任的会话，用户之后的答复也送到新会话。
 // 身份通知（kind = role，如「用户请你交接」）留给原会话。返回转了几条。
 func (s *Store) MoveUndelivered(ctx context.Context, from, to string) (int, error) {

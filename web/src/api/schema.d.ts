@@ -267,7 +267,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Agent 把大目标拆成计划，等用户批准后开工 */
+        /** Agent 把大目标拆成计划，等用户批准后开始处理 */
         post: operations["agent-create-plan"];
         delete?: never;
         options?: never;
@@ -437,7 +437,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；交给评审的待验收需求这时进用户的验收卡，有不通过的通知主调度 */
+        /** Rev 交审查意见 / 验证结果（R-88、R-232）：不改需求状态；提交评审的待验收需求这时进用户的验收卡，有不通过的通知主调度 */
         post: operations["agent-submit-review"];
         delete?: never;
         options?: never;
@@ -489,7 +489,7 @@ export interface paths {
         put?: never;
         /**
          * 订阅 / 退订一条需求（R-249 P4）：需求有变动时收到一句话提醒
-         * @description off = false 订阅（mode = action 只收要动手的：验收标准被改、评审不通过、关联决策被作答、被退回或设为受阻；默认 all 两档都收，只告知的不叫醒）；off = true 退订。关联这条需求、或正在做它的会话默认订阅，退订优先于这种默认订阅。自己引起的变动不通知自己。订阅者永远是当前会话（session_key）。
+         * @description off = false 订阅（mode = action 只收要动手的：验收标准被改、评审不通过、关联决策被作答、被退回或设为受阻；默认 all 两档都收，只告知的不唤醒）；off = true 退订。关联这条需求、或正在做它的会话默认订阅，退订优先于这种默认订阅。自己引起的变动不通知自己。订阅者永远是当前会话（session_key）。
          */
         post: operations["agent-watch"];
         delete?: never;
@@ -609,7 +609,7 @@ export interface paths {
         put?: never;
         /**
          * 项目内广播（R-249）：发给本项目没结束的会话，可按身份过滤，逐个收件人返回送达状态
-         * @description 范围：本项目没结束的会话（不含桌面应用的后台任务会话、不含你自己），roles 按身份过滤（逗号分隔，none 表示没身份的会话）。一次广播拆成每个收件人一条团队消息（D 号），共用 broadcast_id。fyi = true 是「只告知」，任何会话都能发；不填是「要动手」，只有主调度、主助理能发，别的身份发会被拒绝并提示改用 fyi。失联 / 已标完成的会话跳过，在 recipients 里标 offline。送达状态：delivered 已送达、pending_wake 等对方醒来（写明原因）、offline 对方不在线。消息只做通知，超过 120 字照常发送并提示压缩。
+         * @description 范围：本项目没结束的会话（不含桌面应用的后台任务会话、不含你自己），roles 按身份过滤（逗号分隔，none 表示没身份的会话）。一次广播拆成每个收件人一条团队消息（D 号），共用 broadcast_id。fyi = true 是「只告知」，任何会话都能发；不填是「要动手」，只有主调度、主助理能发，别的身份发会被拒绝并提示改用 fyi。失联 / 已标完成的会话跳过，在 recipients 里标 offline。送达状态：delivered 已送达、pending_wake 待送达（写明原因）、offline 无法送达。消息只做通知，超过 120 字照常发送并提示压缩。
          */
         post: operations["agent-team-broadcast"];
         delete?: never;
@@ -703,7 +703,7 @@ export interface paths {
         put?: never;
         /**
          * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
-         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 等对方醒来（写明原因，如 Codex 要等用户下次发消息）、offline 对方不在线；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被叫醒或用户发消息时一并带上；默认要对方动手，立刻叫醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。
          */
         post: operations["agent-tell-pm"];
         delete?: never;
@@ -1230,7 +1230,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 忽略 / 取消忽略一个孤儿进程：不再列出、不提醒；按进程号 + 启动时间记，进程退出后失效（R-209） */
+        /** 忽略 / 取消忽略一个残留进程：不再列出、不提醒；按进程号 + 启动时间记，进程退出后失效（R-209） */
         post: operations["ignore-orphan"];
         delete?: never;
         options?: never;
@@ -1247,7 +1247,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 停止一个孤儿 / 已脱离的后台进程：经 Hub 交给所在设备的 daemon 核对后发信号（R-209） */
+        /** 停止一个残留进程 / 已脱离的后台进程：经 Hub 交给所在设备的 daemon 核对后发信号（R-209） */
         post: operations["stop-orphan"];
         delete?: never;
         options?: never;
@@ -2106,7 +2106,7 @@ export interface components {
         "Agent-assignRequest": {
             /** @description 交代给开发的话，例如为什么交给它、和哪条需求相关 */
             comment?: string;
-            /** @description 派的是草稿时必填：放行理由（派活会顺带把草稿放行为待开始，R-166） */
+            /** @description 派的是草稿时必填：放行理由（指派会顺带把草稿放行为待开始，R-166） */
             reason?: string;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
@@ -2157,7 +2157,7 @@ export interface components {
              * @description 推荐开几个 Dev 会话；0 表示撤回在等批准的推荐、撤掉横幅
              */
             count: number;
-            /** @description 为什么要开：为什么要并行、为什么一次性子代理不合适 */
+            /** @description 为什么要开：为什么要并行、为什么一次性子任务不合适 */
             reason?: string;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
@@ -2175,7 +2175,7 @@ export interface components {
              * @description 批准时限（分钟）；不填用设置里的（默认 30）
              */
             minutes?: number;
-            /** @description 为什么要开：为什么要并行、为什么一次性子代理不合适 */
+            /** @description 为什么要开：为什么要并行、为什么一次性子任务不合适 */
             reason: string;
             /** @description 调用者（必须是本项目的 PM） */
             session_key: string;
@@ -2243,9 +2243,9 @@ export interface components {
             text: string;
         };
         "Agent-tell-pmRequest": {
-            /** @description 发消息的子任务（一次性子代理）的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上 */
+            /** @description 发消息的子任务的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上 */
             agent_id?: string;
-            /** @description 只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、派活、回复，立刻叫醒）。部署 / 重启、进展通报这类用 true */
+            /** @description 只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、指派、回复，立刻唤醒）。部署 / 重启、进展通报这类用 true */
             fyi?: boolean;
             /** @description 回复收到的团队消息：填它的编号（D-x） */
             reply_to?: string;
@@ -2282,7 +2282,7 @@ export interface components {
             session_key?: string;
             /** @enum {string} */
             status: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
-            /** @description 设为 blocked 时在等的需求或决策编号（R-x / D-x，R-243）：顺着等待关系落到用户身上的那一条会在「要你处理」写明「R-x 在等这条」；不写时这条受阻需求本身进「要你处理」 */
+            /** @description 设为 blocked 时在等的需求或决策编号（R-x / D-x，R-243）：顺着等待关系落到用户身上的那一条会在「待处理」写明「R-x 在等这条」；不写时这条受阻需求本身进「待处理」 */
             waiting_on?: string;
         };
         "Agent-void-evidenceRequest": {
@@ -2850,7 +2850,7 @@ export interface components {
             files?: string[] | null;
         };
         CommentInBody: {
-            /** @description 留言的子任务（一次性子代理）的 agent_id；会话主线程为空 */
+            /** @description 留言的子任务的 agent_id；会话主线程为空 */
             agent_id?: string;
             /** @description 表达块（R-97），同证据：checklist / compare / figure / flow / metrics / scope / options / table；不合法的块丢掉并在 block_warnings 里说明，留言照常保存 */
             blocks?: unknown[] | null;
@@ -2927,7 +2927,7 @@ export interface components {
         CommsOutBody: {
             /** @description 时间范围内的消息，新的在前（含纸鸢提醒） */
             messages: components["schemas"]["CommsMsg"][] | null;
-            /** @description 没送到、对方已结束或失联的消息，新的在前 */
+            /** @description 无法送达（对方已结束或失联）的消息，新的在前 */
             offline: components["schemas"]["CommsMsg"][] | null;
             project_id: string;
             project_name: string;
@@ -3053,7 +3053,7 @@ export interface components {
             blocks?: components["schemas"]["Block"][] | null;
             /** @description 团队消息（R-249）：一次广播拆成每个收件人一行，同一次广播共用这个 ID */
             broadcast_id?: string;
-            /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话 */
+            /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 指派是 assigned_by，决策是提问的会话 */
             by_title?: string;
             choices?: number[] | null;
             close_reason?: string;
@@ -3164,7 +3164,7 @@ export interface components {
             blocks?: components["schemas"]["Block"][] | null;
             /** @description 团队消息（R-249）：一次广播拆成每个收件人一行，同一次广播共用这个 ID */
             broadcast_id?: string;
-            /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话 */
+            /** @description 写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 指派是 assigned_by，决策是提问的会话 */
             by_title?: string;
             choices?: number[] | null;
             close_reason?: string;
@@ -3879,7 +3879,7 @@ export interface components {
             id: string;
             kind: string;
             next_actor: string;
-            /** @description 提示，例如草稿没放行、只关联未开工（R-166） */
+            /** @description 提示，例如草稿没放行、只关联未开始处理（R-166） */
             notices?: string[] | null;
             /**
              * Format: date-time
@@ -4006,7 +4006,7 @@ export interface components {
             note?: components["schemas"]["MorningNote"];
             /**
              * Format: int64
-             * @description ③ 留给你的：还没答的决策条数（在「要你处理」里）
+             * @description ③ 留给你的：还没答的决策条数（在「待处理」里）
              */
             pending: number;
             project_id: string;
@@ -4017,7 +4017,7 @@ export interface components {
             releases: components["schemas"]["MorningRelease"][] | null;
             /**
              * Format: int64
-             * @description ④ 待验收需求条数（在「要你处理」里）
+             * @description ④ 待验收需求条数（在「待处理」里）
              */
             review: number;
             /**
@@ -4086,7 +4086,7 @@ export interface components {
             state: "orphan" | "detached";
         };
         OrphansOutBody: {
-            /** @description 你忽略了的孤儿（还在跑；不在 orphans 里、不提醒） */
+            /** @description 你忽略了的残留进程（还在跑；不在 orphans 里、不提醒） */
             ignored: components["schemas"]["Orphan"][] | null;
             orphans: components["schemas"]["Orphan"][] | null;
             /** @description 最近 24 小时的停止记录（新的在前） */
@@ -4323,7 +4323,7 @@ export interface components {
             session_key: string;
             /** @description SIGTERM / SIGKILL；没发信号时为空 */
             signal: string;
-            /** @description 停止时的状态：orphan 孤儿 / detached 已脱离 */
+            /** @description 停止时的状态：orphan 残留进程 / detached 已脱离 */
             state: string;
         };
         Project: {
@@ -4651,10 +4651,10 @@ export interface components {
         ReviewState: {
             /**
              * Format: date-time
-             * @description 交给评审的时间
+             * @description 提交评审的时间
              */
             asked_at?: string;
-            /** @description 交验收时纸鸢自动派给在线评审的（否则是手动交给评审） */
+            /** @description 交验收时纸鸢自动提交评审的（否则是用户手动提交评审） */
             auto?: boolean;
             /**
              * Format: date-time
@@ -4680,7 +4680,7 @@ export interface components {
             /** @description 评审会话的标题 */
             session_title?: string;
             /**
-             * @description reviewing 评审中（不进「要你处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见
+             * @description reviewing 评审中（不进「待处理」）/ overdue 评审未完成（照常弹给用户）/ done 评审已交意见
              * @enum {string}
              */
             state: "reviewing" | "overdue" | "done";
@@ -4756,7 +4756,7 @@ export interface components {
             updated_at: string;
         };
         RoleOutBody: {
-            /** @description 因本次接任主调度 / 主助理被降为无身份并卸任的会话（R-229） */
+            /** @description 因本次接任主调度 / 主助理被降为无身份的会话（R-229） */
             demoted: string[] | null;
             /** @description 接任了上一任写的交接（R-224）：交接内容已附在 prompt 末尾 */
             handoff: boolean;
@@ -5284,7 +5284,7 @@ export interface components {
             after_tools: components["schemas"]["ToolSum"];
             /**
              * Format: date-time
-             * @description 这一轮结束（Stop）的时间；还在跑时省略
+             * @description 这一轮结束（Stop）的时间；运行中时省略
              */
             end?: string;
             /** @description 轮的标识：turn_id；没有时用提问事件的 ID */
@@ -5394,7 +5394,7 @@ export interface components {
             pending: number;
             /** @description 紧接着重挂等待时，上一次等待送来、对应需求还没开始处理的内容（R-278），ks wait 开头输出 */
             replay?: string;
-            /** @description 会话已被接任卸任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待 */
+            /** @description 会话已被接任（R-224、R-229），或已空等下线（R-272）：ks wait 输出 hint 后直接返回，不再等待 */
             retired?: boolean;
         };
         Watch: {

@@ -270,7 +270,7 @@ func (h *Hub) startPlan(ctx context.Context, ref string, n note) (store.Plan, er
 	if x.CreatedBy == "agent" {
 		verb = "已获用户批准，开始"
 	}
-	h.planMsg(ctx, x, withComment(fmt.Sprintf("计划%s：共 %d 个阶段，现在是%s，其中的需求已交给你。%s", verb, len(x.Stages), stageName(st), stageHowTo), n), n.files...)
+	h.planMsg(ctx, x, withComment(fmt.Sprintf("计划%s：共 %d 个阶段，现在是%s，其中的需求已指派给你。%s", verb, len(x.Stages), stageName(st), stageHowTo), n), n.files...)
 	if err := h.unlockStage(ctx, x, st); err != nil {
 		return x, err
 	}
@@ -335,7 +335,7 @@ func (h *Hub) submitStage(ctx context.Context, ref string, seq int, summary stri
 	if err := h.store.SetStageBlocks(ctx, st.ID, bs); err != nil {
 		return x, err
 	}
-	h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: fmt.Sprintf("待阶段验收 · %s 阶段 %d", x.Code, st.Seq), Body: x.Title + " · " + st.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
+	h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventRequirementReview, Title: pushStageTitle(x.Code, st.Seq), Body: pushStageBody(x.Title, st.Title), Group: "kitestring"}, "/requirements?plan="+x.Code)
 	return h.planChanged(ctx, x.ID)
 }
 
@@ -390,7 +390,7 @@ func (h *Hub) passStage(ctx context.Context, ref string, seq int, n note) (store
 		h.onUserPlanEvent(ctx, x, fmt.Sprintf("用户验收通过了计划 %s「%s」的%s，计划全部完成。", x.Code, brief(x.Title, 30), stageName(st)))
 		return h.planChanged(ctx, x.ID)
 	}
-	h.planMsg(ctx, x, withComment(fmt.Sprintf("%s现在进入%s，其中的需求已交给你。%s", msg, stageName(next), stageHowTo), n), n.files...)
+	h.planMsg(ctx, x, withComment(fmt.Sprintf("%s现在进入%s，其中的需求已指派给你。%s", msg, stageName(next), stageHowTo), n), n.files...)
 	if err := h.unlockStage(ctx, x, next); err != nil {
 		return x, err
 	}
@@ -581,7 +581,7 @@ func (h *Hub) registerPlans(api huma.API) {
 			}
 			x, err := h.startPlan(ctx, in.Ref, n)
 			if err == nil {
-				h.awayUser(ctx, "plan_start", x.ProjectID, x.Code, x.Title, "批准了计划") // R-210
+				h.awayUser(ctx, "plan_start", x.ProjectID, x.Code, x.Title, awayPlanApproved) // R-210
 			}
 			return &planOut{Body: x}, err
 		})
@@ -596,7 +596,7 @@ func (h *Hub) registerPlans(api huma.API) {
 			}
 			x, err := h.rejectPlan(ctx, in.Ref, n)
 			if err == nil {
-				h.awayUser(ctx, "plan_reject", x.ProjectID, x.Code, x.Title, "没有批准计划") // R-210
+				h.awayUser(ctx, "plan_reject", x.ProjectID, x.Code, x.Title, awayPlanRejected) // R-210
 			}
 			return &planOut{Body: x}, err
 		})
@@ -612,7 +612,7 @@ func (h *Hub) registerPlans(api huma.API) {
 			}
 			x, err := h.passStage(ctx, in.Ref, in.Seq, n)
 			if err == nil {
-				h.awayUser(ctx, "stage_pass", x.ProjectID, x.Code, x.Title, fmt.Sprintf("阶段 %d 验收通过", in.Seq)) // R-210
+				h.awayUser(ctx, "stage_pass", x.ProjectID, x.Code, x.Title, awayStagePassed(in.Seq)) // R-210
 			}
 			return &planOut{Body: x}, err
 		})
@@ -628,7 +628,7 @@ func (h *Hub) registerPlans(api huma.API) {
 			}
 			x, err := h.reviseStage(ctx, in.Ref, in.Seq, n)
 			if err == nil {
-				h.awayUser(ctx, "stage_revise", x.ProjectID, x.Code, x.Title, fmt.Sprintf("退回了阶段 %d", in.Seq)) // R-210
+				h.awayUser(ctx, "stage_revise", x.ProjectID, x.Code, x.Title, awayStageReturned(in.Seq)) // R-210
 			}
 			return &planOut{Body: x}, err
 		})
@@ -636,7 +636,7 @@ func (h *Hub) registerPlans(api huma.API) {
 
 func (h *Hub) registerAgentPlans(api huma.API) {
 	tag := []string{"agent"}
-	huma.Register(api, huma.Operation{OperationID: "agent-create-plan", Method: http.MethodPost, Path: "/api/agent/plans", Tags: tag, Summary: "Agent 把大目标拆成计划，等用户批准后开工"},
+	huma.Register(api, huma.Operation{OperationID: "agent-create-plan", Method: http.MethodPost, Path: "/api/agent/plans", Tags: tag, Summary: "Agent 把大目标拆成计划，等用户批准后开始处理"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				Title      string    `json:"title" minLength:"1"`
@@ -674,7 +674,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划 " + x.Code, Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
+			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: pushPlanTitle(x.Code, false), Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
 			x, err = h.planChanged(ctx, x.ID)
 			out := &planCreatedOut{}
 			out.Body.Plan, out.Body.Notices = x, notices
@@ -719,7 +719,7 @@ func (h *Hub) registerAgentPlans(api huma.API) {
 			if err := h.store.SetPlanReturned(ctx, x.ID, false); err != nil {
 				return nil, err
 			}
-			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: "待批准计划 " + x.Code + "（已按意见修改）", Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
+			h.sendNotify(x.ProjectID, notify.Message{Event: notify.EventDecisionRaised, Title: pushPlanTitle(x.Code, true), Body: x.Title, Group: "kitestring"}, "/requirements?plan="+x.Code)
 			x, err = h.planChanged(ctx, x.ID)
 			out := &planCreatedOut{}
 			out.Body.Plan, out.Body.Notices = x, notices

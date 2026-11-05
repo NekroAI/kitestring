@@ -66,8 +66,8 @@ type Daemon struct {
 	waitSeq       int64
 	tools         toolsState             // 各会话的 Kitestring 工具版本（R-59）
 	tasks         taskState              // 后台 shell 与子代理线索（R-162）
-	orph          orphanState            // 孤儿 / 已脱离的后台进程（R-209）
-	direct        chan protocol.Envelope // 不落盘、连着 Hub 时直接发的消息（孤儿列表、停止结果）
+	orph          orphanState            // 残留进程 / 已脱离的后台进程（R-209）
+	direct        chan protocol.Envelope // 不落盘、连着 Hub 时直接发的消息（残留进程列表、停止结果）
 	orphanKick    chan struct{}
 	usage         *usageScanner // token 用量（R-206）
 	shells        *shellTracker // 后台命令（R-208）
@@ -766,7 +766,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			d.writeItem(&b, dec)
 		}
 	}
-	// 团队消息分两档（R-227）：要动手的和只告知的分开写，只告知的是攒着没叫醒你、这次一起附上的
+	// 团队消息分两档（R-227）：要动手的和只告知的分开写，只告知的是攒着没唤醒你、这次一起附上的
 	var tellAct, tellFYI []protocol.Decision
 	for _, dec := range tells {
 		if dec.Quiet {
@@ -782,7 +782,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		}
 	}
 	if len(tellFYI) > 0 {
-		b.WriteString("[Kitestring] 团队消息 · 只告知（攒着没有叫醒你，这次一并附上；不必动手，需要时自己看）：\n")
+		b.WriteString("[Kitestring] 团队消息 · 只告知（之前攒着没有送达，这次一并附上；不必动手，需要时自己看）：\n")
 		for _, dec := range tellFYI {
 			d.writeItem(&b, dec)
 		}

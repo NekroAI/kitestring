@@ -328,7 +328,7 @@ func runReq(args []string) error {
 	comment := fs.String("comment", "", "assign：交代给开发的话")
 	reason := fs.String("reason", "", "request：申请理由（必填）；status ready / assign 草稿：放行理由（只有 PM / Adv 能放行）；status draft：撤回原因；status shelved：搁置原因（必填）；edit：为什么改")
 	reasonKind := fs.String("reason-kind", "", "status shelved：搁置原因类别 duplicate（重复）/ changed（方向变了）/ dropped（不做了）/ other（其他，默认）")
-	waitingOn := fs.String("on", "", "status blocked：在等的需求或决策编号（R-x / D-x，R-243）；不写时这条受阻需求本身进用户的「要你处理」")
+	waitingOn := fs.String("on", "", "status blocked：在等的需求或决策编号（R-x / D-x，R-243）；不写时这条受阻需求本身进用户的「待处理」")
 	verdict := fs.String("verdict", "", "evidence / review：一句结论（40 字以内）")
 	details := fs.String("details", "", "evidence：实现细节（默认折叠）；review：怎么验的")
 	blocksArg := fs.String("blocks", "", "evidence / review / comment：表达块，JSON 数组或 JSON 文件路径")
@@ -451,7 +451,7 @@ func runReq(args []string) error {
 		printHint(writing.PayloadHint(*verdict, rawHasChecklist(raw)))
 		return nil
 	case "assign":
-		// PM 派活（R-86）：ks req assign R-12 --to <Dev 会话键|auto> [--comment ...]
+		// PM 指派（R-86）：ks req assign R-12 --to <Dev 会话键|auto> [--comment ...]
 		if fs.NArg() < 1 || *to == "" {
 			return fmt.Errorf("用法：ks req assign <R-编号> --to <Dev 会话键|auto> [--comment 交代] [--reason 放行理由（派草稿时必填）]")
 		}
@@ -605,7 +605,7 @@ func runDecision(args []string) error {
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	question := fs.String("question", "", "问题：一句话，只问一件事（建议 60 字以内）")
-	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的待决策的点另开决策（建议 400 字以内）")
+	ctxText := fs.String("context", "", "说明：按“结论 / 依据 / 细节”写，别的要决策的点另开决策（建议 400 字以内）")
 	rec := fs.String("recommend", "", "推荐及理由")
 	recOpt := fs.Int("recommend-option", 0, "推荐的是第几个 --option（从 1 开始）；不填时只有 --recommend 与某个选项文字完全相同才标推荐")
 	req := fs.String("req", "", "关联需求")
@@ -722,7 +722,7 @@ func runWait(args []string) error {
 	fs := flag.NewFlagSet("wait", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
 	timeout := fs.Duration("timeout", 0, "最长等待时间，如 30m。不填：Claude Code 55 分钟（也是上限，项目设置可调得更短），Codex 30 分钟（也是上限）；超过上限按上限截断")
-	on := fs.String("on", "", "还要被哪些项目事件唤醒（R-164）：decision（有人提决策）、review（交验收）、blocked（需求受阻）、stage（阶段交小结）、settings（用户在网页改了项目设置：放行开关、自动派发、参谋授权窗口）、status（用户在网页改了需求状态），逗号分隔；none 不订阅，default 按身份默认（Adv：decision,review,settings；PM：review,blocked,settings；其它不订阅）。不填沿用上次")
+	on := fs.String("on", "", "还要被哪些项目事件唤醒（R-164）：decision（有人提决策）、review（交验收）、blocked（需求受阻）、stage（阶段交小结）、settings（用户在网页改了项目设置：放行开关、自动派发、授权窗口）、status（用户在网页改了需求状态），逗号分隔；none 不订阅，default 按身份默认（Adv：decision,review,settings；PM：review,blocked,settings；其它不订阅）。不填沿用上次")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -766,7 +766,7 @@ func runWait(args []string) error {
 		ccancel()
 	}
 	if check.Retired {
-		return nil // 已交接卸任（R-224）或空等下线（R-272）：不再挂起等待
+		return nil // 已交接交出身份（R-224）或空等下线（R-272）：不再挂起等待
 	}
 	// 单次等待上限（R-272）：Claude Code 不超过 55 分钟（项目设置可更短），常驻会话最多等到空等下线的时刻
 	codexKey := strings.HasPrefix(key, protocol.ToolCodex+":")

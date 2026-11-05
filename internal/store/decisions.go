@@ -16,7 +16,7 @@ import (
 
 // 决策状态（requirements.md 4.2）。
 const (
-	DecPending   = "pending"   // 待决策
+	DecPending   = "pending"   // 待答复决策
 	DecAnswered  = "answered"  // 已决策待接收
 	DecDelivered = "delivered" // 已接收
 	DecClosed    = "closed"    // 已关闭（不再注入）
@@ -28,8 +28,8 @@ const (
 	KindDecision   = "decision"
 	KindFeedback   = "feedback"
 	KindNote       = "note"
-	KindAssign     = "assign"      // 你把需求交给某个会话开工
-	KindPlan       = "plan"        // 计划进展（开工、阶段通过 / 退回、未获批准），送达计划的负责会话
+	KindAssign     = "assign"      // 你把需求交给某个会话开始处理
+	KindPlan       = "plan"        // 计划进展（开始处理、阶段通过 / 退回、未获批准），送达计划的负责会话
 	KindQueue      = "queue"       // 会话空闲时整批送达的待开始需求（R-66）
 	KindRole       = "role"        // 会话身份变更通知，例如 PM 被新会话接管（R-82）
 	KindReviewTask = "review_task" // 你把需求交给审查员审查（R-88）：只送达，不改需求状态
@@ -45,7 +45,7 @@ type Decision struct {
 	Code            string         `json:"code"`
 	SessionKey      string         `json:"session_key,omitempty"`
 	OriginSession   string         `json:"origin_session,omitempty"`
-	AssignedBy      string         `json:"assigned_by,omitempty"`   // 交出需求的会话（PM 派活时为 PM，R-86）；你在网页上交出时为空
+	AssignedBy      string         `json:"assigned_by,omitempty"`   // 交出需求的会话（PM 指派时为 PM，R-86）；你在网页上交出时为空
 	SessionState    string         `json:"session_state,omitempty"` // 目标会话当前状态
 	DeviceName      string         `json:"device_name,omitempty"`
 	ProjectID       string         `json:"project_id,omitempty"`
@@ -110,9 +110,9 @@ type Decision struct {
 	RequestFrom  string     `json:"request_from,omitempty" doc:"改状态申请（R-188）：申请时需求的状态"`
 	RequestTo    string     `json:"request_to,omitempty" doc:"改状态申请（R-188）：申请改成的状态"`
 	Voided       bool       `json:"voided,omitempty" doc:"改状态申请（R-188）：批准前需求状态已被改动，申请自动作废"`
-	// ByTitle：写这条记录的会话当时的标题（R-195）——修改、放行、派活记 assigned_by 的，Agent 提的决策记提问会话的；旧记录为空
-	ByTitle string `json:"by_title,omitempty" doc:"写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 派活是 assigned_by，决策是提问的会话"`
-	// 团队消息（R-191）：AssignedBy 是发消息的会话，FromRole 是它当时的身份；FromAgent 是发消息的子任务（一次性子代理）的 agent_id，
+	// ByTitle：写这条记录的会话当时的标题（R-195）——修改、放行、指派记 assigned_by 的，Agent 提的决策记提问会话的；旧记录为空
+	ByTitle string `json:"by_title,omitempty" doc:"写这条记录的会话当时的标题快照（R-195）：修改 / 放行 / 指派是 assigned_by，决策是提问的会话"`
+	// 团队消息（R-191）：AssignedBy 是发消息的会话，FromRole 是它当时的身份；FromAgent 是发消息的子任务的 agent_id，
 	// 主线程发的为空；ReplyTo 是这条回复的那条团队消息的 ID
 	FromRole  string `json:"from_role,omitempty" doc:"团队消息（R-191）：发消息的会话当时的身份；Agent 提的决策（R-245 起）是提问会话当时的身份"`
 	FromAgent string `json:"from_agent,omitempty" doc:"团队消息（R-191）：发消息的子任务的 agent_id；会话主线程发的为空"`
@@ -202,7 +202,7 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	return d, err
 }
 
-// CreateDecision 新建待决策项。
+// CreateDecision 新建待答复决策项。
 func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error) {
 	if strings.TrimSpace(d.Question) == "" {
 		return d, errors.New("问题不能为空")
@@ -223,7 +223,7 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 				return err
 			}
 			if d.SessionKey != "" && !(d.Kind == KindTell && d.FYI) {
-				// 点名送给它的（派活、排队送达、留言、团队消息、身份通知）：待命超时的开发恢复正常（R-229）
+				// 点名送给它的（指派、排队送达、留言、团队消息、身份通知）：待命超时的开发恢复正常（R-229）
 				if _, err := t.ExecContext(ctx, `UPDATE sessions SET idle_at = '' WHERE key = ? AND idle_at <> ''`, d.SessionKey); err != nil {
 					return err
 				}
@@ -575,7 +575,7 @@ func checkReplacement(ctx context.Context, t *sql.Tx, d Decision, target string)
 }
 
 // WithdrawDecision 是 Agent 撤回自己提的、还没答复的决策（R-136）：只能撤回本会话提的 decision 类、
-// 状态为待决策的那条；已答复、已接收或已关闭的不能撤回。
+// 状态为待答复决策的那条；已答复、已接收或已关闭的不能撤回。
 func (s *Store) WithdrawDecision(ctx context.Context, ref, sessionKey, reason, replacedBy string) (Decision, error) {
 	d, err := s.GetDecision(ctx, ref)
 	if err != nil {

@@ -21,7 +21,7 @@ func (s *Store) ProjectTells(ctx context.Context, projectID string, since, until
 }
 
 // UnsentTells 列出还没送达、也没关闭的团队消息（新的在前）；projectID 为空时列所有项目。
-// 是「等对方醒来」还是「对方不在线」由调用方按收件会话的记录推。
+// 是「待送达」还是「无法送达」由调用方按收件会话的记录推。
 func (s *Store) UnsentTells(ctx context.Context, projectID string, limit int) ([]Decision, error) {
 	q := decSelect + ` WHERE x.kind = ? AND x.status NOT IN (?, ?)`
 	args := []any{KindTell, DecDelivered, DecClosed}

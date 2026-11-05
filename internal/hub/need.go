@@ -14,9 +14,9 @@ import (
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 开独立开发会话改为「PM 推荐、你限时批准」（R-169，D-221）：默认 PM 把需求交给一次性子代理，
+// 开独立开发会话改为「PM 推荐、你限时批准」（R-169，D-221）：默认 PM 把需求交给一次性子任务，
 // 只有特别适合并行、需要多轮沟通时，PM 才推荐开 Dev 会话。推荐是一条请求类审批（approval = true，request_kind = devs），
-// 出现在「要你处理」和审批抽屉里，不推送打扰；写明为什么要开、开几个、做什么。到点（默认 30 分钟，设置里可改）没人作答，
+// 出现在「待处理」和审批抽屉里，不推送打扰；写明为什么要开、开几个、做什么。到点（默认 30 分钟，设置里可改）没人作答，
 // 按规则视为拒绝，送给 PM 的文字写明是超时（verdict.go）。你批准后才推送接入语、项目页出现横幅（沿用 R-87），
 // 在线 Dev 够数后横幅自动清除并告诉 PM（R-116）。need_devs 保留为兼容入口，走同一流程。
 
@@ -34,7 +34,7 @@ func SetRequestUnit(d time.Duration) { requestUnit = d }
 
 // JoinPhrase 是开开发会话时对 Agent 说的那句话。
 func JoinPhrase(project string) string {
-	return fmt.Sprintf("连接到纸鸢，做「%s」的 Dev（运行 ks role dev）", project)
+	return fmt.Sprintf("连接到纸鸢，做「%s」的开发（运行 ks role dev）", project)
 }
 
 // devRequestMinutes：推荐开 Dev 会话的批准时限（分钟）；minutes > 0 时按这条覆盖，否则用设置里的，都没有用默认 30。
@@ -52,7 +52,7 @@ func (h *Hub) devRequestMinutes(ctx context.Context, minutes int) int {
 
 type devRecommend struct {
 	Count    int
-	Reason   string // 为什么要开：为什么要并行、为什么子代理不合适
+	Reason   string // 为什么要开：为什么要并行、为什么子任务不合适
 	Work     string // 开了做什么：哪些需求
 	Duration string // 预计用多久
 	Minutes  int    // 批准时限，0 = 用设置
@@ -77,10 +77,10 @@ func (h *Hub) recommendDevs(ctx context.Context, me store.Session, in devRecomme
 	if du := strings.TrimSpace(in.Duration); du != "" {
 		fmt.Fprintf(&b, "\n\n**预计用多久**：%s", du)
 	}
-	fmt.Fprintf(&b, "\n\n%d 分钟内没批按规则视为不开，PM 继续用一次性子代理。批准后推送接入语：在项目目录打开 Claude Code，说「%s」。", mins, JoinPhrase(p.Name))
+	fmt.Fprintf(&b, "\n\n%d 分钟内未批准按规则视为不开，主调度继续用一次性子任务。批准后推送接入语：在项目目录打开 Claude Code，输入「%s」。", mins, JoinPhrase(p.Name))
 	d, err = h.store.CreateDecision(ctx, store.Decision{
 		SessionKey: me.Key, ProjectID: me.ProjectID, Kind: store.KindDecision,
-		Question: fmt.Sprintf("推荐开 %d 个 Dev 会话", in.Count), Context: b.String(),
+		Question: fmt.Sprintf("推荐开启 %d 个开发会话", in.Count), Context: b.String(),
 		Approval: true, Options: []string{"批准", "拒绝"}, Risk: store.RiskHigh,
 		RequestKind: store.RequestDevs, RequestCount: in.Count, ExpiresAt: &exp,
 	})
@@ -161,8 +161,8 @@ func (h *Hub) requestDevs(ctx context.Context, projectID string, n int, reason s
 	h.mu.Unlock()
 	h.sendNotify(projectID, notify.Message{
 		Event: notify.EventNeedDevs,
-		Title: fmt.Sprintf("已批准开 %d 个 Dev 会话 · %s", n, p.Name),
-		Body:  fmt.Sprintf("在项目目录打开 Claude Code，说：%s", JoinPhrase(p.Name)),
+		Title: pushNeedDevsTitle(n, p.Name),
+		Body:  pushNeedDevsBody(JoinPhrase(p.Name)),
 		Group: "kitestring",
 	}, "/projects/"+projectID)
 	return nil
@@ -217,7 +217,7 @@ func (h *Hub) registerAgentNeed(api huma.API) {
 	}
 	recommend := func(ctx context.Context, me store.Session, in devRecommend) (*recommendOut, error) {
 		if strings.TrimSpace(in.Reason) == "" {
-			return nil, huma.Error400BadRequest("请写明为什么要开 Dev 会话：为什么要并行、为什么一次性子代理不合适；用户在审批里看到")
+			return nil, huma.Error400BadRequest("请写明为什么要开 Dev 会话：为什么要并行、为什么一次性子任务不合适；用户在审批里看到")
 		}
 		d, existing, err := h.recommendDevs(ctx, me, in)
 		if err != nil {
@@ -232,7 +232,7 @@ func (h *Hub) registerAgentNeed(api huma.API) {
 		if existing {
 			out.Body.Message = fmt.Sprintf("已有 %s 在等用户批准（%s%s），没有重复提。", d.Code, d.Question, left)
 		} else {
-			out.Body.Message = fmt.Sprintf("已推荐（%s）：在用户的审批里等批准，不推送%s。批准后用户才会拿到接入语，Dev 上线时你会收到通知；结果（批准 / 拒绝 / 超时）会送到你这里。等待期间照常用一次性子代理。", d.Code, left)
+			out.Body.Message = fmt.Sprintf("已推荐（%s）：在用户的审批里等批准，不推送%s。批准后用户才会拿到接入语，Dev 上线时你会收到通知；结果（批准 / 拒绝 / 超时）会送到你这里。等待期间照常用一次性子任务。", d.Code, left)
 		}
 		return out, nil
 	}
@@ -242,7 +242,7 @@ func (h *Hub) registerAgentNeed(api huma.API) {
 			Body struct {
 				SessionKey string `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 PM）"`
 				Count      int    `json:"count" minimum:"1" maximum:"5" doc:"推荐开几个 Dev 会话"`
-				Reason     string `json:"reason" doc:"为什么要开：为什么要并行、为什么一次性子代理不合适"`
+				Reason     string `json:"reason" doc:"为什么要开：为什么要并行、为什么一次性子任务不合适"`
 				Work       string `json:"work,omitempty" doc:"开了做什么：哪些需求（写编号）"`
 				Duration   string `json:"duration,omitempty" doc:"预计用多久，例如「两小时」"`
 				Minutes    int    `json:"minutes,omitempty" minimum:"0" maximum:"1440" doc:"批准时限（分钟）；不填用设置里的（默认 30）"`
@@ -261,7 +261,7 @@ func (h *Hub) registerAgentNeed(api huma.API) {
 			Body struct {
 				SessionKey string `json:"session_key" minLength:"1" doc:"调用者（必须是本项目的 PM）"`
 				Count      int    `json:"count" minimum:"0" maximum:"5" doc:"推荐开几个 Dev 会话；0 表示撤回在等批准的推荐、撤掉横幅"`
-				Reason     string `json:"reason,omitempty" doc:"为什么要开：为什么要并行、为什么一次性子代理不合适"`
+				Reason     string `json:"reason,omitempty" doc:"为什么要开：为什么要并行、为什么一次性子任务不合适"`
 			}
 		}) (*recommendOut, error) {
 			me, err := pmOnly(ctx, in.Body.SessionKey)

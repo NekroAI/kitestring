@@ -19,7 +19,7 @@ import (
 	"github.com/NekroAI/kitestring/internal/summary"
 )
 
-// 孤儿进程（R-209）：会话结束后，它开过的后台进程还在跑（典型是 pnpm dev 这类开发服务器）。
+// 残留进程（R-209）：会话结束后，它开过的后台进程还在跑（典型是 pnpm dev 这类开发服务器）。
 //
 // 怎么认“会话开过的后台进程”，两路：
 //  1. Claude Code 给每条命令的环境里都放了 CLAUDE_PID（Agent 进程号）和 CLAUDE_CODE_SESSION_ID：
@@ -27,11 +27,11 @@ import (
 //     包括 daemon 启动前、本功能上线前就开着的。
 //  2. Codex 的命令环境里没有这类标记：扫后台任务（R-162）时，把会话下面的后台 shell 和它的子孙按 pid + 启动时间记进 daemon.db。
 //
-// 状态：开它的 Agent 进程已经不在（进程号不在，或进程号被复用、启动时间对不上）→ 孤儿；
+// 状态：开它的 Agent 进程已经不在（进程号不在，或进程号被复用、启动时间对不上）→ 残留进程；
 // Agent 还在，但进程已经不在 Agent 的进程树下（shell 退出后被系统接管，父进程变成 1）→ 已脱离（会话还在，可能仍在用）；
 // 其余（还挂在 Agent 下面的）是正常运行的，不列出、不给停。
 //
-// 停止只经 Hub 转来，daemon 当场重扫一遍：只停 daemon.db 里记过的、此刻判定为孤儿或已脱离的、pid 和启动时间都对得上的进程树；
+// 停止只经 Hub 转来，daemon 当场重扫一遍：只停 daemon.db 里记过的、此刻判定为残留进程或已脱离的、pid 和启动时间都对得上的进程树；
 // 其他一律拒绝，不按裸 pid 发信号。先 SIGTERM，几秒不退回报“仍在运行”，用户再确认才 SIGKILL。
 //
 // 覆盖不到的：Codex 在 app-server / 桌面 App 里跑（一个进程承载多个会话，R-162 本来就不认）；
@@ -180,7 +180,7 @@ func under(byPid map[int]proc, p proc, agentPid int) bool {
 	return false
 }
 
-// classifyOrphans 从一份进程表里认出孤儿与已脱离的进程树（纯函数，便于测试）。
+// classifyOrphans 从一份进程表里认出残留进程与已脱离的进程树（纯函数，便于测试）。
 func classifyOrphans(ps []proc, envs map[int]procEnv, recs map[string]procRec, self int) []orphanItem {
 	byPid, kids := procIndex(ps)
 	type flag struct{ state, key, cwd, agent string }
@@ -391,7 +391,7 @@ func (d *Daemon) snapshot() ([]proc, map[int]procEnv, error) {
 	return ps, envs(ps), nil
 }
 
-// scanOrphans 认一遍孤儿 / 已脱离的进程，记进 daemon.db，有变化（或隔一分钟）时报给 Hub。
+// scanOrphans 认一遍残留进程 / 已脱离的进程，记进 daemon.db，有变化（或隔一分钟）时报给 Hub。
 func (d *Daemon) scanOrphans(now time.Time, ps []proc) {
 	if d.q == nil {
 		return
@@ -487,7 +487,7 @@ func (d *Daemon) handleStop(req protocol.StopProc) {
 
 var errNoSignal = errors.New("没有发信号")
 
-// stopProc 核对后发信号：只停 daemon.db 记过的、此刻判定为孤儿或已脱离、pid 与启动时间都对得上的进程树。
+// stopProc 核对后发信号：只停 daemon.db 记过的、此刻判定为残留进程或已脱离、pid 与启动时间都对得上的进程树。
 func (d *Daemon) stopProc(req protocol.StopProc) protocol.StopResult {
 	now := time.Now()
 	ps, envs, err := d.snapshot()

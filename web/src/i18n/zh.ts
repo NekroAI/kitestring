@@ -1060,7 +1060,7 @@ export const zh = {
       return rt`允许${'pm'} / ${'aide'}放行草稿`
     },
     get agentReleaseHint() {
-      return rt`${'pm'}或${'aide'}可将做法明确的草稿改为待开始（指派草稿也算放行），须写明理由。进展中记录放行人和理由，可一键撤回。验收${ACC.pass}仍只由你操作，${'dev'}、${'advisor'}不能放行。`
+      return rt`${'pm'}或${'aide'}可将做法明确的草稿改为待开始（指派草稿也算放行），需写明理由。进展中记录放行人和理由，可一键撤回。验收${ACC.pass}仍只由你操作，${'dev'}、${'advisor'}不能放行。`
     },
     commitOnAccept: '验收通过后自动提交',
     get commitOnAcceptHint() {
@@ -1212,7 +1212,7 @@ export const zh = {
     more: '展开全部',
     less: '收起',
   },
-  // 评审验证（R-232、R-237）：交给评审的待验收需求，评审交意见前不进「待处理」
+  // 评审验证（R-232、R-237）：提交评审的待验收需求，评审交意见前不进「待处理」
   verify: {
     reviewing: (who: string) => rt`${'reviewer'}中` + (who ? ` · ${who}` : ''),
     get inProgress() {

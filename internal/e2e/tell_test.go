@@ -151,7 +151,7 @@ func TestTellPM(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/requirements/"+r.Code+"/status", map[string]any{"status": "review", "session_key": "claude:dev"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	text := woke(t, done, "团队消息", r.Code, "已交验收", "列表页能导出 CSV", "达标 2/3")
+	text := woke(t, done, "团队消息", r.Code, "已提交验收", "列表页能导出 CSV", "达标 2 / 3")
 	if strings.Contains(text, "用户已对你之前提出的决策") {
 		t.Fatalf("团队消息不应写成用户答复：%s", text)
 	}
@@ -246,7 +246,7 @@ func TestDevOnlineTellsPM(t *testing.T) {
 	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": "claude:dev", "role": "dev"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	woke(t, done, "团队消息", "claude:dev", "已上线待命", "req_assign", "在线 Dev 已够用户批准的 1 个，接入语横幅已撤下")
+	woke(t, done, "团队消息", "claude:dev", "已上线待命", "req_assign", "在线开发会话已达到用户批准的 1 个，接入语横幅已撤下")
 	if n := pendingCount(e); n != before {
 		t.Fatalf("上线通知不应进用户收件箱：%d → %d", before, n)
 	}

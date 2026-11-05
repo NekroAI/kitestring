@@ -57,9 +57,9 @@ func runRole(args []string) error {
 		return nil
 	}
 	if out.Handoff {
-		fmt.Printf("[Kitestring] 已接任%s：上一任写的交接附在下面，上一任已自动卸任。\n", roles.Display(role))
+		fmt.Printf("[Kitestring] 已接任%s：上一任写的交接附在下面，上一任已自动交出身份。\n", roles.Display(role))
 	} else if len(out.Demoted) > 0 {
-		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）已卸任（不再被唤醒），并已收到卸任通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
+		fmt.Printf("[Kitestring] 已接任%s：原来的%s会话（%s）已交出身份（不再被唤醒），并已收到通知。\n", roles.Display(role), roles.Name(role), strings.Join(out.Demoted, "、"))
 	}
 	fmt.Print(out.Prompt)
 	// DSH 的等待由 Host 插件负责，身份提示词里关于 ks wait 的说法要当场盖掉，避免模型照着挂起来。
@@ -147,7 +147,7 @@ func runBrief(args []string) error {
 //	ks away <总述>                          写总述（传空字符串清除）
 //	ks away advise <R-x> <pass|return|clear> <理由>   给待验收的需求写验收建议
 //	ks away status | report [A-x]               暂时离开的状态 / 时段报告（R-210）
-//	ks away escalate <D-x> --reason 理由         主助理把拿不准的待决策推给用户（R-210）
+//	ks away escalate <D-x> --reason 理由         主助理把拿不准的待答复决策推给用户（R-210）
 func runMorning(args []string) error {
 	if len(args) > 0 {
 		switch args[0] {
@@ -198,7 +198,7 @@ func runTeam(args []string) error {
 	fs := flag.NewFlagSet("team", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）：仅 指定当前会话；tell 里只在自动识别不到时才接受，识别得到而与它不一致会被拒绝（防冒用，R-248），点名收件会话用 --to-session")
 	toSession := fs.String("to-session", "", "tell：点名收件会话键（tool:id），须是本项目没结束、有身份的会话；本项目有多个顾问 / 评审时用它指定，不填则发给最近活跃的那个")
-	reason := fs.String("reason", "", "recommend / need：为什么要开 Dev 会话（为什么要并行、为什么子代理不合适）")
+	reason := fs.String("reason", "", "recommend / need：为什么要开 Dev 会话（为什么要并行、为什么子任务不合适）")
 	work := fs.String("work", "", "recommend：开了做什么（需求编号）")
 	duration := fs.String("duration", "", "recommend：预计用多久")
 	minutes := fs.Int("minutes", 0, "recommend：批准时限（分钟），默认用设置里的（30）")
@@ -209,7 +209,7 @@ func runTeam(args []string) error {
 	allProjects := fs.Bool("all-projects", false, "sessions：列所有项目的会话（不只本项目）")
 	all := fs.Bool("all", false, "sessions：也列已结束的会话（最近活跃的 50 个）")
 	asJSON := fs.Bool("json", false, "sessions / tell / broadcast / sent：输出原始 JSON")
-	fyi := fs.Bool("fyi", false, "tell / broadcast：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被叫醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、派活、回复），立刻叫醒。部署 / 重启、进展通报用 --fyi")
+	fyi := fs.Bool("fyi", false, "tell / broadcast：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、指派、回复），立刻唤醒。部署 / 重启、进展通报用 --fyi")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -436,7 +436,7 @@ func runAwayReport(args []string) error {
 	return nil
 }
 
-// runEscalate：ks away escalate D-x --reason 理由——主助理把拿不准、要用户尽快看的待决策推给用户（R-210）。
+// runEscalate：ks away escalate D-x --reason 理由——主助理把拿不准、要用户尽快看的待答复决策推给用户（R-210）。
 func runEscalate(args []string) error {
 	fs := flag.NewFlagSet("away escalate", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
