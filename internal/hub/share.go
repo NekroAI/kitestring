@@ -61,6 +61,7 @@ type ShareView struct {
 	HasSessions bool            `json:"has_sessions" doc:"范围里有会话：新建 / 编辑时提醒「会话对话全文对访客可见」"`
 	LastVisitAt *time.Time      `json:"last_visit_at,omitempty" doc:"所有链接里最近一次访问"`
 	Visits      int             `json:"visits" doc:"所有链接的访问次数合计"`
+	Pending     int             `json:"pending" doc:"待收的访客留言条数（R-281 第 4 段）"`
 }
 
 type shareOut struct{ Body ShareView }
@@ -461,6 +462,9 @@ func (h *Hub) shareView(ctx context.Context, x store.Share) (ShareView, error) {
 		return v, err
 	}
 	v.HasSessions = v.Scope.Sess > 0
+	if cs, err := h.store.PendingShareCounts(ctx); err == nil {
+		v.Pending = cs[x.ID]
+	}
 	return v, nil
 }
 

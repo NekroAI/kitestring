@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Decision, Requirement, Session } from '../api/client'
-import { useDecisions, usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
+import { useDecisions, usePlans, useProjects, useRequirements, useSessions, useShareComments } from '../api/queries'
 import { attention, stallLimit } from '../lib/waiton'
 import { displayState } from '../ui/marks'
 import { usePlanTodo } from './plans'
@@ -48,6 +48,7 @@ export function useWorkbench() {
   const plansQ = usePlans() // 计划也进「要你处理」（待批准、待阶段验收），到齐前算加载中（R-211）
   const projectsQ = useProjects() // 停滞阈值按项目设置（R-243）
   const minute = useMinute() // 停滞按时间算：每分钟重算一次
+  const guestQ = useShareComments() // 待收的访客留言（R-281）也进「待处理」
 
   return useMemo(() => {
     const ss = sessions.data?.sessions ?? []
@@ -158,9 +159,10 @@ export function useWorkbench() {
       plans, // 在等你的计划：待批准、待阶段验收
       attention: att,
       reqs: rs,
-      todo: all.reduce((n, th) => n + th.items, 0) + plans.length + att.blocked.length + att.drafts.length + att.stalled.length + att.unstarted.length,
+      guests: guestQ.data ?? [],
+      todo: all.reduce((n, th) => n + th.items, 0) + plans.length + att.blocked.length + att.drafts.length + att.stalled.length + att.unstarted.length + (guestQ.data?.length ?? 0),
     }
-  }, [sessions, decisions, reqs, plans, plansQ.isPending, projectsQ.data, minute])
+  }, [sessions, decisions, reqs, plans, plansQ.isPending, projectsQ.data, minute, guestQ.data])
 }
 
 // useMinute：每分钟变一次的当前时间（停滞判断用，R-243）。

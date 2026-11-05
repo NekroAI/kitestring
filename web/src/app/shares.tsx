@@ -13,6 +13,9 @@ import { PlanGlyph, ReqGlyph, RefChip } from '../ui/refmark'
 import { RoleTag } from '../ui/marks'
 import { DraftLine, useDraft } from './draft'
 import { useBusy } from './actions'
+import { AskItem, guestAsk, useStaying } from './asks'
+import { useWorkbench } from './inbox'
+import { useOpenAsk } from './nav'
 
 // 分享（R-281）：所有者这一侧的列表、详情、新建 / 编辑。访客页（/s/<token>）见第 3 段，访客留言见第 4 段。
 
@@ -130,6 +133,39 @@ export function ShareGraph({ tree, inc }: { tree: ShareTree; inc: Set<string> })
 
 // ---------- 分享列表 ----------
 
+// PendingPill：分享上待收的访客留言条数（R-281），黄色：不挡进行中的工作
+function PendingPill({ n, className }: { n: number; className?: string }) {
+  return <span className={cx('shrink-0 rounded-full bg-wait-soft px-2 text-xs leading-5 font-medium text-wait tabular', className)}>{t.share.inbox.pending(n)}</span>
+}
+
+// Inbox：分享详情左栏的「待收的访客留言」，条目和「待处理」里的同一个，点开进审批抽屉处理
+function Inbox({ x }: { x: Share }) {
+  const wb = useWorkbench()
+  const now = useNow()
+  const open = useOpenAsk()
+  const asks = useStaying(useMemo(() => wb.guests.filter((c) => c.share_id === x.id).map(guestAsk), [wb.guests, x.id]))
+  return (
+    <Card className="p-4 sm:p-5" data-share-inbox="">
+      <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-wide text-fg-3">
+        {t.share.inbox.title}
+        {asks.length > 0 && <span className="font-normal tabular">{asks.length}</span>}
+      </h2>
+      {asks.length ? (
+        <div className="grid gap-2">
+          {asks.map((a) => (
+            <AskItem key={a.key} a={a} now={now} onOpen={(k) => open(k)} showShare={false} swipe={false} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-[13px] text-fg-3">
+          <p className="font-medium text-fg-2">{t.share.inbox.empty}</p>
+          <p className="mt-0.5 text-xs">{t.share.inbox.emptyHint}</p>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function ShareRow({ x }: { x: Share }) {
   const on = x.status === 'active'
   const parts = [...countParts(x.scope), t.share.guests(x.links.filter((l) => !l.revoked_at).length)]
@@ -150,8 +186,10 @@ function ShareRow({ x }: { x: Share }) {
           </Tip>
         )}
         {!on && <StatusPill status={x.status} />}
+        {x.pending > 0 && <PendingPill n={x.pending} className="sm:hidden" />}
       </div>
       <div className="col-start-2 row-span-2 row-start-1 flex items-center gap-2 text-[12.5px] text-fg-3 max-sm:hidden">
+        {x.pending > 0 && <PendingPill n={x.pending} />}
         <span className="tabular">{when}</span>
         <ChevronRight className="size-4" />
       </div>
@@ -479,6 +517,7 @@ export function ShareDetail({ x }: { x: Share }) {
       </div>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-4">
+          <Inbox x={x} />
           <Card className="p-4 sm:p-5">
             <h2 className="mb-1 text-xs font-semibold tracking-wide text-fg-3">{t.share.links}</h2>
             <p className="mb-3 text-xs text-fg-3">{t.share.linksHint}</p>

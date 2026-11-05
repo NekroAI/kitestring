@@ -33,7 +33,9 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	guestAPI := humago.New(guestMux, apiConfig())
 	h.registerPublic(publicAPI)
 	h.registerShareGuest(guestAPI) // 分享访客（R-281）：免登录只读，单独一组路由，不经 requireWeb
+	h.registerShareGuestComments(guestAPI)
 	h.registerShareWeb(webAPI)
+	h.registerShareComments(webAPI)
 	h.registerWeb(webAPI)
 	h.registerReview(webAPI)
 	h.registerRelease(webAPI)
@@ -85,7 +87,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	root.Handle("POST /api/auth/passkey/finish", http.HandlerFunc(h.handlePasskeyLoginFinish))
 	root.Handle("POST /api/passkeys/register/begin", h.requireWeb(http.HandlerFunc(h.handlePasskeyRegisterBegin)))
 	root.Handle("POST /api/passkeys/register/finish", h.requireWeb(http.HandlerFunc(h.handlePasskeyRegisterFinish)))
-	// 分享访客（R-281）：只认路径里的访客 token，只有读和输密码；附件和实时通道不走 huma
+	// 分享访客（R-281）：只认路径里的访客 token，只有读、输密码和访客留言；附件和实时通道不走 huma
 	root.Handle("/api/share/", guestMethodGuard(guestMux))
 	root.Handle("GET /api/share/{token}/files/{id}", http.HandlerFunc(h.handleGuestFile))
 	root.Handle("GET /api/share/{token}/stream", http.HandlerFunc(h.serveGuestStream))
@@ -120,7 +122,9 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	api := humago.New(mux, apiConfig())
 	h.registerPublic(api)
 	h.registerShareGuest(api)
+	h.registerShareGuestComments(api)
 	h.registerShareWeb(api)
+	h.registerShareComments(api)
 	h.registerWeb(api)
 	h.registerReview(api)
 	h.registerRelease(api)

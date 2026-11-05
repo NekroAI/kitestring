@@ -1,6 +1,8 @@
 {
   "$comment": "界面文案自动检查规则（docs/copywriting.md 第 6 节）。前端 web/src/lib/copy.test.ts 与后端 internal/copyrules 共用这一份。改术语表时同步改 forbidden 和 statusSets；豁免只写在 allow 里，必须写 reason，拦不到任何问题的豁免会报错。",
   "forbidden": [
+    { "word": "访客评论", "use": "访客留言" },
+    { "word": "待审核", "use": "待收" },
     { "word": "在跑", "use": "运行中" },
     { "word": "干活", "use": "处理" },
     { "word": "接着干", "use": "继续" },
@@ -86,7 +88,7 @@
     "turns.give", "turns.send", "orphans.ignore", "handoff.copyCmd", "brief.reportOpen", "away.start", "away.confirm", "away.end", "morning.withdraw",
     "share.create", "share.menu", "share.enable", "share.revoke", "share.revokeOk", "share.preview", "share.copyLink", "share.revokeLink", "share.restoreLink",
     "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk",
-    "guest.enter", "guest.toolsAll", "guest.toolsFold"
+    "guest.enter", "guest.toolsAll", "guest.toolsFold", "share.inbox.place", "share.inbox.ignore", "share.inbox.raw", "share.inbox.rewrite", "guest.leave", "guest.send", "guest.toWhole"
   ],
   "buttonMax": 6,
   "allow": [

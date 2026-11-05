@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, BellRing, CheckCircle2, ChevronDown, ChevronRight, Share2, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
-import { qk, useDevices, useProjects, useCacheHolds, usePush, useSettings, useTokenPrices } from '../api/queries'
+import { qk, useDevices, useProjects, useCacheHolds, usePush, useSettings, useTokenPrices, useShareComments } from '../api/queries'
 import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
 import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
@@ -1225,6 +1225,7 @@ function Account({ version }: { version: string }) {
 
 export default function SettingsPage({ version }: { version: string }) {
   const [params, setParams] = useSearchParams()
+  const guests = useShareComments().data?.length ?? 0 // 待收的访客留言（R-281），手机入口旁显示
   const tab = (tabs.find((x) => x.id === params.get('tab'))?.id ?? 'devices') as Tab
   const go = (id: Tab) =>
     setParams((p) => {
@@ -1247,6 +1248,11 @@ export default function SettingsPage({ version }: { version: string }) {
       <Link to="/shares" className="mb-4 flex h-12 items-center gap-2.5 rounded-2xl border border-line bg-surface px-4 text-sm font-medium text-fg shadow-card transition active:bg-hover lg:hidden">
         <Share2 className="size-[18px] shrink-0 text-fg-3" />
         <span className="flex-1">{t.nav.shares}</span>
+        {guests > 0 && (
+          <span aria-label={t.share.inbox.pending(guests)} className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-wait px-1 text-[11px] font-semibold text-white tabular dark:text-bg">
+            {guests}
+          </span>
+        )}
         <ChevronRight className="size-4 text-fg-3" />
       </Link>
       <div className="-mx-4 mb-5 overflow-x-auto px-4 lg:hidden">

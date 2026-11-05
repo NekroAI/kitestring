@@ -13,8 +13,8 @@ import { displayState, RoleTag, StatusPill } from '../ui/marks'
 import { DecGlyph, Linkify, PlanGlyph, RefChip, ReqGlyph, ReqStatus, statusCls } from '../ui/refmark'
 import { EvidenceBody } from '../app/evidence'
 import { hm, ItemNode, type TurnItem } from '../app/sessionTurns'
-import { useGuestPlan, useGuestReq, useGuestSession, type GuestItem, type GuestOverview, type GuestSession, type GuestTurn, type ShareActivity } from './data'
-import { CommentSlot } from './slots'
+import { useGuestPlan, useGuestReq, useGuestSession, useMyComments, type GuestItem, type GuestOverview, type GuestSession, type GuestTurn, type ShareActivity } from './data'
+import { CommentSlot, Compose, MyComments } from './slots'
 
 // 访客页的各个视图（R-281 第 3 段）：概览、需求、计划、会话。全部只读，没有任何改动入口。
 
@@ -273,10 +273,16 @@ function Byline({ role, title, user, children, at, now, right }: { role?: string
   )
 }
 
+// evidenceLine：证据的一句话（结构化证据的结论，老格式取第一行），留言对象的标签用
+function evidenceLine(e: Evidence) {
+  const s = (e.payload?.verdict || e.summary || '').trim().split('\n')[0] ?? ''
+  return s.length > 30 ? `${s.slice(0, 30)}…` : s
+}
+
 function EvidenceItem({ e, r, review, now }: { e: Evidence; r: Requirement; review?: boolean; now: number }) {
   return (
     <Card className="@container" id={`ev-${e.id}`}>
-      <Byline role={e.role} title={e.session_title} at={e.created_at} now={now} right={<CommentSlot target={{ kind: 'evidence', ref: e.id, req: r.code }} />}>
+      <Byline role={e.role} title={e.session_title} at={e.created_at} now={now} right={<CommentSlot target={{ kind: 'evidence', ref: e.id, req: r.code, label: t.guest.onEvidence(evidenceLine(e)) }} />}>
         <span>{review ? t.guest.reviewed : t.guest.submitted}</span>
       </Byline>
       <EvidenceBody e={e} r={r} />
@@ -288,7 +294,7 @@ function DecisionItem({ d, now }: { d: Decision; now: number }) {
   const answered = !!d.answer && d.status !== 'pending'
   return (
     <Card id={d.code}>
-      <Byline role={d.from_role || undefined} title={d.by_title} at={d.created_at} now={now} right={<CommentSlot target={{ kind: 'dec', ref: d.code, req: d.requirement_code }} />}>
+      <Byline role={d.from_role || undefined} title={d.by_title} at={d.created_at} now={now} right={<CommentSlot target={{ kind: 'dec', ref: d.code, req: d.requirement_code, label: d.code }} />}>
         <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-fg-2">
           <DecGlyph open={d.status === 'pending'} />
           {d.code}
@@ -340,6 +346,29 @@ function DecisionItem({ d, now }: { d: Decision; now: number }) {
 const noteKinds = ['comment', 'note', 'feedback']
 function NoteItem({ f, now }: { f: Decision; now: number }) {
   const user = f.kind !== 'comment' && !f.assigned_by
+  const g = f.guest
+  if (g)
+    // 分享者放入的访客留言（R-281）：写明来自谁、经分享链接、由分享者放入；改写前的原话不给访客看
+    return (
+      <Card id={f.code}>
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-3">
+          <b className="font-medium text-fg">{t.guest.from(g.name)}</b>
+          {g.target_kind === 'dec' && g.target_code && <RefChip code={g.target_code} />}
+          {g.target_kind === 'evidence' && <span>{t.guest.onEvidence(g.target_title ?? '')}</span>}
+          {g.target_kind === 'stage' && <span>{t.guest.onStage(g.target_code ?? '', g.target_seq ?? 0)}</span>}
+          <Rel at={f.answered_at || f.created_at} now={now} />
+        </div>
+        <p className="text-[13.5px] break-words whitespace-pre-wrap">
+          <Linkify text={f.answer} />
+        </p>
+        {g.addend && (
+          <p className="mt-1.5 border-t border-dashed border-line pt-1.5 text-[13px] break-words whitespace-pre-wrap text-fg-2">
+            <b className="mr-1 font-semibold">{t.guest.ownerAddend}：</b>
+            {g.addend}
+          </p>
+        )}
+      </Card>
+    )
   return (
     <Card id={f.code} className={f.kind === 'feedback' ? 'border-reply/30' : undefined}>
       <Byline user={user} role={f.from_role || undefined} title={f.by_title} at={f.answered_at || f.created_at} now={now}>
@@ -358,6 +387,7 @@ function NoteItem({ f, now }: { f: Decision; now: number }) {
 
 export function ReqView({ token, code, ov }: { token: string; code: string; ov: Overview }) {
   const q = useGuestReq(token, code)
+  const mine = useMyComments(token)
   const now = useNow()
   useScrollToHash(!!q.data)
   if (q.isPending) return <Loading />
@@ -367,8 +397,10 @@ export function ReqView({ token, code, ov }: { token: string; code: string; ov: 
   const voided = (r.evidence ?? []).filter((e) => e.voided).length
   const reviews = [...(r.reviews ?? [])].reverse()
   const notes = (r.feedback ?? []).filter((f) => noteKinds.includes(f.kind))
+  const myNotes = (mine.data ?? []).filter((x) => x.req === r.code)
   return (
-    <div className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
+    <div className="flex min-h-full flex-col">
+    <div className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6">
       <header className="mb-5">
         <h1 className="font-display text-[20px] leading-snug tracking-[0.02em] text-balance text-fg">{r.title}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-fg-3">
@@ -377,7 +409,7 @@ export function ReqView({ token, code, ov }: { token: string; code: string; ov: 
           {r.plan_code && <RefChip code={r.plan_code} label="title" suffix={r.stage_seq ? t.guest.stage(r.stage_seq) : undefined} />}
           <span>{t.guest.updated(relTime(r.updated_at, now))}</span>
           <span className="ml-auto">
-            <CommentSlot target={{ kind: 'req', ref: r.code }} />
+            <CommentSlot target={{ kind: 'req', ref: r.code, label: r.code }} />
           </span>
         </div>
         {r.status === 'blocked' && (r.blocked_on || r.blocked_reason) && (
@@ -451,8 +483,11 @@ export function ReqView({ token, code, ov }: { token: string; code: string; ov: 
             </div>
           </Section>
         )}
+        <MyComments items={myNotes} />
         <Section title={t.guest.progress}>{activity.length ? <Feed list={activity} token={token} sessions={ov.sessions} now={now} /> : <p className="text-[13px] text-fg-3">{t.guest.noProgress}</p>}</Section>
       </div>
+    </div>
+    <Compose fallback={{ kind: 'req', ref: r.code, label: r.code }} />
     </div>
   )
 }
@@ -470,12 +505,15 @@ function useScrollToHash(ready: boolean) {
 
 export function PlanView({ token, code }: { token: string; code: string }) {
   const q = useGuestPlan(token, code)
+  const mine = useMyComments(token)
   const now = useNow()
   if (q.isPending) return <Loading />
   if (q.isError) return <Failed error={q.error} onRetry={() => q.refetch()} />
   const p = q.data
+  const myNotes = (mine.data ?? []).filter((x) => x.target_kind === 'stage' && x.target_code === p.code)
   return (
-    <div className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
+    <div className="flex min-h-full flex-col">
+    <div className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6">
       <header className="mb-5">
         <h1 className="flex items-center gap-2 font-display text-[20px] leading-snug tracking-[0.02em] text-balance text-fg">
           <PlanGlyph status={p.status} className="size-4" />
@@ -499,6 +537,7 @@ export function PlanView({ token, code }: { token: string; code: string }) {
               <>
                 {t.guest.stage(s.seq)}
                 <span className="font-normal text-fg-2">{s.title}</span>
+                <CommentSlot target={{ kind: 'stage', ref: s.id, label: t.guest.onStage(p.code, s.seq) }} className="order-last ml-auto" />
               </>
             }
             extra={t.plan.stageState[s.status] ?? s.status}
@@ -524,9 +563,6 @@ export function PlanView({ token, code }: { token: string; code: string }) {
                 <div className="mb-1 flex items-center gap-2 text-xs text-fg-3">
                   {t.guest.stageSummary}
                   <Rel at={s.summary_at} now={now} />
-                  <span className="ml-auto">
-                    <CommentSlot target={{ kind: 'stage', ref: s.id }} />
-                  </span>
                 </div>
                 {s.summary && <Md text={s.summary} className="text-[13.5px]" />}
                 {!!s.summary_blocks?.length && <BlockList blocks={s.summary_blocks} className="mt-1.5" />}
@@ -534,7 +570,10 @@ export function PlanView({ token, code }: { token: string; code: string }) {
             )}
           </Section>
         ))}
+        <MyComments items={myNotes} />
       </div>
+    </div>
+    <Compose />
     </div>
   )
 }

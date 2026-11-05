@@ -582,3 +582,24 @@ CREATE TABLE IF NOT EXISTS share_links (
 	visits        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS share_links_share ON share_links(share_id);
+
+-- 访客留言（R-281）：访客在分享页上对需求、决策、证据、阶段的留言。先进待收队列（pending），
+-- 所有者原样或改写放入（placed，写成需求留言 decision_id）或忽略（ignored）。访客只能写这一张表
+CREATE TABLE IF NOT EXISTS share_comments (
+	id             TEXT PRIMARY KEY,
+	share_id       TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+	link_id        TEXT NOT NULL DEFAULT '',
+	guest_name     TEXT NOT NULL,
+	target_kind    TEXT NOT NULL, -- req | dec | evidence | stage
+	target_ref     TEXT NOT NULL, -- 需求 ID、决策 ID、证据 ID、阶段 ID
+	requirement_id TEXT NOT NULL DEFAULT '', -- 留言所属的需求；挂在阶段上时为空
+	plan_id        TEXT NOT NULL DEFAULT '',
+	stage_seq      INTEGER NOT NULL DEFAULT 0,
+	text           TEXT NOT NULL,
+	status         TEXT NOT NULL DEFAULT 'pending',
+	decision_id    TEXT NOT NULL DEFAULT '',
+	created_at     TEXT NOT NULL,
+	handled_at     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS share_comments_status ON share_comments(status, created_at);
+CREATE INDEX IF NOT EXISTS share_comments_link ON share_comments(link_id, created_at);

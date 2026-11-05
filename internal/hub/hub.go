@@ -429,6 +429,9 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 		if d.Kind == store.KindFeedback {
 			pd.Advice = d.Context
 		}
+		if d.Guest != nil {
+			pd.Answer = guestNoteText(d) // 放入的访客留言（R-281）：写明来自谁、经哪个分享、针对什么
+		}
 		if d.Kind == store.KindPlan {
 			pd.ReqCode, pd.ReqTitle = d.PlanCode, d.Question // 计划进展：编号与标题是计划的
 		}

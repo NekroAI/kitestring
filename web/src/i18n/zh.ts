@@ -11,11 +11,12 @@ import { both, roleNames, rt } from './roles.ts'
 // - request  Agent 的请求（R-169 推荐开独立开发会话，超时视为拒绝）：批准 / 拒绝
 // - answer   选项类决策：回答（没有否定动作）
 // - permit   会话等授权：允许 / 拒绝（网页上暂不提供，预留）
+// - guest    访客留言（R-281）：放入 / 忽略（放入 = 写进需求留言）
 // 送给 Agent 的答复里，拒绝 / 退回 / 超时视为拒绝分别写明（后端 internal/hub/verdict.go）。
 // joinCodes：R-1、R-2 两条以内全写，再多写「R-1 等 3 条」（R-243）
 const joinCodes = (codes: string[]) => (codes.length <= 2 ? codes.join('、') : `${codes[0]} 等 ${codes.length} 条`)
 
-export type Scene = 'accept' | 'plan' | 'approval' | 'request' | 'answer' | 'permit'
+export type Scene = 'accept' | 'plan' | 'approval' | 'request' | 'answer' | 'permit' | 'guest'
 const VERB: Record<Scene, { pass: string; back: string }> = {
   accept: { pass: '通过', back: '退回' },
   plan: { pass: '批准', back: '退回' },
@@ -23,6 +24,7 @@ const VERB: Record<Scene, { pass: string; back: string }> = {
   request: { pass: '批准', back: '拒绝' },
   answer: { pass: '回答', back: '' },
   permit: { pass: '允许', back: '拒绝' },
+  guest: { pass: '放入', back: '忽略' },
 }
 const ACC = VERB.accept
 
@@ -171,6 +173,40 @@ export const zh = {
     needContent: '勾选内容后才能保存',
     created: '已创建分享',
     saved: '已保存分享',
+    // 待收的访客留言（R-281 第 4 段）：先进待收队列和「待处理」，在审批抽屉里放入或忽略
+    inbox: {
+      title: '待收的访客留言',
+      empty: '暂无待收的访客留言',
+      emptyHint: '访客在分享页上的留言先到这里，放入后才进需求。',
+      pending: (n: number) => `待收留言 ${n}`,
+      via: (share: string) => `经「${share}」`,
+      viaLink: (link: string) => `经链接「${link}」`,
+      to: '留言给',
+      mode: '放入方式',
+      raw: '原样',
+      rewrite: '改写',
+      rewriteAria: '改写后的留言',
+      keepOriginal: '原话会保留，在需求里可以展开查看。',
+      addend: '附言',
+      addendPlaceholder: '可选，会话读需求时一起看到',
+      pickReq: '放入哪条需求',
+      noReq: '这个阶段暂无需求，无法放入。',
+      preview: (code: string) => `放入后在 ${code} 显示为`,
+      notify: (code: string) => `放入后 ${code} 的关联会话会收到提醒。`,
+      place: (code: string) => `放入 ${code}`,
+      ignore: '忽略',
+      placed: (code: string) => `已放入 ${code}`,
+      ignored: '已忽略',
+      ignoredHint: '访客不会收到通知。',
+      handled: '这条访客留言已处理',
+      // 放入后在需求时间线上：来源一句、原话、附言
+      from: (name: string) => `来自「${name}」（经分享链接），由你放入`,
+      original: '访客原话',
+      yourAddend: '你的附言',
+      onStage: (plan: string, n: number) => `${plan} 阶段 ${n}`,
+      onEvidence: (title: string) => `证据「${title}」`,
+      fail: { place: '放入访客留言', ignore: '忽略访客留言' },
+    },
     fail: {
       create: '创建分享',
       save: '保存分享',
@@ -252,6 +288,22 @@ export const zh = {
     toolsFold: '收起',
     toolRunning: '运行中',
     sub: '子任务',
+    // 访客留言（R-281 第 4 段）：留在需求、决策、证据、阶段上，分享者确认后才加进需求留言
+    leave: '留言',
+    leaveTo: '留言给',
+    leaveAria: (target: string) => `留言给 ${target}`,
+    toWhole: '改回整条需求',
+    closeCompose: '收起留言框',
+    placeholder: '写给分享者，确认后会加进需求留言',
+    send: '发送',
+    sent: '已发送，等待分享者确认',
+    sendFail: '发送留言',
+    mine: '你的留言',
+    mineStatus: { pending: '待分享者确认', placed: '已放入需求', ignored: '分享者已查看' } as Record<string, string>,
+    onStage: (plan: string, n: number) => `${plan} 阶段 ${n}`,
+    onEvidence: (title: string) => `证据「${title}」`,
+    from: (name: string) => `来自「${name}」（经分享链接），由分享者放入`,
+    ownerAddend: '分享者附言',
   },
   app: {
     name: '纸鸢',
@@ -674,7 +726,7 @@ export const zh = {
   },
   // 审批抽屉与「待处理」条目（R-177）
   ask: {
-    kind: { review: '验收', decide: '决策', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答', blocked: '受阻', waited: '待定稿', stalled: '停滞', unstarted: '未开始' } as Record<string, string>,
+    kind: { review: '验收', decide: '决策', approve: '批准', request: '请求', plan: '计划', stage: '阶段验收', orphan: '转交', permit: '授权', question: '提问', proxy: '代答', blocked: '受阻', waited: '待定稿', stalled: '停滞', unstarted: '未开始', guest: '访客留言' } as Record<string, string>,
     // 待处理里的等待关系（R-243）：受阻指向、被等着定稿的草稿、停滞的进行中需求
     waitedBy: (by: string[]) => `${joinCodes(by)} 等待这条需求`,
     waitedDraft: (by: string[]) => `${joinCodes(by)} 等待这条草稿定稿`,

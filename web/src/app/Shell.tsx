@@ -51,15 +51,16 @@ function Count({ n, tone = 'seal' }: { n: number; tone?: 'seal' | 'wait' }) {
 }
 
 // 通讯旁的黄色数字（R-249）：还在等对方醒来的消息。只是提示，不进「要你处理」，所以用黄色而不是朱砂
-// 分享旁的数字只数待收的访客留言（R-281 第 4 段接上），同样用黄色
-function navCount(to: string, todo: number, unsent: number): { n: number; tone: 'seal' | 'wait'; tip?: string } {
+// 分享旁的数字只数待收的访客留言（R-281），同样用黄色：访客留言不挡进行中的工作
+function navCount(to: string, todo: number, unsent: number, guests = 0): { n: number; tone: 'seal' | 'wait'; tip?: string } {
   if (to === '/') return { n: todo, tone: 'seal' }
   if (to === '/comms') return { n: unsent, tone: 'wait', tip: unsent ? t.nav.commsTip(unsent) : undefined }
+  if (to === '/shares') return { n: guests, tone: 'wait', tip: guests ? t.share.inbox.pending(guests) : undefined }
   return { n: 0, tone: 'seal' }
 }
 
 // 侧边栏可折叠成图标栏（R-18）：⌘\ 或底部按钮切换，记在本机。折叠后名称在悬停提示里。
-function Sidebar({ todo, unsent, connected, collapsed, onToggle }: { todo: number; unsent: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
+function Sidebar({ todo, unsent, guests, connected, collapsed, onToggle }: { todo: number; unsent: number; guests: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
   const wb = useWorkbench()
   const now = useNow()
   const { openPalette } = useCommand()
@@ -93,7 +94,7 @@ function Sidebar({ todo, unsent, connected, collapsed, onToggle }: { todo: numbe
       </Tip>
       <nav className="space-y-0.5">
         {nav.map((n) => {
-          const k = navCount(n.to, todo, unsent)
+          const k = navCount(n.to, todo, unsent, guests)
           return (
           <Tip key={n.to} side="right" content={c ? (n.keys ? withKey(k.tip ? `${n.label} · ${k.tip}` : n.label, n.keys) : n.label) : null}>
             {/* 外面包一层：Tip 的 asChild 会把 NavLink 的函数 className 拼成字符串 */}
@@ -154,7 +155,7 @@ function Sidebar({ todo, unsent, connected, collapsed, onToggle }: { todo: numbe
   )
 }
 
-function TabBar({ todo, unsent }: { todo: number; unsent: number }) {
+function TabBar({ todo, unsent, guests }: { todo: number; unsent: number; guests: number }) {
   const { pathname } = useLocation()
   // 分享页从设置页进入，底部导航把它算在「设置」下
   const inSettings = pathname.startsWith('/shares')
@@ -168,6 +169,8 @@ function TabBar({ todo, unsent }: { todo: number; unsent: number }) {
               <span className="absolute -top-1.5 -right-2.5">
                 <Count n={navCount(n.to, todo, unsent).n} tone={navCount(n.to, todo, unsent).tone} />
               </span>
+              {/* 手机上「分享」在设置页里：有待收的访客留言时「设置」上带一个小点（R-281） */}
+              {n.to === '/settings' && guests > 0 && <span data-guest-dot="" aria-label={t.share.inbox.pending(guests)} className="absolute -top-0.5 -right-1 size-[7px] rounded-full bg-wait" />}
             </span>
             {n.label}
           </NavLink>
@@ -234,7 +237,7 @@ export function Shell() {
     <RefIndexProvider>
     <CommandProvider>
     <div className="min-h-dvh">
-      <Sidebar todo={todo} unsent={unsent} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      <Sidebar todo={todo} unsent={unsent} guests={wb.guests.length} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
       <main className={cx('pb-24 transition-[padding] duration-200 ease-out', pathname === '/' ? 'lg:pb-5' : 'lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
         {/* 工作台是一屏驾驶舱，用满任意宽度（R-170，去掉原来 1880px 的上限）、需求池盘面随屏幕一直放宽到 3600px（R-133，2K / 4K / 21:9 用满），其余页面保持 1360px 的阅读宽度 */}
@@ -243,7 +246,7 @@ export function Shell() {
           <Outlet />
         </div>
       </main>
-      <TabBar todo={todo} unsent={unsent} />
+      <TabBar todo={todo} unsent={unsent} guests={wb.guests.length} />
       <SessionPanel sessionKey={session} onClose={close} />
       <ReqPanel refId={req} onClose={close} />
       <PlanPanel code={planAsk ? null : plan} onClose={close} />

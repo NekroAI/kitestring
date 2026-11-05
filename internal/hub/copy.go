@@ -218,7 +218,15 @@ const (
 	sharePasswordWrong  = "访问密码错误"
 	shareNotIncluded    = "不在这个分享里"
 	shareReadOnly       = "分享只能查看，不能修改"
+	// 访客留言（R-281 第 4 段）
+	shareCommentEmpty   = "留言不能为空"
+	shareCommentTarget  = "只能在需求、决策、证据或阶段上留言"
+	shareCommentTooMany = "留言过于频繁，10 分钟后再试"
+	shareCommentPickReq = "选择要放入的需求（这个阶段里的需求）"
 )
+
+// shareCommentTooLong 是访客留言超出字数上限时的提示。
+func shareCommentTooLong(n int) string { return fmt.Sprintf("留言最多 %d 字", n) }
 
 // sharePasswordLocked 是访问密码错误次数过多后的提示。
 func sharePasswordLocked(minutes int) string {
@@ -264,6 +272,7 @@ func copyTexts() map[string]string {
 		"holdEnded": holdEnded("G-3"), "handoffHow": handoffHow("甲", false), "handoffHowHanded": handoffHow("甲", true),
 		"shareLinkInvalid": shareLinkInvalid, "shareLinkRevoked": shareLinkRevoked, "shareRevokedText": shareRevokedText, "shareExpiredText": shareExpiredText,
 		"sharePasswordNeeded": sharePasswordNeeded, "sharePasswordWrong": sharePasswordWrong, "shareNotIncluded": shareNotIncluded, "shareReadOnly": shareReadOnly, "sharePasswordLocked": sharePasswordLocked(15),
+		"shareCommentEmpty": shareCommentEmpty, "shareCommentTarget": shareCommentTarget, "shareCommentTooMany": shareCommentTooMany, "shareCommentPickReq": shareCommentPickReq, "shareCommentTooLong": shareCommentTooLong(2000),
 	} {
 		out[k] = v
 	}

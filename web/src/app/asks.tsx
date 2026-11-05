@@ -19,16 +19,18 @@ import { useWarmFlag } from './laneFeed'
 import { PendingCover, usePending, usePendingMap, useReqVerdict } from './verdict'
 import { ReviewMark } from './verify'
 import type { BlockedWhy } from '../lib/waiton'
+import type { ShareComment } from '../api/queries'
 
 // 「要你处理」的条目（R-177）：所有要你下判断的事只有一个界面——右侧的审批抽屉（app/approval.tsx）。
 // 工作台左栏、会话面板、项目页、⌘K 只放固定大小的条目（类型 + 标题 + 一行状态 + 参谋建议 + 等待时长），
 // 不铺开证据、不就地展开、不就地作答；点开进抽屉，抽屉里可以上一条 / 下一条连续处理。
 // 唯一的例外（D-491，R-73）：触屏上验收、批准类决策可以左滑露出「通过 / 退回」（useAskActions）。
 // 条目的键也是抽屉的地址（?a=键）：r:R-1 需求验收、d:D-2 决策、p:P-3 计划批准、g:P-3 阶段验收、o:D-4 转交、
-// s:会话键 会话在等授权 / 用提问工具在问你、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）。
+// s:会话键 会话在等授权 / 用提问工具在问你、x:D-5 推翻参谋的代答（只从离开期间小结打开，不在队列里）、
+// v:留言 ID 待收的访客留言（R-281：放入需求或忽略）。
 // 只认明确记录（R-239）：会话只在对话里写了问句、没提决策的，不进这里。
 
-export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy' | 'blocked' | 'waited' | 'stalled' | 'unstarted'
+export type AskKind = 'review' | 'decide' | 'approve' | 'request' | 'plan' | 'stage' | 'orphan' | 'permit' | 'question' | 'proxy' | 'blocked' | 'waited' | 'stalled' | 'unstarted' | 'guest'
 
 export type Ask = {
   key: string
@@ -46,13 +48,15 @@ export type Ask = {
   stage?: number // 阶段验收：等你验收的阶段
   waitedBy?: string[] // 在等这一条的受阻需求（R-243）：「R-210 在等这条」
   blockedWhy?: BlockedWhy // 受阻需求本身进来的原因（R-243）
+  gc?: ShareComment // 访客留言（R-281）
 }
 
 type WB = ReturnType<typeof useWorkbench>
 
 // 越小越靠前：决策 / 批准 → 会话在等你 → 验收 → 计划 / 阶段 → 转交；同类里等得越久越靠前。
 // 受阻 / 被等着定稿的草稿和计划同档（解开它工作才能往下走）；停滞和转交同档。
-const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, waited: 3, blocked: 3, orphan: 4, stalled: 4, unstarted: 3, proxy: 9 }
+// 访客留言不挡任何进行中的工作，排在最后（R-281）。
+const rank: Record<AskKind, number> = { approve: 0, request: 0, decide: 0, permit: 1, question: 1, review: 2, stage: 3, plan: 3, waited: 3, blocked: 3, orphan: 4, stalled: 4, unstarted: 3, guest: 5, proxy: 9 }
 
 // buildAsks：从工作台数据算出全部条目（工作台、侧栏角标、抽屉队列同一口径）。
 export function buildAsks(wb: WB): Ask[] {
@@ -114,11 +118,36 @@ export function buildAsks(wb: WB): Ask[] {
     if (st) push({ key: `g:${x.code}`, kind: 'stage', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, stage: st.seq, projectId: x.project_id || '', projectName: x.project_name || '' })
     else if (needsApproval(x)) push({ key: `p:${x.code}`, kind: 'plan', title: x.title, at: x.updated_at, counted: true, code: x.code, plan: x, projectId: x.project_id || '', projectName: x.project_name || '' })
   }
+  for (const c of wb.guests) push(guestAsk(c))
   for (const a of out) {
     const by = a.code ? att.waitedBy.get(a.code) : undefined
     if (by?.length) a.waitedBy = by
   }
   return out.sort((a, b) => rank[a.kind] - rank[b.kind] || a.at.localeCompare(b.at))
+}
+
+// guestAsk：一条待收的访客留言（R-281）。标题是所属需求（挂在阶段上的写计划和阶段）。
+export function guestAsk(c: ShareComment): Ask {
+  const stage = c.target_kind === 'stage'
+  return {
+    key: `v:${c.id}`,
+    kind: 'guest',
+    title: stage ? c.target_title || c.plan_title || '' : c.requirement_title || '',
+    at: c.created_at,
+    counted: true,
+    code: stage ? c.target_code : c.requirement_code,
+    gc: c,
+    projectId: c.project_id || '',
+    projectName: '',
+  }
+}
+
+// guestTarget：访客留言针对的对象写成一个短标签（挂在需求本身时为空）。
+export function guestTarget(c: { target_kind: string; target_code?: string; target_seq?: number; target_title?: string }) {
+  if (c.target_kind === 'dec') return c.target_code ?? ''
+  if (c.target_kind === 'evidence') return t.share.inbox.onEvidence(c.target_title ?? '')
+  if (c.target_kind === 'stage') return t.share.inbox.onStage(c.target_code ?? '', c.target_seq ?? 0)
+  return ''
 }
 
 export function useAsks(wb: WB) {
@@ -132,6 +161,7 @@ export function pendingKeyOf(a: Ask | undefined) {
   if (a.kind === 'plan') return `plan:${a.code}`
   if (a.kind === 'stage') return `stage:${a.code}:${a.stage}`
   if (a.d && (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request')) return decKey(a.d.code)
+  if (a.kind === 'guest' && a.gc) return `guest:${a.gc.id}`
   return undefined
 }
 
@@ -211,6 +241,7 @@ const kindTone: Record<AskKind, string> = {
   waited: 'text-wait',
   stalled: 'text-reply',
   unstarted: 'text-wait',
+  guest: 'text-accent',
   permit: 'text-wait',
   question: 'text-reply',
   proxy: 'text-accent',
@@ -285,6 +316,15 @@ function statusLine(a: Ask, now: number): React.ReactNode {
       return t.ask.stalledLine(roughDuration(a.at, now))
     case 'unstarted':
       return t.ask.unstartedLine(roughDuration(a.at, now))
+    case 'guest': {
+      const on = a.gc && a.gc.target_kind !== 'stage' ? guestTarget(a.gc) : ''
+      return (
+        <>
+          {on && <span className="mr-1.5 font-mono text-[11.5px] text-fg-3">{on}</span>}
+          {firstLine(a.gc?.text)}
+        </>
+      )
+    }
   }
 }
 
@@ -397,6 +437,15 @@ export function AskItem(props: Parameters<typeof AskCard>[0] & { swipe?: boolean
   const actions = useAskActions(props.a)
   const key = swipeKey(props.a)
   const pend = usePending(key)
+  // 访客留言（R-281）不能左滑，但放入 / 忽略的撤销期里条目上同样盖遮罩
+  const gk = props.a.kind === 'guest' ? pendingKeyOf(props.a) : undefined
+  if (gk)
+    return (
+      <div className="relative shrink-0 rounded-[14px]">
+        <AskCard {...rest} spotKey={props.a.s?.key ?? ''} />
+        <PendingCover k={gk} />
+      </div>
+    )
   if (!swipe || !actions.length) return <AskCard {...rest} spotKey={props.a.s?.key ?? ''} />
   return (
     <SwipeRow actions={actions} disabled={!!pend} className="shrink-0" spotKey={props.a.s?.key ?? ''}>
@@ -414,6 +463,7 @@ function AskCard({
   showProject,
   className,
   spotKey,
+  showShare = true,
 }: {
   a: Ask
   now: number
@@ -422,9 +472,12 @@ function AskCard({
   showProject?: boolean
   className?: string
   spotKey?: string
+  showShare?: boolean // 访客留言写经哪个分享；分享详情页里不写
 }) {
   const s = a.s
-  const who = s ? sessionTitle(s) : a.projectName || t.thread.noSession
+  const g = a.gc
+  // 访客留言：访客名字，不在分享页里时再写经哪个分享
+  const who = g ? [g.guest_name, showShare ? t.share.inbox.via(g.share_name) : ''].filter(Boolean).join(t.common.sep) : s ? sessionTitle(s) : a.projectName || t.thread.noSession
   // 改状态申请（R-188）：多一行——需求编号 + 标题、一句话说明、当前 → 目标状态 + 理由；卡片上不作答，点开进抽屉
   const sr = a.kind === 'request' && isStatusReq(a.d) ? a.d : undefined
   return (

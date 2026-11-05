@@ -15,6 +15,7 @@ import { PeekContext } from '../app/nav'
 import { Logo } from '../app/Shell'
 import { gk, unlock, useGuestLive, useGuestMeta, useOverview, type GuestMeta } from './data'
 import { Failed, Loading, OverviewView, PlanView, ReqView, SessionView, type Overview } from './views'
+import { ComposeScope } from './slots'
 
 // 访客页（R-281 第 3 段）：/s/<token>，免登录、只读。
 // 和所有者的网页完全分开：不挂所有者的导航、设置和任何写操作入口，不调所有者的接口（不会借访客页拿到所有者的登录态），
@@ -213,6 +214,7 @@ function Space({ token, meta }: { token: string; meta: GuestMeta }) {
                 ) : ov.isError ? (
                   <Failed error={ov.error} onRetry={() => ov.refetch()} />
                 ) : (
+                  <ComposeScope key={loc.pathname} token={token}>
                   <Routes>
                     <Route index element={<OverviewView ov={ov.data} token={token} reqs={reqs} fresh={fresh} />} />
                     <Route path="r/:code" element={<ReqRoute token={token} ov={ov.data} />} />
@@ -220,6 +222,7 @@ function Space({ token, meta }: { token: string; meta: GuestMeta }) {
                     <Route path="s/:key" element={<SessionRoute token={token} ov={ov.data} />} />
                     <Route path="*" element={<OverviewView ov={ov.data} token={token} reqs={reqs} fresh={fresh} />} />
                   </Routes>
+                  </ComposeScope>
                 )}
               </main>
             </div>

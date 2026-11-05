@@ -15,6 +15,7 @@ export type GuestItem = Schemas['GuestItem']
 export type GuestSessionPage = Schemas['GuestSessionOutBody']
 export type ShareActivity = Schemas['ShareActivity']
 export type GuestPlan = Schemas['Plan']
+export type GuestComment = Schemas['GuestComment']
 
 const base = (token: string) => `/api/share/${encodeURIComponent(token)}`
 
@@ -40,6 +41,7 @@ export const gk = {
   req: (token: string, code: string) => ['guest', token, 'req', code] as const,
   plan: (token: string, code: string) => ['guest', token, 'plan', code] as const,
   session: (token: string, key: string) => ['guest', token, 'session', key] as const,
+  comments: (token: string) => ['guest', token, 'comments'] as const,
 }
 
 const noRetry = (n: number, e: unknown) => !(e instanceof ApiError && e.status < 500) && n < 2
@@ -71,6 +73,20 @@ export function useGuestReq(token: string, code: string) {
     select: (d) => ({ ...d, requirement: { ...d.requirement, sessions: norm(d.requirement.sessions) }, decisions: norm(d.decisions), sessions: norm(d.sessions), activity: norm(d.activity) }),
     retry: noRetry,
   })
+}
+
+// 访客留言（R-281 第 4 段）：这条链接写过的留言和处理结果（分享者放入 / 忽略后随实时通道刷新）
+export function useMyComments(token: string) {
+  return useQuery({
+    queryKey: gk.comments(token),
+    queryFn: () => call<{ comments?: GuestComment[] | null }>(`${base(token)}/comments`),
+    select: (d) => d.comments ?? [],
+    retry: noRetry,
+  })
+}
+
+export async function postComment(token: string, body: { target_kind: string; target_ref: string; text: string }) {
+  return call<GuestComment>(`${base(token)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
 export function useGuestPlan(token: string, code: string) {

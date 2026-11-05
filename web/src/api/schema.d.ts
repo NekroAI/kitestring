@@ -1913,6 +1913,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/share-comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 待收的访客留言（全部分享） */
+        get: operations["list-share-comments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share-comments/{id}/ignore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 忽略访客留言（访客不会收到通知） */
+        post: operations["ignore-share-comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share-comments/{id}/place": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 放入访客留言：原样或改写放进需求留言（可加附言，改写保留原话） */
+        post: operations["place-share-comment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/share/{token}": {
         parameters: {
             query?: never;
@@ -1924,6 +1975,27 @@ export interface paths {
         get: operations["guest-share"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：这条链接写过的留言和处理结果 */
+        get: operations["guest-comments"];
+        put?: never;
+        /**
+         * 访客：留言（先进分享者的待收队列）
+         * @description 访客唯一能写的接口：在分享里的需求、决策、证据或阶段上留一条言。留言只进待收队列，分享者放入后才成为需求留言；不能借它改任何别的内容。
+         */
+        post: operations["guest-comment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3333,6 +3405,8 @@ export interface components {
             from_role?: string;
             /** @description 团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait */
             fyi?: boolean;
+            /** @description 访客留言的来源（R-281）：所有者从分享的待收队列放入的留言才有 */
+            guest?: components["schemas"]["GuestOrigin"];
             /** @enum {string} */
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
@@ -3444,6 +3518,8 @@ export interface components {
             from_role?: string;
             /** @description 团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait */
             fyi?: boolean;
+            /** @description 访客留言的来源（R-281）：所有者从分享的待收队列放入的留言才有 */
+            guest?: components["schemas"]["GuestOrigin"];
             /** @enum {string} */
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
@@ -3822,6 +3898,42 @@ export interface components {
             /** @description 参谋代答过的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
         };
+        GuestComment: {
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            /** @description 所属需求编号 */
+            req?: string;
+            /**
+             * @description pending 待分享者处理 / placed 已放入需求 / ignored 分享者已看过、没有放入
+             * @enum {string}
+             */
+            status: "pending" | "placed" | "ignored";
+            /** @description 决策编号；阶段是所属计划编号 */
+            target_code?: string;
+            /** @enum {string} */
+            target_kind: "req" | "dec" | "evidence" | "stage";
+            target_ref: string;
+            /** Format: int64 */
+            target_seq?: number;
+            target_title?: string;
+            text: string;
+        };
+        GuestCommentInBody: {
+            /**
+             * @description 留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段
+             * @enum {string}
+             */
+            target_kind: "req" | "dec" | "evidence" | "stage";
+            /** @description 需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID */
+            target_ref: string;
+            /** @description 留言正文，最多 2000 字 */
+            text: string;
+        };
+        GuestCommentsOutBody: {
+            /** @description 这条链接写过的留言，新的在前，最多 50 条 */
+            comments: components["schemas"]["GuestComment"][] | null;
+        };
         GuestDecRef: {
             code: string;
             /** @description 所属需求编号 */
@@ -3860,6 +3972,34 @@ export interface components {
             /** @description 已输过密码（或没设密码），可以看内容 */
             unlocked: boolean;
         };
+        GuestOrigin: {
+            /** @description 所有者放入时写的附言 */
+            addend?: string;
+            /**
+             * Format: date-time
+             * @description 访客留言的时间
+             */
+            at: string;
+            /** @description 访客留言 ID */
+            comment: string;
+            /** @description 访客名字（访客链接的名字） */
+            name: string;
+            /** @description 改写放入时访客的原话；原样放入时为空 */
+            original?: string;
+            /** @description 经由的分享名称 */
+            share: string;
+            /** @description 决策编号 D-x；阶段是所属计划编号 P-x */
+            target_code?: string;
+            /** @enum {string} */
+            target_kind: "req" | "dec" | "evidence" | "stage";
+            /**
+             * Format: int64
+             * @description 阶段：第几阶段
+             */
+            target_seq?: number;
+            /** @description 证据的结论第一句、阶段标题 */
+            target_title?: string;
+        };
         GuestOverviewOutBody: {
             /** @description 最近动态（只收有明确记录的事件），新的在前，最多 50 条 */
             activity: components["schemas"]["ShareActivity"][] | null;
@@ -3869,7 +4009,7 @@ export interface components {
             counts: {
                 [key: string]: number;
             };
-            /** @description 分享里需求上的决策：文字里提到这些 D-x 时能点开（落到所属需求） */
+            /** @description 分享里需求上访客看得到的决策和留言等记录：文字里提到这些 D-x 时能点开（落到所属需求） */
             decs: components["schemas"]["GuestDecRef"][] | null;
             guest: string;
             name: string;
@@ -4558,6 +4698,19 @@ export interface components {
             todo?: string[] | null;
             /** @description 一句结论（40 字以内） */
             verdict?: string;
+        };
+        PlaceInBody: {
+            /** @description 附言（可选） */
+            addend?: string;
+            /** @description 挂在阶段上的留言放进哪条需求（R-x）；其它对象不填，放进留言所属的需求 */
+            requirement?: string;
+            /** @description 改写放入时的正文；不填为原样放入 */
+            text?: string;
+        };
+        PlaceOutBody: {
+            comment: components["schemas"]["ShareComment"];
+            /** @description 放入后成为的需求留言 */
+            decision: components["schemas"]["Decision"];
         };
         Plan: {
             code: string;
@@ -5487,6 +5640,90 @@ export interface components {
             /** @description 改状态：新状态 */
             to?: string;
         };
+        ShareComment: {
+            /** Format: date-time */
+            created_at: string;
+            /** @description 放入后成为的需求留言编号 D-x */
+            decision_code?: string;
+            /** @description 访客名字（访客链接的名字） */
+            guest_name: string;
+            /** Format: date-time */
+            handled_at?: string;
+            id: string;
+            link_id: string;
+            plan_id?: string;
+            plan_title?: string;
+            project_id?: string;
+            requirement_code?: string;
+            requirement_id?: string;
+            requirement_title?: string;
+            share_id: string;
+            share_name: string;
+            /**
+             * @description pending 待收 / placed 已放入 / ignored 已忽略
+             * @enum {string}
+             */
+            status: "pending" | "placed" | "ignored";
+            /** @description 决策编号 D-x；阶段是所属计划编号 P-x */
+            target_code?: string;
+            /** @enum {string} */
+            target_kind: "req" | "dec" | "evidence" | "stage";
+            /** @description 需求 / 决策 / 证据 / 阶段的 ID */
+            target_ref: string;
+            /**
+             * Format: int64
+             * @description 阶段：第几阶段
+             */
+            target_seq?: number;
+            /** @description 证据的结论第一句、阶段标题、决策的问题 */
+            target_title?: string;
+            text: string;
+        };
+        ShareCommentView: {
+            /** @description 挂在阶段上的留言：放入时可选的需求（这个阶段的需求） */
+            choices?: components["schemas"]["RequirementRef"][] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description 放入后成为的需求留言编号 D-x */
+            decision_code?: string;
+            /** @description 访客名字（访客链接的名字） */
+            guest_name: string;
+            /** Format: date-time */
+            handled_at?: string;
+            id: string;
+            link_id: string;
+            plan_id?: string;
+            plan_title?: string;
+            project_id?: string;
+            requirement_code?: string;
+            requirement_id?: string;
+            requirement_title?: string;
+            share_id: string;
+            share_name: string;
+            /**
+             * @description pending 待收 / placed 已放入 / ignored 已忽略
+             * @enum {string}
+             */
+            status: "pending" | "placed" | "ignored";
+            /** @description 决策编号 D-x；阶段是所属计划编号 P-x */
+            target_code?: string;
+            /** @enum {string} */
+            target_kind: "req" | "dec" | "evidence" | "stage";
+            /** @description 需求 / 决策 / 证据 / 阶段的 ID */
+            target_ref: string;
+            /**
+             * Format: int64
+             * @description 阶段：第几阶段
+             */
+            target_seq?: number;
+            /** @description 证据的结论第一句、阶段标题、决策的问题 */
+            target_title?: string;
+            text: string;
+        };
+        ShareCommentsOutBody: {
+            /** @description 待收的访客留言（全部分享），早的在前 */
+            comments: components["schemas"]["ShareCommentView"][] | null;
+        };
         ShareCreateInBody: {
             /**
              * Format: date-time
@@ -5620,6 +5857,11 @@ export interface components {
             last_visit_at?: string;
             links: components["schemas"]["ShareLinkView"][] | null;
             name: string;
+            /**
+             * Format: int64
+             * @description 待收的访客留言条数（R-281 第 4 段）
+             */
+            pending: number;
             project_id?: string;
             /**
              * Format: date-time
@@ -10365,6 +10607,101 @@ export interface operations {
             };
         };
     };
+    "list-share-comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareCommentsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "ignore-share-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareComment"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "place-share-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaceInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaceOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "guest-share": {
         parameters: {
             query?: never;
@@ -10385,6 +10722,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GuestMetaOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestCommentsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestCommentInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestComment"];
                 };
             };
             /** @description Error */

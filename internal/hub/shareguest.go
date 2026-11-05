@@ -233,6 +233,12 @@ func (h *Hub) guestSessions(ctx context.Context, g *guestCtx, keys []string) []G
 
 // guestDecision 去掉访客不该看到的会话键、设备名等，范围外的会话只留身份和标题快照。
 func (g *guestCtx) decision(d store.Decision) store.Decision {
+	if d.Guest != nil {
+		// 放入的访客留言：访客页只给放进去的正文和附言，改写前的原话只有所有者看得到
+		x := *d.Guest
+		x.Original, x.Comment = "", ""
+		d.Guest = &x
+	}
 	d.SessionKey, d.OriginSession, d.AssignedBy = g.keep(d.SessionKey), g.keep(d.OriginSession), g.keep(d.AssignedBy)
 	d.ProxyBy = g.keep(d.ProxyBy)
 	d.SessionState, d.DeviceName, d.DeliveredTurn = "", "", ""
@@ -813,10 +819,20 @@ func (h *Hub) serveGuestStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// guestMethodGuard：访客接口只有读和输密码，其它方法一律 405。
+// guestPostPath：访客能 POST 的只有两处——输密码 /api/share/<token>/unlock、留言 /api/share/<token>/comments（R-281 第 4 段）。
+func guestPostPath(p string) bool {
+	rest, ok := strings.CutPrefix(p, "/api/share/")
+	if !ok {
+		return false
+	}
+	parts := strings.Split(rest, "/")
+	return len(parts) == 2 && parts[0] != "" && (parts[1] == "unlock" || parts[1] == "comments")
+}
+
+// guestMethodGuard：访客接口只有读、输密码和留言，其它方法一律 405。
 func guestMethodGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && !(r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/unlock")) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !(r.Method == http.MethodPost && guestPostPath(r.URL.Path)) {
 			writeErr(w, http.StatusMethodNotAllowed, shareReadOnly)
 			return
 		}

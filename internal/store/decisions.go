@@ -121,6 +121,8 @@ type Decision struct {
 	// BroadcastID 非空表示这条是一次广播拆给某个收件人的那一行，同一次广播的各行共用它
 	FYI         bool   `json:"fyi,omitempty" doc:"团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait"`
 	BroadcastID string `json:"broadcast_id,omitempty" doc:"团队消息（R-249）：一次广播拆成每个收件人一行，同一次广播共用这个 ID"`
+	// Guest：所有者放入需求的访客留言（R-281）的来源；其它记录为空
+	Guest *GuestOrigin `json:"guest,omitempty" doc:"访客留言的来源（R-281）：所有者从分享的待收队列放入的留言才有"`
 }
 
 // snapDecision 给刚写入的记录补上会话标题快照（R-195）。
@@ -149,7 +151,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
 	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
-	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option, x.hard, x.fyi, x.broadcast_id
+	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option, x.hard, x.fyi, x.broadcast_id, x.guest
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -162,12 +164,15 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var seq, rseq, pseq int
 	var options, optFiles, ctxFiles, created, files, bs, points, summary, choices string
 	var answered, delivered sql.NullString
-	var proxyAt, overAt, expires string
+	var proxyAt, overAt, expires, guest string
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
 		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
-		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption, &d.Hard, &d.FYI, &d.BroadcastID)
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption, &d.Hard, &d.FYI, &d.BroadcastID, &guest)
+	if guest != "" {
+		d.Guest = blocks.Decode[GuestOrigin](guest)
+	}
 	d.ExpiresAt = parseNullTS(sql.NullString{String: expires, Valid: expires != ""})
 	d.Code = decCode(seq)
 	d.ProxyAt = parseNullTS(sql.NullString{String: proxyAt, Valid: proxyAt != ""})

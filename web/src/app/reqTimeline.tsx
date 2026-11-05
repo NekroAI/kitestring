@@ -23,6 +23,7 @@ import { releaseKey, useWithdrawRelease } from './requirements'
 import { PendingBar } from './verdict'
 import { PlanSummary } from './points'
 import { approvedOf } from '../lib/waiting'
+import { GuestNoteContent, GuestSource } from './guestNote'
 
 // 需求抽屉只有这一条时间线（R-195）：从上往下按时间排，每份证据只出现一次——本轮最新的一份展开，其余收成一行，点开就地展开。
 // 每条记录都写清是谁做的：身份胶囊 + 会话标题（动作当时的标题，悬停看现在的），点开是那个会话。
@@ -516,14 +517,21 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
             now={now}
             head={
               <>
-                {f.assigned_by ? <Who actor="agent" session={f.assigned_by} title={f.by_title} className="max-w-[16em]" /> : <Who actor="user" />}
-                <span className={cx('font-semibold', note ? 'text-fg-2' : 'text-reply')}>{note ? t.proof.noted : t.proof.revised}</span>
+                {f.guest ? (
+                  // 放入的访客留言（R-281）：写明来自谁、经分享链接、由你放入
+                  <GuestSource g={f.guest} />
+                ) : (
+                  <>
+                    {f.assigned_by ? <Who actor="agent" session={f.assigned_by} title={f.by_title} className="max-w-[16em]" /> : <Who actor="user" />}
+                    <span className={cx('font-semibold', note ? 'text-fg-2' : 'text-reply')}>{note ? t.proof.noted : t.proof.revised}</span>
+                  </>
+                )}
                 {flowOf(f.code)}
                 <Badge tone={f.status === 'delivered' ? 'run' : 'neutral'}>{t.decision.status[f.status]}</Badge>
               </>
             }
           >
-            {f.answer && <Linkify text={f.answer} />}
+            {f.guest ? <GuestNoteContent text={f.answer ?? ''} original={f.guest.original} addend={f.guest.addend} /> : f.answer && <Linkify text={f.answer} />}
             {!!f.answer_files?.length && (
               <div className="mt-1.5">
                 <Thumbs files={f.answer_files} size="sm" />

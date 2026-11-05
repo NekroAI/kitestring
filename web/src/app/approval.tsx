@@ -25,9 +25,10 @@ import { BackButton, DrawerSkeleton, ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
 import { isStatusReq, StatusReqNote } from './statusReq'
 import { useAdvance, usePendingMap } from './verdict'
+import { GuestNoteBody } from './guestNote'
 
 // 审批抽屉（R-177）：所有要你下判断的事只在这里处理——需求验收、阶段验收、计划批准、批准类 / 选项类决策、
-// Agent 的限时请求（R-169 推荐开 Dev 会话）、转交、会话在等你、推翻代答。同一个外壳（需求抽屉的版式：顶栏 → 中部滚动 → 底部固定的判断），
+// Agent 的限时请求（R-169 推荐开 Dev 会话）、转交、会话在等你、推翻代答、访客留言（R-281）。同一个外壳（需求抽屉的版式：顶栏 → 中部滚动 → 底部固定的判断），
 // 按类型换中部内容；底部统一是 R-161 的 Verdict，用词按 R-176 的场景。
 // 从「要你处理」打开时按它的顺序排队：顶部 ‹ › 切换，← → / J K 同样切换；处理完显示「都处理完了」。
 // 撤销期不挡用户的下一步（R-201），但系统替用户做的下一步要等撤销期结束（R-226，docs/principles.md 第 8 条）：点了通过 / 批准 / 回答，停在这一件盖着撤销遮罩，3 秒走完盖印后才滑到下一件；
@@ -369,6 +370,7 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
     )
   }
   if (a.kind === 'orphan' && d) return <OrphanBody d={d} top={top} />
+  if (a.kind === 'guest' && a.gc) return <GuestNoteBody key={a.gc.id} c={a.gc} top={top} />
   if (a.kind === 'proxy' && d) return <ProxyBody d={d} top={top} />
   if (a.s) return <SessionBody s={a.s} top={top} />
   return <Gone top={top} />

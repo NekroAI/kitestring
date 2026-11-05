@@ -3002,6 +3002,10 @@
             "description": "团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait",
             "type": "boolean"
           },
+          "guest": {
+            "$ref": "#/components/schemas/GuestOrigin",
+            "description": "访客留言的来源（R-281）：所有者从分享的待收队列放入的留言才有"
+          },
           "hard": {
             "enum": [
               "product",
@@ -3401,6 +3405,10 @@
           "fyi": {
             "description": "团队消息（R-249）：只告知，不唤醒对方挂着的 ks wait",
             "type": "boolean"
+          },
+          "guest": {
+            "$ref": "#/components/schemas/GuestOrigin",
+            "description": "访客留言的来源（R-281）：所有者从分享的待收队列放入的留言才有"
           },
           "hard": {
             "enum": [
@@ -4563,6 +4571,114 @@
         ],
         "type": "object"
       },
+      "GuestComment": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "req": {
+            "description": "所属需求编号",
+            "type": "string"
+          },
+          "status": {
+            "description": "pending 待分享者处理 / placed 已放入需求 / ignored 分享者已看过、没有放入",
+            "enum": [
+              "pending",
+              "placed",
+              "ignored"
+            ],
+            "type": "string"
+          },
+          "target_code": {
+            "description": "决策编号；阶段是所属计划编号",
+            "type": "string"
+          },
+          "target_kind": {
+            "enum": [
+              "req",
+              "dec",
+              "evidence",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "target_ref": {
+            "type": "string"
+          },
+          "target_seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "target_title": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "target_kind",
+          "target_ref",
+          "text",
+          "status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "GuestCommentInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "target_kind": {
+            "description": "留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段",
+            "enum": [
+              "req",
+              "dec",
+              "evidence",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "target_ref": {
+            "description": "需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID",
+            "type": "string"
+          },
+          "text": {
+            "description": "留言正文，最多 2000 字",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_kind",
+          "target_ref",
+          "text"
+        ],
+        "type": "object"
+      },
+      "GuestCommentsOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "comments": {
+            "description": "这条链接写过的留言，新的在前，最多 50 条",
+            "items": {
+              "$ref": "#/components/schemas/GuestComment"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "type": "object"
+      },
       "GuestDecRef": {
         "additionalProperties": false,
         "properties": {
@@ -4683,6 +4799,66 @@
         ],
         "type": "object"
       },
+      "GuestOrigin": {
+        "additionalProperties": false,
+        "properties": {
+          "addend": {
+            "description": "所有者放入时写的附言",
+            "type": "string"
+          },
+          "at": {
+            "description": "访客留言的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "comment": {
+            "description": "访客留言 ID",
+            "type": "string"
+          },
+          "name": {
+            "description": "访客名字（访客链接的名字）",
+            "type": "string"
+          },
+          "original": {
+            "description": "改写放入时访客的原话；原样放入时为空",
+            "type": "string"
+          },
+          "share": {
+            "description": "经由的分享名称",
+            "type": "string"
+          },
+          "target_code": {
+            "description": "决策编号 D-x；阶段是所属计划编号 P-x",
+            "type": "string"
+          },
+          "target_kind": {
+            "enum": [
+              "req",
+              "dec",
+              "evidence",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "target_seq": {
+            "description": "阶段：第几阶段",
+            "format": "int64",
+            "type": "integer"
+          },
+          "target_title": {
+            "description": "证据的结论第一句、阶段标题",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment",
+          "name",
+          "share",
+          "at",
+          "target_kind"
+        ],
+        "type": "object"
+      },
       "GuestOverviewOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -4715,7 +4891,7 @@
             "type": "object"
           },
           "decs": {
-            "description": "分享里需求上的决策：文字里提到这些 D-x 时能点开（落到所属需求）",
+            "description": "分享里需求上访客看得到的决策和留言等记录：文字里提到这些 D-x 时能点开（落到所属需求）",
             "items": {
               "$ref": "#/components/schemas/GuestDecRef"
             },
@@ -6870,6 +7046,41 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "PlaceInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "addend": {
+            "description": "附言（可选）",
+            "type": "string"
+          },
+          "requirement": {
+            "description": "挂在阶段上的留言放进哪条需求（R-x）；其它对象不填，放进留言所属的需求",
+            "type": "string"
+          },
+          "text": {
+            "description": "改写放入时的正文；不填为原样放入",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PlaceOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "$ref": "#/components/schemas/ShareComment"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision",
+            "description": "放入后成为的需求留言"
+          }
+        },
+        "required": [
+          "comment",
+          "decision"
+        ],
         "type": "object"
       },
       "Plan": {
@@ -9779,6 +9990,239 @@
         ],
         "type": "object"
       },
+      "ShareComment": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decision_code": {
+            "description": "放入后成为的需求留言编号 D-x",
+            "type": "string"
+          },
+          "guest_name": {
+            "description": "访客名字（访客链接的名字）",
+            "type": "string"
+          },
+          "handled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "link_id": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "plan_title": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_id": {
+            "type": "string"
+          },
+          "requirement_title": {
+            "type": "string"
+          },
+          "share_id": {
+            "type": "string"
+          },
+          "share_name": {
+            "type": "string"
+          },
+          "status": {
+            "description": "pending 待收 / placed 已放入 / ignored 已忽略",
+            "enum": [
+              "pending",
+              "placed",
+              "ignored"
+            ],
+            "type": "string"
+          },
+          "target_code": {
+            "description": "决策编号 D-x；阶段是所属计划编号 P-x",
+            "type": "string"
+          },
+          "target_kind": {
+            "enum": [
+              "req",
+              "dec",
+              "evidence",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "target_ref": {
+            "description": "需求 / 决策 / 证据 / 阶段的 ID",
+            "type": "string"
+          },
+          "target_seq": {
+            "description": "阶段：第几阶段",
+            "format": "int64",
+            "type": "integer"
+          },
+          "target_title": {
+            "description": "证据的结论第一句、阶段标题、决策的问题",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "share_id",
+          "share_name",
+          "link_id",
+          "guest_name",
+          "target_kind",
+          "target_ref",
+          "text",
+          "status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ShareCommentView": {
+        "additionalProperties": false,
+        "properties": {
+          "choices": {
+            "description": "挂在阶段上的留言：放入时可选的需求（这个阶段的需求）",
+            "items": {
+              "$ref": "#/components/schemas/RequirementRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decision_code": {
+            "description": "放入后成为的需求留言编号 D-x",
+            "type": "string"
+          },
+          "guest_name": {
+            "description": "访客名字（访客链接的名字）",
+            "type": "string"
+          },
+          "handled_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "link_id": {
+            "type": "string"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "plan_title": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_id": {
+            "type": "string"
+          },
+          "requirement_title": {
+            "type": "string"
+          },
+          "share_id": {
+            "type": "string"
+          },
+          "share_name": {
+            "type": "string"
+          },
+          "status": {
+            "description": "pending 待收 / placed 已放入 / ignored 已忽略",
+            "enum": [
+              "pending",
+              "placed",
+              "ignored"
+            ],
+            "type": "string"
+          },
+          "target_code": {
+            "description": "决策编号 D-x；阶段是所属计划编号 P-x",
+            "type": "string"
+          },
+          "target_kind": {
+            "enum": [
+              "req",
+              "dec",
+              "evidence",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "target_ref": {
+            "description": "需求 / 决策 / 证据 / 阶段的 ID",
+            "type": "string"
+          },
+          "target_seq": {
+            "description": "阶段：第几阶段",
+            "format": "int64",
+            "type": "integer"
+          },
+          "target_title": {
+            "description": "证据的结论第一句、阶段标题、决策的问题",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "share_id",
+          "share_name",
+          "link_id",
+          "guest_name",
+          "target_kind",
+          "target_ref",
+          "text",
+          "status",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ShareCommentsOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "comments": {
+            "description": "待收的访客留言（全部分享），早的在前",
+            "items": {
+              "$ref": "#/components/schemas/ShareCommentView"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "type": "object"
+      },
       "ShareCreateInBody": {
         "additionalProperties": false,
         "properties": {
@@ -10177,6 +10621,11 @@
           "name": {
             "type": "string"
           },
+          "pending": {
+            "description": "待收的访客留言条数（R-281 第 4 段）",
+            "format": "int64",
+            "type": "integer"
+          },
           "project_id": {
             "type": "string"
           },
@@ -10212,6 +10661,7 @@
           "scope",
           "has_sessions",
           "visits",
+          "pending",
           "id",
           "name",
           "has_password",
@@ -17563,6 +18013,129 @@
         ]
       }
     },
+    "/api/share-comments": {
+      "get": {
+        "operationId": "list-share-comments",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareCommentsOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "待收的访客留言（全部分享）",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/share-comments/{id}/ignore": {
+      "post": {
+        "operationId": "ignore-share-comment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareComment"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "忽略访客留言（访客不会收到通知）",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
+    "/api/share-comments/{id}/place": {
+      "post": {
+        "operationId": "place-share-comment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "放入访客留言：原样或改写放进需求留言（可加附言，改写保留原话）",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
     "/api/share/{token}": {
       "get": {
         "operationId": "guest-share",
@@ -17606,6 +18179,111 @@
           }
         },
         "summary": "访客：分享名称、要不要输密码",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/comments": {
+      "get": {
+        "operationId": "guest-comments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestCommentsOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：这条链接写过的留言和处理结果",
+        "tags": [
+          "share-guest"
+        ]
+      },
+      "post": {
+        "description": "访客唯一能写的接口：在分享里的需求、决策、证据或阶段上留一条言。留言只进待收队列，分享者放入后才成为需求留言；不能借它改任何别的内容。",
+        "operationId": "guest-comment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestCommentInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestComment"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：留言（先进分享者的待收队列）",
         "tags": [
           "share-guest"
         ]

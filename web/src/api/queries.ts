@@ -236,6 +236,16 @@ export function useShare(id: string | undefined) {
   })
 }
 
+// 待收的访客留言（R-281 第 4 段）：全部分享的，早的在前；进「待处理」，侧边栏「分享」的数字也数它。
+export type ShareComment = Schemas['ShareCommentView']
+export function useShareComments() {
+  return useQuery({
+    queryKey: ['shares', 'comments'],
+    queryFn: () => unwrap(api.GET('/api/share-comments')),
+    select: (d) => (d.comments ?? []).map((c) => ({ ...c, choices: c.choices ?? [] })),
+  })
+}
+
 export function useShareCandidates(projectId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ['shares', 'candidates', projectId ?? ''],

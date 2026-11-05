@@ -114,7 +114,34 @@ type reqView struct {
 		FromRole     string     `json:"from_role"`
 		ByTitle      string     `json:"by_title"`
 		Blocks       []any      `json:"blocks"`
+		Guest        *guestView `json:"guest"`
 	} `json:"feedback"`
+}
+
+// guestView 是放入需求的访客留言的来源（R-281）：用户从分享的待收队列放进来的，不是用户自己写的。
+type guestView struct {
+	Name        string `json:"name"`
+	Share       string `json:"share"`
+	TargetKind  string `json:"target_kind"`
+	TargetCode  string `json:"target_code"`
+	TargetSeq   int    `json:"target_seq"`
+	TargetTitle string `json:"target_title"`
+	Original    string `json:"original"`
+	Addend      string `json:"addend"`
+}
+
+// source：「来自「小王」（经分享链接「P-8 进展」），由用户放入，针对 D-12」（与 hub 送达文字同一写法）。
+func (g guestView) source() string {
+	s := "来自「" + g.Name + "」（经分享链接「" + g.Share + "」），由用户放入"
+	switch g.TargetKind {
+	case "dec":
+		s += "，针对 " + g.TargetCode
+	case "evidence":
+		s += "，针对证据「" + g.TargetTitle + "」"
+	case "stage":
+		s += fmt.Sprintf("，针对 %s 阶段 %d", g.TargetCode, g.TargetSeq)
+	}
+	return s
 }
 
 // commentShown 是 req_get 默认列出的会话留言条数（最新的几条，R-249）；full = true 给全部。
@@ -306,6 +333,18 @@ func (r reqView) String() string {
 			s = fmt.Sprintf("  - %s%s 放行：由 %s（%s）放行：%s", when, f.Code, roleZh(f.Context), f.AssignedBy, f.Answer)
 			if f.CloseReason != "" {
 				s += "（已撤回：" + f.CloseReason + "）"
+			}
+		case "note":
+			if f.Guest == nil {
+				s = fmt.Sprintf("  - %s%s %s：%s", when, f.Code, fbLabel[f.Kind], f.Answer)
+				break
+			}
+			s = fmt.Sprintf("  - %s%s 访客留言：%s：%s", when, f.Code, f.Guest.source(), f.Answer)
+			if f.Guest.Original != "" {
+				s += "\n      访客原话：" + f.Guest.Original
+			}
+			if f.Guest.Addend != "" {
+				s += "\n      用户附言：" + f.Guest.Addend
 			}
 		default:
 			s = fmt.Sprintf("  - %s%s %s：%s", when, f.Code, fbLabel[f.Kind], f.Answer)

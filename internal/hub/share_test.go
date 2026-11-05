@@ -421,8 +421,8 @@ func TestShareGuestBoundary(t *testing.T) {
 			if op == nil {
 				continue
 			}
-			if strings.HasPrefix(path, "/api/auth/") || path == "/api/share/{token}/unlock" {
-				continue // 登录、首次设置、输访问密码本来就不用登录
+			if strings.HasPrefix(path, "/api/auth/") || path == "/api/share/{token}/unlock" || path == "/api/share/{token}/comments" {
+				continue // 登录、首次设置、输访问密码本来就不用登录；访客留言另有测试（sharecomments_test.go）
 			}
 			p := param.ReplaceAllStringFunc(path, func(s string) string {
 				if s == "{token}" {
