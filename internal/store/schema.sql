@@ -534,3 +534,14 @@ CREATE TABLE IF NOT EXISTS arrangements (
 	revoked_by TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS arrangements_project ON arrangements(project_id, created_at);
+
+-- 每轮回复（R-273）：会话每轮结束（Stop）时的最后一条回复，最长 2 万字，按 Stop 事件存一行；会话详情页按轮显示。
+-- 只从上线起记，之前的轮用 Stop 事件里带的摘要用回复兜底。清理跟 events 一致（目前不清理）。
+CREATE TABLE IF NOT EXISTS turn_replies (
+	event_id    TEXT PRIMARY KEY,
+	session_key TEXT NOT NULL,
+	turn_id     TEXT NOT NULL DEFAULT '',
+	at          TEXT NOT NULL,
+	text        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS turn_replies_session ON turn_replies(session_key, at);

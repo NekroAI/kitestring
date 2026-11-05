@@ -1829,6 +1829,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/{key}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 网页上发给会话的话和它们的送达状态（R-273） */
+        get: operations["session-replies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/{key}/reply": {
         parameters: {
             query?: never;
@@ -1838,8 +1855,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒） */
+        /** 给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒），返回送达状态 */
         post: operations["reply-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{key}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢叫醒它的消息、纸鸢动作、工具汇总、回复；附对象索引 */
+        get: operations["session-turns"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4372,9 +4406,20 @@ export interface components {
             /** @description 放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor） */
             role: string;
         };
+        RepliesOutBody: {
+            /** @description 最近在网页上发给它的话（新的在前，最多 20 条），带送达状态 */
+            replies: components["schemas"]["TurnItem"][] | null;
+        };
         "Reply-sessionRequest": {
             comment?: string;
             files?: string[] | null;
+        };
+        ReplyOutBody: {
+            /** @description 记录编号（D-x） */
+            code: string;
+            delivery: components["schemas"]["WebDelivery"];
+            /** @description 这句话的记录 ID */
+            id: string;
         };
         ReqCommits: {
             code: string;
@@ -4699,6 +4744,18 @@ export interface components {
             /** @description 给 Agent 读的列表（ks team sessions 与 team_sessions 输出同一段） */
             text: string;
         };
+        RunTask: {
+            id: string;
+            /** @enum {string} */
+            kind: "agent" | "shell";
+            model?: string;
+            /** @description 子任务的任务描述 / 后台命令的描述；没有描述时为空（不拿命令原文顶替） */
+            name: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @description 子任务类型（Explore 等）或后台命令的类别（build / deploy / service / poll / other） */
+            type?: string;
+        };
         SentMsg: {
             broadcast: boolean;
             broadcast_id?: string;
@@ -4798,6 +4855,20 @@ export interface components {
             handoffs?: components["schemas"]["Handoff"][] | null;
             last_reply?: components["schemas"]["LastReply"];
             session: components["schemas"]["Session"];
+        };
+        SessionObject: {
+            /** @description R-x / D-x；计数项为 agents / messages / briefs */
+            code: string;
+            /** @description 相关条目的 ID：纸鸢记录的 ID，以及 p:<轮>（提问提到）、r:<轮>（回复提到） */
+            items: string[] | null;
+            /** @enum {string} */
+            kind: "req" | "dec" | "agents" | "messages" | "briefs";
+            /** Format: date-time */
+            last: string;
+            /** @description 它提的、还在等你答的决策 */
+            pending?: boolean;
+            status?: string;
+            title?: string;
         };
         SessionsOutBody: {
             devices: components["schemas"]["Device"][] | null;
@@ -5100,6 +5171,117 @@ export interface components {
             at: string;
             label: string;
         };
+        ToolCall: {
+            /** Format: date-time */
+            at: string;
+            brief?: string;
+            name: string;
+            /** @description 子任务调用的 */
+            sub?: boolean;
+        };
+        ToolName: {
+            /** Format: int64 */
+            n: number;
+            name: string;
+        };
+        ToolSum: {
+            list: components["schemas"]["ToolCall"][] | null;
+            /** Format: int64 */
+            n: number;
+            names: components["schemas"]["ToolName"][] | null;
+            /**
+             * Format: int64
+             * @description 其中子任务调用的次数
+             */
+            sub: number;
+        };
+        Turn: {
+            /** @description 这一轮结束后、下一轮开始前发生的动作（多半是子任务） */
+            after: components["schemas"]["TurnItem"][] | null;
+            /** @description 这一轮结束后子任务调用的工具 */
+            after_tools: components["schemas"]["ToolSum"];
+            /**
+             * Format: date-time
+             * @description 这一轮结束（Stop）的时间；还在跑时省略
+             */
+            end?: string;
+            /** @description 轮的标识：turn_id；没有时用提问事件的 ID */
+            id: string;
+            /** @description 这一轮收到的消息：网页上发的话、团队消息、你的答复、交给它的需求…… */
+            inbox: components["schemas"]["TurnItem"][] | null;
+            /** @description 这一轮里纸鸢的动作，时间正序 */
+            items: components["schemas"]["TurnItem"][] | null;
+            /** @description 你在终端说的话（截断）；纸鸢叫醒时为空 */
+            prompt?: string;
+            prompt_id?: string;
+            /** @description 它在这一轮最后的回复（Markdown） */
+            reply?: string;
+            reply_id?: string;
+            /** @enum {string} */
+            reply_kind: "full" | "brief" | "none";
+            /** @enum {string} */
+            source: "" | "terminal" | "web" | "wake";
+            /** Format: date-time */
+            start: string;
+            tools: components["schemas"]["ToolSum"];
+            /** @description 这一轮里挂 ks wait 的记录 */
+            waits?: components["schemas"]["TurnWait"][] | null;
+        };
+        TurnItem: {
+            agent?: string;
+            /** Format: date-time */
+            at: string;
+            dec?: string;
+            dec_status?: string;
+            dec_title?: string;
+            /** Format: date-time */
+            delivered_at?: string;
+            delivery?: components["schemas"]["WebDelivery"];
+            /** Format: date-time */
+            ended_at?: string;
+            from?: string;
+            fyi?: boolean;
+            id: string;
+            kind: string;
+            /** @description 派子任务：用量最多的模型 id */
+            model?: string;
+            note?: string;
+            peer?: string;
+            peer_role?: string;
+            /** @description 相关的需求 / 决策编号 */
+            refs: string[] | null;
+            req?: string;
+            req_status?: string;
+            req_title?: string;
+            text?: string;
+            to?: string;
+            via?: string;
+            web?: boolean;
+        };
+        TurnWait: {
+            /** Format: date-time */
+            at: string;
+            /** Format: date-time */
+            until?: string;
+        };
+        TurnsOutBody: {
+            /** @description 子任务用量最多的模型，键是 agent_id */
+            agent_models: {
+                [key: string]: string;
+            };
+            /** @description 往上加载更早一页时传的 before */
+            before?: string;
+            /** @description 更早还有轮 */
+            more: boolean;
+            /** @description 对象索引：这个会话动过的需求、决策（待你答的在前，其余按最近动过排序），以及子任务 / 消息 / 简报的计数 */
+            objects: components["schemas"]["SessionObject"][] | null;
+            /** @description 网页上发的、还没送进某一轮的话（带送达状态）；只在最新一页 */
+            pending: components["schemas"]["TurnItem"][] | null;
+            /** @description 在跑的子任务 / 后台命令：名字、模型、开始时间，不含命令原文 */
+            running: components["schemas"]["RunTask"][] | null;
+            /** @description 时间正序 */
+            turns: components["schemas"]["Turn"][] | null;
+        };
         "Update-passkeyRequest": {
             name: string;
         };
@@ -5173,6 +5355,13 @@ export interface components {
         };
         WeComConfig: {
             webhook: string;
+        };
+        WebDelivery: {
+            /** @description 已下线、要先接任时新会话接任的命令（ks takeover <身份>） */
+            command?: string;
+            reason: string;
+            /** @enum {string} */
+            status: "woke" | "queued" | "offline" | "delivered" | "closed";
         };
         "Withdraw-releaseRequest": {
             /** @description 撤回原因，可不写 */
@@ -9287,6 +9476,37 @@ export interface operations {
             };
         };
     };
+    "session-replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepliesOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "reply-session": {
         parameters: {
             query?: never;
@@ -9308,7 +9528,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Decision"];
+                    "application/json": components["schemas"]["ReplyOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "session-turns": {
+        parameters: {
+            query?: {
+                /** @description 只要这个时间之前开始的轮（上一页返回的 before）；不传是最新一页 */
+                before?: string;
+                /** @description 最多几轮，默认 12、最多 50 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnsOutBody"];
                 };
             };
             /** @description Error */

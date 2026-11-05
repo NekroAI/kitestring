@@ -299,6 +299,12 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 		if err := h.store.SetLastReply(ctx, key, reply, ev.Time); err != nil {
 			return err
 		}
+		// 每轮回复也按 Stop 存一份，会话详情页按轮显示（R-273）；子任务的 Stop 不算
+		if ev.AgentID == "" {
+			if err := h.store.SaveTurnReply(ctx, ev.ID, key, ev.TurnID, reply, ev.Time); err != nil {
+				return err
+			}
+		}
 	}
 	if ev.Context > 0 { // 上下文占用（R-60）
 		if err := h.store.SetContext(ctx, key, ev.Context, ev.ContextMax); err != nil {

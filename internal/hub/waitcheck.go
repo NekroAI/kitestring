@@ -151,17 +151,19 @@ func (h *Hub) registerAgentWaitCheck(api huma.API) {
 }
 
 // registerSessionReply：在会话面板上直接给会话发一句话（R-117、R-239）。用留言的送达通道（kind = note，不关联需求）：
-// 挂着 ks wait 时立刻唤醒，否则在你下次给它发消息时送达。只是留言，不算待办、不进「要你处理」。
+// 挂着 ks wait 时立刻唤醒，否则在它这一轮结束 / 你下次给它发消息时送达。只是留言，不算待办、不进「要你处理」。
+// R-273：返回这句话的 ID 和送达状态（woke 已叫醒 / queued 排到下一轮 / offline 已下线，附接任命令），之后在按轮的时间线里查。
 func (h *Hub) registerSessionReply(api huma.API) {
+	h.registerSessionTurns(api)
 	huma.Register(api, huma.Operation{OperationID: "reply-session", Method: http.MethodPost, Path: "/api/sessions/{key}/reply", Tags: []string{"sessions"},
-		Summary: "给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒）"},
+		Summary: "给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒），返回送达状态"},
 		func(ctx context.Context, in *struct {
 			Key  string `path:"key"`
 			Body struct {
 				Comment string   `json:"comment,omitempty"`
 				Files   []string `json:"files,omitempty"`
 			}
-		}) (*decisionOut, error) {
+		}) (*replyOut, error) {
 			x, err := h.store.GetSession(ctx, in.Key)
 			if err != nil {
 				return nil, apiErr(err)
@@ -174,9 +176,11 @@ func (h *Hub) registerSessionReply(api huma.API) {
 			if comment == "" && len(files) == 0 {
 				return nil, huma.Error400BadRequest("请写下回复或附上图片")
 			}
+			// 送达状态按发出这一刻的会话状态算（叫醒后会话马上变成在跑）
+			dl := webDelivery(store.Act{Status: store.DecAnswered}, x, false)
 			d, err := h.store.CreateDecision(ctx, store.Decision{
 				Kind: store.KindNote, SessionKey: x.Key, ProjectID: x.ProjectID,
-				Question: "回复你的最后一条消息", Answer: comment, AnswerFiles: files,
+				Question: store.WebReplyQuestion, Answer: comment, AnswerFiles: files,
 			})
 			if err != nil {
 				return nil, apiErr(err)
@@ -186,6 +190,8 @@ func (h *Hub) registerSessionReply(api huma.API) {
 			}
 			h.decisionsChanged(ctx, d)
 			h.sessionChanged(x.Key)
-			return &decisionOut{Body: d}, nil
+			out := &replyOut{}
+			out.Body.ID, out.Body.Code, out.Body.Delivery = d.ID, d.Code, *dl
+			return out, nil
 		})
 }

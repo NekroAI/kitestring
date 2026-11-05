@@ -7231,6 +7231,25 @@
         ],
         "type": "object"
       },
+      "RepliesOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "replies": {
+            "description": "最近在网页上发给它的话（新的在前，最多 20 条），带送达状态",
+            "items": {
+              "$ref": "#/components/schemas/TurnItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "replies"
+        ],
+        "type": "object"
+      },
       "Reply-sessionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7247,6 +7266,28 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "ReplyOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "记录编号（D-x）",
+            "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/WebDelivery"
+          },
+          "id": {
+            "description": "这句话的记录 ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "delivery"
+        ],
         "type": "object"
       },
       "ReqCommits": {
@@ -8387,6 +8428,43 @@
         ],
         "type": "object"
       },
+      "RunTask": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "agent",
+              "shell"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "name": {
+            "description": "子任务的任务描述 / 后台命令的描述；没有描述时为空（不拿命令原文顶替）",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "description": "子任务类型（Explore 等）或后台命令的类别（build / deploy / service / poll / other）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "started_at"
+        ],
+        "type": "object"
+      },
       "SentMsg": {
         "additionalProperties": false,
         "properties": {
@@ -8759,6 +8837,56 @@
         "required": [
           "session",
           "events"
+        ],
+        "type": "object"
+      },
+      "SessionObject": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "R-x / D-x；计数项为 agents / messages / briefs",
+            "type": "string"
+          },
+          "items": {
+            "description": "相关条目的 ID：纸鸢记录的 ID，以及 p:\u003c轮\u003e（提问提到）、r:\u003c轮\u003e（回复提到）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "req",
+              "dec",
+              "agents",
+              "messages",
+              "briefs"
+            ],
+            "type": "string"
+          },
+          "last": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pending": {
+            "description": "它提的、还在等你答的决策",
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "kind",
+          "items",
+          "last"
         ],
         "type": "object"
       },
@@ -9669,6 +9797,375 @@
         ],
         "type": "object"
       },
+      "ToolCall": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brief": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sub": {
+            "description": "子任务调用的",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "at"
+        ],
+        "type": "object"
+      },
+      "ToolName": {
+        "additionalProperties": false,
+        "properties": {
+          "n": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "n"
+        ],
+        "type": "object"
+      },
+      "ToolSum": {
+        "additionalProperties": false,
+        "properties": {
+          "list": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCall"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "n": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "names": {
+            "items": {
+              "$ref": "#/components/schemas/ToolName"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sub": {
+            "description": "其中子任务调用的次数",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n",
+          "sub",
+          "names",
+          "list"
+        ],
+        "type": "object"
+      },
+      "Turn": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "description": "这一轮结束后、下一轮开始前发生的动作（多半是子任务）",
+            "items": {
+              "$ref": "#/components/schemas/TurnItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "after_tools": {
+            "$ref": "#/components/schemas/ToolSum",
+            "description": "这一轮结束后子任务调用的工具"
+          },
+          "end": {
+            "description": "这一轮结束（Stop）的时间；还在跑时省略",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "轮的标识：turn_id；没有时用提问事件的 ID",
+            "type": "string"
+          },
+          "inbox": {
+            "description": "这一轮收到的消息：网页上发的话、团队消息、你的答复、交给它的需求……",
+            "items": {
+              "$ref": "#/components/schemas/TurnItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "items": {
+            "description": "这一轮里纸鸢的动作，时间正序",
+            "items": {
+              "$ref": "#/components/schemas/TurnItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "prompt": {
+            "description": "你在终端说的话（截断）；纸鸢叫醒时为空",
+            "type": "string"
+          },
+          "prompt_id": {
+            "type": "string"
+          },
+          "reply": {
+            "description": "它在这一轮最后的回复（Markdown）",
+            "type": "string"
+          },
+          "reply_id": {
+            "type": "string"
+          },
+          "reply_kind": {
+            "enum": [
+              "full",
+              "brief",
+              "none"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "",
+              "terminal",
+              "web",
+              "wake"
+            ],
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tools": {
+            "$ref": "#/components/schemas/ToolSum"
+          },
+          "waits": {
+            "description": "这一轮里挂 ks wait 的记录",
+            "items": {
+              "$ref": "#/components/schemas/TurnWait"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "source",
+          "inbox",
+          "items",
+          "tools",
+          "reply_kind",
+          "after",
+          "after_tools"
+        ],
+        "type": "object"
+      },
+      "TurnItem": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "dec": {
+            "type": "string"
+          },
+          "dec_status": {
+            "type": "string"
+          },
+          "dec_title": {
+            "type": "string"
+          },
+          "delivered_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/WebDelivery"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "fyi": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "model": {
+            "description": "派子任务：用量最多的模型 id",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "peer": {
+            "type": "string"
+          },
+          "peer_role": {
+            "type": "string"
+          },
+          "refs": {
+            "description": "相关的需求 / 决策编号",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "req": {
+            "type": "string"
+          },
+          "req_status": {
+            "type": "string"
+          },
+          "req_title": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "via": {
+            "type": "string"
+          },
+          "web": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "refs",
+          "id",
+          "kind",
+          "at"
+        ],
+        "type": "object"
+      },
+      "TurnWait": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "type": "object"
+      },
+      "TurnsOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_models": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "子任务用量最多的模型，键是 agent_id",
+            "type": "object"
+          },
+          "before": {
+            "description": "往上加载更早一页时传的 before",
+            "type": "string"
+          },
+          "more": {
+            "description": "更早还有轮",
+            "type": "boolean"
+          },
+          "objects": {
+            "description": "对象索引：这个会话动过的需求、决策（待你答的在前，其余按最近动过排序），以及子任务 / 消息 / 简报的计数",
+            "items": {
+              "$ref": "#/components/schemas/SessionObject"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "pending": {
+            "description": "网页上发的、还没送进某一轮的话（带送达状态）；只在最新一页",
+            "items": {
+              "$ref": "#/components/schemas/TurnItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "running": {
+            "description": "在跑的子任务 / 后台命令：名字、模型、开始时间，不含命令原文",
+            "items": {
+              "$ref": "#/components/schemas/RunTask"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "turns": {
+            "description": "时间正序",
+            "items": {
+              "$ref": "#/components/schemas/Turn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "turns",
+          "more",
+          "objects",
+          "pending",
+          "agent_models",
+          "running"
+        ],
+        "type": "object"
+      },
       "Update-passkeyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9884,6 +10381,33 @@
         },
         "required": [
           "webhook"
+        ],
+        "type": "object"
+      },
+      "WebDelivery": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "已下线、要先接任时新会话接任的命令（ks takeover \u003c身份\u003e）",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "woke",
+              "queued",
+              "offline",
+              "delivered",
+              "closed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason"
         ],
         "type": "object"
       },
@@ -15614,6 +16138,47 @@
         ]
       }
     },
+    "/api/sessions/{key}/replies": {
+      "get": {
+        "operationId": "session-replies",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepliesOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "网页上发给会话的话和它们的送达状态（R-273）",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/sessions/{key}/reply": {
       "post": {
         "operationId": "reply-session",
@@ -15642,7 +16207,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Decision"
+                  "$ref": "#/components/schemas/ReplyOutBody"
                 }
               }
             },
@@ -15659,7 +16224,69 @@
             "description": "Error"
           }
         },
-        "summary": "给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒）",
+        "summary": "给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒），返回送达状态",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{key}/turns": {
+      "get": {
+        "operationId": "session-turns",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "只要这个时间之前开始的轮（上一页返回的 before）；不传是最新一页",
+            "explode": false,
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "description": "只要这个时间之前开始的轮（上一页返回的 before）；不传是最新一页",
+              "type": "string"
+            }
+          },
+          {
+            "description": "最多几轮，默认 12、最多 50",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "最多几轮，默认 12、最多 50",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnsOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话按轮的时间线（R-273）：每轮你说的话 / 纸鸢叫醒它的消息、纸鸢动作、工具汇总、回复；附对象索引",
         "tags": [
           "sessions"
         ]

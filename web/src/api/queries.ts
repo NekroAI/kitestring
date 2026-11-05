@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { api, unwrap, type Plan, type Requirement, type Schemas, type Session } from './client'
 
@@ -11,6 +11,7 @@ export const qk = {
   auth: ['auth'] as const,
   sessions: ['sessions'] as const,
   session: (key: string) => ['sessions', 'detail', key] as const,
+  turns: (key: string) => ['session-turns', key] as const,
   bgSessions: ['sessions', 'background'] as const,
   requirements: ['requirements'] as const,
   requirement: (ref: string) => ['requirements', 'detail', ref] as const,
@@ -62,6 +63,7 @@ function applySessionPatch(qc: QueryClient, rev: number, s: RawSession) {
   patches.set(s.key, { rev, session: s })
   qc.setQueryData<RawSessions>(qk.sessions, (old) => (old ? { ...old, sessions: upsert(old.sessions ?? [], s) } : old))
   void qc.invalidateQueries({ queryKey: qk.session(s.key), exact: true }) // 打开着的会话详情补拉时间线
+  void qc.invalidateQueries({ queryKey: qk.turns(s.key) }) // 按轮的时间线（R-273）
 }
 
 export function useSessions() {
@@ -92,6 +94,18 @@ export function useSessionDetail(key: string | null) {
     queryKey: qk.session(key ?? ''),
     queryFn: () => unwrap(api.GET('/api/sessions/{key}', { params: { path: { key: key! } } })),
     select: (d) => ({ session: normSession(d.session), events: d.events ?? [], lastReply: d.last_reply, handoffs: d.handoffs ?? [] }),
+    enabled: !!key,
+  })
+}
+
+// 会话按轮的时间线（R-273）：最新一页在前，往上滚动时按 before 取更早的一页。
+export type TurnsPage = Schemas['TurnsOutBody']
+export function useSessionTurns(key: string | null) {
+  return useInfiniteQuery({
+    queryKey: qk.turns(key ?? ''),
+    queryFn: ({ pageParam }) => unwrap(api.GET('/api/sessions/{key}/turns', { params: { path: { key: key! }, query: pageParam ? { before: pageParam } : {} } })),
+    initialPageParam: '',
+    getNextPageParam: (last) => (last.more && last.before ? last.before : undefined),
     enabled: !!key,
   })
 }
@@ -265,14 +279,14 @@ export function useCommsPending() {
 // 主题 → 需要失效的查询前缀。
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],
-  decisions: [['decisions'], ['grants'], ['morning']],
+  decisions: [['decisions'], ['grants'], ['morning'], ['session-turns']],
   grants: [['grants'], ['morning']],
   morning: [['morning']],
   away: [['away'], ['morning'], ['grants']],
-  requirements: [['requirements'], ['plans'], ['morning']],
+  requirements: [['requirements'], ['plans'], ['morning'], ['session-turns']],
   plans: [['plans']],
   devices: [['devices'], ['sessions']],
-  projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning']],
+  projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning'], ['session-turns']],
   settings: [['settings']],
   orphans: [['orphans']],
   arrangements: [['arrangements']],
