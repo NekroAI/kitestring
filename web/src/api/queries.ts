@@ -213,6 +213,38 @@ export function usePlans() {
   })
 }
 
+// 分享（R-281）：所有者的分享列表、单个分享、新建 / 编辑时的勾选列表。挂在 shares 主题下，需求和计划变了也跟着刷新（标题、状态、范围）。
+export type ShareView = Schemas['ShareView']
+export type ShareLinkView = Schemas['ShareLinkView']
+const normShare = (x: ShareView) => ({ ...x, items: x.items ?? [], links: x.links ?? [], scope: { ...x.scope, nodes: x.scope.nodes ?? [] } })
+export type Share = ReturnType<typeof normShare>
+
+export function useShares() {
+  return useQuery({
+    queryKey: ['shares', 'list'],
+    queryFn: () => unwrap(api.GET('/api/shares')),
+    select: (d) => (d.shares ?? []).map(normShare),
+  })
+}
+
+export function useShare(id: string | undefined) {
+  return useQuery({
+    queryKey: ['shares', 'detail', id ?? ''],
+    queryFn: () => unwrap(api.GET('/api/shares/{id}', { params: { path: { id: id! } } })),
+    select: normShare,
+    enabled: !!id,
+  })
+}
+
+export function useShareCandidates(projectId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ['shares', 'candidates', projectId ?? ''],
+    queryFn: () => unwrap(api.GET('/api/shares/candidates', { params: { query: { project_id: projectId || undefined } } })),
+    select: (d) => (d.nodes ?? []).map((n) => ({ ...n, parents: n.parents ?? [] })),
+    enabled,
+  })
+}
+
 export function useDevices() {
   return useQuery({
     queryKey: qk.devices,
@@ -283,8 +315,9 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   grants: [['grants'], ['morning']],
   morning: [['morning']],
   away: [['away'], ['morning'], ['grants']],
-  requirements: [['requirements'], ['plans'], ['morning'], ['session-turns']],
-  plans: [['plans']],
+  requirements: [['requirements'], ['plans'], ['morning'], ['session-turns'], ['shares']],
+  plans: [['plans'], ['shares']],
+  shares: [['shares']],
   devices: [['devices'], ['sessions']],
   projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning'], ['session-turns']],
   settings: [['settings']],

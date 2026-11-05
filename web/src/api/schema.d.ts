@@ -2050,6 +2050,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shares/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 可以分享的全部内容（新建 / 编辑时的勾选列表）：项目里的计划、阶段、需求和它们关联的会话 */
+        get: operations["share-candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shares/preview": {
         parameters: {
             query?: never;
@@ -10622,6 +10639,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShareView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "share-candidates": {
+        parameters: {
+            query?: {
+                /** @description 只列这个项目的；空 = 全部项目 */
+                project_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareScopeView"];
                 };
             };
             /** @description Error */

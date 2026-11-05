@@ -507,3 +507,26 @@ func TestShareGuestStream(t *testing.T) {
 		t.Fatalf("撤回后实时通道应拒绝：%d", r2.StatusCode)
 	}
 }
+
+// 勾选列表（第 2 段）：项目里的计划、阶段、需求和关联的会话都列出来，上下级连好。
+func TestShareCandidates(t *testing.T) {
+	e := newShareEnv(t)
+	var v ShareScopeView
+	e.do(e.owner, "GET", "/api/shares/candidates", nil, &v, 200)
+	if v.Plans != 1 || v.Stages != 2 || v.Reqs != 4 || v.Sess != 3 {
+		t.Fatalf("候选范围不对：%+v", v)
+	}
+	parents := map[string][]string{}
+	for _, n := range v.Nodes {
+		parents[n.Kind+"|"+n.Ref] = n.Parents
+	}
+	if p := parents["req|"+e.ra.ID]; len(p) != 1 {
+		t.Fatalf("计划里的需求应连到阶段：%v", p)
+	}
+	if p := parents["req|"+e.rout.ID]; len(p) != 0 {
+		t.Fatalf("计划外的需求没有上级：%v", p)
+	}
+	if p := parents["session|"+e.dev2]; !slices.Contains(p, e.rb.ID) || !slices.Contains(p, e.rout.ID) {
+		t.Fatalf("会话应连到它关联的每条需求：%v", p)
+	}
+}

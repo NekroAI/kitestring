@@ -1,6 +1,8 @@
 import { useContext, useMemo, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Lock, Milestone, MoreHorizontal, Pencil, Plus, Send, Trash2, X, Zap } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Lock, Milestone, MoreHorizontal, PanelRight, Pencil, Plus, Send, Share2, Trash2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router'
+import { Ctx } from '../ui/contextMenu'
 import type { Plan, PlanReq, Requirement, Session, Stage } from '../api/client'
 import { usePlans, useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
@@ -108,12 +110,19 @@ const ownerLabel = (s: Session) => [s.role && t.role[s.role] ? t.role[s.role] : 
 // act：工作台「要你处理」里的计划卡，待批准 / 待阶段验收时卡片底部直接给 [附言][退回][批准]（R-161）。
 export function PlanCard({ x, act }: { x: Plan; act?: boolean }) {
   const open = useOpenPlan()
+  const navigate = useNavigate()
   const gate = act ? gateStage(x) : undefined
   const verdict = act && (needsApproval(x) || !!gate)
   const sessionOf = useSessionOf()
   const owner = sessionOf(x.owner_session)
   const state = planState(x)
+  // 右键 / 长按菜单：打开计划、分享（R-281）
+  const menu = [
+    { label: t.menu.openPlan, icon: <PanelRight />, onSelect: () => open(x.code) },
+    { label: t.share.menu, icon: <Share2 />, onSelect: () => navigate(`/shares/new?with=${encodeURIComponent(x.code)}`) },
+  ]
   return (
+    <Ctx items={menu} className="rounded-2xl">
     <Card
       role="button"
       tabIndex={0}
@@ -150,6 +159,7 @@ export function PlanCard({ x, act }: { x: Plan; act?: boolean }) {
       )}
       {verdict && <Seal k={gate ? stageKey(x, gate) : planKey(x)} />}
     </Card>
+    </Ctx>
   )
 }
 
@@ -540,6 +550,7 @@ export function PlanBody({ x, top, sel, onPick: pick }: { x: Plan; top: ReactNod
 
 export function PlanPanel({ code, onClose }: { code: string | null; onClose: () => void }) {
   const plans = usePlans()
+  const navigate = useNavigate()
   const { deletePlan } = useActions()
   const confirm = useConfirm()
   const [editing, setEditing] = useState(false)
@@ -552,6 +563,7 @@ export function PlanPanel({ code, onClose }: { code: string | null; onClose: () 
   const menu: MenuItem[] = x
     ? [
         { label: t.plan.edit, icon: <Pencil />, onSelect: () => setEditing(true) },
+        { label: t.share.menu, icon: <Share2 />, onSelect: () => navigate(`/shares/new?with=${encodeURIComponent(x.code)}`) },
         { type: 'separator' },
         {
           label: t.common.delete,

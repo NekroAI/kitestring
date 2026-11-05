@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router'
-import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router'
+import { Check, CheckCheck, ChevronDown, CornerDownLeft, ChevronLeft, ChevronRight, ExternalLink, Link2, MoreHorizontal, Share2, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiError, type ReqFields, type Requirement } from '../api/client'
 import { useDecisions, usePrefetchReqs, useProjects, useRequirement, useRequirements, useSessions } from '../api/queries'
@@ -473,6 +473,7 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
   const [acting, setActing] = useState(false)
   const { deleteReq } = useActions()
   const confirm = useConfirm()
+  const navigate = useNavigate()
   const [dir, setDir] = useState<Dir>('next')
   const [finished, setFinished] = useState<string | null>(null) // 连续处理完时显示的一句话（某项目的待验收 / 草稿都处理完了）
   const internal = useRef(false)
@@ -611,6 +612,8 @@ export function ReqPanel({ refId, onClose }: { refId: string | null; onClose: ()
             </button>
           }
           items={[
+            { label: t.share.menu, icon: <Share2 />, onSelect: () => navigate(`/shares/new?with=${encodeURIComponent(x.code)}`) },
+            { type: 'separator' },
             {
               label: t.common.delete,
               icon: <Trash2 />,

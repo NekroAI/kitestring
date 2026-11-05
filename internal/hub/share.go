@@ -136,6 +136,42 @@ type sharePreviewOut struct {
 	Body ShareScopeView
 }
 
+type shareCandidatesIn struct {
+	ProjectID string `query:"project_id" doc:"只列这个项目的；空 = 全部项目"`
+}
+
+// shareCandidates 把项目里的全部计划、阶段、需求和需求关联的会话当成一个范围，勾选列表按它画。
+func (h *Hub) shareCandidates(ctx context.Context, projectID string) (store.ShareScope, error) {
+	sc := store.ShareScope{Plans: map[string]bool{}, Stages: map[string]bool{}, Reqs: map[string]bool{}, Sessions: map[string]bool{}}
+	plans, err := h.store.ListPlans(ctx, projectID)
+	if err != nil {
+		return sc, err
+	}
+	for _, p := range plans {
+		sc.Plans[p.ID] = true
+		for _, st := range p.Stages {
+			sc.Stages[st.ID] = true
+		}
+	}
+	reqs, err := h.store.ListRequirements(ctx, projectID, nil)
+	if err != nil {
+		return sc, err
+	}
+	ids := make([]string, 0, len(reqs))
+	for _, r := range reqs {
+		sc.Reqs[r.ID] = true
+		ids = append(ids, r.ID)
+	}
+	links, err := h.store.ReqSessionLinks(ctx, ids)
+	if err != nil {
+		return sc, err
+	}
+	for k := range links {
+		sc.Sessions[k] = true
+	}
+	return sc, nil
+}
+
 type shareLinkIn struct {
 	ID   string `path:"id"`
 	Body struct {
@@ -183,6 +219,15 @@ func (h *Hub) registerShareWeb(api huma.API) {
 				return nil, apiErr(err)
 			}
 			sc, err := h.store.ResolveShare(ctx, items)
+			if err != nil {
+				return nil, err
+			}
+			v, err := h.scopeView(ctx, sc)
+			return &sharePreviewOut{Body: v}, err
+		})
+	huma.Register(api, huma.Operation{OperationID: "share-candidates", Method: http.MethodGet, Path: "/api/shares/candidates", Tags: tag, Summary: "可以分享的全部内容（新建 / 编辑时的勾选列表）：项目里的计划、阶段、需求和它们关联的会话"},
+		func(ctx context.Context, in *shareCandidatesIn) (*sharePreviewOut, error) {
+			sc, err := h.shareCandidates(ctx, in.ProjectID)
 			if err != nil {
 				return nil, err
 			}

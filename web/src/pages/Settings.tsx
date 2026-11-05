@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, BellRing, CheckCircle2, ChevronDown, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
+import { Bell, BellRing, CheckCircle2, ChevronDown, ChevronRight, Share2, FileText, FolderGit2, History, Info, KeyRound, LogOut, MessageSquareText, Monitor, MonitorSmartphone, Moon, Palette, Pencil, Plus, RotateCcw, ScrollText, Send, Smartphone, Sparkles, Sun, SunMoon, Tag, Trash2, User, XCircle, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
 import { qk, useDevices, useProjects, useCacheHolds, usePush, useSettings, useTokenPrices } from '../api/queries'
@@ -1243,6 +1243,12 @@ export default function SettingsPage({ version }: { version: string }) {
   return (
     <>
       <PageHeader title={t.settings.title} />
+      {/* 手机底部导航保持 5 格，「分享」（R-281）从这里进入；桌面在侧边栏 */}
+      <Link to="/shares" className="mb-4 flex h-12 items-center gap-2.5 rounded-2xl border border-line bg-surface px-4 text-sm font-medium text-fg shadow-card transition active:bg-hover lg:hidden">
+        <Share2 className="size-[18px] shrink-0 text-fg-3" />
+        <span className="flex-1">{t.nav.shares}</span>
+        <ChevronRight className="size-4 text-fg-3" />
+      </Link>
       <div className="-mx-4 mb-5 overflow-x-auto px-4 lg:hidden">
         <Segmented size="sm" value={tab} onChange={go} options={tabs.map((x) => ({ value: x.id, label: t.settings.sections[x.id] }))} />
       </div>

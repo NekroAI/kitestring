@@ -1,5 +1,6 @@
-import { Palette, Send, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
+import { Palette, Send, Share2, Archive, ArchiveRestore, Check, CircleDot, ClipboardCopy, ExternalLink, Flag, ListTodo, PanelRight, Terminal, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router'
 import type { ReqFields, Requirement, Session } from '../api/client'
 import { t } from '../i18n'
 import { copyText } from '../lib/util'
@@ -68,6 +69,7 @@ export function useReqMenu() {
   const setStatus = useSetStatus()
   const { updateReq, deleteReq } = useActions()
   const confirm = useConfirm()
+  const navigate = useNavigate()
   return (r: Requirement): CtxItem[] => [
     { type: 'label', label: `${r.code} ${r.title}` },
     { label: t.menu.openReq, icon: <PanelRight />, onSelect: () => openReq(r.code) },
@@ -92,6 +94,8 @@ export function useReqMenu() {
       items: priorities.map((p) => ({ label: t.priority[p], checked: p === r.priority, icon: <PriorityDot p={p} />, onSelect: () => void updateReq(r.code, toFields(r, { priority: p as ReqFields['priority'] })) })),
     },
     { type: 'separator' },
+    // 分享（R-281）：新建分享并预先勾好这条需求和它下面的会话
+    { label: t.share.menu, icon: <Share2 />, onSelect: () => navigate(`/shares/new?with=${encodeURIComponent(r.code)}`) },
     { label: t.menu.copyCode, icon: <ClipboardCopy />, onSelect: () => void copy(r.code) },
     { label: t.menu.copyLink, icon: <ExternalLink />, onSelect: () => void copy(`${location.origin}/requirements?r=${encodeURIComponent(r.code)}`) },
     { type: 'separator' },

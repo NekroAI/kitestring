@@ -60,7 +60,8 @@
     "device": ["在线", "离线", "未连接", "已移除"],
     "req": ["草稿", "待开始", "进行中", "受阻", "待验收", "已完成", "已搁置"],
     "decision": ["待答复", "待送达", "已送达", "已关闭"],
-    "delivery": ["已送达", "待送达", "无法送达"]
+    "delivery": ["已送达", "待送达", "无法送达"],
+    "share": ["生效中", "已失效", "已撤回"]
   },
   "statusKeys": {
     "state.*": ["session"],
@@ -70,7 +71,8 @@
     "decision.status.*": ["decision"],
     "device.online": ["device"],
     "device.offline": ["device"],
-    "device.never": ["device"]
+    "device.never": ["device"],
+    "share.status.*": ["share"]
   },
   "buttons": [
     "common.save", "common.cancel", "common.close", "common.confirm", "common.delete", "common.edit", "common.create",
@@ -79,9 +81,11 @@
     "decision.reassign", "decision.closeIt", "decision.resend", "decision.useRecommendation",
     "orphans.stop", "orphans.confirmOk", "orphans.forceOk", "orphans.ignoreAct", "orphans.unignore",
     "desk.replySend", "desk.review", "desk.decide", "desk.view", "desk.handle", "desk.reply",
-    "menu.openSession", "menu.openReq", "menu.markDone", "menu.markStopped", "menu.undoDone", "menu.copyResume", "menu.copySessionId", "menu.handoff",
+    "menu.openSession", "menu.openReq", "menu.openPlan", "menu.markDone", "menu.markStopped", "menu.undoDone", "menu.copyResume", "menu.copySessionId", "menu.handoff",
     "menu.status", "menu.priority", "menu.copyCode", "menu.copyLink", "ask.open", "ask.prev", "ask.next", "ask.openSession", "session.give", "session.message",
-    "turns.give", "turns.send", "orphans.ignore", "handoff.copyCmd", "brief.reportOpen", "away.start", "away.confirm", "away.end", "morning.withdraw"
+    "turns.give", "turns.send", "orphans.ignore", "handoff.copyCmd", "brief.reportOpen", "away.start", "away.confirm", "away.end", "morning.withdraw",
+    "share.create", "share.menu", "share.enable", "share.revoke", "share.revokeOk", "share.preview", "share.copyLink", "share.revokeLink", "share.restoreLink",
+    "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk"
   ],
   "buttonMax": 6,
   "allow": [

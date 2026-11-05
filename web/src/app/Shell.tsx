@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { RefIndexProvider } from '../ui/refmark'
-import { ArrowLeftRight, FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, WifiOff } from 'lucide-react'
+import { ArrowLeftRight, FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, Share2, WifiOff } from 'lucide-react'
 import { useCommsPending, useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow, usePref } from '../lib/util'
@@ -21,11 +21,13 @@ import { CommandProvider, KeyCaps, modKey, useCommand, withKey } from './command
 
 // 页面切换不做进出场动画：路由直接切换，避免闪烁与白屏。
 
-const nav = [
+const nav: { to: string; label: string; icon: typeof Share2; end?: boolean; keys?: string; desktop?: boolean }[] = [
   { to: '/', label: t.nav.home, icon: LayoutDashboard, end: true, keys: 'G H' },
   { to: '/projects', label: t.nav.projects, icon: FolderKanban, keys: 'G P' },
   { to: '/requirements', label: t.nav.requirements, icon: ListTodo, keys: 'G R' },
   { to: '/comms', label: t.nav.comms, icon: ArrowLeftRight, keys: 'G C' },
+  // 分享（R-281）：只在桌面侧边栏；手机底部导航保持 5 格，入口在设置页
+  { to: '/shares', label: t.nav.shares, icon: Share2, desktop: true },
   { to: '/settings', label: t.nav.settings, icon: Settings2, keys: 'G S' },
 ]
 
@@ -49,6 +51,7 @@ function Count({ n, tone = 'seal' }: { n: number; tone?: 'seal' | 'wait' }) {
 }
 
 // 通讯旁的黄色数字（R-249）：还在等对方醒来的消息。只是提示，不进「要你处理」，所以用黄色而不是朱砂
+// 分享旁的数字只数待收的访客留言（R-281 第 4 段接上），同样用黄色
 function navCount(to: string, todo: number, unsent: number): { n: number; tone: 'seal' | 'wait'; tip?: string } {
   if (to === '/') return { n: todo, tone: 'seal' }
   if (to === '/comms') return { n: unsent, tone: 'wait', tip: unsent ? t.nav.commsTip(unsent) : undefined }
@@ -92,7 +95,7 @@ function Sidebar({ todo, unsent, connected, collapsed, onToggle }: { todo: numbe
         {nav.map((n) => {
           const k = navCount(n.to, todo, unsent)
           return (
-          <Tip key={n.to} side="right" content={c ? withKey(k.tip ? `${n.label} · ${k.tip}` : n.label, n.keys) : null}>
+          <Tip key={n.to} side="right" content={c ? (n.keys ? withKey(k.tip ? `${n.label} · ${k.tip}` : n.label, n.keys) : n.label) : null}>
             {/* 外面包一层：Tip 的 asChild 会把 NavLink 的函数 className 拼成字符串 */}
             <div>
               <NavLink
@@ -152,11 +155,14 @@ function Sidebar({ todo, unsent, connected, collapsed, onToggle }: { todo: numbe
 }
 
 function TabBar({ todo, unsent }: { todo: number; unsent: number }) {
+  const { pathname } = useLocation()
+  // 分享页从设置页进入，底部导航把它算在「设置」下
+  const inSettings = pathname.startsWith('/shares')
   return (
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-xl lg:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5">
-        {nav.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} viewTransition className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive ? 'text-accent' : 'text-fg-3')}>
+        {nav.filter((n) => !n.desktop).map((n) => (
+          <NavLink key={n.to} to={n.to} end={n.end} viewTransition className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive || (inSettings && n.to === '/settings') ? 'text-accent' : 'text-fg-3')}>
             <span className="relative">
               <n.icon className="size-[22px]" strokeWidth={1.8} />
               <span className="absolute -top-1.5 -right-2.5">

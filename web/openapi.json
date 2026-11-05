@@ -17969,6 +17969,49 @@
         ]
       }
     },
+    "/api/shares/candidates": {
+      "get": {
+        "operationId": "share-candidates",
+        "parameters": [
+          {
+            "description": "只列这个项目的；空 = 全部项目",
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "description": "只列这个项目的；空 = 全部项目",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareScopeView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "可以分享的全部内容（新建 / 编辑时的勾选列表）：项目里的计划、阶段、需求和它们关联的会话",
+        "tags": [
+          "shares"
+        ]
+      }
+    },
     "/api/shares/preview": {
       "post": {
         "operationId": "preview-share",
