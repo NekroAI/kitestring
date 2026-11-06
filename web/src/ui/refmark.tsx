@@ -409,14 +409,20 @@ export function RefLine({ text, label }: { text: string; label?: 'code' | 'title
     <span className="flex min-w-0 items-baseline gap-x-1 overflow-hidden whitespace-nowrap">
       {parts.map((p, i) =>
         i % 2 ? (
-          <span key={i} className={label === 'code' ? 'flex shrink-0' : 'flex min-w-0 shrink [&>.ref-chip]:min-w-0 [&>.ref-chip]:shrink'}>
+          // 印记最窄留「图标 + 编号」的宽度（标题先截），不再缩没、和后面的字叠在一起（R-296）
+          <span key={i} className={label === 'code' ? 'flex shrink-0' : 'flex min-w-[5.5em] shrink [&>.ref-chip]:min-w-0 [&>.ref-chip]:shrink [&>.ref-chip]:overflow-hidden'}>
             <RefText code={p} label={label} />
           </span>
         ) : i === last && p.includes('：') ? (
           // 句尾「阶段 2：标题」「：留言内容」——冒号前的（阶段几）一定看全，冒号后的才截
-          <span key={i} className="flex shrink-[3]">
+          <span key={i} className="flex min-w-0 shrink-[3]">
             {p.slice(0, p.indexOf('：')).trim() && <span className="shrink-0">{p.slice(0, p.indexOf('：')).trim()}</span>}
             <span className="min-w-[2em] truncate">{p.slice(p.indexOf('：')).trim()}</span>
+          </span>
+        ) : i === last && i > 0 && p.trim() ? (
+          // 印记后面的动词（「提交了证据并提交验收」）：先截印记的标题，实在放不下再截这里
+          <span key={i} className="min-w-[2em] shrink-[0.2] truncate">
+            {p.trim()}
           </span>
         ) : p.trim() ? (
           <span key={i} className="shrink-0">

@@ -10,11 +10,12 @@ import { Skeleton, Tip } from '../ui/base'
 import { Item, List, useSettled } from '../ui/motion'
 import { spring } from '../ui/gesture'
 import { displayState } from '../ui/marks'
-import { PlanGlyph, RefLine, shortTitle } from '../ui/refmark'
+import { Linkify, PlanGlyph, shortTitle } from '../ui/refmark'
 import type { ProjectGroup, useWorkbench } from './inbox'
 import { useOpenPlan } from './nav'
 import { needsApproval, passedWith, planState, StageRail } from './plans'
 import { useRecent } from './recent'
+import { RecentFilter, showRecentFilter, useRecentMine } from './recentFilter'
 import { Team } from '../pages/Projects'
 import { usePendingMap } from './verdict'
 import { approvedOf, titleOf } from '../lib/waiting'
@@ -76,10 +77,17 @@ function StageDetail({ x }: { x: Plan }) {
 const toneText: Record<string, string> = { review: 'text-reply', approve: 'text-wait', paused: 'text-danger', active: 'text-accent' }
 
 // fill：在栏里撑满剩余高度，加载骨架里也照这样画（R-211，ui/shape.tsx 的 data-fill）
-function Panel({ title, children, className, fill }: { title: string; children: React.ReactNode; className?: string; fill?: boolean }) {
+function Panel({ title, children, className, fill, right }: { title: string; children: React.ReactNode; className?: string; fill?: boolean; right?: React.ReactNode }) {
   return (
     <section data-fill={fill ? '' : undefined} className={cx('rounded-[14px] bg-surface px-3.5 py-3 shadow-card', className)}>
-      <h3 className="mb-2.5 font-display text-[13.5px] font-bold tracking-wide text-fg">{title}</h3>
+      {right ? (
+        <div className="-mt-1 mb-2 flex items-center justify-between gap-2">
+          <h3 className="font-display text-[13.5px] font-bold tracking-wide text-fg">{title}</h3>
+          {right}
+        </div>
+      ) : (
+        <h3 className="mb-2.5 font-display text-[13.5px] font-bold tracking-wide text-fg">{title}</h3>
+      )}
       {children}
     </section>
   )
@@ -149,7 +157,7 @@ export function PlanChips({ className }: { className?: string }) {
 }
 
 // 圆点的颜色（最近动态给的是底色类名）→ 竖线上空心节点的描边色
-const ringOf: Record<string, string> = { 'bg-run': 'ring-run', 'bg-accent': 'ring-accent', 'bg-reply': 'ring-reply', 'bg-wait': 'ring-wait' }
+const ringOf: Record<string, string> = { 'bg-run': 'ring-run', 'bg-accent': 'ring-accent', 'bg-reply': 'ring-reply', 'bg-wait': 'ring-wait', 'bg-danger': 'ring-danger' }
 
 // RecentRail：最近动态串成一条竖线，内容多时在卡片内部滚动。
 // fill：按列表区的可用高度算条数（R-187），把卡片填满；窗口 / 栏高变化时跟着重算。
@@ -167,11 +175,12 @@ export function RecentRail({ now, className, limit = 14, fill }: { now: number; 
     calc()
     return () => ro.disconnect()
   }, [box, fill])
-  const recent = useRecent(undefined, fill && fit ? fit : limit)
+  const [mine, setMine] = useRecentMine()
+  const { items: recent, loading } = useRecent(undefined, fill && fit ? fit : limit, mine)
   // 首次加载（数据陆续到齐、按栏高算出条数）这段时间里的出现不算进场（R-216）
   const still = !useSettled(recent.length > 0 && (!fill || fit > 0))
   return (
-    <Panel title={t.desk.recentTitle} fill={fill} className={cx('flex min-h-0 flex-col', className)}>
+    <Panel title={t.desk.recentTitle} fill={fill} className={cx('flex min-h-0 flex-col', className)} right={showRecentFilter(recent.length, mine) && <RecentFilter mine={mine} onChange={setMine} />}>
       {recent.length ? (
         <ul ref={setBox} className="desk-scroll relative -mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
           <span aria-hidden className="absolute top-2.5 bottom-2.5 left-[4px] w-px bg-line-strong" />
@@ -187,7 +196,10 @@ export function RecentRail({ now, className, limit = 14, fill }: { now: number; 
               >
                 <div className="relative grid grid-cols-[9px_minmax(0,1fr)_auto] items-baseline gap-2.5 py-[5px] text-[12.5px] text-fg-2">
                   <span className={cx('size-[9px] translate-y-px rounded-full bg-surface ring-2 ring-inset', ringOf[e.dot] ?? 'ring-line-strong')} />
-                  <RefLine text={e.text} label={e.stage ? 'code' : 'title'} />
+                  {/* 窄栏里一句放不下时折成两行，印记随句子折行（R-296：会话动作的句子里印记在中间，单行时动词被截掉） */}
+                  <p className="line-clamp-2 leading-snug">
+                    <Linkify text={e.text} label={e.stage ? 'code' : 'title'} flow />
+                  </p>
                   <span className="text-[11px] text-fg-3 tabular">{relTime(e.at, now)}</span>
                 </div>
               </motion.li>
@@ -195,7 +207,7 @@ export function RecentRail({ now, className, limit = 14, fill }: { now: number; 
           </AnimatePresence>
         </ul>
       ) : (
-        <p className="text-xs text-fg-3">{t.projects.noRecent}</p>
+        !loading && <p className="text-xs text-fg-3">{mine ? t.projects.noRecentMine : t.projects.noRecent}</p>
       )}
     </Panel>
   )

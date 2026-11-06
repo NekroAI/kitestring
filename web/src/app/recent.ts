@@ -1,50 +1,22 @@
 import { useMemo } from 'react'
-import type { Requirement } from '../api/client'
-import { useDecisions, usePlans, useRequirements } from '../api/queries'
-import { t } from '../i18n'
-import { passedWith } from './plans'
-import { approvedOf } from '../lib/waiting'
+import { useActivity } from '../api/queries'
+import { lineOf } from '../lib/activity'
 
-// 最近动态：跨会话汇总交证据、退回、留言、派活、完成与决策答复。项目页与工作台右栏共用。
+// 最近动态（R-296）：后端动态接口按时间线记录给出最近 n 条（交证据、提交验收、提决策、受阻与解除、留言、指派、
+// 提交评审、评审意见、你的答复与验收、阶段验收），句子由 lib/activity 组。项目页与工作台右栏共用。
 export type RecentItem = { at: string; code: string; text: string; dot: string; stage?: boolean }
 
-export function useRecent(projectId?: string, limit = 8, reqs?: Requirement[]): RecentItem[] {
-  const all = useRequirements()
-  const decisions = useDecisions()
-  const plans = usePlans()
-  const list = reqs ?? all.data
-  return useMemo(() => {
-    const out: RecentItem[] = []
-    for (const r of list ?? []) {
-      if (projectId && r.project_id !== projectId) continue
-      for (const e of r.evidence ?? []) if (!e.voided) out.push({ at: e.created_at, code: r.code, text: t.projects.evEvidence(r.code), dot: 'bg-run' })
-      for (const f of r.feedback ?? []) {
-        const at = f.answered_at ?? f.created_at
-        if (f.kind === 'assign') out.push({ at, code: r.code, text: t.projects.evAssign(r.code), dot: 'bg-accent' })
-        else if (f.kind === 'note') out.push({ at, code: r.code, text: t.projects.evNote(r.code, f.answer ?? ''), dot: 'bg-accent' })
-        else if (f.kind === 'comment') out.push({ at, code: r.code, text: t.projects.evComment(r.code, f.answer ?? ''), dot: 'bg-line-strong' })
-        else out.push({ at, code: r.code, text: t.projects.evRevise(r.code, f.answer ?? ''), dot: 'bg-reply' })
-      }
-      if (r.status === 'done') out.push({ at: r.updated_at, code: r.code, text: t.projects.evDone(r.code), dot: 'bg-run' })
-    }
-    for (const d of decisions.data ?? [])
-      if ((!projectId || d.project_id === projectId) && d.kind === 'decision' && d.answered_at)
-        out.push({ at: d.answered_at, code: d.requirement_code ?? '', text: d.timed_out ? t.projects.evTimeout(d.code) : d.voided ? t.projects.evVoided(d.code) : d.proxy_by && !d.overridden_at ? t.projects.evProxy(d.code) : t.projects.evAnswer(d.code, answerVerb(d)), dot: 'bg-wait' })
-    // 阶段验收通过也记一条（R-161：判断完成后卡片收起、时间线记一条）
-    for (const x of plans.data ?? [])
-      if (!projectId || x.project_id === projectId)
-        for (const st of x.stages) {
-          if (!st.passed_at) continue
-          // 随前一个阶段自动通过的不算你通过的（R-211）
-          const by = passedWith(x, st)
-          out.push({ at: st.passed_at, code: x.code, text: by ? t.projects.evStageWith(x.code, st.seq, st.title, by) : t.projects.evStage(x.code, st.seq, st.title), dot: 'bg-run', stage: true })
-        }
-    return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit)
-  }, [list, projectId, limit, decisions.data, plans.data])
-}
-
-// answerVerb：最近动态里你对决策做了什么（R-176）——批准类决策写「批准 / 拒绝」（读结论字段 verdict，R-239），选项类写「回答」。
-function answerVerb(d: { approval?: boolean; verdict?: string }) {
-  if (!d.approval) return t.verdict.pass('answer')
-  return approvedOf(d) === false ? t.verdict.back('approval') : t.verdict.pass('approval')
+export function useRecent(projectId: string | undefined, limit: number, mine = false): { items: RecentItem[]; loading: boolean } {
+  const q = useActivity(projectId, limit, mine)
+  const items = useMemo(
+    () =>
+      (q.data ?? []).map((a) => {
+        const { text, dot } = lineOf(a)
+        // 点开：对象是决策时打开所属需求
+        const code = a.kind === 'stage' ? a.code : a.req_code || (a.code.startsWith('R-') ? a.code : '')
+        return { at: a.at, code, text, dot, stage: a.kind === 'stage' }
+      }),
+    [q.data],
+  )
+  return { items, loading: q.isPending }
 }

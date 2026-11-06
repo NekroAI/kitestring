@@ -124,6 +124,144 @@
         ],
         "type": "object"
       },
+      "Activity": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "description": "主语：user 你 / agent 会话 / system 纸鸢",
+            "enum": [
+              "user",
+              "agent",
+              "system"
+            ],
+            "type": "string"
+          },
+          "approval": {
+            "description": "raise / answer：批准类决策或请求",
+            "type": "boolean"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "code": {
+            "description": "对象编号：R-x / D-x / P-x",
+            "type": "string"
+          },
+          "evidence": {
+            "description": "submit：同时提交了证据（交证据后 2 分钟内提交验收，合成一条）",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "动作：evidence 提交证据 / review 交审查意见 / submit 提交验收 / blocked 设为受阻 / unblock 纸鸢自动解除受阻 / shelved 搁置 / done 验收通过 / raise 提决策 / answer 决策有了结果 / assign 指派 / note 你留言 / comment 会话留言 / revise 退回 / review_task 提交评审 / release 放行 / stage 阶段验收通过",
+            "enum": [
+              "evidence",
+              "review",
+              "submit",
+              "blocked",
+              "unblock",
+              "shelved",
+              "done",
+              "raise",
+              "answer",
+              "assign",
+              "note",
+              "comment",
+              "revise",
+              "review_task",
+              "release",
+              "stage"
+            ],
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "ref": {
+            "description": "blocked / unblock：在等的 R-x / D-x",
+            "type": "string"
+          },
+          "req_code": {
+            "description": "所属需求编号（对象是决策时），点开用",
+            "type": "string"
+          },
+          "role": {
+            "description": "会话当时的身份：aide / advisor / reviewer / pm / dev；没记时为空",
+            "type": "string"
+          },
+          "session": {
+            "description": "会话键（主语是会话时）",
+            "type": "string"
+          },
+          "session_title": {
+            "description": "会话标题（当时的快照，没有时取现在的）",
+            "type": "string"
+          },
+          "stage_seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stage_title": {
+            "type": "string"
+          },
+          "stage_with": {
+            "description": "stage：随第几个阶段一起自动通过；0 = 你通过的",
+            "format": "int64",
+            "type": "integer"
+          },
+          "target_role": {
+            "description": "assign / review_task：接手会话的身份",
+            "type": "string"
+          },
+          "target_title": {
+            "description": "assign / review_task：接手会话的标题",
+            "type": "string"
+          },
+          "text": {
+            "description": "内容：留言正文、退回意见、受阻 / 搁置原因、审查结论（最多 120 字）",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "answer：answer 你回答了 / approved 你批准了 / rejected 你拒绝了 / proxy 主助理代答 / timeout 到期视为拒绝 / voided 申请作废",
+            "enum": [
+              "",
+              "answer",
+              "approved",
+              "rejected",
+              "proxy",
+              "timeout",
+              "voided"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "actor",
+          "code"
+        ],
+        "type": "object"
+      },
+      "ActivityOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "新的在前",
+            "items": {
+              "$ref": "#/components/schemas/Activity"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "Add-arrangementRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12489,6 +12627,70 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/activity": {
+      "get": {
+        "operationId": "list-activity",
+        "parameters": [
+          {
+            "description": "只看某个项目；空 = 全部项目",
+            "explode": false,
+            "in": "query",
+            "name": "project_id",
+            "schema": {
+              "description": "只看某个项目；空 = 全部项目",
+              "type": "string"
+            }
+          },
+          {
+            "description": "只看你做的",
+            "explode": false,
+            "in": "query",
+            "name": "mine",
+            "schema": {
+              "description": "只看你做的",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "最多几条，默认 20，最多 200",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "最多几条，默认 20，最多 200",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "最近动态：提交证据、提交验收、提决策、受阻与解除、留言、指派、提交评审、审查意见、你的答复与验收（R-296）",
+        "tags": [
+          "requirements"
+        ]
+      }
+    },
     "/api/agent/arrangements": {
       "get": {
         "operationId": "agent-list-arrangements",

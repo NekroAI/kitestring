@@ -20,6 +20,7 @@ import { NewReqModal, statusCls } from '../app/requirements'
 import { SessionRow } from '../app/thread'
 import { RefLine, ReqGlyph } from '../ui/refmark'
 import { useRecent } from '../app/recent'
+import { RecentFilter, showRecentFilter, useRecentMine } from '../app/recentFilter'
 import { reviewHeld } from '../app/verify'
 import { canStop, OfflineCmd, StopIcon } from '../app/compact'
 
@@ -303,7 +304,8 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
   const live = [...p.live].sort((a, b) => Number(displayState(b) === 'parked') - Number(displayState(a) === 'parked') || b.last_active_at.localeCompare(a.last_active_at))
 
   // 最近进展：跨会话汇总这个项目的提交验收、退回、留言、交出与决策答复（与工作台右栏共用）
-  const recent = useRecent(p.id, 8, p.reqs)
+  const [mine, setMine] = useRecentMine()
+  const { items: recent, loading: recentLoading } = useRecent(p.id, 8, mine)
 
   // 本机路径：按设备汇总会话所在目录。
   const paths = useMemo(() => {
@@ -410,7 +412,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
         </Card>
       </Section>
 
-      <Section title={t.projects.recent}>
+      <Section title={t.projects.recent} right={showRecentFilter(recent.length, mine) && <RecentFilter mine={mine} onChange={setMine} />}>
         {recent.length ? (
           <Card className="divide-y divide-dashed divide-line px-4 py-1">
             {recent.map((e, i) => (
@@ -423,7 +425,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
             ))}
           </Card>
         ) : (
-          <p className="text-sm text-fg-3">{t.projects.noRecent}</p>
+          !recentLoading && <p className="text-sm text-fg-3">{mine ? t.projects.noRecentMine : t.projects.noRecent}</p>
         )}
       </Section>
 

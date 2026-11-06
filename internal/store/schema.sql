@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS decisions (
 	delivered_turn TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS decisions_status ON decisions(status);
+-- 最近动态（R-296）按时间倒序取最近 n 条
+CREATE INDEX IF NOT EXISTS decisions_created ON decisions(created_at);
+CREATE INDEX IF NOT EXISTS decisions_answered ON decisions(answered_at);
 
 CREATE TABLE IF NOT EXISTS files (
 	id         TEXT PRIMARY KEY,
@@ -158,6 +161,7 @@ CREATE TABLE IF NOT EXISTS evidence (
 	voided         INTEGER NOT NULL DEFAULT 0,
 	created_at     TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS evidence_created ON evidence(created_at); -- 最近动态（R-296）
 
 -- 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
 CREATE TABLE IF NOT EXISTS plans (

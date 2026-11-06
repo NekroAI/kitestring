@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { api, unwrap, type Plan, type Requirement, type Schemas, type Session } from './client'
 
@@ -165,6 +165,17 @@ export function useAwayReport(enabled: boolean) {
   })
 }
 
+// 最近动态（R-296）：后端按时间线记录取最近 limit 条；mine 只看你做的。需求、决策、计划一变就刷新，
+// 条数随栏高变化时保留上一份，不闪空。
+export function useActivity(projectId: string | undefined, limit: number, mine: boolean) {
+  return useQuery({
+    queryKey: ['activity', projectId ?? '', limit, mine],
+    queryFn: () => unwrap(api.GET('/api/activity', { params: { query: { project_id: projectId || undefined, limit, mine: mine || undefined } } })),
+    select: (d) => d.items ?? [],
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function useRequirements() {
   return useQuery({
     queryKey: qk.requirements,
@@ -321,15 +332,15 @@ export function useCommsPending() {
 // 主题 → 需要失效的查询前缀。
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],
-  decisions: [['decisions'], ['grants'], ['morning'], ['session-turns']],
+  decisions: [['decisions'], ['grants'], ['morning'], ['session-turns'], ['activity']],
   grants: [['grants'], ['morning']],
   morning: [['morning']],
   away: [['away'], ['morning'], ['grants']],
-  requirements: [['requirements'], ['plans'], ['morning'], ['session-turns'], ['shares']],
-  plans: [['plans'], ['shares']],
+  requirements: [['requirements'], ['plans'], ['morning'], ['session-turns'], ['shares'], ['activity']],
+  plans: [['plans'], ['shares'], ['activity']],
   shares: [['shares']],
   devices: [['devices'], ['sessions']],
-  projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning'], ['session-turns']],
+  projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning'], ['session-turns'], ['activity']],
   settings: [['settings']],
   orphans: [['orphans']],
   arrangements: [['arrangements']],

@@ -17,6 +17,7 @@ export type AwayStatus = Schemas['AwayStatus']
 export type AwayReport = Schemas['AwayReport']
 export type Requirement = NN<Schemas['Requirement'], 'sessions'>
 export type Project = Schemas['Project']
+export type Activity = Schemas['Activity']
 export type Workspace = Schemas['Workspace']
 export type NotifyConfig = Schemas['NotifyConfig']
 export type SettingsView = Schemas['SettingsView']

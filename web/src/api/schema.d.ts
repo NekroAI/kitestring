@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 最近动态：提交证据、提交验收、提决策、受阻与解除、留言、指派、提交评审、审查意见、你的答复与验收（R-296） */
+        get: operations["list-activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/arrangements": {
         parameters: {
             query?: never;
@@ -2405,6 +2422,60 @@ export interface components {
             since?: string;
             /** Format: date-time */
             week_start: string;
+        };
+        Activity: {
+            /**
+             * @description 主语：user 你 / agent 会话 / system 纸鸢
+             * @enum {string}
+             */
+            actor: "user" | "agent" | "system";
+            /** @description raise / answer：批准类决策或请求 */
+            approval?: boolean;
+            /** Format: date-time */
+            at: string;
+            /** @description 对象编号：R-x / D-x / P-x */
+            code: string;
+            /** @description submit：同时提交了证据（交证据后 2 分钟内提交验收，合成一条） */
+            evidence?: boolean;
+            /**
+             * @description 动作：evidence 提交证据 / review 交审查意见 / submit 提交验收 / blocked 设为受阻 / unblock 纸鸢自动解除受阻 / shelved 搁置 / done 验收通过 / raise 提决策 / answer 决策有了结果 / assign 指派 / note 你留言 / comment 会话留言 / revise 退回 / review_task 提交评审 / release 放行 / stage 阶段验收通过
+             * @enum {string}
+             */
+            kind: "evidence" | "review" | "submit" | "blocked" | "unblock" | "shelved" | "done" | "raise" | "answer" | "assign" | "note" | "comment" | "revise" | "review_task" | "release" | "stage";
+            project_id?: string;
+            /** @description blocked / unblock：在等的 R-x / D-x */
+            ref?: string;
+            /** @description 所属需求编号（对象是决策时），点开用 */
+            req_code?: string;
+            /** @description 会话当时的身份：aide / advisor / reviewer / pm / dev；没记时为空 */
+            role?: string;
+            /** @description 会话键（主语是会话时） */
+            session?: string;
+            /** @description 会话标题（当时的快照，没有时取现在的） */
+            session_title?: string;
+            /** Format: int64 */
+            stage_seq?: number;
+            stage_title?: string;
+            /**
+             * Format: int64
+             * @description stage：随第几个阶段一起自动通过；0 = 你通过的
+             */
+            stage_with?: number;
+            /** @description assign / review_task：接手会话的身份 */
+            target_role?: string;
+            /** @description assign / review_task：接手会话的标题 */
+            target_title?: string;
+            /** @description 内容：留言正文、退回意见、受阻 / 搁置原因、审查结论（最多 120 字） */
+            text?: string;
+            /**
+             * @description answer：answer 你回答了 / approved 你批准了 / rejected 你拒绝了 / proxy 主助理代答 / timeout 到期视为拒绝 / voided 申请作废
+             * @enum {string}
+             */
+            verdict?: "" | "answer" | "approved" | "rejected" | "proxy" | "timeout" | "voided";
+        };
+        ActivityOutBody: {
+            /** @description 新的在前 */
+            items: components["schemas"]["Activity"][] | null;
         };
         "Add-arrangementRequest": {
             project_id: string;
@@ -6483,6 +6554,42 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "list-activity": {
+        parameters: {
+            query?: {
+                /** @description 只看某个项目；空 = 全部项目 */
+                project_id?: string;
+                /** @description 只看你做的 */
+                mine?: boolean;
+                /** @description 最多几条，默认 20，最多 200 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "agent-list-arrangements": {
         parameters: {
             query?: {
