@@ -10,7 +10,7 @@ Kitestring 是一个二进制 `ks`，支持 macOS 与 Linux（arm64 / x64）。�
 curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.sh | sh
 ```
 
-脚本按系统和架构下载对应版本，用 `SHA256SUMS.txt` 校验后装到 `~/.local/bin/ks`。`KS_VERSION=v0.1.0` 可固定版本，`KS_INSTALL_DIR` 可改安装目录。重跑即升级。
+脚本按系统和架构下载对应版本，用 `SHA256SUMS.txt` 校验后装到 `~/.local/bin/ks`。`KS_VERSION=v0.1.0` 可固定版本，`KS_INSTALL_DIR` 可改安装目录。之后升级用 `ks update`（见[升级](#升级)）。
 
 想手动安装：从 [Releases](https://github.com/NekroAI/kitestring/releases/latest) 下载 `kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz`，对照 `SHA256SUMS.txt` 校验，把 `ks` 放到固定位置——`ks install` 会把它的绝对路径写进 agent 配置，之后不要再移动。
 
@@ -129,7 +129,7 @@ scripts/install-dsh-plugin.sh --profile web # 链接这份副本，并在 profil
 
 在用的 Host 链接的是 `$KS_HOME` 下的副本，只随部署更新、部署失败时一起回滚；仓库里改代码不会被热加载进去。开发插件本身时加 `--dev` 直接链接仓库。
 
-web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --profile web`。之后会话会带 DSH 标记出现在看板上。DSH 的 shell 里能正常使用 `ks role …`（插件注入根会话键 `DSH_KITESTRING_SESSION`，子代理里、从 Claude Code 终端启动的 DSH 里也认对）；不要在那里运行 `ks wait`——daemon 会立即返回并说明待命由插件负责。
+web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --profile web`。之后会话会带 DSH 标记出现在工作台上。DSH 的 shell 里能正常使用 `ks role …`（插件注入根会话键 `DSH_KITESTRING_SESSION`，子代理里、从 Claude Code 终端启动的 DSH 里也认对）；不要在那里运行 `ks wait`——daemon 会立即返回并说明待命由插件负责。
 
 插件会报 token 用量和上下文大小（会话圆环），Host 进程消失时会结束它承载的所有会话。目前只在 `web` profile 上验证过；桌面版和 Windows 没有验证。从纸鸢创建/恢复 DSH 会话、原生审批双向同步还没有做。
 

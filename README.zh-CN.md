@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>风筝飞得再远，线在你手里。</strong><br>
-  一块看板管住你所有设备上的 Claude Code 与 Codex 会话：看清每个 agent 在做什么，回答它在等的事，交给它下一件事——在电脑前或手机上都行。
+  一个工作台管住你所有设备上的 Claude Code 与 Codex 会话：看清每个 agent 在做什么，回答它在等的事，交给它下一件事——在电脑前或手机上都行。
 </p>
 
 <p align="center">
@@ -24,12 +24,12 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-sessions-dark.png">
-  <img src="docs/assets/screenshot-sessions-light.png" alt="会话墙：多台设备上的 agent 会话按项目分组，每个都显示正在做什么、是否在等你。">
+  <img src="docs/assets/screenshot-sessions-light.png" alt="工作台：左边是要你处理的事，中间每个会话一条泳道，显示近期动静、子任务和后台命令，右边是实时动态。">
 </picture>
 
 ## 它能做什么
 
-- **一眼看清所有会话**：所有设备上的会话按项目归在一起——运行中、等你处理、待命中还是已完成，以及此刻在做什么。
+- **一眼看清所有会话**：工作台列出要你处理的事，给所有设备上的每个会话一条泳道，实时显示此刻在做什么——运行中、等你处理、待命中还是已完成。
 - **在哪都能答复**：agent 需要你决策时，手机收到推送；点一个选项，答复就进入那个 agent 的下一轮。
 - **事情都记在一处**：agent 边做边记下需求；你确认、交给会话、对着截图验收。
 
@@ -70,7 +70,13 @@
 
 ## 更多亮点
 
+- **一支分工明确的团队，不是一个对话**：对会话说一句身份（`ks role`）——主调度（PM）、主助理（Aide）、顾问、评审、开发——它就知道自己的活：主调度排期、派子任务、合并部署；主助理替你判断，在你授权的范围内代答；评审在成果到你面前之前先审一遍；开发负责实现。子任务在后台跑，显示在会话泳道里。
+- **会话之间能说话**：在需求下留言、点对点发消息或广播、看谁在线、消息有没有送达，都在只看的「通讯」页。「要动手」的消息会叫醒会话，「只告知」的不会。
+- **分享给你信任的人**：勾选计划、需求、会话，生成带名字的访客链接，可设访问密码和有效期。访客看到的是实时、只读的页面；他们写的留言先进待收队列，由你原样或改写后放进需求——没有你点头，什么都到不了 agent 那里。
+- **原型直接在纸鸢里看**：agent 可以给需求、或给决策的每个选项附一个可交互的原型（HTML 页面加资源）。在纸鸢里全屏打开，跑在隔离的沙箱里，碰不到你的登录和接口，可切手机、平板、电脑的宽度预览。交之前用 `ks proto check` 自检。
+- **一条命令升级**：`ks update` 拉取最新发布版、校验、替换 `ks`，并重启 Hub 和后台服务。
 - **交出下一件事**：把需求交给会话；待办会在它空闲时整批送达，挂着 `ks wait` 的会话几秒内就开工。
+- **受阻不挂着不放**：需求被设为受阻后，等的事一完成就自动解除；会话关联它开工，也会转为进行中。
 - **分阶段的计划**：大目标拆成阶段，上一阶段你验收通过后，下一阶段才解锁。
 - **每个会话实时可见**：最近的工具调用实时滚动，小圆环显示上下文占用；接入你自己的模型后，还有一句话进展摘要。
 - **泳道时间线**：工作台每个会话一条泳道，按分钟汇总工具调用；中线以下画新算的 token（颜色按缓存命中率，冷启动有标记），后台命令（shell）每条一行，画起止、类型和结果，失败醒目、跑飞标黄。会话已结束、后台进程还在跑的「孤儿进程」单独列出，确认后可停止，也可忽略。
@@ -90,10 +96,10 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.zh-CN.svg">
-  <img src="docs/assets/architecture-light.zh-CN.svg" alt="每台设备上的 Claude Code 与 Codex 连到 ks daemon；daemon 与 ks hub 通信；你在任意浏览器或手机上使用 Hub 的网页看板。">
+  <img src="docs/assets/architecture-light.zh-CN.svg" alt="每台设备上的 Claude Code 与 Codex 连到 ks daemon；daemon 与 ks hub 通信；你在任意浏览器或手机上使用 Hub 的网页。">
 </picture>
 
-每台设备上的小 daemon 通过官方的 hooks 与 MCP 感知你的 agent，汇报给一台常开机器上的 Hub；你在任意浏览器里用 Hub 的网页看板。细节见[工作原理](docs/how-it-works.zh-CN.md)。
+每台设备上的小 daemon 通过官方的 hooks 与 MCP 感知你的 agent，汇报给一台常开机器上的 Hub；你在任意浏览器里用 Hub 的网页。细节见[工作原理](docs/how-it-works.zh-CN.md)。
 
 ## 上手
 
@@ -115,7 +121,9 @@ ks hub passwd && ks install --hub --claude=false --codex=false --daemon=false
 ks login --hub http://<hub>:7310 --token kst_xxx && ks install
 ```
 
-`ks status` 显示 `"connected": true` 就连上了，打开 Claude Code 或 Codex，会话就会出现在看板上。逐步说明、Linux 后台服务、DSH、升级与从源码构建见[安装说明](docs/install.zh-CN.md#3-每台开发设备)。
+`ks status` 显示 `"connected": true` 就连上了，打开 Claude Code 或 Codex，会话就会出现在工作台上。逐步说明、Linux 后台服务、DSH 与从源码构建见[安装说明](docs/install.zh-CN.md#3-每台开发设备)。
+
+**升级**：在每台机器上运行 `ks update`：下载最新发布版、用 `SHA256SUMS.txt` 校验、替换 `ks`，再重启用这个 `ks` 的 Hub 和后台服务（`ks update --check` 只查不换）。0.2.0 及更早的版本还没有这个命令，重跑一次安装脚本即可，见[升级](docs/install.zh-CN.md#升级)。
 
 ## 不碰你的订阅
 

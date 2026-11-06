@@ -36,16 +36,16 @@
 <text x="498.0" y="198" font-size="12" font-weight="400" fill="#9a9585" text-anchor="middle">一台常开的机器</text>
 <rect x="408" y="224" width="180" height="34" rx="9" fill="#1c2232" stroke="#343c52"/>
 <rect x="420" y="237" width="8" height="8" rx="2" fill="#8db3e2"/>
-<text x="438" y="246" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">会话墙</text>
+<text x="438" y="246" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">工作台</text>
 <rect x="408" y="272" width="180" height="34" rx="9" fill="#1c2232" stroke="#343c52"/>
 <rect x="420" y="285" width="8" height="8" rx="2" fill="#c8483a"/>
-<text x="438" y="294" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">决策收件箱</text>
+<text x="438" y="294" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">需求</text>
 <rect x="408" y="320" width="180" height="34" rx="9" fill="#1c2232" stroke="#343c52"/>
 <rect x="420" y="333" width="8" height="8" rx="2" fill="#8db3e2"/>
-<text x="438" y="342" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">需求看板</text>
+<text x="438" y="342" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">通讯</text>
 <rect x="408" y="368" width="180" height="34" rx="9" fill="#1c2232" stroke="#343c52"/>
 <rect x="420" y="381" width="8" height="8" rx="2" fill="#8db3e2"/>
-<text x="438" y="390" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">计划</text>
+<text x="438" y="390" font-size="13" font-weight="600" fill="#c2bbaa" text-anchor="start">分享</text>
 <text x="498.0" y="444" font-size="11" font-weight="500" fill="#9a9585" text-anchor="middle">SQLite · 网页 · 系统推送</text>
 <line x1="292" y1="185" x2="386" y2="185" stroke="#8db3e2" stroke-width="2" marker-end="url(#ac)"/>
 <line x1="390" y1="199" x2="296" y2="199" stroke="#c8483a" stroke-width="2" marker-end="url(#se)"/>

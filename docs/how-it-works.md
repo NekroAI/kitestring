@@ -4,7 +4,7 @@ English · [中文](how-it-works.zh-CN.md)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
-  <img src="assets/architecture-light.svg" alt="Claude Code and Codex on each machine report to ks daemon through hooks and MCP; the daemons send events to ks hub and receive your decisions; you use the Hub's web board from any browser or phone.">
+  <img src="assets/architecture-light.svg" alt="Claude Code and Codex on each machine report to ks daemon through hooks and MCP; the daemons send events to ks hub and receive your decisions; you use the Hub's web app from any browser or phone.">
 </picture>
 
 ## One binary, four roles
@@ -28,7 +28,7 @@ Session state is collected passively; agents don't have to report it.
 - **Session files.** The daemon reads the agents' local session files (read-only) for context usage and the latest activity.
 - **Git.** For each session's working directory, the daemon reports the branch, worktree and number of dirty files. Sessions are grouped into projects by git remote, or by machine and path when there is no remote.
 
-From these events the Hub derives the state you see on the board: running, waiting on you (a permission prompt or a question), standing by, finished, or lost.
+From these events the Hub derives the state you see on the workbench: running, waiting on you (a permission prompt or a question), standing by, finished, or lost.
 
 **Hooks never get in your way.** `ks hook` has a 1.5-second hard timeout and lets the agent continue on any error — even when the daemon isn't running. It never exits with code 2, which agents would treat as "block".
 
@@ -36,10 +36,10 @@ From these events the Hub derives the state you see on the board: running, waiti
 
 1. An agent hits something you should decide and calls `decision_raise` with the options and its recommendation.
 2. The decision shows up in your inbox, with a push notification to your phone or browser.
-3. You answer on the board. The Hub routes the answer to the one session that asked and sends it to that machine's daemon.
+3. You answer on the workbench. The Hub routes the answer to the one session that asked and sends it to that machine's daemon.
 4. The next time you send that session a message, its prompt hook injects the answer into the agent's context (`additionalContext`). If the session has ended, the answer is delivered when it resumes.
 
-<p align="center"><img src="assets/screenshot-mobile-light.png" width="300" alt="A decision on a phone: approve or reject, with an optional note."></p>
+<p align="center"><img src="assets/screenshot-mobile-light.png" width="300" alt="A decision on a phone: the agent's question and recommendation, with mockups to choose from."></p>
 
 Requirements work the same way: agents create and update them through MCP; you confirm drafts, hand them to a session, review and accept.
 
@@ -54,7 +54,7 @@ When an agent finishes a piece of work and needs your review or answer to contin
 | Usage cost | none while waiting | Codex polls the command output, costing a little each time (mostly cache reads), hence the 30-minute cap |
 | On timeout | ends quietly; continue in the conversation when you're back | tells the agent to wrap up — report progress and what it's waiting for, then end the turn; later answers arrive in the next conversation |
 
-Waiting sessions show as "standing by" on the board, with how long they have waited and until when.
+Waiting sessions show as "standing by" on the workbench, with how long they have waited and until when.
 
 Resident sessions (manager / aide / developer) re-wait after a timeout. Once they have idled in a row (nothing to act on, no message from you) longer than the project's "go offline after idling" setting (4 hours by default), the next wake-up tells them to write a handoff and go offline instead of waiting again; the board marks them "handed off, offline". Messages addressed to them keep queuing; when you're back, run `ks takeover <role>` in the project directory to start a new session, which receives the handoff, the takeover overview and the queued messages.
 

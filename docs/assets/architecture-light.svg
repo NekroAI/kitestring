@@ -36,16 +36,16 @@
 <text x="498.0" y="198" font-size="12" font-weight="400" fill="#776f5f" text-anchor="middle">one always-on machine</text>
 <rect x="408" y="224" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
 <rect x="420" y="237" width="8" height="8" rx="2" fill="#2f5d8c"/>
-<text x="438" y="246" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Session wall</text>
+<text x="438" y="246" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Workbench</text>
 <rect x="408" y="272" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
 <rect x="420" y="285" width="8" height="8" rx="2" fill="#b5382a"/>
-<text x="438" y="294" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Decision inbox</text>
+<text x="438" y="294" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Requirements</text>
 <rect x="408" y="320" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
 <rect x="420" y="333" width="8" height="8" rx="2" fill="#2f5d8c"/>
-<text x="438" y="342" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Requirement board</text>
+<text x="438" y="342" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Comms</text>
 <rect x="408" y="368" width="180" height="34" rx="9" fill="#f4f0e6" stroke="#e3dccb"/>
 <rect x="420" y="381" width="8" height="8" rx="2" fill="#2f5d8c"/>
-<text x="438" y="390" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Plans</text>
+<text x="438" y="390" font-size="13" font-weight="600" fill="#4f493c" text-anchor="start">Shares</text>
 <text x="498.0" y="444" font-size="11" font-weight="500" fill="#776f5f" text-anchor="middle">SQLite · Web UI · Web Push</text>
 <line x1="292" y1="185" x2="386" y2="185" stroke="#2f5d8c" stroke-width="2" marker-end="url(#ac)"/>
 <line x1="390" y1="199" x2="296" y2="199" stroke="#b5382a" stroke-width="2" marker-end="url(#se)"/>

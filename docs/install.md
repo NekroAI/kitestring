@@ -10,7 +10,7 @@ Kitestring is a single binary, `ks`, for macOS and Linux (arm64 and x64). One al
 curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.sh | sh
 ```
 
-The script picks the right build for your system, verifies it against `SHA256SUMS.txt` and installs it to `~/.local/bin/ks`. Set `KS_VERSION=v0.1.0` to pin a version or `KS_INSTALL_DIR` to change the directory. Run it again to update.
+The script picks the right build for your system, verifies it against `SHA256SUMS.txt` and installs it to `~/.local/bin/ks`. Set `KS_VERSION=v0.1.0` to pin a version or `KS_INSTALL_DIR` to change the directory. To update later, use `ks update` (see [Updating](#updating)).
 
 Prefer to do it by hand? Download `kitestring-<version>-<darwin|linux>-<arm64|amd64>.tar.gz` below, check it against `SHA256SUMS.txt`, and put `ks` somewhere stable — `ks install` writes the binary's absolute path into your agent configuration, so don't move it afterwards.
 

@@ -24,12 +24,12 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-sessions-dark.png">
-  <img src="docs/assets/screenshot-sessions-light.png" alt="The session wall: agent sessions on several machines, grouped by project, each showing what it is doing and whether it needs you.">
+  <img src="docs/assets/screenshot-sessions-light.png" alt="The workbench: what needs you on the left, a lane per session in the middle showing recent activity, sub-tasks and background commands, and a live feed on the right.">
 </picture>
 
 ## What it does
 
-- **See every session at a glance.** Sessions on all your machines, grouped by project — running, waiting on you, standing by or done, with what each one is doing right now.
+- **See every session at a glance.** The workbench lists what needs you, gives every session on every machine a lane, and streams what each one is doing right now — running, waiting on you, standing by or done.
 - **Answer from anywhere.** When an agent needs a decision, you get a push notification. Pick an option on your phone, and the answer lands in that agent's next turn.
 - **Keep the work in one place.** Agents record requirements as they go; you confirm them, hand them to a session, and accept the results with screenshots attached.
 
@@ -70,7 +70,13 @@ Circle, box, point and write right on the agent's screenshots. The pen follows p
 
 ## More highlights
 
+- **A team of roles, not one chat.** Tell a session who it is — manager (PM), aide, advisor, reviewer, developer (`ks role`) — and each knows its job: the PM schedules and merges, the aide judges and answers for you within the limits you set, the reviewer checks work before it reaches you, developers implement. Sub-tasks run in the background and show up in the lanes.
+- **Sessions talk to each other.** Leave a comment under a requirement, message one session or broadcast to many, see who is online and whether a message was delivered — all on the read-only **Comms** page. "Act on this" messages wake a session; "FYI" ones don't.
+- **Share with people you trust.** Pick plans, requirements and sessions, and hand out a named visitor link with an optional password and expiry. Visitors get a live, read-only view; what they write is held in a queue until you put it into the requirement (as it is or reworded) — nothing reaches the agents without you.
+- **Prototypes you can open right here.** An agent can attach an interactive prototype (an HTML page with its assets) to a requirement or to each option of a decision. It opens full screen in Kitestring, in a sandbox that cannot touch your login or the API, with width presets for phone, tablet and desktop. `ks proto check` self-checks a package before it is handed in.
+- **Update with one command.** `ks update` pulls the latest release, verifies it, replaces `ks` and restarts the Hub and background services.
 - **Hand off the next task.** Give a requirement to a session; to-dos queue up and arrive together when it goes idle. A session waiting in `ks wait` picks it up within seconds.
+- **Blocked doesn't linger.** A requirement marked blocked is released automatically once the thing it waited on is done, and linking a session to it starts the work.
 - **Plans with gates.** Split a big goal into stages; each stage unlocks only after you accept the previous one.
 - **A live view of every session.** Recent tool calls stream in, a ring shows how full the context is, and — if you connect your own model — a one-line summary says what it's doing.
 - **Swim-lane timeline.** Every session gets a lane on the workbench, summarised per minute; below the midline it draws newly computed tokens (coloured by cache hit rate, with cold starts marked), and each background shell command gets its own row with start, end, type and result — failures stand out, runaways turn yellow. "Orphan" processes that outlived their ended session are listed so you can stop or ignore them.
@@ -90,10 +96,10 @@ Circle, box, point and write right on the agent's screenshots. The pen follows p
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.svg">
-  <img src="docs/assets/architecture-light.svg" alt="Claude Code and Codex on each machine report to ks daemon; the daemons talk to ks hub; you use the Hub's web board from any browser or phone.">
+  <img src="docs/assets/architecture-light.svg" alt="Claude Code and Codex on each machine report to ks daemon; the daemons talk to ks hub; you use the Hub's web app from any browser or phone.">
 </picture>
 
-A small daemon on each machine listens to your agents through their official hooks and MCP, and reports to a Hub on one always-on machine. You use the Hub's web board from any browser. Details: [How it works](docs/how-it-works.md).
+A small daemon on each machine listens to your agents through their official hooks and MCP, and reports to a Hub on one always-on machine. You use the Hub's web app from any browser. Details: [How it works](docs/how-it-works.md).
 
 ## Get started
 
@@ -115,7 +121,9 @@ ks hub passwd && ks install --hub --claude=false --codex=false --daemon=false
 ks login --hub http://<hub>:7310 --token kst_xxx && ks install
 ```
 
-When `ks status` shows `"connected": true`, open Claude Code or Codex and your session appears on the board. Step by step, Linux services, DSH, updating and building from source: [Install guide](docs/install.md#3-every-development-machine).
+When `ks status` shows `"connected": true`, open Claude Code or Codex and your session appears on the workbench. Step by step, Linux services, DSH and building from source: [Install guide](docs/install.md#3-every-development-machine).
+
+**Updating.** Run `ks update` on each machine: it downloads the latest release, verifies it against `SHA256SUMS.txt`, replaces `ks` and restarts the Hub and daemon services that run it (`ks update --check` only looks). Versions 0.2.0 and earlier don't have it yet — re-run the install script once; see [Updating](docs/install.md#updating).
 
 ## Safe for your subscription
 

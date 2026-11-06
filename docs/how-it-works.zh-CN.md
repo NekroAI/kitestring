@@ -4,7 +4,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.zh-CN.svg">
-  <img src="assets/architecture-light.zh-CN.svg" alt="每台设备上的 Claude Code 与 Codex 通过 hooks 和 MCP 连到 ks daemon；daemon 把事件发给 ks hub，并接收你的决策；你在任意浏览器或手机上使用 Hub 的网页看板。">
+  <img src="assets/architecture-light.zh-CN.svg" alt="每台设备上的 Claude Code 与 Codex 通过 hooks 和 MCP 连到 ks daemon；daemon 把事件发给 ks hub，并接收你的决策；你在任意浏览器或手机上使用 Hub 的网页。">
 </picture>
 
 ## 一个二进制，四种角色
@@ -28,7 +28,7 @@ daemon 主动通过 WebSocket 连到 Hub，Hub 不需要反向连到你的设备
 - **会话文件**：daemon 只读地读取 agent 的本地会话记录，得到上下文占用与最近活动。
 - **Git**：daemon 上报每个会话工作目录的分支、worktree 与未提交文件数。会话按 git remote 归并为项目，没有 remote 时按设备 + 路径区分。
 
-Hub 据此推导你在看板上看到的状态：运行中、等你处理（权限确认或提问）、待命中、已结束、失联。
+Hub 据此推导你在工作台上看到的状态：运行中、等你处理（权限确认或提问）、待命中、已结束、失联。
 
 **Hook 永远不挡路**：`ks hook` 有 1.5 秒硬超时，出任何错都放行，daemon 没运行也一样；`ks` 永远不以退出码 2 退出（agent 会把它当成“阻止”）。
 
@@ -36,10 +36,10 @@ Hub 据此推导你在看板上看到的状态：运行中、等你处理（权�
 
 1. agent 遇到需要你决策的事，调用 `decision_raise`，附上选项和它的推荐。
 2. 决策进入你的收件箱，并推送到你的手机或浏览器。
-3. 你在看板上作答。Hub 把答复路由到提出它的那个会话，下发到该设备的 daemon。
+3. 你在工作台上作答。Hub 把答复路由到提出它的那个会话，下发到该设备的 daemon。
 4. 你下次给这个会话发消息时，prompt hook 把答复注入 agent 的上下文（`additionalContext`）。会话已结束的，恢复时送达。
 
-<p align="center"><img src="assets/screenshot-mobile-light.png" width="300" alt="手机上的决策：批准或拒绝，可附言。"></p>
+<p align="center"><img src="assets/screenshot-mobile-light.png" width="300" alt="手机上的决策：agent 的问题和推荐，带效果图供你选。"></p>
 
 需求同理：agent 通过 MCP 创建、更新需求；你确认草稿、把需求交给会话、验收。
 
