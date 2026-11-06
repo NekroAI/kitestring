@@ -2807,6 +2807,8 @@ export interface components {
         "Agent-secret-finishRequest": {
             /** Format: int64 */
             exit_code: number;
+            /** @description 发起这次取用的会话 */
+            session_key: string;
         };
         "Agent-secret-useRequest": {
             /** @description 要运行的命令（ks secret run） */
@@ -2814,9 +2816,13 @@ export interface components {
             name: string;
             /** @description 要写入的文件绝对路径（ks secret write） */
             path?: string;
+            /** @description ks 解析出的程序绝对路径（exec.LookPath）；按它判定允许的命令、记进取用记录 */
+            program?: string;
             /** @description 这次取用为的需求 R-x；不写时取会话正在处理的需求 */
             requirement?: string;
             session_key: string;
+            /** @description 程序是按 PATH 找到的（命令里写的是裸程序名） */
+            via_path?: boolean;
         };
         "Agent-set-briefRequest": {
             /** @description 一句话结论（建议 40 字以内）：常驻条上只显示它（R-212）；不写时网页取正文第一句 */
@@ -5888,6 +5894,8 @@ export interface components {
             updated_at: string;
         };
         SecretAsk: {
+            /** @description 这次申请给已有凭据新加的值（环境变量名）；申请被拒绝或撤回时没填的随之去掉 */
+            added?: string[] | null;
             /** @description 要的命令；空 = 没限定 */
             allowed: string[] | null;
             /**

@@ -585,6 +585,7 @@ func (h *Hub) sendNotify(projectID string, m notify.Message, path string, meta .
 
 // deliverNotify 异步发送通知。projectID 为空或项目未归属工作空间时使用默认渠道。
 func (h *Hub) deliverNotify(projectID string, m notify.Message, path string) {
+	m.Title, m.Body = h.redactText(m.Title, nil), h.redactText(m.Body, nil) // 已知凭据值隐去（R-295）
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()

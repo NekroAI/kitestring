@@ -3,40 +3,52 @@ package hub
 import (
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
-// 凭据（R-295）：允许的命令按词匹配；「*」单独放最后 = 后面任意参数，放中间 = 一个参数，词里的「*」匹配任意字符；
-// 程序名按文件名比；空表 = 不限命令。
+// 凭据（R-295）：允许的命令按词匹配；「*」单独放最后 = 后面任意参数，放中间 = 一个参数，词里的「*」匹配任意字符；空表 = 不限命令。
+// 程序（D-1450 审查第 3 条）：规则写裸程序名时只认按 PATH 找到的那一个，写了路径的（./wrangler、/tmp/x/wrangler）不算；
+// 规则写绝对路径时和解析出的路径精确比对。
 func TestCommandAllowed(t *testing.T) {
-	allowed := []string{"wrangler pages deploy *", "wrangler whoami", "gh release * --repo=NekroAI/*"}
+	allowed := []string{"wrangler pages deploy *", "wrangler whoami", "/usr/bin/gh release * --repo=NekroAI/*"}
+	viaPath := func(p string) program { return program{path: p, viaPath: true} }
+	given := func(p string) program { return program{path: p} }
+	wr, gh := viaPath("/opt/homebrew/bin/wrangler"), viaPath("/usr/bin/gh")
 	cases := []struct {
+		prog program
 		argv []string
 		want bool
 	}{
-		{[]string{"wrangler", "pages", "deploy", "dist", "--project-name", "kite"}, true},
-		{[]string{"wrangler", "pages", "deploy"}, true},
-		{[]string{"/usr/local/bin/wrangler", "whoami"}, true},
-		{[]string{"wrangler", "whoami", "--json"}, false},
-		{[]string{"wrangler", "pages", "project", "delete"}, false},
-		{[]string{"curl", "-H", "Authorization: Bearer x", "https://api.cloudflare.com"}, false},
-		{[]string{"sh", "-c", "wrangler whoami"}, false},
-		{[]string{"gh", "release", "create", "--repo=NekroAI/kitestring"}, true},
-		{[]string{"gh", "release", "create", "--repo=other/kitestring"}, false},
-		{[]string{"gh", "release", "--repo=NekroAI/kitestring"}, false},
+		{wr, []string{"wrangler", "pages", "deploy", "dist", "--project-name", "kite"}, true},
+		{wr, []string{"wrangler", "pages", "deploy"}, true},
+		{wr, []string{"wrangler", "whoami"}, true},
+		{given("/tmp/x/wrangler"), []string{"/tmp/x/wrangler", "whoami"}, false},
+		{given("/home/u/proj/wrangler"), []string{"./wrangler", "whoami"}, false},
+		{viaPath("/tmp/x/wrangler-evil"), []string{"wrangler-evil", "whoami"}, false},
+		{wr, []string{"wrangler", "whoami", "--json"}, false},
+		{wr, []string{"wrangler", "pages", "project", "delete"}, false},
+		{viaPath("/usr/bin/curl"), []string{"curl", "-H", "Authorization: Bearer x", "https://api.cloudflare.com"}, false},
+		{viaPath("/bin/sh"), []string{"sh", "-c", "wrangler whoami"}, false},
+		{gh, []string{"gh", "release", "create", "--repo=NekroAI/kitestring"}, true},
+		{given("/usr/bin/gh"), []string{"/usr/bin/gh", "release", "create", "--repo=NekroAI/kitestring"}, true},
+		{viaPath("/opt/gh/gh"), []string{"gh", "release", "create", "--repo=NekroAI/kitestring"}, false},
+		{gh, []string{"gh", "release", "create", "--repo=other/kitestring"}, false},
+		{gh, []string{"gh", "release", "--repo=NekroAI/kitestring"}, false},
 	}
 	for _, c := range cases {
-		if got := commandAllowed(allowed, c.argv); got != c.want {
-			t.Errorf("%v → %v，应为 %v", c.argv, got, c.want)
+		if got := commandAllowed(allowed, c.argv, c.prog); got != c.want {
+			t.Errorf("%v（%+v）→ %v，应为 %v", c.argv, c.prog, got, c.want)
 		}
 	}
-	if !commandAllowed(nil, []string{"anything"}) || commandAllowed(nil, nil) {
+	if !commandAllowed(nil, []string{"anything"}, given("/x")) || commandAllowed(nil, nil, program{}) {
 		t.Fatal("空表 = 不限命令（但要有命令）")
 	}
 }
@@ -163,5 +175,54 @@ func TestRedactWriter(t *testing.T) {
 	}
 	if got := serve("image/png", "value-123456"); got != "value-123456" {
 		t.Fatalf("其它类型应透传：%s", got)
+	}
+}
+
+// 出口脱敏补漏（D-1450 审查第 2 条）：系统推送的内容、分享页 HTML 的标题与描述、设备长连接下行都隐去已知值。
+func TestSecretRedactExits(t *testing.T) {
+	e := newShareEnv(t)
+	const val = "share-secret-0042abc"
+	x, err := e.st.CreateSecret(e.ctx, store.Secret{Name: "甲", Fields: []store.SecretField{{Env: "TOKEN", Label: "Token", Filled: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if x.Cipher, err = e.h.sealSecret(x.ID, map[string]string{"TOKEN": val}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.SaveSecret(e.ctx, x); err != nil {
+		t.Fatal(err)
+	}
+	e.h.refreshRedactor(e.ctx)
+	// 系统推送
+	if b := string(e.h.pushBody(notify.Message{Title: "新决策 D-1", Body: "token " + val}, "/")); strings.Contains(b, val) || !strings.Contains(b, SecretRedacted) {
+		t.Fatalf("推送内容应隐去：%s", b)
+	}
+	// 设备长连接下行（JSON 帧）
+	if b := string(e.h.redactBytes([]byte(`{"answer":"` + val + `"}`))); strings.Contains(b, val) {
+		t.Fatalf("长连接下行应隐去：%s", b)
+	}
+	// 分享页 HTML 的标题与描述
+	web := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<html><head><title>纸鸢 Kitestring</title><meta name="description" content="x" /></head><body></body></html>`))
+	})
+	srv := httptest.NewServer(e.h.Handler(web))
+	defer srv.Close()
+	sh := e.createShare(map[string]any{"name": "部署 " + val, "links": []string{"甲"}, "items": []map[string]any{{"kind": "req", "ref": e.ra.Code}}})
+	resp, err := http.Get(srv.URL + "/s/" + linkByName(sh, "甲").Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.Contains(string(b), val) || !strings.Contains(string(b), SecretRedacted) {
+		t.Fatalf("分享页标题应隐去：%s", b)
+	}
+}
+
+// 全量重拉时凭据页也要刷新（D-1450 审查第 5 条）。
+func TestAllTopicsHasSecrets(t *testing.T) {
+	if !strings.Contains(","+allTopics+",", ",secrets,") {
+		t.Fatalf("allTopics 缺 secrets：%s", allTopics)
 	}
 }

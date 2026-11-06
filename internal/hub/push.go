@@ -60,6 +60,12 @@ type pushPayload struct {
 	Tag   string `json:"tag,omitempty"`
 }
 
+// pushBody 是系统推送的内容；已知凭据值隐去（R-295）。
+func (h *Hub) pushBody(m notify.Message, path string) []byte {
+	body, _ := json.Marshal(pushPayload{Title: h.redactText(m.Title, nil), Body: h.redactText(m.Body, nil), URL: path, Tag: m.Event})
+	return body
+}
+
 // sendPush 把通知推给所有订阅了的浏览器；推送服务说订阅已失效（404 / 410）时删掉它。
 func (h *Hub) sendPush(ctx context.Context, m notify.Message, path string, only string) (sent int, firstErr error) {
 	subs, err := h.store.ListPushSubs(ctx)
@@ -70,7 +76,7 @@ func (h *Hub) sendPush(ctx context.Context, m notify.Message, path string, only 
 	if err != nil {
 		return 0, err
 	}
-	body, _ := json.Marshal(pushPayload{Title: m.Title, Body: m.Body, URL: path, Tag: m.Event})
+	body := h.pushBody(m, path)
 	for _, s := range subs {
 		if only != "" && s.ID != only && s.Endpoint != only {
 			continue

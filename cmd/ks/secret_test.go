@@ -48,3 +48,26 @@ func TestWritePrivate(t *testing.T) {
 		t.Fatalf("%v %q", st.Mode(), b)
 	}
 }
+
+// 程序解析（D-1450 审查第 3 条）：裸程序名按 PATH 找成绝对路径（viaPath = true）；写了路径的照写的算（viaPath = false）；找不到报错。
+func TestResolveProgram(t *testing.T) {
+	p, via, err := resolveProgram("sh")
+	if err != nil || !filepath.IsAbs(p) || !via {
+		t.Fatalf("sh → %q %v %v", p, via, err)
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "wrangler")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if p, via, err := resolveProgram(exe); err != nil || p != exe || via {
+		t.Fatalf("写了路径：%q %v %v", p, via, err)
+	}
+	t.Chdir(dir)
+	if p, via, err := resolveProgram("./wrangler"); err != nil || !filepath.IsAbs(p) || via {
+		t.Fatalf("./wrangler：%q %v %v", p, via, err)
+	}
+	if _, _, err := resolveProgram("no-such-cmd-295"); err == nil {
+		t.Fatal("找不到的命令应报错")
+	}
+}

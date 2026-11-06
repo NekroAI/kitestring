@@ -30,6 +30,8 @@ const secretUsage = `用法：
       本项目能用的凭据：名字、状态、字段名、允许的命令（没有值）。
   ks secret run <凭据名> [--req R-x] -- <命令> [参数...]
       授权有效、项目匹配、命令在允许范围内时，把凭据的值作为这条命令的环境变量运行；否则拒绝并说明原因。每次取用都有记录。
+      程序按 PATH 解析成绝对路径后判定、记录：允许规则写裸程序名时只认 PATH 找到的那一个（./wrangler、/tmp/x/wrangler 不算）。
+      命令继承当前环境（PATH、NODE_OPTIONS 等），记录里写实际运行的程序路径；这一层只防误用，不要借环境变量绕过。
   ks secret write <凭据名> <文件路径> [--field 环境变量名] [--force] [--req R-x]
       只在凭据授权了「写入磁盘」时可用：写成 环境变量名=值 的行（--field 只写这一个值的原文），文件权限 0600，路径会被记录。
 不要打印、回显值，也不要再让用户在终端里输入凭据。`
@@ -123,8 +125,21 @@ func secretList(args []string) error {
 	return agentCall("GET", "/agent/secrets?session_key="+url.QueryEscape(key), nil)
 }
 
-// secretUse 向纸鸢取值；被拒时错误里写明原因。
-func secretUse(key, name, req string, argv []string, path string) (logID string, env map[string]string, err error) {
+// resolveProgram 把命令的程序解析成绝对路径（exec.LookPath）：裸程序名按 PATH 找，写了路径的照写的算（viaPath = false）。
+// 纸鸢按解析结果判定允许的命令，ks 也运行这个路径，记录里的就是实际运行的程序。
+func resolveProgram(name string) (abs string, viaPath bool, err error) {
+	p, err := exec.LookPath(name)
+	if err != nil {
+		return "", false, fmt.Errorf("找不到命令 %s：%w", name, err)
+	}
+	if abs, err = filepath.Abs(p); err != nil {
+		return "", false, err
+	}
+	return abs, !strings.Contains(name, "/"), nil
+}
+
+// secretUse 向纸鸢取值；被拒时错误里写明原因。prog 是 resolveProgram 解析出的程序（write 时为空）。
+func secretUse(key, name, req string, argv []string, prog string, viaPath bool, path string) (logID string, env map[string]string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	var out struct {
@@ -135,7 +150,7 @@ func secretUse(key, name, req string, argv []string, path string) (logID string,
 	if path != "" {
 		body["path"] = path
 	} else {
-		body["argv"] = argv
+		body["argv"], body["program"], body["via_path"] = argv, prog, viaPath
 	}
 	if err := client.New(20*time.Second).Do(ctx, "POST", "/agent/secrets/use", body, &out); err != nil {
 		return "", nil, err
@@ -143,11 +158,11 @@ func secretUse(key, name, req string, argv []string, path string) (logID string,
 	return out.LogID, out.Env, nil
 }
 
-// secretFinish 上报退出码；失败不影响命令本身的结果。
-func secretFinish(logID string, code int) {
+// secretFinish 上报退出码（只有发起这次取用的会话能报）；失败不影响命令本身的结果。
+func secretFinish(key, logID string, code int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := client.New(5*time.Second).Do(ctx, "POST", "/agent/secrets/uses/"+url.PathEscape(logID)+"/finish", map[string]any{"exit_code": code}, nil); err != nil {
+	if err := client.New(5*time.Second).Do(ctx, "POST", "/agent/secrets/uses/"+url.PathEscape(logID)+"/finish", map[string]any{"session_key": key, "exit_code": code}, nil); err != nil {
 		fmt.Fprintln(os.Stderr, "ks secret：上报取用结果失败：", err)
 	}
 }
@@ -171,12 +186,16 @@ func secretRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	logID, env, err := secretUse(key, fs.Arg(0), *req, argv, "")
+	prog, viaPath, err := resolveProgram(argv[0])
 	if err != nil {
 		return err
 	}
-	code := runWithEnv(argv, env)
-	secretFinish(logID, code)
+	logID, env, err := secretUse(key, fs.Arg(0), *req, argv, prog, viaPath, "")
+	if err != nil {
+		return err
+	}
+	code := runWithEnv(append([]string{prog}, argv[1:]...), env) // 运行的就是纸鸢判定、记录的那个路径
+	secretFinish(key, logID, code)
 	os.Exit(code)
 	return nil
 }
@@ -243,7 +262,7 @@ func secretWrite(args []string) error {
 	if err != nil {
 		return err
 	}
-	logID, env, err := secretUse(key, fs.Arg(0), *req, nil, path)
+	logID, env, err := secretUse(key, fs.Arg(0), *req, nil, "", false, path)
 	if err != nil {
 		return err
 	}
@@ -251,7 +270,7 @@ func secretWrite(args []string) error {
 	if *field != "" {
 		v, ok := env[*field]
 		if !ok {
-			secretFinish(logID, 2)
+			secretFinish(key, logID, 2)
 			return fmt.Errorf("凭据「%s」没有 %s 这个值", fs.Arg(0), *field)
 		}
 		content = v
@@ -272,10 +291,10 @@ func secretWrite(args []string) error {
 		content = b.String()
 	}
 	if err := writePrivate(path, content); err != nil {
-		secretFinish(logID, 1)
+		secretFinish(key, logID, 1)
 		return err
 	}
-	secretFinish(logID, 0)
+	secretFinish(key, logID, 0)
 	fmt.Printf("已写入 %s（权限 0600）。不要打印或提交这个文件。\n", path)
 	return nil
 }

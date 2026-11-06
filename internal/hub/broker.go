@@ -55,7 +55,7 @@ func (s *sub) settle(w http.ResponseWriter) {
 }
 
 // allTopics 是全量重拉时让网页失效的全部数据类型。
-const allTopics = "sessions,requirements,decisions,projects,devices,plans,settings,lanes,shares"
+const allTopics = "sessions,requirements,decisions,projects,devices,plans,settings,lanes,shares,secrets"
 
 func newBroker() *broker { return &broker{subs: map[*sub]struct{}{}, guests: map[*guestSub]struct{}{}} }
 

@@ -101,6 +101,7 @@ type SecretAsk struct {
 	ProjectName string   `json:"project_name,omitempty"`
 	Days        int      `json:"days" doc:"建议的有效期（天），0 = 长期"`
 	Allowed     []string `json:"allowed" doc:"要的命令；空 = 没限定"`
+	Added       []string `json:"added,omitempty" doc:"这次申请给已有凭据新加的值（环境变量名）；申请被拒绝或撤回时没填的随之去掉"`
 }
 
 // SecretLog 是一条取用记录或授权变更。

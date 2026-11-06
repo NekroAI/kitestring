@@ -101,30 +101,39 @@ func secretExpiry(days int) *time.Time {
 
 // ---------- 命令范围 ----------
 
+// program 是要运行的程序：ks 用 exec.LookPath 解析出的绝对路径，以及它是不是按 PATH 找到的（命令里写的是裸程序名）。
+type program struct {
+	path    string
+	viaPath bool
+}
+
 // commandAllowed：argv 是否在允许的命令里。allowed 为空 = 不限命令。
 // 每条允许的命令按空白拆成词，逐词对 argv：「*」单独一词放在最后表示后面可以跟任意参数（也可以没有），放在中间匹配一个参数；
-// 词里的「*」匹配任意字符（如 --project-name=*）。第一个词不含「/」时也和程序名的文件名比（/usr/local/bin/wrangler 算 wrangler）。
-func commandAllowed(allowed, argv []string) bool {
+// 词里的「*」匹配任意字符（如 --project-name=*）。
+// 第一个词是程序：写裸程序名（wrangler）时，只认按 PATH 找到的那一个，./wrangler、/tmp/x/wrangler 这类写了路径的都不算；
+// 写绝对路径时和解析出的路径精确比对。会话改 PATH、NODE_OPTIONS 这类环境变量仍能换掉实际运行的东西——取用记录写实际路径，
+// 这一层只防误用（D-1434）。
+func commandAllowed(allowed, argv []string, prog program) bool {
 	if len(allowed) == 0 {
 		return len(argv) > 0
 	}
 	for _, a := range allowed {
-		if matchCommand(strings.Fields(a), argv) {
+		if matchCommand(strings.Fields(a), argv, prog) {
 			return true
 		}
 	}
 	return false
 }
 
-func matchCommand(pat, argv []string) bool {
+func matchCommand(pat, argv []string, prog program) bool {
 	if len(pat) == 0 || len(argv) == 0 {
 		return false
 	}
-	first := argv[0]
-	if !strings.Contains(pat[0], "/") {
-		first = filepath.Base(first)
-	}
-	if !wildMatch(pat[0], first) && !wildMatch(pat[0], argv[0]) {
+	if strings.Contains(pat[0], "/") {
+		if !wildMatch(pat[0], prog.path) {
+			return false
+		}
+	} else if !prog.viaPath || !wildMatch(pat[0], filepath.Base(prog.path)) {
 		return false
 	}
 	pat, argv = pat[1:], argv[1:]
@@ -259,8 +268,9 @@ func (h *Hub) secretValues(x store.Secret) (map[string]string, error) {
 	return h.openSecret(x.ID, x.Cipher)
 }
 
-// mergeSecretValues 把新填的值并进已有值：没填的保留原值；每个字段最后都要有值。返回是否有改动。
-func mergeSecretValues(x *store.Secret, old, in map[string]string) (map[string]string, bool, error) {
+// mergeSecretValues 把新填的值并进已有值：没填的保留原值。requireAll（保存授权时）要求每个字段最后都有值；
+// 替换值时没填过的字段（例如等待中的申请新加的）可以继续空着。返回是否有改动。
+func mergeSecretValues(x *store.Secret, old, in map[string]string, requireAll bool) (map[string]string, bool, error) {
 	vals := map[string]string{}
 	changed := false
 	for i, f := range x.Fields {
@@ -270,7 +280,11 @@ func mergeSecretValues(x *store.Secret, old, in map[string]string) (map[string]s
 			v = nv
 		}
 		if v == "" {
-			return nil, false, fmt.Errorf("「%s」还没填写", f.Label)
+			if requireAll {
+				return nil, false, fmt.Errorf("「%s」还没填写", f.Label)
+			}
+			x.Fields[i].Filled = false
+			continue
 		}
 		vals[f.Env] = v
 		x.Fields[i].Filled = true
@@ -324,7 +338,7 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	if err != nil {
 		old = map[string]string{} // 主密钥换了：要求把每个值重新填一遍
 	}
-	vals, changed, err := mergeSecretValues(&x, old, in.Values)
+	vals, changed, err := mergeSecretValues(&x, old, in.Values, true)
 	if err != nil {
 		return x, huma.Error400BadRequest(err.Error())
 	}
@@ -398,7 +412,8 @@ func (h *Hub) rejectSecretRequest(ctx context.Context, x store.Secret, note stri
 	return d, nil
 }
 
-// afterSecretRequest：申请被拒绝或撤回后，从没填过值的凭据删除；有值的留着，记一条「拒绝了申请」。
+// afterSecretRequest：申请被拒绝或撤回后，从没填过值的凭据删除；有值的留着，去掉这次申请新加、还没填的值（不留下
+// 卡住替换值 / 重新授权的空字段），被拒绝的记一条「拒绝了申请」。
 func (h *Hub) afterSecretRequest(ctx context.Context, d store.Decision, note string) {
 	if d.RequestKind != store.RequestSecret {
 		return
@@ -409,7 +424,17 @@ func (h *Hub) afterSecretRequest(ctx context.Context, d store.Decision, note str
 	}
 	if x.Cipher == "" {
 		_ = h.store.DeleteSecret(ctx, x.ID)
-	} else if d.Verdict == store.VerdictRejected {
+		h.broker.publish("secrets")
+		return
+	}
+	if x.Ask != nil && len(x.Ask.Added) > 0 {
+		x.Fields = slices.DeleteFunc(x.Fields, func(f store.SecretField) bool { return !f.Filled && slices.Contains(x.Ask.Added, f.Env) })
+		x.Ask.Added = nil
+		if _, err := h.store.SaveSecret(ctx, x); err != nil {
+			h.log.Warn("回滚凭据申请新加的值失败", "secret", x.Name, "err", err)
+		}
+	}
+	if d.Verdict == store.VerdictRejected {
 		_, _ = h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReject, SessionKey: x.RequestedBy, Reason: note, Days: -1})
 	}
 	h.broker.publish("secrets")
@@ -554,7 +579,7 @@ func (h *Hub) registerSecretsWeb(api huma.API) {
 			if err != nil {
 				old = map[string]string{}
 			}
-			vals, changed, err := mergeSecretValues(&x, old, in.Body.Values)
+			vals, changed, err := mergeSecretValues(&x, old, in.Body.Values, false)
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
 			}
@@ -731,19 +756,35 @@ func (h *Hub) registerSecretsAgent(api huma.API) {
 				SessionKey  string   `json:"session_key" minLength:"1"`
 				Name        string   `json:"name" minLength:"1"`
 				Argv        []string `json:"argv,omitempty" doc:"要运行的命令（ks secret run）"`
+				Program     string   `json:"program,omitempty" doc:"ks 解析出的程序绝对路径（exec.LookPath）；按它判定允许的命令、记进取用记录"`
+				ViaPath     bool     `json:"via_path,omitempty" doc:"程序是按 PATH 找到的（命令里写的是裸程序名）"`
 				Path        string   `json:"path,omitempty" doc:"要写入的文件绝对路径（ks secret write）"`
 				Requirement string   `json:"requirement,omitempty" doc:"这次取用为的需求 R-x；不写时取会话正在处理的需求"`
 			}
 		}) (*secretUseOut, error) {
-			return h.secretUse(ctx, in.Body.SessionKey, in.Body.Name, in.Body.Argv, in.Body.Path, in.Body.Requirement)
+			b := in.Body
+			return h.secretUse(ctx, b.SessionKey, b.Name, b.Argv, program{path: b.Program, viaPath: b.ViaPath}, b.Path, b.Requirement)
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-secret-finish", Method: http.MethodPost, Path: "/api/agent/secrets/uses/{id}/finish", Tags: tag, Summary: "上报取用命令的退出码"},
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
 			Body struct {
-				ExitCode int `json:"exit_code"`
+				SessionKey string `json:"session_key" minLength:"1" doc:"发起这次取用的会话"`
+				ExitCode   int    `json:"exit_code"`
 			}
 		}) (*okBody, error) {
+			// 只有发起这次取用的会话（在它所在的设备上）能上报，且只能上报一次（FinishSecretLog 只改还没上报的）
+			me, err := h.agentSessionOf(ctx, in.Body.SessionKey)
+			if err != nil {
+				return nil, err
+			}
+			l, err := h.store.GetSecretLog(ctx, in.ID)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			if l.SessionKey != me.Key || (l.Kind != store.SecretLogUse && l.Kind != store.SecretLogWrite) {
+				return nil, huma.Error403Forbidden("这条取用记录不是当前会话发起的，不能上报结果")
+			}
 			if _, err := h.store.FinishSecretLog(ctx, in.ID, in.Body.ExitCode); err != nil {
 				return nil, apiErr(err)
 			}
@@ -804,11 +845,16 @@ func (h *Hub) secretRequest(ctx context.Context, b secretRequestIn) (*secretRequ
 			out.Body.Message = fmt.Sprintf("凭据「%s」已有申请 %s 等待用户处理，没有重复提。结果会送到提申请的会话。", x.Name, x.RequestCode)
 			return out, nil
 		}
+		// 同名凭据没授权给本项目：不能借申请往别人的凭据里加值、改申请内容
+		if !secretInProject(x, me.ProjectID) && (x.Ask == nil || x.Ask.ProjectID != me.ProjectID) {
+			return nil, huma.Error403Forbidden(fmt.Sprintf("已有名为「%s」的凭据，没有授权给本项目（%s）；换一个名字申请。确实要共用这个凭据时，请用户在凭据页把本项目加进授权", x.Name, me.ProjectName))
+		}
 		missing := false
 		for _, f := range fields {
 			i := slices.IndexFunc(x.Fields, func(g store.SecretField) bool { return g.Env == f.Env })
 			if i < 0 {
-				x.Fields = append(x.Fields, f) // 新要的值：授权时一起填
+				x.Fields = append(x.Fields, f) // 新要的值：授权时一起填；申请被拒绝或撤回时去掉
+				ask.Added = append(ask.Added, f.Env)
 				missing = true
 			} else if !x.Fields[i].Filled {
 				missing = true
@@ -884,7 +930,7 @@ func (h *Hub) secretUseReq(ctx context.Context, me store.Session, x store.Secret
 }
 
 // secretUse 判断能否取用；能就记一条进行中的取用并返回值，不能就记一条被拒并说明原因。
-func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, path, reqCode string) (*secretUseOut, error) {
+func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, prog program, path, reqCode string) (*secretUseOut, error) {
 	me, err := h.agentSessionOf(ctx, key)
 	if err != nil {
 		return nil, err
@@ -901,6 +947,14 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pa
 	}
 	if !write && len(argv) == 0 {
 		return nil, huma.Error400BadRequest("用法：ks secret run <凭据> -- <命令>")
+	}
+	if !write {
+		if prog.path == "" { // 旧版 ks 没上报解析结果：按命令里写的判
+			prog = program{path: argv[0], viaPath: !strings.Contains(argv[0], "/")}
+		} else if !filepath.IsAbs(prog.path) {
+			return nil, huma.Error400BadRequest("程序路径要用绝对路径")
+		}
+		argv = append([]string{prog.path}, argv[1:]...) // 记录写实际运行的程序
 	}
 	vals, openErr := h.secretValues(x)
 	l := store.SecretLog{SecretID: x.ID, Kind: store.SecretLogUse, SessionKey: me.Key, RequirementID: h.secretUseReq(ctx, me, x, reqCode), Days: -1}
@@ -924,7 +978,7 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pa
 		deny, hint = secretDenyProject, fmt.Sprintf("这个凭据只授权给 %s，当前会话在「%s」；需要时用 ks secret request 申请", strings.Join(x.ProjectNames, "、"), me.ProjectName)
 	case write && !x.Disk:
 		deny, hint = secretDenyDisk, "这个凭据没有授权写入磁盘，改用 ks secret run 把值作为命令的环境变量；确实要写文件时重新申请并说明"
-	case !write && !commandAllowed(x.Allowed, argv):
+	case !write && !commandAllowed(x.Allowed, argv, prog):
 		deny, hint = secretDenyCommand, "允许的命令："+strings.Join(x.Allowed, "、")+"。不要换个写法绕过；确实需要时用 ks secret request 申请扩大范围，写明要运行的命令"
 	case openErr != nil:
 		deny, hint = secretDenyUnreadable, openErr.Error()

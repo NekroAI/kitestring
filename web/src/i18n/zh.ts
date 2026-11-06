@@ -265,7 +265,7 @@ export const zh = {
     addCmd: '添加',
     removeCmd: (cmd: string) => `移除「${cmd}」`,
     cmdPlaceholder: '如 wrangler pages deploy *',
-    cmdHint: '* 单独放在最后表示后面可以跟任意参数。不添加表示不限命令。',
+    cmdHint: '* 单独放在最后表示后面可以跟任意参数，不添加表示不限命令。程序只写名字时，只认按 PATH 找到的那一个，取用记录写实际路径。命令继承会话的环境变量（如 PATH、NODE_OPTIONS），这一层只防误用。',
     disk: '写入磁盘',
     diskOn: '允许',
     diskOff: '不允许',

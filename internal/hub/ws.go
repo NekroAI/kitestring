@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -66,7 +67,11 @@ func (h *Hub) serveDeviceWS(w http.ResponseWriter, r *http.Request) {
 				return
 			case e := <-c.out:
 				wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)
-				err := wsjson.Write(wctx, ws, e)
+				// 下行内容（答复、团队消息……）里出现的已知凭据值同样隐去（R-295）
+				b, err := json.Marshal(e)
+				if err == nil {
+					err = ws.Write(wctx, websocket.MessageText, h.redactBytes(b))
+				}
 				wcancel()
 				if err != nil {
 					cancel()

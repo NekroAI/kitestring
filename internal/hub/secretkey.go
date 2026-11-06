@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // 凭据的加密（R-295）：值用 AES-256-GCM 加密后存进数据库，主密钥不进数据库。
@@ -205,8 +206,15 @@ func (h *Hub) refreshRedactor(ctx context.Context) {
 	h.vault.mu.Unlock()
 }
 
-// currentRedactor 是当前的脱敏器；没有已知值时为空（不脱敏）。
+// currentRedactor 是当前的脱敏器；没有已知值时为空（不脱敏）。第一次用到时先从库里建好。
 func (h *Hub) currentRedactor() redactor {
+	if h.store != nil {
+		h.vault.once.Do(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			h.refreshRedactor(ctx)
+		})
+	}
 	h.vault.mu.Lock()
 	defer h.vault.mu.Unlock()
 	return h.vault.redactor

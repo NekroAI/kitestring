@@ -2,17 +2,18 @@ package hub
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // 已知值脱敏（R-295）：凭据的值一旦出现在纸鸢自己存、自己展示的内容里（会话的消息与回复、决策、留言、证据、团队消息、取用记录的命令……），
-// 展示前一律换成「[已隐去]」。做法是在 /api/ 的响应出口统一替换，而不是逐个接口处理：新加的接口、访客页、实时推送都自动覆盖。
+// 展示前一律换成「[已隐去]」。做法是在出口统一替换，而不是逐个接口处理：
+//   - /api/ 的 JSON 响应和网页 / 访客页的实时推送（withRedact）：新加的接口自动覆盖；
+//   - 设备长连接下行（ws.go，送给会话的答复、团队消息等）、系统推送与 Bark / 企业微信通知（hub.go deliverNotify、push.go）、
+//     分享页 HTML 的标题与描述（sharemeta.go）：这几处不经过 withRedact，各自调 redactText / redactBytes。
 // 只有 ks secret run 取值的那个接口例外（它本来就是把值交给运行命令的 ks 进程）。管不到 Claude Code / Codex 自己的对话记录。
 //
 // 太短的值（少于 secretRedactMin 个字符）不参与：会把普通文字误隐去；这类值本身也不像需要保密的 Token。
@@ -76,6 +77,14 @@ func (h *Hub) redactText(s string, extra map[string]string) string {
 	return s
 }
 
+// redactBytes 用当前的已知值脱敏一段已编码的内容（设备长连接的 JSON 帧）。
+func (h *Hub) redactBytes(b []byte) []byte {
+	if r := h.currentRedactor(); r != nil {
+		return []byte(r.Replace(string(b)))
+	}
+	return b
+}
+
 // secretUsePath 是 ks secret run / write 取值的接口：响应里就是值，不脱敏。
 const secretUsePath = "/api/agent/secrets/use"
 
@@ -86,11 +95,6 @@ func (h *Hub) withRedact(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		h.vault.once.Do(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			h.refreshRedactor(ctx)
-		})
 		rep := h.currentRedactor()
 		if rep == nil {
 			next.ServeHTTP(w, r)

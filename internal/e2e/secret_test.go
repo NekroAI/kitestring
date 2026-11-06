@@ -49,10 +49,17 @@ func TestSecretVault(t *testing.T) {
 		Secret store.Secret      `json:"secret"`
 		Logs   []store.SecretLog `json:"logs"`
 	}
-	use := func(sess, name string, argv ...string) (useOut, error) {
+	useProg := func(sess, name, prog string, viaPath bool, argv ...string) (useOut, error) {
 		var out useOut
-		err := c.Do(ctx, "POST", "/agent/secrets/use", map[string]any{"session_key": sess, "name": name, "argv": argv}, &out)
+		err := c.Do(ctx, "POST", "/agent/secrets/use", map[string]any{"session_key": sess, "name": name, "argv": argv, "program": prog, "via_path": viaPath}, &out)
 		return out, err
+	}
+	// use 模拟 ks secret run：裸程序名按 PATH 解析成 /usr/local/bin/<名>
+	use := func(sess, name string, argv ...string) (useOut, error) {
+		return useProg(sess, name, "/usr/local/bin/"+argv[0], true, argv...)
+	}
+	finish := func(sess, id string, code int) error {
+		return c.Do(ctx, "POST", "/agent/secrets/uses/"+id+"/finish", map[string]any{"session_key": sess, "exit_code": code}, nil)
 	}
 	denied := func(err error, want string) {
 		t.Helper()
@@ -136,14 +143,14 @@ func TestSecretVault(t *testing.T) {
 	if err != nil || u.Env["CLOUDFLARE_API_TOKEN"] != token || u.Env["CLOUDFLARE_ACCOUNT_ID"] != account {
 		t.Fatalf("允许的命令应拿到值：%+v %v", u, err)
 	}
-	if err := c.Do(ctx, "POST", "/agent/secrets/uses/"+u.LogID+"/finish", map[string]any{"exit_code": 0}, nil); err != nil {
+	if err := finish(key, u.LogID, 0); err != nil {
 		t.Fatal(err)
 	}
-	u2, err := use(key, "Cloudflare 部署", "/opt/bin/wrangler", "pages", "deploy", "dist", "--project-name", "kite")
+	u2, err := use(key, "Cloudflare 部署", "wrangler", "pages", "deploy", "dist", "--project-name", "kite")
 	if err != nil {
-		t.Fatalf("程序名按文件名比、* 跟任意参数：%v", err)
+		t.Fatalf("* 跟任意参数：%v", err)
 	}
-	if err := c.Do(ctx, "POST", "/agent/secrets/uses/"+u2.LogID+"/finish", map[string]any{"exit_code": 1}, nil); err != nil {
+	if err := finish(key, u2.LogID, 1); err != nil {
 		t.Fatal(err)
 	}
 	// 越界：命令不在允许范围内（命令里带着值）
@@ -174,7 +181,7 @@ func TestSecretVault(t *testing.T) {
 		}
 		switch {
 		case l.Kind == store.SecretLogUse && l.Result == store.SecretOK:
-			ok = l.SessionKey == key && l.RequirementCode == r.Code && l.Command == "wrangler whoami"
+			ok = l.SessionKey == key && l.RequirementCode == r.Code && l.Command == "/usr/local/bin/wrangler whoami" // 记录写实际运行的程序
 		case l.Kind == store.SecretLogUse && l.Result == store.SecretFailed:
 			failed = l.ExitCode == 1
 		case l.Kind == store.SecretLogUse && l.Result == store.SecretDenied && l.Reason == "不在允许范围内":
@@ -206,6 +213,73 @@ func TestSecretVault(t *testing.T) {
 	}
 	if !strings.Contains(e.session(key).LastPrompt, "token 是 "+hub.SecretRedacted) {
 		t.Fatalf("值应显示为已隐去：%q", e.session(key).LastPrompt)
+	}
+
+	// 5b. 安全审查补丁（D-1450）
+	// 程序写了路径（./wrangler、/tmp/x/wrangler）不算允许规则里的裸程序名
+	_, err = useProg(key, "Cloudflare 部署", "/tmp/x/wrangler", false, "/tmp/x/wrangler", "whoami")
+	denied(err, "不在允许范围内")
+	_, err = useProg(key, "Cloudflare 部署", cwd+"/wrangler", false, "./wrangler", "whoami")
+	denied(err, "不在允许范围内")
+	// 上报结果：只认发起取用的会话和它的设备，只能报一次
+	u3, err := use(key, "Cloudflare 部署", "wrangler", "whoami")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := finish("claude:sec2", u3.LogID, 9); err == nil || !strings.Contains(err.Error(), "不是当前会话") {
+		t.Fatalf("别的会话不能上报：%v", err)
+	}
+	var dev2 struct {
+		Token string `json:"token"`
+	}
+	e.call("POST", "/api/devices", map[string]any{"name": "other-device"}, &dev2)
+	req2, _ := http.NewRequest("POST", e.srv.URL+"/api/agent/secrets/uses/"+u3.LogID+"/finish", strings.NewReader(`{"session_key":"`+key+`","exit_code":9}`))
+	req2.Header.Set("Authorization", "Bearer "+dev2.Token)
+	req2.Header.Set("Content-Type", "application/json")
+	if resp, err := http.DefaultClient.Do(req2); err != nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("别的设备不能上报：%v %v", resp, err)
+	} else {
+		resp.Body.Close()
+	}
+	if err := finish(key, u3.LogID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := finish(key, u3.LogID, 5); err == nil {
+		t.Fatal("只能上报一次")
+	}
+	// 别的项目的会话按名字申请已有凭据：拒绝，不能往里加值
+	err = c.Do(ctx, "POST", "/agent/secrets/request", map[string]any{"session_key": "claude:sec2", "name": "Cloudflare 部署", "purpose": "x", "fields": []map[string]string{{"env": "EVIL"}}}, nil)
+	denied(err, "没有授权给本项目")
+	if n := len(get(x.ID).Secret.Fields); n != 2 {
+		t.Fatalf("字段不应被别的项目加上：%d", n)
+	}
+	// 本项目再次申请加一个值：等待期间替换值照常；被拒绝后新加的值去掉，修改授权照常
+	var rq3 reqOut
+	if err := c.Do(ctx, "POST", "/agent/secrets/request", map[string]any{"session_key": key, "name": "Cloudflare 部署", "purpose": "加 Zone ID",
+		"fields": []map[string]string{{"env": "CLOUDFLARE_ZONE_ID", "label": "Zone ID"}}}, &rq3); err != nil || rq3.Existing {
+		t.Fatalf("加值的申请应新建：%+v %v", rq3, err)
+	}
+	if n := len(get(x.ID).Secret.Fields); n != 3 {
+		t.Fatalf("申请期间应多一个待填的值：%d", n)
+	}
+	e.call("POST", "/api/secrets/"+x.ID+"/values", map[string]any{"values": map[string]string{"CLOUDFLARE_ACCOUNT_ID": "acct-temp-777777"}}, nil)
+	e.call("POST", "/api/secrets/"+x.ID+"/values", map[string]any{"values": map[string]string{"CLOUDFLARE_ACCOUNT_ID": account}}, nil)
+	done = parkWait(t, e, c, key)
+	e.call("POST", "/api/secrets/"+x.ID+"/reject", map[string]any{"note": "先不用"}, nil)
+	woke(t, done, "拒绝", "先不用")
+	if fs := get(x.ID).Secret.Fields; len(fs) != 2 || fs[0].Env != "CLOUDFLARE_API_TOKEN" {
+		t.Fatalf("被拒绝后新加的值应去掉：%+v", fs)
+	}
+	e.call("POST", "/api/secrets/"+x.ID+"/authorize", map[string]any{"projects": []string{projectID}, "days": 7, "allowed": []string{"wrangler pages deploy *", "wrangler whoami"}}, nil)
+	// 设备长连接下行：答复里带着值，送到会话时已隐去
+	var dq store.Decision
+	if err := c.Do(ctx, "POST", "/agent/decisions", map[string]any{"question": "用哪个 Token？", "options": []string{"甲", "乙"}, "session_key": key}, &dq); err != nil {
+		t.Fatal(err)
+	}
+	done = parkWait(t, e, c, key)
+	e.call("POST", "/api/decisions/answers", map[string]any{"answers": []map[string]any{{"ref": dq.Code, "answer": "用 " + token}}}, nil)
+	if got := woke(t, done, hub.SecretRedacted); strings.Contains(got, token) {
+		t.Fatalf("送到会话的答复应隐去：%s", got)
 	}
 
 	// 6. 过期 → 拒绝；重新授权 → 恢复；撤销 → 拒绝；替换值 → 新值

@@ -740,9 +740,15 @@
           "exit_code": {
             "format": "int64",
             "type": "integer"
+          },
+          "session_key": {
+            "description": "发起这次取用的会话",
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
+          "session_key",
           "exit_code"
         ],
         "type": "object"
@@ -768,6 +774,10 @@
             "description": "要写入的文件绝对路径（ks secret write）",
             "type": "string"
           },
+          "program": {
+            "description": "ks 解析出的程序绝对路径（exec.LookPath）；按它判定允许的命令、记进取用记录",
+            "type": "string"
+          },
           "requirement": {
             "description": "这次取用为的需求 R-x；不写时取会话正在处理的需求",
             "type": "string"
@@ -775,6 +785,10 @@
           "session_key": {
             "minLength": 1,
             "type": "string"
+          },
+          "via_path": {
+            "description": "程序是按 PATH 找到的（命令里写的是裸程序名）",
+            "type": "boolean"
           }
         },
         "required": [
@@ -10090,6 +10104,16 @@
       "SecretAsk": {
         "additionalProperties": false,
         "properties": {
+          "added": {
+            "description": "这次申请给已有凭据新加的值（环境变量名）；申请被拒绝或撤回时没填的随之去掉",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "allowed": {
             "description": "要的命令；空 = 没限定",
             "items": {

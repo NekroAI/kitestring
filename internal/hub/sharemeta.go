@@ -50,6 +50,7 @@ func (h *Hub) shareMeta(web http.Handler) http.Handler {
 			return
 		}
 		title, desc := h.shareSummary(r.Context(), token)
+		title, desc = h.redactText(title, nil), h.redactText(desc, nil) // 已知凭据值隐去（R-295）
 		base := h.baseURL(r)
 		page := string(body)
 		page = reTitle.ReplaceAllLiteralString(page, "<title>"+html.EscapeString(title)+"</title>")
