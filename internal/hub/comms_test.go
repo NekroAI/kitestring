@@ -103,6 +103,10 @@ func TestCommsPendingByProject(t *testing.T) {
 	tell("claude:b1", pb)
 	tell("claude:b1", pb)
 	tell("claude:b2", pb) // 收件会话已结束：无法送达，不算
+	// R-294：只告知、按设计攒着的不算进导航黄标
+	if _, err := e.st.CreateDecision(e.ctx, store.Decision{Kind: store.KindTell, SessionKey: "claude:a1", ProjectID: pa, Question: "q", Answer: "fyi", AssignedBy: e.pm, FYI: true}); err != nil {
+		t.Fatal(err)
+	}
 	var out struct {
 		Count    int
 		Projects []commsPendingProj

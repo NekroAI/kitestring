@@ -11,7 +11,7 @@ export type CommsMsgLike = {
   text: string
   full: string
   from?: { key: string; role: string; title?: string; agent_name?: string }
-  recipients: { to: string; role?: string; title?: string; status: string }[] | null
+  recipients: { to: string; role?: string; title?: string; status: string; held?: boolean }[] | null
 }
 
 export type CommsFilter = {
@@ -28,8 +28,8 @@ const rcpts = (m: CommsMsgLike) => m.recipients ?? []
 // involves：会话 key 是这条消息的发送方或收件人之一。
 export const involves = (m: CommsMsgLike, key: string) => m.from?.key === key || rcpts(m).some((r) => r.to === key)
 
-// unsent：有收件人还没送到（等对方醒来或对方不在线）。
-export const unsent = (m: CommsMsgLike) => rcpts(m).some((r) => r.status !== 'delivered')
+// unsent：有收件人要动手却还没送到（等对方醒来或对方不在线）；只告知、按设计攒着的不算（R-294）。
+export const unsent = (m: CommsMsgLike) => rcpts(m).some((r) => r.status !== 'delivered' && !r.held)
 
 const roleOf = (r: string | undefined) => r || 'none'
 

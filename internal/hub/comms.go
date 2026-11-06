@@ -56,7 +56,8 @@ type CommsSession struct {
 	RosterEntry
 	In           int        `json:"in" doc:"今天收到的会话消息（不含纸鸢提醒）"`
 	Out          int        `json:"out" doc:"今天发出的会话消息（一次广播算一条）"`
-	Waiting      int        `json:"waiting" doc:"发给该会话、待送达的消息数"`
+	Waiting      int        `json:"waiting" doc:"发给该会话、待送达的消息数（不含攒着的只告知）"`
+	Held         int        `json:"held" doc:"发给该会话、只告知而攒着的消息数（R-294）"`
 	WaitingSince *time.Time `json:"waiting_since,omitempty" doc:"最早那条的发送时间"`
 }
 
@@ -66,7 +67,8 @@ type commsOut struct {
 		ProjectName string         `json:"project_name"`
 		Sessions    []CommsSession `json:"sessions" doc:"待命 → 运行中 → 空闲 → 已结束"`
 		Messages    []CommsMsg     `json:"messages" doc:"时间范围内的消息，新的在前（含纸鸢提醒）"`
-		Waiting     []CommsMsg     `json:"waiting" doc:"待送达的消息（不论等了多久），新的在前"`
+		Waiting     []CommsMsg     `json:"waiting" doc:"待送达的消息（不论等了多久），新的在前；不含攒着的只告知"`
+		Held        []CommsMsg     `json:"held" doc:"只告知、按设计攒着、等对方下次被唤醒时一并送达的消息，新的在前（R-294）"`
 		Offline     []CommsMsg     `json:"offline" doc:"无法送达（对方已结束或失联）的消息，新的在前"`
 		Today       int            `json:"today" doc:"今天的会话消息条数（一次广播算一条，不含纸鸢提醒）"`
 		TodayCasts  int            `json:"today_broadcasts" doc:"今天的广播次数"`
@@ -77,7 +79,7 @@ type commsOut struct {
 
 type commsPendingOut struct {
 	Body struct {
-		Count    int                `json:"count" doc:"所有项目里待送达的消息数（导航上的数字；一次广播算一条）"`
+		Count    int                `json:"count" doc:"所有项目里要对方动手却还没送到的消息数（导航上的数字；一次广播算一条；只告知而攒着的不算，R-294）"`
 		Projects []commsPendingProj `json:"projects" doc:"按项目分的待送达条数，多的在前（同样多时最近有新消息的在前）；点导航数字时进第一个项目（R-288）"`
 	}
 }
@@ -370,13 +372,18 @@ func (h *Hub) registerCommsWeb(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			out.Body.Waiting, out.Body.Offline = []CommsMsg{}, []CommsMsg{}
-			waitingTo := map[string][]time.Time{}
+			out.Body.Waiting, out.Body.Held, out.Body.Offline = []CommsMsg{}, []CommsMsg{}, []CommsMsg{}
+			waitingTo, heldTo := map[string][]time.Time{}, map[string]int{}
 			for _, m := range b.build(ctx, unsent) {
-				var w, off bool
+				var w, h, off bool
 				for _, r := range m.Recipients {
 					switch r.Status {
 					case PendingWakeSt:
+						if r.Held {
+							h = true
+							heldTo[r.To]++
+							continue
+						}
 						w = true
 						waitingTo[r.To] = append(waitingTo[r.To], m.CreatedAt)
 					case OfflineSt:
@@ -385,6 +392,8 @@ func (h *Hub) registerCommsWeb(api huma.API) {
 				}
 				if w {
 					out.Body.Waiting = append(out.Body.Waiting, m)
+				} else if h {
+					out.Body.Held = append(out.Body.Held, m)
 				} else if off {
 					out.Body.Offline = append(out.Body.Offline, m)
 				}
@@ -425,7 +434,7 @@ func (h *Hub) registerCommsWeb(api huma.API) {
 			}
 			out.Body.Sessions = []CommsSession{}
 			for _, x := range list {
-				e := CommsSession{RosterEntry: toRosterEntry(x, "", b.at), In: in1[x.Key], Out: out1[x.Key]}
+				e := CommsSession{RosterEntry: toRosterEntry(x, "", b.at), In: in1[x.Key], Out: out1[x.Key], Held: heldTo[x.Key]}
 				if ts := waitingTo[x.Key]; len(ts) > 0 {
 					e.Waiting = len(ts)
 					sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
@@ -462,7 +471,7 @@ func (h *Hub) registerCommsWeb(api huma.API) {
 				n := 0
 				for _, m := range b.build(ctx, byProj[pid]) {
 					for _, r := range m.Recipients {
-						if r.Status == PendingWakeSt {
+						if r.Status == PendingWakeSt && !r.Held {
 							n++
 							break
 						}

@@ -43,6 +43,10 @@ func TestDeliveryOf(t *testing.T) {
 		if e.Status != c.status || !strings.Contains(e.Reason, c.why) || e.StatusLabel != deliveryLabel[c.status] || e.Code != c.d.Code {
 			t.Errorf("%s：%+v，应为 %s 且原因含「%s」", c.name, e, c.status, c.why)
 		}
+		// R-294：只告知、按设计攒着的才算 held；要动手的、离线的都不是
+		if wantHeld := c.d.FYI && c.status == PendingWakeSt; e.Held != wantHeld {
+			t.Errorf("%s：held = %v，应为 %v", c.name, e.Held, wantHeld)
+		}
 	}
 	if e := deliveryOf(queued, store.Session{Tool: "codex", Client: "cli", State: store.StateWaitReply}, true, now); e.Tool != "Codex 终端" {
 		t.Errorf("工具应写显示名：%+v", e)

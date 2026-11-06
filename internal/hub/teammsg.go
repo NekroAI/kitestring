@@ -35,6 +35,7 @@ type Delivery struct {
 	Tool        string     `json:"tool" doc:"收件会话所用工具：Claude Code / claude-x / Codex 终端 / Codex App / DSH"`
 	Status      string     `json:"status" enum:"delivered,pending_wake,offline" doc:"delivered 已送达；pending_wake 待送达；offline 无法送达"`
 	StatusLabel string     `json:"status_label"`
+	Held        bool       `json:"held,omitempty" doc:"待送达里「只告知、按设计攒着」的：不唤醒对方，等它下次被唤醒时一并送达，不算卡住（R-294）"`
 	Reason      string     `json:"reason" doc:"送达状态的原因：已送达时间、等什么、为什么离线"`
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
 }
@@ -82,6 +83,7 @@ func deliveryOf(d store.Decision, x store.Session, ok bool, at time.Time) Delive
 	default:
 		now, why := wakeAbilityAt(x, at)
 		out.Status = PendingWakeSt
+		out.Held = d.FYI
 		switch {
 		case d.FYI && now:
 			out.Reason = "仅告知，不唤醒（会话" + why + "），下次唤醒或用户发消息时一并送达"

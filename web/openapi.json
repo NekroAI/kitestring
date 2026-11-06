@@ -2632,6 +2632,16 @@
       "CommsOutBody": {
         "additionalProperties": false,
         "properties": {
+          "held": {
+            "description": "只告知、按设计攒着、等对方下次被唤醒时一并送达的消息，新的在前（R-294）",
+            "items": {
+              "$ref": "#/components/schemas/CommsMsg"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "messages": {
             "description": "时间范围内的消息，新的在前（含纸鸢提醒）",
             "items": {
@@ -2688,7 +2698,7 @@
             "type": "boolean"
           },
           "waiting": {
-            "description": "待送达的消息（不论等了多久），新的在前",
+            "description": "待送达的消息（不论等了多久），新的在前；不含攒着的只告知",
             "items": {
               "$ref": "#/components/schemas/CommsMsg"
             },
@@ -2704,6 +2714,7 @@
           "sessions",
           "messages",
           "waiting",
+          "held",
           "offline",
           "today",
           "today_broadcasts",
@@ -2753,7 +2764,7 @@
         "additionalProperties": false,
         "properties": {
           "count": {
-            "description": "所有项目里待送达的消息数（导航上的数字；一次广播算一条）",
+            "description": "所有项目里要对方动手却还没送到的消息数（导航上的数字；一次广播算一条；只告知而攒着的不算，R-294）",
             "format": "int64",
             "type": "integer"
           },
@@ -2807,6 +2818,11 @@
           "harness": {
             "description": "所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH",
             "type": "string"
+          },
+          "held": {
+            "description": "发给该会话、只告知而攒着的消息数（R-294）",
+            "format": "int64",
+            "type": "integer"
           },
           "in": {
             "description": "今天收到的会话消息（不含纸鸢提醒）",
@@ -2869,7 +2885,7 @@
             "type": "string"
           },
           "waiting": {
-            "description": "发给该会话、待送达的消息数",
+            "description": "发给该会话、待送达的消息数（不含攒着的只告知）",
             "format": "int64",
             "type": "integer"
           },
@@ -2891,6 +2907,7 @@
           "in",
           "out",
           "waiting",
+          "held",
           "key",
           "title",
           "role",
@@ -3777,6 +3794,10 @@
           "delivered_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "held": {
+            "description": "待送达里「只告知、按设计攒着」的：不唤醒对方，等它下次被唤醒时一并送达，不算卡住（R-294）",
+            "type": "boolean"
           },
           "reason": {
             "description": "送达状态的原因：已送达时间、等什么、为什么离线",

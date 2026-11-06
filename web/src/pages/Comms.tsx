@@ -23,6 +23,8 @@ const statusDot: Record<string, string> = { standby: 'bg-run', busy: 'bg-accent'
 const statusPill: Record<string, string> = { standby: 'bg-accent-soft text-accent', busy: 'bg-accent-soft text-accent', online: 'bg-wait-soft text-wait', offline: 'bg-sunken text-fg-3' }
 const deliverTone: Record<string, string> = { delivered: 'text-run', pending_wake: 'text-wait', offline: 'text-fg-3' }
 const deliverDot: Record<string, string> = { delivered: 'bg-run', pending_wake: 'border border-wait', offline: 'bg-fg-3/50' }
+// 只告知、按设计攒着的（R-294）：灰色，不和卡住的待送达混在一起
+const dotOf = (r: Rcpt) => (r.held ? 'border border-fg-3' : deliverDot[r.status])
 const roleList = ['pm', 'aide', 'advisor', 'reviewer', 'dev']
 
 const ts = (iso?: string | null) => (iso ? Date.parse(iso) : 0)
@@ -58,16 +60,16 @@ function PeerChip({ k, role, title, tool, sessions, onPick }: { k: string; role?
 function Delivered({ m, now }: { m: Msg; now: number }) {
   const rs = m.recipients ?? []
   if (m.broadcast) {
-    const n = (st: string) => rs.filter((r) => r.status === st).length
+    const n = (st: string) => rs.filter((r) => r.status === st && !r.held).length
     return (
-      <Tip content={rs.map((r) => `${roleName(r.role) || r.title || r.to}：${r.status_label}${r.reason && r.status !== 'delivered' ? `（${r.reason}）` : ''}`).join('\n')}>
+      <Tip content={rs.map((r) => `${roleName(r.role) || r.title || r.to}：${r.held ? t.comms.held : r.status_label}${r.reason && r.status !== 'delivered' ? `（${r.reason}）` : ''}`).join('\n')}>
         <span className="flex items-center gap-1.5 text-[11.5px] whitespace-nowrap text-fg-3">
           <span className="flex items-center gap-0.5">
             {rs.map((r, i) => (
-              <span key={i} className={cx('size-1.5 rounded-full', deliverDot[r.status])} />
+              <span key={i} className={cx('size-1.5 rounded-full', dotOf(r))} />
             ))}
           </span>
-          {t.comms.castSum(n('delivered'), n('pending_wake'), n('offline'))}
+          {t.comms.castSum(n('delivered'), n('pending_wake'), rs.filter((r) => r.held).length, n('offline'))}
         </span>
       </Tip>
     )
@@ -78,12 +80,12 @@ function Delivered({ m, now }: { m: Msg; now: number }) {
   if (r.status === 'delivered' && r.delivered_at) {
     const late = ts(r.delivered_at) - ts(m.created_at)
     if (late >= 2 * 60_000) extra = t.comms.late(shortDuration(m.created_at, ts(r.delivered_at)))
-  } else if (r.status === 'pending_wake') extra = t.comms.waited(shortDuration(m.created_at, now))
+  } else if (r.status === 'pending_wake' && !r.held) extra = t.comms.waited(shortDuration(m.created_at, now))
   return (
     <Tip content={r.reason}>
-      <span className={cx('flex items-center gap-1.5 text-[11.5px] whitespace-nowrap', deliverTone[r.status])}>
-        <span className={cx('size-1.5 rounded-full', deliverDot[r.status])} />
-        {r.status_label}
+      <span className={cx('flex items-center gap-1.5 text-[11.5px] whitespace-nowrap', r.held ? 'text-fg-3' : deliverTone[r.status])}>
+        <span className={cx('size-1.5 rounded-full', dotOf(r))} />
+        {r.held ? t.comms.held : r.status_label}
         {extra && <span className="text-fg-3">· {extra}</span>}
       </span>
     </Tip>
@@ -181,7 +183,7 @@ function SessionItem({ s, now, active, onClick }: { s: Sess; now: number; active
       </div>
       <Tip content={s.wake_why} truncated>
         <div className={cx('mt-1 truncate text-[12px]', s.waiting ? 'text-wait' : 'text-fg-3')}>
-          {s.waiting && s.waiting_since ? t.comms.waitingOn(s.waiting, duration(s.waiting_since, now)) : s.wake_now ? `${t.comms.wakeNow} · ${s.wake_why}` : s.wake_why}
+          {s.waiting && s.waiting_since ? t.comms.waitingOn(s.waiting, duration(s.waiting_since, now)) : s.held ? t.comms.heldOn(s.held) : s.wake_now ? `${t.comms.wakeNow} · ${s.wake_why}` : s.wake_why}
         </div>
       </Tip>
       <div className="mt-1 flex min-w-0 items-center gap-2 text-[12px] text-fg-3">
@@ -262,18 +264,19 @@ export default function CommsPage() {
 
   const sessions = useMemo(() => new Map((d?.sessions ?? []).map((s) => [s.key, s])), [d?.sessions])
   const filter: CommsFilter = { session: session || undefined, role: role || undefined, req: req || undefined, kind, unsent: onlyUnsent, q }
-  const waitingCodes = useMemo(() => new Set((d?.waiting ?? []).map((m) => m.code)), [d?.waiting])
+  const waitingCodes = useMemo(() => new Set([...(d?.waiting ?? []), ...(d?.held ?? [])].map((m) => m.code)), [d?.waiting, d?.held])
   const all = (d?.messages ?? []).filter((m) => !waitingCodes.has(m.code)) // 置顶的不在下面重复（原则第 5 条）
   const scoped = all.filter((m) => matches(m, filter))
   const sysCount = scoped.filter((m) => m.system).length
   const shown = scoped.filter((m) => showSys || !m.system)
   const waiting = (d?.waiting ?? []).filter((m) => matches(m, { ...filter, unsent: false }))
+  const held = (d?.held ?? []).filter((m) => matches(m, { ...filter, unsent: false }))
   const offline = (d?.offline ?? []).filter((m) => matches(m, { ...filter, unsent: false }))
   const reqs = useMemo(() => {
     const seen = new Map<string, string>()
-    for (const m of [...(d?.waiting ?? []), ...(d?.messages ?? [])]) if (m.requirement && !seen.has(m.requirement)) seen.set(m.requirement, m.requirement_title ?? '')
+    for (const m of [...(d?.waiting ?? []), ...(d?.held ?? []), ...(d?.messages ?? [])]) if (m.requirement && !seen.has(m.requirement)) seen.set(m.requirement, m.requirement_title ?? '')
     return [...seen].sort((a, b) => Number(b[0].slice(2)) - Number(a[0].slice(2)))
-  }, [d?.messages, d?.waiting])
+  }, [d?.messages, d?.waiting, d?.held])
   const filtered = !!(session || role || req || kind !== 'all' || onlyUnsent || q.trim())
   const clear = () => {
     setParam('session', '')
@@ -417,6 +420,19 @@ export default function CommsPage() {
                     )}
                   </>
                 )}
+              </Card>
+            )}
+
+            {/* 只告知、按设计攒着：灰色说明，不算没送到（R-294） */}
+            {held.length > 0 && !onlyUnsent && (
+              <Card className="mb-3 overflow-hidden p-0">
+                <div className="flex items-center gap-2 px-4 pt-2.5 pb-1 text-[13px]">
+                  <span className="font-semibold text-fg-2">{t.comms.held}</span>
+                  <span className="text-fg-3">{t.comms.heldHint(held.length)}</span>
+                </div>
+                {held.map((m) => (
+                  <Row key={m.code} m={m} now={now} sessions={sessions} onPick={pickSession} />
+                ))}
               </Card>
             )}
 

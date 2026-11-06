@@ -35,6 +35,8 @@ test('要动手 / 只告知 / 广播、没送到、需求、关键词', () => {
   assert.equal(matches(msg(), f({ kind: 'cast' })), false)
   assert.equal(unsent(msg()), false)
   assert.equal(matches(msg({ recipients: [{ to: 'x', status: 'offline' }] }), f({ unsent: true })), true)
+  assert.equal(unsent(msg({ recipients: [{ to: 'x', status: 'pending_wake', held: true }] })), false) // R-294：攒着的只告知不算没送到
+  assert.equal(unsent(msg({ recipients: [{ to: 'x', status: 'pending_wake' }] })), true)
   assert.equal(matches(msg({ requirement: 'R-249' }), f({ req: 'R-249' })), true)
   assert.equal(matches(msg(), f({ req: 'R-249' })), false)
   assert.equal(matches(msg(), f({ q: 'EB0A' })), true)

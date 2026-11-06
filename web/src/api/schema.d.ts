@@ -3295,6 +3295,8 @@ export interface components {
             text: string;
         };
         CommsOutBody: {
+            /** @description 只告知、按设计攒着、等对方下次被唤醒时一并送达的消息，新的在前（R-294） */
+            held: components["schemas"]["CommsMsg"][] | null;
             /** @description 时间范围内的消息，新的在前（含纸鸢提醒） */
             messages: components["schemas"]["CommsMsg"][] | null;
             /** @description 无法送达（对方已结束或失联）的消息，新的在前 */
@@ -3320,7 +3322,7 @@ export interface components {
             today_system: number;
             /** @description 时间范围内的消息超过上限，只列了最近的 */
             truncated: boolean;
-            /** @description 待送达的消息（不论等了多久），新的在前 */
+            /** @description 待送达的消息（不论等了多久），新的在前；不含攒着的只告知 */
             waiting: components["schemas"]["CommsMsg"][] | null;
         };
         CommsPeer: {
@@ -3340,7 +3342,7 @@ export interface components {
         CommsPendingOutBody: {
             /**
              * Format: int64
-             * @description 所有项目里待送达的消息数（导航上的数字；一次广播算一条）
+             * @description 所有项目里要对方动手却还没送到的消息数（导航上的数字；一次广播算一条；只告知而攒着的不算，R-294）
              */
             count: number;
             /** @description 按项目分的待送达条数，多的在前（同样多时最近有新消息的在前）；点导航数字时进第一个项目（R-288） */
@@ -3357,6 +3359,11 @@ export interface components {
             device: string;
             /** @description 所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH */
             harness: string;
+            /**
+             * Format: int64
+             * @description 发给该会话、只告知而攒着的消息数（R-294）
+             */
+            held: number;
             /**
              * Format: int64
              * @description 今天收到的会话消息（不含纸鸢提醒）
@@ -3388,7 +3395,7 @@ export interface components {
             tool: string;
             /**
              * Format: int64
-             * @description 发给该会话、待送达的消息数
+             * @description 发给该会话、待送达的消息数（不含攒着的只告知）
              */
             waiting: number;
             /**
@@ -3642,6 +3649,8 @@ export interface components {
             code?: string;
             /** Format: date-time */
             delivered_at?: string;
+            /** @description 待送达里「只告知、按设计攒着」的：不唤醒对方，等它下次被唤醒时一并送达，不算卡住（R-294） */
+            held?: boolean;
             /** @description 送达状态的原因：已送达时间、等什么、为什么离线 */
             reason: string;
             /** @description 收件会话的身份；空为无身份 */
