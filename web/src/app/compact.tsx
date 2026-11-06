@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Copy, PowerOff, TimerOff } from 'lucide-react'
+import { ArrowRightLeft, Copy, Hand, PowerOff, TimerOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Session } from '../api/client'
 import { t } from '../i18n'
@@ -6,6 +6,7 @@ import { copyText, cx, relTime, wan } from '../lib/util'
 import { Button, Tip } from '../ui/base'
 import { ctxColor, ctxLoad, ctxTip, CtxRing } from './assign'
 import { useQueryClient } from '@tanstack/react-query'
+import { schedule } from './verdict'
 
 // 上下文过长时以压缩为主（R-224）：超过设置里的阈值标「建议压缩」，点一下复制按身份写好的 /compact 命令。
 // /compact 是终端里的用户命令，纸鸢不替你执行，只提示和给出命令。
@@ -123,15 +124,26 @@ export function IdleRow({ s, now }: { s: Session; now: number }) {
 // ---------- 空等下线（R-272） ----------
 
 // 常驻会话连续空等累计超过项目设置的时长：Hub 记下 offline_at（明确记录），身份还在、等新会话接任。
-export const offlineOf = (s: Session) => (s.offline_at && s.role ? s.offline_at : '')
+// 停下（R-291）：用户让会话停下后先是「停下中」（stopped_at），写完交接或结束本轮不再待命时才记 offline_at。
+export const offlineOf = (s: Session) => (s.offline_at && (s.role || s.stopped_at) ? s.offline_at : '')
+export const stoppingOf = (s: Session) => (s.stopped_at && !s.offline_at ? s.stopped_at : '')
 
 export const takeoverCommand = (role: string) => `ks takeover ${role}`
 
 // OfflineTag：泳道状态标后面的「已交接下线」；窄处只留图标。
 export function OfflineTag({ s }: { s: Session }) {
+  if (stoppingOf(s))
+    return (
+      <Tip content={t.stop.stoppingTip}>
+        <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] leading-4 font-medium whitespace-nowrap text-wait" aria-label={t.stop.stopping}>
+          <Hand className="size-3.5" />
+          <span className="@max-[12rem]:hidden">{t.stop.stopping}</span>
+        </span>
+      </Tip>
+    )
   if (!offlineOf(s)) return null
   return (
-    <Tip content={t.session.offlineTip}>
+    <Tip content={s.stopped_at ? t.stop.offlineTip : t.session.offlineTip}>
       <span className="inline-flex shrink-0 items-center gap-1 text-[11.5px] leading-4 font-medium whitespace-nowrap text-fg-3" aria-label={t.session.offline}>
         <PowerOff className="size-3.5" />
         <span className="@max-[12rem]:hidden">{t.session.offline}</span>
@@ -196,7 +208,37 @@ export function useRequestHandoff() {
   }
 }
 
-export const canHandoff = (s: Session) => !!s.role && !!s.project_id && s.state !== 'ended' && !s.retired_at && !s.offline_at
+export const canHandoff = (s: Session) => !!s.role && !!s.project_id && s.state !== 'ended' && !s.retired_at && !s.offline_at && !s.stopped_at
+
+// ---------- 停下（R-291） ----------
+
+// canStop：还没结束、没交接、没下线、没在停下中的会话可以停下（与后端 unstoppable 一致）。
+export const canStop = (s: Session) => s.state !== 'ended' && s.state !== 'lost' && !s.retired_at && !s.offline_at && !s.stopped_at && !s.background
+
+export const StopIcon = Hand
+
+// useStopSession：让会话停下。走全站撤销期（3 秒，D-1381），撤销期内不发提醒；到点后纸鸢送停下提醒。
+export function useStopSession() {
+  const qc = useQueryClient()
+  return (s: Session, title: string) =>
+    schedule(`stop:${s.key}`, {
+      act: 'move',
+      label: t.stop.act,
+      subject: title,
+      beacon: { method: 'POST', url: `/api/sessions/${encodeURIComponent(s.key)}/stop`, body: {} },
+      commit: async () => {
+        try {
+          const out = (await unwrap(api.POST('/api/sessions/{key}/stop', { params: { path: { key: s.key } } }))) as { message: string }
+          void qc.invalidateQueries({ queryKey: ['sessions'] })
+          toast.success(t.stop.sent(title), { description: out.message })
+          return true
+        } catch (e) {
+          toast.error(errMsg(e, t.fail.stopSession))
+          return false
+        }
+      },
+    })
+}
 
 export const HandoffIcon = ArrowRightLeft
 

@@ -14,7 +14,7 @@ import { displayState, RoleBadge, StatusDot, ToolMark } from '../ui/marks'
 import { DecGlyph, Linkify, RefChip } from '../ui/refmark'
 import { useActions } from './actions'
 import { CtxRing, ctxLoad } from './assign'
-import { canHandoff, compactCommand, HandoffCard, HandoffIcon, offlineOf, useRequestHandoff, type Handoff } from './compact'
+import { canHandoff, canStop, compactCommand, HandoffCard, HandoffIcon, offlineOf, StopIcon, stoppingOf, useRequestHandoff, useStopSession, type Handoff } from './compact'
 import { canMessage, MessageBox } from './messageBox'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { NewReqModal } from './requirements'
@@ -35,6 +35,7 @@ const offlineHanded = (s: Session, hs: Handoff[]) => hs.some((h) => h.from_sessi
 function stateLine(s: Session, hs: Handoff[], now: number): { dot: string; label: string; detail: string } {
   const off = offlineOf(s)
   if (off) return { dot: 'ended', label: t.turns.st.offline, detail: offlineHanded(s, hs) ? t.turns.offlineHanded(hm(off)) : t.turns.offlineBare(hm(off)) }
+  if (stoppingOf(s)) return { dot: displayState(s), label: t.turns.st.stopping, detail: t.stop.stoppingDetail }
   if (s.retired_at) return { dot: 'ended', label: t.turns.st.retired, detail: t.turns.retiredBy }
   const ds = displayState(s)
   const label = t.turns.st[ds] ?? t.state[ds] ?? ds
@@ -455,6 +456,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
   const s: Session | undefined = q.data?.session
   const handoffs = (q.data?.handoffs ?? []) as Handoff[]
   const requestHandoff = useRequestHandoff()
+  const stop = useStopSession()
   const navigate = useNavigate()
   const pages = useMemo(() => tq.data?.pages ?? [], [tq.data])
   const objs = useMemo(() => sortObjects(pages[0]?.objects ?? []), [pages])
@@ -486,6 +488,7 @@ export function SessionPanel({ sessionKey, onClose }: { sessionKey: string | nul
         { label: t.turns.info, icon: <Info className="size-3.5" />, onSelect: () => setInfo(true) },
         ...(s.project_id ? [{ label: t.comms.open, icon: <ArrowLeftRight className="size-3.5" />, onSelect: () => navigate(`/comms?project=${encodeURIComponent(s.project_id ?? '')}&session=${encodeURIComponent(s.key)}`) }] : []),
         ...(canHandoff(s) ? [{ label: t.handoff.action, hint: t.menu.handoffHint, icon: <HandoffIcon className="size-3.5" />, onSelect: () => void requestHandoff(s) }] : []),
+        ...(canStop(s) ? [{ label: t.stop.action, hint: t.stop.hint, icon: <StopIcon className="size-3.5" />, onSelect: () => void stop(s, sessionTitle(s)) }] : []),
         { label: t.turns.giveNew, icon: <ListChecks className="size-3.5" />, onSelect: () => setCreating(true) },
         ...((s.requirements ?? []).filter((r) => r.status !== 'done' && r.status !== 'shelved').length
           ? [

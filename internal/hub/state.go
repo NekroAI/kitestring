@@ -214,8 +214,8 @@ func applyEvent(prev *store.Session, deviceID, projectID string, ev protocol.Eve
 			x.State, x.StateDetail = store.StateParked, ""
 			break
 		}
-		if x.OfflineAt != nil && x.Role != "" {
-			// 空等交接下线后结束这一轮（R-272）：不是在等你回复，记为空闲、不推送
+		if x.OfflineAt != nil && x.Role != "" || x.StoppedAt != nil {
+			// 空等交接下线（R-272）或用户让它停下（R-291）后结束这一轮：不是在等你回复，记为空闲、不推送
 			x.State, x.StateDetail, x.WaitKind = store.StateIdle, "", ""
 			break
 		}

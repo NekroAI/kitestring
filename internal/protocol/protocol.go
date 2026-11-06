@@ -174,6 +174,9 @@ type Decision struct {
 	Replyable  bool      `json:"replyable,omitempty"` // 会话发来的团队消息（R-191）：送达时写上怎么回复，回复自动送回发消息的一方
 }
 
+// StopQuestion 是停下提醒（R-291）的标题：kind = role。会话运行中时，daemon 在它这一轮结束（Stop）时拦下结束并送达这条提醒。
+const StopQuestion = "用户请你停下"
+
 // File 是随决策下行的附件（图片或录屏）引用；daemon 下载到本地后在送达文字里给出路径。
 type File struct {
 	ID   string `json:"id"`

@@ -76,7 +76,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 	if role != "" && x.ProjectID != "" {
 		if list, err := h.store.RoleSessions(ctx, x.ProjectID); err == nil {
 			for _, o := range list {
-				if o.Key != key && o.Role == role && o.OfflineAt != nil {
+				if o.Key != key && o.Role == role && (o.OfflineAt != nil || o.StoppedAt != nil) {
 					offline[o.Key] = o
 				}
 			}

@@ -10,6 +10,7 @@ import { useSessionMenu } from './menus'
 import { Ctx } from '../ui/contextMenu'
 import { Linkify } from '../ui/refmark'
 import { bgCount } from './tasks'
+import { OfflineTag } from './compact'
 
 // SessionLine：会话在做什么的一行描述（摘要 → 最后动作 → 你最后说的话）。
 function activity(s: Session): { icon: ReactNode; text: string; mono?: boolean } | null {
@@ -45,6 +46,7 @@ export function SessionRow({ s, now, showProject }: { s: Session; now: number; s
           <span className="truncate text-sm font-medium text-fg">{sessionTitle(s)}</span>
           {showProject && s.project_name && <span className="shrink-0 text-xs text-fg-3">{s.project_name}</span>}
           <RoleBadge s={s} />
+          <OfflineTag s={s} />
         </div>
         {a && (
           <Ticker id={a.text} className={cx('mt-0.5 h-5 text-[13px] text-fg-3', a.mono && 'font-mono text-[12px]')}>

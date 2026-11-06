@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"time"
+
+	"github.com/NekroAI/kitestring/internal/protocol"
 )
 
 // 空等下线（R-272）：Claude 的提示缓存 1 小时有效，ks wait 单次等待不超过 55 分钟，醒来时缓存还在；
@@ -55,7 +57,7 @@ func (s *Store) SetOffline(ctx context.Context, key string, at *time.Time) (bool
 	if at != nil {
 		args[0] = ts(at.UTC())
 	} else {
-		q = `UPDATE sessions SET offline_at = '', idle_wait_since = '' WHERE key = ? AND offline_at <> ''`
+		q = `UPDATE sessions SET offline_at = '', stopped_at = '', idle_wait_since = '' WHERE key = ? AND (offline_at <> '' OR stopped_at <> '')`
 		args = []any{key}
 	}
 	res, err := s.db.ExecContext(ctx, q, args...)
@@ -76,4 +78,58 @@ func (s *Store) MoveUndelivered(ctx context.Context, from, to string) (int, erro
 	}
 	n, _ := res.RowsAffected()
 	return int(n), nil
+}
+
+// StopQuestion 是停下提醒（R-291）的标题：kind = role 的纸鸢提醒，用标题区分，daemon 据此在 Stop 时送达。
+const StopQuestion = protocol.StopQuestion
+
+// SetStopped 记下用户让会话停下（R-291）：先是「停下中」（stopped_at），写完交接或结束本轮不再待命时再记已下线（SetOffline）。
+// 已下线、已在停下中的不再重记。返回状态是否有变化。
+func (s *Store) SetStopped(ctx context.Context, key string, at time.Time) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET stopped_at = ? WHERE key = ? AND offline_at = '' AND stopped_at = ''`, ts(at.UTC()), key)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// StopNoticePending：会话有没有还没送达的停下提醒（R-291）。
+func (s *Store) StopNoticePending(ctx context.Context, key string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM decisions WHERE session_key = ? AND kind = ? AND question = ? AND status = ?`, key, KindRole, StopQuestion, DecAnswered).Scan(&n)
+	return n > 0, err
+}
+
+// StoppedOnDevice 列出设备上已停下的会话（R-291），按会话键：除停下提醒和停下中要用的答复外，点名给它们的消息先不下发。
+func (s *Store) StoppedOnDevice(ctx context.Context, deviceID string) (map[string]Session, error) {
+	list, err := s.querySessions(ctx, sessionSelect+` WHERE s.device_id = ? AND s.stopped_at <> ''`, deviceID)
+	out := map[string]Session{}
+	for _, x := range list {
+		out[x.Key] = x
+	}
+	return out, err
+}
+
+// StoppableSessions 列出项目里还没结束、能停下的会话（R-291「全部停下」）：不含后台任务、已结束 / 失联、已归档、已交接、已下线、已在停下中的。
+func (s *Store) StoppableSessions(ctx context.Context, projectID string) ([]Session, error) {
+	return s.querySessions(ctx, sessionSelect+` WHERE s.project_id = ? AND s.background = 0 AND s.state NOT IN (?, ?) AND s.done_at = ''
+		AND s.retired_at = '' AND s.offline_at = '' AND s.stopped_at = '' ORDER BY s.last_active_at DESC`, projectID, StateEnded, StateLost)
+}
+
+func (s *Store) querySessions(ctx context.Context, q string, args ...any) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Session{}
+	for rows.Next() {
+		x, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
 }

@@ -82,6 +82,14 @@ func (h *Hub) checkWait(ctx context.Context, key, text string, afterTimeout bool
 	if err != nil {
 		return waitCheck{}, apiErr(err)
 	}
+	if x.StoppedAt != nil {
+		// 停下（R-291）：停下提醒还没送达时照常挂起，马上收到提醒；停下中为等答复也可以挂；已下线后不再等待
+		pending, _ := h.store.StopNoticePending(ctx, key)
+		if x.OfflineAt != nil && !pending {
+			return waitCheck{Items: []string{}, Retired: true, Offline: true, Hint: stopDoneHint(x.Role, h.handedOff(ctx, x))}, nil
+		}
+		return waitCheck{Items: []string{}, MaxWait: store.WaitMaxDefault.String()}, nil
+	}
 	if x.OfflineAt != nil && x.Role != "" {
 		return waitCheck{Items: []string{}, Retired: true, Offline: true, Hint: offlineDoneHint(x.Role, h.handedOff(ctx, x))}, nil
 	}

@@ -73,6 +73,8 @@ func deliveryOf(d store.Decision, x store.Session, ok bool, at time.Time) Delive
 		out.Status, out.Reason = OfflineSt, "已关闭，不再送达"
 	case !ok:
 		out.Status, out.Reason = OfflineSt, "收件会话不存在"
+	case x.StoppedAt != nil && x.Role != "":
+		out.Status, out.Reason = PendingWakeSt, "会话已停下，消息照常排队，用户开启新会话接任（"+takeoverCmd(x.Role)+"）时转交"
 	case x.OfflineAt != nil && x.Role != "":
 		out.Status, out.Reason = PendingWakeSt, "会话已下线，消息照常排队，用户开启新会话接任（"+takeoverCmd(x.Role)+"）时转交"
 	case sessionOffline(x):

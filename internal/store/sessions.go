@@ -85,6 +85,10 @@ type Session struct {
 	// OfflineAt：空等累计超过项目设置的时长后，纸鸢叫它写交接下线的时间（R-272）。身份保留（点名给它的消息照常入队，接任时转给新会话），
 	// 不再挂 ks wait、Stop hook 不拦、不送订阅事件；新会话 ks role 接任或它自己重新 ks role 时清除
 	OfflineAt *time.Time `json:"offline_at,omitempty"`
+	// StoppedAt：用户在工作台上让会话停下的时间（R-291）。之后是「停下中」：Stop hook 不拦；停下提醒、它自己提的决策的答复、
+	// 用户直接发给它的话照常送达，其他点名消息先排队。写完交接或结束本轮不再待命时记为已下线（OfflineAt），之后只排队，
+	// 新会话接任时转过去。和 OfflineAt 一起清除
+	StoppedAt *time.Time `json:"stopped_at,omitempty"`
 }
 
 // BgTask 是会话下一个在跑的后台任务（R-162）：只有类型、标签、开始时间与最近动作，不含命令输出与对话内容。
@@ -144,18 +148,18 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.profile, s.profile_dir, s.launcher, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.wait_kind, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at, s.idle_at, s.idle_wait_since, s.offline_at,
+	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at, s.idle_at, s.idle_wait_since, s.offline_at, s.stopped_at,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
 func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	var x Session
-	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired, idle, idleWait, offline string
+	var started, active, since, toolAt, doneAt, parkedUntil, tasks, retired, idle, idleWait, offline, stopped string
 	var ended sql.NullString
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Profile, &x.ProfileDir, &x.Launcher, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.WaitKind, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired, &idle, &idleWait, &offline,
+		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired, &idle, &idleWait, &offline, &stopped,
 		&started, &active, &ended)
 	x.Tasks = []BgTask{}
 	if tasks != "" && tasks != "[]" {
@@ -188,7 +192,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 		t := parseTS(idle)
 		x.IdleAt = &t
 	}
-	x.IdleWaitSince, x.OfflineAt = optTS(idleWait), optTS(offline)
+	x.IdleWaitSince, x.OfflineAt, x.StoppedAt = optTS(idleWait), optTS(offline), optTS(stopped)
 	x.LastActiveAt = parseTS(active)
 	x.EndedAt = parseNullTS(ended)
 	x.Requirements = []RequirementRef{}
@@ -740,7 +744,7 @@ func (s *Store) SetRole(ctx context.Context, key, role string) (demoted []string
 
 // RolesForDevice 返回该设备上有身份的会话：会话键 → 身份，下发给 daemon 用于注入与常驻检查。
 func (s *Store) RolesForDevice(ctx context.Context, deviceID string) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT key, role FROM sessions WHERE device_id = ? AND role <> '' AND offline_at = ''`, deviceID)
+	rows, err := s.db.QueryContext(ctx, `SELECT key, role FROM sessions WHERE device_id = ? AND role <> '' AND offline_at = '' AND stopped_at = ''`, deviceID)
 	if err != nil {
 		return nil, err
 	}

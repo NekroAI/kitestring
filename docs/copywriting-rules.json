@@ -56,7 +56,7 @@
   ],
   "statusSets": {
     "session": ["运行中", "等待授权", "等待回答", "待回复", "后台运行", "待命", "空闲", "已归档", "已结束", "失联"],
-    "sessionMark": ["长时间未回复", "待命超时", "已下线", "已交接", "工具待更新"],
+    "sessionMark": ["长时间未回复", "待命超时", "停下中", "已下线", "已交接", "工具待更新"],
     "presence": ["待命", "运行中", "空闲", "已结束"],
     "roster": ["待命", "运行中", "空闲", "已结束"],
     "device": ["在线", "离线", "未连接", "已移除"],
@@ -84,7 +84,7 @@
     "decision.reassign", "decision.closeIt", "decision.resend", "decision.useRecommendation",
     "orphans.stop", "orphans.confirmOk", "orphans.forceOk", "orphans.ignoreAct", "orphans.unignore",
     "desk.replySend", "desk.review", "desk.decide", "desk.view", "desk.handle", "desk.reply",
-    "menu.openSession", "menu.openReq", "menu.openPlan", "menu.markDone", "menu.markStopped", "menu.undoDone", "menu.copyResume", "menu.copySessionId", "menu.handoff",
+    "menu.openSession", "menu.openReq", "menu.openPlan", "menu.markDone", "menu.markStopped", "menu.undoDone", "menu.copyResume", "menu.copySessionId", "menu.handoff", "stop.action", "stop.all",
     "menu.status", "menu.priority", "menu.copyCode", "menu.copyLink", "ask.open", "ask.prev", "ask.next", "ask.openSession", "session.give", "session.message",
     "turns.give", "turns.send", "orphans.ignore", "handoff.copyCmd", "brief.reportOpen", "away.start", "away.confirm", "away.end", "morning.withdraw",
     "share.create", "share.menu", "share.enable", "share.revoke", "share.revokeOk", "share.preview", "share.copyLink", "share.revokeLink", "share.restoreLink",

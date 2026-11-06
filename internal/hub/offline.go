@@ -28,7 +28,7 @@ const idleSlack = time.Minute
 
 // trackIdleWait 按事件更新常驻会话的空等起点。prev 是事件前的会话（可能为空），next 是事件后的。
 func (h *Hub) trackIdleWait(ctx context.Context, prev *store.Session, next store.Session, ev protocol.Event) {
-	if !roles.Resident(next.Role) || next.ProjectID == "" || next.Tool == protocol.ToolDSH || next.OfflineAt != nil {
+	if !roles.Resident(next.Role) || next.ProjectID == "" || next.Tool == protocol.ToolDSH || next.OfflineAt != nil || next.StoppedAt != nil {
 		return
 	}
 	var err error
@@ -127,7 +127,7 @@ func (h *Hub) handedOff(ctx context.Context, x store.Session) bool {
 
 // takeOverOffline：新会话 to 接任时，把下线会话 from 积压的点名消息和它提的未答决策转给 to（R-272）。返回转了几条。
 func (h *Hub) takeOverOffline(ctx context.Context, from store.Session, to store.Session) int {
-	if from.OfflineAt == nil {
+	if from.OfflineAt == nil && from.StoppedAt == nil { // 空等下线（R-272）或停下（R-291）
 		return 0
 	}
 	n, err := h.store.MoveUndelivered(ctx, from.Key, to.Key)

@@ -159,6 +159,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	// 空等下线（R-272）：常驻会话连续空等的起点；累计超过项目设置的时长后写交接下线（offline_at），新会话接任时清除
 	{"sessions", "idle_wait_since", "TEXT NOT NULL DEFAULT ''"},
 	{"sessions", "offline_at", "TEXT NOT NULL DEFAULT ''"},
+	// 停下（R-291）：用户在工作台上让会话停下的时间；同时记 offline_at，接任或重新声明身份时一并清除
+	{"sessions", "stopped_at", "TEXT NOT NULL DEFAULT ''"},
 	{"projects", "idle_offline_minutes", "INTEGER NOT NULL DEFAULT 0"},
 	{"projects", "wait_max_minutes", "INTEGER NOT NULL DEFAULT 0"},
 	// 状态只认明确记录（R-239）：等待类型、批准 / 拒绝、推荐选项存成字段，老数据补列时一次性回填

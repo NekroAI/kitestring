@@ -374,7 +374,11 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(protocol.HookResponse{Context: d.staleNote(ev.Instance)})
 		return
 	}
-	if block := d.stopGuard(ev); block != "" {
+	block := d.stopNotice(ev) // 用户让它停下（R-291）：运行中的会话在这一轮结束时收到停下提醒
+	if block == "" {
+		block = d.stopGuard(ev)
+	}
+	if block != "" {
 		// 这一轮没有真正结束，不上报 Stop（否则网页会闪一下“等你回复”，还会推送通知）。
 		// 被拦下时的回复往往就是这一轮的正文（报告、计划），先留着，并到真正结束时一起上送（R-109）
 		d.holdReply(ev)

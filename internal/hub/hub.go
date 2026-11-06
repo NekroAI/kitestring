@@ -304,6 +304,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	}
 	defer h.sessionChanged(key)          // 存完工具版本、上下文占用等再推
 	h.trackIdleWait(ctx, prev, next, ev) // 常驻会话的连续空等起点（R-272）
+	h.trackStopped(ctx, next, ev)        // 停下中的会话结束本轮、不再待命时记为已下线（R-291）
 	if ev.Name == "Stop" && reply != "" {
 		if err := h.store.SetLastReply(ctx, key, reply, ev.Time); err != nil {
 			return err
@@ -423,9 +424,17 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 		return
 	}
 	stale := h.staleDelivered(ctx, list)
+	stopped, err := h.store.StoppedOnDevice(ctx, deviceID)
+	if err != nil {
+		h.log.Warn("查询已停下的会话失败", "err", err)
+	}
 	out := make([]protocol.Decision, 0, len(list))
 	for _, d := range list {
 		if stale[d.ID] {
+			continue
+		}
+		// 停下的会话（R-291）：没送达的消息里只下发停下提醒和收尾要用的答复，其余排队等接任
+		if x, ok := stopped[d.SessionKey]; ok && d.Status != store.DecDelivered && !stoppedPasses(x, d) {
 			continue
 		}
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: proxyText(d), Delivered: d.Status == store.DecDelivered,

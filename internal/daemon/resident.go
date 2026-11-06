@@ -150,3 +150,31 @@ func (d *Daemon) staleNote(inst string) string {
 	d.staleWarn[inst] = true
 	return staleText + "\n"
 }
+
+// stopNotice：会话这一轮结束（Stop）时，如果有还没送达的停下提醒（R-291），拦下结束并把提醒作为理由送达，返回提醒文字；
+// 没有时返回空串。运行中的会话就这样在本轮结束时收到，不论身份；DSH 由插件待命接住，不在这里拦。
+func (d *Daemon) stopNotice(ev protocol.Event) string {
+	if ev.Name != "Stop" || ev.Tool == protocol.ToolDSH || ev.AgentID != "" {
+		return ""
+	}
+	key := protocol.SessionKey(ev.Tool, ev.SessionID)
+	d.mu.Lock()
+	var hit []protocol.Decision
+	for _, dec := range d.decisions {
+		if dec.SessionKey == key && dec.Kind == "role" && dec.Question == protocol.StopQuestion && !dec.Delivered && !d.q.wasDelivered(dec.ID, key) {
+			hit = append(hit, dec)
+		}
+	}
+	d.mu.Unlock()
+	if len(hit) == 0 {
+		return ""
+	}
+	now := time.Now().UTC()
+	for _, dec := range hit {
+		if err := d.q.pushDelivery(protocol.Delivery{DecisionID: dec.ID, SessionKey: key, TurnID: "stop-hook", Time: now}); err != nil {
+			d.log.Warn("记录停下提醒送达失败", "err", err)
+		}
+	}
+	d.wake()
+	return "[Kitestring] " + hit[len(hit)-1].Answer
+}

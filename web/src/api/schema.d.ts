@@ -1475,6 +1475,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 让项目的全部会话停下（R-291）：逐个送停下提醒；不改项目的自动派发设置 */
+        post: operations["stop-project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push": {
         parameters: {
             query?: never;
@@ -1857,6 +1874,23 @@ export interface paths {
         put?: never;
         /** 给会话发一句话（送达方式同留言，挂着 ks wait 时立刻唤醒），返回送达状态 */
         post: operations["reply-session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/{key}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 让会话停下（R-291）：送停下提醒，会话写交接后下线；不强行中止 */
+        post: operations["stop-session"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5572,6 +5606,8 @@ export interface components {
             state_detail: string;
             /** Format: date-time */
             state_since: string;
+            /** Format: date-time */
+            stopped_at?: string;
             /** Format: int64 */
             subagents: number;
             summary: string;
@@ -6084,7 +6120,7 @@ export interface components {
             /** @description 操作时会话的标题快照（R-195）；旧记录没有 */
             session_title?: string;
             to: string;
-            /** @description 经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 / request 用户批准了 Agent 的改状态申请（ref 是申请的 D-x，R-188） */
+            /** @description 经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话（受阻的需求写明原来在等什么） / unblock 等的事完成了自动解除受阻 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 / request 用户批准了 Agent 的改状态申请（ref 是申请的 D-x，R-188） */
             via: string;
         };
         StatusChangesOutBody: {
@@ -6102,6 +6138,11 @@ export interface components {
             force?: boolean;
             /** @description 根进程“进程号@启动时间”，取自列表 */
             id: string;
+        };
+        StopOutBody: {
+            message: string;
+            /** @description 这次停下的会话键 */
+            stopped: string[] | null;
         };
         "Subscribe-pushRequest": {
             auth: string;
@@ -9681,6 +9722,37 @@ export interface operations {
             };
         };
     };
+    "stop-project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "get-push": {
         parameters: {
             query?: never;
@@ -10556,6 +10628,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReplyOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "stop-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopOutBody"];
                 };
             };
             /** @description Error */

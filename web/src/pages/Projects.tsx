@@ -3,7 +3,8 @@ import { AnimatePresence } from 'motion/react'
 import { useNavigate, useParams } from 'react-router'
 import { ArrowRight, ChevronLeft, ChevronRight, Copy, FileCheck2, FolderGit2, HardDrive, Merge, Plus, PowerOff, Settings2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Requirement, Session } from '../api/client'
+import { api, errMsg, unwrap, type Requirement, type Session } from '../api/client'
+import { useQueryClient } from '@tanstack/react-query'
 import { useProjects, useRequirements, useSessions } from '../api/queries'
 import { t } from '../i18n'
 import { copyText, cx, relTime, savePref, shortPath, useMedia, useNow } from '../lib/util'
@@ -20,7 +21,7 @@ import { SessionRow } from '../app/thread'
 import { RefLine, ReqGlyph } from '../ui/refmark'
 import { useRecent } from '../app/recent'
 import { reviewHeld } from '../app/verify'
-import { OfflineCmd } from '../app/compact'
+import { canStop, OfflineCmd, StopIcon } from '../app/compact'
 
 // 项目：左侧项目列表常驻，右侧回答“这个项目现在怎样”（D-20 选定 B 主从双栏；窄屏退化为列表 → 详情）。
 
@@ -217,6 +218,31 @@ function OfflineSeats({ sessions, now }: { sessions: Session[]; now: number }) {
   )
 }
 
+// StopAll：项目页「全部停下…」（R-291）：先弹确认说明会发生什么，再让这个项目所有未结束的会话停下；不改自动派发设置。
+function StopAll({ p }: { p: Stat }) {
+  const confirm = useConfirm()
+  const qc = useQueryClient()
+  const n = p.sessions.filter((s) => canStop(s) && !s.done_at).length // 与后端「全部停下」一致：不含已归档的
+  if (!n) return null
+  const run = async () => {
+    if (!(await confirm({ title: t.stop.allTitle(p.name), description: t.stop.allBody(n), confirmText: t.stop.act, danger: true }))) return
+    try {
+      const out = (await unwrap(api.POST('/api/projects/{id}/stop', { params: { path: { id: p.id } } }))) as { stopped: string[] }
+      void qc.invalidateQueries({ queryKey: ['sessions'] })
+      const k = out.stopped?.length ?? 0
+      if (k) toast.success(t.stop.allDone(k))
+      else toast(t.stop.allNone)
+    } catch (e) {
+      toast.error(errMsg(e, t.fail.stopAll))
+    }
+  }
+  return (
+    <Button icon={<StopIcon className="size-4" />} onClick={() => void run()}>
+      <span className="max-sm:hidden">{t.stop.all}</span>
+    </Button>
+  )
+}
+
 // NeedDevs：你批准了 PM 的推荐、要开开发会话（R-87 → R-169）：显示接入语。开发上线够数后由 hub 自动清除。
 function NeedDevs({ p, now }: { p: Stat; now: number }) {
   const act = useActions()
@@ -308,6 +334,7 @@ function Detail({ p, now, back }: { p: Stat; now: number; back?: () => void }) {
           </div>
         </div>
         <div className="flex gap-2">
+          <StopAll p={p} />
           <Button icon={<Settings2 className="size-4" />} onClick={() => setEditing(true)}>
             <span className="max-sm:hidden">{t.projects.settings}</span>
           </Button>

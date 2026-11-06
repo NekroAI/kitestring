@@ -193,9 +193,13 @@ func (h *Hub) writeHandoff(ctx context.Context, in *handoffWriteIn) (string, err
 		return "", err
 	}
 	_ = hd
+	h.stoppedOffline(ctx, x) // 停下中的会话写完交接：记为已下线（R-291）
 	h.sessionChanged(x.Key)
 	h.broker.publish("sessions")
 	msg := fmt.Sprintf("交接已存，用户在你的会话时间线上能看到。用户会在项目目录运行 %s 开新会话；新会话声明%s时自动读到这份交接和纸鸢生成的接手概览，你随即交出身份。在那之前照常待命；要补充就再调一次 handoff_write（覆盖这一份）。", takeoverCmd(x.Role), roles.Display(x.Role))
+	if x.StoppedAt != nil { // 用户让它停下（R-291）：写完交接就结束本轮，不再待命
+		msg = fmt.Sprintf("交接已存，已记为下线。用一两句话说明已停下，然后结束本轮，不要再运行 ks wait。用户回来后会在项目目录运行 %s 开新会话接任。", takeoverCmd(x.Role))
+	}
 	var old []string
 	for _, f := range []struct{ k, v string }{{"waiting（等用户的）", b.Waiting}, {"rules（约定和规矩）", b.Rules}, {"next（下一步）", b.Next}} {
 		if strings.TrimSpace(f.v) != "" {

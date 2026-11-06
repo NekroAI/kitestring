@@ -722,6 +722,8 @@ export const zh = {
     save: '保存设置',
     login: '登录',
     stop: '停止进程',
+    stopSession: '停下会话',
+    stopAll: '停下全部会话',
     ignore: '忽略进程',
     compact: '复制压缩命令',
   },
@@ -981,6 +983,23 @@ export const zh = {
       reviewer: `/compact 保留：我是 ${project} 评审；在审的需求、已提和待提的审查意见`,
       dev: `/compact 保留：我是 ${project} 开发；在做的需求和验收标准、改过的文件和分支、未完成的检查`,
     })[role] ?? `/compact 保留：在做的需求和进度、用户提过的要求、下一步`,
+  // 停下（R-291）：让会话停在稳妥的点，写交接后下线；只送提醒，不强行中止
+  stop: {
+    action: '停下',
+    hint: '会话完成当前一步、写交接后下线，不强行中止',
+    act: '停下',
+    sent: (name: string) => `已让「${name}」停下`,
+    all: '全部停下…',
+    allTitle: (project: string) => `停下「${project}」的全部会话？`,
+    allBody: (n: number) =>
+      `纸鸢向 ${n} 个未结束的会话发出停下提醒：待命的会话立即收到，运行中的会话在本轮结束时收到，不强行中止。会话完成当前一步，把进行中的需求改为受阻，写好交接后下线；需要你定的事照常提出决策。下线后的消息排队，开启新会话接任时转交。项目的自动派发设置不变。`,
+    allDone: (n: number) => `已向 ${n} 个会话发出停下提醒`,
+    allNone: '没有可停下的会话',
+    stopping: '停下中',
+    stoppingTip: '已发出停下提醒，会话完成当前一步、写好交接后下线。期间决策的答复和直接发送的消息照常送达，其他消息排队',
+    stoppingDetail: '已发出停下提醒，等待会话写交接',
+    offlineTip: '已按你的要求停下并下线。定向消息照常排队；回来后在项目目录运行接任命令开启新会话，交接、接任概览和排队的消息会一并交给新会话',
+  },
   // 会话交接（R-224）
   handoff: {
     action: '交接',
@@ -1868,6 +1887,7 @@ export const zh = {
       parked: '待命',
       running: '运行中',
       offline: '已下线',
+      stopping: '停下中',
       retired: '已交接',
       ended: '已结束',
       lost: '失联',
