@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Ban, List, X } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { t } from '../i18n'
-import { actKey, freshOf, guestPath, guestTree, navRows, refIndex } from '../lib/guest'
+import { actKey, freshOf, guestPath, guestTree, navRows, navSessions, refIndex } from '../lib/guest'
 import { reasonOf, classify } from '../lib/fail'
 import { cx } from '../lib/util'
 import { setFileBase } from '../ui/attach'
@@ -246,9 +246,10 @@ function SessionRoute({ token, ov }: { token: string; ov: Overview }) {
   return <SessionView key={key} token={token} sessionKey={key} ov={ov} />
 }
 
-// Tree：目录。概览，然后计划 → 阶段 → 需求 → 会话；主调度不能点进对话，只是一行。
+// Tree：目录。概览，然后计划 → 阶段 → 需求（到需求为止），再单列「会话」一组、每个会话只出现一次；主调度不能点进对话，只是一行。
 function Tree({ token, ov }: { token: string; ov: Overview }) {
   const rows = useMemo(() => navRows(guestTree(ov.nodes ?? [])), [ov.nodes])
+  const sess = useMemo(() => navSessions(guestTree(ov.nodes ?? [])), [ov.nodes])
   const sessions = new Map(ov.sessions.map((s) => [s.key, s]))
   const item = 'flex min-h-8 w-full min-w-0 items-center gap-1.5 rounded-lg py-1 pr-2 text-left text-[13px] text-fg-2 transition-colors'
   const link = ({ isActive }: { isActive: boolean }) => cx(item, isActive ? 'bg-surface text-fg shadow-[0_1px_2px_rgb(70_50_18/0.06)]' : 'hover:bg-hover hover:text-fg')
@@ -284,7 +285,12 @@ function Tree({ token, ov }: { token: string; ov: Overview }) {
               <span className="truncate">{n.title}</span>
             </NavLink>
           )
+        return null
+      })}
+      {sess.length > 0 && <div className="mx-2 mt-3.5 mb-1 text-xs text-fg-3">{t.guest.sessions}</div>}
+      {sess.map((n) => {
         const s = sessions.get(n.ref)
+        const pad = { paddingLeft: 8 }
         const body = (
           <>
             <StatusDot state={s ? displayState(s) : (n.status ?? 'idle')} />
@@ -293,11 +299,11 @@ function Tree({ token, ov }: { token: string; ov: Overview }) {
           </>
         )
         return s && !s.conversation ? (
-          <div key={i} className={cx(item, 'text-fg-3')} style={pad}>
+          <div key={n.ref} className={cx(item, 'text-fg-3')} style={pad}>
             {body}
           </div>
         ) : (
-          <NavLink key={i} to={guestPath(token, 'session', n.ref)} className={link} style={pad}>
+          <NavLink key={n.ref} to={guestPath(token, 'session', n.ref)} className={link} style={pad}>
             {body}
           </NavLink>
         )

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { actKey, freshOf, guestPath, guestTree, navRows, refIndex, statusBar } from './guest.ts'
+import { actKey, freshOf, guestPath, guestTree, navRows, navSessions, refIndex, statusBar } from './guest.ts'
 import type { ShareNode } from './share.ts'
 
 const nodes: ShareNode[] = [
@@ -30,9 +30,13 @@ test('refIndex：只收分享里的计划、需求，以及这些需求上的决
   assert.equal(m.has('R-77'), false)
 })
 
-test('navRows：计划 → 阶段 → 需求 → 会话，计划外需求在后，散的会话最后；同一会话在每条需求下都出现', () => {
+test('navRows：计划 → 阶段 → 需求到此为止，计划外需求在后，不列会话', () => {
   const rows = navRows(guestTree(nodes)).map((r) => `${r.depth}:${r.node.code ?? r.node.ref}`)
-  assert.deepEqual(rows, ['0:P-1', '1:P-1', '2:R-1', '3:claude:a', '0:R-9', '1:claude:a', '0:claude:z'])
+  assert.deepEqual(rows, ['0:P-1', '1:P-1', '2:R-1', '0:R-9'])
+})
+
+test('navSessions：会话单独成组，挂在几条需求下的会话也只出现一次', () => {
+  assert.deepEqual(navSessions(guestTree(nodes)).map((n) => n.ref), ['claude:a', 'claude:z'])
 })
 
 test('statusBar：流转中的在前，没数的不列', () => {

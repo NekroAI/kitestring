@@ -29,14 +29,14 @@ export function refIndex(nodes: ShareNode[], decs: DecRef[]): Map<string, GuestR
 
 export type NavRow = { key: string; depth: number; node: ShareNode }
 
-// navRows：目录树摊平成行：计划 → 阶段 → 需求 → 会话；不在计划里的需求接在后面，没挂在需求下的会话放最后。
-// 同一个会话挂在几条需求下时，每条下面都出现一次。
+// navRows：需求目录摊平成行：计划 → 阶段 → 需求（到需求为止，不列会话）；不在计划里的需求接在后面。
+// 会话另列一组，见 navSessions。
 export function navRows(tr: ShareTree): NavRow[] {
   const out: NavRow[] = []
   const seen = new Set<string>()
   const add = (k: string, depth: number) => {
     const node = tr.nodes.get(k)
-    if (!node) return
+    if (!node || node.kind === 'session') return
     out.push({ key: k, depth, node })
     seen.add(k)
     for (const c of tr.kids.get(k) ?? []) add(c, depth + 1)
@@ -45,8 +45,12 @@ export function navRows(tr: ShareTree): NavRow[] {
   for (const r of tr.loose) add(r, 0)
   // 计划不在分享里、只挂了阶段时，阶段没有上级
   for (const [k, n] of tr.nodes) if (!seen.has(k) && n.kind === 'stage' && !(tr.ups.get(k) ?? []).length) add(k, 0)
-  for (const [k, n] of tr.nodes) if (!seen.has(k) && n.kind === 'session') add(k, 0)
   return out
+}
+
+// navSessions：分享里包含的会话，每个只出现一次（同一个会话负责几条需求也只列一行）。
+export function navSessions(tr: ShareTree): ShareNode[] {
+  return [...tr.nodes.values()].filter((n) => n.kind === 'session')
 }
 
 export const guestTree = (nodes: ShareNode[]) => buildTree(nodes)
