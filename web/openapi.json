@@ -2726,9 +2726,41 @@
             "description": "所有项目里待送达的消息数（导航上的数字；一次广播算一条）",
             "format": "int64",
             "type": "integer"
+          },
+          "projects": {
+            "description": "按项目分的待送达条数，多的在前（同样多时最近有新消息的在前）；点导航数字时进第一个项目（R-288）",
+            "items": {
+              "$ref": "#/components/schemas/CommsPendingProj"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
+          "count",
+          "projects"
+        ],
+        "type": "object"
+      },
+      "CommsPendingProj": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
           "count"
         ],
         "type": "object"
@@ -15010,7 +15042,7 @@
             "description": "Error"
           }
         },
-        "summary": "所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算",
+        "summary": "所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算。projects 按项目分开（R-288）",
         "tags": [
           "comms"
         ]

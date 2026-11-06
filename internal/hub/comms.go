@@ -77,8 +77,16 @@ type commsOut struct {
 
 type commsPendingOut struct {
 	Body struct {
-		Count int `json:"count" doc:"所有项目里待送达的消息数（导航上的数字；一次广播算一条）"`
+		Count    int                `json:"count" doc:"所有项目里待送达的消息数（导航上的数字；一次广播算一条）"`
+		Projects []commsPendingProj `json:"projects" doc:"按项目分的待送达条数，多的在前（同样多时最近有新消息的在前）；点导航数字时进第一个项目（R-288）"`
 	}
+}
+
+// commsPendingProj 是一个项目里待送达的条数。
+type commsPendingProj struct {
+	ProjectID string `json:"project_id"`
+	Name      string `json:"name"`
+	Count     int    `json:"count"`
 }
 
 // sysHead 是纸鸢提醒开头的「你订阅的事件（review · 交验收）：」这类前缀。
@@ -433,21 +441,40 @@ func (h *Hub) registerCommsWeb(api huma.API) {
 		})
 
 	huma.Register(api, huma.Operation{OperationID: "get-comms-pending", Method: http.MethodGet, Path: "/api/comms/pending", Tags: tag,
-		Summary: "所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算"},
+		Summary: "所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算。projects 按项目分开（R-288）"},
 		func(ctx context.Context, _ *struct{}) (*commsPendingOut, error) {
 			unsent, err := h.store.UnsentTells(ctx, "", 1000)
 			if err != nil {
 				return nil, err
 			}
 			out := &commsPendingOut{}
-			for _, m := range h.newCommsBuilder().build(ctx, unsent) { // 一次广播算一条，和通讯页置顶的条数一致
-				for _, r := range m.Recipients {
-					if r.Status == PendingWakeSt {
-						out.Body.Count++
-						break
+			out.Body.Projects = []commsPendingProj{}
+			// 一次广播的各行同属一个项目，按项目分开再拼条目，条数和各项目通讯页置顶的「待送达」一致
+			byProj, order := map[string][]store.Decision{}, []string{} // order：按最近一条消息排（unsent 新的在前）
+			for _, d := range unsent {
+				if _, ok := byProj[d.ProjectID]; !ok {
+					order = append(order, d.ProjectID)
+				}
+				byProj[d.ProjectID] = append(byProj[d.ProjectID], d)
+			}
+			b := h.newCommsBuilder()
+			for _, pid := range order {
+				n := 0
+				for _, m := range b.build(ctx, byProj[pid]) {
+					for _, r := range m.Recipients {
+						if r.Status == PendingWakeSt {
+							n++
+							break
+						}
 					}
 				}
+				if n == 0 {
+					continue
+				}
+				out.Body.Count += n
+				out.Body.Projects = append(out.Body.Projects, commsPendingProj{ProjectID: pid, Name: byProj[pid][0].ProjectName, Count: n})
 			}
+			sort.SliceStable(out.Body.Projects, func(i, j int) bool { return out.Body.Projects[i].Count > out.Body.Projects[j].Count })
 			return out, nil
 		})
 }

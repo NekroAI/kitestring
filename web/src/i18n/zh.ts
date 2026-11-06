@@ -363,6 +363,7 @@ export const zh = {
     castSum: (ok: number, wait: number, off: number) => [ok && `已送达 ${ok}`, wait && `待送达 ${wait}`, off && `无法送达 ${off}`].filter(Boolean).join(' · '),
     open: '通讯',
     pickProject: '选择项目',
+    pendingIn: (n: number) => `待送达 ${n} 条`,
     noProject: '暂无项目',
     truncated: '消息较多，仅列出最近的部分。缩短时间范围可查看更早的消息。',
     gone: '会话已结束',

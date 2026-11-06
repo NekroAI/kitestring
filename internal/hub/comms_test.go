@@ -3,6 +3,7 @@ package hub
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NekroAI/kitestring/internal/store"
 )
@@ -69,5 +70,48 @@ func TestInboxText(t *testing.T) {
 		if strings.Contains(text, "claude:") || strings.Contains(text, "review ·") {
 			t.Errorf("%s：还露着内部代号：%q", c.name, text)
 		}
+	}
+}
+
+// R-288：导航上的待送达数按项目分开，点数字进条数最多的项目；发给已结束会话的不算。
+func TestCommsPendingByProject(t *testing.T) {
+	e := newShareEnv(t)
+	d, err := e.st.CreateDevice(e.ctx, "mac2", "h2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa, err := e.st.ResolveProject(e.ctx, d.ID, "/repo/alpha", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, err := e.st.ResolveProject(e.ctx, d.ID, "/repo/beta", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, x := range [][3]string{{"claude:a1", pa, "parked"}, {"claude:b1", pb, "parked"}, {"claude:b2", pb, "ended"}} {
+		if _, err := e.st.DB().Exec(`INSERT INTO sessions(key, tool, session_id, device_id, project_id, state, cwd, started_at, last_active_at) VALUES(?, 'claude', ?, ?, ?, ?, '/repo', ?, ?)`, x[0], x[0], d.ID, x[1], x[2], now, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tell := func(to, pid string) {
+		if _, err := e.st.CreateDecision(e.ctx, store.Decision{Kind: store.KindTell, SessionKey: to, ProjectID: pid, Question: "q", Answer: "hi", AssignedBy: e.pm}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tell("claude:a1", pa)
+	tell("claude:b1", pb)
+	tell("claude:b1", pb)
+	tell("claude:b2", pb) // 收件会话已结束：无法送达，不算
+	var out struct {
+		Count    int
+		Projects []commsPendingProj
+	}
+	e.do(e.owner, "GET", "/api/comms/pending", nil, &out, 200)
+	if out.Count != 3 || len(out.Projects) != 2 {
+		t.Fatalf("count=%d projects=%+v", out.Count, out.Projects)
+	}
+	if out.Projects[0].ProjectID != pb || out.Projects[0].Count != 2 || out.Projects[0].Name != "beta" || out.Projects[1].Count != 1 {
+		t.Fatalf("按项目分开不对：%+v", out.Projects)
 	}
 }

@@ -943,7 +943,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算 */
+        /** 所有项目里待送达的团队消息数（R-249，导航「通讯」旁的数字）；发给已结束 / 失联会话的不算。projects 按项目分开（R-288） */
         get: operations["get-comms-pending"];
         put?: never;
         post?: never;
@@ -3303,6 +3303,14 @@ export interface components {
              * @description 所有项目里待送达的消息数（导航上的数字；一次广播算一条）
              */
             count: number;
+            /** @description 按项目分的待送达条数，多的在前（同样多时最近有新消息的在前）；点导航数字时进第一个项目（R-288） */
+            projects: components["schemas"]["CommsPendingProj"][] | null;
+        };
+        CommsPendingProj: {
+            /** Format: int64 */
+            count: number;
+            name: string;
+            project_id: string;
         };
         CommsSession: {
             client: string;

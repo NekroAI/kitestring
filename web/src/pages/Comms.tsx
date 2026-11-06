@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { ArrowRight, BellOff, ChevronDown, ChevronRight, Radio, Search, X } from 'lucide-react'
-import { useComms, useProjects } from '../api/queries'
+import { useComms, useCommsPending, useProjects } from '../api/queries'
 import type { Schemas } from '../api/client'
 import { t } from '../i18n'
 import { matches, rangeStart, dayStart, type CommsFilter, type CommsKind, type CommsRange } from '../lib/comms'
-import { cx, duration, shortDuration, useNow, usePref } from '../lib/util'
+import { cx, duration, loadPref, shortDuration, useNow, usePref } from '../lib/util'
 import { Button, Card, ErrorState, Input, PageHeader, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, type MenuItem } from '../ui/overlay'
 import { ToolMark } from '../ui/marks'
@@ -200,14 +200,19 @@ export default function CommsPage() {
   const projList = useMemo(() => (projects.data?.projects ?? []).filter((p) => !p.hidden), [projects.data])
   const [params, setParams] = useSearchParams()
   const [projectPref, setProject] = usePref<string>('ks.comms.project', '')
-  const project = params.get('project') || projectPref || projList[0]?.id || ''
+  const pending = useCommsPending().data
+  const pendingOf = useMemo(() => new Map((pending?.projects ?? []).map((p) => [p.project_id, p.count])), [pending])
+  // 没选过项目时：先看有待送达的项目，再看需求页选的项目，最后才按名字排第一个（R-288：按名字排第一的可能是根目录建出的「/」）
+  const reqsPref = loadPref<string>('ks.reqs.project', '')
+  const fallback = pending?.projects[0]?.project_id || projList.find((p) => p.id === reqsPref)?.id || projList[0]?.id || ''
+  const project = params.get('project') || projectPref || fallback
   const session = params.get('session') || ''
   const [range, setRange] = usePref<CommsRange>('ks.comms.range', 'today')
   const [ended, setEnded] = useState(false)
   const [kind, setKind] = useState<CommsKind>('all')
   const [role, setRole] = useState('')
   const [req, setReq] = useState('')
-  const [onlyUnsent, setOnlyUnsent] = useState(false)
+  const [onlyUnsent, setOnlyUnsent] = useState(params.get('unsent') === '1')
   const [showSys, setShowSys] = usePref('ks.comms.sys', false)
   const [q, setQ] = useState('')
   const [offOpen, setOffOpen] = useState(false)
@@ -240,6 +245,20 @@ export default function CommsPage() {
   useEffect(() => {
     if (fromLink && fromLink !== projectPref) setProject(fromLink)
   }, [fromLink, projectPref, setProject])
+  // 点导航上的待送达数字进来（?unsent=1）：打开「只看未送达」，参数用完就去掉，之后由按钮自己切换
+  const unsentLink = params.get('unsent') === '1'
+  useEffect(() => {
+    if (!unsentLink) return
+    setOnlyUnsent(true)
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p)
+        n.delete('unsent')
+        return n
+      },
+      { replace: true },
+    )
+  }, [unsentLink, setParams])
 
   const sessions = useMemo(() => new Map((d?.sessions ?? []).map((s) => [s.key, s])), [d?.sessions])
   const filter: CommsFilter = { session: session || undefined, role: role || undefined, req: req || undefined, kind, unsent: onlyUnsent, q }
@@ -279,7 +298,7 @@ export default function CommsPage() {
           <ChevronDown className="size-3.5" />
         </button>
       }
-      items={projList.map((p) => ({ label: p.name, hint: p.remote, checked: p.id === project, onSelect: () => pickProject(p.id) }))}
+      items={projList.map((p) => ({ label: p.name, hint: p.remote, checked: p.id === project, trailing: pendingOf.get(p.id) ? <span className="text-[11.5px] text-wait tabular">{t.comms.pendingIn(pendingOf.get(p.id) ?? 0)}</span> : undefined, onSelect: () => pickProject(p.id) }))}
     />
   )
   const roleItems: MenuItem[] = [

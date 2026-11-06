@@ -60,7 +60,7 @@ function navCount(to: string, todo: number, unsent: number, guests = 0): { n: nu
 }
 
 // 侧边栏可折叠成图标栏（R-18）：⌘\ 或底部按钮切换，记在本机。折叠后名称在悬停提示里。
-function Sidebar({ todo, unsent, guests, connected, collapsed, onToggle }: { todo: number; unsent: number; guests: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
+function Sidebar({ todo, unsent, commsTo, guests, connected, collapsed, onToggle }: { todo: number; unsent: number; commsTo: string; guests: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
   const wb = useWorkbench()
   const now = useNow()
   const { openPalette } = useCommand()
@@ -100,7 +100,7 @@ function Sidebar({ todo, unsent, guests, connected, collapsed, onToggle }: { tod
             {/* 外面包一层：Tip 的 asChild 会把 NavLink 的函数 className 拼成字符串 */}
             <div>
               <NavLink
-                to={n.to}
+                to={n.to === '/comms' ? commsTo : n.to}
                 end={n.end}
                 viewTransition
                 aria-label={n.label}
@@ -155,7 +155,7 @@ function Sidebar({ todo, unsent, guests, connected, collapsed, onToggle }: { tod
   )
 }
 
-function TabBar({ todo, unsent, guests }: { todo: number; unsent: number; guests: number }) {
+function TabBar({ todo, unsent, commsTo, guests }: { todo: number; unsent: number; commsTo: string; guests: number }) {
   const { pathname } = useLocation()
   // 分享页从设置页进入，底部导航把它算在「设置」下
   const inSettings = pathname.startsWith('/shares')
@@ -163,7 +163,7 @@ function TabBar({ todo, unsent, guests }: { todo: number; unsent: number; guests
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-xl lg:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5">
         {nav.filter((n) => !n.desktop).map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.end} viewTransition className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive || (inSettings && n.to === '/settings') ? 'text-accent' : 'text-fg-3')}>
+          <NavLink key={n.to} to={n.to === '/comms' ? commsTo : n.to} end={n.end} viewTransition className={({ isActive }) => cx('flex flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium transition-colors', isActive || (inSettings && n.to === '/settings') ? 'text-accent' : 'text-fg-3')}>
             <span className="relative">
               <n.icon className="size-[22px]" strokeWidth={1.8} />
               <span className="absolute -top-1.5 -right-2.5">
@@ -209,7 +209,11 @@ export function Shell() {
   useCompactSync() // 上下文圆环 / 建议压缩用设置里的阈值（R-224、R-225）
   const wb = useWorkbench()
   const todo = useTodo(wb).length // 与工作台「待你处理」同一口径
-  const unsent = useCommsPending().data ?? 0
+  const pending = useCommsPending().data
+  const unsent = pending?.count ?? 0
+  // 点「通讯」时有待送达就直接落到待送达最多的那个项目、只看未送达（R-288）：数字是全部项目的，通讯页一次看一个项目
+  const top = pending?.projects[0]
+  const commsTo = top ? `/comms?project=${encodeURIComponent(top.project_id)}&unsent=1` : '/comms'
   const { session, req, plan, ask, close } = usePanelParams()
   // 在等你的计划（待批准、待阶段验收）一律在审批抽屉里处理（R-177）：?plan= 打开它时落到审批抽屉
   const plans = usePlans()
@@ -237,7 +241,7 @@ export function Shell() {
     <RefIndexProvider>
     <CommandProvider>
     <div className="min-h-dvh">
-      <Sidebar todo={todo} unsent={unsent} guests={wb.guests.length} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+      <Sidebar todo={todo} unsent={unsent} commsTo={commsTo} guests={wb.guests.length} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
       <main className={cx('pb-24 transition-[padding] duration-200 ease-out', pathname === '/' ? 'lg:pb-5' : 'lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
         {/* 工作台是一屏驾驶舱，用满任意宽度（R-170，去掉原来 1880px 的上限）、需求池盘面随屏幕一直放宽到 3600px（R-133，2K / 4K / 21:9 用满），其余页面保持 1360px 的阅读宽度 */}
@@ -246,7 +250,7 @@ export function Shell() {
           <Outlet />
         </div>
       </main>
-      <TabBar todo={todo} unsent={unsent} guests={wb.guests.length} />
+      <TabBar todo={todo} unsent={unsent} commsTo={commsTo} guests={wb.guests.length} />
       <SessionPanel sessionKey={session} onClose={close} />
       <ReqPanel refId={req} onClose={close} />
       <PlanPanel code={planAsk ? null : plan} onClose={close} />

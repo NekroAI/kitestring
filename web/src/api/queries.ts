@@ -313,7 +313,7 @@ export function useCommsPending() {
   return useQuery({
     queryKey: ['decisions', 'comms-pending'],
     queryFn: () => unwrap(api.GET('/api/comms/pending')),
-    select: (d) => d.count,
+    select: (d) => ({ count: d.count, projects: d.projects ?? [] }),
     refetchInterval: 60_000,
   })
 }
