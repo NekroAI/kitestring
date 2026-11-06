@@ -214,6 +214,9 @@ func (s *Store) ProxyAnswerDecision(ctx context.Context, id, by, answer, reason,
 	if k, _ := res.RowsAffected(); k == 0 {
 		return Decision{}, errors.New("这条决策已不在待答复状态（可能用户刚答复或已撤回）")
 	}
+	if s.OnWaitSettled != nil {
+		s.OnWaitSettled(d0.Code)
+	}
 	return s.GetDecision(ctx, id)
 }
 

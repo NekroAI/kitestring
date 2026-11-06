@@ -345,6 +345,9 @@ func (s *Store) AnswerDecisionPoints(ctx context.Context, ref, answer string, fi
 			return d, err
 		}
 	}
+	if s.OnWaitSettled != nil {
+		s.OnWaitSettled(d.Code) // 在等这条决策的受阻需求自动解除（R-269）
+	}
 	return s.GetDecision(ctx, d.ID)
 }
 
@@ -375,6 +378,9 @@ func (s *Store) ExpireRequest(ctx context.Context, id, answer string) (Decision,
 		return Decision{}, false, err
 	}
 	k, _ := res.RowsAffected()
+	if k > 0 && s.OnWaitSettled != nil {
+		s.OnWaitSettled(d0.Code)
+	}
 	d, err := s.GetDecision(ctx, id)
 	return d, k > 0, err
 }

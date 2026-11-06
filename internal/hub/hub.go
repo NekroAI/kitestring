@@ -132,6 +132,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 	}
 	if st != nil {
 		st.OnRequestVoided = h.onStatusRequestVoided // 改状态申请因状态被改动而作废，送回申请方（R-188）
+		st.OnWaitSettled = h.onWaitSettled           // 等的需求完成 / 决策答复：受阻的需求自动解除（R-269）
 	}
 	return h
 }

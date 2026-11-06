@@ -47,7 +47,7 @@ func TestPMPromptRework(t *testing.T) {
 func TestPromptWaitOn(t *testing.T) {
 	for _, r := range []string{PM, Dev, Aide, Advisor} {
 		p := Prompt(r)
-		for _, want := range []string{"做完原型 / 方案，当场用 decision_raise", "设为 blocked 并用 waiting_on 指向它", "不要一直标着进行中干等"} {
+		for _, want := range []string{"做完原型 / 方案，当场用 decision_raise", "设为 blocked 并用 waiting_on 指向它", "不要一直标着进行中干等", "自己正在做的、只是还没做完的不设受阻"} {
 			if !strings.Contains(p, want) {
 				t.Fatalf("%s 提示词缺 %q", r, want)
 			}

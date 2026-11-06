@@ -1338,7 +1338,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			if in.Body.Status == store.ReqShelved {
 				ctx = store.WithActor(ctx, store.Actor{ReasonKind: in.Body.ReasonKind, Reason: in.Body.Reason})
 			}
-			if in.Body.Status == store.ReqReady {
+			if in.Body.Status == store.ReqReady && before.Status != store.ReqBlocked { // 受阻改回待开始是解除受阻，不是放行（R-269）
 				// 放行（R-166）：只有 主调度 / 主助理、项目开关打开、从草稿、写了理由才行；不关联放行的会话，需求照常归原会话或 PM
 				x, err := h.releaseCheck(ctx, before, in.Body.SessionKey, in.Body.Reason)
 				if err != nil {
@@ -1629,6 +1629,13 @@ func (h *Hub) registerAgent(api huma.API) {
 				if _, err := h.store.SetRequirementStatus(ctx, r.ID, store.ReqInProgress); err != nil {
 					return nil, apiErr(err)
 				}
+			case store.ReqBlocked:
+				// 受阻的需求有会话关联开工：转为进行中，时间线写明原来在等什么（R-269）
+				lctx := store.WithActor(ctx, store.Actor{Ref: r.BlockedOn, Reason: waitedText(r)})
+				if _, err := h.store.SetRequirementStatus(lctx, r.ID, store.ReqInProgress); err != nil {
+					return nil, apiErr(err)
+				}
+				out.Body.Notices = append(out.Body.Notices, "这条原来是受阻（"+waitedText(r)+"），已转为进行中；等的事其实没完成的话，再设一次受阻即可")
 			case store.ReqDraft:
 				if !canRelease(x.Role) {
 					out.Body.Notices = append(out.Body.Notices, "已关联，但这条还是草稿，请主调度放行，或用 req_request_status 申请用户批准")

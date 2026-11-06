@@ -1621,6 +1621,7 @@ export const zh = {
     changed: '将状态改为',
     shelveWhy: '搁置原因',
     blockedWhy: '受阻原因',
+    unblockWhy: '解除受阻',
     waitOn: '等待',
     statusReq: {
       approved: '你批准了 Agent 的申请',
@@ -1634,6 +1635,7 @@ export const zh = {
     via: {
       link: '开始处理',
       withdraw: '撤回放行',
+      unblock: '等的事完成',
       assign: '指派',
       plan: '计划',
     } as Record<string, string>,

@@ -717,6 +717,12 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
               <span className="mr-1.5 text-fg-3">{t.timeline.shelveWhy}</span>
               <Linkify text={t.reqs.shelve.why(t.reqs.shelve.kinds[c.reason_kind ?? ''] ?? '', c.reason ?? '')} />
             </p>
+          ) : c.from === 'blocked' && c.reason ? (
+            // 解除受阻（R-269）：自动解除或会话关联开工，写明原来在等什么
+            <p className="text-sm leading-relaxed break-words text-fg-2">
+              <span className="mr-1.5 text-fg-3">{t.timeline.unblockWhy}</span>
+              <Linkify text={c.reason} />
+            </p>
           ) : c.to === 'blocked' && c.reason ? (
             // 受阻的原因（R-243）；在等的 R-x / D-x 已画在上面的印记里
             <p className="text-sm leading-relaxed break-words text-fg-2">

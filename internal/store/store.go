@@ -23,6 +23,8 @@ type Store struct {
 	db *sql.DB
 	// OnRequestVoided：改状态申请因需求状态被改动而自动作废后调用（R-188），hub 用它把结果送回申请方。
 	OnRequestVoided func(ids []string)
+	// OnWaitSettled：需求变为已完成、或决策被答复后调用（R-269），参数是它的编号（R-x / D-x）；hub 用它解除在等它的受阻需求。
+	OnWaitSettled func(code string)
 }
 
 // Open 打开（必要时创建）数据库并应用结构。

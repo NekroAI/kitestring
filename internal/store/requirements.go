@@ -415,6 +415,9 @@ func (s *Store) SetRequirementStatus(ctx context.Context, ref, status string) (R
 	if len(voided) > 0 && s.OnRequestVoided != nil {
 		s.OnRequestVoided(voided)
 	}
+	if status == ReqDone && cur.Status != ReqDone && s.OnWaitSettled != nil {
+		s.OnWaitSettled(cur.Code) // 在等它的受阻需求自动解除（R-269）
+	}
 	return s.GetRequirement(ctx, cur.ID)
 }
 
@@ -609,4 +612,10 @@ func (s *Store) VoidEvidence(ctx context.Context, id, by, role, reason string) (
 		return Evidence{}, fmt.Errorf("这条证据已经作废")
 	}
 	return s.GetEvidence(ctx, id)
+}
+
+// BlockedFrom 返回需求最近一次被设为受阻的记录：受阻前的状态、设为受阻的会话（R-269）。没有这样的记录时 from 为空。
+func (s *Store) BlockedFrom(ctx context.Context, reqID string) (from, sessionKey string) {
+	_ = s.db.QueryRowContext(ctx, `SELECT from_status, session_key FROM status_changes WHERE requirement_id = ? AND to_status = ? ORDER BY at DESC, rowid DESC LIMIT 1`, reqID, ReqBlocked).Scan(&from, &sessionKey)
+	return from, sessionKey
 }
