@@ -246,6 +246,18 @@ const (
 	shareCommentPickReq = "选择要放入的需求（这个阶段里的需求）"
 )
 
+// ---------- 凭据（R-295）：取用被拒的原因，记在取用记录里、显示在凭据详情的「结果」列 ----------
+
+const (
+	secretDenyPending    = "未填写值"
+	secretDenyRevoked    = "授权已撤回"
+	secretDenyExpired    = "授权已到期"
+	secretDenyProject    = "项目不在授权范围内"
+	secretDenyCommand    = "不在允许范围内"
+	secretDenyDisk       = "未授权写入磁盘"
+	secretDenyUnreadable = "值无法解密"
+)
+
 // shareCommentTooLong 是访客留言超出字数上限时的提示。
 func shareCommentTooLong(n int) string { return fmt.Sprintf("留言最多 %d 字", n) }
 
@@ -295,6 +307,8 @@ func copyTexts() map[string]string {
 		"sharePasswordNeeded": sharePasswordNeeded, "sharePasswordWrong": sharePasswordWrong, "shareNotIncluded": shareNotIncluded, "shareReadOnly": shareReadOnly, "sharePasswordLocked": sharePasswordLocked(15),
 		"ogPromoTitle": ogPromoTitle, "ogPromoDesc": ogPromoDesc, "ogSiteName": ogSiteName,
 		"ogShareDesc": ogShareDesc(5, 2, "11-06 10:30"), "ogShareDesc0": ogShareDesc(0, 0, ""),
+		"secretDenyPending": secretDenyPending, "secretDenyRevoked": secretDenyRevoked, "secretDenyExpired": secretDenyExpired, "secretDenyProject": secretDenyProject,
+		"secretDenyCommand": secretDenyCommand, "secretDenyDisk": secretDenyDisk, "secretDenyUnreadable": secretDenyUnreadable,
 		"shareCommentEmpty": shareCommentEmpty, "shareCommentTarget": shareCommentTarget, "shareCommentTooMany": shareCommentTooMany, "shareCommentPickReq": shareCommentPickReq, "shareCommentTooLong": shareCommentTooLong(2000),
 	} {
 		out[k] = v

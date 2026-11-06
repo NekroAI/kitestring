@@ -51,6 +51,7 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图（要试交互的用 option_prototypes 附可交互原型），用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
+- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到）；用户在纸鸢上填值并授权后结果送到你这里。之后用 shell 命令 ks secret run <凭据> -- <命令> 运行，值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。
 - 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开始。计划开始或阶段解锁时，该阶段的需求会指派给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动指派给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认、也最多等 55 分钟，醒来时提示缓存还有效；项目设置可调得更短，--timeout 超过上限按上限截断；后台任务的超时要设得比它长）。主调度 / 主助理 / 开发连续空等累计到项目设置的时长（默认 4 小时）时，醒来会收到写交接下线的指示：handoff_write 写交接后结束本轮，不再挂 ks wait，它结束时你会被唤醒。
@@ -200,6 +201,21 @@ type reqRequestStatusIn struct {
 	Ref    string `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
 	To     string `json:"to" jsonschema:"目标状态：ready（草稿 / 已搁置 → 待开始）或 draft（已搁置 → 草稿）；其它状态不能申请"`
 	Reason string `json:"reason" jsonschema:"一句理由：为什么现在可以改，用户在审批里看到"`
+}
+
+type secretFieldArg struct {
+	Env   string `json:"env" jsonschema:"环境变量名，例如 CLOUDFLARE_API_TOKEN"`
+	Label string `json:"label,omitempty" jsonschema:"显示名，例如 API Token"`
+	How   string `json:"how" jsonschema:"获取方式：按服务写清步骤（在哪个页面、点什么、选什么权限 / 模板），指导用户快速取到"`
+}
+
+type secretRequestIn struct {
+	Name        string           `json:"name" jsonschema:"凭据名，例如「Cloudflare 部署」；ks secret run 按它取用。已有同名凭据时是对它重新申请（补值、续期、扩大范围）"`
+	Purpose     string           `json:"purpose" jsonschema:"用途：拿它做什么，用户在申请里看到"`
+	Fields      []secretFieldArg `json:"fields" jsonschema:"要的每个值；一条凭据可以含多个值（如 API Token 和 Account ID），一起授权、一次取用"`
+	Requirement string           `json:"requirement,omitempty" jsonschema:"关联需求 R-x"`
+	Days        *int             `json:"days,omitempty" jsonschema:"建议的有效期（天），默认 7；0 = 长期"`
+	Allowed     []string         `json:"allowed,omitempty" jsonschema:"建议允许的命令，如 \"wrangler pages deploy *\"（* 单独放最后 = 后面可跟任意参数，放在中间匹配一个参数）；不写 = 不限命令。范围越小越容易获批"`
 }
 
 type reqEditIn struct {
@@ -446,6 +462,37 @@ func (t *tools) register(s *mcp.Server) {
 				return nil, nil, err
 			}
 			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "secret_request", Description: "申请第三方凭据（R-295）：要 API Token 之类的凭据时用它，不要让用户在终端里输入或粘贴。写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到）。申请出现在用户的「待处理」，用户在网页上填值、可改项目 / 有效期 / 允许的命令后保存并授权，或拒绝；结果送到你这里。授权后用 shell 命令 ks secret run <凭据名> -- <命令> 运行：值只作为这条命令的环境变量出现，命令不在允许范围内、授权过期或被撤销时会被拒绝。不要打印、回显值或写进文件。已有等待中的申请或凭据已可用时不重复建。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in secretRequestIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			body := map[string]any{"session_key": key, "name": in.Name, "purpose": in.Purpose, "fields": in.Fields, "requirement": in.Requirement, "allowed": in.Allowed}
+			if in.Days != nil {
+				body["days"] = *in.Days
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/secrets/request", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "secret_list", Description: "本项目能用的凭据（R-295）：名字、状态（active 生效中 / pending 待填写 / expired 已失效 / revoked 已撤回）、每个值的环境变量名、允许的命令、是否允许写入磁盘、到期时间。没有值：取用用 shell 命令 ks secret run <凭据名> -- <命令>。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out any
+			if err := t.c.Do(ctx, "GET", "/agent/secrets?session_key="+url.QueryEscape(key), nil, &out); err != nil {
+				return nil, nil, err
+			}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			return text(string(b)), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "req_edit", Description: "改需求的标题、描述、验收标准、优先级或类型（只改给出的字段）。需求随讨论演进时在原需求上改，不要另建一条取代。谁能改：关联了这条需求的会话（创建者、在做的会话）和项目主调度 / 主助理 / 顾问；没关联的会话（包括 Dev）会被拒绝；已完成、已搁置的需求不能改。需求进行中 / 受阻 / 待验收时改验收标准，要先用 decision_raise（approval = true）请用户批准，再把批准的决策编号填进 approval。每次修改都在时间线留下改前改后与你写的 reason，用户能看到是谁改的；有别的会话在做时会通知它。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqEditIn) (*mcp.CallToolResult, any, error) {

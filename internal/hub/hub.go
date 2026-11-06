@@ -110,6 +110,7 @@ type Hub struct {
 	lanes       *laneState                          // 泳道时间线（R-205）
 	watchMerges map[string]*watchMerge              // 需求|会话 → 60 秒内可并入的只告知订阅提醒（R-249 P4，只在内存里）
 	shareKey    []byte                              // 访客输对密码后的 cookie 签名密钥（R-281），首次用到时生成并存进设置
+	vault       *vault                              // 凭据主密钥与已知值脱敏器（R-295）
 }
 
 // New 创建 Hub。
@@ -131,6 +132,7 @@ func New(st *store.Store, log *slog.Logger) *Hub {
 		deploy:      version.Commit,
 		lanes:       newLaneState(),
 		watchMerges: map[string]*watchMerge{},
+		vault:       &vault{},
 	}
 	if st != nil {
 		st.OnRequestVoided = h.onStatusRequestVoided // 改状态申请因状态被改动而作废，送回申请方（R-188）

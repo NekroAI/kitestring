@@ -627,3 +627,52 @@ CREATE TABLE IF NOT EXISTS prototypes (
 );
 CREATE INDEX IF NOT EXISTS prototypes_lineage ON prototypes(lineage, version);
 CREATE INDEX IF NOT EXISTS prototypes_req ON prototypes(requirement_id, title);
+
+-- 凭据（R-295）：第三方 API 凭据，一条可含多个值（如 API Token + Account ID），一起授权、一次取用。
+-- 值用 Hub 的主密钥（AES-256-GCM，主密钥在数据库之外的单独文件里）加密后存进 cipher，库里没有明文；cipher 为空 = 待填写。
+-- fields 只存每个值的环境变量名、显示名和获取方式；projects 是授权的项目 ID；allowed 是允许的命令（空 = 不限命令）；
+-- disk = 允许写入磁盘；expires_at 为空 = 长期；revoked_at 非空 = 已撤回。request_decision 是最近一次申请的决策 ID。
+-- 申请要的项目、有效期、命令只记在 request 里，你保存授权后才写进 projects / expires_at / allowed（申请不能自己扩大已有授权）。
+CREATE TABLE IF NOT EXISTS secrets (
+	id               TEXT PRIMARY KEY,
+	name             TEXT NOT NULL,
+	purpose          TEXT NOT NULL DEFAULT '',
+	fields           TEXT NOT NULL DEFAULT '[]',
+	cipher           TEXT NOT NULL DEFAULT '',
+	projects         TEXT NOT NULL DEFAULT '[]',
+	allowed          TEXT NOT NULL DEFAULT '[]',
+	disk             INTEGER NOT NULL DEFAULT 0,
+	expires_at       TEXT NOT NULL DEFAULT '',
+	granted_at       TEXT NOT NULL DEFAULT '',
+	revoked_at       TEXT NOT NULL DEFAULT '',
+	requirement_id   TEXT NOT NULL DEFAULT '',
+	request_decision TEXT NOT NULL DEFAULT '',
+	requested_by     TEXT NOT NULL DEFAULT '',
+	request          TEXT NOT NULL DEFAULT '', -- 最近一次申请的内容（SecretAsk）：申请方所在项目、建议有效期、要的命令
+	last_used_at     TEXT NOT NULL DEFAULT '',
+	created_at       TEXT NOT NULL,
+	updated_at       TEXT NOT NULL
+);
+
+-- 凭据的取用记录与授权变更（R-295），同一条时间线。kind：use 取用（ks secret run）/ write 写入磁盘 /
+-- request 会话申请 / grant 保存并授权 / reject 拒绝申请 / create 新建 / replace 替换值 / edit 修改授权 / regrant 重新授权 / revoke 撤销授权。
+-- result（取用）：running 已开始、未上报结果 / ok 已完成 / failed 失败（exit_code）/ denied 已拒绝（reason）。
+-- command 存之前已把已知值换成「[已隐去]」，库里不留明文；会话标题、身份是当时的快照；days 是授权时选的有效期（-1 = 不适用，0 = 长期）。
+CREATE TABLE IF NOT EXISTS secret_logs (
+	id             TEXT PRIMARY KEY,
+	secret_id      TEXT NOT NULL REFERENCES secrets(id) ON DELETE CASCADE,
+	kind           TEXT NOT NULL,
+	at             TEXT NOT NULL,
+	session_key    TEXT NOT NULL DEFAULT '',
+	session_title  TEXT NOT NULL DEFAULT '',
+	session_role   TEXT NOT NULL DEFAULT '',
+	requirement_id TEXT NOT NULL DEFAULT '',
+	command        TEXT NOT NULL DEFAULT '',
+	path           TEXT NOT NULL DEFAULT '',
+	result         TEXT NOT NULL DEFAULT '',
+	exit_code      INTEGER NOT NULL DEFAULT 0,
+	reason         TEXT NOT NULL DEFAULT '',
+	days           INTEGER NOT NULL DEFAULT -1,
+	finished_at    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS secret_logs_secret ON secret_logs(secret_id, at);

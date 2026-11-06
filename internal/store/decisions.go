@@ -106,7 +106,7 @@ type Decision struct {
 	// devs = PM 推荐开独立开发会话：RequestCount 是要开几个；ExpiresAt 到点仍没作答按规则视为拒绝，TimedOut 记下这种结局。
 	// status = Agent 申请改需求状态（R-188）：RequestFrom 是申请时的状态，RequestTo 是目标状态；不限时。
 	// 批准前需求状态被改动过，申请自动作废：Voided 为真，答复送回申请方。
-	RequestKind  string     `json:"request_kind,omitempty" enum:"devs,status"`
+	RequestKind  string     `json:"request_kind,omitempty" enum:"devs,status,secret"`
 	RequestCount int        `json:"request_count,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 	TimedOut     bool       `json:"timed_out,omitempty"`
@@ -143,6 +143,9 @@ const RequestDevs = "devs"
 
 // RequestStatus：Agent 申请改需求状态（R-188）。
 const RequestStatus = "status"
+
+// RequestSecret：会话申请凭据（R-295）：用户在抽屉里填值并保存授权，或拒绝；不能代答，也不能直接点「批准」。
+const RequestSecret = "secret"
 
 // VoidAnswer 是作废的改状态申请写进 answer 的文字；送给申请方的完整说明由 hub 拼。
 const VoidAnswer = "已作废"

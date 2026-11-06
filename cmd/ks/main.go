@@ -57,6 +57,8 @@ agent 调用：
   req assign <R-x> --to <会话|auto>   PM 把需求指派给开发
   req review <R-x> [意见] [--verdict] [--blocks] [--image]   Rev 交审查意见 / 验证结果（不改需求状态）
   commit list|link|ci ...   需求关联的提交与 CI（R-156）：标题末尾写（R-x）的提交自动关联；link 手动关联，ci 上报 CI 结果（只记录，不改仓库）
+  secret request|list|run|write ...   凭据（R-295）：request 申请（用户在网页上填值并授权）；run <凭据> -- <命令> 把值作为这条命令的环境变量运行；
+                                 write 写入磁盘（要单独授权）；没有打印明文的命令，不要再让用户在终端里输入凭据（ks secret help 看用法）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team sessions [--role 身份|none] [--all-projects] [--all] [--json]
                                  在线会话列表（R-249）：本项目没结束的会话，带身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
@@ -162,6 +164,8 @@ func main() {
 		err = runTeam(args)
 	case "commit":
 		err = runCommit(args)
+	case "secret":
+		err = runSecret(args)
 	case "help", "--help", "-h":
 		fmt.Println(usage)
 	default:
@@ -225,6 +229,7 @@ func runHub(args []string) error {
 		dbPath = filepath.Join(daemon.Home(), "hub.db")
 	}
 	h.SetFilesDir(filepath.Join(filepath.Dir(dbPath), "files"))
+	h.SetSecretKeyFile(filepath.Join(filepath.Dir(dbPath), "secret.key")) // 凭据主密钥（R-295）：与数据库同目录的单独文件，不进数据库
 	ctx := signalContext()
 	switch sub {
 	case "serve":

@@ -36,6 +36,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerShareGuestComments(guestAPI)
 	h.registerShareWeb(webAPI)
 	h.registerShareComments(webAPI)
+	h.registerSecretsWeb(webAPI) // 凭据（R-295）：只挂网页登录与设备两组路由，访客路由没有
 	h.registerWeb(webAPI)
 	h.registerReview(webAPI)
 	h.registerRelease(webAPI)
@@ -81,6 +82,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerArrangeWeb(webAPI)
 	h.registerCommsWeb(webAPI)
 	h.registerAgentArrange(agentAPI)
+	h.registerSecretsAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -110,7 +112,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	if web != nil {
 		root.Handle("/", h.shareMeta(web))
 	}
-	return withGzip(withClient(withToldHandler(root)))
+	return withGzip(withClient(withToldHandler(h.withRedact(root)))) // 已知凭据值在 /api/ 响应出口统一隐去（R-295）
 }
 
 func apiConfig() huma.Config {
@@ -176,6 +178,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerArrangeWeb(api)
 	h.registerCommsWeb(api)
 	h.registerAgentArrange(api)
+	h.registerSecretsWeb(api)
+	h.registerSecretsAgent(api)
 	return api.OpenAPI()
 }
 
@@ -929,6 +933,10 @@ func (h *Hub) registerWeb(api huma.API) {
 				if err != nil {
 					return nil, apiErr(err)
 				}
+				// 凭据申请（R-295）：只能在抽屉里填值后保存授权，这里只接受拒绝
+				if err := checkSecretAnswer(d0, a.Answer, a.Verdict, a.Reject); err != nil {
+					return nil, err
+				}
 				// 改状态申请（R-188）：需求状态在批准前已被改动 → 这条申请作废，不再记答复
 				if vd, voided, err := h.checkStatusRequest(ctx, d0); err != nil {
 					return nil, err
@@ -951,9 +959,10 @@ func (h *Hub) registerWeb(api huma.API) {
 				}
 				// 离开期间你在哪台设备上答的（R-210）
 				h.awayUser(ctx, "answer", d.ProjectID, d.Code, d.Question, brief(approvalText(d), 80))
-				h.onRequestAnswered(ctx, d)         // 批准开 Dev 会话 → 推送接入语（R-169）
-				h.applyStatusRequest(ctx, d)        // 批准改状态申请 → 纸鸢改状态（R-188）
-				h.watchDecisionAnswered(ctx, d, "") // 关联决策被作答，告诉订阅了这条需求的会话（R-249 P4）
+				h.onRequestAnswered(ctx, d)                              // 批准开 Dev 会话 → 推送接入语（R-169）
+				h.applyStatusRequest(ctx, d)                             // 批准改状态申请 → 纸鸢改状态（R-188）
+				h.afterSecretRequest(ctx, d, answerNote(d.Answer, "拒绝")) // 拒绝凭据申请 → 没填过值的凭据删除（R-295）
+				h.watchDecisionAnswered(ctx, d, "")                      // 关联决策被作答，告诉订阅了这条需求的会话（R-249 P4）
 				out.Body.Decisions = append(out.Body.Decisions, d)
 				if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 					devices[x.DeviceID] = true
@@ -999,7 +1008,11 @@ func (h *Hub) registerWeb(api huma.API) {
 		return h.store.ResendDecision(ctx, ref)
 	})
 	decisionAction("close-decision", "close", func(ctx context.Context, ref string, b map[string]string) (store.Decision, error) {
-		return h.store.CloseDecision(ctx, ref, b["reason"], b["replaced_by"])
+		d, err := h.store.CloseDecision(ctx, ref, b["reason"], b["replaced_by"])
+		if err == nil {
+			h.afterSecretRequest(ctx, d, "") // 关闭凭据申请：没填过值的凭据随之删除（R-295）
+		}
+		return d, err
 	})
 
 	// 需求看板
@@ -1650,6 +1663,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				return nil, apiErr(err)
 			}
 			h.decisionsChanged(ctx, d)
+			h.afterSecretRequest(ctx, d, "") // 撤回凭据申请：没填过值的凭据随之删除（R-295）
 			return &decisionOut{Body: d}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-link-session", Method: http.MethodPost, Path: "/api/agent/sessions/{key}/link", Tags: tag},

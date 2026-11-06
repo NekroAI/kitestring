@@ -89,6 +89,9 @@ func requestText(d store.Decision) string {
 	if d.RequestKind == store.RequestStatus {
 		return statusRequestText(d)
 	}
+	if d.RequestKind == store.RequestSecret {
+		return secretRequestText(d)
+	}
 	what := requestWhat(d)
 	devs := d.RequestKind == store.RequestDevs
 	if d.TimedOut {
