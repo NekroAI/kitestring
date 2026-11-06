@@ -24,6 +24,8 @@ import { PendingBar } from './verdict'
 import { PlanSummary } from './points'
 import { approvedOf } from '../lib/waiting'
 import { GuestNoteContent, GuestSource } from './guestNote'
+import { isSecretReq } from '../lib/secrets'
+import { useOpenAsk } from './nav'
 
 // 需求抽屉只有这一条时间线（R-195）：从上往下按时间排，每份证据只出现一次——本轮最新的一份展开，其余收成一行，点开就地展开。
 // 每条记录都写清是谁做的：身份胶囊 + 会话标题（动作当时的标题，悬停看现在的），点开是那个会话。
@@ -162,6 +164,7 @@ const KEEP = 3
 
 export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions: Decision[]; focus?: string }) {
   const now = useNow()
+  const openAsk = useOpenAsk()
   const [early, setEarly] = useState(false) // 展开了前面折叠的记录
   useEffect(() => setEarly(false), [r.id, focus])
   const morning = useMorning()
@@ -562,7 +565,17 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
               </>
             }
           >
-            <DecisionComposer d={d} embedded autoFocus={focused} />
+            {isSecretReq(d) ? (
+              // 凭据申请（R-295）：值要在审批抽屉里填，这里只给入口
+              <div className="flex items-center gap-3">
+                <span className="min-w-0 flex-1 truncate text-sm text-fg">{d.question}</span>
+                <Button size="sm" variant="primary" onClick={() => openAsk(`d:${d.code}`)}>
+                  {t.secret.fill}
+                </Button>
+              </div>
+            ) : (
+              <DecisionComposer d={d} embedded autoFocus={focused} />
+            )}
           </Node>
           </div>
         ),
@@ -613,7 +626,8 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
     }
     // 你的答复：选了选项的只显示另写的附言（选项已经在上面标出来了）；批准类的结论写在头上
     const structured = !!d.points?.length || (!!d.options?.length && !d.approval) || (d.approval && approvedOf(d) !== undefined)
-    const note = structured ? answerNote(d) : (d.answer ?? '')
+    // 凭据申请（R-295）批准时的答复是写给会话的用法说明，时间线上只留结论；拒绝时留附言
+    const note = isSecretReq(d) && approvedOf(d) === true ? '' : structured ? answerNote(d) : (d.answer ?? '')
     const noteLabel = structured ? t.decision.noteLabel : t.timeline.answer
     const ok = d.status !== 'closed' ? approvedOf(d) : undefined
     entries.push({

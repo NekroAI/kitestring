@@ -24,6 +24,7 @@ import { PlanBody } from './plans'
 import { BackButton, DrawerSkeleton, ReqView } from './reqDrawer'
 import { Callout, sessionTitle } from './SessionCard'
 import { isStatusReq, StatusReqNote } from './statusReq'
+import { isSecretReq, SecretRequestBody } from './secrets'
 import { useAdvance, usePendingMap } from './verdict'
 import { GuestNoteBody } from './guestNote'
 
@@ -360,6 +361,8 @@ function AskBody({ a, top, sealed }: { a: Ask; top: ReactNode; sealed: boolean }
   if (a.kind === 'decide' || a.kind === 'approve' || a.kind === 'request') {
     if (d && isStatusReq(d) && d.voided) return <VoidedBody d={d} top={top} />
     if (!d || (d.status !== 'pending' && !sealed)) return <Gone top={top} />
+    // 凭据申请（R-295）：填值、改授权后保存，或拒绝
+    if (isSecretReq(d)) return <SecretRequestBody key={d.code} d={d} top={top} />
     // 挂了需求的决策（R-241）：打开这条需求，决策是时间线的最后一步，原地作答；改状态申请、限时请求照旧用决策卡
     if (d.requirement_code && !isStatusReq(d) && !d.request_kind) return <ReqView key={d.code} refId={d.requirement_code} top={top} focus={d.code} />
     return (

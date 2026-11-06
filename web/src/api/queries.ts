@@ -247,6 +247,31 @@ export function useShare(id: string | undefined) {
   })
 }
 
+// 凭据（R-295）：列表和单条（详情时间线）；值永不下发。挂在 secrets 主题下，决策变了（申请被处理）也刷新。
+export type Secret = Schemas['Secret']
+export type SecretLog = Schemas['SecretLog']
+const normSecret = (x: Secret) => ({ ...x, fields: x.fields ?? [], projects: x.projects ?? [], project_names: x.project_names ?? [], allowed: x.allowed ?? [] })
+export type SecretView = ReturnType<typeof normSecret>
+
+export function useSecrets() {
+  return useQuery({
+    queryKey: ['secrets', 'list'],
+    queryFn: () => unwrap(api.GET('/api/secrets')),
+    select: (d) => (d.secrets ?? []).map(normSecret),
+  })
+}
+
+// useSecret：ref 可以是 ID、名字或申请的决策编号 D-x
+export function useSecret(ref: string | undefined) {
+  return useQuery({
+    queryKey: ['secrets', 'detail', ref ?? ''],
+    queryFn: () => unwrap(api.GET('/api/secrets/{ref}', { params: { path: { ref: ref! } } })),
+    select: (d) => ({ secret: normSecret(d.secret), logs: d.logs ?? [] }),
+    enabled: !!ref,
+    retry: false,
+  })
+}
+
 // 待收的访客留言（R-281 第 4 段）：全部分享的，早的在前；进「待处理」，侧边栏「分享」的数字也数它。
 export type ShareComment = Schemas['ShareCommentView']
 export function useShareComments() {
@@ -332,13 +357,14 @@ export function useCommsPending() {
 // 主题 → 需要失效的查询前缀。
 const topicKeys: Record<string, readonly (readonly string[])[]> = {
   sessions: [['sessions']],
-  decisions: [['decisions'], ['grants'], ['morning'], ['session-turns'], ['activity']],
+  decisions: [['decisions'], ['grants'], ['morning'], ['session-turns'], ['activity'], ['secrets']],
   grants: [['grants'], ['morning']],
   morning: [['morning']],
   away: [['away'], ['morning'], ['grants']],
   requirements: [['requirements'], ['plans'], ['morning'], ['session-turns'], ['shares'], ['activity']],
   plans: [['plans'], ['shares'], ['activity']],
   shares: [['shares']],
+  secrets: [['secrets']],
   devices: [['devices'], ['sessions']],
   projects: [['projects'], ['sessions'], ['requirements'], ['plans'], ['morning'], ['session-turns'], ['activity']],
   settings: [['settings']],

@@ -11,6 +11,7 @@ import WorkbenchPage from './pages/Workbench'
 import ProjectsPage from './pages/Projects'
 import CommsPage from './pages/Comms'
 import SharesPage from './pages/Shares'
+import SecretsPage from './pages/Secrets'
 
 function Splash() {
   return (
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="shares/new" element={<SharesPage mode="new" />} />
         <Route path="shares/:id" element={<SharesPage mode="detail" />} />
         <Route path="shares/:id/edit" element={<SharesPage mode="edit" />} />
+        <Route path="secrets" element={<SecretsPage />} />
         <Route path="settings" element={<SettingsPage version={version} />} />
         <Route path="decisions" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

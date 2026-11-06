@@ -611,6 +611,24 @@
         ],
         "type": "object"
       },
+      "Agent-list-secretsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSecret"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "secrets"
+        ],
+        "type": "object"
+      },
       "Agent-need-devsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -713,6 +731,55 @@
         },
         "required": [
           "session_key"
+        ],
+        "type": "object"
+      },
+      "Agent-secret-finishRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "exit_code": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "exit_code"
+        ],
+        "type": "object"
+      },
+      "Agent-secret-useRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "argv": {
+            "description": "要运行的命令（ks secret run）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "description": "要写入的文件绝对路径（ks secret write）",
+            "type": "string"
+          },
+          "requirement": {
+            "description": "这次取用为的需求 R-x；不写时取会话正在处理的需求",
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "name"
         ],
         "type": "object"
       },
@@ -1327,6 +1394,76 @@
         },
         "required": [
           "title"
+        ],
+        "type": "object"
+      },
+      "AgentSecret": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "description": "允许的命令；空 = 不限命令",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "disk": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/SecretField"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "projects": {
+            "description": "授权的项目名",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "request": {
+            "description": "等待处理的申请 D-x",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "pending",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "purpose",
+          "status",
+          "fields",
+          "projects",
+          "allowed",
+          "disk"
         ],
         "type": "object"
       },
@@ -3112,6 +3249,64 @@
         ],
         "type": "object"
       },
+      "Create-secretRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "description": "允许的命令；空 = 不限命令",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "days": {
+            "description": "有效期（天）；0 = 长期",
+            "format": "int64",
+            "type": "integer"
+          },
+          "disk": {
+            "description": "允许写入磁盘",
+            "type": "boolean"
+          },
+          "fields": {
+            "description": "每个值：环境变量名、显示名、值",
+            "items": {
+              "$ref": "#/components/schemas/SecretFieldIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "projects": {
+            "description": "授权的项目 ID，至少一个",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields",
+          "projects",
+          "days"
+        ],
+        "type": "object"
+      },
       "Decision": {
         "additionalProperties": false,
         "properties": {
@@ -3379,7 +3574,8 @@
           "request_kind": {
             "enum": [
               "devs",
-              "status"
+              "status",
+              "secret"
             ],
             "type": "string"
           },
@@ -3807,7 +4003,8 @@
           "request_kind": {
             "enum": [
               "devs",
-              "status"
+              "status",
+              "secret"
             ],
             "type": "string"
           },
@@ -8416,6 +8613,16 @@
         ],
         "type": "object"
       },
+      "Reject-secret-requestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "description": "附言",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Release": {
         "additionalProperties": false,
         "properties": {
@@ -8445,6 +8652,22 @@
           "role",
           "reason",
           "at"
+        ],
+        "type": "object"
+      },
+      "Replace-secret-valuesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "环境变量名 → 新值；没写的保留原值",
+            "type": "object"
+          }
+        },
+        "required": [
+          "values"
         ],
         "type": "object"
       },
@@ -9724,6 +9947,503 @@
           "kind",
           "name",
           "started_at"
+        ],
+        "type": "object"
+      },
+      "Secret": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "description": "允许的命令；空 = 不限命令",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ask": {
+            "$ref": "#/components/schemas/SecretAsk",
+            "description": "最近一次申请的内容：申请方的项目、建议有效期、要的命令"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "disk": {
+            "description": "允许写入磁盘（ks secret write）",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "description": "授权到期时间；省略表示长期",
+            "format": "date-time",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/SecretField"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "granted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_use": {
+            "$ref": "#/components/schemas/SecretLog",
+            "description": "最近一次取用（含被拒）"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_names": {
+            "description": "授权的项目名，与 projects 一一对应",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "projects": {
+            "description": "授权的项目 ID",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "request_code": {
+            "description": "最近一次申请的决策编号 D-x",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "最近一次申请的决策 ID",
+            "type": "string"
+          },
+          "request_pending": {
+            "description": "有一条申请等待你填写 / 授权",
+            "type": "boolean"
+          },
+          "requested_by": {
+            "description": "最近一次申请的会话键",
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_id": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "description": "active 生效中 / pending 待填写 / expired 已失效 / revoked 已撤回",
+            "enum": [
+              "active",
+              "pending",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "purpose",
+          "fields",
+          "projects",
+          "project_names",
+          "allowed",
+          "disk",
+          "request_pending",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "SecretAsk": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "description": "要的命令；空 = 没限定",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "days": {
+            "description": "建议的有效期（天），0 = 长期",
+            "format": "int64",
+            "type": "integer"
+          },
+          "project_id": {
+            "description": "申请方所在的项目",
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "days",
+          "allowed"
+        ],
+        "type": "object"
+      },
+      "SecretAuthIn": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "description": "允许的命令；空 = 不限命令",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "days": {
+            "description": "有效期（天），从现在算起；0 = 长期",
+            "format": "int64",
+            "type": "integer"
+          },
+          "disk": {
+            "description": "允许写入磁盘",
+            "type": "boolean"
+          },
+          "projects": {
+            "description": "授权的项目 ID，至少一个",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "环境变量名 → 值；没写或为空的保留原值。待填写的每个值都要填",
+            "type": "object"
+          }
+        },
+        "required": [
+          "projects",
+          "days"
+        ],
+        "type": "object"
+      },
+      "SecretField": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "description": "环境变量名，例如 CLOUDFLARE_API_TOKEN",
+            "type": "string"
+          },
+          "filled": {
+            "description": "已填写值",
+            "type": "boolean"
+          },
+          "how": {
+            "description": "获取方式：申请的会话按服务写清步骤，指导用户快速取到",
+            "type": "string"
+          },
+          "label": {
+            "description": "显示名，例如 API Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "env",
+          "label",
+          "filled"
+        ],
+        "type": "object"
+      },
+      "SecretFieldIn": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "description": "环境变量名，例如 CLOUDFLARE_API_TOKEN",
+            "type": "string"
+          },
+          "how": {
+            "description": "获取方式：按服务写清步骤，指导用户快速取到（例如「Cloudflare 控制台 → 我的个人资料 → API 令牌，模板选编辑 Cloudflare Workers」）",
+            "type": "string"
+          },
+          "label": {
+            "description": "显示名，例如 API Token；不写时用环境变量名",
+            "type": "string"
+          },
+          "value": {
+            "description": "值（只在网页上新建时填）",
+            "type": "string"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "type": "object"
+      },
+      "SecretLog": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "command": {
+            "description": "取用的命令；已知值已换成「[已隐去]」",
+            "type": "string"
+          },
+          "days": {
+            "description": "授权时选的有效期（天）：0 = 长期，-1 = 不适用",
+            "format": "int64",
+            "type": "integer"
+          },
+          "exit_code": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "use",
+              "write",
+              "request",
+              "grant",
+              "reject",
+              "create",
+              "replace",
+              "edit",
+              "regrant",
+              "revoke"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "写入磁盘的路径",
+            "type": "string"
+          },
+          "reason": {
+            "description": "被拒的原因；拒绝申请时的附言",
+            "type": "string"
+          },
+          "requirement_code": {
+            "type": "string"
+          },
+          "requirement_id": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "",
+              "running",
+              "ok",
+              "failed",
+              "denied"
+            ],
+            "type": "string"
+          },
+          "secret_id": {
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "session_role": {
+            "description": "会话当时的身份",
+            "type": "string"
+          },
+          "session_title": {
+            "description": "会话当时的标题",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "secret_id",
+          "kind",
+          "at",
+          "exit_code",
+          "days"
+        ],
+        "type": "object"
+      },
+      "SecretOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "logs": {
+            "items": {
+              "$ref": "#/components/schemas/SecretLog"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "secret": {
+            "$ref": "#/components/schemas/Secret"
+          }
+        },
+        "required": [
+          "secret",
+          "logs"
+        ],
+        "type": "object"
+      },
+      "SecretRequestIn": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed": {
+            "description": "建议允许的命令，如 \"wrangler pages deploy *\"（* 单独放最后 = 后面可跟任意参数）；不写 = 不限命令",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "days": {
+            "description": "建议的有效期（天），默认 7；0 = 长期",
+            "format": "int64",
+            "type": "integer"
+          },
+          "fields": {
+            "description": "要的每个值：环境变量名、显示名、获取方式（按服务写清步骤，指导用户快速取到）",
+            "items": {
+              "$ref": "#/components/schemas/SecretFieldIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "凭据名，例如「Cloudflare 部署」；ks secret run 按它取用",
+            "minLength": 1,
+            "type": "string"
+          },
+          "purpose": {
+            "description": "用途：拿它做什么（用户在申请里看到）",
+            "type": "string"
+          },
+          "requirement": {
+            "description": "关联需求 R-x",
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "name",
+          "purpose",
+          "fields"
+        ],
+        "type": "object"
+      },
+      "SecretRequestOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "existing": {
+            "description": "已有等待中的申请或凭据已可用，没有新建",
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "existing",
+          "message"
+        ],
+        "type": "object"
+      },
+      "SecretUseOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "环境变量名 → 值：只交给 ks 进程放进子进程环境，不要打印",
+            "type": "object"
+          },
+          "log_id": {
+            "description": "这次取用的记录 ID，命令结束后用它上报退出码",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "log_id",
+          "name",
+          "env"
+        ],
+        "type": "object"
+      },
+      "SecretsOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "secrets": {
+            "items": {
+              "$ref": "#/components/schemas/Secret"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "secrets"
         ],
         "type": "object"
       },
@@ -14178,6 +14898,180 @@
         ]
       }
     },
+    "/api/agent/secrets": {
+      "get": {
+        "operationId": "agent-list-secrets",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "session_key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent-list-secretsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "当前项目能用的凭据（没有值）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/secrets/request": {
+      "post": {
+        "operationId": "agent-secret-request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretRequestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretRequestOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话申请凭据（R-295）：进用户的「待处理」，用户填值并授权或拒绝后结果送回",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/secrets/use": {
+      "post": {
+        "operationId": "agent-secret-use",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-secret-useRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretUseOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "ks secret run / write 取值：授权有效、项目匹配、命令在允许范围内才返回值；否则拒绝并记录",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/secrets/uses/{id}/finish": {
+      "post": {
+        "operationId": "agent-secret-finish",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-secret-finishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkBodyBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "上报取用命令的退出码",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/sessions/role": {
       "post": {
         "operationId": "agent-set-role",
@@ -18159,6 +19053,311 @@
         "summary": "改写某个身份的提示词（只有网页能改，R-98）",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/secrets": {
+      "get": {
+        "operationId": "list-secrets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretsOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "凭据列表（R-295）：值永不返回",
+        "tags": [
+          "secrets"
+        ]
+      },
+      "post": {
+        "operationId": "create-secret",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Create-secretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "新建凭据并授权",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/secrets/{ref}": {
+      "get": {
+        "operationId": "get-secret",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "凭据详情与时间线；ref 可以是 ID、名字或申请的决策编号 D-x",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/secrets/{ref}/authorize": {
+      "post": {
+        "operationId": "authorize-secret",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretAuthIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "保存并授权：填写 / 替换值、修改授权、重新授权；有等待中的申请时一并答成批准、送回申请方",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/secrets/{ref}/reject": {
+      "post": {
+        "operationId": "reject-secret-request",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reject-secret-requestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "拒绝凭据申请（可附言），答复送回申请方",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/secrets/{ref}/revoke": {
+      "post": {
+        "operationId": "revoke-secret",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤销授权：之后的取用一律拒绝；值保留，可重新授权",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/secrets/{ref}/values": {
+      "post": {
+        "operationId": "replace-secret-values",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Replace-secret-valuesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "替换值：授权不变",
+        "tags": [
+          "secrets"
         ]
       }
     },

@@ -1259,6 +1259,12 @@ export default function SettingsPage({ version }: { version: string }) {
         )}
         <ChevronRight className="size-4 text-fg-3" />
       </Link>
+      {/* 「凭据」（R-295）同样只在桌面侧边栏，手机从这里进入 */}
+      <Link to="/secrets" className="mb-4 flex h-12 items-center gap-2.5 rounded-2xl border border-line bg-surface px-4 text-sm font-medium text-fg shadow-card transition active:bg-hover lg:hidden">
+        <KeyRound className="size-[18px] shrink-0 text-fg-3" />
+        <span className="flex-1">{t.nav.secrets}</span>
+        <ChevronRight className="size-4 text-fg-3" />
+      </Link>
       <div className="-mx-4 mb-5 overflow-x-auto px-4 lg:hidden">
         <Segmented size="sm" value={tab} onChange={go} options={tabs.map((x) => ({ value: x.id, label: t.settings.sections[x.id] }))} />
       </div>

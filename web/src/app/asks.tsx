@@ -10,6 +10,8 @@ import type { useWorkbench } from './inbox'
 import { gateStage, needsApproval } from './plans'
 import { sessionTitle, splitTool } from './SessionCard'
 import { isStatusReq, StatusReqLines } from './statusReq'
+import { isSecretReq } from '../lib/secrets'
+import { SecretReqLine } from './secrets'
 import { DraftMark, dropDraft } from './draft'
 import { Check, Hourglass, Snowflake, Undo2 } from 'lucide-react'
 import { SwipeRow, type RowAction } from '../ui/gesture'
@@ -194,12 +196,14 @@ export function decisionKind(d: Decision): AskKind {
 
 // askKindLabel：条目的类型词；改状态申请（R-188）叫「申请」。
 export function askKindLabel(a: Ask) {
+  if (a.kind === 'request' && isSecretReq(a.d)) return t.secret.kind // 凭据申请（R-295）
   return a.kind === 'request' && isStatusReq(a.d) ? t.ask.status.kind : t.ask.kind[a.kind]
 }
 
 // askTitle：决策条目的标题。改状态申请（R-188）用需求标题——你要一眼看到是哪条需求。
 export function askTitle(d: Decision) {
   if (isStatusReq(d)) return d.requirement_title || d.question
+  if (isSecretReq(d)) return d.question // 凭据名：要的值（R-295）
   return titleOf(d)
 }
 
@@ -284,6 +288,7 @@ function statusLine(a: Ask, now: number): React.ReactNode {
       return firstLine(d?.context) || t.desk.approval
     case 'request':
       if (isStatusReq(d)) return d?.context ?? ''
+      if (d && isSecretReq(d)) return <SecretReqLine d={d} />
       return d ? [t.ask.request.what(d.request_count ?? 1), requestLeft(d, now)].filter(Boolean).join(t.common.sep) : t.desk.approval
     case 'plan': {
       const n = a.plan!.stages.reduce((k, st) => k + st.requirements.length, 0)
@@ -384,7 +389,8 @@ function swipeKey(a: Ask) {
   if (a.kind === 'review' && a.code) return a.code
   const d = a.d
   // 只给批准类单点决策（批准 / 拒绝）；选项类要先选、多点决策要逐点选，进抽屉做
-  if ((a.kind === 'approve' || a.kind === 'request') && d && d.approval && !d.points?.length && d.status === 'pending' && !d.voided) return decKey(d.code)
+  // 凭据申请（R-295）要先填值，不给左滑批准
+  if ((a.kind === 'approve' || a.kind === 'request') && d && d.approval && !d.points?.length && d.status === 'pending' && !d.voided && !isSecretReq(d)) return decKey(d.code)
   return undefined
 }
 
@@ -437,8 +443,8 @@ export function AskItem(props: Parameters<typeof AskCard>[0] & { swipe?: boolean
   const actions = useAskActions(props.a)
   const key = swipeKey(props.a)
   const pend = usePending(key)
-  // 访客留言（R-281）不能左滑，但放入 / 忽略的撤销期里条目上同样盖遮罩
-  const gk = props.a.kind === 'guest' ? pendingKeyOf(props.a) : undefined
+  // 访客留言（R-281）、凭据申请（R-295）不能左滑，但撤销期里条目上同样盖遮罩
+  const gk = props.a.kind === 'guest' || isSecretReq(props.a.d) ? pendingKeyOf(props.a) : undefined
   if (gk)
     return (
       <div className="relative shrink-0 rounded-[14px]">
@@ -496,7 +502,7 @@ function AskCard({
       )}
     >
       <span className="flex min-w-0 items-center gap-2 text-[11.5px] leading-5 text-fg-3">
-        <b className={cx('shrink-0 font-semibold tracking-wider', kindTone[a.kind])}>{sr ? t.ask.status.kind : t.ask.kind[a.kind]}</b>
+        <b className={cx('shrink-0 font-semibold tracking-wider', kindTone[a.kind])}>{askKindLabel(a)}</b>
         {s && <RoleBadge s={s} />}
         <span className="min-w-0 truncate">{showProject && a.projectName && s ? `${a.projectName}${t.common.sep}${who}` : who}</span>
         {/* 有没发出的草稿（R-202） */}

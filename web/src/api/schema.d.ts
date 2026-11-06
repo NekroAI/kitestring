@@ -515,6 +515,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前项目能用的凭据（没有值） */
+        get: operations["agent-list-secrets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/secrets/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 会话申请凭据（R-295）：进用户的「待处理」，用户填值并授权或拒绝后结果送回 */
+        post: operations["agent-secret-request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/secrets/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ks secret run / write 取值：授权有效、项目匹配、命令在允许范围内才返回值；否则拒绝并记录 */
+        post: operations["agent-secret-use"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/secrets/uses/{id}/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 上报取用命令的退出码 */
+        post: operations["agent-secret-finish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/sessions/role": {
         parameters: {
             query?: never;
@@ -1797,6 +1865,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 凭据列表（R-295）：值永不返回 */
+        get: operations["list-secrets"];
+        put?: never;
+        /** 新建凭据并授权 */
+        post: operations["create-secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 凭据详情与时间线；ref 可以是 ID、名字或申请的决策编号 D-x */
+        get: operations["get-secret"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/{ref}/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 保存并授权：填写 / 替换值、修改授权、重新授权；有等待中的申请时一并答成批准、送回申请方 */
+        post: operations["authorize-secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/{ref}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 拒绝凭据申请（可附言），答复送回申请方 */
+        post: operations["reject-secret-request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/{ref}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销授权：之后的取用一律拒绝；值保留，可重新授权 */
+        post: operations["revoke-secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/{ref}/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 替换值：授权不变 */
+        post: operations["replace-secret-values"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -2588,6 +2759,9 @@ export interface components {
         "Agent-link-sessionRequest": {
             requirement: string;
         };
+        "Agent-list-secretsResponse": {
+            secrets: components["schemas"]["AgentSecret"][] | null;
+        };
         "Agent-need-devsRequest": {
             /**
              * Format: int64
@@ -2628,6 +2802,20 @@ export interface components {
             to: string;
         };
         "Agent-revoke-arrangementRequest": {
+            session_key: string;
+        };
+        "Agent-secret-finishRequest": {
+            /** Format: int64 */
+            exit_code: number;
+        };
+        "Agent-secret-useRequest": {
+            /** @description 要运行的命令（ks secret run） */
+            argv?: string[] | null;
+            name: string;
+            /** @description 要写入的文件绝对路径（ks secret write） */
+            path?: string;
+            /** @description 这次取用为的需求 R-x；不写时取会话正在处理的需求 */
+            requirement?: string;
             session_key: string;
         };
         "Agent-set-briefRequest": {
@@ -2835,6 +3023,22 @@ export interface components {
             /** @enum {string} */
             status?: "draft" | "ready" | "in_progress" | "blocked" | "review" | "done" | "shelved";
             title: string;
+        };
+        AgentSecret: {
+            /** @description 允许的命令；空 = 不限命令 */
+            allowed: string[] | null;
+            disk: boolean;
+            /** Format: date-time */
+            expires_at?: string;
+            fields: components["schemas"]["SecretField"][] | null;
+            name: string;
+            /** @description 授权的项目名 */
+            projects: string[] | null;
+            purpose: string;
+            /** @description 等待处理的申请 D-x */
+            request?: string;
+            /** @enum {string} */
+            status: "active" | "pending" | "expired" | "revoked";
         };
         AnswersInBody: {
             answers: components["schemas"]["Item1"][] | null;
@@ -3497,6 +3701,23 @@ export interface components {
             /** @description 被授权的主助理会话 */
             session_key: string;
         };
+        "Create-secretRequest": {
+            /** @description 允许的命令；空 = 不限命令 */
+            allowed?: string[] | null;
+            /**
+             * Format: int64
+             * @description 有效期（天）；0 = 长期
+             */
+            days: number;
+            /** @description 允许写入磁盘 */
+            disk?: boolean;
+            /** @description 每个值：环境变量名、显示名、值 */
+            fields: components["schemas"]["SecretFieldIn"][] | null;
+            name: string;
+            /** @description 授权的项目 ID，至少一个 */
+            projects: string[] | null;
+            purpose?: string;
+        };
         Decision: {
             answer: string;
             answer_files: components["schemas"]["FileRef"][] | null;
@@ -3572,7 +3793,7 @@ export interface components {
             /** @description 改状态申请（R-188）：申请时需求的状态 */
             request_from?: string;
             /** @enum {string} */
-            request_kind?: "devs" | "status";
+            request_kind?: "devs" | "status" | "secret";
             /** @description 改状态申请（R-188）：申请改成的状态 */
             request_to?: string;
             requirement_code?: string;
@@ -3687,7 +3908,7 @@ export interface components {
             /** @description 改状态申请（R-188）：申请时需求的状态 */
             request_from?: string;
             /** @enum {string} */
-            request_kind?: "devs" | "status";
+            request_kind?: "devs" | "status" | "secret";
             /** @description 改状态申请（R-188）：申请改成的状态 */
             request_to?: string;
             requirement_code?: string;
@@ -5202,6 +5423,10 @@ export interface components {
             existing: boolean;
             message: string;
         };
+        "Reject-secret-requestRequest": {
+            /** @description 附言 */
+            note?: string;
+        };
         Release: {
             /** Format: date-time */
             at: string;
@@ -5212,6 +5437,12 @@ export interface components {
             reason: string;
             /** @description 放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor） */
             role: string;
+        };
+        "Replace-secret-valuesRequest": {
+            /** @description 环境变量名 → 新值；没写的保留原值 */
+            values: {
+                [key: string]: string;
+            };
         };
         RepliesOutBody: {
             /** @description 最近在网页上发给它的话（新的在前，最多 20 条），带送达状态 */
@@ -5607,6 +5838,175 @@ export interface components {
             started_at: string;
             /** @description 子任务类型（Explore 等）或后台命令的类别（build / deploy / service / poll / other） */
             type?: string;
+        };
+        Secret: {
+            /** @description 允许的命令；空 = 不限命令 */
+            allowed: string[] | null;
+            /** @description 最近一次申请的内容：申请方的项目、建议有效期、要的命令 */
+            ask?: components["schemas"]["SecretAsk"];
+            /** Format: date-time */
+            created_at: string;
+            /** @description 允许写入磁盘（ks secret write） */
+            disk: boolean;
+            /**
+             * Format: date-time
+             * @description 授权到期时间；省略表示长期
+             */
+            expires_at?: string;
+            fields: components["schemas"]["SecretField"][] | null;
+            /** Format: date-time */
+            granted_at?: string;
+            id: string;
+            /** @description 最近一次取用（含被拒） */
+            last_use?: components["schemas"]["SecretLog"];
+            /** Format: date-time */
+            last_used_at?: string;
+            name: string;
+            /** @description 授权的项目名，与 projects 一一对应 */
+            project_names: string[] | null;
+            /** @description 授权的项目 ID */
+            projects: string[] | null;
+            purpose: string;
+            /** @description 最近一次申请的决策编号 D-x */
+            request_code?: string;
+            /** @description 最近一次申请的决策 ID */
+            request_id?: string;
+            /** @description 有一条申请等待你填写 / 授权 */
+            request_pending: boolean;
+            /** @description 最近一次申请的会话键 */
+            requested_by?: string;
+            requirement_code?: string;
+            requirement_id?: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            /**
+             * @description active 生效中 / pending 待填写 / expired 已失效 / revoked 已撤回
+             * @enum {string}
+             */
+            status: "active" | "pending" | "expired" | "revoked";
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SecretAsk: {
+            /** @description 要的命令；空 = 没限定 */
+            allowed: string[] | null;
+            /**
+             * Format: int64
+             * @description 建议的有效期（天），0 = 长期
+             */
+            days: number;
+            /** @description 申请方所在的项目 */
+            project_id?: string;
+            project_name?: string;
+        };
+        SecretAuthIn: {
+            /** @description 允许的命令；空 = 不限命令 */
+            allowed?: string[] | null;
+            /**
+             * Format: int64
+             * @description 有效期（天），从现在算起；0 = 长期
+             */
+            days: number;
+            /** @description 允许写入磁盘 */
+            disk?: boolean;
+            /** @description 授权的项目 ID，至少一个 */
+            projects: string[] | null;
+            /** @description 环境变量名 → 值；没写或为空的保留原值。待填写的每个值都要填 */
+            values?: {
+                [key: string]: string;
+            };
+        };
+        SecretField: {
+            /** @description 环境变量名，例如 CLOUDFLARE_API_TOKEN */
+            env: string;
+            /** @description 已填写值 */
+            filled: boolean;
+            /** @description 获取方式：申请的会话按服务写清步骤，指导用户快速取到 */
+            how?: string;
+            /** @description 显示名，例如 API Token */
+            label: string;
+        };
+        SecretFieldIn: {
+            /** @description 环境变量名，例如 CLOUDFLARE_API_TOKEN */
+            env: string;
+            /** @description 获取方式：按服务写清步骤，指导用户快速取到（例如「Cloudflare 控制台 → 我的个人资料 → API 令牌，模板选编辑 Cloudflare Workers」） */
+            how?: string;
+            /** @description 显示名，例如 API Token；不写时用环境变量名 */
+            label?: string;
+            /** @description 值（只在网页上新建时填） */
+            value?: string;
+        };
+        SecretLog: {
+            /** Format: date-time */
+            at: string;
+            /** @description 取用的命令；已知值已换成「[已隐去]」 */
+            command?: string;
+            /**
+             * Format: int64
+             * @description 授权时选的有效期（天）：0 = 长期，-1 = 不适用
+             */
+            days: number;
+            /** Format: int64 */
+            exit_code: number;
+            /** Format: date-time */
+            finished_at?: string;
+            id: string;
+            /** @enum {string} */
+            kind: "use" | "write" | "request" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke";
+            /** @description 写入磁盘的路径 */
+            path?: string;
+            /** @description 被拒的原因；拒绝申请时的附言 */
+            reason?: string;
+            requirement_code?: string;
+            requirement_id?: string;
+            /** @enum {string} */
+            result?: "" | "running" | "ok" | "failed" | "denied";
+            secret_id: string;
+            session_key?: string;
+            /** @description 会话当时的身份 */
+            session_role?: string;
+            /** @description 会话当时的标题 */
+            session_title?: string;
+        };
+        SecretOutBody: {
+            logs: components["schemas"]["SecretLog"][] | null;
+            secret: components["schemas"]["Secret"];
+        };
+        SecretRequestIn: {
+            /** @description 建议允许的命令，如 "wrangler pages deploy *"（* 单独放最后 = 后面可跟任意参数）；不写 = 不限命令 */
+            allowed?: string[] | null;
+            /**
+             * Format: int64
+             * @description 建议的有效期（天），默认 7；0 = 长期
+             */
+            days?: number;
+            /** @description 要的每个值：环境变量名、显示名、获取方式（按服务写清步骤，指导用户快速取到） */
+            fields: components["schemas"]["SecretFieldIn"][] | null;
+            /** @description 凭据名，例如「Cloudflare 部署」；ks secret run 按它取用 */
+            name: string;
+            /** @description 用途：拿它做什么（用户在申请里看到） */
+            purpose: string;
+            /** @description 关联需求 R-x */
+            requirement?: string;
+            session_key: string;
+        };
+        SecretRequestOutBody: {
+            decision?: components["schemas"]["Decision"];
+            /** @description 已有等待中的申请或凭据已可用，没有新建 */
+            existing: boolean;
+            message: string;
+        };
+        SecretUseOutBody: {
+            /** @description 环境变量名 → 值：只交给 ks 进程放进子进程环境，不要打印 */
+            env: {
+                [key: string]: string;
+            };
+            /** @description 这次取用的记录 ID，命令结束后用它上报退出码 */
+            log_id: string;
+            name: string;
+        };
+        SecretsOutBody: {
+            secrets: components["schemas"]["Secret"][] | null;
         };
         SentMsg: {
             broadcast: boolean;
@@ -7651,6 +8051,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WatchOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-list-secrets": {
+        parameters: {
+            query?: {
+                session_key?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent-list-secretsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-secret-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretRequestIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretRequestOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-secret-use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-secret-useRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretUseOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-secret-finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-secret-finishRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkBodyBody"];
                 };
             };
             /** @description Error */
@@ -10549,6 +11081,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RolePromptView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Create-secretRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "authorize-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretAuthIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "reject-secret-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Reject-secret-requestRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "revoke-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "replace-secret-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Replace-secret-valuesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOutBody"];
                 };
             };
             /** @description Error */

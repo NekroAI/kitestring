@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { RefIndexProvider } from '../ui/refmark'
-import { ArrowLeftRight, FolderKanban, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, Share2, WifiOff } from 'lucide-react'
+import { ArrowLeftRight, FolderKanban, KeyRound, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, Share2, WifiOff } from 'lucide-react'
 import { useCommsPending, useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow, usePref } from '../lib/util'
@@ -28,6 +28,8 @@ const nav: { to: string; label: string; icon: typeof Share2; end?: boolean; keys
   { to: '/comms', label: t.nav.comms, icon: ArrowLeftRight, keys: 'G C' },
   // 分享（R-281）：只在桌面侧边栏；手机底部导航保持 5 格，入口在设置页
   { to: '/shares', label: t.nav.shares, icon: Share2, desktop: true },
+  // 凭据（R-295，D-1438）：放在分享后面，同样只在桌面侧边栏，手机从设置页进
+  { to: '/secrets', label: t.nav.secrets, icon: KeyRound, desktop: true },
   { to: '/settings', label: t.nav.settings, icon: Settings2, keys: 'G S' },
 ]
 
@@ -157,8 +159,8 @@ function Sidebar({ todo, unsent, commsTo, guests, connected, collapsed, onToggle
 
 function TabBar({ todo, unsent, commsTo, guests }: { todo: number; unsent: number; commsTo: string; guests: number }) {
   const { pathname } = useLocation()
-  // 分享页从设置页进入，底部导航把它算在「设置」下
-  const inSettings = pathname.startsWith('/shares')
+  // 分享页、凭据页从设置页进入，底部导航把它们算在「设置」下
+  const inSettings = pathname.startsWith('/shares') || pathname.startsWith('/secrets')
   return (
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 backdrop-blur-xl lg:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5">

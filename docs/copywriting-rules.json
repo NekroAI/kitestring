@@ -63,7 +63,9 @@
     "req": ["草稿", "待开始", "进行中", "受阻", "待验收", "已完成", "已搁置"],
     "decision": ["待答复", "待送达", "已送达", "已关闭"],
     "delivery": ["已送达", "待送达", "无法送达"],
-    "share": ["生效中", "已失效", "已撤回"]
+    "share": ["生效中", "已失效", "已撤回"],
+    "secret": ["生效中", "待填写", "已失效", "已撤回"],
+    "secretResult": ["已完成", "失败", "已拒绝", "未上报结果"]
   },
   "statusKeys": {
     "state.*": ["session"],
@@ -74,7 +76,9 @@
     "device.online": ["device"],
     "device.offline": ["device"],
     "device.never": ["device"],
-    "share.status.*": ["share"]
+    "share.status.*": ["share"],
+    "secret.status.*": ["secret"],
+    "secret.result.*": ["secretResult"]
   },
   "buttons": [
     "common.save", "common.cancel", "common.close", "common.confirm", "common.delete", "common.edit", "common.create",
@@ -89,7 +93,8 @@
     "turns.give", "turns.send", "orphans.ignore", "handoff.copyCmd", "brief.reportOpen", "away.start", "away.confirm", "away.end", "morning.withdraw",
     "share.create", "share.menu", "share.enable", "share.revoke", "share.revokeOk", "share.preview", "share.copyLink", "share.revokeLink", "share.restoreLink",
     "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk",
-    "guest.enter", "guest.toolsAll", "guest.toolsFold", "share.inbox.place", "share.inbox.ignore", "share.inbox.raw", "share.inbox.rewrite", "guest.leave", "guest.send", "guest.toWhole"
+    "guest.enter", "guest.toolsAll", "guest.toolsFold", "share.inbox.place", "share.inbox.ignore", "share.inbox.raw", "share.inbox.rewrite", "guest.leave", "guest.send", "guest.toWhole",
+    "secret.create", "secret.replace", "secret.revoke", "secret.regrant", "secret.fill", "secret.edit", "secret.reject", "secret.save", "secret.addProject", "secret.addCmd", "secret.addField"
   ],
   "buttonMax": 6,
   "allow": [
