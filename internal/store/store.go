@@ -196,6 +196,10 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"requirements", "offer_overdue_at", "TEXT NOT NULL DEFAULT ''"},
 	// 访客留言（R-281）：所有者放入需求的访客留言，记下来源（访客、分享、针对的对象、改写前的原话、附言），JSON
 	{"decisions", "guest", "TEXT NOT NULL DEFAULT ''"},
+	// 可交互原型（R-197）：证据、决策、决策选项挂的原型快照（JSON）
+	{"evidence", "prototypes", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "prototypes", "TEXT NOT NULL DEFAULT ''"},
+	{"decisions", "option_prototypes", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

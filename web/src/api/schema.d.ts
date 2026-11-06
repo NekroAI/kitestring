@@ -2457,6 +2457,8 @@ export interface components {
             /** @description 例：test、screenshot、commit、doc、manual */
             kind: string;
             link?: string;
+            /** @description 可交互原型 ID（R-197），先传到 /api/agent/prototypes */
+            prototypes?: string[] | null;
             session_key?: string;
             /** @description 证据正文；给了 verdict / blocks 时可省略，由 hub 拼出纯文本 */
             summary?: string;
@@ -2669,11 +2671,15 @@ export interface components {
             images?: string[] | null;
             /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
             option_images?: string[] | null;
+            /** @description 每个选项的可交互原型 ID（与 options 一一对应，可留空，R-197） */
+            option_prototypes?: string[] | null;
             options?: string[] | null;
             /** @description 为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision） */
             overturns?: boolean;
             /** @description 要决策的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明 */
             points?: unknown[] | null;
+            /** @description 问题附带的可交互原型 ID（R-197），先传到 /api/agent/prototypes */
+            prototypes?: string[] | null;
             question: string;
             recommendation?: string;
             /**
@@ -3421,6 +3427,7 @@ export interface components {
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
+            option_prototypes?: (components["schemas"]["Prototype"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
             /** Format: date-time */
@@ -3431,6 +3438,7 @@ export interface components {
             points?: components["schemas"]["Block"][] | null;
             project_id?: string;
             project_name?: string;
+            prototypes?: components["schemas"]["Prototype"][] | null;
             proxy_answer?: string;
             /** Format: date-time */
             proxy_at?: string;
@@ -3534,6 +3542,7 @@ export interface components {
             /** @enum {string} */
             kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
+            option_prototypes?: (components["schemas"]["Prototype"][] | null)[] | null;
             options: string[] | null;
             origin_session?: string;
             /** Format: date-time */
@@ -3544,6 +3553,7 @@ export interface components {
             points?: components["schemas"]["Block"][] | null;
             project_id?: string;
             project_name?: string;
+            prototypes?: components["schemas"]["Prototype"][] | null;
             proxy_answer?: string;
             /** Format: date-time */
             proxy_at?: string;
@@ -3754,6 +3764,7 @@ export interface components {
             kind: string;
             link: string;
             payload?: components["schemas"]["Payload"];
+            prototypes?: components["schemas"]["Prototype"][] | null;
             requirement_id: string;
             /** @description 交证据时会话的身份快照（R-195） */
             role?: string;
@@ -4233,6 +4244,8 @@ export interface components {
             label?: string;
             /** @description metrics / scope：一句补充 */
             note?: string;
+            /** @description options（要决策的点）：这个选项的可交互原型（R-197） */
+            prototype?: components["schemas"]["Prototype"];
             /** @description options：是否推荐 */
             recommended?: boolean;
             /**
@@ -5002,6 +5015,51 @@ export interface components {
             projects: components["schemas"]["Project"][] | null;
             workspaces: components["schemas"]["Workspace"][] | null;
         };
+        Prototype: {
+            /** @description 封面（Agent 交的截图）；没交时网页显示占位图 */
+            cover?: components["schemas"]["File"];
+            /** Format: date-time */
+            created_at: string;
+            /** @description 下载整包的地址 */
+            download_url: string;
+            /** @description 入口页面在包里的路径 */
+            entry: string;
+            /**
+             * Format: int64
+             * @description 包里的文件数
+             */
+            files: number;
+            id: string;
+            /** @description 同一原型各版本共用的编号（第 1 版的 ID） */
+            lineage: string;
+            /**
+             * Format: int64
+             * @description zip 包大小（字节）
+             */
+            size: number;
+            title: string;
+            /** @description 打开地址（隔离路径） */
+            url: string;
+            /**
+             * Format: int64
+             * @description 第几版（从 1 开始）
+             */
+            version: number;
+            versions?: components["schemas"]["PrototypeVersion"][] | null;
+        };
+        PrototypeVersion: {
+            /** Format: date-time */
+            created_at: string;
+            download_url: string;
+            /** Format: int64 */
+            files: number;
+            id: string;
+            /** Format: int64 */
+            size: number;
+            url: string;
+            /** Format: int64 */
+            version: number;
+        };
         PushSub: {
             /** Format: date-time */
             created_at: string;
@@ -5593,6 +5651,11 @@ export interface components {
             upload_image_mb?: number;
             /**
              * Format: int64
+             * @description 可交互原型包（zip）大小上限（MB），0 或留空用默认 20
+             */
+            upload_prototype_mb?: number;
+            /**
+             * Format: int64
              * @description 录屏大小上限（MB），0 或留空用默认 50
              */
             upload_video_mb?: number;
@@ -5625,6 +5688,11 @@ export interface components {
              * @description 图片大小上限（MB）
              */
             upload_image_mb: number;
+            /**
+             * Format: int64
+             * @description 可交互原型包（zip）大小上限（MB，R-197）
+             */
+            upload_prototype_mb: number;
             /**
              * Format: int64
              * @description 录屏大小上限（MB）

@@ -30,6 +30,7 @@ export type Block = Schemas['Block']
 export type BlockItem = Schemas['Item']
 export type Payload = Schemas['Payload']
 export type Evidence = Schemas['Evidence']
+export type Prototype = Schemas['Prototype']
 export type StatusChange = Schemas['StatusChange']
 export type ReviewState = Schemas['ReviewState']
 

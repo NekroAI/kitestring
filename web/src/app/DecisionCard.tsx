@@ -13,6 +13,7 @@ import { HoldNote } from './morning'
 import { ThumbImg, Thumbs, uploadsBusy, ZoomButton } from '../ui/attach'
 import { isImage } from '../lib/files'
 import { BlockList } from '../ui/blocks'
+import { ProtoCover, ProtoList, ProtoOpen } from '../ui/proto'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, decDraftKey, decKey, emptyDraft, useOutbox, type Draft } from './outbox'
@@ -192,8 +193,9 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const free = !multi && (options.length === 0 || draft.choice === 'other')
   const title = titleOf(d)
-  // 方案对比：任一选项带效果图时，选项改为看图点选的卡片
-  const visual = (d.option_files ?? []).some((f) => f?.length)
+  // 方案对比：任一选项带效果图或原型（R-197）时，选项改为看图点选的卡片
+  const optProto = (i: number) => d.option_prototypes?.[i]?.[0]
+  const visual = (d.option_files ?? []).some((f) => f?.length) || (d.option_prototypes ?? []).some((p) => p?.length)
   const optImgs = (d.option_files ?? []).flatMap((fs) => fs?.slice(0, 1) ?? [])
   // 在选项效果图上“标注并附上”：把标注图附进答复（附言框常驻，R-161）
   const [incoming, setIncoming] = useState<File[]>([])
@@ -263,6 +265,7 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
           </div>
         )}
         {ctxOther.length > 0 && <Thumbs files={ctxOther} />}
+        <ProtoList ps={d.prototypes} />
 
         {multi && <Points d={d} picks={picks} onPick={(i, k) => setDraft(d.code, { picks: picks.map((c, j) => (j === i ? k : c)) })} />}
 
@@ -271,7 +274,8 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
             {options.map((o, i) => {
               const on = draft.choice === i
               const img = d.option_files?.[i]?.[0]
-              if (!img) return null // 没有效果图的选项放到下面的列表里
+              const pr = optProto(i)
+              if (!img && !pr) return null // 没有效果图、原型的选项放到下面的列表里
               return (
                 <div
                   key={i}
@@ -285,15 +289,26 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
                     on ? 'border-accent shadow-xs ring-2 ring-accent/30' : 'border-line hover:border-line-strong hover:shadow-xs',
                   )}
                 >
-                  <div className="relative aspect-[16/10] overflow-hidden border-b border-line bg-sunken">
-                    <ThumbImg id={img.id} alt={o} loading="lazy" className="size-full object-cover object-top transition-transform duration-300 group-hover/opt:scale-[1.02]" />
-                    <span className="absolute top-2 right-2 opacity-0 transition group-hover/opt:opacity-100 pointer-coarse:opacity-100" onClick={(e) => e.stopPropagation()}>
-                      <ZoomButton f={img} group={optImgs} />
-                    </span>
-                  </div>
+                  {pr ? (
+                    <ProtoOpen p={pr} className="border-b border-line">
+                      <ProtoCover p={pr} className="aspect-[16/10]" />
+                    </ProtoOpen>
+                  ) : (
+                    img && (
+                      <div className="relative aspect-[16/10] overflow-hidden border-b border-line bg-sunken">
+                        <ThumbImg id={img.id} alt={o} loading="lazy" className="size-full object-cover object-top transition-transform duration-300 group-hover/opt:scale-[1.02]" />
+                        <span className="absolute top-2 right-2 opacity-0 transition group-hover/opt:opacity-100 pointer-coarse:opacity-100" onClick={(e) => e.stopPropagation()}>
+                          <ZoomButton f={img} group={optImgs} />
+                        </span>
+                      </div>
+                    )
+                  )}
                   <div className="flex items-start gap-2.5 px-3 py-2.5 text-sm">
                     <span className={cx('mt-px flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular transition-colors', on ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong text-fg-3')}>{i + 1}</span>
-                    <span className="min-w-0 flex-1 leading-relaxed break-words">{o}</span>
+                    <span className="min-w-0 flex-1 leading-relaxed break-words">
+                      {o}
+                      {pr && <span className="mt-0.5 block text-xs text-fg-3">{t.proto.tapToOpen(pr.version)}</span>}
+                    </span>
                     {i === ri && (
                       <Badge tone="accent" icon={<Sparkles className="size-3" />}>
                         {t.decision.recommended}
@@ -309,7 +324,7 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
         {options.length > 0 && !approval && (
           <div className="space-y-1.5" role={visual ? undefined : 'radiogroup'}>
             {options.map((o, i) => {
-              if (visual && d.option_files?.[i]?.length) return null
+              if (visual && (d.option_files?.[i]?.length || optProto(i))) return null
               const on = draft.choice === i
               return (
                 <button

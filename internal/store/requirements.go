@@ -99,6 +99,8 @@ type Evidence struct {
 	Summary       string    `json:"summary"`
 	Link          string    `json:"link"`
 	Files         []FileRef `json:"files"`
+	// Prototypes：附的可交互原型（R-197），读出时换成同一原型的最新版并带全部版本
+	Prototypes []Prototype `json:"prototypes,omitempty"`
 	// Payload 是结构化证据（R-97）：一句结论、清单与表达块、要你做的、折叠的细节。旧证据没有，只按 summary 显示。
 	Payload *blocks.Payload `json:"payload,omitempty"`
 	Voided  bool            `json:"voided"`
@@ -539,8 +541,8 @@ func (s *Store) AddEvidence(ctx context.Context, e Evidence) (Evidence, error) {
 	e.ID = protocol.NewID()
 	e.CreatedAt = time.Now()
 	e.SessionTitle, e.Role = sessionSnap(ctx, s.db, e.SessionKey)
-	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, files, payload, session_title, role, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, filesJSON(e.Files), blocks.Encode(e.Payload), e.SessionTitle, e.Role, ts(e.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO evidence(id, requirement_id, session_key, kind, summary, link, files, payload, session_title, role, created_at, prototypes) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.RequirementID, nullStr(e.SessionKey), e.Kind, e.Summary, e.Link, filesJSON(e.Files), blocks.Encode(e.Payload), e.SessionTitle, e.Role, ts(e.CreatedAt), protosJSON(e.Prototypes))
 	return e, err
 }
 
@@ -572,17 +574,23 @@ func (s *Store) listEvidence(ctx context.Context, reqID, cond string) ([]Evidenc
 		}
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	s.fillEvidencePrototypes(ctx, out)
+	return out, nil
 }
 
-const evidenceCols = `id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, payload, voided, void_reason, voided_by, voided_role, voided_at, session_title, role, created_at`
+const evidenceCols = `id, requirement_id, COALESCE(session_key, ''), kind, summary, link, files, payload, voided, void_reason, voided_by, voided_role, voided_at, session_title, role, created_at, prototypes`
 
 func scanEvidence(row interface{ Scan(...any) error }) (Evidence, error) {
 	var e Evidence
-	var created, files, payload, voidedAt string
-	if err := row.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &payload, &e.Voided, &e.VoidReason, &e.VoidedBy, &e.VoidedRole, &voidedAt, &e.SessionTitle, &e.Role, &created); err != nil {
+	var created, files, payload, voidedAt, protos string
+	if err := row.Scan(&e.ID, &e.RequirementID, &e.SessionKey, &e.Kind, &e.Summary, &e.Link, &files, &payload, &e.Voided, &e.VoidReason, &e.VoidedBy, &e.VoidedRole, &voidedAt, &e.SessionTitle, &e.Role, &created, &protos); err != nil {
 		return e, err
 	}
+	e.Prototypes = parseProtos(protos)
 	e.Payload = blocks.Decode[blocks.Payload](payload)
 	e.Files = parseFiles(files)
 	e.CreatedAt = parseTS(created)

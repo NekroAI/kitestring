@@ -67,20 +67,21 @@ type File struct {
 // checklist 用 criterion / text / result / why / see；metrics 用 label / value / unit / note / trend；
 // scope 用 label（模块）/ count / note；options 用 label / desc / recommended / image。
 type Item struct {
-	Criterion   int       `json:"criterion,omitempty" doc:"checklist：对应第几条验收标准（从 1 开始）"`
-	Text        string    `json:"text,omitempty" doc:"checklist：这一项验收标准"`
-	Result      string    `json:"result,omitempty" enum:"pass,fail,ask" doc:"checklist：pass 达标 / fail 未达标 / ask 要你看"`
-	Why         string    `json:"why,omitempty" doc:"checklist：一句依据"`
-	See         string    `json:"see,omitempty" doc:"checklist：关联的块 id，点这一项会跳到那个块"`
-	Label       string    `json:"label,omitempty" doc:"metrics：指标名；scope：模块名；options：选项名"`
-	Value       string    `json:"value,omitempty" doc:"metrics：数值"`
-	Unit        string    `json:"unit,omitempty" doc:"metrics：单位"`
-	Note        string    `json:"note,omitempty" doc:"metrics / scope：一句补充"`
-	Trend       []float64 `json:"trend,omitempty" doc:"metrics：小趋势线的数据点"`
-	Count       int       `json:"count,omitempty" doc:"scope：改动数"`
-	Desc        string    `json:"desc,omitempty" doc:"options：一句说明"`
-	Recommended bool      `json:"recommended,omitempty" doc:"options：是否推荐"`
-	Image       *File     `json:"image,omitempty" doc:"options：效果图"`
+	Criterion   int        `json:"criterion,omitempty" doc:"checklist：对应第几条验收标准（从 1 开始）"`
+	Text        string     `json:"text,omitempty" doc:"checklist：这一项验收标准"`
+	Result      string     `json:"result,omitempty" enum:"pass,fail,ask" doc:"checklist：pass 达标 / fail 未达标 / ask 要你看"`
+	Why         string     `json:"why,omitempty" doc:"checklist：一句依据"`
+	See         string     `json:"see,omitempty" doc:"checklist：关联的块 id，点这一项会跳到那个块"`
+	Label       string     `json:"label,omitempty" doc:"metrics：指标名；scope：模块名；options：选项名"`
+	Value       string     `json:"value,omitempty" doc:"metrics：数值"`
+	Unit        string     `json:"unit,omitempty" doc:"metrics：单位"`
+	Note        string     `json:"note,omitempty" doc:"metrics / scope：一句补充"`
+	Trend       []float64  `json:"trend,omitempty" doc:"metrics：小趋势线的数据点"`
+	Count       int        `json:"count,omitempty" doc:"scope：改动数"`
+	Desc        string     `json:"desc,omitempty" doc:"options：一句说明"`
+	Recommended bool       `json:"recommended,omitempty" doc:"options：是否推荐"`
+	Image       *File      `json:"image,omitempty" doc:"options：效果图"`
+	Prototype   *Prototype `json:"prototype,omitempty" doc:"options（要决策的点）：这个选项的可交互原型（R-197）"`
 }
 
 // Block 是一个表达块。
@@ -161,7 +162,11 @@ type Resolver func(ref string) (f File, ok bool)
 
 // Parse 宽松解析 Agent 交来的块列表（JSON 解出的 []any）。不合法的块丢掉，并在 warnings 里写清楚哪一个、为什么。
 func Parse(raw []any, resolve Resolver) (out []Block, warnings []string) {
-	p := parser{resolve: resolve}
+	return parse(raw, resolve, nil)
+}
+
+func parse(raw []any, resolve Resolver, proto ProtoResolver) (out []Block, warnings []string) {
+	p := parser{resolve: resolve, proto: proto}
 	if len(raw) > MaxBlocks {
 		p.warn(fmt.Sprintf("块最多 %d 个，后面 %d 个没有保存", MaxBlocks, len(raw)-MaxBlocks))
 		raw = raw[:MaxBlocks]
@@ -245,6 +250,7 @@ func Encode(v any) string {
 
 type parser struct {
 	resolve  Resolver
+	proto    ProtoResolver
 	at       string
 	warnings []string
 }
@@ -378,6 +384,13 @@ func (p *parser) block(m map[string]any) (Block, bool) {
 			}
 			if v := o["image"]; v != nil && str(v) != "" {
 				it.Image = p.file(v, fmt.Sprintf("%s第 %d 项的 image", at, j+1))
+			}
+			if id := str(o["prototype"]); id != "" && p.proto != nil {
+				if x, ok := p.proto(id); ok {
+					it.Prototype = &x
+				} else {
+					p.warn(fmt.Sprintf("%s第 %d 项的 prototype 找不到（%s），没有挂上原型", at, j+1, id))
+				}
 			}
 			b.Items = append(b.Items, it)
 		}
@@ -691,7 +704,11 @@ func PointsToRaw(points []any) []any {
 
 // ParsePoints 解析要决策的点：每个点要有问题和至少 2 个选项；不合法的点丢掉并说明。
 func ParsePoints(points []any, resolve Resolver) (out []Block, warnings []string) {
-	bs, warns := Parse(PointsToRaw(points), resolve)
+	return parsePoints(points, resolve, nil)
+}
+
+func parsePoints(points []any, resolve Resolver, proto ProtoResolver) (out []Block, warnings []string) {
+	bs, warns := parse(PointsToRaw(points), resolve, proto)
 	for _, b := range bs {
 		if strings.TrimSpace(b.Title) == "" {
 			var labels []string

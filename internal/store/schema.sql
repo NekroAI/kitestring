@@ -603,3 +603,23 @@ CREATE TABLE IF NOT EXISTS share_comments (
 );
 CREATE INDEX IF NOT EXISTS share_comments_status ON share_comments(status, created_at);
 CREATE INDEX IF NOT EXISTS share_comments_link ON share_comments(link_id, created_at);
+
+-- 可交互原型（R-197）：zip 原样存成附件（files），这里记版本、入口、封面和访问令牌。
+-- 同一需求下同标题重交（或指定 version_of）即为新版本，lineage 是第 1 版的 ID。
+CREATE TABLE IF NOT EXISTS prototypes (
+	id             TEXT PRIMARY KEY,
+	lineage        TEXT NOT NULL,
+	version        INTEGER NOT NULL,
+	requirement_id TEXT NOT NULL DEFAULT '',
+	title          TEXT NOT NULL,
+	entry          TEXT NOT NULL,
+	file_id        TEXT NOT NULL,
+	cover_id       TEXT NOT NULL DEFAULT '',
+	token          TEXT NOT NULL UNIQUE,
+	files          INTEGER NOT NULL DEFAULT 0,
+	size           INTEGER NOT NULL DEFAULT 0,
+	session_key    TEXT NOT NULL DEFAULT '',
+	created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS prototypes_lineage ON prototypes(lineage, version);
+CREATE INDEX IF NOT EXISTS prototypes_req ON prototypes(requirement_id, title);

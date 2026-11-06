@@ -8,6 +8,7 @@ import { Badge, Tip } from '../ui/base'
 import { fileUrl, thumbUrl, ThumbImg, isVideo, Lightbox, Thumbs, type ViewShot } from '../ui/attach'
 import { criteriaOf, ResultIcon, Score } from '../ui/blocks'
 import { shotTitle } from '../ui/shots'
+import { ProtoList } from '../ui/proto'
 import { Md } from '../ui/markdown'
 import { Linkify } from '../ui/refmark'
 import { evidenceKind } from './review'
@@ -289,6 +290,7 @@ export function EvidenceBody({ e, r }: { e: Evidence; r: Requirement }) {
       ) : (
         <LegacyBody text={e.summary} />
       )}
+      <ProtoList ps={e.prototypes} />
       <Gallery shots={shots} group={group} />
       {rest.length > 0 && (
         <div className="space-y-1.5">
@@ -373,6 +375,7 @@ export function EvidenceRow({ e, onOpen, voidedOnBack }: { e: Evidence; onOpen: 
           <Linkify text={gist(e)} />
         </span>
         {items.length > 0 && <Score items={items} className="shrink-0 text-xs" />}
+        {!!e.prototypes?.length && <span className="shrink-0 text-xs text-fg-3">{t.proto.count(e.prototypes.length)}</span>}
         {n > 0 && <span className="shrink-0 text-xs text-fg-3">{t.proof.shotCount(n)}</span>}
         <span className="shrink-0 text-xs text-fg-3 tabular @max-[559px]:hidden">{relTime(e.created_at, now)}</span>
         <ChevronRight aria-hidden className="size-3.5 shrink-0 text-fg-3" />

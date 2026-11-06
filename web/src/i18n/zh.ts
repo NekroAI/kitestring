@@ -1789,6 +1789,23 @@ export const zh = {
     reviewTask: '提交评审',
     reason: '的理由',
   },
+  // 可交互原型（R-197）：证据、决策里的原型卡片和全屏查看器
+  proto: {
+    badge: '原型',
+    meta: (v: number, files: number, size: string) => `第 ${v} 版 · ${files} 个文件 · ${size}`,
+    version: (v: number) => `第 ${v} 版`,
+    history: (n: number) => `历史版本 ${n}`,
+    open: '打开',
+    openAria: (title: string) => `打开原型「${title}」`,
+    tapToOpen: (v: number) => `点图打开原型 · 第 ${v} 版`,
+    count: (n: number) => `${n} 个原型`,
+    widths: { phone: '手机 390', tablet: '平板 820', desktop: '电脑 1280', fit: '适应窗口' },
+    newTab: '新标签打开',
+    download: '下载',
+    close: '关闭',
+    isolated: '原型在隔离环境中运行，读不到纸鸢的数据，外部链接已停用',
+    unavailable: '这个原型现在打不开',
+  },
   // 看图（R-195）：右栏「这张图证明」和「标注」，点哪条放大到哪个框
   viewer: {
     proves: '这张图证明',
@@ -2222,6 +2239,7 @@ export const zh = {
         image: '图片（MB）',
         video: '录屏（MB）',
         file: '其它文件（MB）',
+        prototype: '原型包（MB）',
       },
       devRequest: {
         get title() {

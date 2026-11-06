@@ -17,6 +17,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/NekroAI/kitestring/internal/blocks"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -39,6 +40,8 @@ type guestCtx struct {
 	share store.Share
 	link  store.ShareLink
 	scope store.ShareScope
+	// protoBase 给原型 ID 算访客地址的根（R-197）；没有时原型只显示卡片、打不开
+	protoBase func(id string) string
 }
 
 func (g *guestCtx) inScopeSession(key string) bool { return key != "" && g.scope.Sessions[key] }
@@ -136,7 +139,7 @@ func (h *Hub) guestAuth(ctx context.Context, token, cookie string) (*guestCtx, e
 	if err != nil {
 		return nil, err
 	}
-	return &guestCtx{share: x, link: l, scope: sc}, nil
+	return &guestCtx{share: x, link: l, scope: sc, protoBase: h.guestProtoBaser(ctx, x, l)}, nil
 }
 
 func notIncluded() error { return huma.Error404NotFound(shareNotIncluded) }
@@ -243,6 +246,11 @@ func (g *guestCtx) decision(d store.Decision) store.Decision {
 	d.ProxyBy = g.keep(d.ProxyBy)
 	d.SessionState, d.DeviceName, d.DeliveredTurn = "", "", ""
 	d.ProjectID = ""
+	g.protos(d.Prototypes)
+	for i := range d.OptionPrototypes {
+		g.protos(d.OptionPrototypes[i])
+	}
+	blocks.WalkPrototypes(d.Points, g.proto)
 	return d
 }
 
@@ -265,6 +273,7 @@ func (g *guestCtx) requirement(r store.Requirement) store.Requirement {
 	}
 	for i := range r.Evidence {
 		r.Evidence[i].SessionKey = g.keep(r.Evidence[i].SessionKey)
+		g.protos(r.Evidence[i].Prototypes)
 	}
 	for i := range r.Reviews {
 		r.Reviews[i].SessionKey = g.keep(r.Reviews[i].SessionKey)

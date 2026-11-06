@@ -62,6 +62,8 @@ type UploadLimits struct {
 	ImageMB int `json:"image_mb,omitempty"`
 	VideoMB int `json:"video_mb,omitempty"`
 	FileMB  int `json:"file_mb,omitempty"`
+	// PrototypeMB：可交互原型包（zip）的上限（R-197），0 = 默认 20
+	PrototypeMB int `json:"prototype_mb,omitempty"`
 }
 
 const (

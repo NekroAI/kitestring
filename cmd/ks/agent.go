@@ -82,7 +82,7 @@ var reqFlags = map[string][]string{
 	"edit":     {"title", "detail", "acceptance", "priority", "type", "approval", "reason", "from-decision"},
 	"status":   {"reason", "reason-kind", "on"},
 	"request":  {"reason"},
-	"evidence": {"kind", "link", "verdict", "details", "blocks", "todo", "aside", "image", "images", "video", "reason"},
+	"evidence": {"kind", "link", "verdict", "details", "blocks", "todo", "aside", "image", "images", "video", "reason", "prototype"},
 	"assign":   {"to", "comment", "reason"},
 	"review":   {"verdict", "details", "blocks", "image", "images"},
 	"comment":  {"blocks", "image"},
@@ -267,6 +267,36 @@ func rawHasChecklist(raw []any) bool {
 }
 
 // attachFiles 经本机 daemon 上传文件，把附件 ID 写入 body["files"]。
+const protoFlagHelp = "可交互原型（R-197），可重复：本机目录、单个 .html 或 .zip 的路径，或 JSON 对象 {\"path\", \"title\", \"cover\": 封面截图, \"entry\": 入口页面, \"version_of\": 原型 ID}；同一需求下同标题重交即为新版本；交之前可用 ks proto check 自检"
+
+// attachProtos 交原型包（R-197），把原型 ID 写进 body[key]。aligned：与选项一一对应，空的留空字符串。
+func attachProtos(body map[string]any, key string, specs []string, requirement, sessionKey string, aligned bool) error {
+	if len(specs) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	c := client.New(5 * time.Minute)
+	var ids []string
+	for _, x := range specs {
+		spec, ok := client.ParseProtoSpec(x)
+		if !ok {
+			if aligned {
+				ids = append(ids, "")
+			}
+			continue
+		}
+		up, err := c.UploadPrototype(ctx, spec, requirement, sessionKey)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "已交"+up.Note())
+		ids = append(ids, up.ID)
+	}
+	body[key] = ids
+	return nil
+}
+
 func attachFiles(body map[string]any, paths []string) error {
 	if len(paths) == 0 {
 		return nil
@@ -339,6 +369,8 @@ func runReq(args []string) error {
 	fs.Var(&images, "image", "create / evidence / review / comment：附图路径，可重复；evidence / review 还可以写成 JSON 对象 {\"path\": 路径, \"title\": 一句话标题, \"boxes\": [{\"x\", \"y\", \"w\", \"h\", \"label\", \"criterion\"}]}（框用 0～1 的比例坐标，criterion 可选：这个框证明第几条验收点）")
 	shotsArg := fs.String("images", "", "evidence / review：带标题和改动框的附图，JSON 数组或 JSON 文件路径：[{\"path\", \"title\", \"boxes\"}]，按顺序显示，重点图放前面")
 	fs.Var(&videos, "video", "evidence：录屏路径（MP4/WebM），可重复；只在用户要求时附加")
+	var protos stringList
+	fs.Var(&protos, "prototype", protoFlagHelp)
 	actionOnly := fs.Bool("action-only", false, "watch：只收要动手的提醒（验收标准被改、评审不通过、关联决策被作答、被退回或受阻）")
 	watchJSON := fs.Bool("json", false, "watch / unwatch / watching：输出原始 JSON")
 	if err := parseAnywhere(fs, args); err != nil {
@@ -420,7 +452,7 @@ func runReq(args []string) error {
 			return agentCall("POST", "/agent/evidence/"+url.PathEscape(fs.Arg(1))+"/void", map[string]any{"session_key": key, "reason": *reason})
 		}
 		if fs.NArg() < 1 || fs.NArg() < 2 && *verdict == "" {
-			return fmt.Errorf("用法：ks req evidence <R-编号> [证据正文] [--verdict 一句结论] [--blocks 块.json] [--todo ...] [--details ...] [--aside ...] [--kind test] [--link ...] [--image 截图.png 或 '{\"path\":…,\"title\":…,\"boxes\":[…]}'] [--images 附图.json] [--video 录屏.webm]\n%s\n表达块：%s", evidenceGuide, writing.BlocksGuide)
+			return fmt.Errorf("用法：ks req evidence <R-编号> [证据正文] [--verdict 一句结论] [--blocks 块.json] [--todo ...] [--details ...] [--aside ...] [--kind test] [--link ...] [--image 截图.png 或 '{\"path\":…,\"title\":…,\"boxes\":[…]}'] [--images 附图.json] [--video 录屏.webm] [--prototype 原型目录、.html 或 .zip]\n%s\n表达块：%s", evidenceGuide, writing.BlocksGuide)
 		}
 		body := map[string]any{"kind": *kind, "summary": fs.Arg(1), "link": *link, "session_key": key, "verdict": *verdict, "details": *details}
 		if len(todo) > 0 {
@@ -437,6 +469,9 @@ func runReq(args []string) error {
 		}
 		raw, err := attachBlocks(body, *blocksArg)
 		if err != nil {
+			return err
+		}
+		if err := attachProtos(body, "prototypes", protos, fs.Arg(0), key, false); err != nil {
 			return err
 		}
 		out, err := agentCallOut("POST", "/agent/requirements/"+url.PathEscape(fs.Arg(0))+"/evidence", compact(body))
@@ -600,7 +635,7 @@ func runDecision(args []string) error {
 		return runAnswer(args[1:])
 	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要决策的点.json] [--summary 方案要点]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要决策的点.json] [--summary 方案要点] [--prototype 原型] [--option-prototype 选项的原型]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
@@ -616,6 +651,9 @@ func runDecision(args []string) error {
 	var opts, optImgs stringList
 	fs.Var(&opts, "option", "选项，可重复")
 	fs.Var(&optImgs, "option-image", "选项的效果图路径，按 --option 的顺序一一对应，可重复")
+	var protos, optProtos stringList
+	fs.Var(&protos, "prototype", protoFlagHelp)
+	fs.Var(&optProtos, "option-prototype", "选项的可交互原型，按 --option 的顺序一一对应（没有的写空字符串），写法同 --prototype")
 	approval := fs.Bool("approval", false, "请用户批准（选项固定为批准 / 拒绝，两种都可以附言）")
 	var imgs stringList
 	fs.Var(&imgs, "image", "问题附带的图片路径（例如待批准的方案图），可重复")
@@ -671,6 +709,23 @@ func runDecision(args []string) error {
 	}
 	if len(summary) > 0 {
 		body["summary"] = []string(summary)
+	}
+	if err := attachProtos(body, "prototypes", protos, *req, cliSession(*session), false); err != nil {
+		return err
+	}
+	if err := attachProtos(body, "option_prototypes", optProtos, *req, cliSession(*session), true); err != nil {
+		return err
+	}
+	if pts, ok := body["points"].([]any); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		var notes []string
+		if err := client.New(5*time.Minute).PointPrototypes(ctx, pts, *req, cliSession(*session), &notes); err != nil {
+			return err
+		}
+		for _, n := range notes {
+			fmt.Fprintln(os.Stderr, "已交"+n)
+		}
 	}
 	out, err := agentCallOut("POST", "/agent/decisions", compact(body))
 	if err != nil {

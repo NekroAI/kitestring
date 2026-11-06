@@ -49,7 +49,7 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
 - 会话之间：细节用 req_comment 写进需求留言，team_tell（旧名 pm_notify）的消息只放编号加一句话请对方去看；本项目有哪些会话、谁现在能立即送达，用 team_sessions（ks team sessions）查。点对点用 team_tell（to 填身份或会话键），好几个会话都要知道用 team_broadcast（要动手的广播只有主调度、主助理能发，别人用 fyi = true 只告知）；发出后用 team_sent 看已送达 / 待送达 / 无法送达。关联或在做的需求默认订阅，有变动时收到一句话提醒（自己引起的不通知）；别的需求要跟进用 req_watch 订阅，不想收用 req_watch off = true 退订，req_watching 看订阅了哪些。
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
-- 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图，用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
+- 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图（要试交互的用 option_prototypes 附可交互原型），用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
 - 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开始。计划开始或阶段解锁时，该阶段的需求会指派给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动指派给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
@@ -215,17 +215,18 @@ type reqEditIn struct {
 }
 
 type evidenceIn struct {
-	Ref     string           `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
-	Kind    string           `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
-	Verdict string           `json:"verdict,omitempty" jsonschema:"一句结论，40 字以内，写用户能看到的变化。纸鸢用大字放在最上面"`
-	Blocks  []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（推荐，验收证据至少给一个 checklist），类型和字段见工具说明"`
-	Todo    []string         `json:"todo,omitempty" jsonschema:"要你做的：只写机器验证不了、要用户动手或决策的事，每条一句；没有就不写"`
-	Details string           `json:"details,omitempty" jsonschema:"实现细节（改了哪些文件、测试命令），默认折叠"`
-	Aside   []string         `json:"aside,omitempty" jsonschema:"和本需求无关的顺带改动，每条一句，默认折叠"`
-	Summary string           `json:"summary,omitempty" jsonschema:"证据正文（可用 Markdown）。给了 verdict 和 blocks 时可以不写，纸鸢会拼出纯文本；只写文字时按顺序写：1. 第一句是结论，40 字以内，写用户能看到的变化（例如：登录页支持“记住我”，重开浏览器不用再登录）；2. 逐条对照验收标准，每条写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图（如：图 1）；3. 你需要做的：只写机器验证不了、要用户动手或决策的事，没有就不写；4. 风险或副作用（可选）；5. 实现细节放最后（改了哪些文件、测试命令）；和本需求无关的顺带改动单列，或另记需求。全文建议 600 字以内"`
-	Link    string           `json:"link,omitempty" jsonschema:"链接或文件路径"`
-	Images  []any            `json:"images,omitempty" jsonschema:"截图（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时按这里的顺序全部显示：重点看的放前面，补充、测试一类的放后面。每项写成 {path: 本机路径, title: 一句话标题（20 字以内，如：工作台 · 带鱼屏 · 没有待办时）, boxes: [{x, y, w, h, label: 一句标签, criterion: 对应第几条验收点（可选）}]}；boxes 用矩形框标出这次改动的地方，坐标是图片原始尺寸的比例（0～1，左上角为原点），看图时画在图上、可一键隐藏；写了 criterion 的框会裁成小图放在那条验收点旁边。只写路径字符串也行，但网页只能用文件名当标题。已经放进 figure / compare 块的图不用再列"`
-	Videos  []string         `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
+	Ref        string           `json:"ref" jsonschema:"需求编号（如 R-12）或 ID"`
+	Kind       string           `json:"kind" jsonschema:"证据类型：test、commit、screenshot、doc、manual 等"`
+	Verdict    string           `json:"verdict,omitempty" jsonschema:"一句结论，40 字以内，写用户能看到的变化。纸鸢用大字放在最上面"`
+	Blocks     []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（推荐，验收证据至少给一个 checklist），类型和字段见工具说明"`
+	Todo       []string         `json:"todo,omitempty" jsonschema:"要你做的：只写机器验证不了、要用户动手或决策的事，每条一句；没有就不写"`
+	Details    string           `json:"details,omitempty" jsonschema:"实现细节（改了哪些文件、测试命令），默认折叠"`
+	Aside      []string         `json:"aside,omitempty" jsonschema:"和本需求无关的顺带改动，每条一句，默认折叠"`
+	Summary    string           `json:"summary,omitempty" jsonschema:"证据正文（可用 Markdown）。给了 verdict 和 blocks 时可以不写，纸鸢会拼出纯文本；只写文字时按顺序写：1. 第一句是结论，40 字以内，写用户能看到的变化（例如：登录页支持“记住我”，重开浏览器不用再登录）；2. 逐条对照验收标准，每条写“通过 / 未通过 / 需你确认”和一句依据，标上对应截图（如：图 1）；3. 你需要做的：只写机器验证不了、要用户动手或决策的事，没有就不写；4. 风险或副作用（可选）；5. 实现细节放最后（改了哪些文件、测试命令）；和本需求无关的顺带改动单列，或另记需求。全文建议 600 字以内"`
+	Link       string           `json:"link,omitempty" jsonschema:"链接或文件路径"`
+	Images     []any            `json:"images,omitempty" jsonschema:"截图（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），用户验收时按这里的顺序全部显示：重点看的放前面，补充、测试一类的放后面。每项写成 {path: 本机路径, title: 一句话标题（20 字以内，如：工作台 · 带鱼屏 · 没有待办时）, boxes: [{x, y, w, h, label: 一句标签, criterion: 对应第几条验收点（可选）}]}；boxes 用矩形框标出这次改动的地方，坐标是图片原始尺寸的比例（0～1，左上角为原点），看图时画在图上、可一键隐藏；写了 criterion 的框会裁成小图放在那条验收点旁边。只写路径字符串也行，但网页只能用文件名当标题。已经放进 figure / compare 块的图不用再列"`
+	Prototypes []any            `json:"prototypes,omitempty" jsonschema:"可交互原型（R-197）：Agent 做的 HTML 原型 / 效果图页面，用户在纸鸢里直接打开（隔离运行，读不到纸鸢的接口和登录态）。每项写成 {path: 本机目录、单个 .html 或 .zip, title: 一句话标题, cover: 封面截图路径（推荐，没有时显示占位图）, entry: 入口页面（不写时找 index.html）, version_of: 原型 ID（可选）}，只写路径也行。同一需求下同标题重交即为新版本，用户能切历史版本。默认单个包不超过 20 MB、500 个文件，交之前可用 ks proto check 自检"`
+	Videos     []string         `json:"videos,omitempty" jsonschema:"本机录屏文件路径（MP4/WebM/MOV，默认单个不超过 50 MB，上限可在 Hub 设置里调）。只在用户明确要求录屏或视频时才附加，平时用截图"`
 }
 
 type evidenceVoidIn struct {
@@ -244,13 +245,15 @@ type decisionIn struct {
 	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的要决策的点，那些另开决策。建议 400 字以内"`
 	Options           []string         `json:"options,omitempty" jsonschema:"候选选项"`
 	OptionImages      []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
+	OptionPrototypes  []any            `json:"option_prototypes,omitempty" jsonschema:"每个选项的可交互原型（R-197），与 options 一一对应，没有的留空字符串；写法同 prototypes。比较交互方案时用，用户点开每套原型试用后再选。要决策的点里的选项也可以写 prototype"`
+	Prototypes        []any            `json:"prototypes,omitempty" jsonschema:"问题附带的可交互原型（例如待批准方案的原型），写法同 evidence_attach 的 prototypes"`
 	Approval          bool             `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
 	Images            []string         `json:"images,omitempty" jsonschema:"问题附带的本机图片路径（例如待批准的方案图）"`
 	Recommendation    string           `json:"recommendation,omitempty" jsonschema:"你的推荐及理由"`
 	RecommendedOption int              `json:"recommended_option,omitempty" jsonschema:"推荐的是第几个选项（从 1 开始，对应 options）；界面上这个选项标「推荐」，用户没选它时会问一句为什么。不填时只有 recommendation 与某个选项文字完全相同才标"`
 	Requirement       string           `json:"requirement,omitempty" jsonschema:"关联需求编号（如 R-12）：问题是哪条需求推进中冒出来的就写哪条，用户会在这条需求的时间线上看着来龙去脉作答。不写时本会话只关联一条没完成的需求就自动挂上；和在做的需求无关的临时问题（如「做完这些要不要上线」）写 none"`
 	Blocks            []map[string]any `json:"blocks,omitempty" jsonschema:"表达块（可选），放在说明下面帮用户看懂：方案对比用 table 或 compare，流程用 flow；类型和字段见工具说明"`
-	Points            []map[string]any `json:"points,omitempty" jsonschema:"要决策的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
+	Points            []map[string]any `json:"points,omitempty" jsonschema:"要决策的点（可选）：一个方案里有几个点要用户分别选时用它，[{question: 一句话问题, options: [{label, desc: 一句说明, recommended: true/false, image: 本机效果图路径, prototype: 可交互原型（写法同 prototypes，可选）}]}]，每点 2～4 个选项、标出推荐，用户逐点选择，答复会逐点注入。和 approval = true 一起用就是“按以下选择批准 / 拒绝”。不用再在 options 里重复"`
 	Summary           []string         `json:"summary,omitempty" jsonschema:"方案要点（可选），每条一行、以需求编号开头，如“R-82 新命令 ks role，提示词压缩后由 hook 补发”；有它时完整说明（context）会折叠起来"`
 	FromDecision      string           `json:"from_decision,omitempty" jsonschema:"来源决策（如 D-142）：这条是接着哪条决策往下问的，或要推翻哪条决策的结论；决策详情里会连成后果链"`
 	Overturns         bool             `json:"overturns,omitempty" jsonschema:"为 true 表示这条要推翻 from_decision 那条的结论（例如用户之前选了 B，现在要改回 A）；接着往下问时不填"`
@@ -466,7 +469,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(msg), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据，用户验收时读它。推荐结构化地交：verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；界面类附 figure 或 compare，流程类附 flow；截图（images、figure、compare）每张写一句话标题（title），改动的地方用 boxes 矩形框标出来，图按顺序全部显示：重点看的放前面，补充、测试一类的放后面；todo 只写机器验证不了的事，没有就不写；实现细节放 details、顺带改动放 aside，两者默认折叠。也可以只写 summary（按同样顺序写成文字）。交之前先自查截图里的文字有没有被截断、溢出或重叠。交错的证据用 evidence_void 作废后重交，不要堆着（返回里有证据 id）。" + writing.UIEvidenceGuide + "超过字数阈值照常保存，返回里会提示压缩。\n" + writing.BlocksGuide},
+	mcp.AddTool(s, &mcp.Tool{Name: "evidence_attach", Description: "为需求附加验收证据，用户验收时读它。推荐结构化地交：verdict 一句结论（40 字以内，写用户能看到的变化）；blocks 里放一个 checklist，逐条对照验收标准给 pass / fail / ask 和一句依据，用 see 指向证明它的块；界面类附 figure 或 compare，流程类附 flow；截图（images、figure、compare）每张写一句话标题（title），改动的地方用 boxes 矩形框标出来，图按顺序全部显示：重点看的放前面，补充、测试一类的放后面；todo 只写机器验证不了的事，没有就不写；实现细节放 details、顺带改动放 aside，两者默认折叠。也可以只写 summary（按同样顺序写成文字）。交之前先自查截图里的文字有没有被截断、溢出或重叠。交错的证据用 evidence_void 作废后重交，不要堆着（返回里有证据 id）。做了可交互原型（HTML 页面）时用 prototypes 附上，用户在纸鸢里直接打开试用。" + writing.UIEvidenceGuide + "超过字数阈值照常保存，返回里会提示压缩。\n" + writing.BlocksGuide},
 		func(ctx context.Context, req *mcp.CallToolRequest, in evidenceIn) (*mcp.CallToolResult, any, error) {
 			body := map[string]any{"kind": in.Kind, "summary": in.Summary, "link": in.Link, "session_key": t.sessionKey(ctx, req), "verdict": in.Verdict, "details": in.Details}
 			dropEmpty(body)
@@ -500,6 +503,12 @@ func (t *tools) register(s *mcp.Server) {
 			if err := t.addBlocks(ctx, body, in.Blocks, cache); err != nil {
 				return nil, nil, err
 			}
+			var notes []string
+			if pids, err := t.protos(ctx, in.Prototypes, in.Ref, body["session_key"], false, &notes); err != nil {
+				return nil, nil, err
+			} else if len(pids) > 0 {
+				body["prototypes"] = pids
+			}
 			var out struct {
 				reqView
 				EvidenceID    string   `json:"evidence_id"`
@@ -517,6 +526,7 @@ func (t *tools) register(s *mcp.Server) {
 			if out.EvidenceID != "" {
 				msg += "\n证据 id：" + out.EvidenceID + "（交错了用 evidence_void 作废后重交）"
 			}
+			msg += protoNotes(notes)
 			msg += blockWarnings(out.BlockWarnings)
 			msg += imageHints(out.ImageHints)
 			if in.Summary != "" {
@@ -591,6 +601,22 @@ func (t *tools) register(s *mcp.Server) {
 			if len(in.Summary) > 0 {
 				body["summary"] = in.Summary
 			}
+			var notes []string
+			if pids, err := t.protos(ctx, in.Prototypes, in.Requirement, body["session_key"], false, &notes); err != nil {
+				return nil, nil, err
+			} else if len(pids) > 0 {
+				body["prototypes"] = pids
+			}
+			if pids, err := t.protos(ctx, in.OptionPrototypes, in.Requirement, body["session_key"], true, &notes); err != nil {
+				return nil, nil, err
+			} else if len(pids) > 0 {
+				body["option_prototypes"] = pids
+			}
+			if pts, ok := body["points"].([]any); ok {
+				if err := t.c.PointPrototypes(ctx, pts, protoReq(in.Requirement), fmt.Sprint(body["session_key"]), &notes); err != nil {
+					return nil, nil, err
+				}
+			}
 			var out struct {
 				Code            string   `json:"code"`
 				RequirementCode string   `json:"requirement_code"`
@@ -601,6 +627,7 @@ func (t *tools) register(s *mcp.Server) {
 				return nil, nil, err
 			}
 			msg := fmt.Sprintf("%v 已进入用户的决策收件箱，作答后会自动注入本会话", out.Code)
+			msg += protoNotes(notes)
 			if out.AutoLinked && out.RequirementCode != "" {
 				msg += fmt.Sprintf("\n本会话只在做 %s，已自动挂到它的时间线上；不是关于它的，撤回后重提并写明 requirement。", out.RequirementCode)
 			}
@@ -812,6 +839,42 @@ func hasChecklist(in []map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// protos 交原型包（R-197），返回原型 ID。aligned：与选项一一对应，空的留空字符串。
+func (t *tools) protos(ctx context.Context, specs []any, requirement string, sessionKey any, aligned bool, notes *[]string) ([]string, error) {
+	var ids []string
+	key, _ := sessionKey.(string)
+	for _, x := range specs {
+		spec, ok := client.ParseProtoSpec(x)
+		if !ok {
+			if aligned {
+				ids = append(ids, "")
+			}
+			continue
+		}
+		up, err := t.c.UploadPrototype(ctx, spec, protoReq(requirement), key)
+		if err != nil {
+			return nil, err
+		}
+		*notes = append(*notes, up.Note())
+		ids = append(ids, up.ID)
+	}
+	return ids, nil
+}
+
+func protoReq(r string) string {
+	if strings.EqualFold(strings.TrimSpace(r), "none") {
+		return ""
+	}
+	return r
+}
+
+func protoNotes(notes []string) string {
+	if len(notes) == 0 {
+		return ""
+	}
+	return "\n已交" + strings.Join(notes, "；")
 }
 
 func (t *tools) upload(ctx context.Context, paths []string) ([]string, error) {

@@ -100,6 +100,10 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	root.Handle("GET /api/files/{id}", h.requireWeb(http.HandlerFunc(h.handleDownload)))
 	root.Handle("POST /api/agent/files", h.requireDevice(h.handleUpload(devUploader)))
 	root.Handle("GET /api/agent/files/{id}", h.requireDevice(http.HandlerFunc(h.handleDownload)))
+	// 可交互原型（R-197）：Agent 交原型包；原型在隔离路径里打开，不认登录（令牌或访客签名就是凭据）
+	root.Handle("POST /api/agent/prototypes", h.requireDevice(http.HandlerFunc(h.handleProtoUpload)))
+	root.Handle("/p/{token}/{path...}", http.HandlerFunc(h.handleProto))
+	root.Handle("/p/g/{link}/{proto}/{sig}/{path...}", http.HandlerFunc(h.handleGuestProto))
 	root.Handle("/api/", h.requireWeb(webMux))
 	if web != nil {
 		root.Handle("/", h.shareMeta(web))
@@ -494,6 +498,7 @@ type SettingsView struct {
 	ImageMB       int                `json:"upload_image_mb" doc:"图片大小上限（MB）"`
 	VideoMB       int                `json:"upload_video_mb" doc:"录屏大小上限（MB）"`
 	FileMB        int                `json:"upload_file_mb" doc:"其它文件（图片、录屏以外）大小上限（MB）"`
+	PrototypeMB   int                `json:"upload_prototype_mb" doc:"可交互原型包（zip）大小上限（MB，R-197）"`
 	DevRequestMin int                `json:"dev_request_minutes" doc:"PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝"`
 	CompactTokens int                `json:"compact_tokens" doc:"建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）"`
 }
@@ -509,6 +514,7 @@ type settingsIn struct {
 		ImageMB       int                `json:"upload_image_mb,omitempty" minimum:"0" maximum:"4096" doc:"图片大小上限（MB），0 或留空用默认 10"`
 		VideoMB       int                `json:"upload_video_mb,omitempty" minimum:"0" maximum:"4096" doc:"录屏大小上限（MB），0 或留空用默认 50"`
 		FileMB        int                `json:"upload_file_mb,omitempty" minimum:"0" maximum:"4096" doc:"其它文件大小上限（MB），0 或留空用默认 20"`
+		PrototypeMB   int                `json:"upload_prototype_mb,omitempty" minimum:"0" maximum:"4096" doc:"可交互原型包（zip）大小上限（MB），0 或留空用默认 20"`
 		DevRequestMin int                `json:"dev_request_minutes,omitempty" minimum:"0" maximum:"1440" doc:"PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30"`
 		CompactTokens int                `json:"compact_tokens,omitempty" minimum:"0" maximum:"2000000" doc:"建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万"`
 	}
@@ -527,7 +533,7 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 	return &settingsOut{Body: SettingsView{
 		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
-		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0), CompactTokens: s.compactTokens(),
+		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), PrototypeMB: int(s.Upload.protoBytes() >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0), CompactTokens: s.compactTokens(),
 	}}, nil
 }
 
@@ -1137,7 +1143,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				cur.Summary.APIKey = b.SummaryKey
 			}
 			cur.NotifyDefault = b.NotifyDefault
-			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB, FileMB: b.FileMB}
+			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB, FileMB: b.FileMB, PrototypeMB: b.PrototypeMB}
 			cur.DevRequestMinutes = b.DevRequestMin
 			cur.CompactTokens = b.CompactTokens
 			if err := h.SaveSettings(ctx, cur); err != nil {
@@ -1219,6 +1225,8 @@ type agentDecisionIn struct {
 		OptionImages      []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
 		Approval          bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
 		Images            []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
+		Prototypes        []string `json:"prototypes,omitempty" doc:"问题附带的可交互原型 ID（R-197），先传到 /api/agent/prototypes"`
+		OptionPrototypes  []string `json:"option_prototypes,omitempty" doc:"每个选项的可交互原型 ID（与 options 一一对应，可留空，R-197）"`
 		Blocks            []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
 		Points            []any    `json:"points,omitempty" doc:"要决策的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
 		Summary           []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
@@ -1423,6 +1431,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				Details    string   `json:"details,omitempty" doc:"实现细节（默认折叠）"`
 				Aside      []string `json:"aside,omitempty" doc:"顺带改动（默认折叠）"`
 				Blocks     []any    `json:"blocks,omitempty" doc:"表达块（R-97）：checklist / compare / figure / flow / metrics / scope / options / table；图片字段填附件 ID。不合法的块丢掉并在 block_warnings 里说明，证据照常保存"`
+				Prototypes []string `json:"prototypes,omitempty" doc:"可交互原型 ID（R-197），先传到 /api/agent/prototypes"`
 			}
 		}) (*evidenceOut, error) {
 			r, err := h.store.GetRequirement(ctx, in.Ref)
@@ -1467,7 +1476,17 @@ func (h *Hub) registerAgent(api huma.API) {
 					return nil, huma.Error400BadRequest("证据类型为 " + b.Kind + " 时必须附上图片或录屏（MCP 用 images / videos，命令行用 --image / --video）")
 				}
 			}
-			added, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: b.SessionKey, Kind: b.Kind, Summary: summary, Link: b.Link, Files: files, Payload: payload})
+			protos, err := h.store.ResolvePrototypes(ctx, b.Prototypes)
+			if err != nil {
+				return nil, err
+			}
+			if len(protos) < len(b.Prototypes) {
+				warns = append(warns, "有原型 ID 找不到，没有挂上")
+			}
+			if err := h.store.AdoptPrototypes(ctx, b.Prototypes, r.ID); err != nil {
+				return nil, err
+			}
+			added, err := h.store.AddEvidence(ctx, store.Evidence{RequirementID: r.ID, SessionKey: b.SessionKey, Kind: b.Kind, Summary: summary, Link: b.Link, Files: files, Payload: payload, Prototypes: protos})
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -1502,7 +1521,7 @@ func (h *Hub) registerAgent(api huma.API) {
 			d.FromDecision = from
 			var warns, pw []string
 			d.Blocks, warns = blocks.Parse(b.Blocks, h.blockFile(ctx))
-			d.Points, pw = blocks.ParsePoints(b.Points, h.blockFile(ctx))
+			d.Points, pw = blocks.ParsePointsProto(b.Points, h.blockFile(ctx), h.protoResolver(ctx))
 			warns = append(warns, pw...)
 			for _, x := range b.Summary {
 				if x = strings.TrimSpace(x); x != "" && len(d.Summary) < 8 {
@@ -1516,6 +1535,24 @@ func (h *Hub) registerAgent(api huma.API) {
 				d.Approval = true
 				d.Options = []string{"批准", "拒绝"}
 				b.OptionImages = nil
+				b.OptionPrototypes = nil
+			}
+			if d.Prototypes, err = h.store.ResolvePrototypes(ctx, b.Prototypes); err != nil {
+				return nil, err
+			}
+			if len(b.OptionPrototypes) > 0 {
+				// 每个选项最多一个原型，固定在提出时那一版
+				d.OptionPrototypes = make([][]store.Prototype, len(d.Options))
+				for i := range d.Options {
+					d.OptionPrototypes[i] = []store.Prototype{}
+					if i < len(b.OptionPrototypes) && b.OptionPrototypes[i] != "" {
+						ps, err := h.store.ResolvePrototypes(ctx, []string{b.OptionPrototypes[i]})
+						if err != nil {
+							return nil, err
+						}
+						d.OptionPrototypes[i] = ps
+					}
+				}
 			}
 			d.RecPick = b.RecommendedOption // 推荐选项存成字段（R-239），CreateDecision 定 rec_option
 			if len(b.Images) > 0 {
@@ -1564,6 +1601,15 @@ func (h *Hub) registerAgent(api huma.API) {
 				}
 				if b.SessionKey != "" {
 					_ = h.store.LinkSession(ctx, r.ID, b.SessionKey)
+				}
+			}
+			if d.RequirementID != "" {
+				// 原型交上来时可能还不知道挂哪条需求（自动挂上的），补记，访客页据此判断能不能看（R-197）
+				ids := append([]string{}, b.Prototypes...)
+				ids = append(ids, b.OptionPrototypes...)
+				blocks.WalkPrototypes(d.Points, func(p *blocks.Prototype) { ids = append(ids, p.ID) })
+				if err := h.store.AdoptPrototypes(ctx, ids, d.RequirementID); err != nil {
+					return nil, err
 				}
 			}
 			d, err = h.store.CreateDecision(ctx, d)

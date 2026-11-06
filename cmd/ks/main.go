@@ -46,6 +46,9 @@ agent 调用：
   hook <claude|codex> <event>   由 agent 的 hook 调用
   mcp                    stdio MCP server
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力；evidence void <证据 id> --reason 作废交错的证据）
+  proto check <目录|.html|.zip> [--entry 入口] [--max-mb 20]
+                                 交可交互原型之前自检（R-197）：找入口、查大小和文件数、列出引用的外部地址；
+                                 原型用 req evidence / decision raise 的 --prototype（决策选项用 --option-prototype）交
   req comment <R-x> <留言> [--image 图] [--blocks 块]   在需求下留言（R-249）：细节写这里，消息只放编号加一句话
   req watch <R-x> [--action-only] / req unwatch <R-x> / req watching
                                  订阅需求（R-249）：有变动时收到一句话提醒（自己引起的不通知）；关联或在做的需求默认已订阅，unwatch 可退订；
@@ -139,6 +142,8 @@ func main() {
 		err = runPlan(args)
 	case "decision":
 		err = runDecision(args)
+	case "proto":
+		err = runProto(args)
 	case "wait":
 		err = runWait(args)
 	case "role":

@@ -78,6 +78,7 @@
   },
   "buttons": [
     "common.save", "common.cancel", "common.close", "common.confirm", "common.delete", "common.edit", "common.create",
+    "proto.open", "proto.newTab", "proto.download", "proto.close",
     "common.undo", "common.retry", "common.copy", "common.more", "common.showAll", "common.collapse",
     "verdict.undo", "verdict.undoAll", "verdict.startPlan", "verdict.revokeGrant", "verdict.withdrawRelease", "verdict.backByAdvice",
     "decision.reassign", "decision.closeIt", "decision.resend", "decision.useRecommendation",

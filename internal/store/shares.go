@@ -777,8 +777,27 @@ func (s *Store) FileOwners(ctx context.Context, id string) ([]FileOwner, error) 
 		[]any{like, like, like, like, like}, func(a, b string) FileOwner { return FileOwner{DecReq: a, DecKind: b} }); err != nil {
 		return nil, err
 	}
+	// 原型的封面（R-197）：原型所属需求在分享里就能看
+	if err := scan(`SELECT requirement_id, '' FROM prototypes WHERE cover_id = ? AND requirement_id <> ''`, []any{id}, func(a, _ string) FileOwner { return FileOwner{ReqID: a} }); err != nil {
+		return nil, err
+	}
 	if err := scan(`SELECT id, '' FROM plan_stages WHERE summary_blocks LIKE ?`, []any{like}, func(a, _ string) FileOwner { return FileOwner{StageID: a} }); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// ShareLinkByID 按链接 ID 找链接（原型的访客地址用，R-197）；找不到返回 ErrNotFound。
+func (s *Store) ShareLinkByID(ctx context.Context, id string) (ShareLink, error) {
+	if id == "" {
+		return ShareLink{}, ErrNotFound
+	}
+	ls, err := s.shareLinks(ctx, `WHERE id = ?`, id)
+	if err != nil {
+		return ShareLink{}, err
+	}
+	if len(ls) == 0 {
+		return ShareLink{}, ErrNotFound
+	}
+	return ls[0], nil
 }

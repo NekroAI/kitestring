@@ -41,26 +41,29 @@ const (
 
 // Decision 是一条待用户决策的问题。
 type Decision struct {
-	ID              string         `json:"id"`
-	Code            string         `json:"code"`
-	SessionKey      string         `json:"session_key,omitempty"`
-	OriginSession   string         `json:"origin_session,omitempty"`
-	AssignedBy      string         `json:"assigned_by,omitempty"`   // 交出需求的会话（PM 指派时为 PM，R-86）；你在网页上交出时为空
-	SessionState    string         `json:"session_state,omitempty"` // 目标会话当前状态
-	DeviceName      string         `json:"device_name,omitempty"`
-	ProjectID       string         `json:"project_id,omitempty"`
-	ProjectName     string         `json:"project_name,omitempty"`
-	RequirementID   string         `json:"requirement_id,omitempty"`
-	RequirementCode string         `json:"requirement_code,omitempty"`
-	PlanID          string         `json:"plan_id,omitempty"`
-	PlanCode        string         `json:"plan_code,omitempty"`
-	Question        string         `json:"question"`
-	Context         string         `json:"context"`
-	Options         []string       `json:"options"`
-	OptionFiles     [][]FileRef    `json:"option_files"`     // 每个选项的效果图（与 options 一一对应），用于方案对比
-	Approval        bool           `json:"approval"`         // 请你批准（选项固定为“批准 / 拒绝”，两种都可以附言）
-	ContextFiles    []FileRef      `json:"context_files"`    // 问题本身附带的图（例如待批准的方案图）
-	Blocks          []blocks.Block `json:"blocks,omitempty"` // 说明里附的表达块（R-97）
+	ID              string      `json:"id"`
+	Code            string      `json:"code"`
+	SessionKey      string      `json:"session_key,omitempty"`
+	OriginSession   string      `json:"origin_session,omitempty"`
+	AssignedBy      string      `json:"assigned_by,omitempty"`   // 交出需求的会话（PM 指派时为 PM，R-86）；你在网页上交出时为空
+	SessionState    string      `json:"session_state,omitempty"` // 目标会话当前状态
+	DeviceName      string      `json:"device_name,omitempty"`
+	ProjectID       string      `json:"project_id,omitempty"`
+	ProjectName     string      `json:"project_name,omitempty"`
+	RequirementID   string      `json:"requirement_id,omitempty"`
+	RequirementCode string      `json:"requirement_code,omitempty"`
+	PlanID          string      `json:"plan_id,omitempty"`
+	PlanCode        string      `json:"plan_code,omitempty"`
+	Question        string      `json:"question"`
+	Context         string      `json:"context"`
+	Options         []string    `json:"options"`
+	OptionFiles     [][]FileRef `json:"option_files"`  // 每个选项的效果图（与 options 一一对应），用于方案对比
+	Approval        bool        `json:"approval"`      // 请你批准（选项固定为“批准 / 拒绝”，两种都可以附言）
+	ContextFiles    []FileRef   `json:"context_files"` // 问题本身附带的图（例如待批准的方案图）
+	// 可交互原型（R-197）：问题本身附的原型、每个选项的原型（与 options 一一对应，没有的为空列表）；固定在提出时那一版
+	Prototypes       []Prototype    `json:"prototypes,omitempty"`
+	OptionPrototypes [][]Prototype  `json:"option_prototypes,omitempty"`
+	Blocks           []blocks.Block `json:"blocks,omitempty"` // 说明里附的表达块（R-97）
 	// 要决策的点（R-112）：每个点是一个 options 块，标题是问题；用户逐点选择，Choices 与之一一对应（-1 = 没选）。
 	Points  []blocks.Block `json:"points,omitempty"`
 	Choices []int          `json:"choices,omitempty"`
@@ -151,7 +154,7 @@ const decSelect = `SELECT x.id, x.seq, COALESCE(x.session_key, ''), COALESCE(x.o
 	x.question, x.context, x.blocks, x.points, x.summary, x.choices, x.options, x.option_files, x.approval, x.context_files, x.recommendation, x.short_title, x.kind, x.answer_files, x.status, x.answer, x.created_at, x.answered_at, x.delivered_at, x.delivered_turn,
 	COALESCE(x.plan_id, ''), COALESCE(pl.seq, 0), x.assigned_by, x.close_reason, x.replaced_by,
 	x.risk, x.proxy_by, x.proxy_reason, x.proxy_risk, x.proxy_answer, x.proxy_at, x.overridden_at, x.from_decision, x.overturns, x.answer_reason,
-	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option, x.hard, x.fyi, x.broadcast_id, x.guest
+	x.request_kind, x.request_count, x.expires_at, x.timed_out, x.request_from, x.request_to, x.request_voided, x.by_title, x.from_role, x.from_agent, x.reply_to, x.verdict, x.rec_option, x.hard, x.fyi, x.broadcast_id, x.guest, x.prototypes, x.option_prototypes
 	FROM decisions x
 	LEFT JOIN sessions s ON s.key = x.session_key
 	LEFT JOIN devices dv ON dv.id = s.device_id
@@ -164,12 +167,16 @@ func scanDec(row interface{ Scan(...any) error }) (Decision, error) {
 	var seq, rseq, pseq int
 	var options, optFiles, ctxFiles, created, files, bs, points, summary, choices string
 	var answered, delivered sql.NullString
-	var proxyAt, overAt, expires, guest string
+	var proxyAt, overAt, expires, guest, protos, optProtos string
 	err := row.Scan(&d.ID, &seq, &d.SessionKey, &d.OriginSession, &d.SessionState, &d.DeviceName, &d.ProjectID, &d.ProjectName, &d.RequirementID, &rseq, &d.RequirementTitle,
 		&d.Question, &d.Context, &bs, &points, &summary, &choices, &options, &optFiles, &d.Approval, &ctxFiles, &d.Recommendation, &d.ShortTitle, &d.Kind, &files, &d.Status, &d.Answer, &created, &answered, &delivered, &d.DeliveredTurn,
 		&d.PlanID, &pseq, &d.AssignedBy, &d.CloseReason, &d.ReplacedBy,
 		&d.Risk, &d.ProxyBy, &d.ProxyReason, &d.ProxyRisk, &d.ProxyAnswer, &proxyAt, &overAt, &d.FromDecision, &d.Overturns, &d.AnswerReason,
-		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption, &d.Hard, &d.FYI, &d.BroadcastID, &guest)
+		&d.RequestKind, &d.RequestCount, &expires, &d.TimedOut, &d.RequestFrom, &d.RequestTo, &d.Voided, &d.ByTitle, &d.FromRole, &d.FromAgent, &d.ReplyTo, &d.Verdict, &d.RecOption, &d.Hard, &d.FYI, &d.BroadcastID, &guest, &protos, &optProtos)
+	d.Prototypes = parseProtos(protos)
+	if x := blocks.Decode[[][]Prototype](optProtos); x != nil {
+		d.OptionPrototypes = *x
+	}
 	if guest != "" {
 		d.Guest = blocks.Decode[GuestOrigin](guest)
 	}
@@ -248,8 +255,8 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 		if d.Approval {
 			rec = -1
 		}
-		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to, rec_option, hard, from_role) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo, rec, d.Hard, d.FromRole)
+		_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, question, context, blocks, points, summary, options, option_files, approval, context_files, recommendation, status, created_at, risk, from_decision, overturns, request_kind, request_count, expires_at, request_from, request_to, rec_option, hard, from_role, prototypes, option_prototypes) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), d.Question, d.Context, blocks.Encode(d.Blocks), blocks.Encode(d.Points), blocks.Encode(d.Summary), string(opts), string(of), d.Approval, filesJSON(d.ContextFiles), d.Recommendation, DecPending, n, d.Risk, d.FromDecision, d.FromDecision != "" && d.Overturns, d.RequestKind, d.RequestCount, expires, d.RequestFrom, d.RequestTo, rec, d.Hard, d.FromRole, protosJSON(d.Prototypes), blocks.Encode(d.OptionPrototypes))
 		if err != nil {
 			return err
 		}

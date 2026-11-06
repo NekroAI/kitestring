@@ -84,6 +84,7 @@ function useSaveSettings() {
             upload_image_mb: patch.upload_image_mb ?? s.upload_image_mb,
             upload_video_mb: patch.upload_video_mb ?? s.upload_video_mb,
             upload_file_mb: patch.upload_file_mb ?? s.upload_file_mb,
+            upload_prototype_mb: patch.upload_prototype_mb ?? s.upload_prototype_mb,
             dev_request_minutes: patch.dev_request_minutes ?? s.dev_request_minutes,
             compact_tokens: patch.compact_tokens ?? s.compact_tokens,
           },
@@ -1063,12 +1064,12 @@ function UploadLimits() {
   const q = useSettings()
   const save = useSaveSettings()
   const [busy, wrap] = useBusy()
-  const [v, setV] = useState({ image: '', video: '', file: '' })
+  const [v, setV] = useState({ image: '', video: '', file: '', proto: '' })
   useEffect(() => {
-    if (q.data) setV({ image: String(q.data.upload_image_mb), video: String(q.data.upload_video_mb), file: String(q.data.upload_file_mb) })
+    if (q.data) setV({ image: String(q.data.upload_image_mb), video: String(q.data.upload_video_mb), file: String(q.data.upload_file_mb), proto: String(q.data.upload_prototype_mb) })
   }, [q.data])
   const num = (x: string) => Math.min(4096, Math.max(1, Math.round(Number(x)) || 1))
-  const dirty = q.data && (num(v.image) !== q.data.upload_image_mb || num(v.video) !== q.data.upload_video_mb || num(v.file) !== q.data.upload_file_mb)
+  const dirty = q.data && (num(v.image) !== q.data.upload_image_mb || num(v.video) !== q.data.upload_video_mb || num(v.file) !== q.data.upload_file_mb || num(v.proto) !== q.data.upload_prototype_mb)
   const L = t.settings.account.upload
   return (
     <Card className="space-y-4 p-4 sm:p-5">
@@ -1076,7 +1077,7 @@ function UploadLimits() {
         <div className="text-sm font-semibold text-fg">{L.title}</div>
         <p className="mt-1 text-xs text-fg-3">{L.hint}</p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-4">
         <Field label={L.image}>
           <Input type="number" inputMode="numeric" min={1} max={4096} value={v.image} onChange={(e) => setV({ ...v, image: e.target.value })} />
         </Field>
@@ -1086,9 +1087,12 @@ function UploadLimits() {
         <Field label={L.file}>
           <Input type="number" inputMode="numeric" min={1} max={4096} value={v.file} onChange={(e) => setV({ ...v, file: e.target.value })} />
         </Field>
+        <Field label={L.prototype}>
+          <Input type="number" inputMode="numeric" min={1} max={4096} value={v.proto} onChange={(e) => setV({ ...v, proto: e.target.value })} />
+        </Field>
       </div>
       <div className="flex justify-end">
-        <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => wrap(() => save({ upload_image_mb: num(v.image), upload_video_mb: num(v.video), upload_file_mb: num(v.file) }))}>
+        <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => wrap(() => save({ upload_image_mb: num(v.image), upload_video_mb: num(v.video), upload_file_mb: num(v.file), upload_prototype_mb: num(v.proto) }))}>
           {t.common.save}
         </Button>
       </div>

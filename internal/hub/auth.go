@@ -110,10 +110,17 @@ func (h *Hub) verifyPassword(ctx context.Context, password string) error {
 	return huma.Error401Unauthorized("密码错误")
 }
 
+// crossSiteFetch：浏览器标明是跨站页面里发出的请求（不含顶层跳转：别处点进 /api/files 下载照常）。
+func crossSiteFetch(r *http.Request) bool {
+	return r.Header.Get("Sec-Fetch-Site") == "cross-site" && r.Header.Get("Sec-Fetch-Mode") != "navigate"
+}
+
 // requireWeb 要求有效的 Web 登录会话。
 func (h *Hub) requireWeb(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !h.webAuthed(r) {
+		// 无来源页面（沙箱里的原型，R-197）发出的请求带 Origin: null；浏览器标明跨站（Sec-Fetch-Site: cross-site）的也一样：
+		// 一律当未登录，即使浏览器带上了 cookie（Safari 在嵌入的沙箱框里发 no-cors 请求时会带 Lax cookie）
+		if r.Header.Get("Origin") == "null" || crossSiteFetch(r) || !h.webAuthed(r) {
 			writeErr(w, http.StatusUnauthorized, "未登录")
 			return
 		}

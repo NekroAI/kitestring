@@ -96,6 +96,11 @@ func errorText(code int, raw []byte) string {
 
 // Upload 以 multipart 上传本地文件到 path（经 daemon 转发到 Hub），结果解到 out。
 func (c *Client) Upload(ctx context.Context, path, file string, out any) error {
+	return c.UploadFields(ctx, path, file, nil, out)
+}
+
+// UploadFields 同 Upload，另外带几个表单字段（例如交原型包时的标题、入口，R-197）。
+func (c *Client) UploadFields(ctx context.Context, path, file string, fields map[string]string, out any) error {
 	f, err := os.Open(file)
 	if err != nil {
 		return err
@@ -104,7 +109,16 @@ func (c *Client) Upload(ctx context.Context, path, file string, out any) error {
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 	go func() {
-		part, err := mw.CreateFormFile("file", filepath.Base(file))
+		var err error
+		for k, v := range fields {
+			if err == nil {
+				err = mw.WriteField(k, v)
+			}
+		}
+		part, cerr := mw.CreateFormFile("file", filepath.Base(file))
+		if err == nil {
+			err = cerr
+		}
 		if err == nil {
 			_, err = io.Copy(part, f)
 		}

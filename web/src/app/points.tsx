@@ -4,6 +4,7 @@ import type { Decision } from '../api/client'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { ThumbImg, ZoomButton } from '../ui/attach'
+import { ProtoCover, ProtoOpen } from '../ui/proto'
 import { Linkify } from '../ui/refmark'
 
 // 多点决策（R-112，原型 ④）：一个方案里有几个点要决策时，每个点单独一组选项（R-97 的 options 块），默认选推荐，可以分别选。
@@ -45,7 +46,11 @@ export function Points({ d, picks, onPick, disabled }: { d: Decision; picks: num
                     on ? 'border-accent shadow-[inset_0_0_0_1px_var(--accent)]' : 'border-line-strong hover:border-fg-3/50',
                   )}
                 >
-                  {o.image && (
+                  {o.prototype ? (
+                    <ProtoOpen p={o.prototype} className="-mx-3 -mt-2.5 mb-2 border-b border-line">
+                      <ProtoCover p={o.prototype} className="aspect-[16/10]" />
+                    </ProtoOpen>
+                  ) : o.image && (
                     <div className="relative -mx-3 -mt-2.5 mb-2 aspect-[16/10] overflow-hidden border-b border-line bg-sunken">
                       <ThumbImg id={o.image.id} alt={o.label} loading="lazy" className="size-full object-cover object-top" />
                       <span className="absolute top-2 right-2 opacity-0 transition group-hover/pt:opacity-100 pointer-coarse:opacity-100" onClick={(e) => e.stopPropagation()}>

@@ -8,6 +8,7 @@ import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, CardSkeleton, ErrorState, Tip } from '../ui/base'
 import { BlockList } from '../ui/blocks'
 import { Thumbs } from '../ui/attach'
+import { ProtoList } from '../ui/proto'
 import { Md } from '../ui/markdown'
 import { displayState, RoleTag, StatusPill } from '../ui/marks'
 import { DecGlyph, Linkify, PlanGlyph, RefChip, ReqGlyph, ReqStatus, statusCls } from '../ui/refmark'
@@ -325,6 +326,7 @@ function DecisionItem({ d, now }: { d: Decision; now: number }) {
           <Thumbs files={d.context_files} size="sm" />
         </div>
       )}
+      <ProtoList ps={[...(d.prototypes ?? []), ...(d.option_prototypes ?? []).flatMap((x) => x ?? []), ...(d.points ?? []).flatMap((p) => (p.items ?? []).flatMap((o) => (o.prototype ? [o.prototype] : [])))]} className="mt-2" />
       {answered && (
         <div className="mt-2.5 rounded-[10px] bg-surface-2 px-3 py-2 text-[13.5px] leading-relaxed">
           <div className="mb-0.5 flex items-center gap-2 text-xs text-fg-3">
