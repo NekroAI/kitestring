@@ -4040,6 +4040,12 @@
           },
           "wait_on": {
             "type": "string"
+          },
+          "wake": {
+            "type": "string"
+          },
+          "wake_note": {
+            "type": "string"
           }
         },
         "required": [
@@ -5221,7 +5227,7 @@
             "type": "boolean"
           },
           "source": {
-            "description": "terminal 在终端提的问 / web 网页上发的话 / wake 纸鸢送达的消息",
+            "description": "terminal 在终端提的问 / web 网页上发的话 / wake 会话被自动唤醒（来源见 wake）",
             "enum": [
               "",
               "terminal",
@@ -5247,6 +5253,22 @@
               "array",
               "null"
             ]
+          },
+          "wake": {
+            "description": "source = wake 时是谁唤醒了会话，同 Turn.wake",
+            "enum": [
+              "",
+              "kite",
+              "timeout",
+              "bg",
+              "agent",
+              "output"
+            ],
+            "type": "string"
+          },
+          "wake_note": {
+            "description": "后台命令 / 监视 / 子任务的描述",
+            "type": "string"
           }
         },
         "required": [
@@ -11585,6 +11607,21 @@
               "array",
               "null"
             ]
+          },
+          "wake": {
+            "enum": [
+              "",
+              "kite",
+              "timeout",
+              "bg",
+              "agent",
+              "output"
+            ],
+            "type": "string"
+          },
+          "wake_note": {
+            "description": "后台命令 / 监视 / 子任务的描述（会话自己写的），没有时为空",
+            "type": "string"
           }
         },
         "required": [

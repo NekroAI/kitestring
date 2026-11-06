@@ -3735,6 +3735,8 @@ export interface components {
             /** Format: date-time */
             until?: string;
             wait_on?: string;
+            wake?: string;
+            wake_note?: string;
         };
         Evidence: {
             /** Format: date-time */
@@ -4115,7 +4117,7 @@ export interface components {
             /** @description 正在运行的一轮（最新一轮且还没结束） */
             running: boolean;
             /**
-             * @description terminal 在终端提的问 / web 网页上发的话 / wake 纸鸢送达的消息
+             * @description terminal 在终端提的问 / web 网页上发的话 / wake 会话被自动唤醒（来源见 wake）
              * @enum {string}
              */
             source: "" | "terminal" | "web" | "wake";
@@ -4125,6 +4127,13 @@ export interface components {
             tool_count: number;
             /** @description 工具调用，时间正序（最多 200 条） */
             tools: components["schemas"]["GuestTool"][] | null;
+            /**
+             * @description source = wake 时是谁唤醒了会话，同 Turn.wake
+             * @enum {string}
+             */
+            wake?: "" | "kite" | "timeout" | "bg" | "agent" | "output";
+            /** @description 后台命令 / 监视 / 子任务的描述 */
+            wake_note?: string;
         };
         GuestUnlockInBody: {
             password: string;
@@ -6161,6 +6170,10 @@ export interface components {
             tools: components["schemas"]["ToolSum"];
             /** @description 这一轮里挂 ks wait 的记录 */
             waits?: components["schemas"]["TurnWait"][] | null;
+            /** @enum {string} */
+            wake?: "" | "kite" | "timeout" | "bg" | "agent" | "output";
+            /** @description 后台命令 / 监视 / 子任务的描述（会话自己写的），没有时为空 */
+            wake_note?: string;
         };
         TurnItem: {
             agent?: string;

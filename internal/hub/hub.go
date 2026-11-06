@@ -231,10 +231,12 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	}
 	if ev.Name == "UserPromptSubmit" {
 		// 兼容旧版 daemon：Hub 侧再整理一次。
-		text, auto := protocol.CleanPrompt(ev.Prompt)
+		raw := ev.Prompt
+		text, auto := protocol.CleanPrompt(raw)
 		ev.Prompt = text
 		if auto {
 			ev.Source = protocol.SourceAuto
+			ev.Wake, ev.WakeNote = protocol.AutoKind(raw)
 		}
 	}
 	// 最后回复单独存在会话上，不写进事件记录（每轮一条，最长 2 万字，R-109）

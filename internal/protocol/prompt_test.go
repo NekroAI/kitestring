@@ -45,3 +45,22 @@ func TestIsBackgroundPrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoKind(t *testing.T) {
+	cases := []struct{ in, kind, note string }{
+		{"<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n<summary>Background command \"Wait for Kitestring events\" completed (exit code 0)</summary>\n</task-notification>", WakeBg, "Wait for Kitestring events"},
+		{"<task-notification>\n<task-id>b2</task-id>\n<summary>Monitor event: \"CI run\"</summary>\n<event>ok</event>\n</task-notification>", WakeBg, "CI run"},
+		{"<task-notification>\n<summary>Agent \"实现 R-273 会话详情页\" finished</summary></task-notification>", WakeAgent, "实现 R-273 会话详情页"},
+		{"<task-notification><status>stopped</status><summary>Background shell command didn't finish</summary></task-notification>", WakeBg, ""},
+		{"<agent-message from=\"a7d\">\n[Subagent hand-back] ...", WakeAgent, ""},
+		{"<local-command-stdout>ok</local-command-stdout>", WakeOutput, ""},
+		{"<bash-stdout>hi</bash-stdout>", WakeOutput, ""},
+		{"帮我看看", "", ""},
+	}
+	for _, c := range cases {
+		k, n := AutoKind(c.in)
+		if k != c.kind || n != c.note {
+			t.Errorf("AutoKind(%q) = %q, %q；期望 %q, %q", c.in, k, n, c.kind, c.note)
+		}
+	}
+}

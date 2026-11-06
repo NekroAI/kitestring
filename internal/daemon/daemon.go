@@ -471,10 +471,12 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		d.mu.Unlock()
 	}
 	if name == "UserPromptSubmit" {
-		text, auto := protocol.CleanPrompt(str(p, "prompt"))
+		raw := str(p, "prompt")
+		text, auto := protocol.CleanPrompt(raw)
 		ev.Prompt = summary.Truncate(text, 200)
 		if auto {
 			ev.Source = protocol.SourceAuto
+			ev.Wake, ev.WakeNote = protocol.AutoKind(raw)
 		}
 	}
 	if name == "PreToolUse" && ev.ToolUseID != "" && strings.HasPrefix(ev.ToolName, "mcp__") {

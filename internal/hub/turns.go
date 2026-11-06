@@ -24,10 +24,15 @@ type Turn struct {
 	ID    string     `json:"id" doc:"轮的标识：turn_id；没有时用提问事件的 ID"`
 	Start time.Time  `json:"start"`
 	End   *time.Time `json:"end,omitempty" doc:"这一轮结束（Stop）的时间；运行中时省略"`
-	// Source：terminal 你在终端说的；web 你在网页上发的话送达并开启了这一轮；wake 纸鸢送达（团队消息、你的答复……）；
+	// Source：terminal 你在终端说的；web 你在网页上发的话送达并开启了这一轮；wake 会话被自动唤醒（来源见 Wake）；
 	// 空 = 没有提问记录（老会话、或这一页最早的半轮）
 	Source string `json:"source" enum:",terminal,web,wake"`
 	Prompt string `json:"prompt,omitempty" doc:"你在终端说的话（截断）；纸鸢送达的消息开启的一轮为空"`
+	// Wake：source = wake 时是谁唤醒了会话（R-287）。kite 待命期间纸鸢送达消息；timeout 待命到时；
+	// bg 后台命令结束或监视有输出；agent 子任务交回结果；output 终端 ! 命令 / 斜杠命令的输出。
+	// 早于 R-287 的记录按待命结束、子任务结束的记录推断，推不出的记 bg。
+	Wake     string `json:"wake,omitempty" enum:",kite,timeout,bg,agent,output"`
+	WakeNote string `json:"wake_note,omitempty" doc:"后台命令 / 监视 / 子任务的描述（会话自己写的），没有时为空"`
 	// 提问 / 回复事件的 ID：对象索引里 p:<ID> / r:<ID> 指的就是它们
 	PromptID string     `json:"prompt_id,omitempty"`
 	ReplyID  string     `json:"reply_id,omitempty"`
@@ -182,7 +187,12 @@ func (h *Hub) sessionTurns(ctx context.Context, key string, before time.Time, li
 		lo = starts[limit-1]
 		out.Body.Before = lo.UTC().Format(time.RFC3339Nano)
 	}
-	evs, err := h.store.EventsBetween(ctx, key, lo, before)
+	// 往前多取一段：这一页最早一轮是自动唤醒时，要看它前面的待命结束、子任务结束记录才知道是谁唤醒的
+	from := lo
+	if !from.IsZero() {
+		from = from.Add(-wakeLookback)
+	}
+	evs, err := h.store.EventsBetween(ctx, key, from, before)
 	if err != nil {
 		return nil, err
 	}
@@ -218,8 +228,13 @@ func (h *Hub) sessionTurns(ctx context.Context, key string, before time.Time, li
 	asks := func(tool string) bool {
 		return tool == "AskUserQuestion" || tool == "request_user_input" || tool == "ExitPlanMode"
 	}
+	var wk wakeTrack
 	for _, ev := range evs {
 		sub := ev.AgentID != ""
+		if !lo.IsZero() && ev.Time.Before(lo) {
+			wk.see(ev) // 这一页之前的，只用来判断唤醒来源
+			continue
+		}
 		switch {
 		case ev.Name == "UserPromptSubmit" && !sub:
 			t := &Turn{ID: ev.TurnID, Start: ev.Time, Source: "terminal", Prompt: ev.Prompt, PromptID: ev.ID, ReplyKind: "none"}
@@ -228,6 +243,7 @@ func (h *Hub) sessionTurns(ctx context.Context, key string, before time.Time, li
 			}
 			if ev.Source == protocol.SourceAuto {
 				t.Source, t.Prompt = "wake", ""
+				t.Wake, t.WakeNote = wk.kind(ev)
 			}
 			turns = append(turns, t)
 		case ev.Name == "PreToolUse":
@@ -257,6 +273,7 @@ func (h *Hub) sessionTurns(ctx context.Context, key string, before time.Time, li
 			t := cur(ev.Time)
 			t.Waits = append(t.Waits, TurnWait{At: ev.Time, Until: ev.Until})
 		}
+		wk.see(ev)
 	}
 	// 最新一轮没有记下回复时，用会话上存的最后回复（它就是这一轮的）
 	if n := len(turns); n > 0 && turns[n-1].Reply == "" && turns[n-1].End != nil && before.IsZero() {
@@ -637,4 +654,53 @@ func slicesHasTask(ts []store.BgTask, id string) bool {
 		}
 	}
 	return false
+}
+
+// subWakeGap：老记录里子任务结束后多久之内的自动唤醒算子任务回报。
+const subWakeGap = 30 * time.Second
+
+// wakeLookback：判断一页最早一轮的唤醒来源时往前多看的时长。
+const wakeLookback = 30 * time.Minute
+
+// wakeTrack 顺着事件记下「上一轮之后」发生的待命结束、子任务结束，用来判断下一条自动注入的消息是谁送来的（R-287）。
+// ks wait 在 Claude Code 里是后台命令，它结束时会话收到的是一条普通的后台命令通知，只有对上 KsWaitEnd 才知道是纸鸢送达。
+type wakeTrack struct {
+	waitEnd  string // 上一轮开始后最近一次待命结束的原因：delivered / timeout / canceled
+	subDone  time.Time // 主线程上一轮结束后最近一次子任务结束（早于 R-287 的记录靠它认子任务回报）
+	mainIdle bool   // 主线程上一轮已结束
+}
+
+func (w *wakeTrack) see(ev protocol.Event) {
+	sub := ev.AgentID != ""
+	switch {
+	case ev.Name == "UserPromptSubmit" && !sub:
+		*w = wakeTrack{}
+	case ev.Name == "Stop" && !sub:
+		w.mainIdle, w.subDone = true, time.Time{}
+	case ev.Name == "SubagentStop" && w.mainIdle && ev.AgentType != "":
+		// 只认派出的子任务（带类型）；Claude Code 自己的内部子代理结束时也发 SubagentStop，但不带类型、也不会唤醒会话
+		w.subDone = ev.Time
+	case ev.Name == protocol.EventWaitEnd:
+		w.waitEnd = ev.Reason
+	}
+}
+
+// kind 给一条自动注入的提问判来源。
+func (w *wakeTrack) kind(ev protocol.Event) (string, string) {
+	if ev.Wake == "" || ev.Wake == protocol.WakeBg {
+		switch w.waitEnd {
+		case "delivered":
+			return "kite", ""
+		case "timeout":
+			return "timeout", ""
+		}
+	}
+	if ev.Wake != "" {
+		return ev.Wake, ev.WakeNote
+	}
+	// 子任务交回结果时会话马上被唤醒；隔得久的是别的通知
+	if !w.subDone.IsZero() && ev.Time.Sub(w.subDone) < subWakeGap {
+		return protocol.WakeAgent, ""
+	}
+	return protocol.WakeBg, ""
 }

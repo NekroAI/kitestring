@@ -19,6 +19,50 @@ var (
 // SourceAuto 标记由 agent 自动注入（非用户输入）的 UserPromptSubmit。
 const SourceAuto = "auto"
 
+// 自动注入消息的来源（R-287），记在 UserPromptSubmit 的 Event.Wake 上：
+// WakeBg 后台命令结束、监视有输出；WakeAgent 子任务交回结果；WakeOutput 终端 ! 命令 / 斜杠命令的输出。
+// 「纸鸢送达」「待命到时」不在这里判：ks wait 本身也是后台命令，要靠 KsWaitEnd 记录（Hub 拼轮时判）。
+const (
+	WakeBg     = "bg"
+	WakeAgent  = "agent"
+	WakeOutput = "output"
+)
+
+var (
+	wakeSummaryRe = regexp.MustCompile(`(?s)<summary>\s*(.*?)\s*</summary>`)
+	wakeQuotedRe  = regexp.MustCompile(`"([^"]*)"`)
+)
+
+// AutoKind 判断一条自动注入消息的来源，并取出一句说明（后台命令 / 监视 / 子任务的描述，截到 80 字）。
+// 不是自动注入的消息返回空。
+func AutoKind(p string) (kind, note string) {
+	m := autoPromptRe.FindStringSubmatch(p)
+	if m == nil {
+		return "", ""
+	}
+	switch m[1] {
+	case "agent-message":
+		return WakeAgent, ""
+	case "task-notification":
+	default:
+		return WakeOutput, ""
+	}
+	sum := ""
+	if s := wakeSummaryRe.FindStringSubmatch(p); s != nil {
+		sum = s[1]
+	}
+	if q := wakeQuotedRe.FindStringSubmatch(sum); q != nil {
+		note = q[1]
+		if r := []rune(note); len(r) > 80 {
+			note = string(r[:80]) + "…"
+		}
+	}
+	if strings.HasPrefix(sum, "Agent ") {
+		return WakeAgent, note
+	}
+	return WakeBg, note
+}
+
 // SourceStandby 标在 DSH 插件的 Stop / Interrupt 上：插件开着待命，这一轮结束后马上挂 /wait，
 // Hub 直接记成待命，不再先记“等你回复”再转待命（R-251）。
 const SourceStandby = "standby"

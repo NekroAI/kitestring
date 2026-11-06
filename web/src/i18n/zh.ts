@@ -1884,6 +1884,9 @@ export const zh = {
     fromWeb: '网页',
     woken: '纸鸢送达消息，会话恢复运行',
     sentIn: '纸鸢送达消息',
+    // 自动唤醒的来源（R-287）：只有待命期间纸鸢送达的才写「纸鸢送达」
+    wake: { timeout: '待命结束', bg: '后台任务通知', agent: '子任务回报', output: '命令输出' } as Record<string, string>,
+    wakeGroup: (n: number) => `自动唤醒 ${n} 轮`,
     tools: (n: number) => `调用 ${n} 次工具`,
     toolsSub: (n: number) => `其中子任务 ${n} 次`,
     noBrief: '（无参数摘要）',

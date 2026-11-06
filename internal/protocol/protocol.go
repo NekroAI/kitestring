@@ -54,12 +54,15 @@ type Event struct {
 	Source     string `json:"source,omitempty"`  // SessionStart.source
 	Reason     string `json:"reason,omitempty"`  // SessionEnd.reason
 	Prompt     string `json:"prompt,omitempty"`  // UserPromptSubmit，截断
-	ToolName   string `json:"tool_name,omitempty"`
-	ToolUseID  string `json:"tool_use_id,omitempty"`
-	ToolBrief  string `json:"tool_brief,omitempty"` // 工具动作简述（命令截断 / 文件名），不含代码正文
-	NotifType  string `json:"notification_type,omitempty"`
-	PermMode   string `json:"permission_mode,omitempty"`
-	AgentType  string `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
+	// Wake / WakeNote：自动注入的 UserPromptSubmit 的来源（WakeBg / WakeAgent / WakeOutput）和一句说明（R-287）
+	Wake      string `json:"wake,omitempty"`
+	WakeNote  string `json:"wake_note,omitempty"`
+	ToolName  string `json:"tool_name,omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	ToolBrief string `json:"tool_brief,omitempty"` // 工具动作简述（命令截断 / 文件名），不含代码正文
+	NotifType string `json:"notification_type,omitempty"`
+	PermMode  string `json:"permission_mode,omitempty"`
+	AgentType string `json:"agent_type,omitempty"` // SubagentStart / SubagentStop
 	// AgentID：子 Agent 的标识。Claude Code 在子 Agent 里触发的 hook 带 agent_id（session_id 仍是主会话的），
 	// 主线程没有；SubagentStart / SubagentStop 也带。Hub 据此把子 Agent 的工具事件只算作后台任务，不改主会话状态（R-115）
 	AgentID   string `json:"agent_id,omitempty"`

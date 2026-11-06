@@ -312,8 +312,10 @@ type GuestTurn struct {
 	Start     time.Time   `json:"start"`
 	End       *time.Time  `json:"end,omitempty" doc:"这一轮结束的时间；正在运行的一轮省略"`
 	Running   bool        `json:"running" doc:"正在运行的一轮（最新一轮且还没结束）"`
-	Source    string      `json:"source" enum:",terminal,web,wake" doc:"terminal 在终端提的问 / web 网页上发的话 / wake 纸鸢送达的消息"`
+	Source    string      `json:"source" enum:",terminal,web,wake" doc:"terminal 在终端提的问 / web 网页上发的话 / wake 会话被自动唤醒（来源见 wake）"`
 	Prompt    string      `json:"prompt,omitempty" doc:"提问全文"`
+	Wake      string      `json:"wake,omitempty" enum:",kite,timeout,bg,agent,output" doc:"source = wake 时是谁唤醒了会话，同 Turn.wake"`
+	WakeNote  string      `json:"wake_note,omitempty" doc:"后台命令 / 监视 / 子任务的描述"`
 	Inbox     []GuestItem `json:"inbox" doc:"这一轮收到的消息（网页上发的话、答复、指派等）"`
 	Items     []GuestItem `json:"items" doc:"这一轮里的明确记录：改状态、证据、决策、留言……"`
 	Tools     []GuestTool `json:"tools" doc:"工具调用，时间正序（最多 200 条）"`
@@ -364,7 +366,7 @@ func guestItems(in []TurnItem) []GuestItem {
 }
 
 func guestTurn(t Turn, last bool) GuestTurn {
-	g := GuestTurn{ID: t.ID, Start: t.Start, End: t.End, Running: last && t.End == nil, Source: t.Source, Prompt: t.Prompt,
+	g := GuestTurn{ID: t.ID, Start: t.Start, End: t.End, Running: last && t.End == nil, Source: t.Source, Prompt: t.Prompt, Wake: t.Wake, WakeNote: t.WakeNote,
 		Inbox: guestItems(t.Inbox), Items: guestItems(append(append([]TurnItem{}, t.Items...), t.After...)),
 		Tools: []GuestTool{}, ToolCount: t.Tools.N + t.AfterTool.N, Files: []string{}, Reply: t.Reply, ReplyKind: t.ReplyKind}
 	for _, c := range append(append([]ToolCall{}, t.Tools.List...), t.AfterTool.List...) {

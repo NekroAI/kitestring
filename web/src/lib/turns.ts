@@ -83,6 +83,50 @@ export function fitRows(boxes: { left: number; top: number; width: number }[], w
   return n
 }
 
+// —— 自动唤醒（R-287）——
+// wake：source = wake 的一轮是谁唤醒的。kite 纸鸢送达；timeout 待命结束；bg 后台任务通知；agent 子任务回报；output 命令输出。
+// 服务端没给（老版本）时按后台任务通知算。
+export type WakeLike = { source: string; wake?: string; inbox?: unknown[] | null; items?: unknown[] | null }
+export const wakeKind = (t: { source: string; wake?: string }) => (t.source !== 'wake' ? '' : t.wake || 'bg')
+
+// quietWake：显示得轻、可以收进一组的自动唤醒轮——不是纸鸢送达，没有收到消息，也没有纸鸢动作（改状态、证据、决策……）。
+export const quietWake = (t: WakeLike) => {
+  const k = wakeKind(t)
+  return k !== '' && k !== 'kite' && !(t.inbox ?? []).length && !(t.items ?? []).length
+}
+
+export type TurnRow<T> = { turn: T; i: number; group?: undefined } | { group: T[]; i: number; turn?: undefined }
+
+// groupWakes：连续 min 轮以上的轻量自动唤醒收成一组；最后一轮（最新、可能正在运行）始终单独显示。i 是该行第一轮的下标。
+export function groupWakes<T extends WakeLike>(turns: T[], min = 2): TurnRow<T>[] {
+  const out: TurnRow<T>[] = []
+  let run: T[] = []
+  let at = 0
+  const flush = () => {
+    if (run.length >= min) out.push({ group: run, i: at })
+    else run.forEach((t, k) => out.push({ turn: t, i: at + k }))
+    run = []
+  }
+  turns.forEach((t, i) => {
+    if (i < turns.length - 1 && quietWake(t)) {
+      if (!run.length) at = i
+      run.push(t)
+      return
+    }
+    flush()
+    out.push({ turn: t, i })
+  })
+  return out
+}
+
+// wakeCounts：一组里各来源的轮数，多的在前（同数按 bg、agent、timeout、output 的顺序）。
+export function wakeCounts(group: { source: string; wake?: string }[]): { kind: string; n: number }[] {
+  const order = ['bg', 'agent', 'timeout', 'output']
+  const m = new Map<string, number>()
+  for (const t of group) m.set(wakeKind(t), (m.get(wakeKind(t)) ?? 0) + 1)
+  return [...m.entries()].map(([kind, n]) => ({ kind, n })).sort((a, b) => b.n - a.n || order.indexOf(a.kind) - order.indexOf(b.kind))
+}
+
 function isSecondRow(boxes: { top: number }[], b: { top: number }, top0: number) {
   const second = boxes.find((x) => x.top > top0)?.top
   return b.top === second

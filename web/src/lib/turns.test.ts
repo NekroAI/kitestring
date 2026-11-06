@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { countHits, fitRows, mergePages, relatedIds, sortObjects, toolLine } from './turns.ts'
+import { countHits, fitRows, groupWakes, mergePages, quietWake, relatedIds, sortObjects, toolLine, wakeCounts, wakeKind } from './turns.ts'
 
 const turn = (id: string, start: string, x: Partial<{ prompt_id: string; reply_id: string; items: { id: string }[]; inbox: { id: string }[]; after: { id: string }[] }> = {}) => ({
   id,
@@ -54,4 +54,37 @@ test('一行半：第一行放满，第二行只用左半边，末尾给 +n 让�
   assert.equal(fitRows([b(0, 0), b(100, 0), b(200, 0), b(0, 30, 140), b(0, 60)], 300, 30), 3)
   // 第一行满了：+n 换到第二行开头
   assert.equal(fitRows([b(0, 0), b(100, 0), b(200, 0), b(0, 30, 200)], 300, 30), 3)
+})
+
+// R-287：自动唤醒的来源与折叠
+const w = (id: string, wake?: string, x: { inbox?: unknown[]; items?: unknown[] } = {}) => ({ id, source: 'wake', wake, inbox: x.inbox ?? [], items: x.items ?? [] })
+const you = (id: string) => ({ id, source: 'terminal', inbox: [], items: [] })
+
+test('wakeKind：没给来源的自动唤醒按后台任务通知算，非自动唤醒为空', () => {
+  assert.equal(wakeKind(w('a')), 'bg')
+  assert.equal(wakeKind(w('a', 'agent')), 'agent')
+  assert.equal(wakeKind(you('a')), '')
+})
+
+test('quietWake：纸鸢送达、收到消息或有纸鸢动作的不算轻量', () => {
+  assert.equal(quietWake(w('a', 'bg')), true)
+  assert.equal(quietWake(w('a', 'kite')), false)
+  assert.equal(quietWake(w('a', 'bg', { inbox: [{}] })), false)
+  assert.equal(quietWake(w('a', 'agent', { items: [{}] })), false)
+  assert.equal(quietWake(you('a')), false)
+})
+
+test('groupWakes：连续两轮以上收成一组，最新一轮单独显示，纸鸢送达打断分组', () => {
+  const ts = [you('u'), w('1'), w('2', 'agent'), w('3', 'kite'), w('4'), you('v'), w('5'), w('6'), w('7')]
+  const rows = groupWakes(ts).map((r) => (r.group ? r.group.map((t) => t.id).join('+') + '@' + r.i : r.turn.id + '@' + r.i))
+  assert.deepEqual(rows, ['u@0', '1+2@1', '3@3', '4@4', 'v@5', '5+6@6', '7@8'])
+  assert.deepEqual(groupWakes([w('1')]).map((r) => r.turn?.id), ['1'])
+})
+
+test('wakeCounts：各来源轮数，多的在前', () => {
+  assert.deepEqual(wakeCounts([w('1'), w('2', 'agent'), w('3', 'bg'), w('4', 'timeout')]), [
+    { kind: 'bg', n: 2 },
+    { kind: 'agent', n: 1 },
+    { kind: 'timeout', n: 1 },
+  ])
 })

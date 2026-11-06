@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowRightLeft, ChevronRight, Copy, FileText, Globe, GitBranch, HelpCircle, Layers, ListChecks, MessageSquare, SquareTerminal } from 'lucide-react'
+import { ArrowRightLeft, BellRing, ChevronRight, Copy, FileText, Globe, GitBranch, HelpCircle, Hourglass, Layers, ListChecks, MessageSquare, SquareTerminal } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Schemas } from '../api/client'
 import { t } from '../i18n'
 import { modelShort } from '../lib/model'
-import { promptKey, replyKey, toolLine } from '../lib/turns'
+import { groupWakes, promptKey, replyKey, toolLine, wakeCounts, wakeKind } from '../lib/turns'
 import { absTime, copyText, cx, shortDuration } from '../lib/util'
 import { Badge, Tip } from '../ui/base'
 import { RoleTag } from '../ui/marks'
@@ -260,7 +260,7 @@ function Rail({ children }: { children: ReactNode }) {
 
 // Reply：它的回复，长的收起；只有摘要用的前一段或没有记录时写明。
 const FOLD = 360
-function Reply({ text, note }: { text: string; note: boolean }) {
+function Reply({ text, note, quiet }: { text: string; note: boolean; quiet?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const [long, setLong] = useState(false)
   const [open, setOpen] = useState(false)
@@ -270,7 +270,7 @@ function Reply({ text, note }: { text: string; note: boolean }) {
   const folded = long && !open
   return (
     <div>
-      <div ref={ref} className="relative text-[14px] leading-relaxed" style={folded ? { maxHeight: FOLD, overflow: 'hidden' } : undefined}>
+      <div ref={ref} className={cx('relative leading-relaxed', quiet ? 'text-[13px] text-fg-2' : 'text-[14px]')} style={folded ? { maxHeight: FOLD, overflow: 'hidden' } : undefined}>
         <Md text={text} />
         {folded && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-linear-to-t from-surface to-transparent" />}
       </div>
@@ -338,7 +338,7 @@ function You({ text, web, at, files, children }: { text: string; web?: boolean; 
 
 // TurnView：一轮。
 // briefNote：这一轮是最早一条只记了开头一段的回复，在这里提示一次（D-1171）。
-export function TurnView({ x, last, who: name, busy, models, hit, now, briefNote }: { x: Turn; last: boolean; who: string; busy: boolean; models: Record<string, string>; hit: Hit; now: number; briefNote?: boolean }) {
+export function TurnView({ x, last, who: name, busy, models, hit, now, briefNote, grouped }: { x: Turn; last: boolean; who: string; busy: boolean; models: Record<string, string>; hit: Hit; now: number; briefNote?: boolean; grouped?: boolean }) {
   const inbox = x.inbox ?? []
   const web = inbox.filter((i) => i.web)
   const other = inbox.filter((i) => !i.web)
@@ -346,9 +346,12 @@ export function TurnView({ x, last, who: name, busy, models, hit, now, briefNote
   const after = x.after ?? []
   const running = last && !x.end && busy
   const empty = !x.source && !inbox.length && !items.length && !after.length && !x.tools.n && !x.after_tools.n && !x.reply
+  // 自动唤醒（R-287）：只有待命期间纸鸢送达的写「纸鸢送达」；后台任务通知、子任务回报等显示得轻
+  const wk = wakeKind(x)
+  const quiet = wk !== '' && wk !== 'kite' && !inbox.length
   if (empty) return null
   return (
-    <section className="border-b border-line/70 py-3 last:border-b-0" data-turn={x.id}>
+    <section className={cx('border-b border-line/70 last:border-b-0', quiet ? 'py-2' : 'py-3', grouped && 'border-b-0 py-1.5')} data-turn={x.id}>
       {!x.source && <p className="mb-1 text-[12px] text-fg-3">{t.turns.noPrompt}</p>}
       {x.source === 'terminal' && (
         <Dim id={promptKey(x)} hit={hit}>
@@ -366,9 +369,16 @@ export function TurnView({ x, last, who: name, busy, models, hit, now, briefNote
         <Rail>
           {(other.length > 0 || (x.source === 'wake' && !web.length)) && (
             <Dim id={other.map((o) => o.id).find((id) => hit(id)) ?? other[0]?.id ?? `w:${x.id}`} hit={(id) => hit(id) || other.some((o) => hit(o.id))}>
-              <Node icon={<KiteMark />} at={x.start}>
-                <span className="font-medium">{x.source === 'wake' ? t.turns.woken : t.turns.sentIn}</span>
-              </Node>
+              {quiet ? (
+                <Node icon={<WakeIcon kind={wk} />} at={x.start}>
+                  <span className="text-fg-2">{t.turns.wake[wk]}</span>
+                  {x.wake_note && <span className="min-w-0 truncate text-fg-3">{x.wake_note}</span>}
+                </Node>
+              ) : (
+                <Node icon={<KiteMark />} at={x.start}>
+                  <span className="font-medium">{wk === 'kite' ? t.turns.woken : wk ? t.turns.wake[wk] + t.common.sep + t.turns.sentIn : t.turns.sentIn}</span>
+                </Node>
+              )}
               {other.length > 0 && <div className="mb-1 ml-[26px] space-y-0.5">{other.map((o) => <InboxLine key={o.id} x={o} />)}</div>}
             </Dim>
           )}
@@ -393,7 +403,7 @@ export function TurnView({ x, last, who: name, busy, models, hit, now, briefNote
               </>
             )}
           </div>
-          <Reply text={x.reply} note={!!briefNote && x.reply_kind === 'brief'} />
+          <Reply text={x.reply} note={!!briefNote && x.reply_kind === 'brief'} quiet={quiet} />
         </Dim>
       ) : running ? (
         <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-run">
@@ -449,3 +459,70 @@ function KiteMark() {
   )
 }
 
+
+// WakeIcon：自动唤醒来源的小图标（R-287），颜色压低。
+function WakeIcon({ kind }: { kind: string }) {
+  const c = 'size-3.5 text-fg-3'
+  if (kind === 'agent') return <GitBranch className={c} />
+  if (kind === 'timeout') return <Hourglass className={c} />
+  if (kind === 'output') return <SquareTerminal className={c} />
+  return <BellRing className={c} />
+}
+
+// wakeSummary：一组自动唤醒的说明「后台任务通知 4 · 子任务回报 1」。
+export const wakeSummary = (group: { source: string; wake?: string }[]) =>
+  wakeCounts(group)
+    .map((c) => `${t.turns.wake[c.kind] ?? c.kind} ${c.n}`)
+    .join(t.common.sep)
+
+// WakeGroup：连续几轮轻量的自动唤醒收成一行（R-287）：来源计数 + 时间段 + 最后一轮回复的首行，点开逐轮显示。
+// 筛选时组里有相关条目就自动展开。
+export function WakeGroup({ turns, open: forced, children }: { turns: Turn[]; open?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const shown = open || !!forced
+  const first = turns[0]
+  const lastT = turns[turns.length - 1]
+  const preview = [...turns].reverse().find((x) => x.reply)?.reply
+  return (
+    <section className="border-b border-line/70 py-2 last:border-b-0" data-wake-group={first.id}>
+      <button onClick={() => setOpen(!shown)} aria-expanded={shown} className="grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-x-2.5 text-left text-[12.5px] text-fg-3 transition hover:text-fg-2">
+        <span className="flex size-4 items-center justify-center">
+          <ChevronRight className={cx('size-3.5 transition-transform', shown && 'rotate-90')} />
+        </span>
+        <span className="min-w-0 truncate">
+          <span className="font-medium text-fg-2">{t.turns.wakeGroup(turns.length)}</span>
+          {t.common.sep + wakeSummary(turns)}
+        </span>
+        <span className="shrink-0 text-[11.5px] tabular">
+          {hm(first.start)}–{hm(lastT.end ?? lastT.start)}
+        </span>
+      </button>
+      {!shown && preview && <p className="mt-0.5 ml-[26px] truncate text-[12.5px] text-fg-3">{oneLine(preview)}</p>}
+      {shown && <div className="mt-1 ml-[7px] border-l border-line pl-[18px]">{children}</div>}
+    </section>
+  )
+}
+
+// TurnList：按轮显示，连续的轻量自动唤醒收成一组（R-287）。
+export function TurnList({ turns, who, busy, models, hit, now, briefAt }: { turns: Turn[]; who: string; busy: boolean; models: Record<string, string>; hit: Hit; now: number; briefAt: number }) {
+  const filtering = !hit('\u0000')
+  return (
+    <>
+      {groupWakes(turns).map((r) => {
+        if (r.turn) {
+          const x = r.turn
+          return <TurnView key={`${x.id}@${x.start}`} x={x} last={r.i === turns.length - 1} who={who} busy={busy} models={models} hit={hit} now={now} briefNote={r.i === briefAt} />
+        }
+        const g = r.group
+        const lit = filtering && g.some((x) => hit(promptKey(x)) || hit(replyKey(x)))
+        return (
+          <WakeGroup key={`g:${g[0].id}@${g[0].start}`} turns={g} open={lit}>
+            {g.map((x, k) => (
+              <TurnView key={`${x.id}@${x.start}`} x={x} last={false} who={who} busy={busy} models={models} hit={hit} now={now} briefNote={r.i + k === briefAt} grouped />
+            ))}
+          </WakeGroup>
+        )
+      })}
+    </>
+  )
+}

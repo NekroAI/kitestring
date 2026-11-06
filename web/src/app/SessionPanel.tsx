@@ -19,7 +19,7 @@ import { canMessage, MessageBox } from './messageBox'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { NewReqModal } from './requirements'
 import { sessionTitle, splitTool } from './SessionCard'
-import { hm, PendingWeb, TurnView, type Hit } from './sessionTurns'
+import { hm, PendingWeb, TurnList, type Hit } from './sessionTurns'
 
 // 会话详情页（R-273，D-1145 选 B）：顶部一处状态 + 对象索引 + 按轮的对话时间线 + 底部输入框。
 // 状态只在头部出现一次（设计原则第 5 条）；模型概括标明是概括（第 11 条）；健康提醒是细条，没有时不占位。
@@ -429,9 +429,7 @@ function Timeline({ s, pages, more, loadingOlder, loadOlder, hit, filterKey, mod
         {more ? (loadingOlder ? t.turns.loading : <button onClick={loadOlder} className="hover:text-fg-2">{t.turns.loadOlder}</button>) : turns.length ? t.turns.start : ''}
       </div>
       {!turns.length && !pending.length && <p className="py-8 text-center text-sm text-fg-3">{t.turns.noTurns}</p>}
-      {turns.map((x, i) => (
-        <TurnView key={`${x.id}@${x.start}`} x={x} last={i === turns.length - 1} who={who} busy={busy} models={models} hit={hit} now={now} briefNote={i === briefAt} />
-      ))}
+      <TurnList turns={turns} who={who} busy={busy} models={models} hit={hit} now={now} briefAt={briefAt} />
       {pending.length > 0 && (
         <div className="pb-3">
           {pending.map((p) => (

@@ -12,7 +12,8 @@ import { Md } from '../ui/markdown'
 import { displayState, RoleTag, StatusPill } from '../ui/marks'
 import { DecGlyph, Linkify, PlanGlyph, RefChip, ReqGlyph, ReqStatus, statusCls } from '../ui/refmark'
 import { EvidenceBody } from '../app/evidence'
-import { hm, ItemNode, type TurnItem } from '../app/sessionTurns'
+import { hm, ItemNode, wakeSummary, type TurnItem } from '../app/sessionTurns'
+import { groupWakes, wakeKind } from '../lib/turns'
 import { useGuestPlan, useGuestReq, useGuestSession, useMyComments, type GuestItem, type GuestOverview, type GuestSession, type GuestTurn, type ShareActivity } from './data'
 import { CommentSlot, Compose, MyComments } from './slots'
 
@@ -648,15 +649,18 @@ const oneLine = (s: string) => {
   return line.length > 200 ? line.slice(0, 200) + '…' : line
 }
 
-function TurnBlock({ x, name, now }: { x: GuestTurn; name: string; now: number }) {
+function TurnBlock({ x, name, now, grouped }: { x: GuestTurn; name: string; now: number; grouped?: boolean }) {
   const inbox = x.inbox ?? []
   const web = inbox.filter((i) => i.web)
   const other = inbox.filter((i) => !i.web)
   const items = x.items ?? []
+  // 自动唤醒（R-287）：只有待命期间纸鸢送达的写「纸鸢送达」；其余写真实来源，显示得轻
+  const wk = wakeKind(x)
+  const quiet = wk !== '' && wk !== 'kite' && !inbox.length
   const prompt = x.source === 'terminal' ? x.prompt : x.source === 'web' ? x.prompt || web.map((i) => i.text).join('\n\n') : ''
   if (!x.source && !inbox.length && !items.length && !(x.tools ?? []).length && !x.reply) return null
   return (
-    <section data-turn={x.id} className={cx('border-b border-line/70 py-3.5 last:border-b-0', x.running && 'border-l-2 border-l-run pl-3')}>
+    <section data-turn={x.id} className={cx('border-b border-line/70 last:border-b-0', quiet ? 'py-2' : 'py-3.5', grouped && 'border-b-0 py-1.5', x.running && 'border-l-2 border-l-run pl-3')}>
       {x.running && (
         <p className="mb-1.5 inline-flex items-center gap-1.5 text-[12px] font-medium text-run">
           <Radio className="size-3.5" />
@@ -679,7 +683,8 @@ function TurnBlock({ x, name, now }: { x: GuestTurn; name: string; now: number }
       ) : x.source === 'wake' || other.length ? (
         <div className="mb-1.5">
           <div className="mb-0.5 flex items-center gap-1.5 text-[12px] text-fg-3">
-            <span className="font-medium text-fg-2">{x.source === 'wake' ? t.turns.woken : t.turns.sentIn}</span>
+            <span className={quiet ? 'text-fg-3' : 'font-medium text-fg-2'}>{wk === 'kite' ? t.turns.woken : wk ? t.turns.wake[wk] + (other.length ? t.common.sep + t.turns.sentIn : '') : t.turns.sentIn}</span>
+            {quiet && x.wake_note && <span className="min-w-0 truncate">{x.wake_note}</span>}
             <span className="tabular">{hm(x.start)}</span>
           </div>
           {other.map((o, i) => (
@@ -701,7 +706,7 @@ function TurnBlock({ x, name, now }: { x: GuestTurn; name: string; now: number }
             <span className="font-medium text-fg-2">{name}</span>
             {x.end && <span className="tabular">{hm(x.end)}</span>}
           </div>
-          <Md text={x.reply} className="text-[14px]" />
+          <Md text={x.reply} className={quiet ? 'text-[13px] text-fg-2' : 'text-[14px]'} />
         </div>
       ) : x.running ? (
         <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-run">
@@ -711,6 +716,30 @@ function TurnBlock({ x, name, now }: { x: GuestTurn; name: string; now: number }
       ) : x.end ? (
         <p className="mt-1 text-[12.5px] text-fg-3">{t.turns.noReply}</p>
       ) : null}
+    </section>
+  )
+}
+
+// WakeGroup：连续几轮轻量的自动唤醒收成一行（R-287），同所有者页面：来源计数 + 时间段 + 最后一轮回复的首行，点开逐轮显示。
+function WakeGroup({ turns, children }: { turns: GuestTurn[]; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const first = turns[0]
+  const lastT = turns[turns.length - 1]
+  const preview = [...turns].reverse().find((x) => x.reply)?.reply
+  return (
+    <section className="border-b border-line/70 py-2 last:border-b-0" data-wake-group={first.id}>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex w-full min-w-0 items-center gap-2 text-left text-[12.5px] text-fg-3 hover:text-fg-2">
+        <ChevronRight className={cx('size-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-medium text-fg-2">{t.turns.wakeGroup(turns.length)}</span>
+          {t.common.sep + wakeSummary(turns)}
+        </span>
+        <span className="shrink-0 text-[11.5px] tabular">
+          {hm(first.start)}–{hm(lastT.end ?? lastT.start)}
+        </span>
+      </button>
+      {!open && preview && <p className="mt-0.5 ml-[22px] truncate text-[12.5px] text-fg-3">{oneLine(preview)}</p>}
+      {open && <div className="mt-1 ml-[6px] border-l border-line pl-4">{children}</div>}
     </section>
   )
 }
@@ -794,7 +823,21 @@ export function SessionView({ token, sessionKey, ov }: { token: string; sessionK
           ) : (
             turns.length > 0 && <p className="mb-1 text-center text-[12px] text-fg-3">{t.turns.start}</p>
           )}
-          {turns.length ? turns.map((x) => <TurnBlock key={x.id} x={x} name={name} now={now} />) : <p className="py-6 text-center text-[13px] text-fg-3">{t.turns.noTurns}</p>}
+          {turns.length ? (
+            groupWakes(turns).map((r) =>
+              r.turn ? (
+                <TurnBlock key={r.turn.id} x={r.turn} name={name} now={now} />
+              ) : (
+                <WakeGroup key={`g:${r.group[0].id}`} turns={r.group}>
+                  {r.group.map((x) => (
+                    <TurnBlock key={x.id} x={x} name={name} now={now} grouped />
+                  ))}
+                </WakeGroup>
+              ),
+            )
+          ) : (
+            <p className="py-6 text-center text-[13px] text-fg-3">{t.turns.noTurns}</p>
+          )}
           <div ref={end} />
         </>
       )}
