@@ -139,7 +139,9 @@ web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --p
 
 ## 升级
 
-重跑安装脚本，再重启常驻服务：macOS 再运行一次 `ks install`；Linux 运行 `systemctl --user restart kitestring-daemon`（Hub 所在机器再重启 `kitestring-hub`）。
+运行 `ks update`：下载最新发布版、用 `SHA256SUMS.txt` 校验、替换 `ks`，再重启用这个 `ks` 的 Hub 和后台服务（launchd / systemd）。`ks update --check` 只查有没有新版本。从源码构建的开发版默认不更新，加 `--force` 才换成发布版。
+
+0.2.0 及更早的版本还没有 `ks update`：重跑安装脚本，再重启常驻服务：macOS 再运行一次 `ks install`；Linux 运行 `systemctl --user restart kitestring-daemon`（Hub 所在机器再重启 `kitestring-hub`）。
 
 本机数据都在 `~/.kitestring`（可用 `KS_HOME` 覆盖），升级时保留。
 

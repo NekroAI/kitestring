@@ -139,7 +139,9 @@ When compacting or switching sessions, hand off: click "Hand off" on a session i
 
 ## Updating
 
-Re-run the install script, then restart the services: on macOS run `ks install` again; on Linux run `systemctl --user restart kitestring-daemon` (and `kitestring-hub` on the Hub machine).
+Run `ks update`: it downloads the latest release, verifies it against `SHA256SUMS.txt`, replaces `ks` and restarts the Hub and daemon services (launchd / systemd) that run this `ks`. `ks update --check` only reports whether a newer version exists. Development builds from source are left alone unless you pass `--force`.
+
+Versions 0.2.0 and earlier have no `ks update`: re-run the install script, then restart the services: on macOS run `ks install` again; on Linux run `systemctl --user restart kitestring-daemon` (and `kitestring-hub` on the Hub machine).
 
 All local data lives in `~/.kitestring` (override with `KS_HOME`) and is kept across updates.
 

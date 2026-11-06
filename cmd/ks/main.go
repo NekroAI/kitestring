@@ -98,6 +98,8 @@ agent 调用：
                          挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）；
                          --on 另外订阅本项目别的会话的事件（提决策 / 交验收 / 受阻 / 阶段交小结 / 用户改项目设置 / 用户改需求状态），none 不订阅、default 按身份默认，不填沿用上次
 
+  update [--check] [--force]   从 GitHub Release 更新到最新版：校验 SHA256SUMS、原子替换 ks，再重启用这个 ks 的 Hub 和后台服务；
+                                 --check 只查有没有新版本；开发构建（版本号不是 X.Y.Z）默认不更新，--force 换成发布版
   version                打印版本
 所有本机数据位于 ~/.kitestring（可用 KS_HOME 覆盖）。`
 
@@ -113,6 +115,8 @@ func main() {
 	switch cmd {
 	case "version", "--version", "-v":
 		fmt.Printf("ks %s (%s)\n", version.Version, version.Commit)
+	case "update":
+		err = runUpdate(args)
 	case "hub":
 		err = runHub(args)
 	case "login":
