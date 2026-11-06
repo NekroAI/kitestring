@@ -197,9 +197,10 @@ export function OverviewView({ ov, token, reqs, fresh }: { ov: Overview; token: 
   const bar = statusBar(ov.counts)
   const total = bar.reduce((n, [, c]) => n + c, 0)
   const running = ov.sessions.filter((s) => ['running', 'background', 'waiting_approval', 'waiting_answer'].includes(displayState(s))).length
+  // 宽屏（xl）：标题和状态分布固定在上，下面两列各自滚动——看动态时左边的会话和需求留在原处；窄屏单列，整页一起滚
   return (
-    <div>
-      <header className="border-b border-line px-4 py-5 sm:px-6">
+    <div className="xl:flex xl:h-full xl:flex-col">
+      <header className="shrink-0 border-b border-line px-4 py-5 sm:px-6">
         <h1 className="font-display text-[22px] leading-snug tracking-[0.02em] text-balance text-fg">{ov.name}</h1>
         {total > 0 && (
           <>
@@ -214,8 +215,8 @@ export function OverviewView({ ov, token, reqs, fresh }: { ov: Overview; token: 
           </>
         )}
       </header>
-      <div className="grid gap-6 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <div className="grid min-w-0 content-start gap-6">
+      <div className="grid gap-6 px-4 py-5 sm:px-6 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] xl:gap-0 xl:p-0">
+        <div className="grid min-w-0 content-start gap-6 xl:min-h-0 xl:overflow-y-auto xl:px-6 xl:py-5">
           <Section title={t.guest.sessions} extra={running ? t.guest.runningN(running) : undefined}>
             <Lanes list={ov.sessions} token={token} now={now} />
           </Section>
@@ -236,9 +237,11 @@ export function OverviewView({ ov, token, reqs, fresh }: { ov: Overview; token: 
             )}
           </Section>
         </div>
-        <Section title={t.guest.activity}>
-          <Feed list={ov.activity} token={token} sessions={ov.sessions} fresh={fresh} now={now} />
-        </Section>
+        <div className="min-w-0 xl:min-h-0 xl:overflow-y-auto xl:border-l xl:border-line xl:px-6 xl:py-5">
+          <Section title={t.guest.activity}>
+            <Feed list={ov.activity} token={token} sessions={ov.sessions} fresh={fresh} now={now} />
+          </Section>
+        </div>
       </div>
     </div>
   )
