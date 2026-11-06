@@ -102,7 +102,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	root.Handle("GET /api/agent/files/{id}", h.requireDevice(http.HandlerFunc(h.handleDownload)))
 	root.Handle("/api/", h.requireWeb(webMux))
 	if web != nil {
-		root.Handle("/", web)
+		root.Handle("/", h.shareMeta(web))
 	}
 	return withGzip(withClient(withToldHandler(root)))
 }

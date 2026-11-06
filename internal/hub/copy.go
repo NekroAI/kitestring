@@ -206,6 +206,27 @@ func handoffHow(by string, handed bool) string {
 	return "已由「" + by + "」接任"
 }
 
+// ---------- 分享链接的预览摘要（R-286）：IM 抓取 /s/<token> 时看到的标题和简介 ----------
+
+const (
+	// 通用宣传摘要：设了访问密码、失效、撤回、到期、链接无效时一律用它，不露分享名称和内容。
+	ogPromoTitle = "纸鸢 Kitestring · 开源的多 agent 驾驶舱"
+	ogPromoDesc  = "一块看板管住你每台机器上的 Claude Code 和 Codex 会话：看清每个会话在做什么，手机上就能回答会话等待的决策、指派下一条需求。AGPL-3.0 开源，github.com/NekroAI/kitestring"
+	ogSiteName   = "纸鸢 Kitestring"
+)
+
+// ogShareDesc 是没设密码的有效分享的简介：几条需求、完成几条、最近更新时间（updated 为空表示没有更新记录）。
+func ogShareDesc(reqs, done int, updated string) string {
+	if reqs == 0 {
+		return "暂无需求"
+	}
+	s := fmt.Sprintf("共 %d 条需求，已完成 %d 条", reqs, done)
+	if updated != "" {
+		s += "，最近更新 " + updated
+	}
+	return s
+}
+
 // copyTexts 列出本文件的全部文字（函数用占位参数取一次），给 copy_test.go 检查。
 // ---------- 分享访客页（R-281）：免登录访客看到的提示 ----------
 
@@ -272,6 +293,8 @@ func copyTexts() map[string]string {
 		"holdEnded": holdEnded("G-3"), "handoffHow": handoffHow("甲", false), "handoffHowHanded": handoffHow("甲", true),
 		"shareLinkInvalid": shareLinkInvalid, "shareLinkRevoked": shareLinkRevoked, "shareRevokedText": shareRevokedText, "shareExpiredText": shareExpiredText,
 		"sharePasswordNeeded": sharePasswordNeeded, "sharePasswordWrong": sharePasswordWrong, "shareNotIncluded": shareNotIncluded, "shareReadOnly": shareReadOnly, "sharePasswordLocked": sharePasswordLocked(15),
+		"ogPromoTitle": ogPromoTitle, "ogPromoDesc": ogPromoDesc, "ogSiteName": ogSiteName,
+		"ogShareDesc": ogShareDesc(5, 2, "11-06 10:30"), "ogShareDesc0": ogShareDesc(0, 0, ""),
 		"shareCommentEmpty": shareCommentEmpty, "shareCommentTarget": shareCommentTarget, "shareCommentTooMany": shareCommentTooMany, "shareCommentPickReq": shareCommentPickReq, "shareCommentTooLong": shareCommentTooLong(2000),
 	} {
 		out[k] = v
