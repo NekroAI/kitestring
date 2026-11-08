@@ -11,7 +11,7 @@ import { ReqGlyph } from '../ui/refmark'
 import { useActions, useBusy } from './actions'
 import { useAssign } from './assign'
 import { offlineOf } from './compact'
-import { DraftLine, useDraft } from './draft'
+import { DraftField, DraftHint, useDraft } from './draft'
 
 // canMessage：会话面板上能不能直接给它发一句话——没结束、没被接任卸任的会话都能发；
 // 送达方式同留言：挂着 ks wait 时立刻叫醒，在跑时排到下一轮，已交接下线的排队等新会话接任（R-273）。
@@ -100,13 +100,15 @@ export function MessageBox({ s, who, onNew, onSent }: { s: Session; who: string;
           }}
         >
           <AttachZone value={files} onChange={(v) => dr.set({ files: v })} compact>
-            <Textarea minRows={1} value={text} disabled={!ok} placeholder={t.turns.to(who) + sendHint(s)} onChange={(e) => dr.set({ text: e.target.value })} className="max-h-48 pr-10" />
+            <DraftField h={dr}>{(pad) => <Textarea minRows={1} value={text} disabled={!ok} placeholder={t.turns.to(who) + sendHint(s)} onChange={(e) => dr.set({ text: e.target.value })} className={cx('max-h-48', pad)} />}</DraftField>
           </AttachZone>
         </div>
         <Button size="icon" variant="primary" aria-label={t.turns.send} disabled={!dirty || uploading} loading={busy} icon={<ArrowUp className="size-4" />} onClick={() => void send()} className="shrink-0" />
       </div>
       <div className={cx('mt-1 flex items-center gap-2 text-[11.5px] text-fg-3', !ok && 'hidden')}>
-        <DraftLine h={dr} className="min-w-0 flex-1" />
+        <span className="min-w-0 flex-1">
+          <DraftHint h={dr} className="text-[11.5px]" />
+        </span>
         <span className="ml-auto hidden shrink-0 items-center gap-1 pointer-fine:flex">
           <kbd className="rounded border border-line px-1 font-mono text-[10.5px]">Enter</kbd>
           {t.turns.keys}

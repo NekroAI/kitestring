@@ -10,7 +10,7 @@ import { Button, Segmented, Textarea, Tip } from '../ui/base'
 import { Modal } from '../ui/overlay'
 import { Linkify } from '../ui/refmark'
 import { useActions } from './actions'
-import { DraftLine, useDraft } from './draft'
+import { DraftField, useDraft } from './draft'
 import { PendingCover, schedule, usePendingMap } from './verdict'
 
 // 当前安排条（R-245）：工作台简报条下方的一条小条，列各项目生效中的安排（用户口头交代的临时安排，如「额度紧，做完这几条就停」「这次可以 push」）。
@@ -90,8 +90,7 @@ function AddArrange({ open, onClose, sessions }: { open: boolean; onClose: () =>
         )}
         <section className="space-y-1.5">
           <h4 className="text-[13px] font-medium text-fg-2">{t.arrange.text}</h4>
-          <Textarea value={dr.value.text} onChange={(e) => dr.set({ text: e.target.value })} placeholder={t.arrange.placeholder} maxLength={200} minRows={2} autoFocus />
-          <DraftLine h={dr} />
+          <DraftField h={dr}>{(pad) => <Textarea value={dr.value.text} onChange={(e) => dr.set({ text: e.target.value })} placeholder={t.arrange.placeholder} maxLength={200} minRows={2} autoFocus className={pad} />}</DraftField>
         </section>
         <section className="space-y-1.5">
           <h4 className="text-[13px] font-medium text-fg-2">{t.arrange.until}</h4>

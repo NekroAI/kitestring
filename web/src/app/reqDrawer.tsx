@@ -28,7 +28,7 @@ import { OwnLine, useOwnership } from './ownership'
 import { useKsEvent } from './command'
 import { PendingBar, Seal, useAdvance, usePending, usePendingMap, useReqVerdict, Verdict } from './verdict'
 import { plainText } from '../ui/markdown'
-import { DraftLine, draftExists, useDraft } from './draft'
+import { DraftField, DraftHint, draftExists, useDraft } from './draft'
 import { Linkify, ProjGlyph, RefChip, ReqGlyph } from '../ui/refmark'
 import { ReviewBadge } from './verify'
 
@@ -218,7 +218,7 @@ function Brief({ r, compact, focus }: { r: Requirement; compact?: boolean; focus
 
   return (
     <header className="shrink-0 border-b border-line px-4 pt-1 pb-3 sm:px-5">
-      <EditableText wrap draftKey={`edit:${r.code}:title`} value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} className="-mx-3 h-auto py-1 font-display text-lg leading-snug" />
+      <EditableText wrap draftKey={`edit:${r.code}:title`} value={r.title} placeholder={t.reqs.titlePlaceholder} onSave={(v) => v && save({ title: v })} boxClassName="-mx-3" className="h-auto py-1 font-display text-lg leading-snug" />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <StatusMenu r={r} size="md" />
         <PlanBadge r={r} className="px-2.5 py-1 text-sm" />
@@ -277,13 +277,13 @@ function Brief({ r, compact, focus }: { r: Requirement; compact?: boolean; focus
         <div className="mt-3 max-h-[34dvh] space-y-3 overflow-y-auto overscroll-contain rounded-xl bg-surface-2 p-3 text-sm">
           <section>
             <h3 className="mb-0.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
-            <AttachZone value={r.files ?? []} onChange={(files) => save({ files: files.map((f) => f.id) })} compact>
-              <EditableMd draftKey={`edit:${r.code}:detail`} value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} className="-mx-3 pr-10" />
+            <AttachZone value={r.files ?? []} onChange={(files) => save({ files: files.map((f) => f.id) })} compact className="-mx-3" listClassName="px-3">
+              <EditableMd draftKey={`edit:${r.code}:detail`} value={r.detail} placeholder={t.reqs.detailPlaceholder} onSave={(v) => save({ detail: v })} />
             </AttachZone>
           </section>
           <section>
             <h3 className="mb-0.5 text-xs font-medium text-fg-3">{t.reqs.acceptance}</h3>
-            <EditableMd draftKey={`edit:${r.code}:acceptance`} value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} className="-mx-3" />
+            <EditableMd draftKey={`edit:${r.code}:acceptance`} value={r.acceptance} placeholder={t.reqs.acceptancePlaceholder} onSave={(v) => save({ acceptance: v })} boxClassName="-mx-3" />
           </section>
           <section>
             <div className="mb-1 flex items-center justify-between">
@@ -422,14 +422,16 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
         onFiles={setFiles}
         incoming={incoming}
         onIncoming={onIncoming}
-        draft={<DraftLine h={dr} />}
+        draft={dr}
         onPass={pass}
         onBack={back}
         backByAdvice={byAdvice}
         size="md"
         extra={
           <div className="flex min-w-0 items-center gap-2">
-            <div className="min-w-0 flex-1">{hint}</div>
+            <div className="min-w-0 flex-1">
+              <DraftHint h={dr}>{hint}</DraftHint>
+            </div>
             {reviewer}
           </div>
         }
@@ -445,11 +447,12 @@ function Composer({ r, pending, onJump, incoming, onIncoming }: { r: Requirement
       }}
     >
       <AttachZone value={files} onChange={setFiles} compact incoming={incoming} onIncoming={onIncoming}>
-        <Textarea ref={box} minRows={1} value={text} placeholder={t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className="pr-10" />
+        <DraftField h={dr}>{(pad) => <Textarea ref={box} minRows={1} value={text} placeholder={t.reqs.notePlaceholder} onChange={(e) => setText(e.target.value)} className={pad} />}</DraftField>
       </AttachZone>
-      <DraftLine h={dr} />
       <div className="mt-2.5 flex items-center gap-2">
-        <div className="min-w-0 flex-1">{hint}</div>
+        <div className="min-w-0 flex-1">
+          <DraftHint h={dr}>{hint}</DraftHint>
+        </div>
         {reviewer}
         {r.status !== 'done' && r.status !== 'shelved' && <AssignButton code={r.code} projectId={r.project_id} />}
         <Button variant="primary" disabled={!dirty || uploading} loading={busy} icon={<CornerDownLeft className="size-4" />} onClick={send}>

@@ -11,7 +11,7 @@ import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Tip } from '..
 import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { PlanGlyph, ReqGlyph, RefChip } from '../ui/refmark'
 import { RoleTag } from '../ui/marks'
-import { DraftLine, useDraft } from './draft'
+import { DraftField, DraftHint, useDraft } from './draft'
 import { useBusy } from './actions'
 import { AskItem, guestAsk, useStaying } from './asks'
 import { useWorkbench } from './inbox'
@@ -787,7 +787,10 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
             <h2 className="text-xs font-semibold tracking-wide text-fg-3">{t.share.access}</h2>
             <label className="block">
               <span className="mb-1.5 block text-[13px] font-medium text-fg-2">{t.share.name}</span>
-              <Input value={f.name} onChange={(e) => h.set({ name: e.target.value })} placeholder={t.share.namePlaceholder} maxLength={80} />
+              {/* 清空（R-317）在名称框右端：放弃没保存的改动，回到打开时的样子 */}
+              <DraftField h={h} single>
+                {(pad) => <Input value={f.name} onChange={(e) => h.set({ name: e.target.value })} placeholder={t.share.namePlaceholder} maxLength={80} className={pad} />}
+              </DraftField>
             </label>
             <div>
               <label className="block">
@@ -850,7 +853,11 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
           )}
           <div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {missingWhy && <span className="mr-auto text-xs text-fg-3">{missingWhy}</span>}
+              {(missingWhy || h.hint) && (
+                <span className="mr-auto min-w-0 text-xs text-fg-3">
+                  <DraftHint h={h}>{missingWhy}</DraftHint>
+                </span>
+              )}
               <Button variant="ghost" onClick={() => navigate(share ? `/shares/${share.id}` : '/shares')}>
                 {t.common.cancel}
               </Button>
@@ -858,7 +865,6 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
                 {share ? t.common.save : t.share.createOk}
               </Button>
             </div>
-            <DraftLine h={h} className="justify-end" />
           </div>
         </div>
       </div>

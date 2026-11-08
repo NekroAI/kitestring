@@ -22,7 +22,7 @@ import { Md } from '../ui/markdown'
 import { ProjGlyph, RefChip, ReqGlyph, ReqStatus } from '../ui/refmark'
 import { BlockList, ScoreCount } from '../ui/blocks'
 import { done, PendingBar, schedule, Seal, usePending, Verdict } from './verdict'
-import { DraftLine, useDraft } from './draft'
+import { DraftField, DraftHint, useDraft } from './draft'
 
 // 计划（R-43）：需求之上的一层，按顺序分阶段推进、逐阶段验收。
 // 阶段状态与推进规则在后端；这里负责展示进度、阶段闸门（批准 / 退回）和编辑。
@@ -296,13 +296,13 @@ function PlanVerdict({ x, st, stack, extra, className }: { x: Plan; st?: Stage; 
     <Verdict
       scene={st ? 'accept' : 'plan'}
       stack={stack}
-      extra={extra}
+      extra={stack ? <DraftHint h={dr}>{extra}</DraftHint> : extra}
       className={className}
       note={comment}
       onNote={(v) => dr.set({ text: v })}
       files={files}
       onFiles={(f) => dr.set({ files: f })}
-      draft={<DraftLine h={dr} />}
+      draft={dr}
       pendingKey={st ? stageKey(x, st) : planKey(x)}
       canPass={st ? !x.paused : planReqCount(x) > 0}
       onPass={() => (st ? v.pass(x, st, c, ids, clear) : v.approve(x, c, ids, clear))}
@@ -828,11 +828,10 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">
           <input autoFocus={!plan} value={title} placeholder={t.plan.titlePlaceholder} onChange={(e) => setTitle(e.target.value)} className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3" />
-          <div>
-            <Textarea minRows={2} value={goal} placeholder={t.plan.goalPlaceholder} onChange={(e) => setGoal(e.target.value)} />
-            {/* 编辑已有计划时「清空」没有意义，只给「恢复原文」 */}
-            <DraftLine h={dr} revert={!!plan} noClear={!!plan} />
-          </div>
+          {/* 编辑已有计划时「清空」没有意义，只给「恢复原文」 */}
+          <DraftField h={dr} revert={!!plan} noClear={!!plan}>
+            {(pad) => <Textarea minRows={2} value={goal} placeholder={t.plan.goalPlaceholder} onChange={(e) => setGoal(e.target.value)} className={pad} />}
+          </DraftField>
           <div className="flex flex-wrap items-center gap-2">
             <Menu
               align="start"
@@ -870,7 +869,9 @@ export function PlanEditor({ open, onClose, plan, defaultProject }: { open: bool
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
-          <span className="min-w-0 flex-1 truncate text-xs text-fg-3 max-sm:hidden">{t.plan.progressDraft(stages.length, total)}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-fg-3 max-sm:hidden">
+            <DraftHint h={dr}>{t.plan.progressDraft(stages.length, total)}</DraftHint>
+          </span>
           {plan ? (
             <Button className="ml-auto" variant="primary" loading={busy} disabled={!title.trim()} onClick={() => void save(false)}>
               {t.plan.save}

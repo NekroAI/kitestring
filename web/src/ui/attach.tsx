@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { createContext, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, motion, useMotionValueEvent, useTransform } from 'motion/react'
 import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
@@ -974,7 +974,9 @@ export function ZoomButton({ f, className, group }: { f: ViewShot; className?: s
 }
 
 // AttachZone：包住输入框，支持粘贴与拖拽任意文件；下方显示附件（图片缩略图、文件块）与“添加附件”按钮。
-export function AttachZone({ value, onChange, children, className, compact, incoming, onIncoming }: { value: FileRef[]; onChange: (v: FileRef[]) => void; children: ReactNode; className?: string; compact?: boolean; incoming?: File[]; onIncoming?: () => void }) {
+// compact：输入框右上角的工具槽里放回形针（最右一格），框里的清空 / 恢复原文从它左边排起（SlotCtx，R-317）。
+// listClassName：附件列表那一行的额外样式（输入框向外伸出时让附件仍和标题对齐）。
+export function AttachZone({ value, onChange, children, className, listClassName, compact, incoming, onIncoming }: { value: FileRef[]; onChange: (v: FileRef[]) => void; children: ReactNode; className?: string; listClassName?: string; compact?: boolean; incoming?: File[]; onIncoming?: () => void }) {
   const { pending, add, onPaste, cancel, remove } = useAttach(value, onChange)
   const [annotating, setAnnotating] = useState<FileRef | null>(null)
   // 从看图处“标注并附上”送来的图片：上传后加进来
@@ -1005,8 +1007,10 @@ export function AttachZone({ value, onChange, children, className, compact, inco
       onDrop={onDrop}
       className={cx('relative rounded-xl transition', over && 'ring-2 ring-accent/50', className)}
     >
-      {children}
-      <div className={cx('flex flex-wrap items-center gap-2', (value.length || pending.length || !compact) && 'mt-2')}>
+      <SlotCtx.Provider value={compact ? 1 : 0}>{children}</SlotCtx.Provider>
+      {/* 回形针紧跟输入框（和框里的清空同一个槽），Tab 顺序：输入框 → 清空 → 附件 → 附件缩略图 */}
+      {compact && <AttachTrigger onPick={() => input.current?.click()} />}
+      <div className={cx('flex flex-wrap items-center gap-2', (value.length || pending.length || !compact) && 'mt-2', listClassName)}>
         {value.map((f) => (
           <Thumb key={f.id} f={f} size="sm" onRemove={() => remove(f.id)} onAnnotate={() => setAnnotating(f)} group={value.filter(viewable)} />
         ))}
@@ -1038,7 +1042,6 @@ export function AttachZone({ value, onChange, children, className, compact, inco
         {!compact && <AddImageButton onPick={() => input.current?.click()} />}
       </div>
       <input ref={input} type="file" multiple hidden onChange={(e) => void add([...(e.target.files ?? [])]).then(() => (e.target.value = ''))} />
-      {compact && <AttachTrigger onPick={() => input.current?.click()} />}
       {over && <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-accent-soft/80 text-sm font-medium text-accent">{t.attach.drop}</div>}
       {annotating && (
         <Annotator
@@ -1065,15 +1068,51 @@ function AddImageButton({ onPick }: { onPick: () => void }) {
   )
 }
 
-// 紧凑模式下的触发按钮：放在输入框右下角。
+// ---------- 框内工具槽（R-317）----------
+// 草稿输入框右上角固定的一格工具槽：从右往左依次是附件、清空、恢复原文（lib/drafts.ts 的 slotTools / slotPad）。
+// 多行框贴第一行顶端，框变高时不动；单行框垂直居中（和需求池搜索框的 × 同一位置）。
+
+// SlotCtx：外层已经占了几格（紧凑的 AttachZone 里回形针占最右一格）。
+export const SlotCtx = createContext(0)
+
+export function ToolSlot({ children, single, offset = 0 }: { children: ReactNode; single?: boolean; offset?: number }) {
+  return (
+    <span data-tool-slot="" className={cx('absolute flex items-center gap-0.5', single ? 'top-1/2 -translate-y-1/2' : 'top-1.5', offset ? 'right-[36px] pointer-coarse:right-[44px]' : 'right-1.5')}>
+      {children}
+    </span>
+  )
+}
+
+// SlotButton：槽里的一个图标按钮（桌面 28px，触屏 36px）。hidden：只隐藏、仍占位，不能聚焦。
+// 按下时不让输入框失焦（失焦就保存了），点完焦点仍在输入框里。
+export function SlotButton({ label, tip, icon, onClick, hidden }: { label: string; tip?: string; icon: ReactNode; onClick: () => void; hidden?: boolean }) {
+  const btn = (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant="ghost"
+      aria-label={label}
+      aria-hidden={hidden || undefined}
+      tabIndex={hidden ? -1 : undefined}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      className={cx(hidden && 'invisible')}
+    >
+      {icon}
+    </Button>
+  )
+  return hidden ? btn : <Tip content={tip ?? label}>{btn}</Tip>
+}
+
+// 紧凑模式下的触发按钮：输入框右上角工具槽的最右一格。
 function AttachTrigger({ onPick }: { onPick: () => void }) {
   return (
-    <span className="absolute top-1.5 right-1.5">
+    <ToolSlot>
       <Tip content={t.attach.hint}>
         <Button type="button" size="icon-sm" variant="ghost" aria-label={t.attach.add} onClick={onPick}>
           <Paperclip className="size-4" />
         </Button>
       </Tip>
-    </span>
+    </ToolSlot>
   )
 }

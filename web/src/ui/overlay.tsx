@@ -5,7 +5,7 @@ import { Check, X } from 'lucide-react'
 import { cx, useDesktop, useMedia } from '../lib/util'
 import { t } from '../i18n'
 import { Button, Input, Textarea } from './base'
-import { DraftLine, useDraft } from '../app/draft'
+import { DraftField, useDraft } from '../app/draft'
 import { clamp, G, noDrag, PagerBind, rub, scrollerOf, scrollsX, spring, springTo, useDrag, type DragStart, type PagerHandle } from './gesture'
 
 // FullSheet：手机上的全屏编辑页（R-72）。header 里放取消 / 提交，键盘挡不住。
@@ -597,26 +597,32 @@ function ReasonProvider({ children }: { children: ReactNode }) {
             ))}
           </div>
           )}
-          {opts?.multiline ? (
-            <Textarea
-              value={note}
-              minRows={3}
-              placeholder={opts.placeholder}
-              onChange={(e) => setNote(e.target.value)}
-              onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
-              autoFocus
-            />
-          ) : (
-            <Input
-              value={note}
-              maxLength={200}
-              placeholder={opts?.placeholder}
-              onChange={(e) => setNote(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
-              autoFocus
-            />
-          )}
-          {opts?.draft && <DraftLine h={dr} className="-mt-2" />}
+          {/* 清空（R-317）只清文字，已选的类别保留 */}
+          <DraftField h={dr} empty={{ note: '' }} noClear={!opts?.draft} single={!opts?.multiline}>
+            {(pad) =>
+              opts?.multiline ? (
+                <Textarea
+                  value={note}
+                  minRows={3}
+                  placeholder={opts.placeholder}
+                  onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
+                  autoFocus
+                  className={pad}
+                />
+              ) : (
+                <Input
+                  value={note}
+                  maxLength={200}
+                  placeholder={opts?.placeholder}
+                  onChange={(e) => setNote(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && (e.preventDefault(), submit())}
+                  autoFocus
+                  className={pad}
+                />
+              )
+            }
+          </DraftField>
         </div>
       </Modal>
     </ReasonCtx.Provider>

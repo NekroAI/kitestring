@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { ChevronDown, LockOpen, Palette, Plus, Send, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
@@ -13,11 +13,11 @@ import { FullSheet, Menu, Panel, useAskReason, type MenuItem } from '../ui/overl
 import { done, schedule, usePendingMap, useReqVerdict } from './verdict'
 import { displayState, presence, PriorityDot, RoleTag, StatusDot } from '../ui/marks'
 import { useActions, useBusy } from './actions'
-import { AttachZone, type FileRef } from '../ui/attach'
+import { AttachZone, SlotCtx, type FileRef } from '../ui/attach'
 import { useOpenReq } from './nav'
 import { ProjGlyph, ReqGlyph, statusCls } from '../ui/refmark'
-import { DraftLine, dropDraft, useDraft } from './draft'
-import { hasContent } from '../lib/drafts'
+import { DraftField, DraftHint, dropDraft, useDraft } from './draft'
+import { hasContent, slotPad } from '../lib/drafts'
 
 export const boardStatuses = ['draft', 'ready', 'in_progress', 'blocked', 'review'] as const
 export const closedStatuses = ['done', 'shelved'] as const
@@ -169,8 +169,9 @@ function useEditDraft(draftKey: string | undefined, value: string) {
 }
 
 // EditableText：点击即编辑，失焦保存。
-// wrap：单行内容但允许折行显示（如标题），回车保存而不是换行。draftKey：编辑中的内容存草稿（edit:R-12:title）。
-export function EditableText({ value, onSave, placeholder, multiline, wrap, className, draftKey }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; wrap?: boolean; className?: string; draftKey?: string }) {
+// wrap：单行内容但允许折行显示（如标题），回车保存而不是换行。draftKey：编辑中的内容存草稿（edit:R-12:title），框内右上角有恢复原文和清空（R-317）。
+// boxClassName：外层的样式（如向外伸出的 -mx-3），工具槽按外层定位，所以伸出要写在这里。
+export function EditableText({ value, onSave, placeholder, multiline, wrap, className, boxClassName, draftKey }: { value: string; onSave: (v: string) => void; placeholder: string; multiline?: boolean; wrap?: boolean; className?: string; boxClassName?: string; draftKey?: string }) {
   const dr = useEditDraft(draftKey, value)
   const v = dr.value.text
   const setV = (text: string) => dr.set({ text })
@@ -183,65 +184,66 @@ export function EditableText({ value, onSave, placeholder, multiline, wrap, clas
     'block w-full min-w-0 rounded-lg border border-transparent bg-transparent px-3 text-[15px] text-fg transition-[border,background,box-shadow] placeholder:text-fg-3 hover:border-line focus:border-accent focus:bg-surface focus:ring-3 focus:ring-[var(--ring)] focus:outline-none sm:text-sm',
     className,
   )
-  const line = draftKey && <DraftLine h={dr} empty={{ text: '' }} revert className="px-3" />
-  if (wrap)
-    return (
-      <>
-        <Textarea
-          value={v}
-          minRows={1}
-          placeholder={placeholder}
-          onChange={(e) => setV(e.target.value.replace(/\n/g, ' '))}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              ;(e.target as HTMLTextAreaElement).blur()
-            }
-          }}
-          unstyled
-          className={cx(cls, 'resize-none')}
-        />
-        {line}
-      </>
+  const field = (pad: string) =>
+    wrap ? (
+      <Textarea
+        value={v}
+        minRows={1}
+        placeholder={placeholder}
+        onChange={(e) => setV(e.target.value.replace(/\n/g, ' '))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            ;(e.target as HTMLTextAreaElement).blur()
+          }
+        }}
+        unstyled
+        className={cx(cls, 'resize-none', pad)}
+      />
+    ) : multiline ? (
+      <Textarea value={v} minRows={2} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} unstyled className={cx(cls, 'resize-none py-2 leading-relaxed', pad)} />
+    ) : (
+      <input value={v} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className={cx(cls, 'h-9', pad)} />
     )
+  if (!draftKey) return field(cx(boxClassName))
   return (
-    <>
-      {multiline ? (
-        <Textarea value={v} minRows={2} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} unstyled className={cx(cls, 'resize-none py-2 leading-relaxed')} />
-      ) : (
-        <input value={v} placeholder={placeholder} onChange={(e) => setV(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} className={cx(cls, 'h-9')} />
-      )}
-      {line}
-    </>
+    <DraftField h={dr} empty={{ text: '' }} revert single={!wrap && !multiline} className={boxClassName}>
+      {field}
+    </DraftField>
   )
 }
 
-
 // EditableMd：展示态按 Markdown 渲染（R-149），点击进入编辑变成原文输入框，失焦保存后回到渲染态。
 // 点链接、编号印记不进入编辑。有没保存的草稿时（关抽屉、刷新前正在改）直接停在编辑态，内容是上次写到的。
-export function EditableMd({ value, onSave, placeholder, className, draftKey }: { value: string; onSave: (v: string) => void; placeholder: string; className?: string; draftKey?: string }) {
+// boxClassName：外层的样式（如向外伸出的 -mx-3），展示态和编辑态都用；在紧凑的 AttachZone 里时右侧给回形针留位（SlotCtx）。
+export function EditableMd({ value, onSave, placeholder, className, boxClassName, draftKey }: { value: string; onSave: (v: string) => void; placeholder: string; className?: string; boxClassName?: string; draftKey?: string }) {
   const [editing, setEditing] = useState(false)
   const dr = useEditDraft(draftKey, value)
-  if (editing || dr.dirty || dr.clearing)
-    return (
-      <div>
-        <EditableMdInput
-          v={dr.value.text}
-          onChange={(text) => dr.set({ text })}
-          focus={editing}
-          placeholder={placeholder}
-          className={className}
-          onDone={(save) => {
-            const v = dr.value.text
-            setEditing(false)
-            if (save && v.trim() !== value.trim()) onSave(v.trim())
-            dr.drop()
-          }}
-        />
-        {draftKey && <DraftLine h={dr} empty={{ text: '' }} revert className="px-3" />}
-      </div>
+  const reserved = useContext(SlotCtx)
+  if (editing || dr.dirty || dr.clearing) {
+    const input = (pad: string) => (
+      <EditableMdInput
+        v={dr.value.text}
+        onChange={(text) => dr.set({ text })}
+        focus={editing}
+        placeholder={placeholder}
+        className={cx(className, pad)}
+        onDone={(save) => {
+          const v = dr.value.text
+          setEditing(false)
+          if (save && v.trim() !== value.trim()) onSave(v.trim())
+          dr.drop()
+        }}
+      />
     )
+    if (!draftKey) return <div className={boxClassName}>{input(slotPad(reserved))}</div>
+    return (
+      <DraftField h={dr} empty={{ text: '' }} revert className={boxClassName}>
+        {input}
+      </DraftField>
+    )
+  }
   return (
     <div
       role="button"
@@ -252,7 +254,7 @@ export function EditableMd({ value, onSave, placeholder, className, draftKey }: 
         setEditing(true)
       }}
       onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && setEditing(true)}
-      className={cx('block w-full min-w-0 cursor-text rounded-lg border border-transparent px-3 py-2 text-[15px] text-fg transition-[border] hover:border-line sm:text-sm', className)}
+      className={cx('block w-full min-w-0 cursor-text rounded-lg border border-transparent px-3 py-2 text-[15px] text-fg transition-[border] hover:border-line sm:text-sm', boxClassName, slotPad(reserved), className)}
     >
       {value.trim() ? <Md text={value} /> : <span className="text-fg-3">{placeholder}</span>}
     </div>
@@ -342,24 +344,26 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
                 {t.design.toggle}
               </button>
   )
+  // 清空（R-317）在标题框右端，清掉整份没建完的需求（标题、描述、验收标准、附件）
   const titleInput = (
-    <div>
-      <input
-        autoFocus
-        value={f.title}
-        placeholder={t.reqs.titlePlaceholder}
-        onChange={(e) => setF({ ...f, title: e.target.value })}
-        className="w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3"
-      />
-      <DraftLine h={dr} />
-    </div>
+    <DraftField h={dr} single>
+      {(pad) => (
+        <input
+          autoFocus
+          value={f.title}
+          placeholder={t.reqs.titlePlaceholder}
+          onChange={(e) => setF({ ...f, title: e.target.value })}
+          className={cx('w-full bg-transparent font-display text-[22px] text-fg outline-none placeholder:text-fg-3', pad)}
+        />
+      )}
+    </DraftField>
   )
   const fields = (
     <>
           <section>
             <h3 className="mb-1.5 text-xs font-medium text-fg-3">{t.reqs.detail}</h3>
             <AttachZone value={files} onChange={setFiles} compact>
-              <Textarea minRows={7} value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholderLong} onChange={(e) => setF({ ...f, detail: e.target.value })} className="pr-10" />
+              <Textarea minRows={7} value={f.detail ?? ''} placeholder={t.reqs.detailPlaceholderLong} onChange={(e) => setF({ ...f, detail: e.target.value })} className={slotPad(1)} />
             </AttachZone>
           </section>
           <div className="flex flex-wrap items-center gap-2">
@@ -488,7 +492,9 @@ export function NewReqModal({ open, onClose, defaultProject, defaultSession }: {
         <div className="shrink-0 space-y-3 border-t border-line bg-surface px-5 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))]">
           {targetRow}
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-xs text-fg-3 max-sm:hidden">{to ? t.reqs.createHintTo : t.reqs.createHint}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-fg-3 max-sm:hidden">
+              <DraftHint h={dr}>{to ? t.reqs.createHintTo : t.reqs.createHint}</DraftHint>
+            </span>
             {to ? (
               <>
                 <Button className="ml-auto" disabled={!f.title.trim() || busy} onClick={() => void submit(false)}>

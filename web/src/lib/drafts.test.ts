@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clip, fit, hasContent, MAX_BYTES, MAX_TEXT, migrate, ownerOf, parse, prune, serialize, sizeOf, sweep, TTL_MS, type DraftMap } from './drafts.ts'
+import { clearPlan, clip, DEC_CLEAR, fit, hasContent, MAX_BYTES, MAX_TEXT, migrate, ownerOf, parse, prune, serialize, sizeOf, slotPad, slotTools, sweep, TTL_MS, type DraftMap } from './drafts.ts'
 
 const DAY = 86_400_000
 
@@ -76,4 +76,45 @@ test('非图片附件的引用照样存进草稿（R-221）：只存引用，不
   const out = serialize(m, 2)
   assert.deepEqual(out['req:R-73'].d.files, [ref])
   assert.equal(hasContent({ text: '', files: [ref] }), true)
+})
+
+// ---------- 框内工具槽（R-317）----------
+
+test('工具槽：空和非空时按钮一样多、内边距一样，清空只是隐藏', () => {
+  const tools = { attach: true, clear: true }
+  const empty = { text: '', files: [] }
+  const full = { text: '写了一半', files: [{ id: 'f1' }] }
+  // 槽里放什么只看这个框能有什么，不看内容
+  assert.deepEqual(slotTools(tools), ['clear', 'attach'])
+  assert.equal(slotPad(slotTools(tools).length), 'pr-[68px] pointer-coarse:pr-[84px]')
+  // 空：清空占位但隐藏；非空：显示
+  assert.equal(clearPlan(empty, false).can, false)
+  assert.equal(clearPlan(full, true).can, true)
+  // 从右往左：附件、清空、恢复原文
+  assert.deepEqual(slotTools({ attach: true, clear: true, revert: true }), ['revert', 'clear', 'attach'])
+  assert.equal(slotPad(1), 'pr-10 pointer-coarse:pr-12')
+  assert.equal(slotPad(0), '')
+})
+
+test('清空的悬停说明：有附件时写清空文字和附件', () => {
+  assert.equal(clearPlan({ text: '一句话', files: [] }, true).files, false)
+  assert.equal(clearPlan({ text: '', files: [{ id: 'f1' }] }, true).files, true)
+  assert.equal(clearPlan({ title: '新需求', refs: [{ id: 'f1' }] }, true).files, true)
+})
+
+test('编辑已有内容：只清文字；文字已空时清空隐藏', () => {
+  assert.deepEqual(clearPlan({ text: '改了一半' }, true, { text: '' }), { can: true, files: false, next: { text: '' } })
+  assert.equal(clearPlan({ text: '' }, true, { text: '' }).can, false)
+})
+
+test('决策卡清空：只清附言、附件和理由，保留已选的选项', () => {
+  const v = { choice: 1, picks: [0, 2], noteOpen: true, note: '附言', files: [{ id: 'f1' }], reason: '不选推荐的理由' }
+  const p = clearPlan(v, true, DEC_CLEAR)
+  assert.equal(p.can, true)
+  assert.equal(p.files, true)
+  assert.deepEqual(p.next, { choice: 1, picks: [0, 2], noteOpen: true, note: '', files: [], reason: '' })
+  // 只选了选项、没写附言：没有可清的，清空隐藏（不会把选项清掉）
+  assert.equal(clearPlan({ choice: 0, note: '' }, true, DEC_CLEAR).can, false)
+  // 清完仍有选项，草稿还在（选项不丢）
+  assert.equal(hasContent(p.next), true)
 })

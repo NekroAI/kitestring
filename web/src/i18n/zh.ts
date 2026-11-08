@@ -33,6 +33,7 @@ export const zh = {
   draft: {
     restored: '已恢复上次未发送的内容',
     clear: '清空',
+    clearAll: '清空文字和附件', // 清空按钮的悬停说明：要清的里面有附件时
     revert: '恢复原文',
     mark: '草稿',
     subject: '草稿',
@@ -1190,7 +1191,6 @@ export const zh = {
     reasonPlaceholder: '为什么没选推荐项？选填',
     reasonLabel: '你的理由',
     useRecommendation: '采用推荐',
-    clearDrafts: '清空',
     drafts: (x: number) => `${x} 条答复待发送`,
     keyTip: '数字键选择 · ⌘↵ 发送',
     joinAnswer: (choice: string, note: string) => `${choice}；${note}`,

@@ -7,7 +7,7 @@ import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Textarea, Tip } from '../ui/base'
 import { RefChip } from '../ui/refmark'
-import { DraftLine, useDraft } from '../app/draft'
+import { DraftField, useDraft } from '../app/draft'
 import { gk, postComment, type GuestComment } from './data'
 
 // 访客留言（R-281 第 4 段）：留言挂在需求、决策、证据、阶段这些具体对象上。
@@ -104,26 +104,29 @@ export function Compose({ fallback }: { fallback?: CommentTarget }) {
         )}
       </div>
       <div className="flex items-end gap-2">
-        <Textarea
-          ref={box}
-          minRows={2}
-          maxLength={2000}
-          placeholder={t.guest.placeholder}
-          value={draft.value.text}
-          onChange={(e) => draft.set({ text: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              void send()
-            }
-          }}
-          className="flex-1"
-        />
+        <DraftField h={draft} className="min-w-0 flex-1">
+          {(pad) => (
+            <Textarea
+              ref={box}
+              minRows={2}
+              maxLength={2000}
+              placeholder={t.guest.placeholder}
+              value={draft.value.text}
+              onChange={(e) => draft.set({ text: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  void send()
+                }
+              }}
+              className={pad}
+            />
+          )}
+        </DraftField>
         <Button type="submit" variant="primary" loading={busy} disabled={!draft.value.text.trim()}>
           {t.guest.send}
         </Button>
       </div>
-      <DraftLine h={draft} className="mt-0" />
       </div>
     </form>
   )

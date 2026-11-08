@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { DraftLine, useDraft } from './draft'
+import { DraftField, useDraft } from './draft'
 import { Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Decision } from '../api/client'
@@ -37,10 +37,7 @@ export function OverrideBox({ d, startOpen = false, onClose }: { d: Decision; st
     )
   return (
     <div className="space-y-2">
-      <div>
-        <Textarea autoFocus minRows={2} value={text} placeholder={t.grant.overridePlaceholder} onChange={(e) => setText(e.target.value)} />
-        <DraftLine h={dr} />
-      </div>
+      <DraftField h={dr}>{(pad) => <Textarea autoFocus minRows={2} value={text} placeholder={t.grant.overridePlaceholder} onChange={(e) => setText(e.target.value)} className={pad} />}</DraftField>
       <div className="flex justify-end gap-2">
         <Button size="sm" onClick={() => setOpen(false)}>
           {t.common.cancel}

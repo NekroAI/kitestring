@@ -8,10 +8,12 @@ import { cx } from '../lib/util'
 import { dockView } from '../lib/pending'
 import { secsAt } from '../lib/undo'
 import { advanceStep } from '../lib/advance'
+import { slotPad } from '../lib/drafts'
 import { Button, Textarea } from '../ui/base'
 import { AttachZone, useUploading, type FileRef } from '../ui/attach'
 import { Leaving, reducedMotion as reduced, spring } from '../ui/gesture'
 import { useActions } from './actions'
+import { DraftField, type DraftHandle } from './draft'
 
 // 统一的判断动作（R-161）：肯定 / 否定 / 回答 / 撤销在全站只有一种样式、一种节奏。
 // - 用词按场景（R-176）：验收「通过 / 退回」、计划「批准 / 退回」、批准类决策和请求「批准 / 拒绝」、选项类决策「回答」；
@@ -635,7 +637,10 @@ export type VerdictProps = {
   stack?: boolean
   extra?: ReactNode // stack 时按钮行左侧的内容（提示、交给审查员等）
   hideNote?: boolean // 不要附言框（例如自由回答的决策，答复框在上面）
-  draft?: ReactNode // 附言框下面那行草稿小字（「已恢复上次没写完的内容 · 清空」，R-202）
+  // 附言框的草稿（R-202）：框内右上角的清空（R-317）；draftEmpty 只清这几项、其余保留（决策答复保留已选的选项）。
+  // 「已恢复上次未发送的内容」由调用方用 DraftHint 放在按钮行左侧的说明位（extra）。
+  draft?: DraftHandle<any> // 各处草稿的字段不同
+  draftEmpty?: Record<string, unknown>
   noteRef?: RefObject<HTMLTextAreaElement | null>
   pendingKey?: string // 这件事在撤销期时，整行换成撤销条
   className?: string
@@ -675,18 +680,21 @@ export function Verdict(p: VerdictProps) {
   }
   const size = p.size ?? 'sm'
   const btnCls = size === 'sm' ? 'h-9' : undefined
+  const noteBox = (pad: string) => (
+    <Textarea
+      ref={ref}
+      minRows={p.minRows ?? 1}
+      value={p.note}
+      placeholder={need ? t.verdict.needNote(scene) : (p.placeholder ?? (mode === 'answer' ? t.verdict.noteOptional : p.backByAdvice ? t.verdict.noteByAdvice : t.verdict.note(scene)))}
+      aria-invalid={need || undefined}
+      onChange={(e) => p.onNote(e.target.value)}
+      onKeyDown={(e) => verdictKey(e, { pass, back: mode === 'verdict' ? back : undefined })}
+      className={cx(pad, need && 'border-danger/60 ring-2 ring-danger/20 placeholder:text-danger/80')}
+    />
+  )
   const box = !p.hideNote && (
     <AttachZone value={p.files ?? []} onChange={p.onFiles ?? (() => {})} compact incoming={p.incoming} onIncoming={p.onIncoming} className={cx('min-w-0', p.stack ? 'w-full' : 'min-w-[12rem] flex-1')}>
-      <Textarea
-        ref={ref}
-        minRows={p.minRows ?? 1}
-        value={p.note}
-        placeholder={need ? t.verdict.needNote(scene) : (p.placeholder ?? (mode === 'answer' ? t.verdict.noteOptional : p.backByAdvice ? t.verdict.noteByAdvice : t.verdict.note(scene)))}
-        aria-invalid={need || undefined}
-        onChange={(e) => p.onNote(e.target.value)}
-        onKeyDown={(e) => verdictKey(e, { pass, back: mode === 'verdict' ? back : undefined })}
-        className={cx(p.onFiles && 'pr-10', need && 'border-danger/60 ring-2 ring-danger/20 placeholder:text-danger/80')}
-      />
+      {p.draft ? <DraftField h={p.draft} empty={p.draftEmpty}>{noteBox}</DraftField> : noteBox(slotPad(1))}
     </AttachZone>
   )
   const buttons = (
@@ -713,10 +721,7 @@ export function Verdict(p: VerdictProps) {
     return (
       <div className={cx('relative space-y-2.5', p.className)}>
         {cover}
-        <div>
-          {box}
-          {p.draft}
-        </div>
+        {box}
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">{p.extra}</div>
           {buttons}
@@ -729,7 +734,6 @@ export function Verdict(p: VerdictProps) {
       {p.extra}
       {box}
       {buttons}
-      {p.draft && <div className="-mt-1.5 basis-full empty:hidden">{p.draft}</div>}
     </div>
   )
 }

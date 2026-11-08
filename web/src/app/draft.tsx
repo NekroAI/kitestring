@@ -1,15 +1,17 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { PenLine } from 'lucide-react'
+import { useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { PenLine, RotateCcw, X } from 'lucide-react'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { DRAFT_STORE, LEGACY_STORE, hasContent, migrate, ownerOf, parse, prune, serialize, sweep, type Closed, type DraftData, type DraftMap } from '../lib/drafts'
+import { clearPlan, DRAFT_STORE, LEGACY_STORE, hasContent, migrate, slotPad, slotTools, ownerOf, parse, prune, serialize, sweep, type Closed, type DraftData, type DraftMap } from '../lib/drafts'
 import { useDecisions, usePlans, useRequirements, useSessions } from '../api/queries'
-import { PendingBar, schedule, undo, usePending } from './verdict'
+import { SlotButton, SlotCtx, ToolSlot } from '../ui/attach'
+import { PendingCover, schedule, undo, usePending } from './verdict'
 
 // 输入草稿（R-202，docs/principles.md 第 9 条）：所有带缓存的输入框共用这一个 useDraft(key)。
 // - 只存在本机浏览器；单段文字最多 2 万字、贴图只存已上传文件的引用、总量约 1MB，超出先清最久没动的（规则在 lib/drafts.ts）。
 // - 什么时候清：提交成功（drop）；撤销期内撤回不清（提交成功的回调里才 drop）；对象关闭（已完成 / 已答复 / 已搁置）后自动清（useDraftSweep）；7 天没动的清。
-// - 回来时直接恢复，下面一行小字「已恢复上次没写完的内容 · 清空」（DraftLine）；「清空」立即清掉文字和贴图并删除草稿，不走撤销期（用户 2026-10-24 退回意见）；
+// - 回来时直接恢复；「清空」是框内右上角工具槽里的 × 图标（DraftField，R-317），立即清掉文字和贴图并删除草稿，不走撤销期（用户 2026-10-24 退回意见）；
+//   「已恢复上次未发送的内容」借用按钮行左侧的说明位（DraftHint），一开始输入就换回原来的说明；
 //   编辑已有内容时的「恢复原文」走全站同一套撤销期（verdict.tsx 的 schedule，第 8 条），3 秒内可撤回。
 // - localStorage 读写都包在 try 里：拿不到（隐私模式、被禁用）时只在内存里存，照常能写能发。
 
@@ -132,6 +134,7 @@ export type DraftHandle<T extends DraftData> = {
   drop: () => void // 提交成功：立刻清掉，不给撤销
   dirty: boolean // 有内容（有草稿）
   restored: boolean // 打开时就有上次没写完的内容
+  hint: boolean // 打开后还没动过：按钮行左侧显示「已恢复上次未发送的内容」
   clearing: boolean // 在「恢复原文」的撤销期里
   clearKey?: string
 }
@@ -148,9 +151,11 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
   const value = (clearing ? { ...init, ...clearNext.get(ck!) } : { ...init, ...stored }) as T
   const dirty = has(value)
   // 打开时（或换到另一件时）有没有上次的草稿
-  const first = useRef<{ key?: string; epoch?: unknown; v: boolean } | null>(null)
+  const first = useRef<{ key?: string; epoch?: unknown; v: boolean; touched?: boolean } | null>(null)
   if (!first.current || first.current.key !== key || first.current.epoch !== epoch) first.current = { key, epoch, v: !!key && !!stored && has({ ...init, ...stored } as T) }
+  const f = first.current
   const write = (v: T) => {
+    f.touched = true
     if (!key) return setLocal(v)
     if (has(v)) put(key, v)
     else dropDraft(key)
@@ -158,7 +163,8 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
   return {
     value,
     dirty,
-    restored: first.current.v,
+    restored: f.v,
+    hint: f.v && !f.touched,
     clearing,
     clearKey: ck,
     set: (patch) => {
@@ -172,6 +178,7 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
       write({ ...init, ...cur, ...patch } as T)
     },
     clear: (next) => {
+      f.touched = true
       if (clearing && ck) undo(ck)
       if (!key) return setLocal(next)
       const v = { ...init, ...next } as T
@@ -179,6 +186,7 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
       else dropDraft(key)
     },
     revert: () => {
+      f.touched = true
       if (!key || !ck) return setLocal(undefined)
       clearNext.set(ck, undefined)
       schedule(ck, {
@@ -195,39 +203,55 @@ export function useDraft<T extends DraftData>(key: string | undefined, init: T, 
   }
 }
 
-// DraftLine：输入框下面的一行小字——回来时「已恢复上次没写完的内容 · 清空」，平时有内容就只有「清空」；
-// 编辑已有内容时还有「恢复原文」（revert）。清空立即生效；恢复原文后这一行换成撤销条，3 秒内可撤回。
-// 点这几个字不让输入框失焦（失焦就保存了）。
-export function DraftLine<T extends DraftData>({ h, empty, revert, noClear, className }: { h: DraftHandle<T>; empty?: Partial<T>; revert?: boolean; noClear?: boolean; className?: string }) {
-  if (h.clearing && h.clearKey) return <PendingBar k={h.clearKey} className={cx('mt-1.5', className)} />
-  if (!h.dirty) return null
-  const canClear = !noClear && (!empty || hasContent(Object.fromEntries(Object.keys(empty).map((k) => [k, h.value[k]]))))
-  const keep = (e: React.MouseEvent | React.PointerEvent) => e.preventDefault()
-  const link = 'shrink-0 text-fg-3 underline-offset-2 transition hover:text-fg hover:underline'
-  const parts = [
-    canClear && (
-      <button key="c" type="button" onMouseDown={keep} onClick={() => h.clear(empty)} className={link}>
-        {t.draft.clear}
-      </button>
-    ),
-    revert && (
-      <button key="r" type="button" onMouseDown={keep} onClick={h.revert} className={link}>
-        {t.draft.revert}
-      </button>
-    ),
-  ].filter(Boolean)
-  if (!parts.length) return null
+// DraftField：草稿输入框外面包一层，右上角固定的工具槽里放清空（× 图标）和恢复原文（revert，编辑已有内容时），R-317。
+// 槽宽按这个框可能有的按钮数一次留足（children 拿到对应的右侧内边距）；清空没有可清的内容时只隐藏、仍占位，框和下面的按钮行都不动。
+// 外面是紧凑的 AttachZone 时，回形针占最右一格，这里的按钮从它左边排起（SlotCtx）。
+// empty：只清这几项、其余保留（例如决策答复保留已选的选项）；不给时整份草稿回到初始值。noClear：不给清空（编辑已有计划时只有恢复原文）。
+// single：单行框，槽垂直居中。清空立即生效；恢复原文走撤销期，期间框上盖撤销遮罩（第 8 条「盖在块上」）。
+export function DraftField<T extends DraftData>({ h, empty, revert, noClear, single, className, children }: { h: DraftHandle<T>; empty?: Partial<T>; revert?: boolean; noClear?: boolean; single?: boolean; className?: string; children: (pad: string) => ReactNode }) {
+  const reserved = useContext(SlotCtx)
+  const box = useRef<HTMLDivElement>(null)
+  const n = slotTools({ attach: reserved > 0, clear: !noClear, revert }).length
+  const plan = clearPlan(h.value, h.dirty, empty)
+  // 点完焦点回到输入框（鼠标点时 mousedown 不失焦，键盘按时在这里放回去）
+  const focus = () => box.current?.querySelector<HTMLElement>('textarea, input')?.focus()
   return (
-    <div data-draft-line="" className={cx('mt-1 flex min-w-0 items-center gap-1.5 text-xs text-fg-3', className)}>
-      {h.restored && (
-        <>
-          <span className="min-w-0 truncate">{t.draft.restored}</span>
-          <span aria-hidden>·</span>
-        </>
-      )}
-      {parts.flatMap((p, i) => (i ? [<span key={`s${i}`} aria-hidden>·</span>, p] : [p]))}
+    <div ref={box} className={cx('relative', className)}>
+      {children(slotPad(n))}
+      <ToolSlot single={single} offset={reserved}>
+        {revert && (
+          <SlotButton
+            label={t.draft.revert}
+            icon={<RotateCcw className="size-4" />}
+            hidden={!h.dirty || h.clearing}
+            onClick={() => {
+              h.revert()
+              focus()
+            }}
+          />
+        )}
+        {!noClear && (
+          <SlotButton
+            label={t.draft.clear}
+            tip={plan.files ? t.draft.clearAll : t.draft.clear}
+            icon={<X className="size-4" />}
+            hidden={!plan.can}
+            onClick={() => {
+              h.clear(plan.next)
+              focus()
+            }}
+          />
+        )}
+      </ToolSlot>
+      {h.clearing && h.clearKey && <PendingCover k={h.clearKey} className="rounded-lg" />}
     </div>
   )
+}
+
+// DraftHint：按钮行左侧的说明位。回来时有上次没发出的内容，先写「已恢复上次未发送的内容」，一开始输入就换回原来的说明（children）。
+export function DraftHint<T extends DraftData>({ h, children, className }: { h: DraftHandle<T>; children?: ReactNode; className?: string }) {
+  if (!h.hint) return <>{children}</>
+  return <span className={cx('block min-w-0 truncate text-xs text-fg-3', className)}>{t.draft.restored}</span>
 }
 
 // useHasDraft：这些对象（需求 / 决策 / 计划编号，会话为 s:会话键）有没有没发出的草稿——「草稿」记号用。

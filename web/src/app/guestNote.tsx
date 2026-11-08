@@ -7,7 +7,7 @@ import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Segmented, Textarea, Tip } from '../ui/base'
 import { Linkify, RefChip } from '../ui/refmark'
-import { DraftLine, useDraft } from './draft'
+import { DraftField, DraftHint, useDraft } from './draft'
 import { guestTarget } from './asks'
 import { PendingCover, schedule, Seal, usePending } from './verdict'
 
@@ -207,8 +207,9 @@ export function GuestNoteBody({ c, top }: { c: ShareComment; top: ReactNode }) {
           <label htmlFor={`addend-${c.id}`} className="text-[13px] font-medium text-fg-2">
             {inbox.addend}
           </label>
-          <Textarea id={`addend-${c.id}`} minRows={2} placeholder={inbox.addendPlaceholder} value={v.addend} onChange={(e) => draft.set({ addend: e.target.value })} />
-          <DraftLine h={draft} empty={init} />
+          <DraftField h={draft} empty={init}>
+            {(pad) => <Textarea id={`addend-${c.id}`} minRows={2} placeholder={inbox.addendPlaceholder} value={v.addend} onChange={(e) => draft.set({ addend: e.target.value })} className={pad} />}
+          </DraftField>
         </section>
         {reqCode && (
           <section className="grid gap-1.5" data-guest-preview="">
@@ -225,7 +226,9 @@ export function GuestNoteBody({ c, top }: { c: ShareComment; top: ReactNode }) {
       </Scroll>
       <footer className="relative shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="min-w-[140px] flex-1 text-xs text-fg-3">{reqCode ? inbox.notify(reqCode) : ''}</span>
+          <span className="min-w-[140px] flex-1 text-xs text-fg-3">
+            <DraftHint h={draft}>{reqCode ? inbox.notify(reqCode) : ''}</DraftHint>
+          </span>
           <Button disabled={!!pend} onClick={() => go('ignore')}>
             {inbox.ignore}
           </Button>

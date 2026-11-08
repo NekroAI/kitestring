@@ -17,7 +17,8 @@ import { ProtoCover, ProtoList, ProtoOpen } from '../ui/proto'
 import { AnnotateTarget } from '../ui/annotate'
 import { useActions, useBusy } from './actions'
 import { composeAnswer, decDraftKey, decKey, emptyDraft, useOutbox, type Draft } from './outbox'
-import { DraftLine, useDraft } from './draft'
+import { DraftHint, useDraft } from './draft'
+import { DEC_CLEAR } from '../lib/drafts'
 import { currentPicks, picksText, PlanSummary, Points } from './points'
 import { useOpenReq, useOpenSession } from './nav'
 import { sessionTitle } from './SessionCard'
@@ -410,7 +411,8 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
             onFiles={(f) => setDraft(d.code, { files: f })}
             incoming={incoming}
             onIncoming={() => setIncoming([])}
-            draft={<DraftLine h={dr} />}
+            draft={dr}
+            draftEmpty={DEC_CLEAR}
             placeholder={free ? t.decision.freePlaceholder : undefined}
             minRows={free ? 3 : 1}
             canPass={approval && !multi ? true : !!answer}
@@ -428,6 +430,7 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
                     </span>
                   </Tip>
                 )}
+                {(free || drawer) && <DraftHint h={dr} className="ml-1" />}
               </div>
             }
           />

@@ -123,3 +123,31 @@ export function sweep(m: DraftMap, closed: Closed): string[] {
   }
   return out
 }
+
+// ---------- 框内工具槽（R-317）----------
+// 草稿输入框右上角一个固定的工具槽，从右往左依次是附件、清空、恢复原文（只在编辑已有内容时有）。
+// 槽宽按这个框可能出现的按钮数一次留足，文字右侧内边距固定；清空没有可清的内容时只隐藏（visibility: hidden）、仍占位，框和按钮行都不动。
+
+export type SlotTool = 'revert' | 'clear' | 'attach'
+
+// slotTools：这个框的工具槽从左到右放哪几个按钮。只看这个框能有什么，不看有没有内容：空和非空时一样，槽宽不变。
+export function slotTools(o: { attach?: boolean; clear?: boolean; revert?: boolean }): SlotTool[] {
+  return [o.revert && 'revert', o.clear && 'clear', o.attach && 'attach'].filter(Boolean) as SlotTool[]
+}
+
+// slotPad：给 n 个按钮留的文字右侧内边距（桌面按钮 28px、触屏 36px，间距 2px，槽离框右边 6px，再空 4px）。
+const SLOT_PAD = ['', 'pr-10 pointer-coarse:pr-12', 'pr-[68px] pointer-coarse:pr-[84px]', 'pr-[98px] pointer-coarse:pr-[122px]']
+export const slotPad = (n: number) => SLOT_PAD[Math.max(0, Math.min(n, SLOT_PAD.length - 1))]
+
+// clearPlan：点「清空」时清哪些、清完是什么。
+// empty 给了时只清这几项、其余保留（决策答复保留已选的选项），清完是 { ...value, ...empty }；没给时整份草稿回到初始值（next 为空）。
+// can：有没有可清的（没有时清空按钮隐藏但占位）；files：要清的里面有附件（悬停说明写「清空文字和附件」）。
+export function clearPlan<T extends DraftData>(value: T, dirty: boolean, empty?: Partial<T>): { can: boolean; files: boolean; next?: T } {
+  const scope: DraftData = empty ? Object.fromEntries(Object.keys(empty).map((k) => [k, value[k]])) : value
+  const can = dirty && (!empty || hasContent(scope))
+  const files = can && ['files', 'refs'].some((k) => Array.isArray(scope[k]) && (scope[k] as unknown[]).length > 0)
+  return { can, files, next: empty ? ({ ...value, ...empty } as T) : undefined }
+}
+
+// DEC_CLEAR：决策答复（dec:D-8）的清空只清附言、附件和理由，已选的选项（choice / picks）保留（R-317）。
+export const DEC_CLEAR = { note: '', files: [], reason: '' }
