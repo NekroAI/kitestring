@@ -307,6 +307,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 	defer h.sessionChanged(key)          // 存完工具版本、上下文占用等再推
 	h.trackIdleWait(ctx, prev, next, ev) // 常驻会话的连续空等起点（R-272）
 	h.trackStopped(ctx, next, ev)        // 停下中的会话结束本轮、不再待命时记为已下线（R-291）
+	h.onSessionEnded(ctx, prev, next)    // 有身份的会话结束：只告知本项目其他在线会话（R-319）
 	if ev.Name == "Stop" && reply != "" {
 		if err := h.store.SetLastReply(ctx, key, reply, ev.Time); err != nil {
 			return err
@@ -448,6 +449,7 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 		if d.Guest != nil {
 			pd.Answer = guestNoteText(d) // 放入的访客留言（R-281）：写明来自谁、经哪个分享、针对什么
 		}
+		pd.Answer += h.takenNote(ctx, d) // 说某个身份下线的消息：那个身份已由别的会话接任时注明（R-319）
 		if d.Kind == store.KindPlan {
 			pd.ReqCode, pd.ReqTitle = d.PlanCode, d.Question // 计划进展：编号与标题是计划的
 		}

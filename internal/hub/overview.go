@@ -16,7 +16,7 @@ import (
 // 压缩上下文后补注入的关键状态（stateNote）也带上。交接因此只需写纸鸢里没有的几句（做到一半的事、口头约定、注意事项）。
 //   - 主调度：进行中 / 受阻的需求；已放行待排（按优先级）；在跑的子任务；已验收但没合入 main / 没部署的需求；main 上没推送的提交数
 //   - 主助理：待验收的需求和写过的验收建议；上一任（和自己）提的、还没答的决策；别的会话提的、还没答的决策（R-272）；在等评审的需求
-//   - 所有身份：项目上生效中的当前安排
+//   - 所有身份：项目上生效中的当前安排；接任时另列本项目当前在线的会话和身份（R-319）
 // 合入 / 部署只认明确记录的提交（原则第 11 条）：取需求最近一轮关联的提交，由会话所在设备的 daemon 在本机仓库查。
 
 const (
@@ -93,6 +93,9 @@ func (h *Hub) overview(ctx context.Context, x store.Session, role, head string, 
 	var secs []ovSection
 	if a := h.arrangeNote(ctx, x.ProjectID); len(a) > 0 || role == roles.PM || role == roles.Aide {
 		secs = append(secs, ovSection{title: "当前安排（用户交代的，照办；不再适用时 ks arrange revoke N-x）", lines: a})
+	}
+	if head == overviewHead { // 接任时：本项目当前在线的会话和身份（R-319）
+		secs = append(secs, h.onlineSection(ctx, x.ProjectID, x.Key))
 	}
 	switch role {
 	case roles.PM:

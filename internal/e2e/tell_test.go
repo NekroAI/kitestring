@@ -208,7 +208,8 @@ func tellCount(e *env, key string) int {
 	e.call("GET", "/api/decisions", nil, &out)
 	n := 0
 	for _, d := range out.Decisions {
-		if d.Kind == store.KindTell && d.SessionKey == key {
+		// 身份变动通知（R-319，只告知）另由 presence_test.go 检查，这里不计
+		if d.Kind == store.KindTell && d.SessionKey == key && !strings.HasPrefix(d.Answer, "身份变动（presence · ") {
 			n++
 		}
 	}

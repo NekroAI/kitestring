@@ -118,8 +118,9 @@ func (h *Hub) stopSession(ctx context.Context, x store.Session, tellTeam bool) e
 		return err
 	}
 	// 既没在运行也没待命（本轮已结束、没挂 ks wait）：没有要停在稳妥点的这一轮，直接记为已下线；提醒在用户下次发消息时送达
+	offlineNow := false
 	if x.AvailabilityAt(now) == store.AvailOnline {
-		_, _ = h.store.SetOffline(ctx, x.Key, &now)
+		offlineNow, _ = h.store.SetOffline(ctx, x.Key, &now)
 	}
 	h.pushRoles(ctx, x.DeviceID)
 	h.decisionsChanged(ctx, d)
@@ -131,10 +132,18 @@ func (h *Hub) stopSession(ctx context.Context, x store.Session, tellTeam bool) e
 		}
 		if to != "" {
 			text := fmt.Sprintf("用户让%s %s 停下，写完交接后下线。点名给这个会话的消息先排队，用户开新会话（%s）接任时转过去；这期间不要再向这个会话指派需求。", roles.Display(x.Role), sessionName(x), takeoverCmd(x.Role))
-			if _, err := h.tellQuiet(ctx, to, x.ProjectID, "", text); err != nil {
+			// 记下说的是哪个会话、哪个身份：送达时身份已由别的会话接任的，注明「已由 X 接任」（R-319）
+			d, err := h.store.CreateDecision(ctx, store.Decision{Kind: store.KindTell, SessionKey: to, ProjectID: x.ProjectID, Question: quietTellQ, Answer: text, FYI: true,
+				AboutKey: x.Key, AboutRole: x.Role})
+			if err != nil {
 				h.log.Warn("通知停下失败", "err", err)
+			} else {
+				h.decisionsChanged(ctx, d)
 			}
 		}
+	}
+	if offlineNow {
+		h.announceStopped(ctx, x)
 	}
 	return nil
 }
@@ -215,6 +224,7 @@ func (h *Hub) stoppedOffline(ctx context.Context, x store.Session) {
 	h.pushDecisions(ctx, x.DeviceID) // 之后只排队：撤下还没送达的其他消息
 	h.sessionChanged(x.Key)
 	h.broker.publish("sessions")
+	h.announceStopped(ctx, x)
 }
 
 // trackStopped 按事件判断停下中的会话是否已结束本轮且不再待命：停下提醒已送达、本轮结束（Stop）、没挂 ks wait、没有在运行的子任务。
@@ -226,4 +236,12 @@ func (h *Hub) trackStopped(ctx context.Context, next store.Session, ev protocol.
 		return
 	}
 	h.stoppedOffline(ctx, next)
+}
+
+// announceStopped：有身份的会话停下后下线，只告知本项目其他在线会话（R-319）。
+func (h *Hub) announceStopped(ctx context.Context, x store.Session) {
+	if x.Role == "" {
+		return
+	}
+	h.announcePresence(ctx, x, x.Role, presenceDown, fmt.Sprintf("%s%s 已停下并下线。点名给这个会话的消息照常排队，用户开新会话（%s）接任时转过去。", roles.Name(x.Role), sessionName(x), takeoverCmd(x.Role)), nil, nil)
 }

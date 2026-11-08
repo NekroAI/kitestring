@@ -83,11 +83,10 @@ func (h *Hub) goOffline(ctx context.Context, x store.Session, idle time.Duration
 	if x.Role == roles.PM {
 		to = h.liveRoleExcept(ctx, x.ProjectID, roles.Aide, x.Key)
 	}
-	if to != "" {
-		text := fmt.Sprintf("%s %s 已连续待命 %s，按项目设置写交接后下线。点名给这个会话的消息照常排队，用户开新会话（%s）接任时转给新会话。", roles.Label(x.Role), sessionName(x), humanMinutes(idle), takeoverCmd(x.Role))
-		if _, err := h.tellQuiet(ctx, to, x.ProjectID, "", text); err != nil {
-			h.log.Warn("通知空等下线失败", "err", err)
-		}
+	// 本项目其他在线会话也收到同一条（R-319）；都是只告知，不唤醒
+	if x.Role != "" {
+		text := fmt.Sprintf("%s%s 已连续待命 %s，按项目设置写交接后下线。点名给这个会话的消息照常排队，用户开新会话（%s）接任时转给新会话。", roles.Name(x.Role), sessionName(x), humanMinutes(idle), takeoverCmd(x.Role))
+		h.announcePresence(ctx, x, x.Role, presenceDown, text, []string{to}, nil)
 	}
 }
 
@@ -133,6 +132,11 @@ func (h *Hub) takeOverOffline(ctx context.Context, from store.Session, to store.
 	n, err := h.store.MoveUndelivered(ctx, from.Key, to.Key)
 	if err != nil {
 		h.log.Warn("转交下线会话积压的消息失败", "err", err)
+	}
+	if dup, err := h.store.CloseDupBroadcasts(ctx, to.Key); err != nil { // 接任前已作为在线会话收到过的同一条广播不再重复送（R-319）
+		h.log.Warn("关闭重复的广播失败", "err", err)
+	} else {
+		n = max(n-dup, 0)
 	}
 	if _, err := h.store.SetOffline(ctx, from.Key, nil); err != nil {
 		h.log.Warn("清除下线标记失败", "err", err)

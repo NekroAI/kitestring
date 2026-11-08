@@ -80,6 +80,19 @@ func (s *Store) MoveUndelivered(ctx context.Context, from, to string) (int, erro
 	return int(n), nil
 }
 
+// CloseDupBroadcasts：接任时转过来的积压消息里，同一次广播（同一条身份变动通知）key 已经有一行的，
+// 多出的这行关闭、不再送达（R-319：新会话接任前作为无身份会话已收到过同一条广播）。返回关闭了几行。
+func (s *Store) CloseDupBroadcasts(ctx context.Context, key string) (int, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET status = ?, close_reason = ? WHERE session_key = ? AND kind = ? AND broadcast_id <> '' AND status = ?
+		AND EXISTS (SELECT 1 FROM decisions y WHERE y.session_key = decisions.session_key AND y.broadcast_id = decisions.broadcast_id AND y.seq < decisions.seq)`,
+		DecClosed, "同一条广播已送给这个会话", key, KindTell, DecAnswered)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // StopQuestion 是停下提醒（R-291）的标题：kind = role 的纸鸢提醒，用标题区分，daemon 据此在 Stop 时送达。
 const StopQuestion = protocol.StopQuestion
 

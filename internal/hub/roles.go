@@ -106,11 +106,13 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 	if name == "" {
 		name = x.DeviceName + " 上的 " + x.Tool + " 会话"
 	}
+	var olds []store.Session
 	for _, k := range demoted {
 		old, err := h.store.GetSession(ctx, k)
 		if err != nil {
 			continue
 		}
+		olds = append(olds, old)
 		devices[old.DeviceID] = true
 		// 被接任一律交出身份（R-229）：有没有写交接都走 R-224 同一处标记——ks wait 直接返回、订阅事件不再送，重新 ks role 时恢复
 		handed := old.RetiredAt != nil
@@ -143,6 +145,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 	if role == roles.Dev {
 		h.devUp(ctx, key, x.Role != roles.Dev) // 新声明的开发报上线；够数时清除 need_devs 提醒并告诉 PM（R-116）
 	}
+	h.onRoleChange(ctx, x, role, olds) // 接任 / 不再担任身份：只告知本项目其他在线会话（R-319）
 	h.sessionChanged(key)
 	return demoted, handoff, backlog, nil
 }
