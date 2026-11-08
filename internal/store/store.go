@@ -205,6 +205,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	// 身份上下线通知（R-319）：这条团队消息说的是哪个会话、哪个身份下线；转送时据此注明「已由 X 接任」
 	{"decisions", "about_key", "TEXT NOT NULL DEFAULT ''"},
 	{"decisions", "about_role", "TEXT NOT NULL DEFAULT ''"},
+	// 凭据授权 / 拒绝的附言（R-321）
+	{"secret_logs", "note", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

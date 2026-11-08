@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -7,14 +7,15 @@ import { api, errMsg, unwrap, type Decision } from '../api/client'
 import { useProjects, useSecret, useSecrets, useSessions, type SecretLog, type SecretView } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { addCommand, authDiff, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
+import { addCommand, authDiff, logNote, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
 import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
-import { Menu, Modal, Panel, useAskReason } from '../ui/overlay'
+import { Menu, Modal, Panel } from '../ui/overlay'
 import { Md } from '../ui/markdown'
 import { RefChip } from '../ui/refmark'
 import { displayState, RoleBadge, RoleTag, StatusPill as SessionPill } from '../ui/marks'
-import { PendingCover, schedule, usePending } from './verdict'
-import { decKey } from './outbox'
+import { done, PendingCover, schedule, usePending } from './verdict'
+import { decDraftKey, decKey } from './outbox'
+import { DraftField, DraftHint, useDraft } from './draft'
 import { useOpenAsk, useOpenSession } from './nav'
 import { sessionTitle } from './SessionCard'
 import { dayText } from './shares'
@@ -319,8 +320,8 @@ function useSecretApi() {
     }
   }
   return {
-    authorize: (x: { id: string; name: string }, a: AuthState, values: Record<string, string>, plain?: Record<string, boolean>) =>
-      call(() => unwrap(api.POST('/api/secrets/{ref}/authorize', { params: { path: { ref: x.id } }, body: { ...a, values: filledValues(values), plain } })), t.secret.fail.save(x.name), ['decisions', 'sessions']),
+    authorize: (x: { id: string; name: string }, a: AuthState, values: Record<string, string>, plain?: Record<string, boolean>, note?: string) =>
+      call(() => unwrap(api.POST('/api/secrets/{ref}/authorize', { params: { path: { ref: x.id } }, body: { ...a, values: filledValues(values), plain, note: note?.trim() || undefined } })), t.secret.fail.save(x.name), ['decisions', 'sessions']),
     replace: (x: { id: string; name: string }, values: Record<string, string>, plain: Record<string, boolean>) =>
       call(() => unwrap(api.POST('/api/secrets/{ref}/values', { params: { path: { ref: x.id } }, body: { values: filledValues(values), plain } })), t.secret.fail.replace(x.name)),
     mark: (x: { id: string; name: string }, plain: Record<string, boolean>) => call(() => unwrap(api.POST('/api/secrets/{ref}/plain', { params: { path: { ref: x.id } }, body: { plain } })), t.secret.fail.mark(x.name)),
@@ -402,7 +403,6 @@ export function SecretRequestBody({ d, top }: { d: Decision; top: ReactNode }) {
 
 function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode }) {
   const ops = useSecretApi()
-  const ask = useAskReason()
   const sessions = useSessions()
   const openSession = useOpenSession()
   const now = useNow()
@@ -414,16 +414,29 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
   const key = decKey(d.code)
   const pend = usePending(key)
   const amend = isAmend(x) // 修改授权申请（R-320）：没有值可填，显示改前 / 改后
+  // 附言（R-321）：保存并授权、拒绝都带上，随结果送达申请方；草稿和决策答复同一个键（答复后自动清）。值不进草稿。
+  const dr = useDraft<{ text: string }>(decDraftKey(d.code), { text: '' })
+  const note = dr.value.text
+  const [need, setNeed] = useState(false)
+  const noteRef = useRef<HTMLTextAreaElement>(null)
   const save = () => {
     if (pend || !checkAuth(x.fields, values, auth)) return
     const v = values
     const a = auth
     const p = amend ? undefined : plain
-    schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => !!(await ops.authorize(x, a, v, p)) })
+    const n = note
+    schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => done(ops.authorize(x, a, v, p, n), dr.drop) })
   }
-  const reject = async () => {
-    const r = await ask({ title: t.verdict.rejectTitle('request', d.code), description: t.secret.rejectDesc, confirmText: t.verdict.back('request'), placeholder: t.verdict.rejectPlaceholder('request'), kinds: [] })
-    if (r) schedule(key, { act: 'back', scene: 'request', subject: d.code, commit: async () => !!(await ops.reject(x, d.code, r.note)) })
+  // 拒绝和其他审批一样要写明理由：没写就把焦点放到附言框
+  const reject = () => {
+    if (pend) return
+    if (!note.trim()) {
+      setNeed(true)
+      noteRef.current?.focus()
+      return
+    }
+    const n = note
+    schedule(key, { act: 'back', scene: 'request', subject: d.code, commit: async () => done(ops.reject(x, d.code, n), dr.drop) })
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -476,15 +489,36 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
         <Guard />
         {amend && <p className="-mt-4 pl-6 text-[13px] leading-relaxed text-fg-3">{t.secret.amendGuard}</p>}
       </div>
-      <footer className="relative flex shrink-0 items-center gap-3 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-6">
-        <Button onClick={() => void reject()} disabled={!!pend}>
-          {t.secret.reject}
-        </Button>
-        <span className="ml-auto min-w-0 truncate text-[12.5px] text-fg-3 max-sm:hidden">{who ? t.secret.deliverHint(who) : t.secret.deliverAny}</span>
-        <Button variant="primary" onClick={save} disabled={!!pend} className="max-sm:ml-auto">
-          {t.secret.save}
-          <span className="ml-1 text-[11px] opacity-70">⌘↵</span>
-        </Button>
+      <footer className="relative shrink-0 space-y-2.5 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-6">
+        <DraftField h={dr}>
+          {(pad) => (
+            <Textarea
+              ref={noteRef}
+              data-secret-note=""
+              minRows={1}
+              value={note}
+              aria-invalid={need || undefined}
+              placeholder={need ? t.verdict.needNote('request') : t.secret.notePh}
+              onChange={(e) => {
+                dr.set({ text: e.target.value })
+                if (e.target.value.trim()) setNeed(false)
+              }}
+              className={cx(pad, need && 'border-danger/60 ring-2 ring-danger/20 placeholder:text-danger/80')}
+            />
+          )}
+        </DraftField>
+        <div className="flex items-center gap-3">
+          <Button onClick={reject} disabled={!!pend}>
+            {t.secret.reject}
+          </Button>
+          <span className="ml-auto min-w-0 truncate text-[12.5px] text-fg-3 max-sm:hidden">
+            <DraftHint h={dr}>{who ? t.secret.deliverHint(who) : t.secret.deliverAny}</DraftHint>
+          </span>
+          <Button variant="primary" onClick={save} disabled={!!pend} className="max-sm:ml-auto">
+            {t.secret.save}
+            <span className="ml-1 text-[11px] opacity-70">⌘↵</span>
+          </Button>
+        </div>
         <PendingCover k={key} />
       </footer>
     </div>
@@ -881,14 +915,14 @@ function Records({ logs, x, now }: { logs: SecretLog[]; x: SecretView; now: numb
                       <span className="tabular">{hhmm(l.at)}</span>
                       <span className="min-w-0">
                         {changeText(l, x)}
-                        {l.reason && l.kind === 'reject' && (
-                          <span className="text-fg-3">
-                            {t.common.sep}
-                            {l.reason}
-                          </span>
-                        )}
                         {/* 修改授权申请（R-320）：申请的理由、批准时改了什么 */}
                         {l.reason && ['amend', 'edit', 'regrant'].includes(l.kind) && <span className="text-fg-3">：{l.reason}</span>}
+                        {/* 你保存授权 / 拒绝时写的附言（R-321） */}
+                        {logNote(l) && (
+                          <span data-secret-log-note="" className="mt-1 block text-fg">
+                            {t.secret.noteLine(logNote(l))}
+                          </span>
+                        )}
                       </span>
                     </div>
                   ),
@@ -1040,12 +1074,15 @@ function AuthDialog({ x, regrant, onClose }: { x: SecretView; regrant: boolean; 
   const left = timeLeft(x.expires_at)
   const [auth, setAuth] = useState<AuthState>({ projects: x.projects, days: !x.expires_at ? 0 : left && 'days' in left && [1, 7, 30].includes(left.days + 1) ? left.days + 1 : DEFAULT_TTL, allowed: x.allowed, disk: x.disk })
   const [busy, setBusy] = useState(false)
+  // 附言（R-321）：手动修改 / 重新授权时没有申请方，只记在时间线上
+  const dr = useDraft<{ text: string }>(`secretnote:${x.id}`, { text: '' })
   const submit = async () => {
     if (!checkAuth(x.fields, {}, auth)) return
     setBusy(true)
-    const r = await ops.authorize(x, auth, {})
+    const r = await ops.authorize(x, auth, {}, undefined, dr.value.text)
     setBusy(false)
     if (r) {
+      dr.drop()
       toast.success(t.secret.updated)
       onClose()
     }
@@ -1069,6 +1106,9 @@ function AuthDialog({ x, regrant, onClose }: { x: SecretView; regrant: boolean; 
       }
     >
       <AuthFields value={auth} onChange={setAuth} />
+      <DraftField h={dr} className="mt-3">
+        {(pad) => <Textarea data-secret-note="" minRows={2} value={dr.value.text} placeholder={t.secret.notePhManual} onChange={(e) => dr.set({ text: e.target.value })} className={pad} />}
+      </DraftField>
     </Modal>
   )
 }

@@ -186,3 +186,11 @@ export function authDiff(before: Scope, after: Scope & { days: number }): AuthDi
 
 // diffEmpty：一项都没改
 export const diffEmpty = (d: AuthDiff) => !d.projects && !d.expiry && !d.allowed && !d.disk
+
+// ---------- 附言（R-321） ----------
+
+// logNote：时间线上这条授权变更的附言。老数据里拒绝申请的附言记在 reason（R-295），新的都在 note。
+export function logNote(l: { kind: string; note?: string; reason?: string }): string {
+  if (l.note) return l.note
+  return l.kind === 'reject' ? (l.reason ?? '') : ''
+}

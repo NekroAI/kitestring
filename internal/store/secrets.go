@@ -149,7 +149,8 @@ type SecretLog struct {
 	Path            string     `json:"path,omitempty" doc:"写入磁盘的路径"`
 	Result          string     `json:"result,omitempty" enum:",running,ok,failed,denied"`
 	ExitCode        int        `json:"exit_code"`
-	Reason          string     `json:"reason,omitempty" doc:"被拒的原因；拒绝申请时的附言；改敏感标记时是哪个值（显示名）"`
+	Reason          string     `json:"reason,omitempty" doc:"被拒的原因；改敏感标记时是哪个值（显示名）；修改授权申请的理由、批准时改了什么；老数据里拒绝申请的附言也在这里"`
+	Note            string     `json:"note,omitempty" doc:"你保存授权、拒绝申请时写的附言（R-321，已知值已隐去）；有申请时随结果送给申请方"`
 	Days            int        `json:"days" doc:"授权时选的有效期（天）：0 = 长期，-1 = 不适用"`
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 }
@@ -340,7 +341,7 @@ func (s *Store) ListSecrets(ctx context.Context) ([]Secret, error) {
 }
 
 const secretLogSelect = `SELECT l.id, l.secret_id, l.kind, l.at, l.session_key, l.session_title, l.session_role, l.requirement_id, COALESCE(r.seq, 0),
-	l.command, l.path, l.result, l.exit_code, l.reason, l.days, l.finished_at
+	l.command, l.path, l.result, l.exit_code, l.reason, l.note, l.days, l.finished_at
 	FROM secret_logs l LEFT JOIN requirements r ON r.id = l.requirement_id`
 
 func scanSecretLog(row interface{ Scan(...any) error }) (SecretLog, error) {
@@ -348,7 +349,7 @@ func scanSecretLog(row interface{ Scan(...any) error }) (SecretLog, error) {
 	var at, fin string
 	var rseq int
 	err := row.Scan(&l.ID, &l.SecretID, &l.Kind, &at, &l.SessionKey, &l.SessionTitle, &l.SessionRole, &l.RequirementID, &rseq,
-		&l.Command, &l.Path, &l.Result, &l.ExitCode, &l.Reason, &l.Days, &fin)
+		&l.Command, &l.Path, &l.Result, &l.ExitCode, &l.Reason, &l.Note, &l.Days, &fin)
 	l.At = parseTS(at)
 	l.FinishedAt = parseNullTS(sql.NullString{String: fin, Valid: fin != ""})
 	if rseq > 0 {
@@ -367,9 +368,9 @@ func (s *Store) AddSecretLog(ctx context.Context, l SecretLog) (SecretLog, error
 		l.SessionTitle, l.SessionRole = sessionSnap(ctx, s.db, l.SessionKey)
 	}
 	err := s.tx(ctx, func(t *sql.Tx) error {
-		if _, err := t.ExecContext(ctx, `INSERT INTO secret_logs(id, secret_id, kind, at, session_key, session_title, session_role, requirement_id, command, path, result, exit_code, reason, days, finished_at)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			l.ID, l.SecretID, l.Kind, ts(l.At), l.SessionKey, l.SessionTitle, l.SessionRole, l.RequirementID, l.Command, l.Path, l.Result, l.ExitCode, l.Reason, l.Days, tsOrEmpty(l.FinishedAt)); err != nil {
+		if _, err := t.ExecContext(ctx, `INSERT INTO secret_logs(id, secret_id, kind, at, session_key, session_title, session_role, requirement_id, command, path, result, exit_code, reason, note, days, finished_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			l.ID, l.SecretID, l.Kind, ts(l.At), l.SessionKey, l.SessionTitle, l.SessionRole, l.RequirementID, l.Command, l.Path, l.Result, l.ExitCode, l.Reason, l.Note, l.Days, tsOrEmpty(l.FinishedAt)); err != nil {
 			return err
 		}
 		if l.Kind == SecretLogUse || l.Kind == SecretLogWrite {

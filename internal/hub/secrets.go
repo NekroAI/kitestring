@@ -381,6 +381,7 @@ type secretAuthIn struct {
 	Allowed  []string          `json:"allowed,omitempty" doc:"允许的命令；空 = 不限命令"`
 	Disk     bool              `json:"disk,omitempty" doc:"允许写入磁盘"`
 	Plain    map[string]bool   `json:"plain,omitempty" doc:"环境变量名 → 是否不敏感（R-318）；没写的保持原样"`
+	Note     string            `json:"note,omitempty" doc:"附言（R-321）：有等待中的申请时随结果送给申请方；都记在授权变更时间线上。已知值隐去"`
 }
 
 // authorize 保存授权：填值（可选）、设项目 / 有效期 / 允许的命令 / 写入磁盘。有等待中的申请时同时把它答成批准，送回申请方。
@@ -441,7 +442,9 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 			return saved, err
 		}
 	}
-	l := store.SecretLog{SecretID: x.ID, Kind: kind, Days: in.Days}
+	// 附言（R-321）：按普通文字处理，已知值隐去（含这次新填的值）
+	note := h.redactText(strings.TrimSpace(in.Note), sensitiveValues(saved, vals))
+	l := store.SecretLog{SecretID: x.ID, Kind: kind, Days: in.Days, Note: note}
 	if pendingReq {
 		l.SessionKey = x.RequestedBy // 「申请来自「x」」
 	}
@@ -466,6 +469,9 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 		if amend {
 			answer = h.redactText(secretAmendAnswer(saved, changes), sensitiveValues(saved, vals))
 		}
+		if note != "" {
+			answer += "\n附言：" + note
+		}
 		d, err := h.store.AnswerDecisionPoints(ctx, x.RequestID, answer, nil, nil, "", store.VerdictApproved)
 		if err != nil {
 			return saved, apiErr(err)
@@ -485,7 +491,9 @@ func (h *Hub) rejectSecretRequest(ctx context.Context, x store.Secret, note stri
 		return store.Decision{}, huma.Error400BadRequest("凭据「" + x.Name + "」没有等待处理的申请")
 	}
 	answer := "拒绝"
-	if note = strings.TrimSpace(note); note != "" {
+	// 附言（R-321）：已知值隐去后送回申请方、记进时间线
+	vals, _ := h.secretValues(x)
+	if note = h.redactText(strings.TrimSpace(note), sensitiveValues(x, vals)); note != "" {
 		answer += "；" + note
 	}
 	d, err := h.store.AnswerDecisionPoints(ctx, x.RequestID, answer, nil, nil, "", store.VerdictRejected)
@@ -522,7 +530,11 @@ func (h *Hub) afterSecretRequest(ctx context.Context, d store.Decision, note str
 		}
 	}
 	if d.Verdict == store.VerdictRejected {
-		_, _ = h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReject, SessionKey: x.RequestedBy, Reason: note, Days: -1})
+		if note != "" { // 通用作答接口拒绝时附言没经过脱敏：记之前隐去已知值
+			vals, _ := h.secretValues(x)
+			note = h.redactText(note, sensitiveValues(x, vals))
+		}
+		_, _ = h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReject, SessionKey: x.RequestedBy, Note: note, Days: -1})
 	}
 	h.broker.publish("secrets")
 }

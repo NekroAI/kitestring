@@ -673,6 +673,7 @@ CREATE TABLE IF NOT EXISTS secret_logs (
 	result         TEXT NOT NULL DEFAULT '',
 	exit_code      INTEGER NOT NULL DEFAULT 0,
 	reason         TEXT NOT NULL DEFAULT '',
+	note           TEXT NOT NULL DEFAULT '', -- 保存授权 / 拒绝申请时的附言（R-321），已知值已隐去
 	days           INTEGER NOT NULL DEFAULT -1,
 	finished_at    TEXT NOT NULL DEFAULT ''
 );

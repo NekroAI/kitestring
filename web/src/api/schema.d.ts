@@ -6006,6 +6006,8 @@ export interface components {
             days: number;
             /** @description 允许写入磁盘 */
             disk?: boolean;
+            /** @description 附言（R-321）：有等待中的申请时随结果送给申请方；都记在授权变更时间线上。已知值隐去 */
+            note?: string;
             /** @description 环境变量名 → 是否不敏感（R-318）；没写的保持原样 */
             plain?: {
                 [key: string]: boolean;
@@ -6060,9 +6062,11 @@ export interface components {
             id: string;
             /** @enum {string} */
             kind: "use" | "write" | "request" | "amend" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke" | "plain" | "sensitive";
+            /** @description 你保存授权、拒绝申请时写的附言（R-321，已知值已隐去）；有申请时随结果送给申请方 */
+            note?: string;
             /** @description 写入磁盘的路径 */
             path?: string;
-            /** @description 被拒的原因；拒绝申请时的附言；改敏感标记时是哪个值（显示名） */
+            /** @description 被拒的原因；改敏感标记时是哪个值（显示名）；修改授权申请的理由、批准时改了什么；老数据里拒绝申请的附言也在这里 */
             reason?: string;
             requirement_code?: string;
             requirement_id?: string;

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { addCommand, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
+import { addCommand, logNote, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
 
 const list = [
   { name: 'Cloudflare 部署', purpose: 'wrangler 部署 Pages', status: 'active', projects: ['p1'], project_names: ['kitestring'] },
@@ -137,4 +137,13 @@ test('修改授权申请（R-320）：改前 → 改后改了哪几项', () => {
   assert.deepEqual(authDiff(before, { ...before, allowed: [], days: KEEP_TTL }).allowed, { added: [], removed: before.allowed, kept: [] })
   assert.ok(isAmend({ ask: { mode: 'amend' } }))
   assert.ok(!isAmend({ ask: { mode: '' } }) && !isAmend(null))
+})
+
+test('附言（R-321）：新的在 note，老数据里拒绝的附言在 reason', () => {
+  assert.equal(logNote({ kind: 'grant', note: '这个 Token 只读' }), '这个 Token 只读')
+  assert.equal(logNote({ kind: 'reject', note: '改用 run', reason: '旧' }), '改用 run')
+  assert.equal(logNote({ kind: 'reject', reason: '先别部署' }), '先别部署')
+  // 别的类别的 reason 不是附言（被拒原因、改了什么、理由）
+  assert.equal(logNote({ kind: 'edit', reason: '允许的命令：加上「a」' }), '')
+  assert.equal(logNote({ kind: 'use', reason: '不在允许范围内' }), '')
 })
