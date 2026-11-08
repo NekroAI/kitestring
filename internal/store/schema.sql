@@ -650,6 +650,7 @@ CREATE TABLE IF NOT EXISTS secrets (
 	requested_by     TEXT NOT NULL DEFAULT '',
 	request          TEXT NOT NULL DEFAULT '', -- 最近一次申请的内容（SecretAsk）：申请方所在项目、建议有效期、要的命令
 	last_used_at     TEXT NOT NULL DEFAULT '',
+	retired          TEXT NOT NULL DEFAULT '', -- 替换掉的旧值（R-325）：主密钥加密的密文，只用来继续隐去已存记录里的旧值，不能取用
 	created_at       TEXT NOT NULL,
 	updated_at       TEXT NOT NULL
 );

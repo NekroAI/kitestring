@@ -194,3 +194,24 @@ export function logNote(l: { kind: string; note?: string; reason?: string }): st
   if (l.note) return l.note
   return l.kind === 'reject' ? (l.reason ?? '') : ''
 }
+
+// ---------- 替换值（R-325） ----------
+
+type Replace = { env: string; how?: string }
+
+// replaceFields：修改授权申请里要替换的值对应的字段（按凭据字段的顺序）；会话写了新的获取方式时用它，没写沿用原来的。
+export function replaceFields<F extends { env: string; how?: string }>(fields: F[], replace?: Replace[] | null): F[] {
+  const rs = replace ?? []
+  return fields.flatMap((f) => {
+    const r = rs.find((v) => v.env === f.env)
+    return r ? [{ ...f, how: r.how || f.how }] : []
+  })
+}
+
+// missingReplace：要替换的值里还没填新值的（填好才能保存并授权）。
+export function missingReplace<F extends { env: string }>(fields: F[], values: Record<string, string>): F[] {
+  return fields.filter((f) => !(values[f.env] ?? '').trim())
+}
+
+// replaceLabels：时间线上「替换了哪些值」：后端记的显示名用「、」连接，老数据为空。
+export const replaceLabels = (reason?: string | null) => (reason ?? '').split('、').filter(Boolean)

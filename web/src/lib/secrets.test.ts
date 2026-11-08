@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { addCommand, logNote, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
+import { addCommand, logNote, missingReplace, replaceFields, replaceLabels, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
 
 const list = [
   { name: 'Cloudflare 部署', purpose: 'wrangler 部署 Pages', status: 'active', projects: ['p1'], project_names: ['kitestring'] },
@@ -146,4 +146,24 @@ test('附言（R-321）：新的在 note，老数据里拒绝的附言在 reason
   // 别的类别的 reason 不是附言（被拒原因、改了什么、理由）
   assert.equal(logNote({ kind: 'edit', reason: '允许的命令：加上「a」' }), '')
   assert.equal(logNote({ kind: 'use', reason: '不在允许范围内' }), '')
+})
+
+test('替换值（R-325）：要替换的字段、获取方式、没填新值的、时间线的显示名', () => {
+  const fields = [
+    { env: 'GITHUB_USER', label: '用户名', how: '个人主页', filled: true, plain: true },
+    { env: 'GITHUB_TOKEN', label: 'Token', how: 'Settings → Tokens', filled: true },
+    { env: 'ORG', label: '组织', filled: true },
+  ]
+  const rs = replaceFields(fields, [{ env: 'ORG' }, { env: 'GITHUB_TOKEN', how: 'Fine-grained tokens → Generate' }])
+  // 按凭据字段的顺序；写了新的获取方式用新的，没写沿用原来的；不改原字段
+  assert.deepEqual(rs.map((f) => [f.env, f.how]), [['GITHUB_TOKEN', 'Fine-grained tokens → Generate'], ['ORG', undefined]])
+  assert.equal(fields[1].how, 'Settings → Tokens')
+  assert.deepEqual(replaceFields(fields, undefined), [])
+  // 已填过值的字段也要填新值才能保存
+  assert.deepEqual(missingReplace(rs, { GITHUB_TOKEN: 'ghp_x' }).map((f) => f.env), ['ORG'])
+  assert.deepEqual(missingReplace(rs, { GITHUB_TOKEN: 'ghp_x', ORG: '  ' }).map((f) => f.env), ['ORG'])
+  assert.deepEqual(missingReplace(rs, { GITHUB_TOKEN: 'ghp_x', ORG: 'kite' }), [])
+  assert.deepEqual(replaceLabels('Token、用户名'), ['Token', '用户名'])
+  assert.deepEqual(replaceLabels(''), [])
+  assert.deepEqual(replaceLabels(undefined), [])
 })

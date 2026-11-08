@@ -12,9 +12,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NekroAI/kitestring/internal/store"
 )
 
 // 凭据的加密（R-295）：值用 AES-256-GCM 加密后存进数据库，主密钥不进数据库。
@@ -199,6 +202,12 @@ func (h *Hub) refreshRedactor(ctx context.Context) {
 		for _, v := range sensitiveValues(x, vals) { // 不敏感的值（R-318）不参与
 			known = append(known, v)
 		}
+		// 替换掉的旧值（R-325）仍参与：已存记录里的旧值继续隐去
+		old, err := h.retiredValues(x)
+		if err != nil {
+			h.log.Warn("凭据替换掉的旧值无法解密，不参与脱敏", "secret", x.Name, "err", err)
+		}
+		known = append(known, old...)
 	}
 	r := newRedactor(known)
 	h.vault.mu.Lock()
@@ -218,4 +227,67 @@ func (h *Hub) currentRedactor() redactor {
 	h.vault.mu.Lock()
 	defer h.vault.mu.Unlock()
 	return h.vault.redactor
+}
+
+// ---------- 替换掉的旧值（R-325） ----------
+
+// 替换值后旧值作废：不再交给任何命令，但已存的记录（会话消息、取用记录、留言……）里可能还有它的原文，所以继续参与脱敏。
+// 旧值单独加密存在 secrets.retired（附加数据是凭据 ID 加后缀，和 cipher 互换不能解开），只有 refreshRedactor 读它。
+// 只收敏感的值：替换时已标为不敏感的旧值本来就不参与脱敏（R-318）。
+
+// retiredAAD 是旧值密文的附加数据：和值的密文（附加数据是凭据 ID）区分开。
+func retiredAAD(id string) string { return id + ":retired" }
+
+// retiredValues 解出一条凭据替换掉的旧值；没有时返回空。
+func (h *Hub) retiredValues(x store.Secret) ([]string, error) {
+	if x.Retired == "" {
+		return nil, nil
+	}
+	m, err := h.openSecret(retiredAAD(x.ID), x.Retired)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(m))
+	for i := range len(m) {
+		if v, ok := m[strconv.Itoa(i)]; ok {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
+// retireValues 把这次被替换掉的敏感旧值并进 x.Retired（重新加密）：fields 是替换前的字段说明（判断旧值是否敏感），
+// old 是旧值、vals 是新值。返回替换掉的值的显示名（按字段顺序），没有替换时为空。旧值解不开时照常记下新的。
+func (h *Hub) retireValues(x *store.Secret, fields []store.SecretField, old, vals map[string]string) ([]string, error) {
+	var labels, gone []string
+	for _, f := range fields {
+		ov := old[f.Env]
+		if ov == "" || vals[f.Env] == ov {
+			continue
+		}
+		labels = append(labels, f.Label)
+		if !f.Plain {
+			gone = append(gone, ov)
+		}
+	}
+	if len(gone) == 0 {
+		return labels, nil
+	}
+	prev, err := h.retiredValues(*x)
+	if err != nil {
+		prev = nil // 主密钥换了：以前的旧值本来就解不开，只记这次的
+	}
+	m, seen := map[string]string{}, map[string]bool{}
+	for _, v := range append(prev, gone...) {
+		if !seen[v] {
+			seen[v] = true
+			m[strconv.Itoa(len(m))] = v
+		}
+	}
+	sealed, err := h.sealSecret(retiredAAD(x.ID), m)
+	if err != nil {
+		return nil, err
+	}
+	x.Retired = sealed
+	return labels, nil
 }

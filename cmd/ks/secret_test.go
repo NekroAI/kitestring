@@ -85,7 +85,10 @@ func TestResolveProgram(t *testing.T) {
 
 // R-320：ks secret amend 只发写了的项（没写 = 不改）。
 func TestSecretAmendBody(t *testing.T) {
-	b := secretAmendBody("k", "n", "r", "", -1, false, false, false, nil, []string{"sh -c *"}, []string{"sh -c x"}, nil)
+	b := secretAmendBody("k", "n", "r", "", -1, false, false, false, nil, []string{"sh -c *"}, []string{"sh -c x"}, nil, nil)
+	if _, ok := b["replace"]; ok {
+		t.Fatal("没写 --replace 不发 replace")
+	}
 	if _, ok := b["days"]; ok {
 		t.Fatal("没写 --days 不发 days（到期时间不变）")
 	}
@@ -95,7 +98,11 @@ func TestSecretAmendBody(t *testing.T) {
 	if b["add_allowed"].([]string)[0] != "sh -c *" || b["remove_allowed"].([]string)[0] != "sh -c x" {
 		t.Fatalf("增删命令：%v", b)
 	}
-	b = secretAmendBody("k", "n", "r", "R-1", 0, true, false, true, nil, nil, nil, []string{"p"})
+	b = secretAmendBody("k", "n", "r", "", -1, false, false, false, nil, nil, nil, nil, []string{"GITHUB_TOKEN|GitHub → Settings | Tokens", " A_ID "})
+	if rs := b["replace"].([]map[string]string); len(rs) != 2 || rs[0]["env"] != "GITHUB_TOKEN" || rs[0]["how"] != "GitHub → Settings | Tokens" || rs[1]["env"] != "A_ID" || rs[1]["how"] != "" {
+		t.Fatalf("替换值（R-325）：%v", b["replace"])
+	}
+	b = secretAmendBody("k", "n", "r", "R-1", 0, true, false, true, nil, nil, nil, []string{"p"}, nil)
 	if b["days"] != 0 || b["disk"] != false || b["any_command"] != true || b["projects"].([]string)[0] != "p" {
 		t.Fatalf("长期、不允许写入磁盘、不限命令、项目：%v", b)
 	}

@@ -207,6 +207,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"decisions", "about_role", "TEXT NOT NULL DEFAULT ''"},
 	// 凭据授权 / 拒绝的附言（R-321）
 	{"secret_logs", "note", "TEXT NOT NULL DEFAULT ''"},
+	// 替换掉的旧值（R-325）：密文，只用来继续隐去已存记录里的旧值
+	{"secrets", "retired", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

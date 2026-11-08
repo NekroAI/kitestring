@@ -20,22 +20,72 @@ import (
 //   - 批准前凭据的授权原样不动（改后的范围只记在 secrets.request 里），旧授权照常生效。
 //   - 只有凭据授权给了会话所在项目时才能申请（不能借申请去动别的项目的凭据）。
 //   - 时间线：会话申请时记一条 amend（理由），批准时记 edit / regrant，带申请的会话和改了什么。
+//   - 替换值（R-325）：申请里可以写要替换哪几个值（环境变量名和新值的获取方式），也可以只替换值、不改授权范围。申请里仍然没有值：
+//     抽屉里这几个值显示填写框，用户填好新值才能保存并授权。批准后新值生效、旧值作废（不能再取用），凭据名、取用记录、时间线不变；
+//     时间线记「替换了哪些值」（只有显示名）。旧值留在脱敏器里（secrets.retired），已存记录里的旧值继续隐去。
 
 // secretKeepExpiry：保存授权时的有效期取这个值 = 到期时间不变（只在生效中的凭据上可用）。
 const secretKeepExpiry = -1
 
 type secretAmendIn struct {
-	SessionKey    string   `json:"session_key" minLength:"1"`
-	Name          string   `json:"name" minLength:"1" doc:"要改授权的凭据名"`
-	Reason        string   `json:"reason,omitempty" doc:"理由（必填）：为什么要改（例如哪条命令被拒、为什么需要），用户在申请里看到"`
-	Requirement   string   `json:"requirement,omitempty" doc:"关联需求 R-x"`
-	Allowed       []string `json:"allowed,omitempty" doc:"改后允许的命令（整份替换）；不写 = 在原来的基础上用 add_allowed / remove_allowed 增删"`
-	AnyCommand    bool     `json:"any_command,omitempty" doc:"改成不限命令"`
-	AddAllowed    []string `json:"add_allowed,omitempty" doc:"加上的命令"`
-	RemoveAllowed []string `json:"remove_allowed,omitempty" doc:"去掉的命令（要和原来的写法一致，空白不计）"`
-	Days          *int     `json:"days,omitempty" doc:"改后的有效期（天），从批准时算起；0 = 长期；不写 = 生效中的到期时间不变，已失效 / 已撤回的按 7 天"`
-	Projects      []string `json:"projects,omitempty" doc:"改后的授权项目（项目名或 ID，整份替换）；不写 = 不变"`
-	Disk          *bool    `json:"disk,omitempty" doc:"改后是否允许写入磁盘；不写 = 不变"`
+	SessionKey    string            `json:"session_key" minLength:"1"`
+	Name          string            `json:"name" minLength:"1" doc:"要改授权的凭据名"`
+	Reason        string            `json:"reason,omitempty" doc:"理由（必填）：为什么要改（例如哪条命令被拒、为什么需要），用户在申请里看到"`
+	Requirement   string            `json:"requirement,omitempty" doc:"关联需求 R-x"`
+	Allowed       []string          `json:"allowed,omitempty" doc:"改后允许的命令（整份替换）；不写 = 在原来的基础上用 add_allowed / remove_allowed 增删"`
+	AnyCommand    bool              `json:"any_command,omitempty" doc:"改成不限命令"`
+	AddAllowed    []string          `json:"add_allowed,omitempty" doc:"加上的命令"`
+	RemoveAllowed []string          `json:"remove_allowed,omitempty" doc:"去掉的命令（要和原来的写法一致，空白不计）"`
+	Days          *int              `json:"days,omitempty" doc:"改后的有效期（天），从批准时算起；0 = 长期；不写 = 生效中的到期时间不变，已失效 / 已撤回的按 7 天"`
+	Projects      []string          `json:"projects,omitempty" doc:"改后的授权项目（项目名或 ID，整份替换）；不写 = 不变"`
+	Disk          *bool             `json:"disk,omitempty" doc:"改后是否允许写入磁盘；不写 = 不变"`
+	Replace       []secretReplaceIn `json:"replace,omitempty" doc:"要替换的值（R-325）：环境变量名和新值的获取方式；用户在抽屉里填新值，申请里没有值。可以只替换值、不改授权范围"`
+}
+
+type secretReplaceIn struct {
+	Env string `json:"env" doc:"要替换的值的环境变量名（凭据里已有的）"`
+	How string `json:"how,omitempty" doc:"新值的获取方式：按服务写清步骤；不写 = 沿用原来的获取方式"`
+}
+
+// amendReplace 核对要替换的值：环境变量名是凭据里已有的、不重复；获取方式里的已知值隐去。
+func (h *Hub) amendReplace(x store.Secret, in []secretReplaceIn, known map[string]string) ([]store.SecretReplace, error) {
+	var out []store.SecretReplace
+	for _, r := range in {
+		env := strings.TrimSpace(r.Env)
+		if env == "" {
+			continue
+		}
+		if !slices.ContainsFunc(x.Fields, func(f store.SecretField) bool { return f.Env == env }) {
+			return nil, fmt.Errorf("凭据「%s」没有 %s 这个值；现有的：%s。要加新的值用 ks secret request", x.Name, env, secretEnvs(x))
+		}
+		if slices.ContainsFunc(out, func(o store.SecretReplace) bool { return o.Env == env }) {
+			return nil, fmt.Errorf("要替换的值 %s 重复", env)
+		}
+		out = append(out, store.SecretReplace{Env: env, How: h.redactText(strings.TrimSpace(r.How), known)})
+	}
+	return out, nil
+}
+
+// replaceLabels 是要替换的值的显示名，按凭据字段的顺序。
+func replaceLabels(x store.Secret, rs []store.SecretReplace) []string {
+	var out []string
+	for _, f := range x.Fields {
+		if slices.ContainsFunc(rs, func(r store.SecretReplace) bool { return r.Env == f.Env }) {
+			out = append(out, f.Label)
+		}
+	}
+	return out
+}
+
+// amendTitle 是修改授权申请的标题（「待处理」里的一行）：只替换值、只改授权，或两者都有。
+func amendTitle(name string, replace bool, scope bool) string {
+	switch {
+	case replace && scope:
+		return name + "：替换值并修改授权"
+	case replace:
+		return name + "：替换值"
+	}
+	return name + "：修改授权"
 }
 
 // amendScope 是一份授权范围（改前或改后），用来比较、写改动说明。
@@ -261,15 +311,23 @@ func (h *Hub) secretAmend(ctx context.Context, b secretAmendIn) (*secretRequestO
 		after.Disk = *b.Disk
 	}
 	changes := amendChanges(before, after)
-	if len(changes) == 0 {
-		return nil, huma.Error400BadRequest(fmt.Sprintf("申请里没有要改的：凭据「%s」现在的授权是 %s", x.Name, secretScope(x)))
-	}
 	vals, _ := h.secretValues(x)
 	known := sensitiveValues(x, vals)
+	replace, err := h.amendReplace(x, b.Replace, known)
+	if err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if len(changes) == 0 && len(replace) == 0 {
+		return nil, huma.Error400BadRequest(fmt.Sprintf("申请里没有要改的：凭据「%s」现在的授权是 %s。要替换值时写明替换哪几个（replace / --replace）", x.Name, secretScope(x)))
+	}
+	all := changes
+	if len(replace) > 0 {
+		all = append([]string{"替换值：" + strings.Join(replaceLabels(x, replace), "、")}, changes...)
+	}
 	reason = h.redactText(reason, known)
 	d, err := h.store.CreateDecision(ctx, store.Decision{
 		SessionKey: me.Key, ProjectID: me.ProjectID, RequirementID: reqID, Kind: store.KindDecision,
-		Question: x.Name + "：修改授权", Context: reason,
+		Question: amendTitle(x.Name, len(replace) > 0, len(changes) > 0), Context: reason,
 		Approval: true, Options: []string{"批准", "拒绝"}, Risk: store.RiskHigh, Hard: "permission",
 		RequestKind: store.RequestSecret, FromRole: me.Role,
 	})
@@ -277,7 +335,7 @@ func (h *Hub) secretAmend(ctx context.Context, b secretAmendIn) (*secretRequestO
 		return nil, apiErr(err)
 	}
 	x.RequestID, x.RequestedBy = d.ID, me.Key
-	x.Ask = &store.SecretAsk{Mode: store.AskAmend, ProjectID: me.ProjectID, Reason: reason, Days: after.Days, Allowed: after.Allowed, Projects: after.Projects, Disk: after.Disk}
+	x.Ask = &store.SecretAsk{Mode: store.AskAmend, ProjectID: me.ProjectID, Reason: reason, Days: after.Days, Allowed: after.Allowed, Projects: after.Projects, Disk: after.Disk, Replace: replace}
 	if x, err = h.store.SaveSecret(ctx, x); err != nil {
 		return nil, apiErr(err)
 	}
@@ -286,16 +344,28 @@ func (h *Hub) secretAmend(ctx context.Context, b secretAmendIn) (*secretRequestO
 	}
 	h.broker.publish("decisions", "sessions", "requirements", "secrets")
 	out.Body.Decision = &d
-	out.Body.Message = fmt.Sprintf("已申请修改授权（%s）：凭据「%s」，%s。在用户的「待处理」里等待处理；批准前原来的授权照常生效。用户保存并授权或拒绝后，结果会送到你这里。不要让用户去凭据页手动改。",
-		d.Code, x.Name, h.redactText(strings.Join(changes, "；"), known))
+	extra := ""
+	if len(replace) > 0 {
+		extra = "新值由用户在抽屉里填写，你拿不到值；批准前旧值照常可用，批准后新值生效、旧值作废，凭据名不变，照常用 ks secret run 取用。"
+	}
+	out.Body.Message = fmt.Sprintf("已申请修改授权（%s）：凭据「%s」，%s。在用户的「待处理」里等待处理；批准前原来的授权照常生效。%s用户保存并授权或拒绝后，结果会送到你这里。不要让用户去凭据页手动改，也不要新建凭据。",
+		d.Code, x.Name, h.redactText(strings.Join(all, "；"), known), extra)
 	return out, nil
 }
 
-// secretAmendAnswer 是批准修改授权申请后送给申请方的答复（以「批准」开头）。changes 是这次实际改了的（你在抽屉里调整过的以此为准）。
-func secretAmendAnswer(x store.Secret, changes []string) string {
+// secretAmendAnswer 是批准修改授权申请后送给申请方的答复（以「批准」开头）。changes 是这次实际改了的授权（你在抽屉里调整过的以此为准），
+// replaced 是替换了的值的显示名（R-325，不含值）。
+func secretAmendAnswer(x store.Secret, replaced, changes []string) string {
 	what := "授权没有改动"
 	if len(changes) > 0 {
 		what = strings.Join(changes, "；")
+	}
+	if len(replaced) > 0 {
+		if len(changes) > 0 {
+			what = "授权改动：" + what
+		}
+		return fmt.Sprintf("批准（用户已替换凭据「%s」的值：%s，新值已生效，旧值已作废；%s。现在的授权：%s）。照常用 ks secret run %q -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件。",
+			x.Name, strings.Join(replaced, "、"), what, secretScope(x), x.Name)
 	}
 	return fmt.Sprintf("批准（用户已修改凭据「%s」的授权：%s。现在的授权：%s）。用 ks secret run %q -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件。",
 		x.Name, what, secretScope(x), x.Name)

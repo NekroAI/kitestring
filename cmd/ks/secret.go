@@ -29,12 +29,15 @@ const secretUsage = `用法：
       --plain 声明某个值不敏感（用户名、Account ID 这类不是密钥的值）：用户在凭据页看到明文，纸鸢各处也不会把同样的文字隐去；
       值默认敏感，用户在申请里可以改。注入命令的规则不变。
   ks secret amend <凭据名> --reason 理由 [--add-allow '命令 *' ...] [--remove-allow '命令' ...] [--allow '命令' ... | --any-command]
-                  [--days N] [--project 项目名 ...] [--disk | --no-disk] [--req R-x]
+                  [--days N] [--project 项目名 ...] [--disk | --no-disk] [--replace '环境变量名|获取方式' ...] [--req R-x]
       申请修改已有凭据的授权（生效中、已失效、已撤回都可以）：允许的命令增删改、有效期、项目、写入磁盘。取用因授权范围被拒
       （命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时用它，不要让用户去凭据页手动改。--add-allow / --remove-allow
       在原来的基础上增删（写错的命令先去掉再加上对的），--allow 整份替换，--any-command 改成不限命令；--days 从批准时算起，
       不写 = 生效中的到期时间不变；--project 是改后的完整项目列表。申请进用户的「待处理」，用户可再调整后保存并授权或拒绝，
-      结果送到你这里；批准前原来的授权照常生效。申请里没有值，也不能改值。
+      结果送到你这里；批准前原来的授权照常生效。申请里没有值。
+      --replace 申请替换某个值（Token 到期、泄露或定期更新）：写环境变量名和新值的获取方式（| 后面，不写 = 沿用原来的），可重复；
+      可以只替换值、不改授权范围。用户在抽屉里填新值，你拿不到值；批准后新值生效、旧值作废，凭据名和取用记录不变，照常 ks secret run。
+      换 Token 用它，不要新建一条凭据。
       允许的命令按空白切成参数逐个比对，* 在参数内匹配任意字符（含空格）：一个参数里含空格时（如 sh -c 后面的整段脚本）
       用 * 代替其中的空格，例如 'sh -c printf*wrangler*secret*put*'，不要拆成多段。
   ks secret list
@@ -162,6 +165,8 @@ func secretAmend(args []string) error {
 	fs.Var(&add, "add-allow", "加上的命令，可重复")
 	fs.Var(&remove, "remove-allow", "去掉的命令，可重复")
 	fs.Var(&projects, "project", "改后的授权项目（项目名或 ID，整份替换），可重复")
+	var replace stringList
+	fs.Var(&replace, "replace", "要替换的值：'环境变量名|新值的获取方式'（获取方式可省略），可重复")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
@@ -175,13 +180,21 @@ func secretAmend(args []string) error {
 	if err != nil {
 		return err
 	}
-	body := secretAmendBody(key, fs.Arg(0), *reason, *req, *days, *anyCmd, *disk, *noDisk, allow, add, remove, projects)
+	body := secretAmendBody(key, fs.Arg(0), *reason, *req, *days, *anyCmd, *disk, *noDisk, allow, add, remove, projects, replace)
 	return agentCall("POST", "/agent/secrets/amend", body)
 }
 
 // secretAmendBody 拼修改授权申请的请求体：没写的项不发（= 不改）。
-func secretAmendBody(key, name, reason, req string, days int, anyCmd, disk, noDisk bool, allow, add, remove, projects []string) map[string]any {
+func secretAmendBody(key, name, reason, req string, days int, anyCmd, disk, noDisk bool, allow, add, remove, projects, replace []string) map[string]any {
 	body := map[string]any{"session_key": key, "name": name, "reason": reason, "requirement": req}
+	if len(replace) > 0 { // 替换值（R-325）：「环境变量名|获取方式」
+		rs := make([]map[string]string, 0, len(replace))
+		for _, r := range replace {
+			env, how, _ := strings.Cut(r, "|")
+			rs = append(rs, map[string]string{"env": strings.TrimSpace(env), "how": strings.TrimSpace(how)})
+		}
+		body["replace"] = rs
+	}
 	if days >= 0 {
 		body["days"] = days
 	}

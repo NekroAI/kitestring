@@ -99,6 +99,8 @@ type Secret struct {
 	UpdatedAt       time.Time     `json:"updated_at"`
 
 	Cipher string `json:"-"`
+	// Retired 是替换掉的旧值（R-325）的密文：旧值作废、不能取用，只用来继续隐去已存记录里出现的旧值。任何接口都不返回。
+	Retired string `json:"-"`
 }
 
 // StatusAt 推算凭据在某时刻的状态。
@@ -126,6 +128,14 @@ type SecretAsk struct {
 	Reason   string   `json:"reason,omitempty" doc:"修改授权申请的理由"`
 	Projects []string `json:"projects,omitempty" doc:"修改授权申请：改后的授权项目 ID"`
 	Disk     bool     `json:"disk,omitempty" doc:"修改授权申请：改后是否允许写入磁盘"`
+	// 替换值（R-325）：修改授权申请里要替换的值。用户在抽屉里填新值后才能保存并授权；申请里没有值。
+	Replace []SecretReplace `json:"replace,omitempty" doc:"修改授权申请：要替换的值（环境变量名和获取方式）；用户填好新值才能保存并授权"`
+}
+
+// SecretReplace 是修改授权申请里要替换的一个值（R-325）：不含值，只有环境变量名和获取新值的方式。
+type SecretReplace struct {
+	Env string `json:"env" doc:"要替换的值的环境变量名"`
+	How string `json:"how,omitempty" doc:"新值的获取方式；空 = 沿用这个值原来的获取方式"`
 }
 
 // AskAmend 是修改授权申请（R-320）的模式名。
@@ -156,7 +166,7 @@ type SecretLog struct {
 }
 
 const secretSelect = `SELECT x.id, x.name, x.purpose, x.fields, x.cipher, x.projects, x.allowed, x.disk, x.expires_at, x.granted_at, x.revoked_at,
-	x.requirement_id, COALESCE(r.seq, 0), x.request_decision, COALESCE(d.seq, 0), COALESCE(d.status, ''), x.requested_by, x.request, x.last_used_at, x.created_at, x.updated_at
+	x.requirement_id, COALESCE(r.seq, 0), x.request_decision, COALESCE(d.seq, 0), COALESCE(d.status, ''), x.requested_by, x.request, x.last_used_at, x.created_at, x.updated_at, x.retired
 	FROM secrets x
 	LEFT JOIN requirements r ON r.id = x.requirement_id
 	LEFT JOIN decisions d ON d.id = x.request_decision`
@@ -166,7 +176,7 @@ func scanSecret(row interface{ Scan(...any) error }) (Secret, error) {
 	var fields, projects, allowed, exp, granted, revoked, used, created, updated, decStatus, ask string
 	var rseq, dseq int
 	if err := row.Scan(&x.ID, &x.Name, &x.Purpose, &fields, &x.Cipher, &projects, &allowed, &x.Disk, &exp, &granted, &revoked,
-		&x.RequirementID, &rseq, &x.RequestID, &dseq, &decStatus, &x.RequestedBy, &ask, &used, &created, &updated); err != nil {
+		&x.RequirementID, &rseq, &x.RequestID, &dseq, &decStatus, &x.RequestedBy, &ask, &used, &created, &updated, &x.Retired); err != nil {
 		return x, err
 	}
 	x.Fields, x.Projects, x.Allowed = []SecretField{}, []string{}, []string{}
@@ -268,9 +278,9 @@ func (s *Store) SaveSecret(ctx context.Context, x Secret) (Secret, error) {
 		return x, fmt.Errorf("已有名为「%s」的凭据", x.Name)
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE secrets SET name = ?, purpose = ?, fields = ?, cipher = ?, projects = ?, allowed = ?, disk = ?, expires_at = ?, granted_at = ?, revoked_at = ?,
-		requirement_id = ?, request_decision = ?, requested_by = ?, request = ?, updated_at = ? WHERE id = ?`,
+		requirement_id = ?, request_decision = ?, requested_by = ?, request = ?, retired = ?, updated_at = ? WHERE id = ?`,
 		x.Name, x.Purpose, blocks.Encode(storedFields(x.Fields)), x.Cipher, blocks.Encode(nonNil(x.Projects)), blocks.Encode(nonNil(x.Allowed)), x.Disk,
-		tsOrEmpty(x.ExpiresAt), tsOrEmpty(x.GrantedAt), tsOrEmpty(x.RevokedAt), x.RequirementID, x.RequestID, x.RequestedBy, blocks.Encode(x.Ask), now(), x.ID)
+		tsOrEmpty(x.ExpiresAt), tsOrEmpty(x.GrantedAt), tsOrEmpty(x.RevokedAt), x.RequirementID, x.RequestID, x.RequestedBy, blocks.Encode(x.Ask), x.Retired, now(), x.ID)
 	if err != nil {
 		return x, err
 	}

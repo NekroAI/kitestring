@@ -390,9 +390,28 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	pendingReq := x.RequestPending
 	amend := pendingReq && x.Ask.IsAmend() // 修改授权申请（R-320）
 	orig := scopeOf(x)
+	origFields := slices.Clone(x.Fields)
 	old, err := h.secretValues(x)
 	if err != nil {
 		old = map[string]string{} // 主密钥换了：要求把每个值重新填一遍
+	}
+	if amend { // 替换值（R-325）：申请里要替换的值都要填新值；新的获取方式随之写进字段说明
+		for _, r := range x.Ask.Replace {
+			i := slices.IndexFunc(x.Fields, func(f store.SecretField) bool { return f.Env == r.Env })
+			if i < 0 {
+				continue
+			}
+			nv := in.Values[r.Env]
+			if strings.TrimSpace(nv) == "" {
+				return x, huma.Error400BadRequest(fmt.Sprintf("「%s」要填写新的值", x.Fields[i].Label))
+			}
+			if nv == old[r.Env] {
+				return x, huma.Error400BadRequest(fmt.Sprintf("「%s」的新值和原来的相同", x.Fields[i].Label))
+			}
+			if r.How != "" {
+				x.Fields[i].How = r.How
+			}
+		}
 	}
 	vals, changed, err := mergeSecretValues(&x, old, in.Values, true)
 	if err != nil {
@@ -416,6 +435,10 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	if x.Cipher, err = h.sealSecret(x.ID, vals); err != nil {
 		return x, err
 	}
+	replaced, err := h.retireValues(&x, origFields, old, vals) // 换掉的旧值作废，仍参与脱敏（R-325）
+	if err != nil {
+		return x, err
+	}
 	n := time.Now()
 	x.Projects, x.Allowed, x.Disk = projects, normAllowed(in.Allowed), in.Disk
 	if in.Days != secretKeepExpiry {
@@ -437,11 +460,6 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	case before == store.SecretExpired || before == store.SecretRevoked:
 		kind = store.SecretLogRegrant
 	}
-	if changed && kind != store.SecretLogGrant {
-		if _, err := h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReplace, Days: -1}); err != nil {
-			return saved, err
-		}
-	}
 	// 附言（R-321）：按普通文字处理，已知值隐去（含这次新填的值）
 	note := h.redactText(strings.TrimSpace(in.Note), sensitiveValues(saved, vals))
 	l := store.SecretLog{SecretID: x.ID, Kind: kind, Days: in.Days, Note: note}
@@ -456,8 +474,24 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 		// 改了什么记在时间线上（命令里的已知值隐去）；改动说明里只有授权范围，没有值
 		l.Reason = h.redactText(strings.Join(changes, "；"), sensitiveValues(saved, vals))
 	}
-	if _, err := h.store.AddSecretLog(ctx, l); err != nil {
-		return saved, err
+	// 替换值记一条「替换了哪些值」（只有显示名）。修改授权申请只替换值、授权没改时，附言和申请的会话记在这一条上，不再另记「修改了授权」
+	onlyReplace := amend && len(replaced) > 0 && len(changes) == 0 && kind == store.SecretLogEdit
+	if changed && (kind != store.SecretLogGrant || amend) {
+		rl := store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReplace, Reason: strings.Join(replaced, "、"), Days: -1}
+		if amend {
+			rl.SessionKey = x.RequestedBy
+		}
+		if onlyReplace {
+			rl.Note = note
+		}
+		if _, err := h.store.AddSecretLog(ctx, rl); err != nil {
+			return saved, err
+		}
+	}
+	if !onlyReplace {
+		if _, err := h.store.AddSecretLog(ctx, l); err != nil {
+			return saved, err
+		}
 	}
 	for _, m := range marks {
 		if _, err := h.store.AddSecretLog(ctx, m); err != nil {
@@ -467,7 +501,7 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	if pendingReq {
 		answer := secretGrantAnswer(saved)
 		if amend {
-			answer = h.redactText(secretAmendAnswer(saved, changes), sensitiveValues(saved, vals))
+			answer = h.redactText(secretAmendAnswer(saved, replaced, changes), sensitiveValues(saved, vals))
 		}
 		if note != "" {
 			answer += "\n附言：" + note
@@ -695,8 +729,12 @@ func (h *Hub) registerSecretsWeb(api huma.API) {
 			if !changed && len(marks) == 0 {
 				return nil, huma.Error400BadRequest("没有填写新的值")
 			}
+			var replaced []string
 			if changed {
 				if x.Cipher, err = h.sealSecret(x.ID, vals); err != nil {
+					return nil, err
+				}
+				if replaced, err = h.retireValues(&x, orig.Fields, old, vals); err != nil { // 旧值仍参与脱敏（R-325）
 					return nil, err
 				}
 			}
@@ -704,7 +742,7 @@ func (h *Hub) registerSecretsWeb(api huma.API) {
 				return nil, apiErr(err)
 			}
 			if changed {
-				if _, err := h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReplace, Days: -1}); err != nil {
+				if _, err := h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReplace, Reason: strings.Join(replaced, "、"), Days: -1}); err != nil {
 					return nil, err
 				}
 			}

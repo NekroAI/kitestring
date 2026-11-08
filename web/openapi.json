@@ -10205,6 +10205,16 @@
               "null"
             ]
           },
+          "replace": {
+            "description": "要替换的值（R-325）：环境变量名和新值的获取方式；用户在抽屉里填新值，申请里没有值。可以只替换值、不改授权范围",
+            "items": {
+              "$ref": "#/components/schemas/SecretReplaceIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "requirement": {
             "description": "关联需求 R-x",
             "type": "string"
@@ -10280,6 +10290,16 @@
           "reason": {
             "description": "修改授权申请的理由",
             "type": "string"
+          },
+          "replace": {
+            "description": "修改授权申请：要替换的值（环境变量名和获取方式）；用户填好新值才能保存并授权",
+            "items": {
+              "$ref": "#/components/schemas/SecretReplace"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -10526,6 +10546,40 @@
         "required": [
           "secret",
           "logs"
+        ],
+        "type": "object"
+      },
+      "SecretReplace": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "description": "要替换的值的环境变量名",
+            "type": "string"
+          },
+          "how": {
+            "description": "新值的获取方式；空 = 沿用这个值原来的获取方式",
+            "type": "string"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "type": "object"
+      },
+      "SecretReplaceIn": {
+        "additionalProperties": false,
+        "properties": {
+          "env": {
+            "description": "要替换的值的环境变量名（凭据里已有的）",
+            "type": "string"
+          },
+          "how": {
+            "description": "新值的获取方式：按服务写清步骤；不写 = 沿用原来的获取方式",
+            "type": "string"
+          }
+        },
+        "required": [
+          "env"
         ],
         "type": "object"
       },

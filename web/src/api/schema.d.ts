@@ -5967,6 +5967,8 @@ export interface components {
             reason?: string;
             /** @description 去掉的命令（要和原来的写法一致，空白不计） */
             remove_allowed?: string[] | null;
+            /** @description 要替换的值（R-325）：环境变量名和新值的获取方式；用户在抽屉里填新值，申请里没有值。可以只替换值、不改授权范围 */
+            replace?: components["schemas"]["SecretReplaceIn"][] | null;
             /** @description 关联需求 R-x */
             requirement?: string;
             session_key: string;
@@ -5995,6 +5997,8 @@ export interface components {
             projects?: string[] | null;
             /** @description 修改授权申请的理由 */
             reason?: string;
+            /** @description 修改授权申请：要替换的值（环境变量名和获取方式）；用户填好新值才能保存并授权 */
+            replace?: components["schemas"]["SecretReplace"][] | null;
         };
         SecretAuthIn: {
             /** @description 允许的命令；空 = 不限命令 */
@@ -6082,6 +6086,18 @@ export interface components {
         SecretOutBody: {
             logs: components["schemas"]["SecretLog"][] | null;
             secret: components["schemas"]["Secret"];
+        };
+        SecretReplace: {
+            /** @description 要替换的值的环境变量名 */
+            env: string;
+            /** @description 新值的获取方式；空 = 沿用这个值原来的获取方式 */
+            how?: string;
+        };
+        SecretReplaceIn: {
+            /** @description 要替换的值的环境变量名（凭据里已有的） */
+            env: string;
+            /** @description 新值的获取方式：按服务写清步骤；不写 = 沿用原来的获取方式 */
+            how?: string;
         };
         SecretRequestIn: {
             /** @description 建议允许的命令，如 "wrangler pages deploy *"（* 单独放最后 = 后面可跟任意参数）；不写 = 不限命令 */

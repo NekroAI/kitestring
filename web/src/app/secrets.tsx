@@ -7,7 +7,7 @@ import { api, errMsg, unwrap, type Decision } from '../api/client'
 import { useProjects, useSecret, useSecrets, useSessions, type SecretLog, type SecretView } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { addCommand, authDiff, logNote, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
+import { addCommand, authDiff, logNote, missingReplace, replaceFields, replaceLabels, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
 import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, Panel } from '../ui/overlay'
 import { Md } from '../ui/markdown'
@@ -164,7 +164,8 @@ type Field = { env: string; label: string; how?: string; filled?: boolean; plain
 
 // FieldValues：每个值一张卡：显示名 + 环境变量名、「敏感」开关、获取方式、输入框。已填过的空着表示保留原值；
 // 不敏感的值明文输入，已填的在占位里写出当前值。
-function FieldValues({ fields, values, onChange, plain, onPlain, autoFocus }: { fields: Field[]; values: Record<string, string>; onChange: (v: Record<string, string>) => void; plain: Record<string, boolean>; onPlain: (v: Record<string, boolean>) => void; autoFocus?: boolean }) {
+// fresh：替换值（R-325）——已填过的也要填新值，占位写「粘贴新值」。
+function FieldValues({ fields, values, onChange, plain, onPlain, autoFocus, fresh }: { fields: Field[]; values: Record<string, string>; onChange: (v: Record<string, string>) => void; plain: Record<string, boolean>; onPlain: (v: Record<string, boolean>) => void; autoFocus?: boolean; fresh?: boolean }) {
   return (
     <div className="grid gap-3">
       {fields.map((f, i) => {
@@ -179,7 +180,7 @@ function FieldValues({ fields, values, onChange, plain, onPlain, autoFocus }: { 
             </div>
             {f.how && <Md text={f.how} className="mt-1 text-[13px] leading-relaxed text-fg-2" />}
             <div className="mt-2">
-              <ValueInput label={f.label} plain={p} value={v} onChange={(x) => onChange({ ...values, [f.env]: x })} placeholder={!f.filled ? t.secret.paste : p && f.value ? t.secret.keepValue(f.value) : t.secret.keep} autoFocus={autoFocus && i === 0} />
+              <ValueInput label={f.label} plain={p} value={v} onChange={(x) => onChange({ ...values, [f.env]: x })} placeholder={fresh ? t.secret.pasteNew : !f.filled ? t.secret.paste : p && f.value ? t.secret.keepValue(f.value) : t.secret.keep} autoFocus={autoFocus && i === 0} />
               <ValueHint value={v} plain={p} />
             </div>
           </div>
@@ -361,7 +362,7 @@ export function SecretReqLine({ d }: { d: Decision }) {
           <span className="min-w-0 truncate">{d.requirement_title}</span>
         </span>
       )}
-      {x?.ask && <span className="shrink-0 text-fg-3">{isAmend(x) ? t.secret.amendShort : t.secret.suggestShort(x.ask.days)}</span>}
+      {x?.ask && <span className="shrink-0 text-fg-3">{isAmend(x) ? (x.ask.replace?.length ? t.secret.replaceShort : t.secret.amendShort) : t.secret.suggestShort(x.ask.days)}</span>}
     </span>
   )
 }
@@ -413,7 +414,9 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
   const who = s ? sessionTitle(s) : ''
   const key = decKey(d.code)
   const pend = usePending(key)
-  const amend = isAmend(x) // 修改授权申请（R-320）：没有值可填，显示改前 / 改后
+  const amend = isAmend(x) // 修改授权申请（R-320）：显示改前 / 改后
+  // 替换值（R-325）：申请里要替换的值显示填写框和获取方式，都填了新值才能保存并授权
+  const swap = amend ? replaceFields(x.fields, x.ask?.replace) : []
   // 附言（R-321）：保存并授权、拒绝都带上，随结果送达申请方；草稿和决策答复同一个键（答复后自动清）。值不进草稿。
   const dr = useDraft<{ text: string }>(decDraftKey(d.code), { text: '' })
   const note = dr.value.text
@@ -421,9 +424,14 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const save = () => {
     if (pend || !checkAuth(x.fields, values, auth)) return
+    const miss = missingReplace(swap, values)
+    if (miss.length) {
+      toast.error(t.secret.needNewValue(miss[0].label))
+      return
+    }
     const v = values
     const a = auth
-    const p = amend ? undefined : plain
+    const p = amend ? (swap.length ? changedPlain(swap, plain) : undefined) : plain
     const n = note
     schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => done(ops.authorize(x, a, v, p, n), dr.drop) })
   }
@@ -474,6 +482,11 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
             </div>
           )}
         </Section>
+        {swap.length > 0 && (
+          <Section title={t.secret.newValues}>
+            <FieldValues fields={swap} values={values} onChange={setValues} plain={plain} onPlain={setPlain} fresh autoFocus />
+          </Section>
+        )}
         {amend ? (
           <Section title={t.secret.change}>
             <AuthDiffView x={x} auth={auth} />
@@ -487,7 +500,7 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
           <AuthFields value={auth} onChange={setAuth} suggest={x.ask?.days} keep={amend && x.status === 'active' ? { at: x.expires_at } : undefined} />
         </Section>
         <Guard />
-        {amend && <p className="-mt-4 pl-6 text-[13px] leading-relaxed text-fg-3">{t.secret.amendGuard}</p>}
+        {amend && <p className="-mt-4 pl-6 text-[13px] leading-relaxed text-fg-3">{swap.length ? t.secret.replaceGuard : t.secret.amendGuard}</p>}
       </div>
       <footer className="relative shrink-0 space-y-2.5 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-6">
         <DraftField h={dr}>
@@ -819,7 +832,7 @@ function changeText(l: SecretLog, x: SecretView) {
     case 'regrant':
       return t.secret.log.regrant(ttl, who || l.session_key || '')
     case 'replace':
-      return t.secret.log.replace
+      return t.secret.log.replace(replaceLabels(l.reason), who || l.session_key || '')
     case 'revoke':
       return t.secret.log.revoke
     case 'reject':
