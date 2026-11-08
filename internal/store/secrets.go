@@ -410,14 +410,14 @@ func (s *Store) FinishSecretLog(ctx context.Context, id string, exitCode int) (S
 	return s.GetSecretLog(ctx, id)
 }
 
-// ListSecretLogs 列出凭据的全部记录，新的在前。
+// ListSecretLogs 列出凭据的全部记录，新的在前；同一毫秒里的按写入顺序（rowid），不靠 ID 里的随机部分。
 func (s *Store) ListSecretLogs(ctx context.Context, secretID string) ([]SecretLog, error) {
-	return s.querySecretLogs(ctx, secretLogSelect+` WHERE l.secret_id = ? ORDER BY l.at DESC, l.id DESC`, secretID)
+	return s.querySecretLogs(ctx, secretLogSelect+` WHERE l.secret_id = ? ORDER BY l.at DESC, l.rowid DESC`, secretID)
 }
 
 // LastSecretUse 是凭据最近一次取用（含被拒、写入磁盘）。
 func (s *Store) LastSecretUse(ctx context.Context, secretID string) (*SecretLog, error) {
-	list, err := s.querySecretLogs(ctx, secretLogSelect+` WHERE l.secret_id = ? AND l.kind IN (?, ?) ORDER BY l.at DESC, l.id DESC LIMIT 1`, secretID, SecretLogUse, SecretLogWrite)
+	list, err := s.querySecretLogs(ctx, secretLogSelect+` WHERE l.secret_id = ? AND l.kind IN (?, ?) ORDER BY l.at DESC, l.rowid DESC LIMIT 1`, secretID, SecretLogUse, SecretLogWrite)
 	if err != nil || len(list) == 0 {
 		return nil, err
 	}
