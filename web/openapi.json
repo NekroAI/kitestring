@@ -1424,6 +1424,10 @@
               "null"
             ]
           },
+          "code": {
+            "description": "稳定编号 S-x：命令里写它（ks secret run S-x -- \u003c命令\u003e），改名不影响",
+            "type": "string"
+          },
           "disk": {
             "type": "boolean"
           },
@@ -1441,6 +1445,7 @@
             ]
           },
           "name": {
+            "description": "名称：只给人看，可能被改",
             "type": "string"
           },
           "projects": {
@@ -1460,6 +1465,10 @@
             "description": "等待处理的申请 D-x",
             "type": "string"
           },
+          "run": {
+            "description": "推荐的取用写法",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "active",
@@ -1471,6 +1480,8 @@
           }
         },
         "required": [
+          "code",
+          "run",
           "name",
           "purpose",
           "status",
@@ -8701,6 +8712,20 @@
         ],
         "type": "object"
       },
+      "Rename-secretRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "新名称",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "Replace-secret-valuesRequest": {
         "additionalProperties": false,
         "properties": {
@@ -10020,6 +10045,10 @@
             "$ref": "#/components/schemas/SecretAsk",
             "description": "最近一次申请的内容：申请方的项目、建议有效期、要的命令"
           },
+          "code": {
+            "description": "稳定编号 S-x（R-326）：ks secret run / amend / write 认它，改名不影响",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -10058,6 +10087,7 @@
             "type": "string"
           },
           "name": {
+            "description": "名称：只给人看，可以改",
             "type": "string"
           },
           "project_names": {
@@ -10126,6 +10156,7 @@
         },
         "required": [
           "id",
+          "code",
           "name",
           "purpose",
           "fields",
@@ -10205,6 +10236,10 @@
               "null"
             ]
           },
+          "rename": {
+            "description": "新名称（R-326）：名称只给人看，编号 S-x 不变；批准后生效",
+            "type": "string"
+          },
           "replace": {
             "description": "要替换的值（R-325）：环境变量名和新值的获取方式；用户在抽屉里填新值，申请里没有值。可以只替换值、不改授权范围",
             "items": {
@@ -10270,6 +10305,10 @@
             ],
             "type": "string"
           },
+          "name": {
+            "description": "修改授权申请：提出的新名称；空 = 不改名",
+            "type": "string"
+          },
           "project_id": {
             "description": "申请方所在的项目",
             "type": "string"
@@ -10329,6 +10368,10 @@
           "disk": {
             "description": "允许写入磁盘",
             "type": "boolean"
+          },
+          "name": {
+            "description": "新名称（R-326）：只在修改授权申请提出改名时用，空 = 按申请里的新名称",
+            "type": "string"
           },
           "note": {
             "description": "附言（R-321）：有等待中的申请时随结果送给申请方；都记在授权变更时间线上。已知值隐去",
@@ -10470,7 +10513,8 @@
               "regrant",
               "revoke",
               "plain",
-              "sensitive"
+              "sensitive",
+              "rename"
             ],
             "type": "string"
           },
@@ -19609,6 +19653,57 @@
           }
         },
         "summary": "拒绝凭据申请（可附言），答复送回申请方",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/secrets/{ref}/rename": {
+      "post": {
+        "operationId": "rename-secret",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Rename-secretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "改名（R-326）：名称只给人看，编号 S-x 不变，按编号取用不受影响",
         "tags": [
           "secrets"
         ]

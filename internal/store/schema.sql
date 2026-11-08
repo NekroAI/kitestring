@@ -635,6 +635,7 @@ CREATE INDEX IF NOT EXISTS prototypes_req ON prototypes(requirement_id, title);
 -- 申请要的项目、有效期、命令只记在 request 里，你保存授权后才写进 projects / expires_at / allowed（申请不能自己扩大已有授权）。
 CREATE TABLE IF NOT EXISTS secrets (
 	id               TEXT PRIMARY KEY,
+	seq              INTEGER NOT NULL DEFAULT 0, -- 稳定编号 S-<seq>（R-326）：取用、申请都认它，改名不影响；唯一索引在迁移后建（老库先补列再回填）
 	name             TEXT NOT NULL,
 	purpose          TEXT NOT NULL DEFAULT '',
 	fields           TEXT NOT NULL DEFAULT '[]',

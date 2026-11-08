@@ -213,5 +213,15 @@ export function missingReplace<F extends { env: string }>(fields: F[], values: R
   return fields.filter((f) => !(values[f.env] ?? '').trim())
 }
 
+// amendKind：「待处理」里修改授权申请的类别词（R-325 / R-326）：有替换值写替换值，只改名写改名，否则修改授权。
+export function amendKind(ask?: { replace?: unknown[] | null; name?: string } | null): 'replace' | 'rename' | 'amend' {
+  if (ask?.replace?.length) return 'replace'
+  if (ask?.name) return 'rename'
+  return 'amend'
+}
+
+// secretRun：会话取用凭据的推荐写法（R-326）：命令里写编号，改名不影响。
+export const secretRun = (code: string) => `ks secret run ${code} -- <命令>`
+
 // replaceLabels：时间线上「替换了哪些值」：后端记的显示名用「、」连接，老数据为空。
 export const replaceLabels = (reason?: string | null) => (reason ?? '').split('、').filter(Boolean)

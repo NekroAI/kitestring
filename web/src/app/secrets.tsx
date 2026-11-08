@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Ban, Check, ChevronDown, Eye, EyeOff, KeyRound, Plus, Search, ShieldCheck, X } from 'lucide-react'
+import { Ban, Check, ChevronDown, Eye, EyeOff, KeyRound, Pencil, Plus, Search, ShieldCheck, X } from 'lucide-react'
 import { api, errMsg, unwrap, type Decision } from '../api/client'
 import { useProjects, useSecret, useSecrets, useSessions, type SecretLog, type SecretView } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { addCommand, authDiff, logNote, missingReplace, replaceFields, replaceLabels, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
+import { addCommand, amendKind, secretRun, authDiff, logNote, missingReplace, replaceFields, replaceLabels, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
 import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, Panel } from '../ui/overlay'
 import { Md } from '../ui/markdown'
@@ -321,8 +321,9 @@ function useSecretApi() {
     }
   }
   return {
-    authorize: (x: { id: string; name: string }, a: AuthState, values: Record<string, string>, plain?: Record<string, boolean>, note?: string) =>
-      call(() => unwrap(api.POST('/api/secrets/{ref}/authorize', { params: { path: { ref: x.id } }, body: { ...a, values: filledValues(values), plain, note: note?.trim() || undefined } })), t.secret.fail.save(x.name), ['decisions', 'sessions']),
+    authorize: (x: { id: string; name: string }, a: AuthState, values: Record<string, string>, plain?: Record<string, boolean>, note?: string, name?: string) =>
+      call(() => unwrap(api.POST('/api/secrets/{ref}/authorize', { params: { path: { ref: x.id } }, body: { ...a, values: filledValues(values), plain, note: note?.trim() || undefined, name: name?.trim() || undefined } })), t.secret.fail.save(x.name), ['decisions', 'sessions']),
+    rename: (x: { id: string; name: string }, name: string) => call(() => unwrap(api.POST('/api/secrets/{ref}/rename', { params: { path: { ref: x.id } }, body: { name } })), t.secret.fail.rename(x.name)),
     replace: (x: { id: string; name: string }, values: Record<string, string>, plain: Record<string, boolean>) =>
       call(() => unwrap(api.POST('/api/secrets/{ref}/values', { params: { path: { ref: x.id } }, body: { values: filledValues(values), plain } })), t.secret.fail.replace(x.name)),
     mark: (x: { id: string; name: string }, plain: Record<string, boolean>) => call(() => unwrap(api.POST('/api/secrets/{ref}/plain', { params: { path: { ref: x.id } }, body: { plain } })), t.secret.fail.mark(x.name)),
@@ -362,7 +363,7 @@ export function SecretReqLine({ d }: { d: Decision }) {
           <span className="min-w-0 truncate">{d.requirement_title}</span>
         </span>
       )}
-      {x?.ask && <span className="shrink-0 text-fg-3">{isAmend(x) ? (x.ask.replace?.length ? t.secret.replaceShort : t.secret.amendShort) : t.secret.suggestShort(x.ask.days)}</span>}
+      {x?.ask && <span className="shrink-0 text-fg-3">{isAmend(x) ? { replace: t.secret.replaceShort, rename: t.secret.renameShort, amend: t.secret.amendShort }[amendKind(x.ask)] : t.secret.suggestShort(x.ask.days)}</span>}
     </span>
   )
 }
@@ -417,6 +418,9 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
   const amend = isAmend(x) // 修改授权申请（R-320）：显示改前 / 改后
   // 替换值（R-325）：申请里要替换的值显示填写框和获取方式，都填了新值才能保存并授权
   const swap = amend ? replaceFields(x.fields, x.ask?.replace) : []
+  // 改名（R-326）：申请里提出了新名称时可再调整
+  const [name, setName] = useState(amend ? (x.ask?.name ?? '') : '')
+  const renaming = amend && !!x.ask?.name
   // 附言（R-321）：保存并授权、拒绝都带上，随结果送达申请方；草稿和决策答复同一个键（答复后自动清）。值不进草稿。
   const dr = useDraft<{ text: string }>(decDraftKey(d.code), { text: '' })
   const note = dr.value.text
@@ -433,7 +437,8 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
     const a = auth
     const p = amend ? (swap.length ? changedPlain(swap, plain) : undefined) : plain
     const n = note
-    schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => done(ops.authorize(x, a, v, p, n), dr.drop) })
+    const nm = renaming ? name : undefined
+    schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => done(ops.authorize(x, a, v, p, n, nm), dr.drop) })
   }
   // 拒绝和其他审批一样要写明理由：没写就把焦点放到附言框
   const reject = () => {
@@ -462,7 +467,10 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 pt-2 pb-6 sm:px-6">
         <div>
           {/* 类型词「凭据申请」已在抽屉顶栏，这里只写项目（principles 第 5 条） */}
-          {d.project_name && <div className="text-[12.5px] text-fg-3">{d.project_name}</div>}
+          <div className="flex items-center gap-2 text-[12.5px] text-fg-3">
+            {d.project_name && <span>{d.project_name}</span>}
+            <CodeChip code={x.code} />
+          </div>
           <h3 className="mt-1 font-display text-[22px] leading-snug font-semibold text-fg">{x.name}</h3>
           {s && (
             <button type="button" onClick={() => openSession(s.key)} className="mt-3 flex w-full min-w-0 items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-left text-[13px] transition hover:border-line-strong">
@@ -487,9 +495,15 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
             <FieldValues fields={swap} values={values} onChange={setValues} plain={plain} onPlain={setPlain} fresh autoFocus />
           </Section>
         )}
+        {renaming && (
+          <Section title={t.secret.name}>
+            <Input data-secret-rename="" value={name} aria-label={t.secret.name} onChange={(e) => setName(e.target.value)} />
+            <p className="mt-1.5 text-xs leading-relaxed text-fg-3">{t.secret.renameHint}</p>
+          </Section>
+        )}
         {amend ? (
           <Section title={t.secret.change}>
-            <AuthDiffView x={x} auth={auth} />
+            <AuthDiffView x={x} auth={auth} name={renaming ? name : undefined} />
           </Section>
         ) : (
           <Section title={t.secret.values}>
@@ -539,11 +553,12 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
 }
 
 // AuthDiffView：修改授权申请的改前 / 改后（R-320）。改前是凭据现在的授权，改后是抽屉里的授权（随你的调整更新）；只列改了的项。
-function AuthDiffView({ x, auth }: { x: SecretView; auth: AuthState }) {
+function AuthDiffView({ x, auth, name: newName }: { x: SecretView; auth: AuthState; name?: string }) {
   const projects = useProjects()
   const name = (id: string) => (projects.data?.projects ?? []).find((p) => p.id === id)?.name ?? x.project_names[x.projects.indexOf(id)] ?? id
   const diff = authDiff(x, auth)
-  if (diffEmpty(diff)) return <p className="text-[13px] text-fg-3">{t.secret.noChange}</p>
+  const renamed = newName !== undefined && newName.trim() !== '' && newName.trim() !== x.name
+  if (diffEmpty(diff) && !renamed) return <p className="text-[13px] text-fg-3">{t.secret.noChange}</p>
   const at = auth.days === KEEP_TTL ? x.expires_at : expiryOf(auth.days)?.toISOString()
   const expBefore = x.status === 'revoked' ? t.secret.status.revoked : x.status === 'expired' ? t.secret.expiredAt(dayText(x.expires_at)) : x.expires_at ? t.secret.until(dayTime(x.expires_at)) : t.secret.forever
   const expAfter = at ? t.secret.until(dayTime(at)) : t.secret.forever
@@ -573,6 +588,7 @@ function AuthDiffView({ x, auth }: { x: SecretView; auth: AuthState }) {
       <AnyCmd />
     )
   const rows: { label: string; before: ReactNode; after: ReactNode }[] = []
+  if (renamed) rows.push({ label: t.secret.name, before: <span data-secret-diff="del" className="text-[13px] text-fg-3 line-through">{x.name}</span>, after: <span data-secret-diff="add" className="rounded-md bg-run-soft px-1.5 text-[13px] leading-6 text-run">{newName!.trim()}</span> })
   if (diff.projects) rows.push({ label: t.secret.project, before: <Names ids={x.projects} mark={diff.projects.removed} tone="del" />, after: <Names ids={auth.projects} mark={diff.projects.added} tone="add" /> })
   if (diff.expiry) rows.push({ label: t.secret.expiry, before: <span className="text-[13px] text-fg-2 tabular">{expBefore}</span>, after: <span className="text-[13px] text-fg tabular">{expAfter}</span> })
   if (diff.allowed) rows.push({ label: t.secret.allowed, before: <Cmds list={x.allowed} mark={diff.allowed.removed} tone="del" />, after: <Cmds list={auth.allowed} mark={diff.allowed.added} tone="add" /> })
@@ -692,7 +708,10 @@ function SecretRow({ x, now, onOpen, onDialog }: { x: SecretView; now: number; o
       className={cx('relative grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b border-line px-4 py-3 transition-colors last:border-b-0 hover:bg-hover/60', gridCols)}
     >
       <div className="min-w-0">
-        <div className={cx('truncate text-[15px] font-semibold', off ? 'text-fg-2' : 'text-fg')}>{x.name}</div>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <CodeChip code={x.code} />
+          <span className={cx('min-w-0 truncate text-[15px] font-semibold', off ? 'text-fg-2' : 'text-fg')}>{x.name}</span>
+        </div>
         <div className="truncate text-[13px] text-fg-3">{x.purpose}</div>
       </div>
       <div className="min-w-0 max-lg:hidden">
@@ -841,6 +860,8 @@ function changeText(l: SecretLog, x: SecretView) {
       return t.secret.log.plain(l.reason ?? '')
     case 'sensitive':
       return t.secret.log.sensitive(l.reason ?? '')
+    case 'rename':
+      return t.secret.log.rename(l.reason ?? '', who || l.session_key || '')
     default:
       return t.secret.log.expire
   }
@@ -976,13 +997,14 @@ function SecretDetail({ id, onClose, onDialog }: { id: string | null; onClose: (
           <header className="shrink-0 border-b border-line px-5 pt-4 pb-4 sm:px-6">
             <div className="flex items-center gap-2">
               <SecretStatusPill status={x.status} />
+              <CodeChip code={x.code} />
               <span className="text-[13px] text-fg-3 tabular">{left}</span>
               <button aria-label={t.common.close} onClick={onClose} className="ml-auto flex size-8 items-center justify-center rounded-lg text-fg-2 transition hover:bg-hover">
                 <X className="size-[18px]" />
               </button>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <h3 className="min-w-0 flex-1 font-display text-[22px] leading-snug font-semibold text-fg">{x.name}</h3>
+              <NameTitle x={x} />
               {x.status === 'pending' ? (
                 <Button size="sm" variant="primary" disabled={!x.request_pending} onClick={() => x.request_code && openAsk(`d:${x.request_code}`)}>
                   {t.secret.fill}
@@ -1215,5 +1237,53 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
         <Guard />
       </div>
     </Modal>
+  )
+}
+
+// CodeChip：凭据编号 S-x 的印记（R-326），悬停说明会话按编号取用。凭据页里不可点（就在这条凭据上）。
+function CodeChip({ code }: { code?: string }) {
+  if (!code) return null
+  return <RefChip code={code} link={false} hint={t.secret.codeTip(code, secretRun(code))} />
+}
+
+// NameTitle：详情抽屉的标题，旁边的笔可以直接改名（R-326）；回车保存、Esc 取消。名称只用来显示，编号不变。
+function NameTitle({ x }: { x: SecretView }) {
+  const ops = useSecretApi()
+  const [edit, setEdit] = useState<string | null>(null)
+  const save = async () => {
+    const v = (edit ?? '').trim()
+    if (!v || v === x.name) return setEdit(null)
+    if (await ops.rename(x, v)) setEdit(null)
+  }
+  if (edit !== null)
+    return (
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <Input
+          autoFocus
+          data-secret-rename=""
+          value={edit}
+          aria-label={t.secret.name}
+          onChange={(e) => setEdit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'Enter') void save()
+            if (e.key === 'Escape') (e.stopPropagation(), setEdit(null))
+          }}
+          className="h-9 text-[16px] font-semibold"
+        />
+        <Button size="sm" variant="primary" onClick={() => void save()}>
+          {t.common.save}
+        </Button>
+      </span>
+    )
+  return (
+    <span className="group flex min-w-0 flex-1 items-center gap-1">
+      <h3 className="min-w-0 font-display text-[22px] leading-snug font-semibold text-fg">{x.name}</h3>
+      <Tip content={t.secret.renameHint}>
+        <button type="button" aria-label={t.secret.rename} onClick={() => setEdit(x.name)} className="shrink-0 rounded-md p-1 text-fg-3 transition hover:bg-hover hover:text-fg">
+          <Pencil className="size-3.5" />
+        </button>
+      </Tip>
+    </span>
   )
 }

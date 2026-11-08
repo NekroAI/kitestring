@@ -51,7 +51,7 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图（要试交互的用 option_prototypes 附可交互原型），用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
-- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到），用户名、Account ID 这类不是密钥的值标为不敏感（plain / --plain）；用户在纸鸢上填值并授权后结果送到你这里（用户可能附言写使用注意事项，如「只读」「别在生产库跑」，照着做）。之后用 shell 命令 ks secret run <凭据> -- <命令> 运行，值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。取用因授权范围被拒（命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时，用 secret_amend（或 ks secret amend）申请修改授权，写明要改什么和理由；不要让用户去凭据页手动改，也不要让用户照着你写的命令文本敲。换 Token（到期、泄露或定期更新）也用 secret_amend 的 replace（--replace）申请替换值，写明理由和新值的获取方式，不要新建一条凭据；用户填新值，你拿不到值，批准后凭据名不变、照常取用。
+- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到），用户名、Account ID 这类不是密钥的值标为不敏感（plain / --plain）；用户在纸鸢上填值并授权后结果送到你这里（用户可能附言写使用注意事项，如「只读」「别在生产库跑」，照着做）。之后用 shell 命令 ks secret run <编号 S-x> -- <命令> 运行（每条凭据有稳定编号 S-x，申请结果和 secret_list 里都有；命令里写编号，不写名称，名称可能被改），值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。取用因授权范围被拒（命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时，用 secret_amend（或 ks secret amend）申请修改授权，写明要改什么和理由；不要让用户去凭据页手动改，也不要让用户照着你写的命令文本敲。换 Token（到期、泄露或定期更新）也用 secret_amend 的 replace（--replace）申请替换值，写明理由和新值的获取方式，不要新建一条凭据；用户填新值，你拿不到值，批准后凭据名不变、照常取用。
 - 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开始。计划开始或阶段解锁时，该阶段的需求会指派给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动指派给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认、也最多等 55 分钟，醒来时提示缓存还有效；项目设置可调得更短，--timeout 超过上限按上限截断；后台任务的超时要设得比它长）。主调度 / 主助理 / 开发连续空等累计到项目设置的时长（默认 4 小时）时，醒来会收到写交接下线的指示：handoff_write 写交接后结束本轮，不再挂 ks wait，它结束时你会被唤醒。
@@ -211,7 +211,7 @@ type secretFieldArg struct {
 }
 
 type secretRequestIn struct {
-	Name        string           `json:"name" jsonschema:"凭据名，例如「Cloudflare 部署」；ks secret run 按它取用。已有同名凭据时是对它重新申请（补值、续期）；只改授权范围或替换值（换 Token）用 secret_amend，不要为替换值新建凭据"`
+	Name        string           `json:"name" jsonschema:"凭据名，例如「Cloudflare 部署」；取用时写批准后给出的编号 S-x。已有同名凭据时是对它重新申请（补值、续期）；只改授权范围或替换值（换 Token）用 secret_amend，不要为替换值新建凭据"`
 	Purpose     string           `json:"purpose" jsonschema:"用途：拿它做什么，用户在申请里看到"`
 	Fields      []secretFieldArg `json:"fields" jsonschema:"要的每个值；一条凭据可以含多个值（如 API Token 和 Account ID），一起授权、一次取用"`
 	Requirement string           `json:"requirement,omitempty" jsonschema:"关联需求 R-x"`
@@ -220,7 +220,8 @@ type secretRequestIn struct {
 }
 
 type secretAmendIn struct {
-	Name          string             `json:"name" jsonschema:"要改授权的凭据名"`
+	Name          string             `json:"name" jsonschema:"要改的凭据：编号 S-x（推荐）或名称"`
+	Rename        string             `json:"rename,omitempty" jsonschema:"新名称（R-326）：名称只给人看，编号 S-x 不变，按编号取用不受影响"`
 	Reason        string             `json:"reason" jsonschema:"理由：为什么要改（例如哪条命令被拒、要运行什么），用户在申请里看到"`
 	Requirement   string             `json:"requirement,omitempty" jsonschema:"关联需求 R-x"`
 	AddAllowed    []string           `json:"add_allowed,omitempty" jsonschema:"加上的允许命令，如 \"wrangler pages deploy *\""`
@@ -501,7 +502,7 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return text(out.Message), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "secret_amend", Description: "申请修改已有凭据的授权或替换其中的值（R-320、R-325）：取用因授权范围被拒（命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时用它，不要让用户去凭据页手动改。生效中、已失效、已撤回的凭据都能申请；只能改授权给本项目的凭据。可改：允许的命令（add_allowed / remove_allowed 在原来的基础上增删，写错的先去掉再加上对的；allowed 整份替换；any_command 改成不限命令）、有效期（days，从批准时算起，0 = 长期；不写 = 生效中的到期时间不变）、项目（projects，改后的完整列表，项目名或 ID）、写入磁盘（disk）。reason 写清理由（哪条命令被拒、要运行什么）。申请出现在用户的「待处理」，用户看到改前 / 改后，可再调整后保存并授权或拒绝，结果送到你这里；批准前原来的授权照常生效。替换值（Token 到期、泄露或定期更新）用 replace 写明要替换哪几个值和新值的获取方式，reason 写为什么要换；可以只替换值、不改授权范围；不要新建凭据。申请里没有值，新值由用户在抽屉里填，你拿不到；批准后新值生效、旧值作废，凭据名、取用记录不变，照常 ks secret run。允许的命令按空白切成参数逐个比对（* 在参数内匹配任意字符，含空格）；一个参数里含空格时（如 sh -c 后面的整段脚本）用 * 代替其中的空格，例如 \"sh -c printf*wrangler*secret*put*\"，不要把它拆成多段。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "secret_amend", Description: "申请修改已有凭据的授权或替换其中的值（R-320、R-325）：取用因授权范围被拒（命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时用它，不要让用户去凭据页手动改。生效中、已失效、已撤回的凭据都能申请；只能改授权给本项目的凭据。可改：允许的命令（add_allowed / remove_allowed 在原来的基础上增删，写错的先去掉再加上对的；allowed 整份替换；any_command 改成不限命令）、有效期（days，从批准时算起，0 = 长期；不写 = 生效中的到期时间不变）、项目（projects，改后的完整列表，项目名或 ID）、写入磁盘（disk）。reason 写清理由（哪条命令被拒、要运行什么）。申请出现在用户的「待处理」，用户看到改前 / 改后，可再调整后保存并授权或拒绝，结果送到你这里；批准前原来的授权照常生效。替换值（Token 到期、泄露或定期更新）用 replace 写明要替换哪几个值和新值的获取方式，reason 写为什么要换；可以只替换值、不改授权范围；不要新建凭据。申请里没有值，新值由用户在抽屉里填，你拿不到；批准后新值生效、旧值作废，编号、取用记录不变，照常 ks secret run S-x。要改名称用 rename（编号不变）。允许的命令按空白切成参数逐个比对（* 在参数内匹配任意字符，含空格）；一个参数里含空格时（如 sh -c 后面的整段脚本）用 * 代替其中的空格，例如 \"sh -c printf*wrangler*secret*put*\"，不要把它拆成多段。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in secretAmendIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {
@@ -527,12 +528,15 @@ func (t *tools) register(s *mcp.Server) {
 			if len(in.Replace) > 0 {
 				body["replace"] = in.Replace
 			}
+			if in.Rename != "" {
+				body["rename"] = in.Rename
+			}
 			if err := t.c.Do(ctx, "POST", "/agent/secrets/amend", body, &out); err != nil {
 				return nil, nil, err
 			}
 			return text(out.Message), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "secret_list", Description: "本项目能用的凭据（R-295）：名字、状态（active 生效中 / pending 待填写 / expired 已失效 / revoked 已撤回）、每个值的环境变量名、允许的命令、是否允许写入磁盘、到期时间。没有值：取用用 shell 命令 ks secret run <凭据名> -- <命令>。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "secret_list", Description: "本项目能用的凭据（R-295）：编号 S-x（命令里写它：ks secret run S-x -- <命令>）、名称、状态（active 生效中 / pending 待填写 / expired 已失效 / revoked 已撤回）、每个值的环境变量名、允许的命令、是否允许写入磁盘、到期时间。没有值：取用用 shell 命令 ks secret run <凭据名> -- <命令>。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" {

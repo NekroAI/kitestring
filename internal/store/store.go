@@ -44,6 +44,11 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("数据库迁移失败：%w", err)
 	}
+	// 补列之后才能建的索引（老库的列由 migrate 补上）
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS secrets_seq ON secrets(seq)`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("建凭据编号索引失败：%w", err)
+	}
 	if err := backfillLanes(db); err != nil { // 泳道时间线（R-205）：旧库从事件记录补出历史分钟
 		db.Close()
 		return nil, fmt.Errorf("补录泳道时间线失败：%w", err)
@@ -209,6 +214,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"secret_logs", "note", "TEXT NOT NULL DEFAULT ''"},
 	// 替换掉的旧值（R-325）：密文，只用来继续隐去已存记录里的旧值
 	{"secrets", "retired", "TEXT NOT NULL DEFAULT ''"},
+	// 凭据的稳定编号 S-<seq>（R-326）：老凭据按创建先后补上
+	{"secrets", "seq", "INTEGER NOT NULL DEFAULT 0"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。
@@ -217,6 +224,7 @@ var columnFills = map[string]func(*sql.DB) error{
 	"decisions.verdict":    fillVerdict,
 	"decisions.rec_option": fillRecOption,
 	"decisions.fyi":        fillTellFYI,
+	"secrets.seq":          fillSecretSeq,
 }
 
 // sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。

@@ -301,8 +301,8 @@ func secretEnvs(x store.Secret) string {
 
 // secretGrantAnswer 是保存授权后送给申请方的答复（存进决策的 answer，以「批准」开头）。
 func secretGrantAnswer(x store.Secret) string {
-	return fmt.Sprintf("批准（用户已授权凭据「%s」，含 %s；%s）。用 ks secret run %q -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件，也不要再让用户在终端里输入。",
-		x.Name, secretEnvs(x), secretScope(x), x.Name)
+	return fmt.Sprintf("批准（用户已授权凭据「%s」，含 %s；%s）。凭据编号 %[4]s，命令里写编号，改名不影响。用 ks secret run %[4]s -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件，也不要再让用户在终端里输入。",
+		x.Name, secretEnvs(x), secretScope(x), x.Code)
 }
 
 // secretRequestText：凭据申请送给申请方的答复。批准时 answer 已是完整的一段（secretGrantAnswer）。
@@ -382,6 +382,7 @@ type secretAuthIn struct {
 	Disk     bool              `json:"disk,omitempty" doc:"允许写入磁盘"`
 	Plain    map[string]bool   `json:"plain,omitempty" doc:"环境变量名 → 是否不敏感（R-318）；没写的保持原样"`
 	Note     string            `json:"note,omitempty" doc:"附言（R-321）：有等待中的申请时随结果送给申请方；都记在授权变更时间线上。已知值隐去"`
+	Name     string            `json:"name,omitempty" doc:"新名称（R-326）：只在修改授权申请提出改名时用，空 = 按申请里的新名称"`
 }
 
 // authorize 保存授权：填值（可选）、设项目 / 有效期 / 允许的命令 / 写入磁盘。有等待中的申请时同时把它答成批准，送回申请方。
@@ -412,6 +413,15 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 				x.Fields[i].How = r.How
 			}
 		}
+	}
+	// 改名（R-326）：修改授权申请里提出了新名称时，按抽屉里的（可再调整）改
+	oldName, renamed := x.Name, false
+	if amend && x.Ask.Name != "" {
+		nn := strings.TrimSpace(in.Name)
+		if nn == "" {
+			nn = x.Ask.Name
+		}
+		x.Name, renamed = nn, nn != oldName
 	}
 	vals, changed, err := mergeSecretValues(&x, old, in.Values, true)
 	if err != nil {
@@ -474,17 +484,27 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 		// 改了什么记在时间线上（命令里的已知值隐去）；改动说明里只有授权范围，没有值
 		l.Reason = h.redactText(strings.Join(changes, "；"), sensitiveValues(saved, vals))
 	}
-	// 替换值记一条「替换了哪些值」（只有显示名）。修改授权申请只替换值、授权没改时，附言和申请的会话记在这一条上，不再另记「修改了授权」
-	onlyReplace := amend && len(replaced) > 0 && len(changes) == 0 && kind == store.SecretLogEdit
+	// 替换值记一条「替换了哪些值」（只有显示名），改名记一条「旧名 → 新名」（R-326）。修改授权申请只替换值 / 改名、授权没改时，
+	// 附言和申请的会话记在这几条上（附言记在最后一条），不再另记「修改了授权」
+	onlyReplace := amend && (len(replaced) > 0 || renamed) && len(changes) == 0 && kind == store.SecretLogEdit
 	if changed && (kind != store.SecretLogGrant || amend) {
 		rl := store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReplace, Reason: strings.Join(replaced, "、"), Days: -1}
 		if amend {
 			rl.SessionKey = x.RequestedBy
 		}
-		if onlyReplace {
+		if onlyReplace && !renamed {
 			rl.Note = note
 		}
 		if _, err := h.store.AddSecretLog(ctx, rl); err != nil {
+			return saved, err
+		}
+	}
+	if renamed {
+		rn := store.SecretLog{SecretID: x.ID, Kind: store.SecretLogRename, Reason: renameText(oldName, saved.Name), SessionKey: x.RequestedBy, Days: -1}
+		if onlyReplace {
+			rn.Note = note
+		}
+		if _, err := h.store.AddSecretLog(ctx, rn); err != nil {
 			return saved, err
 		}
 	}
@@ -501,7 +521,11 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	if pendingReq {
 		answer := secretGrantAnswer(saved)
 		if amend {
-			answer = h.redactText(secretAmendAnswer(saved, replaced, changes), sensitiveValues(saved, vals))
+			all := changes
+			if renamed {
+				all = append([]string{"名称：" + renameText(oldName, saved.Name)}, changes...)
+			}
+			answer = h.redactText(secretAmendAnswer(saved, replaced, all), sensitiveValues(saved, vals))
 		}
 		if note != "" {
 			answer += "\n附言：" + note
@@ -754,6 +778,32 @@ func (h *Hub) registerSecretsWeb(api huma.API) {
 			h.secretsChanged(ctx)
 			return h.secretDetail(ctx, x)
 		})
+	huma.Register(api, huma.Operation{OperationID: "rename-secret", Method: http.MethodPost, Path: "/api/secrets/{ref}/rename", Tags: tag,
+		Summary: "改名（R-326）：名称只给人看，编号 S-x 不变，按编号取用不受影响"},
+		func(ctx context.Context, in *struct {
+			Ref  string `path:"ref"`
+			Body struct {
+				Name string `json:"name" minLength:"1" doc:"新名称"`
+			}
+		}) (*secretOut, error) {
+			x, err := h.getSecretRef(ctx, in.Ref)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			old := x.Name
+			x.Name = strings.TrimSpace(in.Body.Name)
+			if x.Name == old {
+				return nil, huma.Error400BadRequest("名称没有改动")
+			}
+			if x, err = h.store.SaveSecret(ctx, x); err != nil {
+				return nil, apiErr(err)
+			}
+			if _, err := h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogRename, Reason: renameText(old, x.Name), Days: -1}); err != nil {
+				return nil, err
+			}
+			h.secretsChanged(ctx)
+			return h.secretDetail(ctx, x)
+		})
 	huma.Register(api, huma.Operation{OperationID: "mark-secret-fields", Method: http.MethodPost, Path: "/api/secrets/{ref}/plain", Tags: tag,
 		Summary: "改值的敏感标记（R-318）：不敏感的值明文显示、不在纸鸢里隐去；值和授权不变"},
 		func(ctx context.Context, in *struct {
@@ -834,7 +884,9 @@ func (h *Hub) relabelFirstGrant(ctx context.Context, id string) error {
 
 // agentSecret 是给会话看的凭据：只有名字、状态、字段名、授权范围，没有值。
 type agentSecret struct {
-	Name      string              `json:"name"`
+	Code      string              `json:"code" doc:"稳定编号 S-x：命令里写它（ks secret run S-x -- <命令>），改名不影响"`
+	Run       string              `json:"run" doc:"推荐的取用写法"`
+	Name      string              `json:"name" doc:"名称：只给人看，可能被改"`
 	Purpose   string              `json:"purpose"`
 	Status    string              `json:"status" enum:"active,pending,expired,revoked"`
 	Fields    []store.SecretField `json:"fields"`
@@ -846,7 +898,7 @@ type agentSecret struct {
 }
 
 func toAgentSecret(x store.Secret) agentSecret {
-	a := agentSecret{Name: x.Name, Purpose: x.Purpose, Status: x.Status, Fields: x.Fields, Projects: x.ProjectNames, Allowed: x.Allowed, Disk: x.Disk, ExpiresAt: x.ExpiresAt}
+	a := agentSecret{Code: x.Code, Run: "ks secret run " + x.Code + " -- <命令>", Name: x.Name, Purpose: x.Purpose, Status: x.Status, Fields: x.Fields, Projects: x.ProjectNames, Allowed: x.Allowed, Disk: x.Disk, ExpiresAt: x.ExpiresAt}
 	if x.RequestPending {
 		a.Request = x.RequestCode
 	}
@@ -1027,7 +1079,7 @@ func (h *Hub) secretRequest(ctx context.Context, b secretRequestIn) (*secretRequ
 			return nil, apiErr(err)
 		}
 	case err != nil:
-		return nil, err
+		return nil, apiErr(err)
 	default:
 		if x.RequestPending {
 			d, _ := h.store.GetDecision(ctx, x.RequestID)
@@ -1052,7 +1104,7 @@ func (h *Hub) secretRequest(ctx context.Context, b secretRequestIn) (*secretRequ
 		}
 		if !missing && x.Status == store.SecretActive && secretInProject(x, me.ProjectID) {
 			out.Body.Existing = true
-			out.Body.Message = fmt.Sprintf("凭据「%s」已授权给本项目（%s），不用申请。用 ks secret run %q -- <命令> 运行；命令不在允许范围内时会被拒绝。", x.Name, secretScope(x), x.Name)
+			out.Body.Message = fmt.Sprintf("凭据「%s」已授权给本项目（%s），不用申请。用 ks secret run %s -- <命令> 运行；命令不在允许范围内时会被拒绝。", x.Name, secretScope(x), x.Code)
 			out.Body.Message += "要改允许的命令、有效期、项目或写入磁盘，用 ks secret amend（MCP secret_amend）申请修改授权。"
 			return out, nil
 		}
@@ -1086,7 +1138,7 @@ func (h *Hub) secretRequest(ctx context.Context, b secretRequestIn) (*secretRequ
 	}
 	h.broker.publish("decisions", "sessions", "requirements", "secrets")
 	out.Body.Decision = &d
-	out.Body.Message = fmt.Sprintf("已申请（%s）：凭据「%s」，在用户的「待处理」里等待填写。用户保存并授权或拒绝后，结果会送到你这里；授权后用 ks secret run %q -- <命令> 运行。不要再让用户在终端里输入这些值。", d.Code, x.Name, x.Name)
+	out.Body.Message = fmt.Sprintf("已申请（%s）：凭据「%s」，在用户的「待处理」里等待填写。用户保存并授权或拒绝后，结果会送到你这里；授权后用 ks secret run %s -- <命令> 运行。不要再让用户在终端里输入这些值。", d.Code, x.Name, x.Code)
 	return out, nil
 }
 
@@ -1128,9 +1180,9 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pr
 	}
 	x, err := h.store.GetSecret(ctx, name)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, huma.Error404NotFound(fmt.Sprintf("没有名为「%s」的凭据。ks secret list 看本项目能用的；没有就用 ks secret request 申请，不要让用户在终端里输入", strings.TrimSpace(name)))
+		return nil, huma.Error404NotFound(fmt.Sprintf("没有编号或名称为「%s」的凭据。ks secret list 看本项目能用的（命令里写编号 S-x）；没有就用 ks secret request 申请，不要让用户在终端里输入", strings.TrimSpace(name)))
 	} else if err != nil {
-		return nil, err
+		return nil, apiErr(err)
 	}
 	write := path != ""
 	if write && !filepath.IsAbs(path) {
@@ -1162,15 +1214,15 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pr
 			hint += "（申请 " + x.RequestCode + " 等待处理）"
 		}
 	case x.Status == store.SecretRevoked:
-		deny, hint = secretDenyRevoked, fmt.Sprintf("用户已撤销授权；确实需要时用 ks secret amend %q --reason <理由> 申请重新授权，写明为什么", x.Name)
+		deny, hint = secretDenyRevoked, fmt.Sprintf("用户已撤销授权；确实需要时用 ks secret amend %s --reason <理由> 申请重新授权，写明为什么", x.Code)
 	case x.Status == store.SecretExpired:
-		deny, hint = secretDenyExpired, "授权已于 "+x.ExpiresAt.Local().Format("01-02 15:04")+fmt.Sprintf(" 到期；确实需要时用 ks secret amend %q --days <天数> --reason <理由> 申请重新授权", x.Name)
+		deny, hint = secretDenyExpired, "授权已于 "+x.ExpiresAt.Local().Format("01-02 15:04")+fmt.Sprintf(" 到期；确实需要时用 ks secret amend %s --days <天数> --reason <理由> 申请重新授权", x.Code)
 	case !secretInProject(x, me.ProjectID):
 		deny, hint = secretDenyProject, fmt.Sprintf("这个凭据只授权给 %s，当前会话在「%s」；需要时用 ks secret request 申请", strings.Join(x.ProjectNames, "、"), me.ProjectName)
 	case write && !x.Disk:
-		deny, hint = secretDenyDisk, fmt.Sprintf("这个凭据没有授权写入磁盘，改用 ks secret run 把值作为命令的环境变量；确实要写文件时用 ks secret amend %q --disk --reason <理由> 申请修改授权，不要让用户去凭据页手动改", x.Name)
+		deny, hint = secretDenyDisk, fmt.Sprintf("这个凭据没有授权写入磁盘，改用 ks secret run 把值作为命令的环境变量；确实要写文件时用 ks secret amend %s --disk --reason <理由> 申请修改授权，不要让用户去凭据页手动改", x.Code)
 	case !write && !commandAllowed(x.Allowed, argv, prog):
-		deny, hint = secretDenyCommand, "允许的命令："+strings.Join(x.Allowed, "、")+fmt.Sprintf("。不要换个写法绕过；确实需要时用 ks secret amend %q --add-allow <命令> --reason <理由> 申请修改授权（写错的用 --remove-allow 去掉；一个参数里含空格时用 * 代替其中的空格，不要拆成多段），不要让用户去凭据页手动改", x.Name)
+		deny, hint = secretDenyCommand, "允许的命令："+strings.Join(x.Allowed, "、")+fmt.Sprintf("。不要换个写法绕过；确实需要时用 ks secret amend %s --add-allow <命令> --reason <理由> 申请修改授权（写错的用 --remove-allow 去掉；一个参数里含空格时用 * 代替其中的空格，不要拆成多段），不要让用户去凭据页手动改", x.Code)
 	case openErr != nil:
 		deny, hint = secretDenyUnreadable, openErr.Error()
 	}
@@ -1192,3 +1244,6 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pr
 	out.Body.LogID, out.Body.Name, out.Body.Env = saved.ID, x.Name, vals
 	return out, nil
 }
+
+// renameText 是改名在时间线和答复里的写法：「旧名」→「新名」。
+func renameText(old, name string) string { return "「" + old + "」→「" + name + "」" }

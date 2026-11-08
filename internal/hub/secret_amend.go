@@ -39,6 +39,7 @@ type secretAmendIn struct {
 	Days          *int              `json:"days,omitempty" doc:"改后的有效期（天），从批准时算起；0 = 长期；不写 = 生效中的到期时间不变，已失效 / 已撤回的按 7 天"`
 	Projects      []string          `json:"projects,omitempty" doc:"改后的授权项目（项目名或 ID，整份替换）；不写 = 不变"`
 	Disk          *bool             `json:"disk,omitempty" doc:"改后是否允许写入磁盘；不写 = 不变"`
+	Rename        string            `json:"rename,omitempty" doc:"新名称（R-326）：名称只给人看，编号 S-x 不变；批准后生效"`
 	Replace       []secretReplaceIn `json:"replace,omitempty" doc:"要替换的值（R-325）：环境变量名和新值的获取方式；用户在抽屉里填新值，申请里没有值。可以只替换值、不改授权范围"`
 }
 
@@ -77,15 +78,22 @@ func replaceLabels(x store.Secret, rs []store.SecretReplace) []string {
 	return out
 }
 
-// amendTitle 是修改授权申请的标题（「待处理」里的一行）：只替换值、只改授权，或两者都有。
-func amendTitle(name string, replace bool, scope bool) string {
-	switch {
-	case replace && scope:
-		return name + "：替换值并修改授权"
-	case replace:
-		return name + "：替换值"
+// amendTitle 是修改授权申请的标题（「待处理」里的一行）：替换值、改名（R-326）、修改授权，按申请里有的写。
+func amendTitle(name string, replace, rename, scope bool) string {
+	var parts []string
+	if replace {
+		parts = append(parts, "替换值")
 	}
-	return name + "：修改授权"
+	if rename {
+		parts = append(parts, "改名")
+	}
+	if scope || len(parts) == 0 {
+		parts = append(parts, "修改授权")
+	}
+	if len(parts) == 1 {
+		return name + "：" + parts[0]
+	}
+	return name + "：" + strings.Join(parts[:len(parts)-1], "、") + "并" + parts[len(parts)-1]
 }
 
 // amendScope 是一份授权范围（改前或改后），用来比较、写改动说明。
@@ -259,9 +267,9 @@ func (h *Hub) secretAmend(ctx context.Context, b secretAmendIn) (*secretRequestO
 	}
 	x, err := h.store.GetSecret(ctx, b.Name)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, huma.Error404NotFound(fmt.Sprintf("没有名为「%s」的凭据。ks secret list 看本项目能用的；新的凭据用 ks secret request 申请", strings.TrimSpace(b.Name)))
+		return nil, huma.Error404NotFound(fmt.Sprintf("没有编号或名称为「%s」的凭据。ks secret list 看本项目能用的（写编号 S-x）；新的凭据用 ks secret request 申请", strings.TrimSpace(b.Name)))
 	} else if err != nil {
-		return nil, err
+		return nil, apiErr(err)
 	}
 	// 只能改授权给本项目的凭据：不能借申请去动别的项目的凭据
 	if !secretInProject(x, me.ProjectID) {
@@ -317,17 +325,35 @@ func (h *Hub) secretAmend(ctx context.Context, b secretAmendIn) (*secretRequestO
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if len(changes) == 0 && len(replace) == 0 {
+	// 改名（R-326）：名称不能和别的凭据重复，也不能写成编号的样子
+	rename := strings.TrimSpace(b.Rename)
+	if rename == x.Name {
+		rename = ""
+	}
+	if rename != "" {
+		if store.IsSecretCode(rename) {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("新名称不能写成编号的样子（%s）", rename))
+		}
+		if taken, err := h.store.SecretNameTaken(ctx, rename, x.ID); err != nil {
+			return nil, err
+		} else if taken {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("已有名为「%s」的凭据，换一个名称", rename))
+		}
+	}
+	if len(changes) == 0 && len(replace) == 0 && rename == "" {
 		return nil, huma.Error400BadRequest(fmt.Sprintf("申请里没有要改的：凭据「%s」现在的授权是 %s。要替换值时写明替换哪几个（replace / --replace）", x.Name, secretScope(x)))
 	}
 	all := changes
+	if rename != "" {
+		all = append([]string{"名称：" + renameText(x.Name, rename)}, all...)
+	}
 	if len(replace) > 0 {
-		all = append([]string{"替换值：" + strings.Join(replaceLabels(x, replace), "、")}, changes...)
+		all = append([]string{"替换值：" + strings.Join(replaceLabels(x, replace), "、")}, all...)
 	}
 	reason = h.redactText(reason, known)
 	d, err := h.store.CreateDecision(ctx, store.Decision{
 		SessionKey: me.Key, ProjectID: me.ProjectID, RequirementID: reqID, Kind: store.KindDecision,
-		Question: amendTitle(x.Name, len(replace) > 0, len(changes) > 0), Context: reason,
+		Question: amendTitle(x.Name, len(replace) > 0, rename != "", len(changes) > 0), Context: reason,
 		Approval: true, Options: []string{"批准", "拒绝"}, Risk: store.RiskHigh, Hard: "permission",
 		RequestKind: store.RequestSecret, FromRole: me.Role,
 	})
@@ -335,7 +361,7 @@ func (h *Hub) secretAmend(ctx context.Context, b secretAmendIn) (*secretRequestO
 		return nil, apiErr(err)
 	}
 	x.RequestID, x.RequestedBy = d.ID, me.Key
-	x.Ask = &store.SecretAsk{Mode: store.AskAmend, ProjectID: me.ProjectID, Reason: reason, Days: after.Days, Allowed: after.Allowed, Projects: after.Projects, Disk: after.Disk, Replace: replace}
+	x.Ask = &store.SecretAsk{Mode: store.AskAmend, ProjectID: me.ProjectID, Reason: reason, Days: after.Days, Allowed: after.Allowed, Projects: after.Projects, Disk: after.Disk, Replace: replace, Name: rename}
 	if x, err = h.store.SaveSecret(ctx, x); err != nil {
 		return nil, apiErr(err)
 	}
@@ -348,8 +374,11 @@ func (h *Hub) secretAmend(ctx context.Context, b secretAmendIn) (*secretRequestO
 	if len(replace) > 0 {
 		extra = "新值由用户在抽屉里填写，你拿不到值；批准前旧值照常可用，批准后新值生效、旧值作废，凭据名不变，照常用 ks secret run 取用。"
 	}
-	out.Body.Message = fmt.Sprintf("已申请修改授权（%s）：凭据「%s」，%s。在用户的「待处理」里等待处理；批准前原来的授权照常生效。%s用户保存并授权或拒绝后，结果会送到你这里。不要让用户去凭据页手动改，也不要新建凭据。",
-		d.Code, x.Name, h.redactText(strings.Join(all, "；"), known), extra)
+	if rename != "" {
+		extra += "改名批准后命令里照常写编号 " + x.Code + "，不受影响。"
+	}
+	out.Body.Message = fmt.Sprintf("已申请修改授权（%s）：凭据「%s」（%s），%s。在用户的「待处理」里等待处理；批准前原来的授权照常生效。%s用户保存并授权或拒绝后，结果会送到你这里。不要让用户去凭据页手动改，也不要新建凭据。",
+		d.Code, x.Name, x.Code, h.redactText(strings.Join(all, "；"), known), extra)
 	return out, nil
 }
 
@@ -364,9 +393,9 @@ func secretAmendAnswer(x store.Secret, replaced, changes []string) string {
 		if len(changes) > 0 {
 			what = "授权改动：" + what
 		}
-		return fmt.Sprintf("批准（用户已替换凭据「%s」的值：%s，新值已生效，旧值已作废；%s。现在的授权：%s）。照常用 ks secret run %q -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件。",
-			x.Name, strings.Join(replaced, "、"), what, secretScope(x), x.Name)
+		return fmt.Sprintf("批准（用户已替换凭据「%s」的值：%s，新值已生效，旧值已作废；%s。现在的授权：%s）。照常用 ks secret run %s -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件。",
+			x.Name, strings.Join(replaced, "、"), what, secretScope(x), x.Code)
 	}
-	return fmt.Sprintf("批准（用户已修改凭据「%s」的授权：%s。现在的授权：%s）。用 ks secret run %q -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件。",
-		x.Name, what, secretScope(x), x.Name)
+	return fmt.Sprintf("批准（用户已修改凭据「%s」的授权：%s。现在的授权：%s）。用 ks secret run %s -- <命令> 运行，值只作为这条命令的环境变量出现；不要打印、回显或写进文件。",
+		x.Name, what, secretScope(x), x.Code)
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { addCommand, logNote, missingReplace, replaceFields, replaceLabels, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
+import { addCommand, amendKind, secretRun, logNote, missingReplace, replaceFields, replaceLabels, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
 
 const list = [
   { name: 'Cloudflare 部署', purpose: 'wrangler 部署 Pages', status: 'active', projects: ['p1'], project_names: ['kitestring'] },
@@ -166,4 +166,12 @@ test('替换值（R-325）：要替换的字段、获取方式、没填新值的
   assert.deepEqual(replaceLabels('Token、用户名'), ['Token', '用户名'])
   assert.deepEqual(replaceLabels(''), [])
   assert.deepEqual(replaceLabels(undefined), [])
+})
+
+test('编号与改名（R-326）：待处理的类别词、推荐写法', () => {
+  assert.equal(amendKind({ replace: [{ env: 'A' }], name: '新名' }), 'replace')
+  assert.equal(amendKind({ replace: [], name: '新名' }), 'rename')
+  assert.equal(amendKind({ name: '' }), 'amend')
+  assert.equal(amendKind(null), 'amend')
+  assert.equal(secretRun('S-3'), 'ks secret run S-3 -- <命令>')
 })

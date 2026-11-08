@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { titleOf } from '../lib/waiting'
 import { useNavigate } from 'react-router'
-import { useDecisions, usePlans, useRequirements } from '../api/queries'
+import { useDecisions, usePlans, useRequirements, useSecrets } from '../api/queries'
 import { PeekContext, SideReqContext, useNavReq, useOpenAsk, useOpenPlan } from '../app/nav'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
@@ -115,6 +115,16 @@ export function DecGlyph({ open, className }: { open?: boolean; className?: stri
   )
 }
 
+// SecretGlyph：钥匙（R-326 凭据编号 S-x）。生效中靛蓝，其余灰。
+export function SecretGlyph({ status, className }: { status?: string; className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className={cx('size-3.5 shrink-0', status === 'active' ? 'text-accent' : 'text-fg-3', className)}>
+      <circle cx="5.2" cy="8" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8.4 8h6M12.2 8v2.6M14.4 8v2" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // ProjGlyph：页签。项目只做分组，不抢眼。
 export function ProjGlyph({ className }: { className?: string }) {
   return (
@@ -137,7 +147,8 @@ export function ReqStatus({ status, className }: { status: string; className?: s
 // ---------- 编号 → 对象 ----------
 
 export type RefInfo = {
-  kind: 'req' | 'plan' | 'dec'
+  kind: 'req' | 'plan' | 'dec' | 'secret'
+  id?: string // 凭据的内部 ID（凭据页按它打开详情）
   code: string
   title: string
   status: string
@@ -157,6 +168,7 @@ export function RefIndexProvider({ children }: { children: ReactNode }) {
   const reqs = useRequirements()
   const plans = usePlans()
   const decs = useDecisions()
+  const secrets = useSecrets()
   const index = useMemo(() => {
     const m = new Map<string, RefInfo>()
     for (const r of reqs.data ?? [])
@@ -182,8 +194,9 @@ export function RefIndexProvider({ children }: { children: ReactNode }) {
         planCode: d.plan_code || undefined,
         project: d.project_name || undefined,
       })
+    for (const x of secrets.data ?? []) if (x.code) m.set(x.code, { kind: 'secret', id: x.id, code: x.code, title: x.name, status: x.status, turn: false, project: x.project_names.join('、') || undefined })
     return m
-  }, [reqs.data, plans.data, decs.data])
+  }, [reqs.data, plans.data, decs.data, secrets.data])
   return <RefIndexContext.Provider value={index}>{children}</RefIndexContext.Provider>
 }
 
@@ -191,7 +204,8 @@ export function useRefInfo(code: string): RefInfo | undefined {
   return useContext(RefIndexContext)?.get(code)
 }
 
-export const refKind = (code: string): RefInfo['kind'] | null => (code.startsWith('R-') ? 'req' : code.startsWith('P-') ? 'plan' : code.startsWith('D-') ? 'dec' : null)
+export const refKind = (code: string): RefInfo['kind'] | null =>
+  code.startsWith('R-') ? 'req' : code.startsWith('P-') ? 'plan' : code.startsWith('D-') ? 'dec' : code.startsWith('S-') ? 'secret' : null
 
 // ---------- 悬停联动 ----------
 
@@ -217,6 +231,7 @@ export function useOpenRef() {
   const side = useContext(SideReqContext)
   const go = useGoRef()
   return (code: string) => {
+    if (refKind(code) === 'secret') return go(code) // 凭据没有纸，直接开凭据页详情
     if (peek) return peek(code)
     if (side && refKind(code) === 'req') return side(code)
     go(code)
@@ -234,6 +249,7 @@ export function useGoRef() {
     const kind = refKind(code)
     if (kind === 'req') return openReq(code, back)
     if (kind === 'plan') return openPlan(code, back)
+    if (kind === 'secret') return nav(`/secrets?k=${index?.get(code)?.id ?? code}`)
     const d = index?.get(code)
     // 还在等你答的决策点开审批抽屉（R-177）；挂在待验收需求上的，落到那件验收
     if (d?.status === 'pending') return openAsk(d.reqCode && index?.get(d.reqCode)?.status === 'review' ? `r:${d.reqCode}` : `d:${code}`, back)
@@ -249,6 +265,7 @@ export function RefGlyph({ code, status, className }: { code: string; status?: s
   const kind = refKind(code)
   const st = status ?? info?.status ?? ''
   if (kind === 'plan') return <PlanGlyph status={st} className={className} />
+  if (kind === 'secret') return <SecretGlyph status={st} className={className} />
   if (kind === 'dec') return <DecGlyph open={st === 'pending'} className={className} />
   return <ReqGlyph status={st} className={className} />
 }
@@ -375,7 +392,7 @@ export function RefChip({ code, size = 'inline', status, title, suffix, hint, tu
 // ---------- 文本里的编号 ----------
 
 // 编号前后不能紧挨字母、数字或连字符（“R-95-D”这类子编号不识别）。
-export const refPattern = /(?<![A-Za-z0-9_-])([RPD]-\d+)(?![A-Za-z0-9_-])/g
+export const refPattern = /(?<![A-Za-z0-9_-])([RPDS]-\d+)(?![A-Za-z0-9_-])/g
 
 // RefText：文本里认出的一个编号。索引里有这个对象才画成印记，否则原样输出（不误伤）。
 // 文本里的编号都是在引用别的对象，默认显示短标题（R-151）。

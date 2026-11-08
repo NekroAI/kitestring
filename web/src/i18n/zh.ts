@@ -273,6 +273,11 @@ export const zh = {
     amendGuard: '申请里只有授权范围，值不变；批准前原来的授权照常生效。',
     // 替换值（R-325）
     replaceShort: '替换值',
+    // 编号与改名（R-326）
+    renameShort: '改名',
+    rename: '改名',
+    renameHint: '名称只用来显示，会话按编号取用，改名不影响取用。',
+    codeTip: (code: string, run: string) => `编号 ${code}：会话用 ${run} 取用，改名不影响`,
     newValues: '填写新值',
     pasteNew: '粘贴新值',
     needNewValue: (label: string) => `「${label}」未填写新值`,
@@ -338,6 +343,7 @@ export const zh = {
       expire: '授权已到期',
       plain: (label: string) => `你把「${label}」标为不敏感`,
       sensitive: (label: string) => `你把「${label}」标为敏感`,
+      rename: (text: string, who = '') => `${who ? `你按「${who}」的申请改了名称` : '你改了名称'}：${text}`,
     },
     // 对话框
     replaceTitle: '替换值',
@@ -368,6 +374,7 @@ export const zh = {
       reject: (code: string) => `拒绝 ${code}`,
       create: '新建凭据',
       mark: (name: string) => `修改「${name}」的敏感标记`,
+      rename: (name: string) => `给「${name}」改名`,
     },
   },
   // 访客页（R-281 第 3 段）：免登录、只读。读者是访客，所有者做的事写「分享者」，不写「你」

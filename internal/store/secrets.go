@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +41,8 @@ const (
 	// R-318：改了某个值的敏感标记，Reason 记是哪个值（显示名）
 	SecretLogPlain     = "plain"     // 你把某个值标为不敏感
 	SecretLogSensitive = "sensitive" // 你把某个值标为敏感
+	// R-326：改名，Reason 记「旧名 → 新名」；按修改授权申请改的带 SessionKey
+	SecretLogRename = "rename"
 )
 
 // 取用结果（secret_logs.result）。
@@ -75,7 +79,8 @@ func storedFields(fs []SecretField) []SecretField {
 // Secret 是一条凭据。值只以密文存在 Cipher 里，任何接口都不返回。
 type Secret struct {
 	ID              string        `json:"id"`
-	Name            string        `json:"name"`
+	Code            string        `json:"code" doc:"稳定编号 S-x（R-326）：ks secret run / amend / write 认它，改名不影响"`
+	Name            string        `json:"name" doc:"名称：只给人看，可以改"`
 	Purpose         string        `json:"purpose"`
 	Fields          []SecretField `json:"fields"`
 	Projects        []string      `json:"projects" doc:"授权的项目 ID"`
@@ -130,6 +135,8 @@ type SecretAsk struct {
 	Disk     bool     `json:"disk,omitempty" doc:"修改授权申请：改后是否允许写入磁盘"`
 	// 替换值（R-325）：修改授权申请里要替换的值。用户在抽屉里填新值后才能保存并授权；申请里没有值。
 	Replace []SecretReplace `json:"replace,omitempty" doc:"修改授权申请：要替换的值（环境变量名和获取方式）；用户填好新值才能保存并授权"`
+	// 改名（R-326）：修改授权申请里提出的新名称；空 = 不改名。批准后生效。
+	Name string `json:"name,omitempty" doc:"修改授权申请：提出的新名称；空 = 不改名"`
 }
 
 // SecretReplace 是修改授权申请里要替换的一个值（R-325）：不含值，只有环境变量名和获取新值的方式。
@@ -148,7 +155,7 @@ func (a *SecretAsk) IsAmend() bool { return a != nil && a.Mode == AskAmend }
 type SecretLog struct {
 	ID              string     `json:"id"`
 	SecretID        string     `json:"secret_id"`
-	Kind            string     `json:"kind" enum:"use,write,request,amend,grant,reject,create,replace,edit,regrant,revoke,plain,sensitive"`
+	Kind            string     `json:"kind" enum:"use,write,request,amend,grant,reject,create,replace,edit,regrant,revoke,plain,sensitive,rename"`
 	At              time.Time  `json:"at"`
 	SessionKey      string     `json:"session_key,omitempty"`
 	SessionTitle    string     `json:"session_title,omitempty" doc:"会话当时的标题"`
@@ -165,7 +172,26 @@ type SecretLog struct {
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 }
 
-const secretSelect = `SELECT x.id, x.name, x.purpose, x.fields, x.cipher, x.projects, x.allowed, x.disk, x.expires_at, x.granted_at, x.revoked_at,
+// SecretCode 是凭据的稳定编号 S-<seq>（R-326）。
+func SecretCode(seq int) string { return "S-" + strconv.Itoa(seq) }
+
+// secretCodeRe 认编号 S-x（不分大小写）。
+var secretCodeRe = regexp.MustCompile(`^[Ss]-(\d+)$`)
+
+// IsSecretCode：这段文字是凭据编号的写法（S-x）。名称不能写成这样，免得和编号混淆。
+func IsSecretCode(s string) bool { return secretCodeRe.MatchString(strings.TrimSpace(s)) }
+
+// AmbiguousSecretError：按名称找凭据时对上了多条（R-326）。不静默取第一条，列出各自的编号。
+type AmbiguousSecretError struct {
+	Name  string
+	Codes []string
+}
+
+func (e *AmbiguousSecretError) Error() string {
+	return fmt.Sprintf("名称「%s」对应多条凭据：%s。用编号指定，例如 ks secret run %s -- <命令>", e.Name, strings.Join(e.Codes, "、"), e.Codes[0])
+}
+
+const secretSelect = `SELECT x.id, x.seq, x.name, x.purpose, x.fields, x.cipher, x.projects, x.allowed, x.disk, x.expires_at, x.granted_at, x.revoked_at,
 	x.requirement_id, COALESCE(r.seq, 0), x.request_decision, COALESCE(d.seq, 0), COALESCE(d.status, ''), x.requested_by, x.request, x.last_used_at, x.created_at, x.updated_at, x.retired
 	FROM secrets x
 	LEFT JOIN requirements r ON r.id = x.requirement_id
@@ -175,10 +201,12 @@ func scanSecret(row interface{ Scan(...any) error }) (Secret, error) {
 	var x Secret
 	var fields, projects, allowed, exp, granted, revoked, used, created, updated, decStatus, ask string
 	var rseq, dseq int
-	if err := row.Scan(&x.ID, &x.Name, &x.Purpose, &fields, &x.Cipher, &projects, &allowed, &x.Disk, &exp, &granted, &revoked,
+	var seq int
+	if err := row.Scan(&x.ID, &seq, &x.Name, &x.Purpose, &fields, &x.Cipher, &projects, &allowed, &x.Disk, &exp, &granted, &revoked,
 		&x.RequirementID, &rseq, &x.RequestID, &dseq, &decStatus, &x.RequestedBy, &ask, &used, &created, &updated, &x.Retired); err != nil {
 		return x, err
 	}
+	x.Code = SecretCode(seq)
 	x.Fields, x.Projects, x.Allowed = []SecretField{}, []string{}, []string{}
 	if v := blocks.Decode[[]SecretField](fields); v != nil {
 		x.Fields = *v
@@ -230,17 +258,33 @@ func (s *Store) projectName(ctx context.Context, id string) string {
 }
 
 // secretNameTaken：同名（不分大小写）的凭据已存在。exceptID 是自己。
+// SecretNameTaken：别的凭据（exceptID 之外）已经用了这个名称（不分大小写）。
+func (s *Store) SecretNameTaken(ctx context.Context, name, exceptID string) (bool, error) {
+	return s.secretNameTaken(ctx, name, exceptID)
+}
+
 func (s *Store) secretNameTaken(ctx context.Context, name, exceptID string) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM secrets WHERE lower(name) = lower(?) AND id <> ?`, strings.TrimSpace(name), exceptID).Scan(&n)
 	return n > 0, err
 }
 
-// CreateSecret 新建凭据。名字不能和已有的重复（ks secret run 按名字取用）。
+// checkSecretName：名称不能为空，也不能写成编号的样子（S-x）。
+func checkSecretName(name string) error {
+	if name == "" {
+		return errors.New("凭据名不能为空")
+	}
+	if IsSecretCode(name) {
+		return fmt.Errorf("名称不能写成编号的样子（%s）", name)
+	}
+	return nil
+}
+
+// CreateSecret 新建凭据，分配下一个编号 S-x。名字不能和已有的重复（按名称取用仍兼容）。
 func (s *Store) CreateSecret(ctx context.Context, x Secret) (Secret, error) {
 	x.Name = strings.TrimSpace(x.Name)
-	if x.Name == "" {
-		return x, errors.New("凭据名不能为空")
+	if err := checkSecretName(x.Name); err != nil {
+		return x, err
 	}
 	if taken, err := s.secretNameTaken(ctx, x.Name, ""); err != nil {
 		return x, err
@@ -249,8 +293,8 @@ func (s *Store) CreateSecret(ctx context.Context, x Secret) (Secret, error) {
 	}
 	x.ID = protocol.NewID()
 	n := now()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO secrets(id, name, purpose, fields, cipher, projects, allowed, disk, expires_at, granted_at, revoked_at, requirement_id, request_decision, requested_by, request, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO secrets(id, seq, name, purpose, fields, cipher, projects, allowed, disk, expires_at, granted_at, revoked_at, requirement_id, request_decision, requested_by, request, created_at, updated_at)
+		VALUES(?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM secrets), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		x.ID, x.Name, x.Purpose, blocks.Encode(storedFields(x.Fields)), x.Cipher, blocks.Encode(nonNil(x.Projects)), blocks.Encode(nonNil(x.Allowed)), x.Disk,
 		tsOrEmpty(x.ExpiresAt), tsOrEmpty(x.GrantedAt), tsOrEmpty(x.RevokedAt), x.RequirementID, x.RequestID, x.RequestedBy, blocks.Encode(x.Ask), n, n)
 	if err != nil {
@@ -269,8 +313,8 @@ func nonNil[T any](v []T) []T {
 // SaveSecret 写回凭据的可变字段（名字、用途、字段说明、密文、授权、申请）。
 func (s *Store) SaveSecret(ctx context.Context, x Secret) (Secret, error) {
 	x.Name = strings.TrimSpace(x.Name)
-	if x.Name == "" {
-		return x, errors.New("凭据名不能为空")
+	if err := checkSecretName(x.Name); err != nil {
+		return x, err
 	}
 	if taken, err := s.secretNameTaken(ctx, x.Name, x.ID); err != nil {
 		return x, err
@@ -296,10 +340,19 @@ func (s *Store) DeleteSecret(ctx context.Context, id string) error {
 	return err
 }
 
-// GetSecret 按 ID 或名字（不分大小写）读取凭据。
+// GetSecret 按编号 S-x、内部 ID 或名称（不分大小写，兼容老写法）读取凭据（R-326）。名称对上多条时返回 *AmbiguousSecretError。
 func (s *Store) GetSecret(ctx context.Context, ref string) (Secret, error) {
 	ref = strings.TrimSpace(ref)
-	x, err := scanSecret(s.db.QueryRowContext(ctx, secretSelect+` WHERE x.id = ? OR lower(x.name) = lower(?) ORDER BY x.id = ? DESC LIMIT 1`, ref, ref, ref))
+	var x Secret
+	var err error
+	if m := secretCodeRe.FindStringSubmatch(ref); m != nil {
+		x, err = scanSecret(s.db.QueryRowContext(ctx, secretSelect+` WHERE x.seq = ?`, m[1]))
+	} else {
+		x, err = scanSecret(s.db.QueryRowContext(ctx, secretSelect+` WHERE x.id = ?`, ref))
+		if errors.Is(err, sql.ErrNoRows) {
+			x, err = s.secretByName(ctx, ref)
+		}
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return x, ErrNotFound
 	}
@@ -308,6 +361,43 @@ func (s *Store) GetSecret(ctx context.Context, ref string) (Secret, error) {
 	}
 	s.fillSecretProjects(ctx, &x)
 	return x, nil
+}
+
+// secretByName 按名称找：对上一条时返回它，多条时报出各自的编号。
+func (s *Store) secretByName(ctx context.Context, name string) (Secret, error) {
+	rows, err := s.db.QueryContext(ctx, secretSelect+` WHERE lower(x.name) = lower(?) ORDER BY x.seq`, name)
+	if err != nil {
+		return Secret{}, err
+	}
+	defer rows.Close()
+	var hits []Secret
+	for rows.Next() {
+		x, err := scanSecret(rows)
+		if err != nil {
+			return Secret{}, err
+		}
+		hits = append(hits, x)
+	}
+	if err := rows.Err(); err != nil {
+		return Secret{}, err
+	}
+	switch len(hits) {
+	case 0:
+		return Secret{}, sql.ErrNoRows
+	case 1:
+		return hits[0], nil
+	}
+	e := &AmbiguousSecretError{Name: name}
+	for _, x := range hits {
+		e.Codes = append(e.Codes, x.Code)
+	}
+	return Secret{}, e
+}
+
+// fillSecretSeq 给老凭据补编号（R-326）：按创建先后从 S-1 起。
+func fillSecretSeq(db *sql.DB) error {
+	_, err := db.Exec(`UPDATE secrets SET seq = (SELECT COUNT(*) FROM secrets s2 WHERE s2.created_at < secrets.created_at OR (s2.created_at = secrets.created_at AND s2.rowid <= secrets.rowid))`)
+	return err
 }
 
 // SecretByRequest 按申请的决策（ID 或 D-x）找凭据。

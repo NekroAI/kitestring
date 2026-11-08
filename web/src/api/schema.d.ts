@@ -1968,6 +1968,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/secrets/{ref}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 改名（R-326）：名称只给人看，编号 S-x 不变，按编号取用不受影响 */
+        post: operations["rename-secret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/secrets/{ref}/revoke": {
         parameters: {
             query?: never;
@@ -3067,16 +3084,21 @@ export interface components {
         AgentSecret: {
             /** @description 允许的命令；空 = 不限命令 */
             allowed: string[] | null;
+            /** @description 稳定编号 S-x：命令里写它（ks secret run S-x -- <命令>），改名不影响 */
+            code: string;
             disk: boolean;
             /** Format: date-time */
             expires_at?: string;
             fields: components["schemas"]["SecretField"][] | null;
+            /** @description 名称：只给人看，可能被改 */
             name: string;
             /** @description 授权的项目名 */
             projects: string[] | null;
             purpose: string;
             /** @description 等待处理的申请 D-x */
             request?: string;
+            /** @description 推荐的取用写法 */
+            run: string;
             /** @enum {string} */
             status: "active" | "pending" | "expired" | "revoked";
         };
@@ -5492,6 +5514,10 @@ export interface components {
             /** @description 放行时的身份：pm / aide（R-190 前的旧记录可能是 advisor） */
             role: string;
         };
+        "Rename-secretRequest": {
+            /** @description 新名称 */
+            name: string;
+        };
         "Replace-secret-valuesRequest": {
             /** @description 环境变量名 → 是否不敏感（R-318）；没写的保持原样 */
             plain?: {
@@ -5902,6 +5928,8 @@ export interface components {
             allowed: string[] | null;
             /** @description 最近一次申请的内容：申请方的项目、建议有效期、要的命令 */
             ask?: components["schemas"]["SecretAsk"];
+            /** @description 稳定编号 S-x（R-326）：ks secret run / amend / write 认它，改名不影响 */
+            code: string;
             /** Format: date-time */
             created_at: string;
             /** @description 允许写入磁盘（ks secret write） */
@@ -5919,6 +5947,7 @@ export interface components {
             last_use?: components["schemas"]["SecretLog"];
             /** Format: date-time */
             last_used_at?: string;
+            /** @description 名称：只给人看，可以改 */
             name: string;
             /** @description 授权的项目名，与 projects 一一对应 */
             project_names: string[] | null;
@@ -5967,6 +5996,8 @@ export interface components {
             reason?: string;
             /** @description 去掉的命令（要和原来的写法一致，空白不计） */
             remove_allowed?: string[] | null;
+            /** @description 新名称（R-326）：名称只给人看，编号 S-x 不变；批准后生效 */
+            rename?: string;
             /** @description 要替换的值（R-325）：环境变量名和新值的获取方式；用户在抽屉里填新值，申请里没有值。可以只替换值、不改授权范围 */
             replace?: components["schemas"]["SecretReplaceIn"][] | null;
             /** @description 关联需求 R-x */
@@ -5990,6 +6021,8 @@ export interface components {
              * @enum {string}
              */
             mode?: "" | "amend";
+            /** @description 修改授权申请：提出的新名称；空 = 不改名 */
+            name?: string;
             /** @description 申请方所在的项目 */
             project_id?: string;
             project_name?: string;
@@ -6010,6 +6043,8 @@ export interface components {
             days: number;
             /** @description 允许写入磁盘 */
             disk?: boolean;
+            /** @description 新名称（R-326）：只在修改授权申请提出改名时用，空 = 按申请里的新名称 */
+            name?: string;
             /** @description 附言（R-321）：有等待中的申请时随结果送给申请方；都记在授权变更时间线上。已知值隐去 */
             note?: string;
             /** @description 环境变量名 → 是否不敏感（R-318）；没写的保持原样 */
@@ -6065,7 +6100,7 @@ export interface components {
             finished_at?: string;
             id: string;
             /** @enum {string} */
-            kind: "use" | "write" | "request" | "amend" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke" | "plain" | "sensitive";
+            kind: "use" | "write" | "request" | "amend" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke" | "plain" | "sensitive" | "rename";
             /** @description 你保存授权、拒绝申请时写的附言（R-321，已知值已隐去）；有申请时随结果送给申请方 */
             note?: string;
             /** @description 写入磁盘的路径 */
@@ -11439,6 +11474,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "rename-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Rename-secretRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOutBody"];
                 };
             };
             /** @description Error */
