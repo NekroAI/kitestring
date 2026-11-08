@@ -44,6 +44,7 @@ type secretFieldIn struct {
 	Label string `json:"label,omitempty" doc:"显示名，例如 API Token；不写时用环境变量名"`
 	How   string `json:"how,omitempty" doc:"获取方式：按服务写清步骤，指导用户快速取到（例如「Cloudflare 控制台 → 我的个人资料 → API 令牌，模板选编辑 Cloudflare Workers」）"`
 	Value string `json:"value,omitempty" doc:"值（只在网页上新建时填）"`
+	Plain bool   `json:"plain,omitempty" doc:"不敏感（如用户名、Account ID）：明文显示、不在纸鸢里隐去；不写 = 敏感。注入命令的规则不变"`
 }
 
 // normSecretFields 检查并整理字段：环境变量名合法、不重复，至少一个。
@@ -66,7 +67,7 @@ func normSecretFields(in []secretFieldIn) ([]store.SecretField, error) {
 		if label == "" {
 			label = env
 		}
-		out = append(out, store.SecretField{Env: env, Label: label, How: strings.TrimSpace(f.How)})
+		out = append(out, store.SecretField{Env: env, Label: label, How: strings.TrimSpace(f.How), Plain: f.Plain})
 	}
 	return out, nil
 }
@@ -182,12 +183,63 @@ func commandLine(argv []string) string {
 
 // ---------- 读取与视图 ----------
 
-// secretView 补上最近一次取用。
+// secretView 补上最近一次取用和不敏感的值的明文（R-318；敏感的值永不返回）。
 func (h *Hub) secretView(ctx context.Context, x store.Secret) store.Secret {
 	if l, err := h.store.LastSecretUse(ctx, x.ID); err == nil {
 		x.LastUse = l
 	}
+	x.Fields = slices.Clone(x.Fields)
+	var vals map[string]string
+	for i, f := range x.Fields {
+		x.Fields[i].Value = ""
+		if !f.Plain || !f.Filled || x.Cipher == "" {
+			continue
+		}
+		if vals == nil {
+			v, err := h.secretValues(x)
+			if err != nil {
+				break
+			}
+			vals = v
+		}
+		x.Fields[i].Value = vals[f.Env]
+	}
 	return x
+}
+
+// sensitiveValues 是参与脱敏的值：只有标为敏感的字段（R-318）；没有对应字段说明的按敏感算。
+func sensitiveValues(x store.Secret, vals map[string]string) map[string]string {
+	out := make(map[string]string, len(vals))
+	for k, v := range vals {
+		i := slices.IndexFunc(x.Fields, func(f store.SecretField) bool { return f.Env == k })
+		if i >= 0 && x.Fields[i].Plain {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// applyPlain 按 env → 不敏感改字段的敏感标记，返回要记的时间线（每个改了的值一条）。没写的字段保持原样。
+func applyPlain(x *store.Secret, plain map[string]bool) ([]store.SecretLog, error) {
+	var logs []store.SecretLog
+	for env, p := range plain {
+		i := slices.IndexFunc(x.Fields, func(f store.SecretField) bool { return f.Env == env })
+		if i < 0 {
+			return nil, fmt.Errorf("凭据「%s」没有 %s 这个值", x.Name, env)
+		}
+		if x.Fields[i].Plain == p {
+			continue
+		}
+		x.Fields[i].Plain = p
+		kind := store.SecretLogSensitive
+		if p {
+			kind = store.SecretLogPlain
+		}
+		logs = append(logs, store.SecretLog{SecretID: x.ID, Kind: kind, Reason: x.Fields[i].Label, Days: -1})
+	}
+	slices.SortFunc(logs, func(a, b store.SecretLog) int { return strings.Compare(a.Reason, b.Reason) })
+	return logs, nil
 }
 
 // getSecretRef 按 ID、名字或申请的决策编号（D-x）找凭据。
@@ -328,6 +380,7 @@ type secretAuthIn struct {
 	Days     int               `json:"days" doc:"有效期（天），从现在算起；0 = 长期"`
 	Allowed  []string          `json:"allowed,omitempty" doc:"允许的命令；空 = 不限命令"`
 	Disk     bool              `json:"disk,omitempty" doc:"允许写入磁盘"`
+	Plain    map[string]bool   `json:"plain,omitempty" doc:"环境变量名 → 是否不敏感（R-318）；没写的保持原样"`
 }
 
 // authorize 保存授权：填值（可选）、设项目 / 有效期 / 允许的命令 / 写入磁盘。有等待中的申请时同时把它答成批准，送回申请方。
@@ -339,6 +392,10 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 		old = map[string]string{} // 主密钥换了：要求把每个值重新填一遍
 	}
 	vals, changed, err := mergeSecretValues(&x, old, in.Values, true)
+	if err != nil {
+		return x, huma.Error400BadRequest(err.Error())
+	}
+	marks, err := applyPlain(&x, in.Plain)
 	if err != nil {
 		return x, huma.Error400BadRequest(err.Error())
 	}
@@ -377,6 +434,11 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	}
 	if _, err := h.store.AddSecretLog(ctx, l); err != nil {
 		return saved, err
+	}
+	for _, m := range marks {
+		if _, err := h.store.AddSecretLog(ctx, m); err != nil {
+			return saved, err
+		}
 	}
 	if pendingReq {
 		d, err := h.store.AnswerDecisionPoints(ctx, x.RequestID, secretGrantAnswer(saved), nil, nil, "", store.VerdictApproved)
@@ -566,6 +628,7 @@ func (h *Hub) registerSecretsWeb(api huma.API) {
 			Ref  string `path:"ref"`
 			Body struct {
 				Values map[string]string `json:"values" doc:"环境变量名 → 新值；没写的保留原值"`
+				Plain  map[string]bool   `json:"plain,omitempty" doc:"环境变量名 → 是否不敏感（R-318）；没写的保持原样"`
 			}
 		}) (*secretOut, error) {
 			x, err := h.getSecretRef(ctx, in.Ref)
@@ -579,23 +642,70 @@ func (h *Hub) registerSecretsWeb(api huma.API) {
 			if err != nil {
 				old = map[string]string{}
 			}
+			orig := x
+			orig.Fields = slices.Clone(x.Fields)
 			vals, changed, err := mergeSecretValues(&x, old, in.Body.Values, false)
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
 			}
 			if !changed {
+				x = orig // 只改了敏感标记：值和密文原样不动
+			}
+			marks, err := applyPlain(&x, in.Body.Plain)
+			if err != nil {
+				return nil, huma.Error400BadRequest(err.Error())
+			}
+			if !changed && len(marks) == 0 {
 				return nil, huma.Error400BadRequest("没有填写新的值")
 			}
-			if x.Cipher, err = h.sealSecret(x.ID, vals); err != nil {
-				return nil, err
+			if changed {
+				if x.Cipher, err = h.sealSecret(x.ID, vals); err != nil {
+					return nil, err
+				}
 			}
 			if x, err = h.store.SaveSecret(ctx, x); err != nil {
 				return nil, apiErr(err)
 			}
-			if _, err := h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReplace, Days: -1}); err != nil {
-				return nil, err
+			if changed {
+				if _, err := h.store.AddSecretLog(ctx, store.SecretLog{SecretID: x.ID, Kind: store.SecretLogReplace, Days: -1}); err != nil {
+					return nil, err
+				}
+			}
+			for _, m := range marks {
+				if _, err := h.store.AddSecretLog(ctx, m); err != nil {
+					return nil, err
+				}
 			}
 			h.secretsChanged(ctx)
+			return h.secretDetail(ctx, x)
+		})
+	huma.Register(api, huma.Operation{OperationID: "mark-secret-fields", Method: http.MethodPost, Path: "/api/secrets/{ref}/plain", Tags: tag,
+		Summary: "改值的敏感标记（R-318）：不敏感的值明文显示、不在纸鸢里隐去；值和授权不变"},
+		func(ctx context.Context, in *struct {
+			Ref  string `path:"ref"`
+			Body struct {
+				Plain map[string]bool `json:"plain" doc:"环境变量名 → 是否不敏感；没写的保持原样"`
+			}
+		}) (*secretOut, error) {
+			x, err := h.getSecretRef(ctx, in.Ref)
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			marks, err := applyPlain(&x, in.Body.Plain)
+			if err != nil {
+				return nil, huma.Error400BadRequest(err.Error())
+			}
+			if len(marks) > 0 {
+				if x, err = h.store.SaveSecret(ctx, x); err != nil {
+					return nil, apiErr(err)
+				}
+				for _, m := range marks {
+					if _, err := h.store.AddSecretLog(ctx, m); err != nil {
+						return nil, err
+					}
+				}
+				h.secretsChanged(ctx)
+			}
 			return h.secretDetail(ctx, x)
 		})
 	huma.Register(api, huma.Operation{OperationID: "revoke-secret", Method: http.MethodPost, Path: "/api/secrets/{ref}/revoke", Tags: tag, Summary: "撤销授权：之后的取用一律拒绝；值保留，可重新授权"},
@@ -961,7 +1071,7 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pr
 	if write {
 		l.Kind, l.Path = store.SecretLogWrite, path
 	} else {
-		l.Command = h.redactText(commandLine(argv), vals)
+		l.Command = h.redactText(commandLine(argv), sensitiveValues(x, vals))
 	}
 	deny, hint := "", ""
 	switch {

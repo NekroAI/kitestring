@@ -275,6 +275,12 @@ export const zh = {
     keep: '不填写则保留原值',
     show: '显示值',
     hide: '隐藏值',
+    // 敏感标记（R-318）
+    sensitive: '敏感',
+    sensitiveTip: '敏感的值不显示明文，纸鸢各处出现同样的文字时显示为「已隐去」。用户名、Account ID 这类不是密钥的值可以关掉，明文显示、不隐去；取用规则不变。',
+    keepValue: (v: string) => `当前值 ${v}，不填写则保留`,
+    hintShort: '少于 6 个字符的值不会隐去。不是密钥时关掉「敏感」。',
+    hintCommon: '常见词：纸鸢里所有同样的文字都会显示为「已隐去」。不是密钥时关掉「敏感」。',
     guard: '值只在运行允许的命令时放进环境变量，用来防止误用；会话有意读取时无法阻止。',
     reject: '拒绝…',
     save: '保存并授权',
@@ -311,6 +317,8 @@ export const zh = {
       revoke: '你撤销了授权',
       reject: (who: string) => (who ? `你拒绝了「${who}」的申请` : '你拒绝了申请'),
       expire: '授权已到期',
+      plain: (label: string) => `你把「${label}」标为不敏感`,
+      sensitive: (label: string) => `你把「${label}」标为敏感`,
     },
     // 对话框
     replaceTitle: '替换值',
@@ -340,6 +348,7 @@ export const zh = {
       revoke: (name: string) => `撤销「${name}」的授权`,
       reject: (code: string) => `拒绝 ${code}`,
       create: '新建凭据',
+      mark: (name: string) => `修改「${name}」的敏感标记`,
     },
   },
   // 访客页（R-281 第 3 段）：免登录、只读。读者是访客，所有者做的事写「分享者」，不写「你」

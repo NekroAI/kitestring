@@ -27,8 +27,19 @@ func TestParseSecretField(t *testing.T) {
 	if f["env"] != "CLOUDFLARE_API_TOKEN" || f["label"] != "API Token" || f["how"] != "控制台 → API 令牌 | 选模板" {
 		t.Fatalf("%v", f)
 	}
-	if f := parseSecretField("X"); f["env"] != "X" || f["label"] != "" {
+	if f := parseSecretField("X"); f["env"] != "X" || f["label"] != nil {
 		t.Fatalf("%v", f)
+	}
+}
+
+// --plain 声明不敏感的值（R-318）：只标写到的那个；写了没有的值时报错。
+func TestSecretFieldsPlain(t *testing.T) {
+	fl, err := secretFields([]string{"ADMIN_USERNAME|用户名", "ADMIN_PASSWORD|密码"}, []string{" ADMIN_USERNAME "})
+	if err != nil || fl[0]["plain"] != true || fl[1]["plain"] != nil {
+		t.Fatalf("%v %v", fl, err)
+	}
+	if _, err := secretFields([]string{"A"}, []string{"B"}); err == nil {
+		t.Fatal("--plain 写了没有的值应报错")
 	}
 }
 

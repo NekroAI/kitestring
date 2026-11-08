@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { addCommand, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, REDACTED, splitRedacted, statusCounts, timeLeft, unionCommands } from './secrets.ts'
+import { addCommand, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
 
 const list = [
   { name: 'Cloudflare 部署', purpose: 'wrangler 部署 Pages', status: 'active', projects: ['p1'], project_names: ['kitestring'] },
@@ -97,4 +97,29 @@ test('环境变量名：字母数字下划线，不能以数字开头；按显�
   assert.equal(envFromLabel('API Token'), 'API_TOKEN')
   assert.equal(envFromLabel('Account ID'), 'ACCOUNT_ID')
   assert.equal(envFromLabel('账户'), '')
+})
+
+test('敏感值的填写提示：少于 6 个字符、常见词（忽略大小写）；不敏感或空值不提示', () => {
+  assert.equal(valueHint('admin'), 'short')
+  assert.equal(valueHint('甲乙丙丁戊'), 'short')
+  assert.equal(valueHint('production'), 'common')
+  assert.equal(valueHint(' Production '), 'common')
+  assert.equal(valueHint('ADMINISTRATOR'), 'common')
+  assert.equal(valueHint('cf-token-AbCdEf0123'), undefined)
+  assert.equal(valueHint('production', true), undefined)
+  assert.equal(valueHint('admin', true), undefined)
+  assert.equal(valueHint('   '), undefined)
+})
+
+test('敏感标记：保存时发全部，替换时只发改了的；老数据没有 plain 按敏感', () => {
+  const fields = [{ env: 'USER', plain: true }, { env: 'PASS' }, { env: 'ID', plain: false }]
+  assert.deepEqual(plainMap(fields), { USER: true, PASS: false, ID: false })
+  assert.deepEqual(changedPlain(fields, { USER: true, PASS: true, ID: false }), { PASS: true })
+  assert.deepEqual(changedPlain(fields, {}), {})
+})
+
+test('凭据页「值」一栏：不敏感的明文列出，有敏感的再画圆点', () => {
+  assert.deepEqual(shownValues([{ plain: true, filled: true, value: 'admin' }, { filled: true }]), { plain: ['admin'], masked: true })
+  assert.deepEqual(shownValues([{ plain: true, filled: true, value: 'admin' }]), { plain: ['admin'], masked: false })
+  assert.deepEqual(shownValues([{ plain: true, filled: false }, { filled: true }]), { plain: [], masked: true })
 })

@@ -51,7 +51,7 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图（要试交互的用 option_prototypes 附可交互原型），用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
-- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到）；用户在纸鸢上填值并授权后结果送到你这里。之后用 shell 命令 ks secret run <凭据> -- <命令> 运行，值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。
+- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到），用户名、Account ID 这类不是密钥的值标为不敏感（plain / --plain）；用户在纸鸢上填值并授权后结果送到你这里。之后用 shell 命令 ks secret run <凭据> -- <命令> 运行，值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。
 - 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开始。计划开始或阶段解锁时，该阶段的需求会指派给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动指派给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认、也最多等 55 分钟，醒来时提示缓存还有效；项目设置可调得更短，--timeout 超过上限按上限截断；后台任务的超时要设得比它长）。主调度 / 主助理 / 开发连续空等累计到项目设置的时长（默认 4 小时）时，醒来会收到写交接下线的指示：handoff_write 写交接后结束本轮，不再挂 ks wait，它结束时你会被唤醒。
@@ -207,6 +207,7 @@ type secretFieldArg struct {
 	Env   string `json:"env" jsonschema:"环境变量名，例如 CLOUDFLARE_API_TOKEN"`
 	Label string `json:"label,omitempty" jsonschema:"显示名，例如 API Token"`
 	How   string `json:"how" jsonschema:"获取方式：按服务写清步骤（在哪个页面、点什么、选什么权限 / 模板），指导用户快速取到"`
+	Plain bool   `json:"plain,omitempty" jsonschema:"不敏感：用户名、Account ID 这类不是密钥的值写 true，用户在凭据页看到明文，纸鸢各处也不会把同样的文字隐去；默认敏感，用户在申请里可以改。注入命令的规则不变"`
 }
 
 type secretRequestIn struct {

@@ -7,7 +7,7 @@ import { api, errMsg, unwrap, type Decision } from '../api/client'
 import { useProjects, useSecret, useSecrets, useSessions, type SecretLog, type SecretView } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { addCommand, isSecretReq, DEFAULT_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands } from '../lib/secrets'
+import { addCommand, changedPlain, isSecretReq, DEFAULT_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
 import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, Panel, useAskReason } from '../ui/overlay'
 import { Md } from '../ui/markdown'
@@ -55,9 +55,9 @@ function authLine(x: SecretView, now: number) {
   return x.disk ? `${base}${t.common.sep}${t.secret.diskOk}` : base
 }
 
-const Dots = ({ className }: { className?: string }) => (
+const Dots = ({ className, short }: { className?: string; short?: boolean }) => (
   <span aria-label={t.secret.masked} className={cx('font-mono tracking-[0.2em] text-fg-2 select-none', className)}>
-    ••••••••
+    {short ? '••••' : '••••••••'}
   </span>
 )
 
@@ -108,13 +108,13 @@ function Who({ role, title, fallback }: { role?: string; title?: string; fallbac
 
 // ---------- 值和授权的表单 ----------
 
-// ValueInput：密码框，右侧眼睛切换显示；不让浏览器记住、不拼写检查。
-function ValueInput({ value, onChange, placeholder, label, autoFocus }: { value: string; onChange: (v: string) => void; placeholder: string; label: string; autoFocus?: boolean }) {
+// ValueInput：密码框，右侧眼睛切换显示；不让浏览器记住、不拼写检查。不敏感的值（R-318）直接明文、没有眼睛。
+function ValueInput({ value, onChange, placeholder, label, autoFocus, plain }: { value: string; onChange: (v: string) => void; placeholder: string; label: string; autoFocus?: boolean; plain?: boolean }) {
   const [show, setShow] = useState(false)
   return (
     <div className="relative">
       <Input
-        type={show ? 'text' : 'password'}
+        type={show || plain ? 'text' : 'password'}
         value={value}
         autoComplete="new-password"
         spellCheck={false}
@@ -125,33 +125,65 @@ function ValueInput({ value, onChange, placeholder, label, autoFocus }: { value:
         placeholder={placeholder}
         autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
-        className="pr-10 font-mono"
+        className={cx('font-mono', plain ? 'pr-3' : 'pr-10')}
       />
-      <button type="button" aria-label={show ? t.secret.hide : t.secret.show} onClick={() => setShow(!show)} className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-fg-3 transition hover:bg-hover hover:text-fg">
-        {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-      </button>
+      {!plain && (
+        <button type="button" aria-label={show ? t.secret.hide : t.secret.show} onClick={() => setShow(!show)} className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-fg-3 transition hover:bg-hover hover:text-fg">
+          {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+        </button>
+      )}
     </div>
   )
 }
 
-type Field = { env: string; label: string; how?: string; filled?: boolean }
+// SensitiveSwitch：值的「敏感」开关（R-318），默认开；悬停看说明。
+function SensitiveSwitch({ env, plain, onChange, disabled }: { env: string; plain: boolean; onChange: (plain: boolean) => void; disabled?: boolean }) {
+  return (
+    <label data-sensitive={env} className="ml-auto flex shrink-0 cursor-pointer items-center gap-2 self-center text-[12.5px] text-fg-2">
+      <Tip content={t.secret.sensitiveTip}>
+        <span>{t.secret.sensitive}</span>
+      </Tip>
+      <Switch checked={!plain} onChange={(v) => onChange(!v)} disabled={disabled} />
+    </label>
+  )
+}
 
-// FieldValues：每个值一张卡：显示名 + 环境变量名、获取方式、密码框。已填过的空着表示保留原值。
-function FieldValues({ fields, values, onChange, autoFocus }: { fields: Field[]; values: Record<string, string>; onChange: (v: Record<string, string>) => void; autoFocus?: boolean }) {
+// ValueHint：敏感值太短（不会隐去）或是常见词（各处同样的文字都会隐去）时的提示（R-318 / R-298 第 3 点）。
+function ValueHint({ value, plain }: { value: string; plain?: boolean }) {
+  const h = valueHint(value, plain)
+  if (!h) return null
+  return (
+    <p data-value-hint={h} className="mt-1.5 text-[12.5px] leading-relaxed text-wait">
+      {h === 'short' ? t.secret.hintShort : t.secret.hintCommon}
+    </p>
+  )
+}
+
+type Field = { env: string; label: string; how?: string; filled?: boolean; plain?: boolean; value?: string }
+
+// FieldValues：每个值一张卡：显示名 + 环境变量名、「敏感」开关、获取方式、输入框。已填过的空着表示保留原值；
+// 不敏感的值明文输入，已填的在占位里写出当前值。
+function FieldValues({ fields, values, onChange, plain, onPlain, autoFocus }: { fields: Field[]; values: Record<string, string>; onChange: (v: Record<string, string>) => void; plain: Record<string, boolean>; onPlain: (v: Record<string, boolean>) => void; autoFocus?: boolean }) {
   return (
     <div className="grid gap-3">
-      {fields.map((f, i) => (
-        <div key={f.env} data-secret-field={f.env} className="rounded-xl border border-line bg-surface px-4 py-3">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <b className="shrink-0 text-[14px] font-semibold text-fg">{f.label}</b>
-            <span className="min-w-0 truncate font-mono text-[12px] text-fg-3">{f.env}</span>
+      {fields.map((f, i) => {
+        const p = !!plain[f.env]
+        const v = values[f.env] ?? ''
+        return (
+          <div key={f.env} data-secret-field={f.env} className="rounded-xl border border-line bg-surface px-4 py-3">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <b className="shrink-0 text-[14px] font-semibold text-fg">{f.label}</b>
+              <span className="min-w-0 truncate font-mono text-[12px] text-fg-3">{f.env}</span>
+              <SensitiveSwitch env={f.env} plain={p} onChange={(x) => onPlain({ ...plain, [f.env]: x })} />
+            </div>
+            {f.how && <Md text={f.how} className="mt-1 text-[13px] leading-relaxed text-fg-2" />}
+            <div className="mt-2">
+              <ValueInput label={f.label} plain={p} value={v} onChange={(x) => onChange({ ...values, [f.env]: x })} placeholder={!f.filled ? t.secret.paste : p && f.value ? t.secret.keepValue(f.value) : t.secret.keep} autoFocus={autoFocus && i === 0} />
+              <ValueHint value={v} plain={p} />
+            </div>
           </div>
-          {f.how && <Md text={f.how} className="mt-1 text-[13px] leading-relaxed text-fg-2" />}
-          <div className="mt-2">
-            <ValueInput label={f.label} value={values[f.env] ?? ''} onChange={(v) => onChange({ ...values, [f.env]: v })} placeholder={f.filled ? t.secret.keep : t.secret.paste} autoFocus={autoFocus && i === 0} />
-          </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -284,14 +316,15 @@ function useSecretApi() {
     }
   }
   return {
-    authorize: (x: { id: string; name: string }, a: AuthState, values: Record<string, string>) =>
-      call(() => unwrap(api.POST('/api/secrets/{ref}/authorize', { params: { path: { ref: x.id } }, body: { ...a, values: filledValues(values) } })), t.secret.fail.save(x.name), ['decisions', 'sessions']),
-    replace: (x: { id: string; name: string }, values: Record<string, string>) =>
-      call(() => unwrap(api.POST('/api/secrets/{ref}/values', { params: { path: { ref: x.id } }, body: { values: filledValues(values) } })), t.secret.fail.replace(x.name)),
+    authorize: (x: { id: string; name: string }, a: AuthState, values: Record<string, string>, plain?: Record<string, boolean>) =>
+      call(() => unwrap(api.POST('/api/secrets/{ref}/authorize', { params: { path: { ref: x.id } }, body: { ...a, values: filledValues(values), plain } })), t.secret.fail.save(x.name), ['decisions', 'sessions']),
+    replace: (x: { id: string; name: string }, values: Record<string, string>, plain: Record<string, boolean>) =>
+      call(() => unwrap(api.POST('/api/secrets/{ref}/values', { params: { path: { ref: x.id } }, body: { values: filledValues(values), plain } })), t.secret.fail.replace(x.name)),
+    mark: (x: { id: string; name: string }, plain: Record<string, boolean>) => call(() => unwrap(api.POST('/api/secrets/{ref}/plain', { params: { path: { ref: x.id } }, body: { plain } })), t.secret.fail.mark(x.name)),
     revoke: (x: { id: string; name: string }) => call(() => unwrap(api.POST('/api/secrets/{ref}/revoke', { params: { path: { ref: x.id } } })), t.secret.fail.revoke(x.name)),
     reject: (x: { id: string }, code: string, note: string) =>
       call(() => unwrap(api.POST('/api/secrets/{ref}/reject', { params: { path: { ref: x.id } }, body: { note } })), t.secret.fail.reject(code), ['decisions', 'sessions']),
-    create: (body: { name: string; purpose: string; fields: { env: string; label: string; value: string }[] } & AuthState) =>
+    create: (body: { name: string; purpose: string; fields: { env: string; label: string; value: string; plain: boolean }[] } & AuthState) =>
       call(() => unwrap(api.POST('/api/secrets', { body })), t.secret.fail.create),
   }
 }
@@ -368,6 +401,7 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
   const openSession = useOpenSession()
   const now = useNow()
   const [values, setValues] = useState<Record<string, string>>({})
+  const [plain, setPlain] = useState<Record<string, boolean>>(() => plainMap(x.fields))
   const [auth, setAuth] = useState<AuthState>(() => initAuth(x))
   const s = (sessions.data?.sessions ?? []).find((v) => v.key === d.session_key)
   const who = s ? sessionTitle(s) : ''
@@ -377,7 +411,8 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
     if (pend || !checkAuth(x.fields, values, auth)) return
     const v = values
     const a = auth
-    schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => !!(await ops.authorize(x, a, v)) })
+    const p = plain
+    schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => !!(await ops.authorize(x, a, v, p)) })
   }
   const reject = async () => {
     const r = await ask({ title: t.verdict.rejectTitle('request', d.code), description: t.secret.rejectDesc, confirmText: t.verdict.back('request'), placeholder: t.verdict.rejectPlaceholder('request'), kinds: [] })
@@ -420,7 +455,7 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
           )}
         </Section>
         <Section title={t.secret.values}>
-          <FieldValues fields={x.fields} values={values} onChange={setValues} autoFocus />
+          <FieldValues fields={x.fields} values={values} onChange={setValues} plain={plain} onPlain={setPlain} autoFocus />
         </Section>
         <Section title={t.secret.auth}>
           <AuthFields value={auth} onChange={setAuth} suggest={x.ask?.days} />
@@ -509,7 +544,22 @@ function LastUse({ x, now }: { x: SecretView; now: number }) {
   )
 }
 
-const gridCols = 'lg:grid-cols-[minmax(0,1.6fr)_6.5rem_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_12.5rem]'
+const gridCols = 'lg:grid-cols-[minmax(0,1.6fr)_9.5rem_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_12.5rem]'
+
+// RowValues：「值」一栏——不敏感的值明文（R-318），还有敏感的值再画圆点。
+function RowValues({ x }: { x: SecretView }) {
+  const v = shownValues(x.fields)
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-[13px]">
+      {v.plain.length > 0 && (
+        <Tip content={v.plain.join('、')} truncated>
+          <span className="min-w-0 truncate font-mono text-[12.5px] text-fg">{v.plain.join('、')}</span>
+        </Tip>
+      )}
+      {v.masked && (v.plain.length > 0 ? <Dots short className="shrink-0" /> : <Dots className="shrink-0" />)}
+    </div>
+  )
+}
 
 function SecretRow({ x, now, onOpen, onDialog }: { x: SecretView; now: number; onOpen: () => void; onDialog: (d: Dialog) => void }) {
   const off = x.status === 'expired' || x.status === 'revoked'
@@ -528,7 +578,7 @@ function SecretRow({ x, now, onOpen, onDialog }: { x: SecretView; now: number; o
         <div className="truncate text-[13px] text-fg-3">{x.purpose}</div>
       </div>
       <div className="min-w-0 max-lg:hidden">
-        {x.status === 'pending' ? <div className="text-[13px] text-fg-3">{t.secret.unfilled}</div> : <Dots className="text-[13px]" />}
+        {x.status === 'pending' ? <div className="text-[13px] text-fg-3">{t.secret.unfilled}</div> : <RowValues x={x} />}
         <div className="text-[12.5px] text-fg-3">{t.secret.fields(x.fields.length)}</div>
       </div>
       <div className="min-w-0 truncate text-[13px] text-fg max-lg:hidden">{x.project_names.join('、')}</div>
@@ -666,6 +716,10 @@ function changeText(l: SecretLog, x: SecretView) {
       return t.secret.log.revoke
     case 'reject':
       return t.secret.log.reject(who)
+    case 'plain':
+      return t.secret.log.plain(l.reason ?? '')
+    case 'sensitive':
+      return t.secret.log.sensitive(l.reason ?? '')
     default:
       return t.secret.log.expire
   }
@@ -753,7 +807,7 @@ function Records({ logs, x, now }: { logs: SecretLog[]; x: SecretView; now: numb
                       <span className="tabular">{hhmm(l.at)}</span>
                       <span className="min-w-0">
                         {changeText(l, x)}
-                        {l.reason && (
+                        {l.reason && l.kind === 'reject' && (
                           <span className="text-fg-3">
                             {t.common.sep}
                             {l.reason}
@@ -777,8 +831,16 @@ function SecretDetail({ id, onClose, onDialog }: { id: string | null; onClose: (
   const now = useNow()
   const revoke = useRevoke()
   const openAsk = useOpenAsk()
+  const ops = useSecretApi()
+  const [marking, setMarking] = useState(false)
   const x = q.data?.secret
   const left = x ? authLine(x, now) : ''
+  const mark = async (env: string, p: boolean) => {
+    if (!x) return
+    setMarking(true)
+    await ops.mark(x, { [env]: p })
+    setMarking(false)
+  }
   return (
     <Panel open={!!id} onClose={onClose} wide="approval" bare title={x?.name ?? t.secret.title}>
       {!x ? (
@@ -823,12 +885,15 @@ function SecretDetail({ id, onClose, onDialog }: { id: string | null; onClose: (
           <div className="relative min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
             <div className="text-[13.5px]">
               <Row label={t.secret.fieldsLabel}>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 pt-1">
+                <div className="grid gap-1.5 pt-0.5">
                   {x.fields.map((f) => (
-                    <span key={f.env} className="flex items-center gap-2 font-mono text-[12.5px] text-fg">
-                      {f.env}
-                      {f.filled ? <Dots /> : <span className="font-sans text-fg-3">{t.secret.unfilled}</span>}
-                    </span>
+                    <div key={f.env} data-secret-field={f.env} className="flex min-w-0 items-center gap-3">
+                      <span className="w-[42%] min-w-0 shrink-0 truncate font-mono text-[12.5px] text-fg-2">{f.env}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {!f.filled ? <span className="text-fg-3">{t.secret.unfilled}</span> : f.plain && f.value ? <span className="font-mono text-[12.5px] text-fg">{f.value}</span> : <Dots />}
+                      </span>
+                      <SensitiveSwitch env={f.env} plain={!!f.plain} disabled={marking} onChange={(p) => void mark(f.env, p)} />
+                    </div>
                   ))}
                 </div>
               </Row>
@@ -857,11 +922,14 @@ function SecretDetail({ id, onClose, onDialog }: { id: string | null; onClose: (
 function ReplaceDialog({ x, onClose }: { x: SecretView; onClose: () => void }) {
   const ops = useSecretApi()
   const [values, setValues] = useState<Record<string, string>>({})
+  const [plain, setPlain] = useState<Record<string, boolean>>(() => plainMap(x.fields))
   const [busy, setBusy] = useState(false)
+  const marks = changedPlain(x.fields, plain)
+  const dirty = Object.keys(filledValues(values)).length > 0 || Object.keys(marks).length > 0
   const submit = async () => {
-    if (!Object.keys(filledValues(values)).length) return
+    if (!dirty) return
     setBusy(true)
-    const r = await ops.replace(x, values)
+    const r = await ops.replace(x, values, marks)
     setBusy(false)
     if (r) {
       toast.success(t.secret.replaced)
@@ -880,13 +948,13 @@ function ReplaceDialog({ x, onClose }: { x: SecretView; onClose: () => void }) {
           <Button variant="ghost" onClick={onClose}>
             {t.common.cancel}
           </Button>
-          <Button variant="primary" loading={busy} disabled={!Object.keys(filledValues(values)).length} onClick={() => void submit()}>
+          <Button variant="primary" loading={busy} disabled={!dirty} onClick={() => void submit()}>
             {t.common.save}
           </Button>
         </>
       }
     >
-      <FieldValues fields={x.fields} values={values} onChange={setValues} autoFocus />
+      <FieldValues fields={x.fields} values={values} onChange={setValues} plain={plain} onPlain={setPlain} autoFocus />
     </Modal>
   )
 }
@@ -929,7 +997,7 @@ function AuthDialog({ x, regrant, onClose }: { x: SecretView; regrant: boolean; 
   )
 }
 
-type NewField = { label: string; env: string; value: string; envTouched?: boolean }
+type NewField = { label: string; env: string; value: string; plain?: boolean; envTouched?: boolean }
 
 function CreateDialog({ onClose }: { onClose: () => void }) {
   const ops = useSecretApi()
@@ -962,7 +1030,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
     if (miss) return void toast.error(t.secret.needValue(miss.label || miss.env))
     if (!auth.projects.length) return void toast.error(t.secret.needProject)
     setBusy(true)
-    const r = await ops.create({ name: name.trim(), purpose: purpose.trim(), fields: fs.map((f) => ({ env: f.env.trim(), label: f.label.trim() || f.env.trim(), value: f.value })), ...auth })
+    const r = await ops.create({ name: name.trim(), purpose: purpose.trim(), fields: fs.map((f) => ({ env: f.env.trim(), label: f.label.trim() || f.env.trim(), value: f.value, plain: !!f.plain })), ...auth })
     setBusy(false)
     if (r) {
       toast.success(t.secret.created(name.trim()))
@@ -995,16 +1063,18 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
               <Input value={f.label} onChange={(e) => setField(i, { label: e.target.value })} placeholder={t.secret.fieldLabel} aria-label={t.secret.fieldLabel} />
               <Input value={f.env} onChange={(e) => setField(i, { env: e.target.value, envTouched: true })} placeholder={t.secret.fieldEnv} aria-label={t.secret.fieldEnv} spellCheck={false} autoCapitalize="off" className="font-mono" />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <div className="flex-1">
-                <ValueInput label={t.secret.fieldValue} value={f.value} onChange={(v) => setField(i, { value: v })} placeholder={t.secret.paste} />
+                <ValueInput label={t.secret.fieldValue} plain={f.plain} value={f.value} onChange={(v) => setField(i, { value: v })} placeholder={t.secret.paste} />
               </div>
+              <SensitiveSwitch env={f.env || String(i)} plain={!!f.plain} onChange={(p) => setField(i, { plain: p })} />
               {fields.length > 1 && (
                 <Button size="icon-sm" variant="ghost" aria-label={t.secret.removeField} onClick={() => setFields((fs) => fs.filter((_, j) => j !== i))}>
                   <X className="size-4" />
                 </Button>
               )}
             </div>
+            <ValueHint value={f.value} plain={f.plain} />
           </div>
         ))}
         <div>

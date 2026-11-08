@@ -655,7 +655,8 @@ CREATE TABLE IF NOT EXISTS secrets (
 );
 
 -- 凭据的取用记录与授权变更（R-295），同一条时间线。kind：use 取用（ks secret run）/ write 写入磁盘 /
--- request 会话申请 / grant 保存并授权 / reject 拒绝申请 / create 新建 / replace 替换值 / edit 修改授权 / regrant 重新授权 / revoke 撤销授权。
+-- request 会话申请 / grant 保存并授权 / reject 拒绝申请 / create 新建 / replace 替换值 / edit 修改授权 / regrant 重新授权 / revoke 撤销授权 /
+-- plain、sensitive 把某个值标为不敏感 / 敏感（R-318，reason 记显示名）。
 -- result（取用）：running 已开始、未上报结果 / ok 已完成 / failed 失败（exit_code）/ denied 已拒绝（reason）。
 -- command 存之前已把已知值换成「[已隐去]」，库里不留明文；会话标题、身份是当时的快照；days 是授权时选的有效期（-1 = 不适用，0 = 长期）。
 CREATE TABLE IF NOT EXISTS secret_logs (

@@ -196,7 +196,7 @@ func (h *Hub) refreshRedactor(ctx context.Context) {
 			h.log.Warn("凭据的值无法解密，不参与脱敏", "secret", x.Name, "err", err)
 			continue
 		}
-		for _, v := range vals {
+		for _, v := range sensitiveValues(x, vals) { // 不敏感的值（R-318）不参与
 			known = append(known, v)
 		}
 	}

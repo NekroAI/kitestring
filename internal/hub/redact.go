@@ -17,6 +17,7 @@ import (
 // 只有 ks secret run 取值的那个接口例外（它本来就是把值交给运行命令的 ks 进程）。管不到 Claude Code / Codex 自己的对话记录。
 //
 // 太短的值（少于 secretRedactMin 个字符）不参与：会把普通文字误隐去；这类值本身也不像需要保密的 Token。
+// 标为不敏感的值（R-318，用户名、Account ID 之类）也不参与：它们在凭据页明文显示，隐去反而把同样的普通文字一起换掉。
 
 // SecretRedacted 是已知值在展示时换成的文字；网页把它画成「已隐去」小标。
 const SecretRedacted = "[已隐去]"

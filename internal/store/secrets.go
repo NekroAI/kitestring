@@ -35,6 +35,9 @@ const (
 	SecretLogEdit    = "edit"    // 你修改了授权
 	SecretLogRegrant = "regrant" // 你重新授权（已失效 / 已撤回之后）
 	SecretLogRevoke  = "revoke"  // 你撤销了授权
+	// R-318：改了某个值的敏感标记，Reason 记是哪个值（显示名）
+	SecretLogPlain     = "plain"     // 你把某个值标为不敏感
+	SecretLogSensitive = "sensitive" // 你把某个值标为敏感
 )
 
 // 取用结果（secret_logs.result）。
@@ -51,6 +54,21 @@ type SecretField struct {
 	Label  string `json:"label" doc:"显示名，例如 API Token"`
 	How    string `json:"how,omitempty" doc:"获取方式：申请的会话按服务写清步骤，指导用户快速取到"`
 	Filled bool   `json:"filled" doc:"已填写值"`
+	// 敏感标记（R-318）：默认敏感（老数据没有这个字段也按敏感）。不敏感的值（用户名、Account ID 之类）在凭据页明文显示、
+	// 不进全局脱敏；注入命令的规则和加密存储不变。
+	Plain bool `json:"plain,omitempty" doc:"不敏感：明文显示、不在纸鸢里隐去；默认 false = 敏感"`
+	// Value 只在网页接口里给不敏感的值填上（hub 解密后补），永不存库：存库前清空。
+	Value string `json:"value,omitempty" doc:"不敏感的值的明文（只在网页的凭据接口里给出）；敏感的值永不返回"`
+}
+
+// storedFields 是存库用的字段说明：去掉明文（Value 只在接口里临时补上，不能落进 fields 列）。
+func storedFields(fs []SecretField) []SecretField {
+	out := make([]SecretField, len(fs))
+	for i, f := range fs {
+		f.Value = ""
+		out[i] = f
+	}
+	return out
 }
 
 // Secret 是一条凭据。值只以密文存在 Cipher 里，任何接口都不返回。
@@ -108,7 +126,7 @@ type SecretAsk struct {
 type SecretLog struct {
 	ID              string     `json:"id"`
 	SecretID        string     `json:"secret_id"`
-	Kind            string     `json:"kind" enum:"use,write,request,grant,reject,create,replace,edit,regrant,revoke"`
+	Kind            string     `json:"kind" enum:"use,write,request,grant,reject,create,replace,edit,regrant,revoke,plain,sensitive"`
 	At              time.Time  `json:"at"`
 	SessionKey      string     `json:"session_key,omitempty"`
 	SessionTitle    string     `json:"session_title,omitempty" doc:"会话当时的标题"`
@@ -119,7 +137,7 @@ type SecretLog struct {
 	Path            string     `json:"path,omitempty" doc:"写入磁盘的路径"`
 	Result          string     `json:"result,omitempty" enum:",running,ok,failed,denied"`
 	ExitCode        int        `json:"exit_code"`
-	Reason          string     `json:"reason,omitempty" doc:"被拒的原因；拒绝申请时的附言"`
+	Reason          string     `json:"reason,omitempty" doc:"被拒的原因；拒绝申请时的附言；改敏感标记时是哪个值（显示名）"`
 	Days            int        `json:"days" doc:"授权时选的有效期（天）：0 = 长期，-1 = 不适用"`
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 }
@@ -210,7 +228,7 @@ func (s *Store) CreateSecret(ctx context.Context, x Secret) (Secret, error) {
 	n := now()
 	_, err := s.db.ExecContext(ctx, `INSERT INTO secrets(id, name, purpose, fields, cipher, projects, allowed, disk, expires_at, granted_at, revoked_at, requirement_id, request_decision, requested_by, request, created_at, updated_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		x.ID, x.Name, x.Purpose, blocks.Encode(nonNil(x.Fields)), x.Cipher, blocks.Encode(nonNil(x.Projects)), blocks.Encode(nonNil(x.Allowed)), x.Disk,
+		x.ID, x.Name, x.Purpose, blocks.Encode(storedFields(x.Fields)), x.Cipher, blocks.Encode(nonNil(x.Projects)), blocks.Encode(nonNil(x.Allowed)), x.Disk,
 		tsOrEmpty(x.ExpiresAt), tsOrEmpty(x.GrantedAt), tsOrEmpty(x.RevokedAt), x.RequirementID, x.RequestID, x.RequestedBy, blocks.Encode(x.Ask), n, n)
 	if err != nil {
 		return x, err
@@ -238,7 +256,7 @@ func (s *Store) SaveSecret(ctx context.Context, x Secret) (Secret, error) {
 	}
 	res, err := s.db.ExecContext(ctx, `UPDATE secrets SET name = ?, purpose = ?, fields = ?, cipher = ?, projects = ?, allowed = ?, disk = ?, expires_at = ?, granted_at = ?, revoked_at = ?,
 		requirement_id = ?, request_decision = ?, requested_by = ?, request = ?, updated_at = ? WHERE id = ?`,
-		x.Name, x.Purpose, blocks.Encode(nonNil(x.Fields)), x.Cipher, blocks.Encode(nonNil(x.Projects)), blocks.Encode(nonNil(x.Allowed)), x.Disk,
+		x.Name, x.Purpose, blocks.Encode(storedFields(x.Fields)), x.Cipher, blocks.Encode(nonNil(x.Projects)), blocks.Encode(nonNil(x.Allowed)), x.Disk,
 		tsOrEmpty(x.ExpiresAt), tsOrEmpty(x.GrantedAt), tsOrEmpty(x.RevokedAt), x.RequirementID, x.RequestID, x.RequestedBy, blocks.Encode(x.Ask), now(), x.ID)
 	if err != nil {
 		return x, err

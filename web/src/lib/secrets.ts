@@ -113,3 +113,41 @@ export function envFromLabel(label: string): string {
     .toUpperCase()
   return envOK(s) ? s : ''
 }
+
+// ---------- 敏感标记（R-318） ----------
+
+// 少于这么多字符的值不参与脱敏（internal/hub/redact.go 的 secretRedactMin）
+export const REDACT_MIN = 6
+
+// 常见词：作敏感值时，纸鸢里所有同样的文字都会被隐去（R-298 第 3 点）。全小写，比对时忽略大小写。
+export const COMMON_WORDS = new Set([
+  'production', 'staging', 'development', 'develop', 'testing', 'preview', 'release', 'master', 'default', 'localhost',
+  'admin', 'administrator', 'password', 'passwd', 'username', 'secret', 'token', 'public', 'private', 'example', 'sample',
+  'changeme', 'welcome', 'letmein', 'qwerty', '123456', '1234567', '12345678', '123456789', 'abc123', 'password1',
+  'undefined', 'latest', 'service', 'account', 'database', 'deploy', 'server', 'client', 'system', 'manager', 'support',
+])
+
+// valueHint：敏感值填写处的提示——太短（不会隐去）或是常见词（各处同样的文字都会隐去）；不敏感或空值不提示。
+export function valueHint(value: string, plain?: boolean): 'short' | 'common' | undefined {
+  const v = value.trim()
+  if (plain || !v) return undefined
+  if ([...value].length < REDACT_MIN) return 'short'
+  if (COMMON_WORDS.has(v.toLowerCase())) return 'common'
+  return undefined
+}
+
+// plainMap：字段的敏感标记（env → 不敏感），保存授权时一并发出。
+export function plainMap(fields: { env: string; plain?: boolean }[]): Record<string, boolean> {
+  return Object.fromEntries(fields.map((f) => [f.env, !!f.plain]))
+}
+
+// changedPlain：和字段原来的标记比，改了的那些（替换值时只发改了的）。
+export function changedPlain(fields: { env: string; plain?: boolean }[], next: Record<string, boolean>): Record<string, boolean> {
+  return Object.fromEntries(fields.filter((f) => f.env in next && next[f.env] !== !!f.plain).map((f) => [f.env, next[f.env]]))
+}
+
+// shownValues：凭据页「值」一栏：不敏感、已填的值明文列出；还有敏感的已填值时 masked = true（画成圆点）。
+export function shownValues(fields: { plain?: boolean; filled?: boolean; value?: string }[]): { plain: string[]; masked: boolean } {
+  const filled = fields.filter((f) => f.filled)
+  return { plain: filled.filter((f) => f.plain && f.value).map((f) => f.value!), masked: filled.some((f) => !f.plain || !f.value) }
+}

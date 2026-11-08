@@ -6852,6 +6852,22 @@
         ],
         "type": "object"
       },
+      "Mark-secret-fieldsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "plain": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "环境变量名 → 是否不敏感；没写的保持原样",
+            "type": "object"
+          }
+        },
+        "required": [
+          "plain"
+        ],
+        "type": "object"
+      },
       "Mark-session-doneRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8672,6 +8688,13 @@
       "Replace-secret-valuesRequest": {
         "additionalProperties": false,
         "properties": {
+          "plain": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "环境变量名 → 是否不敏感（R-318）；没写的保持原样",
+            "type": "object"
+          },
           "values": {
             "additionalProperties": {
               "type": "string"
@@ -10165,6 +10188,13 @@
             "description": "允许写入磁盘",
             "type": "boolean"
           },
+          "plain": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "环境变量名 → 是否不敏感（R-318）；没写的保持原样",
+            "type": "object"
+          },
           "projects": {
             "description": "授权的项目 ID，至少一个",
             "items": {
@@ -10207,6 +10237,14 @@
           "label": {
             "description": "显示名，例如 API Token",
             "type": "string"
+          },
+          "plain": {
+            "description": "不敏感：明文显示、不在纸鸢里隐去；默认 false = 敏感",
+            "type": "boolean"
+          },
+          "value": {
+            "description": "不敏感的值的明文（只在网页的凭据接口里给出）；敏感的值永不返回",
+            "type": "string"
           }
         },
         "required": [
@@ -10230,6 +10268,10 @@
           "label": {
             "description": "显示名，例如 API Token；不写时用环境变量名",
             "type": "string"
+          },
+          "plain": {
+            "description": "不敏感（如用户名、Account ID）：明文显示、不在纸鸢里隐去；不写 = 敏感。注入命令的规则不变",
+            "type": "boolean"
           },
           "value": {
             "description": "值（只在网页上新建时填）",
@@ -10279,7 +10321,9 @@
               "replace",
               "edit",
               "regrant",
-              "revoke"
+              "revoke",
+              "plain",
+              "sensitive"
             ],
             "type": "string"
           },
@@ -10288,7 +10332,7 @@
             "type": "string"
           },
           "reason": {
-            "description": "被拒的原因；拒绝申请时的附言",
+            "description": "被拒的原因；拒绝申请时的附言；改敏感标记时是哪个值（显示名）",
             "type": "string"
           },
           "requirement_code": {
@@ -19237,6 +19281,57 @@
           }
         },
         "summary": "保存并授权：填写 / 替换值、修改授权、重新授权；有等待中的申请时一并答成批准、送回申请方",
+        "tags": [
+          "secrets"
+        ]
+      }
+    },
+    "/api/secrets/{ref}/plain": {
+      "post": {
+        "operationId": "mark-secret-fields",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Mark-secret-fieldsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "改值的敏感标记（R-318）：不敏感的值明文显示、不在纸鸢里隐去；值和授权不变",
         "tags": [
           "secrets"
         ]

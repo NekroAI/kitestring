@@ -23,9 +23,11 @@ import (
 // 凭据（R-295）：会话申请凭据、在命令的环境变量里取用。没有打印明文的子命令：值只交给要运行的命令（run）或写进授权过的文件（write）。
 
 const secretUsage = `用法：
-  ks secret request <凭据名> --purpose 用途 --field '环境变量名|显示名|获取方式' [--field ...] [--req R-x] [--days 7] [--allow '命令 *' ...]
+  ks secret request <凭据名> --purpose 用途 --field '环境变量名|显示名|获取方式' [--field ...] [--plain 环境变量名 ...] [--req R-x] [--days 7] [--allow '命令 *' ...]
       申请凭据：进用户的「待处理」，用户在网页上填值并授权或拒绝后结果送到你这里。获取方式按服务写清步骤（在哪个页面、点什么、选什么权限），
       指导用户快速取到；--allow 是建议允许的命令（* 单独放最后 = 后面可跟任意参数），不写 = 不限命令；--days 0 = 长期。
+      --plain 声明某个值不敏感（用户名、Account ID 这类不是密钥的值）：用户在凭据页看到明文，纸鸢各处也不会把同样的文字隐去；
+      值默认敏感，用户在申请里可以改。注入命令的规则不变。
   ks secret list
       本项目能用的凭据：名字、状态、字段名、允许的命令（没有值）。
   ks secret run <凭据名> [--req R-x] -- <命令> [参数...]
@@ -70,9 +72,9 @@ func secretSessionKey(flagVal string) (string, error) {
 }
 
 // parseSecretField 解析 --field '环境变量名|显示名|获取方式'（后两段可省）。
-func parseSecretField(v string) map[string]string {
+func parseSecretField(v string) map[string]any {
 	parts := strings.SplitN(v, "|", 3)
-	f := map[string]string{"env": strings.TrimSpace(parts[0])}
+	f := map[string]any{"env": strings.TrimSpace(parts[0])}
 	if len(parts) > 1 {
 		f["label"] = strings.TrimSpace(parts[1])
 	}
@@ -82,14 +84,37 @@ func parseSecretField(v string) map[string]string {
 	return f
 }
 
+// secretFields 解析全部 --field，并按 --plain 标出不敏感的值；--plain 写了没有的环境变量名时报错。
+func secretFields(fields, plain []string) ([]map[string]any, error) {
+	fl := make([]map[string]any, len(fields))
+	seen := map[string]bool{}
+	for i, f := range fields {
+		fl[i] = parseSecretField(f)
+		seen[fl[i]["env"].(string)] = true
+	}
+	for _, p := range plain {
+		p = strings.TrimSpace(p)
+		if !seen[p] {
+			return nil, fmt.Errorf("--plain %s：没有这个值，先用 --field 写上", p)
+		}
+		for _, f := range fl {
+			if f["env"] == p {
+				f["plain"] = true
+			}
+		}
+	}
+	return fl, nil
+}
+
 func secretRequest(args []string) error {
 	fs := flag.NewFlagSet("secret request", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	purpose := fs.String("purpose", "", "用途：拿它做什么（必填）")
 	req := fs.String("req", "", "关联需求 R-x")
 	days := fs.Int("days", 7, "建议的有效期（天），0 = 长期")
-	var fields, allow stringList
+	var fields, allow, plain stringList
 	fs.Var(&fields, "field", "要的值：'环境变量名|显示名|获取方式'，可重复")
+	fs.Var(&plain, "plain", "不敏感的值（环境变量名，如用户名、Account ID）：明文显示、不在纸鸢里隐去，可重复")
 	fs.Var(&allow, "allow", "建议允许的命令，如 'wrangler pages deploy *'，可重复；不写 = 不限命令")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
@@ -101,9 +126,9 @@ func secretRequest(args []string) error {
 	if err != nil {
 		return err
 	}
-	fl := make([]map[string]string, len(fields))
-	for i, f := range fields {
-		fl[i] = parseSecretField(f)
+	fl, err := secretFields(fields, plain)
+	if err != nil {
+		return err
 	}
 	body := map[string]any{"session_key": key, "name": fs.Arg(0), "purpose": *purpose, "requirement": *req, "days": *days, "fields": fl}
 	if len(allow) > 0 {

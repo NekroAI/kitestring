@@ -1917,6 +1917,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/secrets/{ref}/plain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 改值的敏感标记（R-318）：不敏感的值明文显示、不在纸鸢里隐去；值和授权不变 */
+        post: operations["mark-secret-fields"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/secrets/{ref}/reject": {
         parameters: {
             query?: never;
@@ -4866,6 +4883,12 @@ export interface components {
         LoginOutBody: {
             ok: boolean;
         };
+        "Mark-secret-fieldsRequest": {
+            /** @description 环境变量名 → 是否不敏感；没写的保持原样 */
+            plain: {
+                [key: string]: boolean;
+            };
+        };
         "Mark-session-doneRequest": {
             done: boolean;
         };
@@ -5445,6 +5468,10 @@ export interface components {
             role: string;
         };
         "Replace-secret-valuesRequest": {
+            /** @description 环境变量名 → 是否不敏感（R-318）；没写的保持原样 */
+            plain?: {
+                [key: string]: boolean;
+            };
             /** @description 环境变量名 → 新值；没写的保留原值 */
             values: {
                 [key: string]: string;
@@ -5917,6 +5944,10 @@ export interface components {
             days: number;
             /** @description 允许写入磁盘 */
             disk?: boolean;
+            /** @description 环境变量名 → 是否不敏感（R-318）；没写的保持原样 */
+            plain?: {
+                [key: string]: boolean;
+            };
             /** @description 授权的项目 ID，至少一个 */
             projects: string[] | null;
             /** @description 环境变量名 → 值；没写或为空的保留原值。待填写的每个值都要填 */
@@ -5933,6 +5964,10 @@ export interface components {
             how?: string;
             /** @description 显示名，例如 API Token */
             label: string;
+            /** @description 不敏感：明文显示、不在纸鸢里隐去；默认 false = 敏感 */
+            plain?: boolean;
+            /** @description 不敏感的值的明文（只在网页的凭据接口里给出）；敏感的值永不返回 */
+            value?: string;
         };
         SecretFieldIn: {
             /** @description 环境变量名，例如 CLOUDFLARE_API_TOKEN */
@@ -5941,6 +5976,8 @@ export interface components {
             how?: string;
             /** @description 显示名，例如 API Token；不写时用环境变量名 */
             label?: string;
+            /** @description 不敏感（如用户名、Account ID）：明文显示、不在纸鸢里隐去；不写 = 敏感。注入命令的规则不变 */
+            plain?: boolean;
             /** @description 值（只在网页上新建时填） */
             value?: string;
         };
@@ -5960,10 +5997,10 @@ export interface components {
             finished_at?: string;
             id: string;
             /** @enum {string} */
-            kind: "use" | "write" | "request" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke";
+            kind: "use" | "write" | "request" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke" | "plain" | "sensitive";
             /** @description 写入磁盘的路径 */
             path?: string;
-            /** @description 被拒的原因；拒绝申请时的附言 */
+            /** @description 被拒的原因；拒绝申请时的附言；改敏感标记时是哪个值（显示名） */
             reason?: string;
             requirement_code?: string;
             requirement_id?: string;
@@ -11207,6 +11244,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SecretAuthIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "mark-secret-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Mark-secret-fieldsRequest"];
             };
         };
         responses: {
