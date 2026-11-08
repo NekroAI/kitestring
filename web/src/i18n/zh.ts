@@ -241,12 +241,14 @@ export const zh = {
     anyCommand: '不限命令',
     moreCmds: (n: number) => `另有 ${n} 条`,
     none: '暂无',
-    replace: '替换值…',
+    // 凭据页列表行和详情头的按钮不加「…」（R-327：行内的「…」被看成文字截断；copywriting 第 122 条例外）
+    replace: '替换值',
     revoke: '撤销授权',
     revokeAct: '撤销授权',
-    regrant: '重新授权…',
+    regrant: '重新授权',
     fill: '填写…',
-    edit: '修改授权…',
+    fillRow: '填写',
+    edit: '修改授权',
     empty: '暂无凭据',
     emptyHint: '会话申请凭据后会出现在这里，也可以在这里新建。',
     noMatch: '没有符合条件的凭据',
@@ -791,6 +793,7 @@ export const zh = {
       // shell 泳道（R-208）：后台命令每条一行
       sh: {
         kind: { build: '构建 / 测试', deploy: '部署', service: '服务', poll: '轮询', other: '其他' } as Record<string, string>,
+        command: '命令', // 会话泳道里还没归类的后台命令行（R-327）：和「服务」「其他」同一个标签
         running: '运行中',
         ok: (d: string) => `已完成 · ${d}`,
         failed: (code: number | null) => (code == null ? '失败' : `失败 · 退出码 ${code}`),

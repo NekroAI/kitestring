@@ -94,7 +94,7 @@
     "share.create", "share.menu", "share.enable", "share.revoke", "share.revokeOk", "share.preview", "share.copyLink", "share.revokeLink", "share.restoreLink",
     "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk",
     "guest.enter", "guest.toolsAll", "guest.toolsFold", "share.inbox.place", "share.inbox.ignore", "share.inbox.raw", "share.inbox.rewrite", "guest.leave", "guest.send", "guest.toWhole",
-    "secret.create", "secret.replace", "secret.revoke", "secret.regrant", "secret.fill", "secret.edit", "secret.reject", "secret.save", "secret.addProject", "secret.addCmd", "secret.addField"
+    "secret.create", "secret.replace", "secret.revoke", "secret.regrant", "secret.fill", "secret.fillRow", "secret.edit", "secret.reject", "secret.save", "secret.addProject", "secret.addCmd", "secret.addField"
   ],
   "buttonMax": 6,
   "allow": [

@@ -749,3 +749,6 @@ nav.fixed {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
 }
+
+/* 密钥框（R-327）：用文字框加圆点遮盖，不是 type=password，浏览器不把它当登录密码、不弹已存密码建议 */
+.secret-mask { -webkit-text-security: disc; }

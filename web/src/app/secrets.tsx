@@ -7,7 +7,7 @@ import { api, errMsg, unwrap, type Decision } from '../api/client'
 import { useProjects, useSecret, useSecrets, useSessions, type SecretLog, type SecretView } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { addCommand, amendKind, secretRun, authDiff, logNote, missingReplace, replaceFields, replaceLabels, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
+import { addCommand, amendKind, canMaskText, secretInputProps, secretRun, authDiff, logNote, missingReplace, replaceFields, replaceLabels, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
 import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, Panel } from '../ui/overlay'
 import { Md } from '../ui/markdown'
@@ -110,23 +110,20 @@ function Who({ role, title, fallback }: { role?: string; title?: string; fallbac
 // ---------- 值和授权的表单 ----------
 
 // ValueInput：密码框，右侧眼睛切换显示；不让浏览器记住、不拼写检查。不敏感的值（R-318）直接明文、没有眼睛。
+// R-327：不用 password 框（浏览器会弹已存的登录密码），见 secretInputProps。
 function ValueInput({ value, onChange, placeholder, label, autoFocus, plain }: { value: string; onChange: (v: string) => void; placeholder: string; label: string; autoFocus?: boolean; plain?: boolean }) {
   const [show, setShow] = useState(false)
+  const ip = secretInputProps(show || !!plain, canMaskText())
   return (
     <div className="relative">
       <Input
-        type={show || plain ? 'text' : 'password'}
+        {...ip}
         value={value}
-        autoComplete="new-password"
-        spellCheck={false}
-        autoCapitalize="off"
         aria-label={label}
-        data-1p-ignore=""
-        data-lpignore="true"
         placeholder={placeholder}
         autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
-        className={cx('font-mono', plain ? 'pr-3' : 'pr-10')}
+        className={cx('font-mono', plain ? 'pr-3' : 'pr-10', ip.className)}
       />
       {!plain && (
         <button type="button" aria-label={show ? t.secret.hide : t.secret.show} onClick={() => setShow(!show)} className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-fg-3 transition hover:bg-hover hover:text-fg">
@@ -646,7 +643,7 @@ function RowActions({ x, onDialog }: { x: SecretView; onDialog: (d: Dialog) => v
   if (x.status === 'pending')
     return (
       <Button size="sm" onClick={(e) => (stop(e), x.request_code && openAsk(`d:${x.request_code}`))} disabled={!x.request_pending}>
-        {t.secret.fill}
+        {t.secret.fillRow}
       </Button>
     )
   return (
@@ -1007,7 +1004,7 @@ function SecretDetail({ id, onClose, onDialog }: { id: string | null; onClose: (
               <NameTitle x={x} />
               {x.status === 'pending' ? (
                 <Button size="sm" variant="primary" disabled={!x.request_pending} onClick={() => x.request_code && openAsk(`d:${x.request_code}`)}>
-                  {t.secret.fill}
+                  {t.secret.fillRow}
                 </Button>
               ) : (
                 <>
@@ -1257,7 +1254,7 @@ function NameTitle({ x }: { x: SecretView }) {
   }
   if (edit !== null)
     return (
-      <span className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="flex min-w-0 flex-1 items-center gap-2 max-sm:basis-full">
         <Input
           autoFocus
           data-secret-rename=""
@@ -1277,7 +1274,7 @@ function NameTitle({ x }: { x: SecretView }) {
       </span>
     )
   return (
-    <span className="group flex min-w-0 flex-1 items-center gap-1">
+    <span className="group flex min-w-0 flex-1 items-center gap-1 max-sm:basis-full">
       <h3 className="min-w-0 font-display text-[22px] leading-snug font-semibold text-fg">{x.name}</h3>
       <Tip content={t.secret.renameHint}>
         <button type="button" aria-label={t.secret.rename} onClick={() => setEdit(x.name)} className="shrink-0 rounded-md p-1 text-fg-3 transition hover:bg-hover hover:text-fg">

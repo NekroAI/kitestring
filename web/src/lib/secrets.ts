@@ -225,3 +225,18 @@ export const secretRun = (code: string) => `ks secret run ${code} -- <命令>`
 
 // replaceLabels：时间线上「替换了哪些值」：后端记的显示名用「、」连接，老数据为空。
 export const replaceLabels = (reason?: string | null) => (reason ?? '').split('、').filter(Boolean)
+
+// ---------- 密钥框（R-327） ----------
+
+// canMaskText：浏览器支持 -webkit-text-security（Chrome、Safari、Edge，新版 Firefox 也支持）。
+export const canMaskText = () => typeof CSS !== 'undefined' && !!CSS.supports?.('-webkit-text-security', 'disc')
+
+// secretInputProps：凭据值、API Key 这类密钥框的属性。浏览器只对 type=password 的框弹已存的登录密码（Chrome 无视 autocomplete=off），
+// 所以支持遮盖时用文字框加圆点（secret-mask），不是 password 框；不支持时退回 password 框加 new-password。
+// 同时关掉密码管理器扩展（1Password、LastPass、Bitwarden）的填充。show = 显示明文。
+export function secretInputProps(show: boolean, canMask: boolean) {
+  const base = { autoComplete: 'off', spellCheck: false, autoCapitalize: 'off', autoCorrect: 'off', 'data-1p-ignore': '', 'data-lpignore': 'true', 'data-bwignore': '', 'data-form-type': 'other' }
+  if (show) return { ...base, type: 'text', className: '' }
+  if (canMask) return { ...base, type: 'text', className: 'secret-mask' }
+  return { ...base, type: 'password', autoComplete: 'new-password', className: '' }
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { addCommand, amendKind, secretRun, logNote, missingReplace, replaceFields, replaceLabels, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
+import { addCommand, amendKind, secretInputProps, secretRun, logNote, missingReplace, replaceFields, replaceLabels, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
 
 const list = [
   { name: 'Cloudflare 部署', purpose: 'wrangler 部署 Pages', status: 'active', projects: ['p1'], project_names: ['kitestring'] },
@@ -174,4 +174,16 @@ test('编号与改名（R-326）：待处理的类别词、推荐写法', () => 
   assert.equal(amendKind({ name: '' }), 'amend')
   assert.equal(amendKind(null), 'amend')
   assert.equal(secretRun('S-3'), 'ks secret run S-3 -- <命令>')
+})
+
+test('密钥框（R-327）：能遮盖时不用 password 框，浏览器不弹已存密码', () => {
+  const m = secretInputProps(false, true)
+  assert.equal(m.type, 'text')
+  assert.equal(m.className, 'secret-mask')
+  assert.equal(m.autoComplete, 'off')
+  assert.equal(m['data-1p-ignore'], '')
+  // 显示明文：普通文字框、不遮盖
+  assert.deepEqual([secretInputProps(true, true).type, secretInputProps(true, true).className], ['text', ''])
+  // 不支持遮盖的浏览器退回 password 框，用 new-password 不填已存密码
+  assert.deepEqual([secretInputProps(false, false).type, secretInputProps(false, false).autoComplete], ['password', 'new-password'])
 })

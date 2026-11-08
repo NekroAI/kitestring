@@ -959,7 +959,12 @@ function SubLane({ row, k, now, mode, last }: { row: SubRow; k: string; now: num
           <span className={cx('absolute top-0 left-0 border-l border-line-strong', last ? 'h-1/2' : 'h-full')} />
           <span className="absolute top-1/2 left-0 w-full border-t border-line-strong" />
         </span>
-        {kind && <span className="w-9 shrink-0 text-[10.5px] opacity-80">{kind}</span>}
+        {row.kind === 'shell' ? (
+          // 后台命令行：和 shell 泳道的「服务」「其他」同一个标签，写「命令」，不换行（R-327）
+          <span className="min-w-[3.8em] shrink-0 rounded border border-line bg-surface-2 px-1 text-center text-[10.5px] leading-[15px] whitespace-nowrap text-fg-2">{t.desk.tl.sh.command}</span>
+        ) : (
+          kind && <span className="w-9 shrink-0 text-[10.5px] whitespace-nowrap opacity-80">{kind}</span>
+        )}
         <Tip truncated={!row.guess} content={row.guess ? `${t.session.taskUnnamed}${t.common.sep}${row.label}` : row.label}>
           <span data-shell-count={count ? row.kind : undefined} className={cx('min-w-0 flex-1 truncate', (row.guess || row.kind === 'more' || row.kind === 'shmore') && 'italic opacity-80')}>
             {row.label}

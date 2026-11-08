@@ -17,6 +17,7 @@ import { Badge, Button, Card, Empty, ErrorState, Field, Input, PageHeader, Segme
 import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
 import { DeviceGuide } from '../app/deviceGuide'
+import { canMaskText, secretInputProps } from '../lib/secrets'
 
 type Tab = 'devices' | 'notify' | 'prompts' | 'ai' | 'appearance' | 'account'
 const tabs: { id: Tab; icon: LucideIcon }[] = [
@@ -550,6 +551,7 @@ function AI() {
   const [base, setBase] = useState('')
   const [model, setModel] = useState('')
   const [key, setKey] = useState('')
+  const keyInput = secretInputProps(false, canMaskText()) // API Key 框不弹浏览器已存密码（R-327）
   const [busy, wrap] = useBusy()
   const [result, setResult] = useState<TestResult | null>(null)
   const [sample, setSample] = useState(false)
@@ -590,7 +592,8 @@ function AI() {
               <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" className="font-mono" />
             </Field>
             <Field label={<Label>{t.settings.ai.apiKey}</Label>}>
-              <Input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder={q.data.summary_api_key_set ? `•••••••• ${t.settings.ai.apiKeySet}` : 'sk-…'} className="font-mono" autoComplete="off" />
+              {/* API Key 不是登录密码：不用 password 框，浏览器不弹已存密码（R-327） */}
+              <Input {...keyInput} value={key} onChange={(e) => setKey(e.target.value)} placeholder={q.data.summary_api_key_set ? `•••••••• ${t.settings.ai.apiKeySet}` : 'sk-…'} className={cx('font-mono', keyInput.className)} />
             </Field>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
