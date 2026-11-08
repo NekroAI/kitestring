@@ -28,6 +28,7 @@ const (
 	SecretLogUse     = "use"     // ks secret run 取用
 	SecretLogWrite   = "write"   // ks secret write 写入磁盘
 	SecretLogRequest = "request" // 会话申请
+	SecretLogAmend   = "amend"   // 会话申请修改授权（R-320），Reason 记会话写的理由
 	SecretLogGrant   = "grant"   // 你保存并授权了申请
 	SecretLogReject  = "reject"  // 你拒绝了申请
 	SecretLogCreate  = "create"  // 你新建了凭据
@@ -117,16 +118,27 @@ func (x Secret) StatusAt(t time.Time) string {
 type SecretAsk struct {
 	ProjectID   string   `json:"project_id,omitempty" doc:"申请方所在的项目"`
 	ProjectName string   `json:"project_name,omitempty"`
-	Days        int      `json:"days" doc:"建议的有效期（天），0 = 长期"`
-	Allowed     []string `json:"allowed" doc:"要的命令；空 = 没限定"`
+	Days        int      `json:"days" doc:"建议的有效期（天），0 = 长期；修改授权申请里 -1 = 到期时间不变"`
+	Allowed     []string `json:"allowed" doc:"要的命令；空 = 没限定。修改授权申请里是改后的完整列表（空 = 不限命令）"`
 	Added       []string `json:"added,omitempty" doc:"这次申请给已有凭据新加的值（环境变量名）；申请被拒绝或撤回时没填的随之去掉"`
+	// 修改授权申请（R-320）：会话对已有凭据提的改后授权范围（完整的一份，改前就是凭据当前的授权）。批准前凭据的授权不变。
+	Mode     string   `json:"mode,omitempty" enum:",amend" doc:"amend = 修改授权申请；空 = 申请凭据（填值 / 续期 / 补值）"`
+	Reason   string   `json:"reason,omitempty" doc:"修改授权申请的理由"`
+	Projects []string `json:"projects,omitempty" doc:"修改授权申请：改后的授权项目 ID"`
+	Disk     bool     `json:"disk,omitempty" doc:"修改授权申请：改后是否允许写入磁盘"`
 }
+
+// AskAmend 是修改授权申请（R-320）的模式名。
+const AskAmend = "amend"
+
+// IsAmend：这条申请是修改授权申请。
+func (a *SecretAsk) IsAmend() bool { return a != nil && a.Mode == AskAmend }
 
 // SecretLog 是一条取用记录或授权变更。
 type SecretLog struct {
 	ID              string     `json:"id"`
 	SecretID        string     `json:"secret_id"`
-	Kind            string     `json:"kind" enum:"use,write,request,grant,reject,create,replace,edit,regrant,revoke,plain,sensitive"`
+	Kind            string     `json:"kind" enum:"use,write,request,amend,grant,reject,create,replace,edit,regrant,revoke,plain,sensitive"`
 	At              time.Time  `json:"at"`
 	SessionKey      string     `json:"session_key,omitempty"`
 	SessionTitle    string     `json:"session_title,omitempty" doc:"会话当时的标题"`

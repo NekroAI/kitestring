@@ -28,6 +28,15 @@ const secretUsage = `用法：
       指导用户快速取到；--allow 是建议允许的命令（* 单独放最后 = 后面可跟任意参数），不写 = 不限命令；--days 0 = 长期。
       --plain 声明某个值不敏感（用户名、Account ID 这类不是密钥的值）：用户在凭据页看到明文，纸鸢各处也不会把同样的文字隐去；
       值默认敏感，用户在申请里可以改。注入命令的规则不变。
+  ks secret amend <凭据名> --reason 理由 [--add-allow '命令 *' ...] [--remove-allow '命令' ...] [--allow '命令' ... | --any-command]
+                  [--days N] [--project 项目名 ...] [--disk | --no-disk] [--req R-x]
+      申请修改已有凭据的授权（生效中、已失效、已撤回都可以）：允许的命令增删改、有效期、项目、写入磁盘。取用因授权范围被拒
+      （命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时用它，不要让用户去凭据页手动改。--add-allow / --remove-allow
+      在原来的基础上增删（写错的命令先去掉再加上对的），--allow 整份替换，--any-command 改成不限命令；--days 从批准时算起，
+      不写 = 生效中的到期时间不变；--project 是改后的完整项目列表。申请进用户的「待处理」，用户可再调整后保存并授权或拒绝，
+      结果送到你这里；批准前原来的授权照常生效。申请里没有值，也不能改值。
+      允许的命令按空白切成参数逐个比对，* 在参数内匹配任意字符（含空格）：一个参数里含空格时（如 sh -c 后面的整段脚本）
+      用 * 代替其中的空格，例如 'sh -c printf*wrangler*secret*put*'，不要拆成多段。
   ks secret list
       本项目能用的凭据：名字、状态、字段名、允许的命令（没有值）。
   ks secret run <凭据名> [--req R-x] -- <命令> [参数...]
@@ -46,6 +55,8 @@ func runSecret(args []string) error {
 	switch sub {
 	case "request":
 		return secretRequest(args)
+	case "amend":
+		return secretAmend(args)
 	case "list":
 		return secretList(args)
 	case "run":
@@ -135,6 +146,66 @@ func secretRequest(args []string) error {
 		body["allowed"] = []string(allow)
 	}
 	return agentCall("POST", "/agent/secrets/request", body)
+}
+
+func secretAmend(args []string) error {
+	fs := flag.NewFlagSet("secret amend", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
+	reason := fs.String("reason", "", "理由：为什么要改（必填）")
+	req := fs.String("req", "", "关联需求 R-x")
+	days := fs.Int("days", -1, "改后的有效期（天），从批准时算起，0 = 长期；不写 = 到期时间不变")
+	anyCmd := fs.Bool("any-command", false, "改成不限命令")
+	disk := fs.Bool("disk", false, "改成允许写入磁盘")
+	noDisk := fs.Bool("no-disk", false, "改成不允许写入磁盘")
+	var allow, add, remove, projects stringList
+	fs.Var(&allow, "allow", "改后允许的命令（整份替换），可重复")
+	fs.Var(&add, "add-allow", "加上的命令，可重复")
+	fs.Var(&remove, "remove-allow", "去掉的命令，可重复")
+	fs.Var(&projects, "project", "改后的授权项目（项目名或 ID，整份替换），可重复")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(*reason) == "" {
+		return errors.New(secretUsage)
+	}
+	if *disk && *noDisk {
+		return errors.New("--disk 和 --no-disk 只能写一个")
+	}
+	key, err := secretSessionKey(*session)
+	if err != nil {
+		return err
+	}
+	body := secretAmendBody(key, fs.Arg(0), *reason, *req, *days, *anyCmd, *disk, *noDisk, allow, add, remove, projects)
+	return agentCall("POST", "/agent/secrets/amend", body)
+}
+
+// secretAmendBody 拼修改授权申请的请求体：没写的项不发（= 不改）。
+func secretAmendBody(key, name, reason, req string, days int, anyCmd, disk, noDisk bool, allow, add, remove, projects []string) map[string]any {
+	body := map[string]any{"session_key": key, "name": name, "reason": reason, "requirement": req}
+	if days >= 0 {
+		body["days"] = days
+	}
+	if anyCmd {
+		body["any_command"] = true
+	}
+	if len(allow) > 0 {
+		body["allowed"] = allow
+	}
+	if len(add) > 0 {
+		body["add_allowed"] = add
+	}
+	if len(remove) > 0 {
+		body["remove_allowed"] = remove
+	}
+	if len(projects) > 0 {
+		body["projects"] = projects
+	}
+	if disk {
+		body["disk"] = true
+	} else if noDisk {
+		body["disk"] = false
+	}
+	return body
 }
 
 func secretList(args []string) error {

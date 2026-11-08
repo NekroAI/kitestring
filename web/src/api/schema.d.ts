@@ -532,6 +532,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/secrets/amend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 会话申请修改已有凭据的授权（R-320）：允许的命令、有效期、项目、写入磁盘；进用户的「待处理」，批准前原授权不变 */
+        post: operations["agent-secret-amend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/secrets/request": {
         parameters: {
             query?: never;
@@ -3742,6 +3759,10 @@ export interface components {
             purpose?: string;
         };
         Decision: {
+            /** @description 团队消息（R-319）：消息说的是哪个会话下线 / 不再担任身份 */
+            about_key?: string;
+            /** @description 团队消息（R-319）：那个会话下线时的身份 */
+            about_role?: string;
             answer: string;
             answer_files: components["schemas"]["FileRef"][] | null;
             /** @description 用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent */
@@ -3853,6 +3874,10 @@ export interface components {
             requirements: components["schemas"]["ChainReq"][] | null;
         };
         DecisionRaisedOutBody: {
+            /** @description 团队消息（R-319）：消息说的是哪个会话下线 / 不再担任身份 */
+            about_key?: string;
+            /** @description 团队消息（R-319）：那个会话下线时的身份 */
+            about_role?: string;
             answer: string;
             answer_files: components["schemas"]["FileRef"][] | null;
             /** @description 用户作答时附的一句话理由（可选，R-157）：没选推荐项时为什么；随答复送给提问的 Agent */
@@ -5920,19 +5945,56 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        SecretAmendIn: {
+            /** @description 加上的命令 */
+            add_allowed?: string[] | null;
+            /** @description 改后允许的命令（整份替换）；不写 = 在原来的基础上用 add_allowed / remove_allowed 增删 */
+            allowed?: string[] | null;
+            /** @description 改成不限命令 */
+            any_command?: boolean;
+            /**
+             * Format: int64
+             * @description 改后的有效期（天），从批准时算起；0 = 长期；不写 = 生效中的到期时间不变，已失效 / 已撤回的按 7 天
+             */
+            days?: number;
+            /** @description 改后是否允许写入磁盘；不写 = 不变 */
+            disk?: boolean;
+            /** @description 要改授权的凭据名 */
+            name: string;
+            /** @description 改后的授权项目（项目名或 ID，整份替换）；不写 = 不变 */
+            projects?: string[] | null;
+            /** @description 理由（必填）：为什么要改（例如哪条命令被拒、为什么需要），用户在申请里看到 */
+            reason?: string;
+            /** @description 去掉的命令（要和原来的写法一致，空白不计） */
+            remove_allowed?: string[] | null;
+            /** @description 关联需求 R-x */
+            requirement?: string;
+            session_key: string;
+        };
         SecretAsk: {
             /** @description 这次申请给已有凭据新加的值（环境变量名）；申请被拒绝或撤回时没填的随之去掉 */
             added?: string[] | null;
-            /** @description 要的命令；空 = 没限定 */
+            /** @description 要的命令；空 = 没限定。修改授权申请里是改后的完整列表（空 = 不限命令） */
             allowed: string[] | null;
             /**
              * Format: int64
-             * @description 建议的有效期（天），0 = 长期
+             * @description 建议的有效期（天），0 = 长期；修改授权申请里 -1 = 到期时间不变
              */
             days: number;
+            /** @description 修改授权申请：改后是否允许写入磁盘 */
+            disk?: boolean;
+            /**
+             * @description amend = 修改授权申请；空 = 申请凭据（填值 / 续期 / 补值）
+             * @enum {string}
+             */
+            mode?: "" | "amend";
             /** @description 申请方所在的项目 */
             project_id?: string;
             project_name?: string;
+            /** @description 修改授权申请：改后的授权项目 ID */
+            projects?: string[] | null;
+            /** @description 修改授权申请的理由 */
+            reason?: string;
         };
         SecretAuthIn: {
             /** @description 允许的命令；空 = 不限命令 */
@@ -5997,7 +6059,7 @@ export interface components {
             finished_at?: string;
             id: string;
             /** @enum {string} */
-            kind: "use" | "write" | "request" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke" | "plain" | "sensitive";
+            kind: "use" | "write" | "request" | "amend" | "grant" | "reject" | "create" | "replace" | "edit" | "regrant" | "revoke" | "plain" | "sensitive";
             /** @description 写入磁盘的路径 */
             path?: string;
             /** @description 被拒的原因；拒绝申请时的附言；改敏感标记时是哪个值（显示名） */
@@ -8127,6 +8189,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Agent-list-secretsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-secret-amend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretAmendIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretRequestOutBody"];
                 };
             };
             /** @description Error */

@@ -387,6 +387,8 @@ type secretAuthIn struct {
 func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (store.Secret, error) {
 	before := x.Status
 	pendingReq := x.RequestPending
+	amend := pendingReq && x.Ask.IsAmend() // 修改授权申请（R-320）
+	orig := scopeOf(x)
 	old, err := h.secretValues(x)
 	if err != nil {
 		old = map[string]string{} // 主密钥换了：要求把每个值重新填一遍
@@ -403,7 +405,11 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	if err != nil {
 		return x, huma.Error400BadRequest(err.Error())
 	}
-	if err := checkSecretDays(in.Days); err != nil {
+	if in.Days == secretKeepExpiry {
+		if before != store.SecretActive {
+			return x, huma.Error400BadRequest("凭据「" + x.Name + "」不在生效中，选一个有效期")
+		}
+	} else if err := checkSecretDays(in.Days); err != nil {
 		return x, huma.Error400BadRequest(err.Error())
 	}
 	if x.Cipher, err = h.sealSecret(x.ID, vals); err != nil {
@@ -411,13 +417,20 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 	}
 	n := time.Now()
 	x.Projects, x.Allowed, x.Disk = projects, normAllowed(in.Allowed), in.Disk
-	x.ExpiresAt, x.GrantedAt, x.RevokedAt = secretExpiry(in.Days), &n, nil
+	if in.Days != secretKeepExpiry {
+		x.ExpiresAt = secretExpiry(in.Days)
+	}
+	x.GrantedAt, x.RevokedAt = &n, nil
 	saved, err := h.store.SaveSecret(ctx, x)
 	if err != nil {
 		return x, apiErr(err)
 	}
 	kind := store.SecretLogEdit
 	switch {
+	case amend && (before == store.SecretExpired || before == store.SecretRevoked):
+		kind = store.SecretLogRegrant
+	case amend:
+		kind = store.SecretLogEdit
 	case pendingReq || before == store.SecretPending:
 		kind = store.SecretLogGrant
 	case before == store.SecretExpired || before == store.SecretRevoked:
@@ -429,8 +442,16 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 		}
 	}
 	l := store.SecretLog{SecretID: x.ID, Kind: kind, Days: in.Days}
-	if kind == store.SecretLogGrant && pendingReq {
+	if pendingReq {
 		l.SessionKey = x.RequestedBy // 「申请来自「x」」
+	}
+	var changes []string
+	if amend {
+		next := scopeOf(saved)
+		next.Days = in.Days
+		changes = amendChanges(orig, next)
+		// 改了什么记在时间线上（命令里的已知值隐去）；改动说明里只有授权范围，没有值
+		l.Reason = h.redactText(strings.Join(changes, "；"), sensitiveValues(saved, vals))
 	}
 	if _, err := h.store.AddSecretLog(ctx, l); err != nil {
 		return saved, err
@@ -441,7 +462,11 @@ func (h *Hub) authorize(ctx context.Context, x store.Secret, in secretAuthIn) (s
 		}
 	}
 	if pendingReq {
-		d, err := h.store.AnswerDecisionPoints(ctx, x.RequestID, secretGrantAnswer(saved), nil, nil, "", store.VerdictApproved)
+		answer := secretGrantAnswer(saved)
+		if amend {
+			answer = h.redactText(secretAmendAnswer(saved, changes), sensitiveValues(saved, vals))
+		}
+		d, err := h.store.AnswerDecisionPoints(ctx, x.RequestID, answer, nil, nil, "", store.VerdictApproved)
 		if err != nil {
 			return saved, apiErr(err)
 		}
@@ -830,6 +855,11 @@ func (h *Hub) registerSecretsAgent(api huma.API) {
 		func(ctx context.Context, in *struct{ Body secretRequestIn }) (*secretRequestOut, error) {
 			return h.secretRequest(ctx, in.Body)
 		})
+	huma.Register(api, huma.Operation{OperationID: "agent-secret-amend", Method: http.MethodPost, Path: "/api/agent/secrets/amend", Tags: tag,
+		Summary: "会话申请修改已有凭据的授权（R-320）：允许的命令、有效期、项目、写入磁盘；进用户的「待处理」，批准前原授权不变"},
+		func(ctx context.Context, in *struct{ Body secretAmendIn }) (*secretRequestOut, error) {
+			return h.secretAmend(ctx, in.Body)
+		})
 	huma.Register(api, huma.Operation{OperationID: "agent-list-secrets", Method: http.MethodGet, Path: "/api/agent/secrets", Tags: tag, Summary: "当前项目能用的凭据（没有值）"},
 		func(ctx context.Context, in *struct {
 			SessionKey string `query:"session_key"`
@@ -972,7 +1002,8 @@ func (h *Hub) secretRequest(ctx context.Context, b secretRequestIn) (*secretRequ
 		}
 		if !missing && x.Status == store.SecretActive && secretInProject(x, me.ProjectID) {
 			out.Body.Existing = true
-			out.Body.Message = fmt.Sprintf("凭据「%s」已授权给本项目（%s），不用申请。用 ks secret run %q -- <命令> 运行；命令不在允许范围内时会被拒绝，要扩大范围再申请。", x.Name, secretScope(x), x.Name)
+			out.Body.Message = fmt.Sprintf("凭据「%s」已授权给本项目（%s），不用申请。用 ks secret run %q -- <命令> 运行；命令不在允许范围内时会被拒绝。", x.Name, secretScope(x), x.Name)
+			out.Body.Message += "要改允许的命令、有效期、项目或写入磁盘，用 ks secret amend（MCP secret_amend）申请修改授权。"
 			return out, nil
 		}
 		if x.Purpose == "" {
@@ -1081,15 +1112,15 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pr
 			hint += "（申请 " + x.RequestCode + " 等待处理）"
 		}
 	case x.Status == store.SecretRevoked:
-		deny, hint = secretDenyRevoked, "用户已撤销授权；确实需要时用 ks secret request 重新申请，写明为什么"
+		deny, hint = secretDenyRevoked, fmt.Sprintf("用户已撤销授权；确实需要时用 ks secret amend %q --reason <理由> 申请重新授权，写明为什么", x.Name)
 	case x.Status == store.SecretExpired:
-		deny, hint = secretDenyExpired, "授权已于 "+x.ExpiresAt.Local().Format("01-02 15:04")+" 到期；确实需要时用 ks secret request 重新申请"
+		deny, hint = secretDenyExpired, "授权已于 "+x.ExpiresAt.Local().Format("01-02 15:04")+fmt.Sprintf(" 到期；确实需要时用 ks secret amend %q --days <天数> --reason <理由> 申请重新授权", x.Name)
 	case !secretInProject(x, me.ProjectID):
 		deny, hint = secretDenyProject, fmt.Sprintf("这个凭据只授权给 %s，当前会话在「%s」；需要时用 ks secret request 申请", strings.Join(x.ProjectNames, "、"), me.ProjectName)
 	case write && !x.Disk:
-		deny, hint = secretDenyDisk, "这个凭据没有授权写入磁盘，改用 ks secret run 把值作为命令的环境变量；确实要写文件时重新申请并说明"
+		deny, hint = secretDenyDisk, fmt.Sprintf("这个凭据没有授权写入磁盘，改用 ks secret run 把值作为命令的环境变量；确实要写文件时用 ks secret amend %q --disk --reason <理由> 申请修改授权，不要让用户去凭据页手动改", x.Name)
 	case !write && !commandAllowed(x.Allowed, argv, prog):
-		deny, hint = secretDenyCommand, "允许的命令："+strings.Join(x.Allowed, "、")+"。不要换个写法绕过；确实需要时用 ks secret request 申请扩大范围，写明要运行的命令"
+		deny, hint = secretDenyCommand, "允许的命令："+strings.Join(x.Allowed, "、")+fmt.Sprintf("。不要换个写法绕过；确实需要时用 ks secret amend %q --add-allow <命令> --reason <理由> 申请修改授权（写错的用 --remove-allow 去掉；一个参数里含空格时用 * 代替其中的空格，不要拆成多段），不要让用户去凭据页手动改", x.Name)
 	case openErr != nil:
 		deny, hint = secretDenyUnreadable, openErr.Error()
 	}

@@ -82,3 +82,21 @@ func TestResolveProgram(t *testing.T) {
 		t.Fatal("找不到的命令应报错")
 	}
 }
+
+// R-320：ks secret amend 只发写了的项（没写 = 不改）。
+func TestSecretAmendBody(t *testing.T) {
+	b := secretAmendBody("k", "n", "r", "", -1, false, false, false, nil, []string{"sh -c *"}, []string{"sh -c x"}, nil)
+	if _, ok := b["days"]; ok {
+		t.Fatal("没写 --days 不发 days（到期时间不变）")
+	}
+	if _, ok := b["disk"]; ok {
+		t.Fatal("没写 --disk / --no-disk 不发 disk")
+	}
+	if b["add_allowed"].([]string)[0] != "sh -c *" || b["remove_allowed"].([]string)[0] != "sh -c x" {
+		t.Fatalf("增删命令：%v", b)
+	}
+	b = secretAmendBody("k", "n", "r", "R-1", 0, true, false, true, nil, nil, nil, []string{"p"})
+	if b["days"] != 0 || b["disk"] != false || b["any_command"] != true || b["projects"].([]string)[0] != "p" {
+		t.Fatalf("长期、不允许写入磁盘、不限命令、项目：%v", b)
+	}
+}

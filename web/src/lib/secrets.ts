@@ -151,3 +151,38 @@ export function shownValues(fields: { plain?: boolean; filled?: boolean; value?:
   const filled = fields.filter((f) => f.filled)
   return { plain: filled.filter((f) => f.plain && f.value).map((f) => f.value!), masked: filled.some((f) => !f.plain || !f.value) }
 }
+
+// ---------- 修改授权申请（R-320） ----------
+
+// 有效期取这个值 = 到期时间不变（只在生效中的凭据上可用，后端 secretKeepExpiry）
+export const KEEP_TTL = -1
+
+// isAmend：凭据最近一次申请是修改授权申请（ask.mode = amend）
+export const isAmend = (x?: { ask?: { mode?: string } | null } | null) => x?.ask?.mode === 'amend'
+
+type Scope = { projects: string[]; allowed: string[]; disk: boolean }
+
+export type AuthDiff = {
+  projects?: { added: string[]; removed: string[] }
+  expiry: boolean
+  allowed?: { added: string[]; removed: string[]; kept: string[] }
+  disk: boolean
+}
+
+// authDiff：改前（凭据现在的授权）→ 改后（抽屉里的授权）改了哪几项；没改的项为空 / false。
+export function authDiff(before: Scope, after: Scope & { days: number }): AuthDiff {
+  const minus = (a: string[], b: string[]) => a.filter((v) => !b.includes(v))
+  const pAdd = minus(after.projects, before.projects)
+  const pDel = minus(before.projects, after.projects)
+  const cAdd = minus(after.allowed, before.allowed)
+  const cDel = minus(before.allowed, after.allowed)
+  return {
+    projects: pAdd.length || pDel.length ? { added: pAdd, removed: pDel } : undefined,
+    expiry: after.days !== KEEP_TTL,
+    allowed: cAdd.length || cDel.length ? { added: cAdd, removed: cDel, kept: after.allowed.filter((v) => before.allowed.includes(v)) } : undefined,
+    disk: before.disk !== after.disk,
+  }
+}
+
+// diffEmpty：一项都没改
+export const diffEmpty = (d: AuthDiff) => !d.projects && !d.expiry && !d.allowed && !d.disk

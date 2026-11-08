@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { addCommand, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
+import { addCommand, authDiff, diffEmpty, isAmend, KEEP_TTL, changedPlain, envFromLabel, envOK, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, plainMap, REDACTED, shownValues, splitRedacted, statusCounts, timeLeft, unionCommands, valueHint } from './secrets.ts'
 
 const list = [
   { name: 'Cloudflare 部署', purpose: 'wrangler 部署 Pages', status: 'active', projects: ['p1'], project_names: ['kitestring'] },
@@ -122,4 +122,19 @@ test('凭据页「值」一栏：不敏感的明文列出，有敏感的再画�
   assert.deepEqual(shownValues([{ plain: true, filled: true, value: 'admin' }, { filled: true }]), { plain: ['admin'], masked: true })
   assert.deepEqual(shownValues([{ plain: true, filled: true, value: 'admin' }]), { plain: ['admin'], masked: false })
   assert.deepEqual(shownValues([{ plain: true, filled: false }, { filled: true }]), { plain: [], masked: true })
+})
+
+test('修改授权申请（R-320）：改前 → 改后改了哪几项', () => {
+  const before = { projects: ['p1'], allowed: ['sh -c ./deploy.sh --prod', 'portal whoami'], disk: false }
+  assert.ok(diffEmpty(authDiff(before, { ...before, days: KEEP_TTL })))
+  const d = authDiff(before, { projects: ['p1', 'p2'], allowed: ['portal whoami', 'sh -c *'], disk: true, days: 30 })
+  assert.deepEqual(d.projects, { added: ['p2'], removed: [] })
+  assert.deepEqual(d.allowed, { added: ['sh -c *'], removed: ['sh -c ./deploy.sh --prod'], kept: ['portal whoami'] })
+  assert.equal(d.expiry, true)
+  assert.equal(d.disk, true)
+  assert.ok(!diffEmpty(d))
+  // 改成不限命令：去掉全部
+  assert.deepEqual(authDiff(before, { ...before, allowed: [], days: KEEP_TTL }).allowed, { added: [], removed: before.allowed, kept: [] })
+  assert.ok(isAmend({ ask: { mode: 'amend' } }))
+  assert.ok(!isAmend({ ask: { mode: '' } }) && !isAmend(null))
 })

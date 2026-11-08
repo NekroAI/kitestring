@@ -51,7 +51,7 @@ const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通
 - 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
 - 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图（要试交互的用 option_prototypes 附可交互原型），用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
 - 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
-- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到），用户名、Account ID 这类不是密钥的值标为不敏感（plain / --plain）；用户在纸鸢上填值并授权后结果送到你这里。之后用 shell 命令 ks secret run <凭据> -- <命令> 运行，值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。
+- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到），用户名、Account ID 这类不是密钥的值标为不敏感（plain / --plain）；用户在纸鸢上填值并授权后结果送到你这里。之后用 shell 命令 ks secret run <凭据> -- <命令> 运行，值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。取用因授权范围被拒（命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时，用 secret_amend（或 ks secret amend）申请修改授权，写明要改什么和理由；不要让用户去凭据页手动改，也不要让用户照着你写的命令文本敲。
 - 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开始。计划开始或阶段解锁时，该阶段的需求会指派给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动指派给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
 - 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
   - Claude Code：在后台运行（默认、也最多等 55 分钟，醒来时提示缓存还有效；项目设置可调得更短，--timeout 超过上限按上限截断；后台任务的超时要设得比它长）。主调度 / 主助理 / 开发连续空等累计到项目设置的时长（默认 4 小时）时，醒来会收到写交接下线的指示：handoff_write 写交接后结束本轮，不再挂 ks wait，它结束时你会被唤醒。
@@ -211,12 +211,25 @@ type secretFieldArg struct {
 }
 
 type secretRequestIn struct {
-	Name        string           `json:"name" jsonschema:"凭据名，例如「Cloudflare 部署」；ks secret run 按它取用。已有同名凭据时是对它重新申请（补值、续期、扩大范围）"`
+	Name        string           `json:"name" jsonschema:"凭据名，例如「Cloudflare 部署」；ks secret run 按它取用。已有同名凭据时是对它重新申请（补值、续期）；只改授权范围用 secret_amend"`
 	Purpose     string           `json:"purpose" jsonschema:"用途：拿它做什么，用户在申请里看到"`
 	Fields      []secretFieldArg `json:"fields" jsonschema:"要的每个值；一条凭据可以含多个值（如 API Token 和 Account ID），一起授权、一次取用"`
 	Requirement string           `json:"requirement,omitempty" jsonschema:"关联需求 R-x"`
 	Days        *int             `json:"days,omitempty" jsonschema:"建议的有效期（天），默认 7；0 = 长期"`
 	Allowed     []string         `json:"allowed,omitempty" jsonschema:"建议允许的命令，如 \"wrangler pages deploy *\"（* 单独放最后 = 后面可跟任意参数，放在中间匹配一个参数）；不写 = 不限命令。范围越小越容易获批"`
+}
+
+type secretAmendIn struct {
+	Name          string   `json:"name" jsonschema:"要改授权的凭据名"`
+	Reason        string   `json:"reason" jsonschema:"理由：为什么要改（例如哪条命令被拒、要运行什么），用户在申请里看到"`
+	Requirement   string   `json:"requirement,omitempty" jsonschema:"关联需求 R-x"`
+	AddAllowed    []string `json:"add_allowed,omitempty" jsonschema:"加上的允许命令，如 \"wrangler pages deploy *\""`
+	RemoveAllowed []string `json:"remove_allowed,omitempty" jsonschema:"去掉的允许命令（和原来的写法一致，空白不计）"`
+	Allowed       []string `json:"allowed,omitempty" jsonschema:"改后允许的命令（整份替换）；不写 = 用 add_allowed / remove_allowed 增删"`
+	AnyCommand    bool     `json:"any_command,omitempty" jsonschema:"改成不限命令"`
+	Days          *int     `json:"days,omitempty" jsonschema:"改后的有效期（天），从批准时算起，0 = 长期；不写 = 生效中的到期时间不变，已失效 / 已撤回的按 7 天"`
+	Projects      []string `json:"projects,omitempty" jsonschema:"改后的授权项目（项目名或 ID，完整列表）；不写 = 不变"`
+	Disk          *bool    `json:"disk,omitempty" jsonschema:"改后是否允许写入磁盘；不写 = 不变"`
 }
 
 type reqEditIn struct {
@@ -478,6 +491,34 @@ func (t *tools) register(s *mcp.Server) {
 				body["days"] = *in.Days
 			}
 			if err := t.c.Do(ctx, "POST", "/agent/secrets/request", body, &out); err != nil {
+				return nil, nil, err
+			}
+			return text(out.Message), nil, nil
+		})
+	mcp.AddTool(s, &mcp.Tool{Name: "secret_amend", Description: "申请修改已有凭据的授权（R-320）：取用因授权范围被拒（命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时用它，不要让用户去凭据页手动改。生效中、已失效、已撤回的凭据都能申请；只能改授权给本项目的凭据。可改：允许的命令（add_allowed / remove_allowed 在原来的基础上增删，写错的先去掉再加上对的；allowed 整份替换；any_command 改成不限命令）、有效期（days，从批准时算起，0 = 长期；不写 = 生效中的到期时间不变）、项目（projects，改后的完整列表，项目名或 ID）、写入磁盘（disk）。reason 写清理由（哪条命令被拒、要运行什么）。申请出现在用户的「待处理」，用户看到改前 / 改后，可再调整后保存并授权或拒绝，结果送到你这里；批准前原来的授权照常生效。申请里没有值，不能改值（替换值只能由用户在凭据页做）。允许的命令按空白切成参数逐个比对（* 在参数内匹配任意字符，含空格）；一个参数里含空格时（如 sh -c 后面的整段脚本）用 * 代替其中的空格，例如 \"sh -c printf*wrangler*secret*put*\"，不要把它拆成多段。"},
+		func(ctx context.Context, req *mcp.CallToolRequest, in secretAmendIn) (*mcp.CallToolResult, any, error) {
+			key := t.sessionKey(ctx, req)
+			if key == "" {
+				return nil, nil, fmt.Errorf("无法识别当前会话")
+			}
+			var out struct {
+				Message string `json:"message"`
+			}
+			body := map[string]any{"session_key": key, "name": in.Name, "reason": in.Reason, "requirement": in.Requirement, "any_command": in.AnyCommand,
+				"add_allowed": in.AddAllowed, "remove_allowed": in.RemoveAllowed}
+			if in.Allowed != nil {
+				body["allowed"] = in.Allowed
+			}
+			if in.Projects != nil {
+				body["projects"] = in.Projects
+			}
+			if in.Days != nil {
+				body["days"] = *in.Days
+			}
+			if in.Disk != nil {
+				body["disk"] = *in.Disk
+			}
+			if err := t.c.Do(ctx, "POST", "/agent/secrets/amend", body, &out); err != nil {
 				return nil, nil, err
 			}
 			return text(out.Message), nil, nil

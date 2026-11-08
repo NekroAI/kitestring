@@ -7,7 +7,7 @@ import { api, errMsg, unwrap, type Decision } from '../api/client'
 import { useProjects, useSecret, useSecrets, useSessions, type SecretLog, type SecretView } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { addCommand, changedPlain, isSecretReq, DEFAULT_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
+import { addCommand, authDiff, changedPlain, diffEmpty, isAmend, isSecretReq, DEFAULT_TTL, KEEP_TTL, expiryOf, filledValues, filterSecrets, groupByDay, missingValues, envFromLabel, envOK, plainMap, shownValues, splitRedacted, statusCounts, timeLeft, TTL_DAYS, unionCommands, valueHint } from '../lib/secrets'
 import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Textarea, Tip } from '../ui/base'
 import { Menu, Modal, Panel, useAskReason } from '../ui/overlay'
 import { Md } from '../ui/markdown'
@@ -200,13 +200,16 @@ function Row({ label, children, last }: { label: string; children: ReactNode; la
 }
 
 // AuthFields：项目、有效期（默认 7 天）、允许的命令、写入磁盘。suggest 是会话建议的有效期（申请时才有）。
-function AuthFields({ value, onChange, suggest }: { value: AuthState; onChange: (v: AuthState) => void; suggest?: number }) {
+// keep：可以选「不变」（保留现在的到期时间，R-320 修改授权申请里、凭据生效中时）；at 是现在的到期时间，没有 = 长期。
+function AuthFields({ value, onChange, suggest, keep }: { value: AuthState; onChange: (v: AuthState) => void; suggest?: number; keep?: { at?: string | null } }) {
   const projects = useProjects()
   const [cmd, setCmd] = useState('')
   const list = (projects.data?.projects ?? []).filter((p) => !p.hidden || value.projects.includes(p.id))
   const name = (id: string) => list.find((p) => p.id === id)?.name ?? id
   const set = (p: Partial<AuthState>) => onChange({ ...value, ...p })
-  const at = expiryOf(value.days)
+  const kept = value.days === KEEP_TTL
+  const at = kept ? (keep?.at ? new Date(keep.at) : undefined) : expiryOf(value.days)
+  const ttls = [...(keep ? [{ value: String(KEEP_TTL), label: t.secret.keepTtl }] : []), ...TTL_DAYS.map((d) => ({ value: String(d), label: t.secret.ttl(d) }))]
   const addCmd = () => {
     set({ allowed: addCommand(value.allowed, cmd) })
     setCmd('')
@@ -241,7 +244,7 @@ function AuthFields({ value, onChange, suggest }: { value: AuthState; onChange: 
       </Row>
       <Row label={t.secret.expiry}>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <Segmented size="sm" value={String(value.days)} onChange={(v) => set({ days: Number(v) })} options={TTL_DAYS.map((d) => ({ value: String(d), label: t.secret.ttl(d) }))} />
+          <Segmented size="sm" value={String(value.days)} onChange={(v) => set({ days: Number(v) })} options={ttls} />
           <span className="text-[13px] text-fg-2 tabular">{at ? t.secret.until(dayTime(at.toISOString())) : t.secret.forever}</span>
           {suggest !== undefined && <span className="ml-auto text-xs text-fg-3">{t.secret.suggest(suggest)}</span>}
         </div>
@@ -357,7 +360,7 @@ export function SecretReqLine({ d }: { d: Decision }) {
           <span className="min-w-0 truncate">{d.requirement_title}</span>
         </span>
       )}
-      {x?.ask && <span className="shrink-0 text-fg-3">{t.secret.suggestShort(x.ask.days)}</span>}
+      {x?.ask && <span className="shrink-0 text-fg-3">{isAmend(x) ? t.secret.amendShort : t.secret.suggestShort(x.ask.days)}</span>}
     </span>
   )
 }
@@ -365,6 +368,9 @@ export function SecretReqLine({ d }: { d: Decision }) {
 // initAuth：申请抽屉的初始授权——待填写的用申请里的建议；已有授权的保留原来的项目和命令，再并上这次要的。
 function initAuth(x: SecretView): AuthState {
   const ask = x.ask
+  // 修改授权申请（R-320）：预填会话要的改后授权；到期时间不变只在生效中时可选
+  if (ask && isAmend(x))
+    return { projects: ask.projects?.length ? [...ask.projects] : [...x.projects], days: ask.days === KEEP_TTL && x.status !== 'active' ? DEFAULT_TTL : ask.days, allowed: [...(ask.allowed ?? [])], disk: !!ask.disk }
   const fresh = x.status === 'pending'
   const projects = fresh ? [] : [...x.projects]
   if (ask?.project_id && !projects.includes(ask.project_id)) projects.push(ask.project_id)
@@ -407,11 +413,12 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
   const who = s ? sessionTitle(s) : ''
   const key = decKey(d.code)
   const pend = usePending(key)
+  const amend = isAmend(x) // 修改授权申请（R-320）：没有值可填，显示改前 / 改后
   const save = () => {
     if (pend || !checkAuth(x.fields, values, auth)) return
     const v = values
     const a = auth
-    const p = plain
+    const p = amend ? undefined : plain
     schedule(key, { act: 'pass', scene: 'request', subject: d.code, commit: async () => !!(await ops.authorize(x, a, v, p)) })
   }
   const reject = async () => {
@@ -446,7 +453,7 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
             </button>
           )}
         </div>
-        <Section title={t.secret.purpose}>
+        <Section title={amend ? t.secret.reason : t.secret.purpose}>
           {d.context && <Md text={d.context} className="text-[14px] leading-relaxed text-fg" />}
           {d.requirement_code && (
             <div className="mt-2">
@@ -454,13 +461,20 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
             </div>
           )}
         </Section>
-        <Section title={t.secret.values}>
-          <FieldValues fields={x.fields} values={values} onChange={setValues} plain={plain} onPlain={setPlain} autoFocus />
-        </Section>
+        {amend ? (
+          <Section title={t.secret.change}>
+            <AuthDiffView x={x} auth={auth} />
+          </Section>
+        ) : (
+          <Section title={t.secret.values}>
+            <FieldValues fields={x.fields} values={values} onChange={setValues} plain={plain} onPlain={setPlain} autoFocus />
+          </Section>
+        )}
         <Section title={t.secret.auth}>
-          <AuthFields value={auth} onChange={setAuth} suggest={x.ask?.days} />
+          <AuthFields value={auth} onChange={setAuth} suggest={x.ask?.days} keep={amend && x.status === 'active' ? { at: x.expires_at } : undefined} />
         </Section>
         <Guard />
+        {amend && <p className="-mt-4 pl-6 text-[13px] leading-relaxed text-fg-3">{t.secret.amendGuard}</p>}
       </div>
       <footer className="relative flex shrink-0 items-center gap-3 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-6">
         <Button onClick={() => void reject()} disabled={!!pend}>
@@ -473,6 +487,63 @@ function RequestForm({ d, x, top }: { d: Decision; x: SecretView; top: ReactNode
         </Button>
         <PendingCover k={key} />
       </footer>
+    </div>
+  )
+}
+
+// AuthDiffView：修改授权申请的改前 / 改后（R-320）。改前是凭据现在的授权，改后是抽屉里的授权（随你的调整更新）；只列改了的项。
+function AuthDiffView({ x, auth }: { x: SecretView; auth: AuthState }) {
+  const projects = useProjects()
+  const name = (id: string) => (projects.data?.projects ?? []).find((p) => p.id === id)?.name ?? x.project_names[x.projects.indexOf(id)] ?? id
+  const diff = authDiff(x, auth)
+  if (diffEmpty(diff)) return <p className="text-[13px] text-fg-3">{t.secret.noChange}</p>
+  const at = auth.days === KEEP_TTL ? x.expires_at : expiryOf(auth.days)?.toISOString()
+  const expBefore = x.status === 'revoked' ? t.secret.status.revoked : x.status === 'expired' ? t.secret.expiredAt(dayText(x.expires_at)) : x.expires_at ? t.secret.until(dayTime(x.expires_at)) : t.secret.forever
+  const expAfter = at ? t.secret.until(dayTime(at)) : t.secret.forever
+  const Names = ({ ids, mark, tone }: { ids: string[]; mark: string[]; tone: 'add' | 'del' }) => (
+    <span className="flex flex-wrap gap-1.5">
+      {ids.map((id) => (
+        <span key={id} className={cx('rounded-md px-1.5 text-[13px] leading-6', mark.includes(id) ? (tone === 'add' ? 'bg-run-soft text-run' : 'bg-idle-soft text-fg-3 line-through') : 'text-fg')}>
+          {name(id)}
+        </span>
+      ))}
+    </span>
+  )
+  // 改前 / 改后的命令完整显示（换行，不截断）：去掉的划线，加上的高亮
+  const Cmds = ({ list, mark, tone }: { list: string[]; mark: string[]; tone: 'add' | 'del' }) =>
+    list.length ? (
+      <span className="flex min-w-0 flex-col items-start gap-1.5">
+        {list.map((c) => {
+          const hit = mark.includes(c)
+          return (
+            <span key={c} data-secret-diff={hit ? tone : undefined} className={cx('max-w-full rounded-md px-2 py-0.5 font-mono text-[12px] leading-5 break-all', !hit ? 'bg-sunken text-fg-2' : tone === 'add' ? 'bg-run-soft text-run' : 'bg-idle-soft text-fg-3 line-through')}>
+              {c}
+            </span>
+          )
+        })}
+      </span>
+    ) : (
+      <AnyCmd />
+    )
+  const rows: { label: string; before: ReactNode; after: ReactNode }[] = []
+  if (diff.projects) rows.push({ label: t.secret.project, before: <Names ids={x.projects} mark={diff.projects.removed} tone="del" />, after: <Names ids={auth.projects} mark={diff.projects.added} tone="add" /> })
+  if (diff.expiry) rows.push({ label: t.secret.expiry, before: <span className="text-[13px] text-fg-2 tabular">{expBefore}</span>, after: <span className="text-[13px] text-fg tabular">{expAfter}</span> })
+  if (diff.allowed) rows.push({ label: t.secret.allowed, before: <Cmds list={x.allowed} mark={diff.allowed.removed} tone="del" />, after: <Cmds list={auth.allowed} mark={diff.allowed.added} tone="add" /> })
+  if (diff.disk) rows.push({ label: t.secret.disk, before: <span className="text-[13px] text-fg-2">{x.disk ? t.secret.diskOn : t.secret.diskOff}</span>, after: <span className="text-[13px] text-fg">{auth.disk ? t.secret.diskOn : t.secret.diskOff}</span> })
+  return (
+    <div data-secret-amend="" className="rounded-xl border border-line">
+      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-line px-3 py-2 text-xs font-medium text-fg-3">
+        <span />
+        <span>{t.secret.before}</span>
+        <span>{t.secret.after}</span>
+      </div>
+      {rows.map((r, i) => (
+        <div key={r.label} className={cx('grid grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 px-3 py-2.5', i < rows.length - 1 && 'border-b border-line')}>
+          <span className="pt-0.5 text-[13px] text-fg-2">{r.label}</span>
+          <div className="min-w-0">{r.before}</div>
+          <div className="min-w-0">{r.after}</div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -697,19 +768,22 @@ function dayLabel(iso: string, now: number) {
 
 // changeText：授权变更在时间线上的一句话。
 function changeText(l: SecretLog, x: SecretView) {
-  const ttl = t.secret.ttlText(l.days)
+  // 按修改授权申请改的（R-320）：改了什么（含有效期）跟在后面，这里不再写有效期
+  const ttl = l.reason && (l.kind === 'edit' || l.kind === 'regrant') ? '' : t.secret.ttlText(l.days)
   const who = l.session_title || ''
   switch (l.kind) {
     case 'request':
       return t.secret.log.request(who || l.session_key || '')
+    case 'amend':
+      return t.secret.log.amend(who || l.session_key || '')
     case 'grant':
       return t.secret.log.grant(x.name, ttl, who)
     case 'create':
       return t.secret.log.create(x.name, ttl)
     case 'edit':
-      return t.secret.log.edit(ttl)
+      return t.secret.log.edit(ttl, who || l.session_key || '')
     case 'regrant':
-      return t.secret.log.regrant(ttl)
+      return t.secret.log.regrant(ttl, who || l.session_key || '')
     case 'replace':
       return t.secret.log.replace
     case 'revoke':
@@ -813,6 +887,8 @@ function Records({ logs, x, now }: { logs: SecretLog[]; x: SecretView; now: numb
                             {l.reason}
                           </span>
                         )}
+                        {/* 修改授权申请（R-320）：申请的理由、批准时改了什么 */}
+                        {l.reason && ['amend', 'edit', 'regrant'].includes(l.kind) && <span className="text-fg-3">：{l.reason}</span>}
                       </span>
                     </div>
                   ),

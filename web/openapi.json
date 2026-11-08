@@ -3324,6 +3324,14 @@
       "Decision": {
         "additionalProperties": false,
         "properties": {
+          "about_key": {
+            "description": "团队消息（R-319）：消息说的是哪个会话下线 / 不再担任身份",
+            "type": "string"
+          },
+          "about_role": {
+            "description": "团队消息（R-319）：那个会话下线时的身份",
+            "type": "string"
+          },
           "answer": {
             "type": "string"
           },
@@ -3739,6 +3747,14 @@
       "DecisionRaisedOutBody": {
         "additionalProperties": false,
         "properties": {
+          "about_key": {
+            "description": "团队消息（R-319）：消息说的是哪个会话下线 / 不再担任身份",
+            "type": "string"
+          },
+          "about_role": {
+            "description": "团队消息（R-319）：那个会话下线时的身份",
+            "type": "string"
+          },
           "answer": {
             "type": "string"
           },
@@ -10124,6 +10140,86 @@
         ],
         "type": "object"
       },
+      "SecretAmendIn": {
+        "additionalProperties": false,
+        "properties": {
+          "add_allowed": {
+            "description": "加上的命令",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "allowed": {
+            "description": "改后允许的命令（整份替换）；不写 = 在原来的基础上用 add_allowed / remove_allowed 增删",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "any_command": {
+            "description": "改成不限命令",
+            "type": "boolean"
+          },
+          "days": {
+            "description": "改后的有效期（天），从批准时算起；0 = 长期；不写 = 生效中的到期时间不变，已失效 / 已撤回的按 7 天",
+            "format": "int64",
+            "type": "integer"
+          },
+          "disk": {
+            "description": "改后是否允许写入磁盘；不写 = 不变",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "要改授权的凭据名",
+            "minLength": 1,
+            "type": "string"
+          },
+          "projects": {
+            "description": "改后的授权项目（项目名或 ID，整份替换）；不写 = 不变",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "理由（必填）：为什么要改（例如哪条命令被拒、为什么需要），用户在申请里看到",
+            "type": "string"
+          },
+          "remove_allowed": {
+            "description": "去掉的命令（要和原来的写法一致，空白不计）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "requirement": {
+            "description": "关联需求 R-x",
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "name"
+        ],
+        "type": "object"
+      },
       "SecretAsk": {
         "additionalProperties": false,
         "properties": {
@@ -10138,7 +10234,7 @@
             ]
           },
           "allowed": {
-            "description": "要的命令；空 = 没限定",
+            "description": "要的命令；空 = 没限定。修改授权申请里是改后的完整列表（空 = 不限命令）",
             "items": {
               "type": "string"
             },
@@ -10148,15 +10244,41 @@
             ]
           },
           "days": {
-            "description": "建议的有效期（天），0 = 长期",
+            "description": "建议的有效期（天），0 = 长期；修改授权申请里 -1 = 到期时间不变",
             "format": "int64",
             "type": "integer"
+          },
+          "disk": {
+            "description": "修改授权申请：改后是否允许写入磁盘",
+            "type": "boolean"
+          },
+          "mode": {
+            "description": "amend = 修改授权申请；空 = 申请凭据（填值 / 续期 / 补值）",
+            "enum": [
+              "",
+              "amend"
+            ],
+            "type": "string"
           },
           "project_id": {
             "description": "申请方所在的项目",
             "type": "string"
           },
           "project_name": {
+            "type": "string"
+          },
+          "projects": {
+            "description": "修改授权申请：改后的授权项目 ID",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "修改授权申请的理由",
             "type": "string"
           }
         },
@@ -10315,6 +10437,7 @@
               "use",
               "write",
               "request",
+              "amend",
               "grant",
               "reject",
               "create",
@@ -15002,6 +15125,47 @@
           }
         },
         "summary": "当前项目能用的凭据（没有值）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/secrets/amend": {
+      "post": {
+        "operationId": "agent-secret-amend",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretAmendIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretRequestOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话申请修改已有凭据的授权（R-320）：允许的命令、有效期、项目、写入磁盘；进用户的「待处理」，批准前原授权不变",
         "tags": [
           "agent"
         ]
