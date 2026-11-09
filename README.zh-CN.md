@@ -136,3 +136,5 @@ Kitestring 只使用 Claude Code / Codex 官方文档化的扩展点：不碰登
 ## 许可证
 
 [AGPL-3.0-or-later](LICENSE)
+
+<sub>感谢 [LINUX DO](https://linux.do) 社区。</sub>

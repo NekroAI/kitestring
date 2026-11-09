@@ -136,3 +136,5 @@ Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 [AGPL-3.0-or-later](LICENSE)
+
+<sub>Thanks to the [LINUX DO](https://linux.do) community.</sub>
