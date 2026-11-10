@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -197,10 +198,32 @@ func openHubStore(data string) (*store.Store, error) {
 	return store.Open(data)
 }
 
+// hubSubcommands 是 ks hub 认的子命令，按帮助里的顺序；未知子命令的报错列出它们
+var hubSubcommands = []string{"serve", "passwd", "device-add", "device-revoke", "device-rm", "openapi"}
+
+// hubAliases 是子命令的别名：password 是更常见的写法（R-329）
+var hubAliases = map[string]string{"password": "passwd"}
+
+// hubSubcommand 把别名换成正式子命令，不认识的返回带可用列表的错误
+func hubSubcommand(sub string) (string, error) {
+	if s, ok := hubAliases[sub]; ok {
+		sub = s
+	}
+	if !slices.Contains(hubSubcommands, sub) {
+		return "", fmt.Errorf("未知的 hub 子命令：%s（可用：%s）", sub, strings.Join(hubSubcommands, "、"))
+	}
+	return sub, nil
+}
+
 func runHub(args []string) error {
 	sub := "serve"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		sub, args = args[0], args[1:]
+	}
+	// 先认子命令再开数据库：敲错时不必碰数据库
+	sub, err := hubSubcommand(sub)
+	if err != nil {
+		return err
 	}
 	fs := flag.NewFlagSet("hub", flag.ContinueOnError)
 	addr := fs.String("addr", "0.0.0.0:7310", "监听地址")
