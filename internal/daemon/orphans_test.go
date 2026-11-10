@@ -3,8 +3,8 @@ package daemon
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 
@@ -100,7 +100,16 @@ func spawn(t *testing.T, args ...string) (*exec.Cmd, string) {
 }
 
 func alive(cmd *exec.Cmd) bool {
-	return cmd.ProcessState == nil && cmd.Process.Signal(syscall.Signal(0)) == nil
+	_, _, _, ok := procQuery(cmd.Process.Pid)
+	return cmd.ProcessState == nil && ok
+}
+
+// sleeper 是一个睡五分钟的命令（Windows 没有 sleep，用 ping 代替）。
+func sleeper() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"ping", "-n", "300", "127.0.0.1"}
+	}
+	return []string{"sleep", "300"}
 }
 
 func stopDaemon(t *testing.T) *Daemon {
@@ -116,22 +125,25 @@ const goneAgent = "99999@Mon Jan 1 00:00:00 2001"
 // 孤儿：先 SIGTERM，退出后写进记录。
 func TestStopOrphan(t *testing.T) {
 	d := stopDaemon(t)
-	cmd, start := spawn(t, "sleep", "300")
+	cmd, start := spawn(t, sleeper()...)
 	pid := cmd.Process.Pid
 	d.q.procsAdd(time.Now(), []procRec{{pid: pid, start: start, key: "claude:dead", agent: goneAgent, source: "env"}})
 	res := d.stopProc(protocol.StopProc{Pid: pid, Start: start})
-	if res.Result != protocol.StopExited || res.Signal != "SIGTERM" {
+	if res.Result != protocol.StopExited || res.Signal != stopSignalName {
 		t.Fatalf("应 SIGTERM 后退出：%+v", res)
 	}
 	var sig, result string
 	_ = d.q.db.QueryRow(`SELECT stop_signal, stop_result FROM bg_procs WHERE pid = ?`, pid).Scan(&sig, &result)
-	if sig != "SIGTERM" || result != protocol.StopExited {
+	if sig != stopSignalName || result != protocol.StopExited {
 		t.Fatalf("停止结果没写进记录：%q %q", sig, result)
 	}
 }
 
 // 不理 SIGTERM 的：回报仍在运行，确认后 SIGKILL。
 func TestStopForce(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 没有信号，结束进程不能被忽略")
+	}
 	d := stopDaemon(t)
 	cmd, start := spawn(t, "sh", "-c", `trap "" TERM; sleep 300`)
 	pid := cmd.Process.Pid
@@ -150,8 +162,8 @@ func TestStopForce(t *testing.T) {
 func TestStopRefusesUnverified(t *testing.T) {
 	d := stopDaemon(t)
 	var signalled []int
-	d.orph.kill = func(pid int, sig syscall.Signal) error { signalled = append(signalled, pid); return nil }
-	cmd, start := spawn(t, "sleep", "300")
+	d.orph.kill = func(pid int, force bool) error { signalled = append(signalled, pid); return nil }
+	cmd, start := spawn(t, sleeper()...)
 	pid := cmd.Process.Pid
 	// 没记过的进程（不是会话开出来的）
 	if res := d.stopProc(protocol.StopProc{Pid: pid, Start: start}); res.Result != protocol.StopRefused {
@@ -179,7 +191,7 @@ func TestStopRefusesUnverified(t *testing.T) {
 func TestStopRefusesLiveSession(t *testing.T) {
 	d := stopDaemon(t)
 	var signalled []int
-	d.orph.kill = func(pid int, sig syscall.Signal) error { signalled = append(signalled, pid); return nil }
+	d.orph.kill = func(pid int, force bool) error { signalled = append(signalled, pid); return nil }
 	ps, err := listProcs()
 	if err != nil {
 		t.Skip("没有 ps")
@@ -190,7 +202,7 @@ func TestStopRefusesLiveSession(t *testing.T) {
 			self = strconv.Itoa(p.pid) + "@" + p.start
 		}
 	}
-	cmd, start := spawn(t, "sleep", "300")
+	cmd, start := spawn(t, sleeper()...)
 	pid := cmd.Process.Pid
 	// 把本测试进程当作开它的 Agent：Agent 还在、sleep 还挂在它下面
 	d.q.procsAdd(time.Now(), []procRec{{pid: pid, start: start, key: "claude:live", agent: self, source: "shell"}})

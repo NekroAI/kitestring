@@ -42,6 +42,8 @@ type Options struct {
 	Codex  bool
 	Daemon bool // 注册 daemon 常驻服务
 	Hub    bool // 注册 hub 常驻服务
+	// NoAutostart：Windows 上注册服务但不随登录启动（任务计划程序不加登录触发器）
+	NoAutostart bool
 	// ClaudeDirs 是命令行指定的 Claude 配置目录（R-240）；安装时并入本机记录，卸载时只处理这些（为空则处理全部）
 	ClaudeDirs []profile.Dir
 	Status     bool // 只列出各配置目录的接入状态
@@ -133,6 +135,38 @@ func hookCommand(ks, tool, event string) string {
 	return fmt.Sprintf("%s hook %s %s", shellQuote(ks), tool, event)
 }
 
+// hookGOOS 是写 hook 时按哪个系统的写法（测试里替换）。
+var hookGOOS = runtime.GOOS
+
+// hookEntry 是一条 ks 的 hook。macOS / Linux 写成一行 shell 命令。
+// Windows 上 Claude Code 优先用 Git Bash 跑命令、没有时用 PowerShell，两者对路径和引号的规则不同：
+// 写成 command（程序）加 args（参数），Claude Code 直接启动程序、不经过 shell。
+// Codex 在 Windows 上用 cmd 跑 hook 命令：按 Windows 规则给路径加引号。
+func hookEntry(ks, tool, event string) map[string]any {
+	h := map[string]any{"type": "command", "timeout": 5}
+	switch {
+	case hookGOOS == "windows" && tool == "claude":
+		h["command"], h["args"] = ks, []any{"hook", tool, event}
+	case hookGOOS == "windows":
+		h["command"] = fmt.Sprintf("%s hook %s %s", winQuote(ks), tool, event)
+	default:
+		h["command"] = hookCommand(ks, tool, event)
+	}
+	return h
+}
+
+// hookLine 把一条 hook 拼回一行（command 后面接上 args），用来认是不是 ks 写的、是不是最新的写法。
+func hookLine(hm map[string]any) string {
+	line, _ := hm["command"].(string)
+	args, _ := hm["args"].([]any)
+	for _, a := range args {
+		if s, ok := a.(string); ok {
+			line += " " + s
+		}
+	}
+	return line
+}
+
 func shellQuote(s string) string {
 	if regexp.MustCompile(`^[A-Za-z0-9_./-]+$`).MatchString(s) {
 		return s
@@ -160,7 +194,7 @@ func mergeHooks(root map[string]any, ks, tool string, events []string, remove bo
 			var keptInner []any
 			for _, hk := range inner {
 				hm, _ := hk.(map[string]any)
-				if c, _ := hm["command"].(string); isOurs(c, tool) {
+				if isOurs(hookLine(hm), tool) {
 					continue
 				}
 				keptInner = append(keptInner, hk)
@@ -179,7 +213,7 @@ func mergeHooks(root map[string]any, ks, tool string, events []string, remove bo
 	if !remove {
 		for _, ev := range events {
 			list, _ := hooks[ev].([]any)
-			entry := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": hookCommand(ks, tool, ev), "timeout": 5}}}
+			entry := map[string]any{"hooks": []any{hookEntry(ks, tool, ev)}}
 			hooks[ev] = append(list, entry)
 		}
 	}
@@ -418,13 +452,15 @@ func codexMCP(o Options, home string, remove bool) error {
 	return writeFile(o, path, []byte(content), 0o600)
 }
 
-// service 注册常驻服务：macOS 用 launchd，Linux 用 systemd --user。
+// service 注册常驻服务：macOS 用 launchd，Linux 用 systemd --user，Windows 用任务计划程序（见 schtasks.go）。
 func service(o Options, home, role string, argv []string, remove bool) error {
 	switch runtime.GOOS {
 	case "darwin":
 		return launchd(o, home, role, argv, remove)
 	case "linux":
 		return systemd(o, home, role, argv, remove)
+	case "windows":
+		return schtask(o, home, role, argv, remove)
 	default:
 		return fmt.Errorf("暂不支持 %s 的常驻服务，请手动运行：%s", runtime.GOOS, strings.Join(argv, " "))
 	}

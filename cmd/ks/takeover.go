@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 
 	"github.com/NekroAI/kitestring/internal/roles"
 )
@@ -40,7 +39,7 @@ func runTakeover(args []string) error {
 		return fmt.Errorf("找不到 %s：先安装，或用 --tool 换一个工具", argv[0])
 	}
 	fmt.Fprintf(os.Stderr, "[Kitestring] 在 %s 启动新的 %s 会话，接任%s。\n", mustWd(), argv[0], roles.Display(role))
-	return syscall.Exec(bin, argv, os.Environ())
+	return execReplace(bin, argv)
 }
 
 // takeoverArgv：启动新会话的命令行（第一个参数是首条消息）。

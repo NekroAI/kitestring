@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -12,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -83,6 +85,9 @@ func serve(t *testing.T, r release) *httptest.Server {
 // setup 在临时目录放一个旧版 ks，返回它的路径。
 func setup(t *testing.T) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("假 ks 是 sh 脚本；Windows 的替换见 TestUpdateWindowsZip")
+	}
 	exe := filepath.Join(t.TempDir(), "ks")
 	if err := os.WriteFile(exe, []byte(oldScript), 0o755); err != nil {
 		t.Fatal(err)
@@ -224,6 +229,9 @@ func TestFailuresKeepOldBinary(t *testing.T) {
 }
 
 func TestRenameFailureKeepsOld(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假 ks 是 sh 脚本")
+	}
 	s := serve(t, release{tag: "v0.3.0", script: "#!/bin/sh\necho 'ks 0.3.0 (new)'\n"})
 	// 让目标是一个非空目录：rename 必然失败
 	dir := t.TempDir()
@@ -276,8 +284,80 @@ func TestNetworkFailure(t *testing.T) {
 }
 
 func TestUnsupportedPlatform(t *testing.T) {
-	err := Run(context.Background(), Options{Current: "0.2.0", GOOS: "windows", GOARCH: "amd64"})
+	err := Run(context.Background(), Options{Current: "0.2.0", GOOS: "freebsd", GOARCH: "amd64"})
 	if err == nil || !strings.Contains(err.Error(), "暂不支持") {
 		t.Fatal(err)
+	}
+}
+
+// TestMain：测试程序带 KS_FAKE_VERSION 运行时充当发布包里的 ks.exe（ks version 打印这个版本）。
+func TestMain(m *testing.M) {
+	if v := os.Getenv("KS_FAKE_VERSION"); v != "" && len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Printf("ks %s (fake)\n", v)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+// Windows 的发布包是 zip（包内 ks.exe）；正在运行的 ks.exe 不能覆盖，先挪成 .old-* 再换上，没人用时当场删掉。
+// 用 GOOS=windows 的流程跑，任何系统上都能测；假 ks.exe 是测试程序自己。
+func TestUpdateWindowsZip(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("ks.exe")
+	w.Write(bin)
+	w, _ = zw.Create("LICENSE")
+	w.Write([]byte("MIT"))
+	zw.Close()
+	pkg := buf.Bytes()
+	sum := sha256.Sum256(pkg)
+	name := "kitestring-0.3.0-windows-amd64.zip"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/NekroAI/kitestring/releases/latest", func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, "/NekroAI/kitestring/releases/tag/v0.3.0", http.StatusFound)
+	})
+	mux.HandleFunc("/NekroAI/kitestring/releases/download/v0.3.0/SHA256SUMS.txt", func(w http.ResponseWriter, req *http.Request) {
+		fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), name)
+	})
+	mux.HandleFunc("/NekroAI/kitestring/releases/download/v0.3.0/"+name, func(w http.ResponseWriter, req *http.Request) { w.Write(pkg) })
+	s := httptest.NewServer(mux)
+	defer s.Close()
+	t.Setenv("KS_FAKE_VERSION", "0.3.0")
+
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ks.exe")
+	if err := os.WriteFile(exe, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := exe + ".old-1"
+	if err := os.WriteFile(stale, []byte("older"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	var restarted string
+	o := Options{Base: s.URL, Current: "0.2.0", Exe: exe, GOOS: "windows", GOARCH: "amd64", Out: &out,
+		Restart: func(e string) error { restarted = e; return nil }}
+	if err := Run(context.Background(), o); err != nil {
+		t.Fatal(err, out.String())
+	}
+	got, _ := os.ReadFile(exe)
+	if !bytes.Equal(got, bin) || restarted != exe {
+		t.Fatalf("没换成新版或没重启：%d 字节，重启 %q", len(got), restarted)
+	}
+	ents, _ := os.ReadDir(dir)
+	if len(ents) != 1 {
+		var names []string
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("应只剩 ks.exe（旧文件、上次留下的 .old-*、临时文件都清掉）：%v", names)
 	}
 }

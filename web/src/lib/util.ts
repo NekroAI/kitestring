@@ -140,12 +140,7 @@ export function usePref<T>(key: string, fallback: T): [T, (v: T) => void] {
 
 // ---------- 文本 ----------
 
-// shortPath 把家目录替换为 ~，过长时保留末尾。
-export function shortPath(p: string, max = 48): string {
-  let s = p.replace(/^\/(Users|home)\/[^/]+/, '~')
-  if (s.length > max) s = '…' + s.slice(s.length - max + 1)
-  return s
-}
+export { pathBase, shortPath } from './paths'
 
 // shortRemote：github.com/owner/repo → owner/repo
 export function shortRemote(r: string): string {

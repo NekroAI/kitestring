@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +23,7 @@ type fakeDaemon struct {
 
 func startFakeDaemon(t *testing.T) *fakeDaemon {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "ks279")
+	dir, err := os.MkdirTemp(sockTmp(), "ks279")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,4 +126,12 @@ func TestStrayOptionsRejected(t *testing.T) {
 	if len(d.reqs) != 0 {
 		t.Fatalf("报错的命令不该发出请求：%v", d.path)
 	}
+}
+
+// sockTmp 是放 unix socket 的临时目录：路径要短，放 /tmp；Windows 没有 /tmp，用系统临时目录（长度够用）。
+func sockTmp() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "/tmp"
 }

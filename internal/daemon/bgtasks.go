@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -220,46 +219,6 @@ type proc struct {
 	rss       int64   // 常驻内存（KB）
 }
 
-// listProcs 读一次本机进程表。
-func listProcs() ([]proc, error) {
-	cmd := exec.Command("ps", "-A", "-ww", "-o", "pid=,ppid=,%cpu=,rss=,stat=,lstart=,etime=,command=")
-	cmd.Env = psEnv()
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	var ps []proc
-	for _, line := range strings.Split(string(out), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 12 { // pid ppid %cpu rss stat lstart（5 段）etime 命令
-			continue
-		}
-		if strings.HasPrefix(f[4], "Z") {
-			continue // 僵尸进程已经退出，只是父进程还没收尸
-		}
-		pid, err1 := strconv.Atoi(f[0])
-		ppid, err2 := strconv.Atoi(f[1])
-		if err1 != nil || err2 != nil {
-			continue
-		}
-		cpu, _ := strconv.ParseFloat(f[2], 64)
-		rss, _ := strconv.ParseInt(f[3], 10, 64)
-		ps = append(ps, proc{pid: pid, ppid: ppid, cpu: cpu, rss: rss, start: strings.Join(f[5:10], " "), age: parseEtime(f[10]), cmd: strings.Join(f[11:], " ")})
-	}
-	return ps, nil
-}
-
-// psEnv：启动时间按 C 的格式写（lstart 的段数固定），命令行按 UTF-8 原样输出（C 下中文会被转义成 M-x，对不上调用，R-208）。
-func psEnv() []string {
-	env := make([]string, 0, len(os.Environ())+3)
-	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "LC_ALL=") && !strings.HasPrefix(kv, "LC_TIME=") && !strings.HasPrefix(kv, "LC_CTYPE=") {
-			env = append(env, kv)
-		}
-	}
-	return append(env, "LC_TIME=C", "LC_CTYPE=en_US.UTF-8")
-}
-
 // parseEtime 解析 ps 的 etime（[[dd-]hh:]mm:ss）。
 func parseEtime(s string) time.Duration {
 	days := 0
@@ -282,23 +241,41 @@ var (
 	claudeEvalRe = regexp.MustCompile(`eval '((?:[^']|'\\'')*)'`)
 )
 
-// isShellProc：命令是 sh / bash / zsh / fish / dash 带 -c（Claude Code 与 Codex 都这样跑命令）。
+// isShellProc：命令是 sh / bash / zsh / fish / dash 带 -c（Claude Code 与 Codex 都这样跑命令），
+// 或 Windows 上的 PowerShell 带 -Command、cmd 带 /c。
 func isShellProc(cmd string) bool {
 	f := strings.Fields(cmd)
 	if len(f) < 2 {
 		return false
 	}
-	switch strings.TrimPrefix(filepath.Base(f[0]), "-") {
-	case "sh", "bash", "zsh", "fish", "dash":
+	switch progName(f[0]) {
+	case "sh", "bash", "zsh", "fish", "dash", "powershell", "pwsh", "cmd":
 	default:
 		return false
 	}
-	for _, a := range f[1:min(3, len(f))] {
-		if strings.HasPrefix(a, "-") && strings.Contains(a, "c") {
+	for _, a := range f[1:min(4, len(f))] {
+		if isCommandFlag(a) {
 			return true
 		}
 	}
 	return false
+}
+
+// progName 是命令行第一段的程序名：去掉目录（/ 与 \ 都认）、登录 shell 的前导 -、Windows 的 .exe。
+func progName(arg0 string) string {
+	if i := strings.LastIndexAny(arg0, `/\`); i >= 0 {
+		arg0 = arg0[i+1:]
+	}
+	arg0 = strings.TrimPrefix(arg0, "-")
+	if len(arg0) > 4 && strings.EqualFold(arg0[len(arg0)-4:], ".exe") {
+		arg0 = arg0[:len(arg0)-4]
+	}
+	return strings.ToLower(arg0)
+}
+
+// isCommandFlag：shell 后面跟命令的开关（-c、-lc、PowerShell 的 -Command、cmd 的 /c）。
+func isCommandFlag(a string) bool {
+	return strings.HasPrefix(a, "-") && strings.Contains(strings.ToLower(a), "c") || strings.EqualFold(a, "/c")
 }
 
 // procLabel 从 shell 进程的命令行里取出真正执行的命令。
@@ -308,7 +285,7 @@ func procLabel(cmd string) string {
 	}
 	f := strings.Fields(cmd)
 	for i, a := range f {
-		if i > 0 && strings.HasPrefix(a, "-") && strings.Contains(a, "c") {
+		if i > 0 && isCommandFlag(a) {
 			return strings.Join(f[i+1:], " ")
 		}
 	}

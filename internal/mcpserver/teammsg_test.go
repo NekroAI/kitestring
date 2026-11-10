@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +23,7 @@ import (
 // R-249 P3：MCP 的 team_tell 与旧名 pm_notify 参数一致、发的请求一模一样；team_broadcast / team_sent 与 ks team broadcast / sent
 // 走同一接口；发送方只认调用带的会话身份（meta），参数里没有能指定发送方的字段。
 func TestTeamMessagingTools(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "ks-mcp-") // unix socket 路径要短
+	dir, err := os.MkdirTemp(sockTmp(), "ks-mcp-") // unix socket 路径要短
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,4 +124,12 @@ func TestTeamMessagingTools(t *testing.T) {
 	if calls[3].Method != "GET" || calls[3].Path != "/agent/team/sent?ref=D-9&session_key=dsh%3Ame" {
 		t.Fatalf("team_sent 请求：%+v", calls[3])
 	}
+}
+
+// sockTmp 是放 unix socket 的临时目录：路径要短，放 /tmp；Windows 没有 /tmp，用系统临时目录（长度够用）。
+func sockTmp() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "/tmp"
 }

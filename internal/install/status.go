@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/NekroAI/kitestring/internal/profile"
 )
@@ -55,7 +56,7 @@ func status(o Options, home string) error {
 				fmt.Fprintln(o.Out, "  相对 ~/.claude 没有缺少用户级 CLAUDE.md / agents / skills")
 			}
 			for _, m := range missing {
-				fmt.Fprintf(o.Out, "  ! 缺少 %s（~/.claude 里有；想共用可自行软链接：ln -s ~/.claude/%s %s）\n", m, m, filepath.Join(d, m))
+				fmt.Fprintf(o.Out, "  ! 缺少 %s（~/.claude 里有；想共用可自行%s）\n", m, linkHint(profile.DefaultDir(home), d, m))
 			}
 		}
 	}
@@ -83,9 +84,9 @@ func dirStatus(ks, home, dir string) DirStatus {
 			inner, _ := gm["hooks"].([]any)
 			for _, hk := range inner {
 				hm, _ := hk.(map[string]any)
-				if c, _ := hm["command"].(string); isOurs(c, "claude") {
+				if c := hookLine(hm); isOurs(c, "claude") {
 					found = true
-					if c == hookCommand(ks, "claude", ev) {
+					if c == hookLine(hookEntry(ks, "claude", ev)) {
 						fresh = true
 					}
 				}
@@ -112,6 +113,18 @@ func dirStatus(ks, home, dir string) DirStatus {
 		st.MCPStale = sv["command"] != ks
 	}
 	return st
+}
+
+// linkHint 是把 ~/.claude 里的 name 链接到 dir 的命令。Windows 上目录用 mklink /J（不需要管理员），
+// 文件的符号链接要开发者模式或管理员。
+func linkHint(def, dir, name string) string {
+	if runtime.GOOS == "windows" {
+		if name == "CLAUDE.md" {
+			return fmt.Sprintf("建链接（需开发者模式或管理员）：cmd /c mklink %s %s", winQuote(filepath.Join(dir, name)), winQuote(filepath.Join(def, name)))
+		}
+		return fmt.Sprintf("建链接：cmd /c mklink /J %s %s", winQuote(filepath.Join(dir, name)), winQuote(filepath.Join(def, name)))
+	}
+	return fmt.Sprintf("软链接：ln -s ~/.claude/%s %s", name, filepath.Join(dir, name))
 }
 
 // missingFromDefault 列出 ~/.claude 里有、这个目录里没有的用户级 CLAUDE.md / agents / skills。

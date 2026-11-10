@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -140,7 +139,7 @@ func (h *Hub) enrichOrphan(ctx context.Context, x *Orphan) {
 		x.ProjectID, x.ProjectName = h.store.ProjectForPath(ctx, x.DeviceID, x.Cwd)
 	}
 	if x.ProjectName == "" && x.Cwd != "" {
-		x.ProjectName = filepath.Base(x.Cwd)
+		x.ProjectName = protocol.PathBase(x.Cwd)
 	}
 }
 

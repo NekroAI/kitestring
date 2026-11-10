@@ -13,6 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -130,11 +131,17 @@ func matchCommand(pat, argv []string, prog program) bool {
 	if len(pat) == 0 || len(argv) == 0 {
 		return false
 	}
-	if strings.Contains(pat[0], "/") {
-		if !wildMatch(pat[0], prog.path) {
+	win := isWinPath(prog.path)
+	if strings.ContainsAny(pat[0], `/\`) {
+		if win {
+			// Windows 路径不分大小写，/ 与 \ 等同
+			if !wildMatch(winPathKey(pat[0]), winPathKey(prog.path)) {
+				return false
+			}
+		} else if !wildMatch(pat[0], prog.path) {
 			return false
 		}
-	} else if !prog.viaPath || !wildMatch(pat[0], filepath.Base(prog.path)) {
+	} else if !prog.viaPath || !matchProgName(pat[0], prog.path, win) {
 		return false
 	}
 	pat, argv = pat[1:], argv[1:]
@@ -147,6 +154,37 @@ func matchCommand(pat, argv []string, prog program) bool {
 		}
 	}
 	return len(argv) == len(pat)
+}
+
+// isWinPath：设备上解析出的是 Windows 路径（C:\… 或 \\server\…）。Hub 可能跑在别的系统上，不能按本机规则拆。
+func isWinPath(p string) bool {
+	return len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/') || strings.HasPrefix(p, `\\\\`)
+}
+
+func winPathKey(p string) string { return strings.ToLower(strings.ReplaceAll(p, "/", `\`)) }
+
+// winExts 是 Windows 上按 PATH 找到的可执行文件后缀：允许规则写 wrangler 也认 wrangler.cmd。
+var winExts = []string{".exe", ".cmd", ".bat", ".com"}
+
+// matchProgName：裸程序名对解析出的路径的最后一段。Windows 路径不分大小写，并且可以省掉可执行文件后缀。
+func matchProgName(pat, path string, win bool) bool {
+	if !win {
+		return wildMatch(pat, filepath.Base(path))
+	}
+	base := path
+	if i := strings.LastIndexAny(base, `/\`); i >= 0 {
+		base = base[i+1:]
+	}
+	pat, base = strings.ToLower(pat), strings.ToLower(base)
+	if wildMatch(pat, base) {
+		return true
+	}
+	for _, ext := range winExts {
+		if strings.HasSuffix(base, ext) && wildMatch(pat, strings.TrimSuffix(base, ext)) {
+			return true
+		}
+	}
+	return false
 }
 
 // wildMatch：「*」匹配任意字符（含 /），其余逐字相等。
@@ -1185,7 +1223,7 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pr
 		return nil, apiErr(err)
 	}
 	write := path != ""
-	if write && !filepath.IsAbs(path) {
+	if write && !protocol.IsAbsPath(path) {
 		return nil, huma.Error400BadRequest("写入路径要用绝对路径")
 	}
 	if !write && len(argv) == 0 {
@@ -1194,7 +1232,7 @@ func (h *Hub) secretUse(ctx context.Context, key, name string, argv []string, pr
 	if !write {
 		if prog.path == "" { // 旧版 ks 没上报解析结果：按命令里写的判
 			prog = program{path: argv[0], viaPath: !strings.Contains(argv[0], "/")}
-		} else if !filepath.IsAbs(prog.path) {
+		} else if !protocol.IsAbsPath(prog.path) {
 			return nil, huma.Error400BadRequest("程序路径要用绝对路径")
 		}
 		argv = append([]string{prog.path}, argv[1:]...) // 记录写实际运行的程序

@@ -68,6 +68,7 @@ func openTemp(t *testing.T) (*Store, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() }) // Windows 上没关的数据库文件删不掉
 	return st, p
 }
 
@@ -135,6 +136,7 @@ func TestLaneLiveAndBackfillAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { re.Close() })
 	back, err := re.Lanes(ctx, base.Add(-time.Hour), time.Now().Add(time.Minute), false)
 	if err != nil {
 		t.Fatal(err)

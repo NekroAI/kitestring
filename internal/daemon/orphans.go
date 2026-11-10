@@ -1,18 +1,12 @@
 package daemon
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -23,7 +17,7 @@ import (
 //
 // 怎么认“会话开过的后台进程”，两路：
 //  1. Claude Code 给每条命令的环境里都放了 CLAUDE_PID（Agent 进程号）和 CLAUDE_CODE_SESSION_ID：
-//     daemon 读进程环境（macOS 用 ps -E，Linux 读 /proc/<pid>/environ），能认出所有由 Claude Code 开出来的进程，
+//     daemon 读进程环境（macOS 用 ps -E，Linux 读 /proc/<pid>/environ，Windows 读进程的 PEB），能认出所有由 Claude Code 开出来的进程，
 //     包括 daemon 启动前、本功能上线前就开着的。
 //  2. Codex 的命令环境里没有这类标记：扫后台任务（R-162）时，把会话下面的后台 shell 和它的子孙按 pid + 启动时间记进 daemon.db。
 //
@@ -32,7 +26,7 @@ import (
 // 其余（还挂在 Agent 下面的）是正常运行的，不列出、不给停。
 //
 // 停止只经 Hub 转来，daemon 当场重扫一遍：只停 daemon.db 里记过的、此刻判定为残留进程或已脱离的、pid 和启动时间都对得上的进程树；
-// 其他一律拒绝，不按裸 pid 发信号。先 SIGTERM，几秒不退回报“仍在运行”，用户再确认才 SIGKILL。
+// 其他一律拒绝，不按裸 pid 发信号。先 SIGTERM，几秒不退回报“仍在运行”，用户再确认才 SIGKILL（Windows 没有信号，两次都是结束进程）。
 //
 // 覆盖不到的：Codex 在 app-server / 桌面 App 里跑（一个进程承载多个会话，R-162 本来就不认）；
 // Codex 前台命令里用 & / nohup 甩出去、shell 当场就退出的进程（来不及在后台 shell 下面看到）；
@@ -52,7 +46,7 @@ type orphanState struct {
 	// 测试里替换：读进程表、读进程环境、发信号、等待时长
 	snap  func() ([]proc, error)
 	envs  func([]proc) map[int]procEnv
-	kill  func(pid int, sig syscall.Signal) error
+	kill  func(pid int, force bool) error
 	grace time.Duration
 }
 
@@ -239,63 +233,31 @@ var ksDaemonRe = regexp.MustCompile(`(^|/)ks\s+daemon\b`)
 
 func isKsDaemon(cmd string) bool { return ksDaemonRe.MatchString(cmd) }
 
-// readEnvs 读进程环境里的 Claude Code 标记（只认本用户的进程，读不到的跳过）。
-func readEnvs(ps []proc) map[int]procEnv {
-	out := map[int]procEnv{}
-	parse := func(pid int, kv string) {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok {
-			return
-		}
-		e := out[pid]
-		switch k {
-		case "CLAUDE_PID":
-			e.claudePid, _ = strconv.Atoi(v)
-		case "CLAUDE_CODE_SESSION_ID":
-			e.session = v
-		case "PWD":
-			e.pwd = v
-		default:
-			return
-		}
-		out[pid] = e
+// errProcGone：要停的进程已经不在了。
+var errProcGone = errors.New("进程已经不在")
+
+// envMark 认一条环境变量（键=值），是 Claude Code 的标记就记到 out[pid]。
+func envMark(out map[int]procEnv, pid int, kv string) {
+	k, v, ok := strings.Cut(kv, "=")
+	if !ok {
+		return
 	}
-	switch runtime.GOOS {
-	case "linux":
-		for _, p := range ps {
-			b, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(p.pid), "environ"))
-			if err != nil || !bytes.Contains(b, []byte("CLAUDE_PID=")) {
-				continue
-			}
-			for _, kv := range bytes.Split(b, []byte{0}) {
-				parse(p.pid, string(kv))
-			}
-		}
+	e := out[pid]
+	switch k {
+	case "CLAUDE_PID":
+		e.claudePid, _ = strconv.Atoi(v)
+	case "CLAUDE_CODE_SESSION_ID":
+		e.session = v
+	case "PWD":
+		e.pwd = v
 	default:
-		// macOS：ps -E 把环境接在命令后面，用空格分开；只取认得的几个键
-		cmd := exec.Command("ps", "-E", "-A", "-ww", "-o", "pid=,command=")
-		cmd.Env = append(os.Environ(), "LC_ALL=C")
-		b, err := cmd.Output()
-		if err != nil {
-			return out
-		}
-		sc := bufio.NewScanner(bytes.NewReader(b))
-		sc.Buffer(make([]byte, 1<<20), 8<<20)
-		for sc.Scan() {
-			line := sc.Text()
-			if !strings.Contains(line, " CLAUDE_PID=") {
-				continue
-			}
-			f := strings.Fields(line)
-			pid, err := strconv.Atoi(f[0])
-			if err != nil {
-				continue
-			}
-			for _, kv := range f[1:] {
-				parse(pid, kv)
-			}
-		}
+		return
 	}
+	out[pid] = e
+}
+
+// dropUnmarked 去掉没有 CLAUDE_PID 的条目（只带了 PWD 之类的不算 Claude Code 开出来的）。
+func dropUnmarked(out map[int]procEnv) map[int]procEnv {
 	for pid, e := range out {
 		if e.claudePid <= 1 {
 			delete(out, pid)
@@ -305,36 +267,6 @@ func readEnvs(ps []proc) map[int]procEnv {
 }
 
 var portArgRe = regexp.MustCompile(`(?:--port[= ]|-p\s+)(\d{2,5})\b`)
-
-// listenPorts 查这些进程在监听的 TCP 端口（lsof；没有 lsof 或查不到时返回空）。
-func listenPorts(pids []int) map[int][]int {
-	out := map[int][]int{}
-	if len(pids) == 0 {
-		return out
-	}
-	list := make([]string, len(pids))
-	for i, p := range pids {
-		list[i] = strconv.Itoa(p)
-	}
-	b, _ := exec.Command("lsof", "-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", strings.Join(list, ","), "-Fpn").Output()
-	cur := 0
-	for _, line := range strings.Split(string(b), "\n") {
-		if line == "" {
-			continue
-		}
-		switch line[0] {
-		case 'p':
-			cur, _ = strconv.Atoi(line[1:])
-		case 'n':
-			if i := strings.LastIndex(line, ":"); i >= 0 {
-				if port, err := strconv.Atoi(line[i+1:]); err == nil && cur > 0 {
-					out[cur] = append(out[cur], port)
-				}
-			}
-		}
-	}
-	return out
-}
 
 // report 把进程树整理成上报给 Hub 的样子。
 func orphanReport(items []orphanItem, ports map[int][]int) []protocol.OrphanProc {
@@ -525,23 +457,23 @@ func (d *Daemon) stopProc(req protocol.StopProc) protocol.StopResult {
 	if _, known := recs[procID(it.root.pid, it.root.start)]; !known {
 		return protocol.StopResult{Result: protocol.StopRefused, Detail: "还没记进本机记录，稍后再试"}
 	}
-	sig, name, grace := syscall.SIGTERM, "SIGTERM", stopGrace
+	name, grace := stopSignalName, stopGrace
 	if req.Force {
-		sig, name, grace = syscall.SIGKILL, "SIGKILL", killGrace
+		name, grace = killSignalName, killGrace
 	}
 	if d.orph.grace > 0 {
 		grace = d.orph.grace
 	}
 	kill := d.orph.kill
 	if kill == nil {
-		kill = syscall.Kill
+		kill = killProc
 	}
 	sent := 0
 	var firstErr error
 	for _, m := range it.members { // 根进程在第一个
-		if err := kill(m.pid, sig); err == nil {
+		if err := kill(m.pid, req.Force); err == nil {
 			sent++
-		} else if !errors.Is(err, syscall.ESRCH) && firstErr == nil {
+		} else if !errors.Is(err, errProcGone) && firstErr == nil {
 			firstErr = err
 		}
 	}

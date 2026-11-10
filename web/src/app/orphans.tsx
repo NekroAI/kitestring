@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas } from '../api/client'
 import { t } from '../i18n'
-import { cx, duration, relTime } from '../lib/util'
+import { cx, duration, pathBase, relTime } from '../lib/util'
 import { Badge, Button, Tip } from '../ui/base'
 import { useConfirm } from '../ui/overlay'
 import { Collapse, Item, List, useSettled } from '../ui/motion'
@@ -32,11 +32,11 @@ export function useOrphans() {
 }
 
 // shortCmd：去掉解释器和可执行文件的绝对路径（node /x/bin/pnpm dev → pnpm dev），完整命令在悬停提示里。
-const base = (p: string) => p.slice(p.lastIndexOf('/') + 1)
 export function shortCmd(cmd: string) {
   const f = cmd.split(' ')
-  if (f.length > 1 && /^(node|python3?|bun|deno|ruby)$/.test(base(f[0])) && f[1].startsWith('/')) return [base(f[1]), ...f.slice(2)].join(' ')
-  if (f[0].startsWith('/')) return [base(f[0]), ...f.slice(1)].join(' ')
+  const abs = (p: string) => p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p) // Windows 设备的 C:\…
+  if (f.length > 1 && /^(node|python3?|bun|deno|ruby)$/.test(pathBase(f[0])) && abs(f[1])) return [pathBase(f[1]), ...f.slice(2)].join(' ')
+  if (abs(f[0])) return [pathBase(f[0]), ...f.slice(1)].join(' ')
   return cmd
 }
 

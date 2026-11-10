@@ -34,5 +34,14 @@ test('回环地址要提示换成局域网地址', () => {
 test('默认平台跟浏览器所在系统', () => {
   assert.equal(defaultPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'), 'mac')
   assert.equal(defaultPlatform('Mozilla/5.0 (X11; Linux x86_64)'), 'linux')
-  assert.equal(defaultPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'linux')
+  assert.equal(defaultPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'windows')
+})
+
+test('Windows：PowerShell 一行安装，日志在 ~\\.kitestring，DSH 不提供', async () => {
+  const { dshSupported, logHint } = await import('./deviceGuide.ts')
+  assert.equal(installCmd('windows'), 'irm https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.ps1 | iex')
+  assert.equal(logHint('windows'), '~\\.kitestring\\logs\\daemon.log')
+  assert.equal(defaultPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), 'windows')
+  assert.equal(dshSupported('windows'), false)
+  assert.equal(dshSupported('linux'), true)
 })

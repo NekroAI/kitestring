@@ -1,15 +1,18 @@
 // 「接入设备」指引里的命令（R-268）：按平台和勾选的工具拼出能直接复制的完整命令。
 // 以 scripts/install.sh 与 internal/install 的实际行为为准，改那边时同步这里。
 
-export type Platform = 'mac' | 'linux'
+export type Platform = 'mac' | 'linux' | 'windows'
 export type Tool = 'claude' | 'codex' | 'dsh'
 
 export const INSTALL_URL = 'https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.sh'
+export const INSTALL_PS_URL = 'https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.ps1'
 export const DOCS_URL = 'https://github.com/NekroAI/kitestring/blob/main/docs/install.zh-CN.md#3-每台开发设备'
 export const DSH_VERSION = '0.2.1-rc.4'
 
 // 安装 ks：install.sh 装到 ~/.local/bin，不改 shell 配置，所以这里把 PATH 一并写进去。
+// Windows 在 PowerShell 里运行 install.ps1：装到 ~\.local\bin，自己写进用户的 PATH 和当前窗口的 $env:Path。
 export function installCmd(p: Platform): string {
+  if (p === 'windows') return `irm ${INSTALL_PS_URL} | iex`
   const rc = p === 'mac' ? '~/.zshrc' : '~/.bashrc'
   return [`curl -fsSL ${INSTALL_URL} | sh`, `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ${rc}`, 'export PATH="$HOME/.local/bin:$PATH"'].join('\n')
 }
@@ -52,6 +55,7 @@ export function dshCmd(): string {
 export const STATUS_CMD = 'ks status'
 
 export function logHint(p: Platform): string {
+  if (p === 'windows') return '~\\.kitestring\\logs\\daemon.log'
   return p === 'mac' ? '~/.kitestring/logs/daemon.log' : 'journalctl --user -u kitestring-daemon -n 50'
 }
 
@@ -62,5 +66,9 @@ export function isLoopback(hostname: string): boolean {
 }
 
 export function defaultPlatform(ua: string): Platform {
+  if (/Windows/i.test(ua)) return 'windows'
   return /Mac|iPhone|iPad/i.test(ua) ? 'mac' : 'linux'
 }
+
+// DSH 插件的接入命令依赖 bash 和 git 源码目录，目前只给 macOS / Linux。
+export const dshSupported = (p: Platform): boolean => p !== 'windows'

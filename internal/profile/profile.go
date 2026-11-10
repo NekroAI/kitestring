@@ -25,7 +25,7 @@ func Expand(home, p string) (string, error) {
 	switch {
 	case p == "~":
 		p = home
-	case strings.HasPrefix(p, "~/"):
+	case strings.HasPrefix(p, "~/"), filepath.Separator == '\\' && strings.HasPrefix(p, `~\`):
 		p = filepath.Join(home, p[2:])
 	}
 	if !filepath.IsAbs(p) {
@@ -36,7 +36,16 @@ func Expand(home, p string) (string, error) {
 
 // IsDefault 判断目录是否就是默认的 ~/.claude（空串也算默认）。
 func IsDefault(home, dir string) bool {
-	return dir == "" || filepath.Clean(dir) == DefaultDir(home)
+	return dir == "" || SamePath(dir, DefaultDir(home))
+}
+
+// SamePath 判断两个路径是否指向同一处：先清理；Windows 上不分大小写，/ 与 \ 等同。
+func SamePath(a, b string) bool {
+	a, b = filepath.Clean(a), filepath.Clean(b)
+	if filepath.Separator == '\\' {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // Name 是显示名：目录名去掉开头的点，如 ~/.claude-x → claude-x。
@@ -98,7 +107,7 @@ func Merge(list []Dir, add ...Dir) []Dir {
 	for _, a := range add {
 		found := false
 		for i := range list {
-			if list[i].Path == a.Path {
+			if SamePath(list[i].Path, a.Path) {
 				if a.Launcher != "" {
 					list[i].Launcher = a.Launcher
 				}
@@ -118,7 +127,7 @@ func Remove(list []Dir, paths ...string) []Dir {
 	for _, d := range list {
 		drop := false
 		for _, p := range paths {
-			if d.Path == p {
+			if SamePath(d.Path, p) {
 				drop = true
 			}
 		}
@@ -148,7 +157,7 @@ func Resolve(home, configDir string) Info {
 	info := Info{Name: Name(dir), Dir: dir}
 	if list, err := Load(home); err == nil {
 		for _, d := range list {
-			if d.Path == dir {
+			if SamePath(d.Path, dir) {
 				info.Launcher = d.Launcher
 			}
 		}

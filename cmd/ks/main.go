@@ -128,7 +128,7 @@ func main() {
 	case "login":
 		err = runLogin(args)
 	case "daemon":
-		err = runDaemon()
+		err = runDaemon(args)
 	case "status":
 		err = runStatus()
 	case "install":
@@ -228,11 +228,18 @@ func runHub(args []string) error {
 	fs := flag.NewFlagSet("hub", flag.ContinueOnError)
 	addr := fs.String("addr", "0.0.0.0:7310", "监听地址")
 	data := fs.String("data", "", "数据库路径（默认 ~/.kitestring/hub.db）")
+	svc := fs.Bool("service", false, "由常驻服务启动：日志写进 ~/.kitestring/logs/hub.log（ks install 注册 Windows 服务时使用）")
 	// 参数可写在位置参数之后（如 device-add <名称> --data x）：否则会静默落到默认数据库
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 
+	var svcCtx context.Context
+	if *svc && sub == "serve" {
+		if svcCtx, err = startService(signalContext(), "hub"); err != nil {
+			return err
+		}
+	}
 	if sub == "openapi" {
 		b, err := json.MarshalIndent(hub.New(nil, logger()).OpenAPI(), "", "  ")
 		if err != nil {
@@ -254,6 +261,9 @@ func runHub(args []string) error {
 	h.SetFilesDir(filepath.Join(filepath.Dir(dbPath), "files"))
 	h.SetSecretKeyFile(filepath.Join(filepath.Dir(dbPath), "secret.key")) // 凭据主密钥（R-295）：与数据库同目录的单独文件，不进数据库
 	ctx := signalContext()
+	if svcCtx != nil {
+		ctx = svcCtx
+	}
 	switch sub {
 	case "serve":
 		return h.Start(ctx, *addr, web.Handler())
@@ -347,7 +357,19 @@ func runLogin(args []string) error {
 	return nil
 }
 
-func runDaemon() error {
+func runDaemon(args []string) error {
+	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
+	svc := fs.Bool("service", false, "由常驻服务启动：日志写进 ~/.kitestring/logs/daemon.log（ks install 注册 Windows 服务时使用）")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	ctx := signalContext()
+	if *svc {
+		var err error
+		if ctx, err = startService(ctx, "daemon"); err != nil {
+			return err
+		}
+	}
 	cfg, err := daemon.LoadConfig()
 	if err != nil {
 		return err
@@ -356,7 +378,7 @@ func runDaemon() error {
 	if err != nil {
 		return err
 	}
-	return d.Run(signalContext())
+	return d.Run(ctx)
 }
 
 func runStatus() error {

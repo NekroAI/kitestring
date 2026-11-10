@@ -22,7 +22,7 @@ func TestTakeoverOverview(t *testing.T) {
 		t.Setenv(k, v)
 	}
 	e := setup(t)
-	repo, err := os.MkdirTemp("/tmp", "ks-repo-")
+	repo, err := os.MkdirTemp(sockTmp(), "ks-repo-")
 	if err != nil {
 		t.Fatal(err)
 	}

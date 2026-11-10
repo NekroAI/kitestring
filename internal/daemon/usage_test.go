@@ -56,6 +56,7 @@ func newUsage(t *testing.T, dir string) (*queue, *usageScanner) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { q.close() })
 	u, err := openUsage(q.db)
 	if err != nil {
 		t.Fatal(err)

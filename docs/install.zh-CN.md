@@ -2,7 +2,7 @@
 
 [English](install.md) · 中文
 
-Kitestring 是一个二进制 `ks`，支持 macOS 与 Linux（arm64 / x64）。一台常开的机器运行 **Hub**；每台跑 Claude Code 或 Codex 的机器运行 **daemon**。
+Kitestring 是一个二进制 `ks`，支持 macOS、Linux 与 Windows（arm64 / x64；Windows 见 [Windows](#windows)）。一台常开的机器运行 **Hub**；每台跑 Claude Code 或 Codex 的机器运行 **daemon**。
 
 ## 1. 安装 `ks`
 
@@ -80,6 +80,39 @@ ks status
 
 接入 DSH 见下面的 [DeepSeek Harness（DSH）](#deepseek-harnessdsh)。
 
+## Windows
+
+支持 Windows 10 1809 及以上、Windows 11（x64 / arm64）。Hub 和 daemon 都能跑在 Windows 上；只有一台 Windows 电脑时，两者装在同一台即可。以下命令都在 PowerShell 里执行，不需要管理员权限。
+
+**1. 安装 `ks`**：
+
+```powershell
+irm https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.ps1 | iex
+```
+
+装到 `~\.local\bin\ks.exe`，并加入用户的 PATH（之后打开的终端都能用）。`$env:KS_VERSION`、`$env:KS_INSTALL_DIR` 的用法同 macOS / Linux。手动安装时下载 `kitestring-<版本>-windows-<amd64|arm64>.zip`，把 `ks.exe` 放到固定位置。
+
+**2. 只有一台电脑：Hub 和 daemon 装在一起**
+
+```powershell
+ks hub passwd
+ks install --hub --claude=false --codex=false --daemon=false   # Hub 常驻
+```
+
+浏览器打开 `http://127.0.0.1:7310` 登录，在「设置 → 设备」接入这台电脑本身，按指引里的 Windows 命令执行（`ks login --hub http://127.0.0.1:7310 --token …` 后 `ks install`）。要用手机访问，第一次启动 Hub 时 Windows 防火墙会询问是否允许 ks 访问网络，选允许（局域网用「专用网络」），手机上打开 `http://<电脑的局域网地址>:7310`。
+
+**3. 常驻服务**：`ks install` 用「任务计划程序」注册当前用户的任务 `Kitestring daemon`（Hub 是 `Kitestring hub`），登录 Windows 后在后台运行、不弹窗口，退出时一分钟后自动重启。不想随登录启动：
+
+```powershell
+ks install --autostart=false    # 只注册，不随登录启动；需要时 schtasks /run /tn "Kitestring daemon"
+```
+
+日志在 `~\.kitestring\logs\daemon.log`（Hub 是 `hub.log`）。`ks uninstall` 删掉任务和写入的配置。
+
+**4. 接入 Claude Code 和 Codex**：Windows 上的 Claude Code 用 Git Bash 或 PowerShell 跑 hook，`ks install` 写成直接启动 `ks.exe` 的形式，两种都能用。Codex 同样要在 `/hooks` 里把 `ks hook codex` 开头的各条设为信任。
+
+DSH 插件暂不支持 Windows。
+
 ## 多个 Claude 配置
 
 如果你用不同的配置目录开 Claude Code（比如用 shell 函数设置 `CLAUDE_CONFIG_DIR`），需要把每个目录手动接入，纸鸢不会自动发现。
@@ -139,7 +172,7 @@ web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --p
 
 ## 升级
 
-运行 `ks update`：下载最新发布版、用 `SHA256SUMS.txt` 校验、替换 `ks`，再重启用这个 `ks` 的 Hub 和后台服务（launchd / systemd）。`ks update --check` 只查有没有新版本。从源码构建的开发版默认不更新，加 `--force` 才换成发布版。
+运行 `ks update`：下载最新发布版、用 `SHA256SUMS.txt` 校验、替换 `ks`，再重启用这个 `ks` 的 Hub 和后台服务（launchd / systemd / 任务计划程序）。`ks update --check` 只查有没有新版本。从源码构建的开发版默认不更新，加 `--force` 才换成发布版。
 
 0.2.0 及更早的版本还没有 `ks update`：重跑安装脚本，再重启常驻服务：macOS 再运行一次 `ks install`；Linux 运行 `systemctl --user restart kitestring-daemon`（Hub 所在机器再重启 `kitestring-hub`）。
 

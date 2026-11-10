@@ -132,7 +132,8 @@ func TestLocalize(t *testing.T) {
 	if err := os.WriteFile(png, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	raw := decode(t, `[{"type":"compare","before":"`+png+`","after":"`+png+`"},{"type":"figure","image":"F9"},{"type":"options","items":[{"label":"a","image":"`+png+`"},{"label":"b"}]}]`)
+	q, _ := json.Marshal(png) // Windows 路径里的 \ 要转义
+	raw := decode(t, `[{"type":"compare","before":`+string(q)+`,"after":`+string(q)+`},{"type":"figure","image":"F9"},{"type":"options","items":[{"label":"a","image":`+string(q)+`},{"label":"b"}]}]`)
 	n := 0
 	err := Localize(raw, map[string]string{}, func(p string) (string, error) { n++; return "F1", nil })
 	if err != nil {

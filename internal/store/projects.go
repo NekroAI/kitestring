@@ -172,7 +172,7 @@ func (s *Store) ResolveProject(ctx context.Context, deviceID, cwd string, git *p
 		}
 		if pid == "" {
 			pid = protocol.NewID()
-			name := path.Base(key)
+			name := protocol.PathBase(key)
 			if remote != "" {
 				name = path.Base(remote)
 			}

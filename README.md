@@ -18,7 +18,7 @@
 <p align="center">
   <a href="https://github.com/NekroAI/kitestring/actions/workflows/ci.yml"><img src="https://github.com/NekroAI/kitestring/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/NekroAI/kitestring/releases/latest"><img src="https://img.shields.io/github/v/release/NekroAI/kitestring" alt="Release"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="Platform: macOS | Linux">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="Platform: macOS | Linux | Windows">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
 </p>
 
@@ -108,6 +108,8 @@ A small daemon on each machine listens to your agents through their official hoo
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.sh | sh
 ```
+
+On Windows, run `irm https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.ps1 | iex` in PowerShell; with a single Windows computer, run the Hub and the daemon on it together — see [Install · Windows](docs/install.md#windows).
 
 **2. Start the Hub** on one always-on machine, then open `http://<hub>:7310`:
 

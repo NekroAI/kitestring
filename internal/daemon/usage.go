@@ -129,7 +129,7 @@ func openUsage(db *sql.DB) (*usageScanner, error) {
 
 // track 记下一个会话的对话记录（hook 事件带来的 transcript_path）。子任务的记录由主会话的目录推出来。
 func (u *usageScanner) track(key, path string) {
-	if path == "" || key == "" || !strings.HasSuffix(path, ".jsonl") || strings.Contains(path, "/subagents/") {
+	if path == "" || key == "" || !strings.HasSuffix(path, ".jsonl") || strings.Contains(filepath.ToSlash(path), "/subagents/") {
 		return
 	}
 	kind := usageClaude

@@ -7,7 +7,7 @@ import { serverNow, useConnected } from '../api/queries'
 import { t } from '../i18n'
 import { addCell, agentEnd, axisX, barHeight, cellX, coarse, emptyCell, gridTicks, hitRate, hitTone, inWindow, LONG_TOOL, laneAxis, makeAxis, shellEnd, shellLive, spanEnd, zoomSpec, ZOOMS, type Agent, type Axis, type Cold, type SessionMeta, type Shell, type TokCell, type Zoom } from '../lib/lanedata'
 import { modelShort, type ModelUse } from '../lib/model'
-import { cx, duration, shortDuration, wan } from '../lib/util'
+import { cx, duration, pathBase, shortDuration, wan } from '../lib/util'
 import { Tip } from '../ui/base'
 import { spring } from '../ui/gesture'
 import { Ctx } from '../ui/contextMenu'
@@ -1152,7 +1152,7 @@ export const EndedLane = memo(function EndedLane({ m, now, mode, zoom }: { m: Se
     ? { id: 'shagg', kind: 'shagg', label: t.desk.tl.sh.count(shs.length, shs.filter((x) => x.status === 'failed').length), guess: false, agents: [], ended: 1, start: shs[0].start }
     : null
   const subs = [sub, shRow].filter((x): x is SubRow => !!x)
-  const title = m.title || m.project_name || m.cwd.split('/').filter(Boolean).at(-1) || t.session.noProject
+  const title = m.title || m.project_name || pathBase(m.cwd) || t.session.noProject
   const when = m.ended_at ? t.desk.tl.endedSession(agoText(m.ended_at, now)) : t.desk.lane.quiet(duration(m.last_active_at, now))
   const phone = mode === 'phone'
   return (

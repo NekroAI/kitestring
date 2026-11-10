@@ -1,10 +1,12 @@
 // Package selfupdate 实现 ks update：从 GitHub Release 取最新版，校验 SHA256SUMS 后原子替换当前 ks，
 // 再重启用这个 ks 的常驻服务（R-80）。发版产物的命名与 scripts/install.sh、.github/workflows/release.yml 一致：
-// kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz（包内 ./ks）与 SHA256SUMS.txt。
+// kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz（包内 ./ks）、kitestring-<版本>-windows-<arm64|amd64>.zip（包内 ks.exe）
+// 与 SHA256SUMS.txt。
 package selfupdate
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -66,8 +68,11 @@ func Run(ctx context.Context, o Options) error {
 	if o.Client == nil {
 		o.Client = &http.Client{Timeout: 5 * time.Minute}
 	}
-	if o.GOOS != "darwin" && o.GOOS != "linux" {
-		return fmt.Errorf("暂不支持 %s，发布版只有 macOS 与 Linux", o.GOOS)
+	if o.GOOS != "darwin" && o.GOOS != "linux" && o.GOOS != "windows" {
+		return fmt.Errorf("暂不支持 %s，发布版只有 macOS、Linux 与 Windows", o.GOOS)
+	}
+	if o.GOOS == "windows" {
+		RemoveStale(o.Exe)
 	}
 	if o.GOARCH != "arm64" && o.GOARCH != "amd64" {
 		return fmt.Errorf("暂不支持 %s 架构，发布版只有 arm64 与 amd64", o.GOARCH)
@@ -100,7 +105,11 @@ func Run(ctx context.Context, o Options) error {
 
 	// 先在 ks 所在目录建临时文件：没有写权限时下载前就报错；同目录才能原子改名。
 	dir := filepath.Dir(o.Exe)
-	tmp, err := os.CreateTemp(dir, ".ks.update-*")
+	pattern := ".ks.update-*"
+	if o.GOOS == "windows" {
+		pattern += ".exe" // Windows 按后缀认可执行文件，下面要先跑一次
+	}
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			return fmt.Errorf("没有写入 %s 的权限，无法替换 %s。用安装 ks 时的用户运行，或用 install.sh 装到自己能写的目录（KS_INSTALL_DIR）", dir, o.Exe)
@@ -117,6 +126,9 @@ func Run(ctx context.Context, o Options) error {
 	}()
 
 	name := fmt.Sprintf("kitestring-%s-%s-%s.tar.gz", latest, o.GOOS, o.GOARCH)
+	if o.GOOS == "windows" {
+		name = fmt.Sprintf("kitestring-%s-%s-%s.zip", latest, o.GOOS, o.GOARCH)
+	}
 	dl := fmt.Sprintf("%s/%s/releases/download/%s/", o.Base, o.Repo, tag)
 	fmt.Fprintf(o.Out, "下载 ks %s（%s-%s）…\n", latest, o.GOOS, o.GOARCH)
 	sums, err := fetch(ctx, o, dl+sumsName)
@@ -135,7 +147,7 @@ func Run(ctx context.Context, o Options) error {
 	if hex.EncodeToString(got[:]) != want {
 		return fmt.Errorf("%s 校验失败，文件可能不完整或被篡改；当前版本未改动", name)
 	}
-	bin, err := extractKS(pkg)
+	bin, err := extractKS(pkg, o.GOOS)
 	if err != nil {
 		return fmt.Errorf("%s：%v；当前版本未改动", name, err)
 	}
@@ -153,14 +165,14 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil || !strings.HasPrefix(string(out), "ks "+latest+" ") {
 		return fmt.Errorf("下载的 ks 无法在本机运行或版本不符（%s）；当前版本未改动", strings.TrimSpace(string(out)))
 	}
-	if err := os.Rename(tmpPath, o.Exe); err != nil {
+	if err := replaceExe(tmpPath, o.Exe, o.GOOS); err != nil {
 		return fmt.Errorf("替换 %s 失败：%v；当前版本未改动", o.Exe, err)
 	}
 	replaced = true
 	fmt.Fprintf(o.Out, "✓ 已更新到 ks %s（原 %s）→ %s\n", latest, o.Current, o.Exe)
 	if o.Restart != nil {
 		if err := o.Restart(o.Exe); err != nil {
-			return fmt.Errorf("%v。ks 已是新版本，请手动重启常驻服务（macOS：launchctl kickstart -k gui/$(id -u)/ai.nekro.kitestring.daemon；Linux：systemctl --user restart kitestring-daemon；Hub 所在设备把 daemon 换成 hub 再执行一次）", err)
+			return fmt.Errorf("%v。ks 已是新版本，请手动重启常驻服务（macOS：launchctl kickstart -k gui/$(id -u)/ai.nekro.kitestring.daemon；Linux：systemctl --user restart kitestring-daemon；Windows：schtasks /end /tn Kitestring\\daemon 后 schtasks /run /tn Kitestring\\daemon；Hub 所在设备把 daemon 换成 hub 再执行一次）", err)
 		}
 	}
 	return nil
@@ -225,8 +237,53 @@ func lookupSum(sums []byte, name string) (string, error) {
 	return "", fmt.Errorf("%s 里没有 %s；当前版本未改动", sumsName, name)
 }
 
-// extractKS 从发布包里取出 ks（包内路径为 ./ks）。
-func extractKS(pkg []byte) ([]byte, error) {
+// replaceExe 把新文件换到 exe 的位置。macOS / Linux 直接原子改名；
+// Windows 不能覆盖正在运行的程序（常驻服务、本命令自己都在用它），但可以给它改名：
+// 先把旧的挪成 ks.exe.old-<时间>，再把新的改名过去，失败时挪回原处。旧文件见 RemoveStale。
+func replaceExe(tmpPath, exe, goos string) error {
+	if goos != "windows" {
+		return os.Rename(tmpPath, exe)
+	}
+	old := fmt.Sprintf("%s.old-%d", exe, time.Now().UnixNano())
+	if err := os.Rename(exe, old); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, exe); err != nil {
+		_ = os.Rename(old, exe)
+		return err
+	}
+	_ = os.Remove(old) // 没有进程在用时当场删掉；还在用时留到下次
+	return nil
+}
+
+// RemoveStale 清掉以前更新留下的 ks.exe.old-*（那时还有进程在用，删不掉）。
+// ks update 开始时清一次；Windows 的常驻服务启动时也清（此时换下来的旧进程已经退出）。
+func RemoveStale(exe string) {
+	olds, _ := filepath.Glob(exe + ".old-*")
+	for _, f := range olds {
+		_ = os.Remove(f)
+	}
+}
+
+// extractKS 从发布包里取出 ks（tar.gz 包内路径为 ./ks，Windows 的 zip 包内为 ks.exe）。
+func extractKS(pkg []byte, goos string) ([]byte, error) {
+	if goos == "windows" {
+		zr, err := zip.NewReader(bytes.NewReader(pkg), int64(len(pkg)))
+		if err != nil {
+			return nil, fmt.Errorf("不是有效的 zip：%v", err)
+		}
+		for _, f := range zr.File {
+			if path.Clean(f.Name) == "ks.exe" && !f.FileInfo().IsDir() {
+				rc, err := f.Open()
+				if err != nil {
+					return nil, fmt.Errorf("解包失败：%v", err)
+				}
+				defer rc.Close()
+				return io.ReadAll(io.LimitReader(rc, maxDownload))
+			}
+		}
+		return nil, errors.New("包里没有 ks.exe")
+	}
 	gz, err := gzip.NewReader(bytes.NewReader(pkg))
 	if err != nil {
 		return nil, fmt.Errorf("不是有效的 tar.gz：%v", err)

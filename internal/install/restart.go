@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // RestartOptions 控制 RestartServices；空值按本机默认（与 scripts/deploy.sh 用同一组环境变量）。
@@ -17,9 +18,12 @@ type RestartOptions struct {
 	Launchctl string // 默认 $KS_LAUNCHCTL，再默认 launchctl
 	Domain    string // launchd 域，默认 $LAUNCHD_PREFIX，再默认 gui/<uid>
 	Systemctl string // 默认 $KS_SYSTEMCTL，再默认 systemctl
+	Schtasks  string // 默认 $KS_SCHTASKS，再默认 schtasks
 	Out       io.Writer
 	// Exec 执行一条命令，测试注入；默认 exec.Command(...).CombinedOutput()
 	Exec func(name string, args ...string) ([]byte, error)
+	// Pause 等旧进程退出（Windows 先停后启），测试注入；默认 time.Sleep
+	Pause func(time.Duration)
 }
 
 // RestartServices 重启 ks install 注册过、且用的正是 exe 这个文件的常驻服务（先 Hub 后后台服务），
@@ -44,6 +48,9 @@ func RestartServices(exe string, o RestartOptions) (int, error) {
 			return exec.Command(name, args...).CombinedOutput()
 		}
 	}
+	if o.Pause == nil {
+		o.Pause = time.Sleep
+	}
 	restarted := 0
 	for _, role := range []string{"hub", "daemon"} {
 		name := serviceName(role)
@@ -61,6 +68,11 @@ func RestartServices(exe string, o RestartOptions) (int, error) {
 			path = filepath.Join(o.Home, ".config", "systemd", "user", unit)
 			cmd = firstNonEmpty(o.Systemctl, os.Getenv("KS_SYSTEMCTL"), "systemctl")
 			args = []string{"--user", "restart", unit}
+		case "windows":
+			path = taskFile(o.Home, role)
+			cmd = firstNonEmpty(o.Schtasks, os.Getenv("KS_SCHTASKS"), "schtasks")
+			// /end 让 conhost 退出，带 --service 的 ks 随之退出；再 /run 换上新版本
+			args = []string{"/run", "/tn", taskName(role)}
 		default:
 			return restarted, nil
 		}
@@ -68,9 +80,15 @@ func RestartServices(exe string, o RestartOptions) (int, error) {
 		if err != nil {
 			continue // 没注册这个服务
 		}
-		if !serviceUses(string(data), exe) {
+		if !serviceUses(decodeUTF16File(data), exe) {
 			fmt.Fprintf(o.Out, "! %s用的不是 %s，未重启（%s）\n", strings.TrimLeft(name, " "), exe, path)
 			continue
+		}
+		if o.GOOS == "windows" {
+			// /end 让 conhost 退出，带 --service 的 ks 随之退出；等它收尾（Hub 最多 5 秒）再 /run 换上新版本
+			if _, err := o.Exec(cmd, "/end", "/tn", taskName(role)); err == nil {
+				o.Pause(serviceStopWait)
+			}
 		}
 		if out, err := o.Exec(cmd, args...); err != nil {
 			return restarted, fmt.Errorf("重启%s失败：%s %s：%v %s", name, cmd, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
@@ -81,9 +99,10 @@ func RestartServices(exe string, o RestartOptions) (int, error) {
 	return restarted, nil
 }
 
-// serviceUses 判断服务配置（plist 或 systemd unit）启动的是不是 exe。
+// serviceUses 判断服务配置（plist、systemd unit 或 Windows 任务定义）启动的是不是 exe。
 func serviceUses(conf, exe string) bool {
 	return strings.Contains(conf, "<string>"+xmlEscape(exe)+"</string>") ||
+		strings.Contains(conf, "<Arguments>--headless "+xmlEscape(winQuote(exe))+" ") ||
 		strings.Contains(conf, "ExecStart="+shellQuote(exe)+" ") ||
 		strings.Contains(conf, "ExecStart="+exe+" ")
 }

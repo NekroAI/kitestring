@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ type env struct {
 
 func setup(t *testing.T) *env {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "ks-e2e-") // unix socket 路径需要短
+	dir, err := os.MkdirTemp(sockTmp(), "ks-e2e-") // unix socket 路径需要短
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -743,4 +744,12 @@ func (e *env) allowRelease(key string) {
 		}
 	}
 	e.t.Fatalf("找不到 %s 所在的项目", key)
+}
+
+// sockTmp 是放 unix socket 的临时目录：路径要短，放 /tmp；Windows 没有 /tmp，用系统临时目录（长度够用）。
+func sockTmp() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
+	return "/tmp"
 }

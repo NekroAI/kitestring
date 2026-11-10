@@ -90,7 +90,7 @@ func readGitBasics(cwd string) protocol.Git {
 	if len(lines) < 3 {
 		return protocol.Git{}
 	}
-	info := protocol.Git{Available: true, Root: lines[0]}
+	info := protocol.Git{Available: true, Root: devicePath(lines[0])}
 	gitDir, common := absUnder(cwd, lines[1]), absUnder(cwd, lines[2])
 	info.Worktree = gitDir != common
 	// symbolic-ref 在尚无提交的新仓库里也能取到分支名；分离 HEAD 时退回短哈希。
@@ -107,6 +107,19 @@ func readGitBasics(cwd string) protocol.Git {
 		}
 	}
 	return info
+}
+
+// devicePath 统一本机路径的写法（Hub 按路径字符串归项目）：Windows 上 git 给的是 D:/x、hook 给的是 D:\x，
+// 盘符大小写也可能不同，统一成反斜杠、大写盘符；其他系统原样返回。
+func devicePath(p string) string {
+	if p == "" || filepath.Separator != '\\' {
+		return p
+	}
+	p = filepath.Clean(filepath.FromSlash(p))
+	if len(p) >= 2 && p[1] == ':' && p[0] >= 'a' && p[0] <= 'z' {
+		p = string(p[0]-'a'+'A') + p[1:]
+	}
+	return p
 }
 
 func absUnder(base, p string) string {

@@ -34,7 +34,8 @@ jobs:
         run: go test ./...
       - name: 交叉编译
         run: |
-          # 每个包只有一个文件：kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz，内含 ks、LICENSE、README
+          # 每个包只有一个文件：kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz，内含 ks、LICENSE、README；
+          # Windows 是 kitestring-<版本>-windows-<arm64|amd64>.zip，内含 ks.exe（与 install.ps1、ks update 一致）
           v=$(tr -d '[:space:]' < VERSION)
           ldflags="-s -w -X github.com/NekroAI/kitestring/internal/version.Version=$v -X github.com/NekroAI/kitestring/internal/version.Commit=$(git rev-parse --short HEAD)"
           mkdir -p dist
@@ -46,8 +47,15 @@ jobs:
             cp LICENSE README.md README.zh-CN.md "$out/"
             tar -czf "dist/kitestring-$v-$os-$arch.tar.gz" -C "$out" .
           done
-          test "$(ls dist | wc -l)" -eq 4
-          (cd dist && sha256sum *.tar.gz > SHA256SUMS.txt)
+          for arch in arm64 amd64; do
+            out="build/kitestring-$v-windows-$arch"
+            mkdir -p "$out"
+            CGO_ENABLED=0 GOOS=windows GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o "$out/ks.exe" ./cmd/ks
+            cp LICENSE README.md README.zh-CN.md "$out/"
+            (cd "$out" && zip -q -r "$OLDPWD/dist/kitestring-$v-windows-$arch.zip" .)
+          done
+          test "$(ls dist | wc -l)" -eq 6
+          (cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -60,7 +68,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # 不标记为预发布：install.sh 依赖 releases/latest，它不包含预发布版本
-          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS.txt \
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.zip dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --title "Kitestring $GITHUB_REF_NAME" \
             --notes-file docs/install.md \

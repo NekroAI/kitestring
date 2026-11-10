@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/store"
+
+	"github.com/NekroAI/kitestring/internal/fsperm"
 )
 
 // 凭据的加密（R-295）：值用 AES-256-GCM 加密后存进数据库，主密钥不进数据库。
@@ -81,12 +83,12 @@ func (h *Hub) secretKey() ([]byte, error) {
 }
 
 func loadSecretKey(path string) ([]byte, error) {
-	st, err := os.Stat(path)
+	private, err := fsperm.IsPrivate(path)
 	if err != nil {
 		return nil, err
 	}
-	if st.Mode().Perm()&0o077 != 0 {
-		if err := os.Chmod(path, 0o600); err != nil {
+	if !private {
+		if err := fsperm.Private(path); err != nil {
 			return nil, fmt.Errorf("收紧主密钥文件权限失败：%w", err)
 		}
 	}
@@ -115,6 +117,10 @@ func createSecretKey(path string) ([]byte, error) {
 		return loadSecretKey(path)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := fsperm.Private(path); err != nil {
+		f.Close()
 		return nil, err
 	}
 	if _, err := f.WriteString(base64.StdEncoding.EncodeToString(key) + "\n"); err != nil {

@@ -3,18 +3,26 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/NekroAI/kitestring/internal/fsperm"
 )
 
 // ks secret run（R-295）：值只加进子进程的环境；退出码原样带回；启动失败为 127。
 func TestRunWithEnv(t *testing.T) {
-	if code := runWithEnv([]string{"sh", "-c", `test "$KS_T_TOKEN" = "v 1&<x>" && test "$KS_T_ID" = acct`}, map[string]string{"KS_T_TOKEN": "v 1&<x>", "KS_T_ID": "acct"}); code != 0 {
+	check, exit3 := []string{"sh", "-c", `test "$KS_T_TOKEN" = "v 1&<x>" && test "$KS_T_ID" = acct`}, []string{"sh", "-c", "exit 3"}
+	if runtime.GOOS == "windows" {
+		check = []string{"powershell", "-NoProfile", "-Command", `if ($env:KS_T_TOKEN -ne 'v 1&<x>' -or $env:KS_T_ID -ne 'acct') { exit 1 }`}
+		exit3 = []string{"cmd", "/c", "exit 3"}
+	}
+	if code := runWithEnv(check, map[string]string{"KS_T_TOKEN": "v 1&<x>", "KS_T_ID": "acct"}); code != 0 {
 		t.Fatalf("子进程应拿到环境变量：%d", code)
 	}
 	if os.Getenv("KS_T_TOKEN") != "" {
 		t.Fatal("值不应进 ks 自己的环境")
 	}
-	if code := runWithEnv([]string{"sh", "-c", "exit 3"}, nil); code != 3 {
+	if code := runWithEnv(exit3, nil); code != 3 {
 		t.Fatalf("退出码应原样带回：%d", code)
 	}
 	if code := runWithEnv([]string{"/no/such/cmd"}, nil); code != 127 {
@@ -53,22 +61,26 @@ func TestWritePrivate(t *testing.T) {
 	if err := writePrivate(p, "A=2\n"); err != nil {
 		t.Fatal(err)
 	}
-	st, _ := os.Stat(p)
+	private, _ := fsperm.IsPrivate(p)
 	b, _ := os.ReadFile(p)
-	if st.Mode().Perm() != 0o600 || string(b) != "A=2\n" {
-		t.Fatalf("%v %q", st.Mode(), b)
+	if !private || string(b) != "A=2\n" {
+		t.Fatalf("%v %q", private, b)
 	}
 }
 
 // 程序解析（D-1450 审查第 3 条）：裸程序名按 PATH 找成绝对路径（viaPath = true）；写了路径的照写的算（viaPath = false）；找不到报错。
 func TestResolveProgram(t *testing.T) {
-	p, via, err := resolveProgram("sh")
+	shell, ext, script := "sh", "", "#!/bin/sh\n"
+	if runtime.GOOS == "windows" {
+		shell, ext, script = "cmd", ".cmd", "@exit /b 0\r\n"
+	}
+	p, via, err := resolveProgram(shell)
 	if err != nil || !filepath.IsAbs(p) || !via {
-		t.Fatalf("sh → %q %v %v", p, via, err)
+		t.Fatalf("%s → %q %v %v", shell, p, via, err)
 	}
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "wrangler")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	exe := filepath.Join(dir, "wrangler"+ext)
+	if err := os.WriteFile(exe, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if p, via, err := resolveProgram(exe); err != nil || p != exe || via {
@@ -77,6 +89,11 @@ func TestResolveProgram(t *testing.T) {
 	t.Chdir(dir)
 	if p, via, err := resolveProgram("./wrangler"); err != nil || !filepath.IsAbs(p) || via {
 		t.Fatalf("./wrangler：%q %v %v", p, via, err)
+	}
+	if runtime.GOOS == "windows" {
+		if _, via, err := resolveProgram(`.\wrangler`); err != nil || via {
+			t.Fatalf(`.\wrangler 写了路径，不算按 PATH 找到：%v %v`, via, err)
+		}
 	}
 	if _, _, err := resolveProgram("no-such-cmd-295"); err == nil {
 		t.Fatal("找不到的命令应报错")

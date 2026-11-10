@@ -2,7 +2,7 @@
 
 English · [中文](https://github.com/NekroAI/kitestring/blob/main/docs/install.zh-CN.md)
 
-Kitestring is a single binary, `ks`, for macOS and Linux (arm64 and x64). One always-on machine runs the **Hub**; every machine where you run Claude Code or Codex runs the **daemon**.
+Kitestring is a single binary, `ks`, for macOS, Linux and Windows (arm64 and x64; for Windows see [Windows](#windows)). One always-on machine runs the **Hub**; every machine where you run Claude Code or Codex runs the **daemon**.
 
 ## 1. Install `ks`
 
@@ -80,6 +80,39 @@ ks status
 
 For DSH, see [DeepSeek Harness (DSH)](#deepseek-harness-dsh) below.
 
+## Windows
+
+Windows 10 1809 or later and Windows 11 (x64 / arm64) are supported. Both the Hub and the daemon run on Windows; if Windows is your only computer, install both on it. Run everything below in PowerShell; no administrator rights are needed.
+
+**1. Install `ks`**:
+
+```powershell
+irm https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.ps1 | iex
+```
+
+It installs `~\.local\bin\ks.exe` and adds that folder to your user PATH (new terminals pick it up). `$env:KS_VERSION` and `$env:KS_INSTALL_DIR` work as on macOS / Linux. To install by hand, download `kitestring-<version>-windows-<amd64|arm64>.zip` and put `ks.exe` somewhere permanent.
+
+**2. One computer: Hub and daemon together**
+
+```powershell
+ks hub passwd
+ks install --hub --claude=false --codex=false --daemon=false   # run the Hub as a service
+```
+
+Open `http://127.0.0.1:7310`, sign in, and add this computer under Settings → Devices; follow the Windows commands in the guide (`ks login --hub http://127.0.0.1:7310 --token …`, then `ks install`). To use your phone, allow ks through Windows Firewall when it asks on the Hub's first start (Private networks for your LAN), then open `http://<your computer's LAN address>:7310` on the phone.
+
+**3. Services**: `ks install` registers a per-user Task Scheduler task, `Kitestring daemon` (`Kitestring hub` for the Hub). It runs in the background after you sign in to Windows, without a window, and restarts a minute after it exits. To keep it from starting at sign-in:
+
+```powershell
+ks install --autostart=false    # register only; start it with schtasks /run /tn "Kitestring daemon"
+```
+
+Logs are in `~\.kitestring\logs\daemon.log` (`hub.log` for the Hub). `ks uninstall` removes the tasks and the config it wrote.
+
+**4. Claude Code and Codex**: Claude Code on Windows runs hooks with Git Bash or PowerShell; `ks install` writes them so `ks.exe` is started directly, which works with either. For Codex, trust the `ks hook codex` entries in `/hooks` as on other systems.
+
+The DSH plugin does not support Windows yet.
+
 ## Multiple Claude configs
 
 If you start Claude Code with different config directories (for example a shell function that exports `CLAUDE_CONFIG_DIR`), hook up each directory explicitly. Kitestring does not discover them on its own.
@@ -139,7 +172,7 @@ When compacting or switching sessions, hand off: click "Hand off" on a session i
 
 ## Updating
 
-Run `ks update`: it downloads the latest release, verifies it against `SHA256SUMS.txt`, replaces `ks` and restarts the Hub and daemon services (launchd / systemd) that run this `ks`. `ks update --check` only reports whether a newer version exists. Development builds from source are left alone unless you pass `--force`.
+Run `ks update`: it downloads the latest release, verifies it against `SHA256SUMS.txt`, replaces `ks` and restarts the Hub and daemon services (launchd / systemd / Task Scheduler) that run this `ks`. `ks update --check` only reports whether a newer version exists. Development builds from source are left alone unless you pass `--force`.
 
 Versions 0.2.0 and earlier have no `ks update`: re-run the install script, then restart the services: on macOS run `ks install` again; on Linux run `systemctl --user restart kitestring-daemon` (and `kitestring-hub` on the Hub machine).
 

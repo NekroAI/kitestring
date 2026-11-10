@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NekroAI/kitestring/internal/fsperm"
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/store"
 )
@@ -53,6 +54,29 @@ func TestCommandAllowed(t *testing.T) {
 	}
 }
 
+// Windows 设备解析出的路径（Hub 可能在别的系统上判定）：裸程序名不分大小写、可省 .exe / .cmd；
+// 绝对路径的规则 / 与 \ 等同、不分大小写；写了路径的仍不算按 PATH 找到。
+func TestCommandAllowedWindowsPaths(t *testing.T) {
+	allowed := []string{"wrangler whoami", `C:/Tools/gh.exe release *`}
+	cases := []struct {
+		prog program
+		argv []string
+		want bool
+	}{
+		{program{path: `C:\Users\u\AppData\Roaming\npm\wrangler.cmd`, viaPath: true}, []string{"wrangler", "whoami"}, true},
+		{program{path: `C:\Users\u\AppData\Roaming\npm\WRANGLER.CMD`, viaPath: true}, []string{"wrangler", "whoami"}, true},
+		{program{path: `D:\proj\wrangler.cmd`}, []string{`.\wrangler`, "whoami"}, false},
+		{program{path: `C:\x\wrangler-evil.exe`, viaPath: true}, []string{"wrangler-evil", "whoami"}, false},
+		{program{path: `c:\tools\GH.exe`}, []string{`c:\tools\GH.exe`, "release", "list"}, true},
+		{program{path: `C:\Tools2\gh.exe`}, []string{`C:\Tools2\gh.exe`, "release", "list"}, false},
+	}
+	for i, c := range cases {
+		if got := commandAllowed(allowed, c.argv, c.prog); got != c.want {
+			t.Errorf("第 %d 条 %v（%s）：得到 %v", i, c.argv, c.prog.path, got)
+		}
+	}
+}
+
 func TestCommandLine(t *testing.T) {
 	got := commandLine([]string{"curl", "-H", `Authorization: Bearer "x"`, "https://a.b/c?d=1"})
 	want := `curl -H "Authorization: Bearer \"x\"" "https://a.b/c?d=1"`
@@ -91,9 +115,8 @@ func TestSecretSealing(t *testing.T) {
 	if strings.Contains(sealed, "tok-abcdef") || !strings.HasPrefix(sealed, "v1:") {
 		t.Fatalf("密文里不应有明文：%s", sealed)
 	}
-	st, err := os.Stat(keyPath)
-	if err != nil || st.Mode().Perm() != 0o600 {
-		t.Fatalf("主密钥文件应为 0600：%v %v", st, err)
+	if private, err := fsperm.IsPrivate(keyPath); err != nil || !private {
+		t.Fatalf("主密钥文件应只有本人能读写：%v %v", private, err)
 	}
 	got, err := h.openSecret("S1", sealed)
 	if err != nil || got["CLOUDFLARE_API_TOKEN"] != "tok-abcdef-123" || got["CLOUDFLARE_ACCOUNT_ID"] != "acct-987654" {
@@ -102,15 +125,15 @@ func TestSecretSealing(t *testing.T) {
 	if _, err := h.openSecret("S2", sealed); err != errSecretUnreadable {
 		t.Fatalf("密文挪到别的凭据上应解不开：%v", err)
 	}
-	// 重开（新的 Hub 读同一个主密钥文件）
+	// 重开（新的 Hub 读同一个主密钥文件）；Windows 上 Chmod 不放宽访问控制列表，只验证仍是本人专用
 	_ = os.Chmod(keyPath, 0o644)
 	h2 := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	h2.SetSecretKeyFile(keyPath)
 	if got, err := h2.openSecret("S1", sealed); err != nil || got["CLOUDFLARE_API_TOKEN"] != "tok-abcdef-123" {
 		t.Fatalf("重开后应能解开：%v %v", got, err)
 	}
-	if st, _ := os.Stat(keyPath); st.Mode().Perm() != 0o600 {
-		t.Fatalf("权限宽了要收紧回 0600：%v", st.Mode())
+	if private, _ := fsperm.IsPrivate(keyPath); !private {
+		t.Fatal("权限宽了要收紧回只有本人能读写")
 	}
 	// 主密钥换了
 	h3 := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))

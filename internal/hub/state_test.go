@@ -303,6 +303,7 @@ func TestSessionProfileRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { st.Close() })
 	ctx := context.Background()
 	dev, err := st.CreateDevice(ctx, "d", "h")
 	if err != nil {

@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+### Windows
+- Hub 和设备端都能在 Windows 10 1809 及以上、Windows 11（x64 / arm64）上原生运行，只有一台 Windows 电脑时两者装在一起即可（R-330）。
+- 安装：PowerShell 里 `irm …/scripts/install.ps1 | iex`，装到 `~\.local\bin` 并加入用户 PATH；发布包新增 `kitestring-<版本>-windows-<架构>.zip`。
+- 常驻服务用任务计划程序的用户任务（`Kitestring daemon` / `Kitestring hub`），登录后在后台运行、不弹窗口，不需要管理员；`ks install --autostart=false` 只注册不随登录启动。日志在 `~\.kitestring\logs`。
+- `ks update` 能替换正在运行的 `ks.exe` 并重启服务；`ks install` 给 Claude Code 写成直接启动 `ks.exe` 的 hook（Git Bash、PowerShell 都能用），Codex 按 cmd 的规则写。
+- 认会话、后台命令、残留进程在 Windows 上照常工作（进程表、环境、监听端口换成 Windows 的实现）；网页设备接入指引加 Windows 一栏。
+- 顺带修正：Windows 设备的路径在 Hub 上取项目名、判定 `ks secret run` 的程序路径时按 Windows 写法处理；Windows 上写了 `.\x` 这类路径的命令不再被当作按 PATH 找到的程序；凭据主密钥、`ks secret write` 写出的文件在 Windows 上设成只有本人能访问。
+
 ## [0.4.0] — 2026-11-10
 
 0.3.0 之后的版本，按 git log 归纳主要变化。

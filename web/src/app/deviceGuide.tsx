@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { t } from '../i18n'
 import { useDevices } from '../api/queries'
 import { copyText, cx } from '../lib/util'
-import { DOCS_URL, DSH_VERSION, LINGER_CMD, NOHUP_CMD, STATUS_CMD, defaultPlatform, dshCmd, installCmd, isLoopback, logHint, loginCmd, toolsCmd, type Platform, type Tool } from '../lib/deviceGuide'
+import { DOCS_URL, DSH_VERSION, LINGER_CMD, NOHUP_CMD, STATUS_CMD, defaultPlatform, dshCmd, dshSupported, installCmd, isLoopback, logHint, loginCmd, toolsCmd, type Platform, type Tool } from '../lib/deviceGuide'
 import { Button, Segmented, Tip } from '../ui/base'
 import { Modal } from '../ui/overlay'
 
@@ -62,6 +62,7 @@ export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: bo
   const hub = window.location.origin
   const loop = isLoopback(window.location.hostname) ? window.location.hostname : ''
   const toggle = (x: Tool) => setTools((cur) => (cur.includes(x) ? cur.filter((y) => y !== x) : [...cur, x]))
+  const dsh = dshSupported(platform) && tools.includes('dsh')
   let n = 0
 
   return (
@@ -93,12 +94,13 @@ export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: bo
             options={[
               { value: 'mac', label: G.mac },
               { value: 'linux', label: G.linux },
+              { value: 'windows', label: G.windows },
             ]}
           />
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[13px] text-fg-3">{G.tools}</span>
-          {(['claude', 'codex', 'dsh'] as Tool[]).map((x) => {
+          {(['claude', 'codex', 'dsh'] as Tool[]).filter((x) => x !== 'dsh' || dshSupported(platform)).map((x) => {
             const on = tools.includes(x)
             return (
               <button
@@ -118,7 +120,7 @@ export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: bo
         <Step n={++n} title={G.install}>
           <CommandBlock cmd={installCmd(platform)} />
           <Note>
-            {G.installNote}
+            {platform === 'windows' ? G.installNoteWin : G.installNote}
             {platform === 'linux' && G.installNoCurl}
           </Note>
         </Step>
@@ -133,7 +135,7 @@ export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: bo
         <Step n={++n} title={G.service}>
           <CommandBlock cmd={toolsCmd(tools)} />
           <Note>
-            {platform === 'mac' ? G.serviceMac : G.serviceLinux}
+            {platform === 'mac' ? G.serviceMac : platform === 'windows' ? G.serviceWin : G.serviceLinux}
             {tools.includes('claude') ? G.needClaude : !tools.includes('codex') && G.noTools}
           </Note>
           {platform === 'linux' && (
@@ -152,7 +154,7 @@ export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: bo
           </Step>
         )}
 
-        {tools.includes('dsh') && (
+        {dsh && (
           <Step n={++n} title={G.dsh}>
             <Note>{G.dshNeed(DSH_VERSION)}</Note>
             <CommandBlock cmd={dshCmd()} />

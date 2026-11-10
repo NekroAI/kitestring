@@ -120,6 +120,10 @@ func openShells(db *sql.DB) (*shellTracker, error) {
 	s := &shellTracker{db: db, now: time.Now, recs: map[string]*shellRec{}, batches: map[string][]shellSent{}}
 	uid := os.Getuid()
 	s.tmp = []string{fmt.Sprintf("/tmp/claude-%d", uid)}
+	if uid < 0 { // Windows：Claude Code 取不到 uid 时按 0 算，目录在系统临时目录下
+		uid = 0
+		s.tmp = []string{filepath.Join(os.TempDir(), "claude-0")}
+	}
 	if d := os.Getenv("CLAUDE_CODE_TMPDIR"); d != "" {
 		s.tmp = append(s.tmp, filepath.Join(d, fmt.Sprintf("claude-%d", uid)))
 	}

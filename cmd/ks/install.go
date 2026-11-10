@@ -40,6 +40,7 @@ func runInstall(args []string, uninstall bool) error {
 	daemonSvc := fs.Bool("daemon", true, "注册 daemon 常驻服务")
 	hubSvc := fs.Bool("hub", false, "同时注册 hub 常驻服务（Hub 所在设备使用）")
 	hubAddr := fs.String("hub-addr", "0.0.0.0:7310", "hub 服务监听地址")
+	autostart := fs.Bool("autostart", true, "Windows：常驻服务随登录自动启动；--autostart=false 只注册、不随登录启动")
 	dirs := &claudeDirFlag{}
 	fs.Var(dirs, "claude-dir", "接入这个 Claude 配置目录（CLAUDE_CONFIG_DIR），可重复；卸载时只移除指定的目录")
 	fs.Var(launcherFlag{dirs}, "launcher", "紧跟在 --claude-dir 之后：开这个配置的启动命令（如 claude-x），用于「复制恢复命令」")
@@ -68,5 +69,5 @@ func runInstall(args []string, uninstall bool) error {
 	if p, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = p
 	}
-	return install.Run(install.Options{KS: exe, Claude: *claude, Codex: *codex, Daemon: *daemonSvc, Hub: *hubSvc, HubAddr: *hubAddr, DryRun: *dry, ClaudeDirs: dirs.dirs, Status: *status}, uninstall)
+	return install.Run(install.Options{KS: exe, Claude: *claude, Codex: *codex, Daemon: *daemonSvc, Hub: *hubSvc, HubAddr: *hubAddr, NoAutostart: !*autostart, DryRun: *dry, ClaudeDirs: dirs.dirs, Status: *status}, uninstall)
 }

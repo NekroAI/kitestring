@@ -2,6 +2,7 @@ package hub
 
 import (
 	"testing"
+	"time"
 
 	"github.com/NekroAI/kitestring/internal/store"
 )
@@ -12,9 +13,11 @@ func TestActivityAPI(t *testing.T) {
 	if _, err := e.st.AddEvidence(e.ctx, store.Evidence{RequirementID: e.ra.ID, SessionKey: e.dev1, Kind: "text", Summary: "接口做完"}); err != nil {
 		t.Fatal(err)
 	}
+	tick() // Windows 的时钟按 tick 走：连着写入的时间可能相同，排序就不定
 	if _, err := e.st.CreateComment(e.ctx, e.rb, store.Comment{By: e.pm, Role: "pm", Text: "先别动"}); err != nil {
 		t.Fatal(err)
 	}
+	tick()
 	if _, err := e.st.CreateDecision(e.ctx, store.Decision{Kind: store.KindNote, RequirementID: e.ra.ID, Question: e.ra.Title, Answer: "看下手机"}); err != nil {
 		t.Fatal(err)
 	}
@@ -30,3 +33,6 @@ func TestActivityAPI(t *testing.T) {
 		t.Fatalf("只看我的不对：%+v", out.Items)
 	}
 }
+
+// tick 等到时钟走过一格（Windows 上最长 15.6 毫秒）。
+func tick() { time.Sleep(20 * time.Millisecond) }

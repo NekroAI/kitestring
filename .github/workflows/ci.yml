@@ -46,3 +46,22 @@ jobs:
         run: go test ./...
       - name: 安装脚本
         run: shellcheck scripts/install.sh scripts/deploy.sh
+
+  # Windows：Go 的单测与 e2e（前端产物用仓库里的占位页即可），以及 install.ps1 的语法检查
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
+      - name: 安装脚本语法
+        shell: powershell
+        run: |
+          $errs = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD\scripts\install.ps1", [ref]$null, [ref]$errs)
+          if ($errs) { $errs | ForEach-Object { Write-Error $_.Message }; exit 1 }

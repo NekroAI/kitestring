@@ -35,7 +35,7 @@ func TestCommitsRevertCI(t *testing.T) {
 	t.Setenv("KS_GITHUB_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	e := setup(t)
-	repo, err := os.MkdirTemp("/tmp", "ks-repo-")
+	repo, err := os.MkdirTemp(sockTmp(), "ks-repo-")
 	if err != nil {
 		t.Fatal(err)
 	}

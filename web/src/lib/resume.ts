@@ -10,6 +10,8 @@ export function resumeCommand(s: ResumeSession): string {
   if (s.tool === 'dsh') return ''
   if (s.tool === 'codex') return `codex resume ${s.session_id}`
   if (s.launcher) return `${s.launcher} --resume ${s.session_id}`
+  // Windows 设备（目录是 C:\… 这样的）在 PowerShell 里恢复：先设环境变量再运行
+  if (s.profile_dir && /^[A-Za-z]:[\\/]/.test(s.profile_dir)) return `$env:CLAUDE_CONFIG_DIR='${s.profile_dir.replace(/'/g, "''")}'; claude --resume ${s.session_id}`
   if (s.profile_dir) return `CLAUDE_CONFIG_DIR=${shellQuote(s.profile_dir)} claude --resume ${s.session_id}`
   return `claude --resume ${s.session_id}`
 }

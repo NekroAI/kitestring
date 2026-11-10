@@ -24,3 +24,8 @@ test('路径有空格时加引号', () => {
 test('Codex 不受影响', () => {
   assert.equal(resumeCommand({ tool: 'codex', session_id: 'z', profile_dir: '/x' }), 'codex resume z')
 })
+
+test('Windows 设备的配置目录：PowerShell 写法', () => {
+  const s = { tool: 'claude', session_id: 'abc', profile_dir: "C:\\Users\\me\\.claude-x'" }
+  assert.equal(resumeCommand(s), "$env:CLAUDE_CONFIG_DIR='C:\\Users\\me\\.claude-x'''; claude --resume abc")
+})

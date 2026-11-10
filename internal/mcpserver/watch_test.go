@@ -22,7 +22,7 @@ import (
 // R-249 P4：MCP 的 req_watch / req_watching 与 ks req watch / unwatch / watching 走同一接口、同一组参数（off、mode），
 // 订阅者只认调用带的会话身份；req_watching 原样给出 hub 写好的那段（含「因关联而订阅」）。
 func TestWatchTools(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", "ks-mcp-")
+	dir, err := os.MkdirTemp(sockTmp(), "ks-mcp-")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -278,13 +276,12 @@ func instanceAlive(inst string) bool {
 	if !ok {
 		return true
 	}
-	cmd := exec.Command("ps", "-o", "lstart=", "-p", pid)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
-	out, err := cmd.Output()
+	n, err := strconv.Atoi(pid)
 	if err != nil {
-		return false // ps 找不到该进程时以非零退出
+		return true
 	}
-	return strings.Join(strings.Fields(string(out)), " ") == start
+	_, s, _, alive := procQuery(n)
+	return alive && s == start
 }
 
 // handleWaitCheck：ks wait 开始前的自查（R-117）。从对话记录里读最新一段回复，连同会话键交给 Hub，

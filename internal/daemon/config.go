@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/NekroAI/kitestring/internal/fsperm"
 )
 
 // Config 是 daemon 配置文件内容。
@@ -55,5 +57,9 @@ func SaveConfig(c Config) error {
 		return err
 	}
 	b, _ := json.MarshalIndent(c, "", "  ")
-	return os.WriteFile(ConfigPath(), b, 0o600)
+	if err := os.WriteFile(ConfigPath(), b, 0o600); err != nil {
+		return err
+	}
+	return fsperm.Private(ConfigPath()) // Windows 上权限位不起作用
+
 }

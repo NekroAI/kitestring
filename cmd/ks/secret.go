@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/client"
+
+	"github.com/NekroAI/kitestring/internal/fsperm"
 )
 
 // 凭据（R-295）：会话申请凭据、在命令的环境变量里取用。没有打印明文的子命令：值只交给要运行的命令（run）或写进授权过的文件（write）。
@@ -250,7 +252,7 @@ func resolveProgram(name string) (abs string, viaPath bool, err error) {
 	if abs, err = filepath.Abs(p); err != nil {
 		return "", false, err
 	}
-	return abs, !strings.Contains(name, "/"), nil
+	return abs, !strings.ContainsRune(name, '/') && !strings.ContainsRune(name, filepath.Separator), nil // Windows 上 \ 也是路径
 }
 
 // secretUse 向纸鸢取值；被拒时错误里写明原因。prog 是 resolveProgram 解析出的程序（write 时为空）。
@@ -423,7 +425,7 @@ func writePrivate(path, content string) error {
 	if err != nil {
 		return err
 	}
-	if err := f.Chmod(0o600); err != nil {
+	if err := fsperm.Private(path); err != nil { // 写值之前先收紧（Windows 上是只含本人的访问控制列表）
 		f.Close()
 		return err
 	}

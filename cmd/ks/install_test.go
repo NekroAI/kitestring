@@ -11,22 +11,28 @@ import (
 func installEnv(t *testing.T) (home, codexHooks, plist string) {
 	home = t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows 的家目录看 USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	bin := t.TempDir()
-	script := "#!/bin/sh\nexit 0\n"
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
+	script, ext := "#!/bin/sh\nexit 0\n", ""
+	if runtime.GOOS == "windows" {
+		script, ext = "@exit /b 0\r\n", ".cmd"
 	}
-	// 假 launchctl / systemctl，万一走到服务注册也不会碰真实服务
-	for _, n := range []string{"launchctl", "systemctl", "codex"} {
-		_ = os.WriteFile(filepath.Join(bin, n), []byte(script), 0o755)
+	// 假 claude / launchctl / systemctl / schtasks，万一走到服务注册也不会碰真实服务
+	for _, n := range []string{"claude", "launchctl", "systemctl", "schtasks", "codex"} {
+		if err := os.WriteFile(filepath.Join(bin, n+ext), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
-	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	codexHooks = filepath.Join(home, ".codex", "hooks.json")
 	plist = filepath.Join(home, "Library", "LaunchAgents", "ai.nekro.kitestring.daemon.plist")
-	if runtime.GOOS != "darwin" {
+	switch runtime.GOOS {
+	case "linux":
 		plist = filepath.Join(home, ".config", "systemd", "user", "kitestring-daemon.service")
+	case "windows":
+		plist = filepath.Join(home, ".kitestring", "services", "daemon.xml")
 	}
 	return
 }

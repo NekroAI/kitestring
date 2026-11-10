@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,21 +16,57 @@ import (
 func setup(t *testing.T) (home string) {
 	home = t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows 的家目录看 USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	bin := t.TempDir()
-	script := `#!/bin/sh
-f="$HOME/.claude.json"
-[ -n "$CLAUDE_CONFIG_DIR" ] && f="$CLAUDE_CONFIG_DIR/.claude.json"
-mkdir -p "$(dirname "$f")"
-if [ "$2" = "remove" ]; then rm -f "$f"; exit 0; fi
-printf '{"mcpServers":{"kitestring":{"command":"%s"}}}' "$7" > "$f"
-`
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil {
+	self, err := os.Executable()
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	b, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "claude"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return home
+}
+
+// TestMain：测试程序复制成 claude 运行时，充当假的 claude 命令——
+// 只往 $CLAUDE_CONFIG_DIR/.claude.json（默认 $HOME/.claude.json）写注册，绝不碰真实配置。
+func TestMain(m *testing.M) {
+	if name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe"); name == "claude" {
+		os.Exit(fakeClaude(os.Args[1:]))
+	}
+	os.Exit(m.Run())
+}
+
+// fakeClaude 实现 claude mcp remove|add --scope user kitestring [-- <ks> mcp]。
+func fakeClaude(args []string) int {
+	f := filepath.Join(os.Getenv("HOME"), ".claude.json")
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		f = filepath.Join(d, ".claude.json")
+	}
+	_ = os.MkdirAll(filepath.Dir(f), 0o755)
+	if len(args) > 1 && args[1] == "remove" {
+		_ = os.Remove(f)
+		return 0
+	}
+	if len(args) < 7 {
+		return 2
+	}
+	b, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"kitestring": map[string]any{"command": args[6]}}})
+	if os.WriteFile(f, b, 0o644) != nil {
+		return 1
+	}
+	return 0
 }
 
 func opts(dirs ...profile.Dir) (Options, *bytes.Buffer) {

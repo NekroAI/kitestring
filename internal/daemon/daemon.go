@@ -13,7 +13,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -450,7 +449,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	key := protocol.SessionKey(req.Tool, sid)
 	ev := protocol.Event{
 		ID: eventID(), Time: time.Now().UTC(), Tool: req.Tool, Name: name, SessionID: sid,
-		Cwd: str(p, "cwd"), Model: str(p, "model"), Source: str(p, "source"), Reason: str(p, "reason"),
+		Cwd: devicePath(str(p, "cwd")), Model: str(p, "model"), Source: str(p, "source"), Reason: str(p, "reason"),
 		ToolName: str(p, "tool_name"), ToolUseID: str(p, "tool_use_id"), NotifType: str(p, "notification_type"),
 		PermMode: str(p, "permission_mode"), AgentType: str(p, "agent_type"), AgentID: str(p, "agent_id"),
 	}
@@ -579,20 +578,14 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 func (d *Daemon) agentInstance(ppid int) string {
 	pid := ppid
 	for i := 0; i < 5 && pid > 1; i++ {
-		cmd := exec.Command("ps", "-o", "ppid=,lstart=,command=", "-p", strconv.Itoa(pid))
-		cmd.Env = append(os.Environ(), "LC_ALL=C") // 固定 lstart 格式（中文环境下段数不同）
-		out, err := cmd.Output()
-		if err != nil {
+		parent, start, cmd, ok := procQuery(pid)
+		if !ok {
 			return ""
 		}
-		f := strings.Fields(string(out))
-		if len(f) < 7 { // ppid + lstart（5 段）+ 命令
-			return ""
+		if isAgentCommand(strings.Fields(cmd)) {
+			return strconv.Itoa(pid) + "@" + start
 		}
-		if isAgentCommand(f[6:]) {
-			return strconv.Itoa(pid) + "@" + strings.Join(f[1:6], " ")
-		}
-		pid, _ = strconv.Atoi(f[0])
+		pid = parent
 	}
 	return ""
 }
@@ -603,7 +596,7 @@ func isAgentCommand(args []string) bool {
 		if i > 1 {
 			break
 		}
-		switch filepath.Base(a) {
+		switch progName(a) {
 		case "claude", "codex":
 			return true
 		}
@@ -627,12 +620,10 @@ func detectClient(req protocol.HookRequest) string {
 		return c
 	}
 	if req.PPID > 1 {
-		out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(req.PPID)).Output()
-		if err == nil {
-			cmd := string(out)
+		if _, _, cmd, ok := procQuery(req.PPID); ok {
 			switch {
 			case strings.Contains(cmd, "app-server"):
-				if strings.Contains(cmd, "ChatGPT.app") || strings.Contains(cmd, "CodexCLI.app") {
+				if strings.Contains(cmd, "ChatGPT.app") || strings.Contains(cmd, "CodexCLI.app") || strings.Contains(cmd, "OpenAI.Codex_") {
 					return "desktop"
 				}
 				return "app-server"
