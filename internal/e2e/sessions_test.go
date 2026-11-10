@@ -19,7 +19,7 @@ import (
 // Codex 前台 ks wait（待命、能立刻叫醒）、Codex 一轮结束没挂 wait（在线、不能后台叫醒）、已结束的默认不列、--all 才列。
 func TestTeamSessions(t *testing.T) {
 	e := setup(t)
-	bin := filepath.Join(t.TempDir(), "ks")
+	bin := filepath.Join(t.TempDir(), ksExe())
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/ks").CombinedOutput(); err != nil {
 		t.Fatalf("编译 ks 失败：%v\n%s", err, out)
 	}

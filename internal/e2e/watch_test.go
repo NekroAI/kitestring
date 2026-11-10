@@ -20,7 +20,7 @@ import (
 // 已被 tellEdited / 用户修改意见通知过的不重复送、60 秒内的只告知合并成一条、退订优先于因关联而来的默认订阅、--action-only。
 func TestReqWatch(t *testing.T) {
 	e := setup(t)
-	bin := filepath.Join(t.TempDir(), "ks")
+	bin := filepath.Join(t.TempDir(), ksExe())
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/ks").CombinedOutput(); err != nil {
 		t.Fatalf("编译 ks 失败：%v\n%s", err, out)
 	}

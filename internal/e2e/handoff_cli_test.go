@@ -17,7 +17,7 @@ import (
 // 真实编译 ks 命令行跑一遍：写成功、显示在时间线，拒收条件与 handoff_write 一致。
 func TestHandoffCLI(t *testing.T) {
 	e := setup(t)
-	bin := filepath.Join(t.TempDir(), "ks")
+	bin := filepath.Join(t.TempDir(), ksExe())
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/ks").CombinedOutput(); err != nil {
 		t.Fatalf("编译 ks 失败：%v\n%s", err, out)
 	}

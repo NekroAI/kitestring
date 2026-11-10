@@ -753,3 +753,11 @@ func sockTmp() string {
 	}
 	return "/tmp"
 }
+
+// ksExe 是测试里编出的 ks 文件名：Windows 上 exec 只认带 .exe 的。
+func ksExe() string {
+	if runtime.GOOS == "windows" {
+		return "ks.exe"
+	}
+	return "ks"
+}

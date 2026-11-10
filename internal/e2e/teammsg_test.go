@@ -38,7 +38,7 @@ type sentRes struct {
 // 开发发「要动手」广播被拒）、送达状态在 待送达 → 已送达 / 无法送达 之间转换、不能冒用发送方。真实编译 ks 跑命令行一侧。
 func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	e := setup(t)
-	bin := filepath.Join(t.TempDir(), "ks")
+	bin := filepath.Join(t.TempDir(), ksExe())
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/ks").CombinedOutput(); err != nil {
 		t.Fatalf("编译 ks 失败：%v\n%s", err, out)
 	}

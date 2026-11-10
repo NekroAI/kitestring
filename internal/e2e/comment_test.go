@@ -20,7 +20,7 @@ import (
 // 留言和用户留言进同一条时间线、不送达任何会话；留言超 600 字、团队消息超 120 字照常保存 / 发送并提示。
 func TestReqComment(t *testing.T) {
 	e := setup(t)
-	bin := filepath.Join(t.TempDir(), "ks")
+	bin := filepath.Join(t.TempDir(), ksExe())
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/ks").CombinedOutput(); err != nil {
 		t.Fatalf("编译 ks 失败：%v\n%s", err, out)
 	}
