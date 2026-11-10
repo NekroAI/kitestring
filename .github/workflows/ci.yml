@@ -62,6 +62,8 @@ jobs:
       - name: 安装脚本语法
         shell: powershell
         run: |
+          # 按 UTF-8 读再解析，与 irm | iex 拿到的文本相同（5.1 的 ParseFile 把无 BOM 的文件按 ANSI 读；脚本不能加 BOM，iex 不认）
           $errs = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD\scripts\install.ps1", [ref]$null, [ref]$errs)
+          $src = [IO.File]::ReadAllText("$PWD\scripts\install.ps1", [Text.Encoding]::UTF8)
+          [void][System.Management.Automation.Language.Parser]::ParseInput($src, [ref]$null, [ref]$errs)
           if ($errs) { $errs | ForEach-Object { Write-Error $_.Message }; exit 1 }
