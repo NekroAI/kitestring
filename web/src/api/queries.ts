@@ -291,6 +291,30 @@ export function useShareCandidates(projectId: string | undefined, enabled = true
   })
 }
 
+// 资源库（R-351）：一次取全部项目的素材（带最新版本），项目、批次、类别、状态在页面里筛（lib/assets）；
+// 素材详情带全部版本，抽屉里看大图、3D、版本对比用。推送后 Hub 发 assets 主题，两者都重新取。
+export type Asset = Schemas['Asset']
+export type AssetVersion = Schemas['AssetVersion']
+const normVersion = (v: AssetVersion) => ({ ...v, previews: v.previews ?? [], size: v.size ?? [], pixels: v.pixels ?? [] })
+
+export function useAssets() {
+  return useQuery({
+    queryKey: ['assets', 'list'],
+    queryFn: () => unwrap(api.GET('/api/assets')),
+    select: (d) => ({ assets: (d.assets ?? []).map((a) => ({ ...a, latest: a.latest ? normVersion(a.latest) : undefined })), statuses: d.statuses ?? [] }),
+  })
+}
+
+export function useAsset(ref: string | null) {
+  return useQuery({
+    queryKey: ['assets', 'detail', ref ?? ''],
+    queryFn: () => unwrap(api.GET('/api/assets/{ref}', { params: { path: { ref: ref! } } })),
+    select: (d) => ({ ...d, latest: d.latest ? normVersion(d.latest) : undefined, versions: (d.versions ?? []).map(normVersion) }),
+    enabled: !!ref,
+    retry: false,
+  })
+}
+
 export function useDevices() {
   return useQuery({
     queryKey: qk.devices,
@@ -370,6 +394,7 @@ const topicKeys: Record<string, readonly (readonly string[])[]> = {
   settings: [['settings']],
   orphans: [['orphans']],
   arrangements: [['arrangements']],
+  assets: [['assets']],
 }
 
 // laneSink：泳道时间线（R-205）的实时推送与断线后补拉，由 app/laneFeed 接上。

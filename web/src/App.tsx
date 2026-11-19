@@ -12,6 +12,7 @@ import ProjectsPage from './pages/Projects'
 import CommsPage from './pages/Comms'
 import SharesPage from './pages/Shares'
 import SecretsPage from './pages/Secrets'
+import AssetsPage from './pages/Assets'
 
 function Splash() {
   return (
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="shares/:id" element={<SharesPage mode="detail" />} />
         <Route path="shares/:id/edit" element={<SharesPage mode="edit" />} />
         <Route path="secrets" element={<SecretsPage />} />
+        <Route path="assets" element={<AssetsPage />} />
         <Route path="settings" element={<SettingsPage version={version} />} />
         <Route path="decisions" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

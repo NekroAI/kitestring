@@ -27,7 +27,7 @@ func TestPushAssetsVersions(t *testing.T) {
 	}
 	push := func(id string, items ...protocol.AssetItem) protocol.AssetPushResult {
 		t.Helper()
-		r, err := s.PushAssets(ctx, NewAssetPush{PushID: id, ProjectID: "p1", ProjectName: "rollcall", SessionKey: "claude:a", Batch: "G11e1", Branch: "main", Commit: "abc1234", Items: items})
+		r, err := s.PushAssets(ctx, NewAssetPush{PushID: id, ProjectID: "p1", ProjectName: "rollcall", Submitter: AssetSubmitter{Kind: SubmitterSession, Ref: "claude:a", Name: "推素材"}, Batch: "G11e1", Branch: "main", Commit: "abc1234", Items: items})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,5 +106,40 @@ func TestAssetMoves(t *testing.T) {
 	}
 	if _, err := s.GetAsset(ctx, "A-99"); !errors.Is(err, ErrNotFound) {
 		t.Fatal("不存在的编号")
+	}
+}
+
+// R-351（D-1782）：提交者不只存会话键，也能表示访客（分享链接 + 名字，给 R-365 预留）；每一版各记各的，素材上是最近一次的。
+func TestAssetSubmitter(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	img := func(sha string) *protocol.AssetFile {
+		f, err := s.CreateFile(ctx, "c.png", "image/png", sha, 10, "device:x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &protocol.AssetFile{ID: f.ID, Name: f.Name}
+	}
+	push := func(id string, f *protocol.AssetFile, sub AssetSubmitter) {
+		t.Helper()
+		if _, err := s.PushAssets(ctx, NewAssetPush{PushID: id, ProjectID: "p1", ProjectName: "rollcall", Submitter: sub, Batch: "G11d", Items: []protocol.AssetItem{{Key: "c", Kind: protocol.AssetImage, File: f}}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	push("s1", img("a"), AssetSubmitter{Kind: SubmitterSession, Ref: "claude:a", Name: "推素材"})
+	push("s2", img("b"), AssetSubmitter{Kind: SubmitterGuest, Ref: "link-1", Name: "小林"})
+	d, err := s.GetAsset(ctx, "A-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Submitter != (AssetSubmitter{Kind: SubmitterGuest, Ref: "link-1", Name: "小林"}) {
+		t.Fatalf("素材上应是最近一次的提交者：%+v", d.Submitter)
+	}
+	if len(d.Versions) != 2 || d.Versions[0].Submitter.Kind != SubmitterGuest || d.Versions[1].Submitter != (AssetSubmitter{Kind: SubmitterSession, Ref: "claude:a", Name: "推素材"}) {
+		t.Fatalf("每一版各记各的提交者：%+v", d.Versions)
+	}
+	list, _ := s.ListAssets(ctx, AssetFilter{ProjectID: "p1"})
+	if len(list) != 1 || list[0].Latest == nil || list[0].Latest.Submitter.Name != "小林" {
+		t.Fatalf("列表里的最新版也带提交者：%+v", list)
 	}
 }

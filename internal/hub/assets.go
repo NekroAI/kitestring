@@ -341,6 +341,15 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 		}
 		p.Items[i] = it
 	}
-	return h.store.PushAssets(ctx, store.NewAssetPush{PushID: p.PushID, ProjectID: proj.ID, ProjectName: proj.Name, SessionKey: p.SessionKey,
+	// 提交者：Agent 推送一律是会话（键 + 当时的会话标题）；网页上传（user）和分享页访客（guest，R-365）以后接这里
+	sub := store.AssetSubmitter{Kind: store.SubmitterSession, Ref: p.SessionKey}
+	if x, err := h.store.GetSession(ctx, p.SessionKey); err == nil {
+		sub.Name = x.Title
+	}
+	out, err := h.store.PushAssets(ctx, store.NewAssetPush{PushID: p.PushID, ProjectID: proj.ID, ProjectName: proj.Name, Submitter: sub,
 		RequirementID: reqID, Batch: batch, Branch: p.Branch, Commit: p.Commit, Status: p.Status, Items: p.Items})
+	if err == nil {
+		h.broker.publish("assets") // 资源库页（R-351 第 3 步）收到后重新拉列表
+	}
+	return out, err
 }

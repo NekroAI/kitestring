@@ -1685,10 +1685,6 @@
           "requirement_id": {
             "type": "string"
           },
-          "session_key": {
-            "description": "最近一次提交素材的会话",
-            "type": "string"
-          },
           "status": {
             "enum": [
               "wip",
@@ -1702,6 +1698,10 @@
             "description": "状态最近一次变化的时间",
             "format": "date-time",
             "type": "string"
+          },
+          "submitter": {
+            "$ref": "#/components/schemas/AssetSubmitter",
+            "description": "最近一次提交素材的人（返工意见送它）"
           },
           "updated_at": {
             "format": "date-time",
@@ -1723,7 +1723,7 @@
           "category",
           "status",
           "version",
-          "session_key",
+          "submitter",
           "created_at",
           "updated_at"
         ],
@@ -1775,10 +1775,6 @@
           "requirement_id": {
             "type": "string"
           },
-          "session_key": {
-            "description": "最近一次提交素材的会话",
-            "type": "string"
-          },
           "status": {
             "enum": [
               "wip",
@@ -1792,6 +1788,10 @@
             "description": "状态最近一次变化的时间",
             "format": "date-time",
             "type": "string"
+          },
+          "submitter": {
+            "$ref": "#/components/schemas/AssetSubmitter",
+            "description": "最近一次提交素材的人（返工意见送它）"
           },
           "updated_at": {
             "format": "date-time",
@@ -1823,7 +1823,7 @@
           "category",
           "status",
           "version",
-          "session_key",
+          "submitter",
           "created_at",
           "updated_at"
         ],
@@ -2172,6 +2172,33 @@
         ],
         "type": "object"
       },
+      "AssetSubmitter": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "session 会话 / user 你 / guest 分享页访客；旧数据为空",
+            "enum": [
+              "session",
+              "user",
+              "guest",
+              ""
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "显示名：会话标题、访客名字",
+            "type": "string"
+          },
+          "ref": {
+            "description": "session：会话键；guest：访客链接 ID；user：空",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
       "AssetVersion": {
         "additionalProperties": false,
         "properties": {
@@ -2224,9 +2251,6 @@
               "null"
             ]
           },
-          "session_key": {
-            "type": "string"
-          },
           "size": {
             "description": "尺寸（米，x / y / z）",
             "items": {
@@ -2237,6 +2261,10 @@
               "array",
               "null"
             ]
+          },
+          "submitter": {
+            "$ref": "#/components/schemas/AssetSubmitter",
+            "description": "这一版的提交者"
           },
           "triangles": {
             "format": "int64",
@@ -2254,7 +2282,7 @@
           "branch",
           "commit",
           "previews",
-          "session_key",
+          "submitter",
           "created_at"
         ],
         "type": "object"

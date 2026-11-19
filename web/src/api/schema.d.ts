@@ -3290,8 +3290,6 @@ export interface components {
             latest?: components["schemas"]["AssetVersion"];
             project_id: string;
             requirement_id?: string;
-            /** @description 最近一次提交素材的会话 */
-            session_key: string;
             /** @enum {string} */
             status: "wip" | "pending" | "approved" | "rework";
             /**
@@ -3299,6 +3297,8 @@ export interface components {
              * @description 状态最近一次变化的时间
              */
             status_at?: string;
+            /** @description 最近一次提交素材的人（返工意见送它） */
+            submitter: components["schemas"]["AssetSubmitter"];
             /** Format: date-time */
             updated_at: string;
             /**
@@ -3328,8 +3328,6 @@ export interface components {
             latest?: components["schemas"]["AssetVersion"];
             project_id: string;
             requirement_id?: string;
-            /** @description 最近一次提交素材的会话 */
-            session_key: string;
             /** @enum {string} */
             status: "wip" | "pending" | "approved" | "rework";
             /**
@@ -3337,6 +3335,8 @@ export interface components {
              * @description 状态最近一次变化的时间
              */
             status_at?: string;
+            /** @description 最近一次提交素材的人（返工意见送它） */
+            submitter: components["schemas"]["AssetSubmitter"];
             /** Format: date-time */
             updated_at: string;
             /**
@@ -3469,6 +3469,17 @@ export interface components {
              */
             reused: number;
         };
+        AssetSubmitter: {
+            /**
+             * @description session 会话 / user 你 / guest 分享页访客；旧数据为空
+             * @enum {string}
+             */
+            kind: "session" | "user" | "guest" | "";
+            /** @description 显示名：会话标题、访客名字 */
+            name?: string;
+            /** @description session：会话键；guest：访客链接 ID；user：空 */
+            ref?: string;
+        };
         AssetVersion: {
             batch: string;
             branch: string;
@@ -3489,9 +3500,10 @@ export interface components {
             pixels?: number[] | null;
             /** @description 零件的预览图 */
             previews: components["schemas"]["FileRef"][] | null;
-            session_key: string;
             /** @description 尺寸（米，x / y / z） */
             size?: number[] | null;
+            /** @description 这一版的提交者 */
+            submitter: components["schemas"]["AssetSubmitter"];
             /** Format: int64 */
             triangles?: number;
             /** Format: int64 */

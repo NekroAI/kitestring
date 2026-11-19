@@ -222,7 +222,7 @@ func TestAssetPush(t *testing.T) {
 			e.call("GET", "/api/assets/"+a.Code, nil, &wheel)
 		}
 	}
-	if wheel.Kind != "part" || wheel.SessionKey != key || len(wheel.Versions) != 1 || len(wheel.Latest.Previews) != 2 || wheel.Latest.File.Mime != "model/gltf-binary" || wheel.Latest.Commit != "abc1234" {
+	if wheel.Kind != "part" || wheel.Submitter.Kind != store.SubmitterSession || wheel.Submitter.Ref != key || wheel.Latest.Submitter.Ref != key || len(wheel.Versions) != 1 || len(wheel.Latest.Previews) != 2 || wheel.Latest.File.Mime != "model/gltf-binary" || wheel.Latest.Commit != "abc1234" {
 		t.Fatalf("wheel 详情：%+v", wheel)
 	}
 	if resp, body := e.download(t, "/api/files/"+wheel.Latest.File.ID); resp.StatusCode != 200 || string(body[:4]) != "glTF" {
@@ -340,8 +340,8 @@ func TestAssetPushOffline(t *testing.T) {
 		if a.Key == "wheel" && (a.Latest.File == nil || a.Latest.File.Size < 100) {
 			t.Fatalf("补传的应是排队时的文件：%+v", a.Latest.File)
 		}
-		if a.SessionKey != key {
-			t.Fatalf("提交会话：%s", a.SessionKey)
+		if a.Submitter.Kind != store.SubmitterSession || a.Submitter.Ref != key {
+			t.Fatalf("提交者：%+v", a.Submitter)
 		}
 	}
 	if spool, _ := os.ReadDir(filepath.Join(os.Getenv("KS_HOME"), "asset-spool")); len(spool) != 0 {

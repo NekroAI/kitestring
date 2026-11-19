@@ -45,40 +45,40 @@ func AssetCode(seq int) string { return "A-" + strconv.Itoa(seq) }
 
 // Asset 是一条素材（带最新版本）。
 type Asset struct {
-	ID            string        `json:"id"`
-	Code          string        `json:"code" doc:"素材编号 A-x"`
-	ProjectID     string        `json:"project_id"`
-	Batch         string        `json:"batch"`
-	Key           string        `json:"key" doc:"manifest 的 id；独立的图是文件名去扩展名"`
-	Kind          string        `json:"kind" enum:"part,image" doc:"part GLB 零件 / image 独立的图"`
-	Category      string        `json:"category"`
-	Group         string        `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版），并排比较用"`
-	Status        string        `json:"status" enum:"wip,pending,approved,rework"`
-	Version       int           `json:"version" doc:"最新版本号"`
-	SessionKey    string        `json:"session_key" doc:"最近一次提交素材的会话"`
-	RequirementID string        `json:"requirement_id,omitempty"`
-	StatusAt      *time.Time    `json:"status_at,omitempty" doc:"状态最近一次变化的时间"`
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
-	Latest        *AssetVersion `json:"latest,omitempty" doc:"最新版本"`
+	ID            string         `json:"id"`
+	Code          string         `json:"code" doc:"素材编号 A-x"`
+	ProjectID     string         `json:"project_id"`
+	Batch         string         `json:"batch"`
+	Key           string         `json:"key" doc:"manifest 的 id；独立的图是文件名去扩展名"`
+	Kind          string         `json:"kind" enum:"part,image" doc:"part GLB 零件 / image 独立的图"`
+	Category      string         `json:"category"`
+	Group         string         `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版），并排比较用"`
+	Status        string         `json:"status" enum:"wip,pending,approved,rework"`
+	Version       int            `json:"version" doc:"最新版本号"`
+	Submitter     AssetSubmitter `json:"submitter" doc:"最近一次提交素材的人（返工意见送它）"`
+	RequirementID string         `json:"requirement_id,omitempty"`
+	StatusAt      *time.Time     `json:"status_at,omitempty" doc:"状态最近一次变化的时间"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	Latest        *AssetVersion  `json:"latest,omitempty" doc:"最新版本"`
 }
 
 // AssetVersion 是素材的一个版本。
 type AssetVersion struct {
-	ID         string          `json:"id"`
-	Version    int             `json:"version"`
-	Batch      string          `json:"batch"`
-	Branch     string          `json:"branch"`
-	Commit     string          `json:"commit"`
-	File       *FileRef        `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`
-	Previews   []FileRef       `json:"previews" doc:"零件的预览图"`
-	Triangles  int             `json:"triangles,omitempty"`
-	Budget     int             `json:"budget,omitempty" doc:"面数预算上限"`
-	Size       []float64       `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
-	Pixels     []int           `json:"pixels,omitempty" doc:"像素尺寸（宽 / 高）"`
-	Meta       json.RawMessage `json:"meta,omitempty" doc:"manifest 里这一项的原文"`
-	SessionKey string          `json:"session_key"`
-	CreatedAt  time.Time       `json:"created_at"`
+	ID        string          `json:"id"`
+	Version   int             `json:"version"`
+	Batch     string          `json:"batch"`
+	Branch    string          `json:"branch"`
+	Commit    string          `json:"commit"`
+	File      *FileRef        `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`
+	Previews  []FileRef       `json:"previews" doc:"零件的预览图"`
+	Triangles int             `json:"triangles,omitempty"`
+	Budget    int             `json:"budget,omitempty" doc:"面数预算上限"`
+	Size      []float64       `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
+	Pixels    []int           `json:"pixels,omitempty" doc:"像素尺寸（宽 / 高）"`
+	Meta      json.RawMessage `json:"meta,omitempty" doc:"manifest 里这一项的原文"`
+	Submitter AssetSubmitter  `json:"submitter" doc:"这一版的提交者"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
 // AssetDetail 是素材与它的全部版本（新的在前）。
@@ -87,12 +87,26 @@ type AssetDetail struct {
 	Versions []AssetVersion `json:"versions"`
 }
 
+// 提交者的三种（R-351；guest 给 R-365 资源库分享预留，访客在分享页上传素材）。
+const (
+	SubmitterSession = "session" // 会话推送：Ref 是会话键
+	SubmitterUser    = "user"    // 你自己在网页上传
+	SubmitterGuest   = "guest"   // 分享页上的访客：Ref 是访客链接 ID，Name 是访客名字
+)
+
+// AssetSubmitter 是素材某一版的提交者。
+type AssetSubmitter struct {
+	Kind string `json:"kind" enum:"session,user,guest," doc:"session 会话 / user 你 / guest 分享页访客；旧数据为空"`
+	Ref  string `json:"ref,omitempty" doc:"session：会话键；guest：访客链接 ID；user：空"`
+	Name string `json:"name,omitempty" doc:"显示名：会话标题、访客名字"`
+}
+
 // NewAssetPush 是登记一次推送的参数（文件已在 files 表里）。
 type NewAssetPush struct {
 	PushID        string
 	ProjectID     string
 	ProjectName   string
-	SessionKey    string
+	Submitter     AssetSubmitter
 	RequirementID string
 	Batch         string
 	Branch        string
@@ -213,8 +227,8 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 			return r, err
 		}
 		version = 0
-		if _, err := t.ExecContext(ctx, `INSERT INTO assets(id, seq, project_id, batch, key, kind, category, grp, status, version, session_key, requirement_id, status_at, created_at, updated_at)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`, id, seq, n.ProjectID, n.Batch, it.Key, it.Kind, it.Category, it.Group, status, n.SessionKey, n.RequirementID, at, at, at); err != nil {
+		if _, err := t.ExecContext(ctx, `INSERT INTO assets(id, seq, project_id, batch, key, kind, category, grp, status, version, submitter_kind, submitter_ref, submitter_name, requirement_id, status_at, created_at, updated_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`, id, seq, n.ProjectID, n.Batch, it.Key, it.Kind, it.Category, it.Group, status, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, n.RequirementID, at, at, at); err != nil {
 			return r, err
 		}
 		r.Result = "created"
@@ -233,20 +247,20 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 	}
 	version++
 	vid := protocol.NewID()
-	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, session_key, created_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, submitter_kind, submitter_ref, submitter_name, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		vid, id, version, n.PushID, n.Batch, n.Branch, n.Commit, fileID, filesJSON(previews), it.Triangles, it.Budget,
-		jsonOrEmpty(it.Size), jsonOrEmpty(it.Pixels), string(it.Meta), digest, n.SessionKey, at); err != nil {
+		jsonOrEmpty(it.Size), jsonOrEmpty(it.Pixels), string(it.Meta), digest, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, at); err != nil {
 		return r, err
 	}
 	reqSet := ""
-	args := []any{version, vid, it.Kind, it.Category, it.Group, status, n.SessionKey}
+	args := []any{version, vid, it.Kind, it.Category, it.Group, status, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name}
 	if n.RequirementID != "" {
 		reqSet = ", requirement_id = ?"
 		args = append(args, n.RequirementID)
 	}
 	args = append(args, at, at, id)
-	if _, err := t.ExecContext(ctx, `UPDATE assets SET version = ?, latest_id = ?, kind = ?, category = ?, grp = ?, status = ?, session_key = ?`+reqSet+`, status_at = ?, updated_at = ? WHERE id = ?`, args...); err != nil {
+	if _, err := t.ExecContext(ctx, `UPDATE assets SET version = ?, latest_id = ?, kind = ?, category = ?, grp = ?, status = ?, submitter_kind = ?, submitter_ref = ?, submitter_name = ?`+reqSet+`, status_at = ?, updated_at = ? WHERE id = ?`, args...); err != nil {
 		return r, err
 	}
 	r.Code, r.Version = AssetCode(seq), version
@@ -270,15 +284,15 @@ type AssetFilter struct {
 	Kind      string
 }
 
-const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.session_key, a.requirement_id, a.status_at, a.created_at, a.updated_at`
+const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at`
 
-const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.session_key, v.created_at`
+const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at`
 
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (Asset, error) {
 	var a Asset
 	var seq int
 	var statusAt, created, updated string
-	dst := append([]any{&a.ID, &seq, &a.ProjectID, &a.Batch, &a.Key, &a.Kind, &a.Category, &a.Group, &a.Status, &a.Version, &a.SessionKey, &a.RequirementID, &statusAt, &created, &updated}, extra...)
+	dst := append([]any{&a.ID, &seq, &a.ProjectID, &a.Batch, &a.Key, &a.Kind, &a.Category, &a.Group, &a.Status, &a.Version, &a.Submitter.Kind, &a.Submitter.Ref, &a.Submitter.Name, &a.RequirementID, &statusAt, &created, &updated}, extra...)
 	if err := row.Scan(dst...); err != nil {
 		return a, err
 	}
@@ -298,7 +312,7 @@ type versionRow struct {
 }
 
 func (r *versionRow) dst() []any {
-	return []any{&r.v.ID, &r.v.Version, &r.v.Batch, &r.v.Branch, &r.v.Commit, &r.fileID, &r.previews, &r.v.Triangles, &r.v.Budget, &r.size, &r.pixels, &r.meta, &r.v.SessionKey, &r.crtd}
+	return []any{&r.v.ID, &r.v.Version, &r.v.Batch, &r.v.Branch, &r.v.Commit, &r.fileID, &r.previews, &r.v.Triangles, &r.v.Budget, &r.size, &r.pixels, &r.meta, &r.v.Submitter.Kind, &r.v.Submitter.Ref, &r.v.Submitter.Name, &r.crtd}
 }
 
 func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
