@@ -49,11 +49,11 @@ export function fileTypeOf(f: Pick<FileLite, 'name' | 'mime'>): string {
   return x
 }
 
-// fileTypesOf（R-388）：一件素材最新一版里全部文件的文件类型（主文件在前，再是预览图），去重；自动生成的缩略图不算。
+// fileTypesOf（R-388）：一件素材最新一版的文件类型，只按主文件算（模型 GLB、图片 PNG / JPG、音效 OGG / WAV）；预览图和自动缩略图不算。
 export function fileTypesOf(a: Pick<AssetLite, 'latest'>): string[] {
-  const v = a.latest
-  const fs = [v?.file, ...(v?.previews ?? [])].filter((f): f is FileLite => !!f)
-  return [...new Set(fs.map(fileTypeOf).filter(Boolean))]
+  const f = a.latest?.file
+  const x = f ? fileTypeOf(f) : ''
+  return x ? [x] : []
 }
 
 // projectsOf：有素材的项目，最近有更新的在前（资源库页的项目切换只列这些）。

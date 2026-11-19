@@ -654,6 +654,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     [t.asset.meta.batch, batchesOf(a.uid ? a : (v ?? a)).join(t.asset.listSep)],
     [t.asset.meta.category, a.category],
     [t.asset.meta.fileType, fileTypesOf({ latest: v }).join(t.asset.listSep)],
+    [t.asset.meta.previews, v?.previews?.length ? t.asset.previewCount(v.previews.length) : ''],
     [t.asset.meta.branch, v?.branch],
     [t.asset.meta.commit, v?.commit ? <span className="font-mono text-[12px]">{v.commit.slice(0, 10)}</span> : ''],
     [t.asset.meta.triangles, v && fmtTris(v.triangles, v.budget) ? <span className={cx(overBudget(v.triangles, v.budget) && 'text-danger')} title={overBudget(v.triangles, v.budget) ? t.asset.overBudget : undefined}>{fmtTris(v.triangles, v.budget)}</span> : ''],

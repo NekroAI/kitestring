@@ -288,8 +288,9 @@ export const zh = {
     compareHint: '拖动分隔线对比',
     compareSlider: (a: number, b: number) => `对比 v${a} 和 v${b}`,
     ver: (n: number) => `v${n}`,
-    meta: { code: '编号', batch: '批次', category: '类别', fileType: '文件类型', branch: '分支', commit: '提交', triangles: '面数', size: '尺寸', pixels: '像素', source: '来源', license: '许可', variants: '变体', submitter: '提交者' },
+    meta: { code: '编号', batch: '批次', category: '类别', fileType: '文件类型', previews: '预览图', branch: '分支', commit: '提交', triangles: '面数', size: '尺寸', pixels: '像素', source: '来源', license: '许可', variants: '变体', submitter: '提交者' },
     // 按素材 id 推送（R-376）：批次可多个；asset.json 里纸鸢不认识的字段原样列在「项目字段」
+    previewCount: (n: number) => `${n} 张`,
     listSep: '、',
     projectFields: '项目字段',
     submitter: { user: '你', session: '会话', guest: (name: string) => `访客「${name}」` },
