@@ -212,7 +212,7 @@ func TestBuildByIDPerAssetDir(t *testing.T) {
 		t.Fatalf("默认变体 g3 的文件、按所在目录挂上的预览图：%+v", c)
 	}
 	text := ReportText(rep)
-	for _, want := range []string{"没在 previews 里列出，按所在目录挂上", "文件类型不支持：body_fall_01.ogg", "有错 1 件"} {
+	for _, want := range []string{"没在 previews 里列出，按所在目录挂上", "音效文件 body_fall_01.ogg 读不出来", "有错 1 件"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("报告缺「%s」：\n%s", want, text)
 		}

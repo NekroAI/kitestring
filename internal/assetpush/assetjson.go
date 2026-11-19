@@ -26,7 +26,7 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
 {
   "id": "core:weapon.carbine",          必填：命名空间:名字。命名空间用小写字母、数字和 _ . -；名字用字母、数字和 _ . - /
   "category": "weapon",                 必填：类别
-  "file": "carbine.glb",                主文件（GLB 或图片），相对 asset.json；不写时取 variants 里默认变体的文件
+  "file": "carbine.glb",                主文件（GLB、图片或音效 OGG / WAV），相对 asset.json；不写时取 variants 里默认变体的文件
   "variants": {"default": {"files": {"model": "carbine.glb"}}, "desert": {"file": "carbine_desert.glb", "previews": ["previews/carbine@desert__front.png"]}},
                                         可选：具名变体。默认变体（default_variant，没写时是 default）就是素材本身；
                                         其余变体各是一条素材「core:weapon.carbine@desert」，有自己的版本和审核，网页上可并排比较。
@@ -39,6 +39,10 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
   "budget": {"triangles": 1200, "max_triangles": 1500}, "size": {"dimensions_m": [0.7, 0.2, 0.1]},
   "title": "卡宾枪"                     其它字段是项目特有的，原样存进 meta，网页上展示
 }
+音效（file 是 .ogg / .opus / .wav）：时长、声道、采样率由推送端从文件读；响度（LUFS）、峰值（dBFS）和波形 WAV 直接算，
+  OGG 要本机有 ffmpeg 解码。读不出的可声明："audio": {"loudness_lufs": -18, "peak_dbfs": -1, "duration_s": 1.2, "channels": 2, "sample_rate": 48000}；
+  文件里读出的优先，声明只补读不出的（网页上标「声明」），不一致时提示。多个版本的音效写成 variants（如 {"default": {"file": "hit_01.ogg"},
+  "b": {"file": "hit_02.ogg"}}），网页上可逐个试听；previews 可放封面图，不放时图片墙画波形。
 多件写法：{"namespace": "core", "batches": ["G12"], "previews_dir": "previews", "assets": [{...}, {...}]}，
   namespace 给没写命名空间的 id 补上，batches 每件都带，previews_dir 是按文件名归属预览图的目录。
 
@@ -63,7 +67,7 @@ const ConfigFile = ".kitestring/assets.json"
 // genericKeys 是纸鸢认识并单独存下的通用字段，不再进 meta。budget、size 写成对象时整个留在 meta（里面常有项目自己的检查项）。
 var genericKeys = map[string]bool{"format": true, "id": true, "category": true, "file": true, "previews": true, "batch": true, "batches": true,
 	"variants": true, "default_variant": true, "source": true, "sources": true, "license": true, "group": true, "triangles": true,
-	"budget_max": true, "pixels": true, "dimensions_px": true}
+	"budget_max": true, "pixels": true, "dimensions_px": true, "audio": true}
 
 // IDOptions 是按 asset.json 推送的输入。
 type IDOptions struct {
@@ -80,6 +84,7 @@ type IDOptions struct {
 	Project     string
 	Requirement string
 	SessionKey  string
+	NoFFmpeg    bool // 不用本机 ffmpeg 解 OGG（测试用；默认有 ffmpeg 就用它测 OGG 的响度、峰值和波形）
 }
 
 // Check 是一件素材的本地校验结果。
@@ -90,6 +95,7 @@ type Check struct {
 	Kind     string   `json:"kind,omitempty"`
 	File     string   `json:"file,omitempty"`
 	Views    []string `json:"views,omitempty" doc:"预览图的机位"`
+	Audio    string   `json:"audio,omitempty" doc:"音效（R-381）：时长、声道、采样率、响度、峰值，一句话"`
 	Batches  []string `json:"batches,omitempty"`
 	Errors   []string `json:"errors,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -221,6 +227,7 @@ type idEntry struct {
 	Dimensions     []float64       `json:"dimensions_m"`
 	Pixels         []int           `json:"pixels"`
 	PixelsOld      []int           `json:"dimensions_px"`
+	Audio          json.RawMessage `json:"audio"`
 }
 
 // winBad 是 Windows 文件名不允许的字符。
@@ -468,7 +475,7 @@ func textOf(raw json.RawMessage) string {
 	return string(raw)
 }
 
-// variantFile 在 variants 里找默认变体的主文件：先 default_variant，再 default，再第一个；文件按 model、image、texture 的顺序取。
+// variantFile 在 variants 里找默认变体的主文件：先 default_variant，再 default，再第一个；文件按 model、image、texture、audio、sound 的顺序取。
 func variantFile(raw json.RawMessage, def string) string {
 	if len(raw) == 0 {
 		return ""
@@ -482,7 +489,7 @@ func variantFile(raw json.RawMessage, def string) string {
 		if v.File != "" {
 			return v.File
 		}
-		for _, role := range []string{"model", "image", "texture"} {
+		for _, role := range []string{"model", "image", "texture", "audio", "sound"} {
 			if f := v.Files[role]; f != "" {
 				return f
 			}
@@ -707,12 +714,8 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 				break
 			}
 			it.File = &protocol.AssetFile{Path: file, Name: filepath.Base(file)}
-			ext := strings.ToLower(filepath.Ext(file))
-			switch {
-			case ext == ".glb":
-				it.Kind = protocol.AssetPart
-			case imageExt[ext]:
-				it.Kind = protocol.AssetImage
+			switch it.Kind = fileKind(file); it.Kind {
+			case protocol.AssetImage:
 				it.Pixels = e.Pixels
 				if len(it.Pixels) != 2 {
 					it.Pixels = e.PixelsOld
@@ -720,8 +723,12 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 				if len(it.Pixels) != 2 {
 					it.Pixels = imageSize(file)
 				}
-			default:
-				c.Errors = append(c.Errors, "文件类型不支持："+filepath.Base(file)+"（现在只收 GLB 和图片）")
+			case protocol.AssetAudio:
+				var errs, warns []string
+				it.Audio, errs, warns = audioInfo(file, e.Audio, !o.NoFFmpeg)
+				c.Errors, c.Warnings, c.Audio = append(c.Errors, errs...), append(c.Warnings, warns...), AudioText(it.Audio)
+			case "":
+				c.Errors = append(c.Errors, "文件类型不支持："+filepath.Base(file)+unsupportedType)
 			}
 			c.Kind = it.Kind
 		}
@@ -818,7 +825,7 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 		}
 		// 具名变体（R-380）：默认变体就是素材本身，其余变体各推一条（排在素材后面）
 		if len(it.Variants) > 0 && id != "" && protocol.CheckAssetID(id) == "" {
-			def, vs, errs := variantItems(it, x.src, e.Variants, e.DefaultVariant, []string{x.dir, base, root}, root)
+			def, vs, errs := variantItems(it, x.src, e.Variants, e.DefaultVariant, []string{x.dir, base, root}, root, !o.NoFFmpeg)
 			it.Variant = def
 			c.Errors = append(c.Errors, errs...)
 			for _, v := range vs {
@@ -1057,6 +1064,11 @@ func ReportText(rep Report) string {
 			parts = append(parts, "GLB")
 		case protocol.AssetImage:
 			parts = append(parts, "图片")
+		case protocol.AssetAudio:
+			parts = append(parts, "音效")
+			if c.Audio != "" {
+				parts = append(parts, c.Audio)
+			}
 		}
 		if len(c.Views) > 0 {
 			parts = append(parts, fmt.Sprintf("预览图 %d 个机位（%s）", len(c.Views), strings.Join(c.Views, "、")))

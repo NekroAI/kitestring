@@ -3552,10 +3552,10 @@ export interface components {
             /** @description manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid */
             key: string;
             /**
-             * @description part GLB 零件 / image 独立的图
+             * @description part GLB 零件 / image 独立的图 / audio 音效（R-381）
              * @enum {string}
              */
-            kind: "part" | "image";
+            kind: "part" | "image" | "audio";
             /** @description 最新版本 */
             latest?: components["schemas"]["AssetVersion"];
             /** @description 这是哪件素材的变体（变体条目才有） */
@@ -3605,6 +3605,39 @@ export interface components {
              */
             version: number;
         };
+        AssetAudioInfo: {
+            /**
+             * Format: int64
+             * @description 声道数
+             */
+            channels?: number;
+            /** @description 编码：pcm（WAV）/ vorbis / opus */
+            codec?: string;
+            /** @description 取自 asset.json 声明（文件里读不出）的字段名 */
+            declared?: string[] | null;
+            /**
+             * Format: double
+             * @description 时长（秒）
+             */
+            duration_s?: number;
+            /**
+             * Format: double
+             * @description 综合响度（LUFS，ITU-R BS.1770）
+             */
+            loudness_lufs?: number;
+            /**
+             * Format: double
+             * @description 采样峰值（dBFS）
+             */
+            peak_dbfs?: number;
+            /**
+             * Format: int64
+             * @description 采样率（Hz）
+             */
+            sample_rate?: number;
+            /** @description 波形：均分成若干段，每段的峰值（0–100，满幅 100），没有预览图时画成封面 */
+            wave?: number[] | null;
+        };
         AssetBaselineInfo: {
             /**
              * Format: int64
@@ -3636,7 +3669,7 @@ export interface components {
             /** @description 素材 id 或编号 A-x；末尾带 * 按前缀查 */
             id?: string;
             /** @enum {string} */
-            kind?: "part" | "image" | "";
+            kind?: "part" | "image" | "audio" | "";
             /** @description 项目 ID（Agent 用时固定为会话所在项目） */
             project?: string;
             /** @enum {string} */
@@ -3734,10 +3767,10 @@ export interface components {
             /** @description manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid */
             key: string;
             /**
-             * @description part GLB 零件 / image 独立的图
+             * @description part GLB 零件 / image 独立的图 / audio 音效（R-381）
              * @enum {string}
              */
-            kind: "part" | "image";
+            kind: "part" | "image" | "audio";
             /** @description 最新版本 */
             latest?: components["schemas"]["AssetVersion"];
             /** @description 这是哪件素材的变体（变体条目才有） */
@@ -3833,6 +3866,8 @@ export interface components {
             };
         };
         AssetItem: {
+            /** @description 音效的时长、声道、响度等（R-381） */
+            audio?: components["schemas"]["AssetAudioInfo"];
             /** @description asset.json：这次带上的批次（可多个，并入素材已有的批次，不删旧的） */
             batches?: string[] | null;
             /**
@@ -3849,10 +3884,10 @@ export interface components {
             /** @description 素材 ID：manifest 的 id；独立的图用文件名（去扩展名） */
             key: string;
             /**
-             * @description part = GLB 零件，image = 独立的图
+             * @description part = GLB 零件，image = 独立的图，audio = 音效（R-381）
              * @enum {string}
              */
-            kind: "part" | "image";
+            kind: "part" | "image" | "audio";
             /** @description asset.json：许可（CC0、自有……） */
             license?: string;
             /** @description 旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样） */
@@ -4092,6 +4127,8 @@ export interface components {
             total: number;
         };
         AssetVersion: {
+            /** @description 音效的时长、声道、采样率、响度、峰值、波形（R-381） */
+            audio?: components["schemas"]["AssetAudioInfo"];
             /** @description 自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它 */
             auto_thumb?: components["schemas"]["FileRef"];
             batch: string;
@@ -7484,10 +7521,10 @@ export interface components {
             /** @description 素材的 key */
             asset_key?: string;
             /**
-             * @description part 零件 / image 独立的图
+             * @description part 零件 / image 独立的图 / audio 音效
              * @enum {string}
              */
-            asset_kind?: "part" | "image" | "";
+            asset_kind?: "part" | "image" | "audio" | "";
             /**
              * Format: int64
              * @description 素材现在的最新版本
@@ -7554,10 +7591,10 @@ export interface components {
             /** @description 素材的 key */
             asset_key?: string;
             /**
-             * @description part 零件 / image 独立的图
+             * @description part 零件 / image 独立的图 / audio 音效
              * @enum {string}
              */
-            asset_kind?: "part" | "image" | "";
+            asset_kind?: "part" | "image" | "audio" | "";
             /**
              * Format: int64
              * @description 素材现在的最新版本
@@ -8578,7 +8615,7 @@ export interface operations {
                 batch?: string;
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
-                kind?: "part" | "image" | "";
+                kind?: "part" | "image" | "audio" | "";
                 /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
@@ -8624,7 +8661,7 @@ export interface operations {
                 batch?: string;
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
-                kind?: "part" | "image" | "";
+                kind?: "part" | "image" | "audio" | "";
                 /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
@@ -10676,7 +10713,7 @@ export interface operations {
                 batch?: string;
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
-                kind?: "part" | "image" | "";
+                kind?: "part" | "image" | "audio" | "";
                 /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */

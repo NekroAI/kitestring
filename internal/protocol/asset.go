@@ -15,7 +15,21 @@ import (
 const (
 	AssetPart  = "part"  // GLB 零件：主文件是 GLB，挂它的预览图
 	AssetImage = "image" // 独立的图：目录图、概念图、动作对比图，主文件就是图
+	AssetAudio = "audio" // 音效（R-381）：主文件是 OGG（Vorbis / Opus）或 WAV，可挂预览图当封面
 )
+
+// AssetAudioInfo 是音效素材的音频信息（R-381）。能从文件读的由推送端读（WAV 全部；OGG 读文件头，响度、峰值、波形要本机有 ffmpeg 解码），
+// 读不出的可在 asset.json 的 audio 里声明；读出的优先，声明只补读不出的，Declared 记下哪些取自声明。
+type AssetAudioInfo struct {
+	Codec      string   `json:"codec,omitempty" doc:"编码：pcm（WAV）/ vorbis / opus"`
+	Duration   float64  `json:"duration_s,omitempty" doc:"时长（秒）"`
+	Channels   int      `json:"channels,omitempty" doc:"声道数"`
+	SampleRate int      `json:"sample_rate,omitempty" doc:"采样率（Hz）"`
+	Loudness   *float64 `json:"loudness_lufs,omitempty" doc:"综合响度（LUFS，ITU-R BS.1770）"`
+	Peak       *float64 `json:"peak_dbfs,omitempty" doc:"采样峰值（dBFS）"`
+	Wave       []int    `json:"wave,omitempty" doc:"波形：均分成若干段，每段的峰值（0–100，满幅 100），没有预览图时画成封面"`
+	Declared   []string `json:"declared,omitempty" doc:"取自 asset.json 声明（文件里读不出）的字段名"`
+}
 
 // AssetFile 是素材里的一个文件。CLI → daemon 时写本机路径；daemon → Hub 时写 sha256 和 Hub 附件 ID。
 type AssetFile struct {
@@ -30,7 +44,7 @@ type AssetFile struct {
 // AssetItem 是一条素材（manifest 里的一项，或预览目录里一张独立的图）。
 type AssetItem struct {
 	Key       string          `json:"key" doc:"素材 ID：manifest 的 id；独立的图用文件名（去扩展名）"`
-	Kind      string          `json:"kind" enum:"part,image" doc:"part = GLB 零件，image = 独立的图"`
+	Kind      string          `json:"kind" enum:"part,image,audio" doc:"part = GLB 零件，image = 独立的图，audio = 音效（R-381）"`
 	Category  string          `json:"category,omitempty" doc:"类别（manifest 的 category，或目录图 / 概念图 / 对比图）"`
 	Group     string          `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版去掉末尾的 _A / _B）"`
 	File      *AssetFile      `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`
@@ -39,6 +53,7 @@ type AssetItem struct {
 	Budget    int             `json:"budget,omitempty" doc:"面数预算上限"`
 	Size      []float64       `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
 	Pixels    []int           `json:"pixels,omitempty" doc:"图的像素尺寸（宽 / 高）"`
+	Audio     *AssetAudioInfo `json:"audio,omitempty" doc:"音效的时长、声道、响度等（R-381）"`
 	Meta      json.RawMessage `json:"meta,omitempty" doc:"旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样）"`
 	// 以下是 asset.json 推送（R-376）的通用字段；旧的按批次推送不写
 	Batches  []string        `json:"batches,omitempty" doc:"asset.json：这次带上的批次（可多个，并入素材已有的批次，不删旧的）"`

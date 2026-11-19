@@ -275,6 +275,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"assets", "parent_id", "TEXT NOT NULL DEFAULT ''"},
 	{"assets", "superseded_by", "TEXT NOT NULL DEFAULT ''"},
 	{"assets", "superseded_at", "TEXT NOT NULL DEFAULT ''"},
+	// 音效素材（R-381）：这一版的时长、声道、采样率、响度、峰值、波形（JSON，protocol.AssetAudioInfo）；不是音效的为空
+	{"asset_versions", "audio", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

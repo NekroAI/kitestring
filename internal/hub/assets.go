@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/audiometa"
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/store"
 )
@@ -40,10 +42,13 @@ func (u UploadLimits) glbBytes() int64 {
 	return int64(min(v, maxUploadMB)) << 20
 }
 
-// assetFileMime 认资源库收的文件：GLB（文件头 glTF）或图片；别的返回空。
+// assetFileMime 认资源库收的文件：GLB（文件头 glTF）、图片或音效（OGG / WAV，R-381）；别的返回空。
 func assetFileMime(head []byte) string {
 	if len(head) >= 4 && bytes.Equal(head[:4], []byte("glTF")) {
 		return glbMime
+	}
+	if m := audiometa.Mime(head); m != "" {
+		return m
 	}
 	if m := sniff(head); protocol.IsImage(m) {
 		return m
@@ -75,15 +80,18 @@ func (h *Hub) handleAssetFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	maxImage, _, _ := set.Upload.bytes()
+	maxImage, _, maxFile := set.Upload.bytes()
 	maxGLB := set.Upload.glbBytes()
 	tooBig := func(mime string) string {
-		if mime == glbMime {
+		switch {
+		case mime == glbMime:
 			return fmt.Sprintf("GLB 模型不能超过 %d MB（可在设置里调整）", maxGLB>>20)
+		case audiometa.IsAudioMime(mime):
+			return fmt.Sprintf("音效不能超过 %d MB（按设置里的其他文件上限）", maxFile>>20)
 		}
 		return fmt.Sprintf("图片不能超过 %d MB（可在设置里调整）", maxImage>>20)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, max(maxImage, maxGLB)+1<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, max(maxImage, maxGLB, maxFile)+1<<20)
 	f, hdr, err := r.FormFile("file")
 	if err != nil {
 		var mb *http.MaxBytesError
@@ -100,12 +108,15 @@ func (h *Hub) handleAssetFile(w http.ResponseWriter, r *http.Request) {
 	head = head[:n]
 	typ := assetFileMime(head)
 	if typ == "" {
-		writeErr(w, http.StatusBadRequest, "资源库只收 GLB 模型和图片（PNG、JPEG、WebP、GIF）："+filepath.Base(hdr.Filename))
+		writeErr(w, http.StatusBadRequest, "资源库只收 GLB 模型、图片（PNG、JPEG、WebP、GIF）和音效（OGG、WAV）："+filepath.Base(hdr.Filename))
 		return
 	}
 	limit := maxImage
-	if typ == glbMime {
+	switch {
+	case typ == glbMime:
 		limit = maxGLB
+	case audiometa.IsAudioMime(typ):
+		limit = maxFile
 	}
 	tmp, err := os.CreateTemp(h.filesDir, "upload-*")
 	if err != nil {
@@ -180,7 +191,7 @@ type assetListIn struct {
 	Batch      string `query:"batch"`
 	Category   string `query:"category"`
 	Status     string `query:"status" enum:"wip,pending,approved,rework,"`
-	Kind       string `query:"kind" enum:"part,image,"`
+	Kind       string `query:"kind" enum:"part,image,audio,"`
 	ID         string `query:"id" doc:"R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）"`
 	SessionKey string `query:"session_key" doc:"Agent 用：不写 project 时列会话所在项目"`
 	CwdRemote  string `query:"cwd_remote" doc:"Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）"`
@@ -457,8 +468,16 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 			if len(it.Previews) > 0 {
 				return res, fmt.Errorf("独立的图 %s 不挂预览图", it.Key)
 			}
+		case protocol.AssetAudio:
+			if !audiometa.IsAudioMime(f.Mime) {
+				return res, fmt.Errorf("音效 %s 的主文件要是 OGG 或 WAV：%s", it.Key, f.Name)
+			}
+			it.Audio = h.assetAudio(it.Audio, f.ID)
 		default:
-			return res, fmt.Errorf("素材 %s 的类型只能是 part（GLB 零件）或 image（独立的图）", it.Key)
+			return res, fmt.Errorf("素材 %s 的类型只能是 part（GLB 零件）、image（独立的图）或 audio（音效）", it.Key)
+		}
+		if it.Kind != protocol.AssetAudio {
+			it.Audio = nil
 		}
 		for _, pv := range it.Previews {
 			pf, err := h.store.GetFile(ctx, pv.ID)
@@ -489,4 +508,50 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 		}
 	}
 	return out, err
+}
+
+// assetAudio 整理音效的音频信息（R-381）：推送端没读（旧版 ks）时 Hub 自己读文件头（不解码 OGG）；
+// 推送端给的值做范围检查，不合理的丢掉，波形最多 256 段、每段夹在 0–100。
+func (h *Hub) assetAudio(a *protocol.AssetAudioInfo, fileID string) *protocol.AssetAudioInfo {
+	if a == nil {
+		info, err := audiometa.Read(h.readPath(fileID), audiometa.Options{})
+		if err != nil {
+			return nil
+		}
+		a = &info
+	}
+	x := *a
+	if math.IsNaN(x.Duration) || x.Duration < 0 || x.Duration > 24*3600 {
+		x.Duration = 0
+	}
+	if x.Channels < 0 || x.Channels > 64 {
+		x.Channels = 0
+	}
+	if x.SampleRate < 0 || x.SampleRate > 768000 {
+		x.SampleRate = 0
+	}
+	if x.Loudness != nil && (math.IsNaN(*x.Loudness) || *x.Loudness < -100 || *x.Loudness > 10) {
+		x.Loudness = nil
+	}
+	if x.Peak != nil && (math.IsNaN(*x.Peak) || *x.Peak < -200 || *x.Peak > 10) {
+		x.Peak = nil
+	}
+	if len(x.Wave) > 256 {
+		x.Wave = x.Wave[:256]
+	}
+	wave := make([]int, len(x.Wave))
+	for i, v := range x.Wave {
+		wave[i] = min(100, max(0, v))
+	}
+	x.Wave = wave
+	if len(x.Wave) == 0 {
+		x.Wave = nil
+	}
+	if len(x.Codec) > 16 {
+		x.Codec = ""
+	}
+	if len(x.Declared) > 8 {
+		x.Declared = x.Declared[:8]
+	}
+	return &x
 }

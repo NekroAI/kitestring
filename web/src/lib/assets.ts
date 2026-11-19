@@ -5,6 +5,19 @@ export type AssetStatus = 'wip' | 'pending' | 'approved' | 'rework'
 export const ASSET_STATUSES: AssetStatus[] = ['wip', 'pending', 'approved', 'rework']
 
 export type FileLite = { id: string; name: string; mime: string; size: number }
+// AssetKind：part GLB 零件 / image 独立的图 / audio 音效（R-381）
+export type AssetKind = 'part' | 'image' | 'audio'
+// AudioLite（R-381）：音效的时长、声道、响度等；wave 是均分若干段的峰值（0–100）；declared 是取自 asset.json 声明的字段
+export type AudioLite = {
+  codec?: string
+  duration_s?: number
+  channels?: number
+  sample_rate?: number
+  loudness_lufs?: number | null
+  peak_dbfs?: number | null
+  wave?: number[] | null
+  declared?: string[] | null
+}
 export type PreviewLite = FileLite & { view?: string }
 export type VersionLite = {
   id: string
@@ -20,6 +33,7 @@ export type VersionLite = {
   size?: number[] | null
   pixels?: number[] | null
   auto_thumb?: FileLite | null
+  audio?: AudioLite | null
   subtype?: string
   variants?: unknown
   created_at: string
@@ -34,7 +48,7 @@ export type AssetLite = {
   batches?: string[] | null
   key: string
   uid?: string
-  kind: 'part' | 'image'
+  kind: AssetKind
   category: string
   group?: string
   status: AssetStatus
@@ -330,8 +344,8 @@ export function groupStatus(assets: Pick<AssetLite, 'status'>[]): AssetStatus {
 
 const isImg = (f?: FileLite | null) => !!f && /^image\/(png|jpeg|gif|webp)/i.test(f.mime)
 
-// coverOf：图片墙和大图用哪张图。独立的图就是它自己；零件优先用特写（文件名带 closeup），否则第一张预览图；都没有返回 null。
-export function coverOf(kind: 'part' | 'image', v?: VersionLite | null): FileLite | null {
+// coverOf：图片墙和大图用哪张图。独立的图就是它自己；零件、音效优先用特写（文件名带 closeup），否则第一张预览图；都没有返回 null（音效画波形）。
+export function coverOf(kind: AssetKind, v?: VersionLite | null): FileLite | null {
   if (!v) return null
   if (kind === 'image') return isImg(v.file) ? v.file! : null
   const ps = (v.previews ?? []).filter(isImg)
@@ -339,7 +353,7 @@ export function coverOf(kind: 'part' | 'image', v?: VersionLite | null): FileLit
 }
 
 // wallCover（R-383）：图片墙、胶片条、版本列表用的封面。有预览图用预览图；只有 GLB 的零件用自动生成的缩略图（auto = true，界面上标明）。
-export function wallCover(kind: 'part' | 'image', v?: VersionLite | null): { file: FileLite; auto: boolean } | null {
+export function wallCover(kind: AssetKind, v?: VersionLite | null): { file: FileLite; auto: boolean } | null {
   const c = coverOf(kind, v)
   if (c) return { file: c, auto: false }
   if (kind === 'part' && v?.file && v.auto_thumb && isImg(v.auto_thumb)) return { file: v.auto_thumb, auto: true }
@@ -347,7 +361,7 @@ export function wallCover(kind: 'part' | 'image', v?: VersionLite | null): { fil
 }
 
 // needsAutoThumb（R-383）：这一版要不要在浏览器里把模型渲染成缩略图——零件、有 GLB、没有预览图、还没有自动缩略图。
-export const needsAutoThumb = (kind: 'part' | 'image', v?: VersionLite | null) => kind === 'part' && !!v?.file && !coverOf(kind, v) && !v.auto_thumb
+export const needsAutoThumb = (kind: AssetKind, v?: VersionLite | null) => kind === 'part' && !!v?.file && !coverOf(kind, v) && !v.auto_thumb
 
 // viewGroups（R-376）：预览图按机位分组，机位按第一次出现的顺序；没有机位的（旧数据）归在空机位一组。
 export function viewGroups<P extends { view?: string }>(previews: P[]): { view: string; items: P[] }[] {
@@ -363,7 +377,7 @@ export function viewGroups<P extends { view?: string }>(previews: P[]): { view: 
 
 // 纸鸢认识的通用字段（asset.json 与旧 manifest），项目字段里不再重复列出。
 // budget、size 等写成对象时（里面常有项目自己的检查项）照样列出，只有数字 / 数组的已在面数、尺寸里显示。
-const GENERIC = new Set(['format', 'id', 'file', 'category', 'subtype', 'previews', 'batch', 'batches', 'variants', 'default_variant', 'source', 'sources', 'license', 'group', 'triangles', 'budget_max', 'pixels', 'dimensions_px'])
+const GENERIC = new Set(['format', 'id', 'file', 'category', 'subtype', 'previews', 'batch', 'batches', 'variants', 'default_variant', 'source', 'sources', 'license', 'group', 'triangles', 'budget_max', 'pixels', 'dimensions_px', 'audio'])
 const SHOWN_UNLESS_OBJECT = new Set(['budget', 'size', 'bounds_m', 'bounds_local_m', 'dimensions_m'])
 const isObj = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v)
 
@@ -383,14 +397,40 @@ export function variantNames(variants: unknown): string[] {
 }
 
 // glbOf：零件的 GLB；独立的图没有。
-export const glbOf = (kind: 'part' | 'image', v?: VersionLite | null) => (kind === 'part' && v?.file ? v.file : null)
+export const glbOf = (kind: AssetKind, v?: VersionLite | null) => (kind === 'part' && v?.file ? v.file : null)
 
 // defaultView（R-395）：详情打开时先看什么——有 GLB 的零件先看 3D，其余看大图。
-export const defaultView = (kind: 'part' | 'image', v?: VersionLite | null): 'model' | 'image' => (glbOf(kind, v) ? 'model' : 'image')
+// 音效（R-381）先听：详情打开时是试听。
+export const defaultView = (kind: AssetKind, v?: VersionLite | null): 'model' | 'image' | 'audio' => (audioOf(kind, v) ? 'audio' : glbOf(kind, v) ? 'model' : 'image')
 
 // detailViews（R-395）：详情的视图切换，有 GLB 时 3D 排在最前（默认看它），其后大图、对比、3D 对比。
-export function detailViews(o: { glb: boolean; pair: boolean; pair3d: boolean }): ('image' | 'model' | 'compare' | 'compare3d')[] {
-  return [...(o.glb ? (['model'] as const) : []), 'image' as const, ...(o.pair ? (['compare'] as const) : []), ...(o.pair3d ? (['compare3d'] as const) : [])]
+// 音效（R-381）：试听排最前；有封面图时才有大图、对比。
+export function detailViews(o: { glb: boolean; pair: boolean; pair3d: boolean; audio?: boolean; image?: boolean }): ('image' | 'model' | 'audio' | 'compare' | 'compare3d')[] {
+  return [
+    ...(o.audio ? (['audio'] as const) : []),
+    ...(o.glb ? (['model'] as const) : []),
+    ...(!o.audio || o.image ? (['image'] as const) : []),
+    ...(o.pair ? (['compare'] as const) : []),
+    ...(o.pair3d ? (['compare3d'] as const) : []),
+  ]
+}
+
+// audioOf（R-381）：音效的主文件；别的素材没有。
+export const audioOf = (kind: AssetKind, v?: VersionLite | null) => (kind === 'audio' && v?.file ? v.file : null)
+
+// isDeclared（R-381）：这个音频字段是不是取自 asset.json 声明（文件里读不出）。
+export const isDeclared = (a: AudioLite | null | undefined, field: string) => !!a?.declared?.includes(field)
+
+// waveBars（R-381）：把波形重采样成 n 根柱子，按最高的一段归一（安静的音效也看得出形状），每根至少 4%。
+export function waveBars(wave: number[] | null | undefined, n: number): number[] {
+  if (!wave?.length || n <= 0) return []
+  const top = Math.max(...wave, 1)
+  return Array.from({ length: n }, (_, i) => {
+    const a = Math.floor((i * wave.length) / n)
+    const b = Math.max(a + 1, Math.floor(((i + 1) * wave.length) / n))
+    const v = Math.max(...wave.slice(a, b))
+    return Math.max(0.04, v / top)
+  })
 }
 
 // 宽屏分栏（R-396）：视口不小于 SPLIT_MIN 时资源库右侧固定一栏详情，点素材直接在栏里切换；更窄时仍用抽屉。

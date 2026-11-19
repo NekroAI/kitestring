@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -342,4 +342,26 @@ test('变体：收进素材本身那一格（审片队列照样逐个过），�
   assert.deepEqual(wallTiles(here, false).length, 3)
   assert.deepEqual(dirCount(dirTree(list), d, here), { total: 3, pending: 1, rework: 1 })
   assert.deepEqual(variantFamily(list, 'core:weapon.carbine').map(variantLabel), ['default', 'desert', 'snow'])
+})
+
+// R-381：音效素材——先试听，有封面图时才有大图；没有预览图时不用自动缩略图（画波形）；波形按最高一段归一、重采样成固定根数
+test('音效：试听视图、封面、波形', () => {
+  const ogg: FileLite = { id: 'o', name: 'hit.ogg', mime: 'audio/ogg', size: 1 }
+  const v = (previews: FileLite[] = []) => ({ id: 'v', version: 1, batch: '', branch: '', commit: '', file: ogg, previews, audio: { duration_s: 0.5, wave: [0, 10, 20, 40] }, created_at: '' })
+  assert.equal(defaultView('audio', v()), 'audio')
+  assert.equal(audioOf('audio', v())?.id, 'o')
+  assert.equal(audioOf('part', v()), null)
+  assert.equal(coverOf('audio', v()), null)
+  assert.equal(coverOf('audio', v([png('hit__cover.png')]))?.name, 'hit__cover.png')
+  assert.equal(wallCover('audio', v()), null)
+  assert.equal(needsAutoThumb('audio', v()), false)
+  assert.deepEqual(detailViews({ glb: false, pair: false, pair3d: false, audio: true }), ['audio'])
+  assert.deepEqual(detailViews({ glb: false, pair: true, pair3d: false, audio: true, image: true }), ['audio', 'image', 'compare'])
+  assert.deepEqual(waveBars([0, 10, 20, 40], 2), [0.25, 1])
+  assert.deepEqual(waveBars([0, 40], 4), [0.04, 0.04, 1, 1])
+  assert.deepEqual(waveBars(null, 8), [])
+  assert.equal(isDeclared({ declared: ['loudness_lufs'] }, 'loudness_lufs'), true)
+  assert.equal(isDeclared({}, 'loudness_lufs'), false)
+  assert.equal(fileTagsOf({ latest: v() })[0].kind, 'audio')
+  assert.deepEqual(metaRows({ audio: { loudness_lufs: -18 }, lod: 2 }), [['lod', '2']])
 })

@@ -1,12 +1,12 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Box as BoxIcon, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, Layers, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
+import { AudioLines, Box as BoxIcon, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, Layers, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
 import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useDesktop, useMedia, useNow } from '../lib/util'
-import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, audioOf, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetKind, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
@@ -20,6 +20,7 @@ import { createAnimSync, type AnimSync, type Frame } from '../lib/anim'
 import { useAdvance, usePending, usePendingMap } from './verdict'
 import { BaselineChip, BaselineLink, BatchBar, PickBox, ReviewerMenu, SelectButton, SelectCtx, UndoLastBatch, useTileClick, useWallSelect } from './assetBatch'
 import { tileCodes } from '../lib/assetBatch'
+import { AudioCover, AudioStage, audioRows, PlayChip, VariantPlays } from './assetAudio'
 
 // 资源库页（R-351 第 3 步，D-1713 方案 B 的图片墙部分）：按项目浏览会话推送的素材。
 // 图片墙按批次 / 类别 / 状态筛选；点一格在右侧抽屉里看大图、3D（three.js 按需加载）、版本对比；
@@ -421,7 +422,9 @@ export function AssetCover({ a, v, className, tag = true }: { a: Pick<AssetLite,
   const c = useCover(a, v, el)
   return (
     <div ref={setEl} className={cx('relative overflow-hidden', c?.auto ? 'bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]' : 'bg-sunken', className)} title={c?.auto ? t.asset.autoThumbTip : undefined} data-auto-thumb={c?.auto ? (c.id ? 'saved' : 'local') : undefined}>
-      {!c ? (
+      {!c && a.kind === 'audio' ? (
+        <AudioCover v={v} />
+      ) : !c ? (
         <div className="flex h-full w-full items-center justify-center text-fg-3">
           <BoxIcon className="size-8" strokeWidth={1.4} />
         </div>
@@ -504,6 +507,10 @@ export function AssetCard({ a, active, onOpen, variants = 0, onFamily, label }: 
         </div>
       </button>
       <PickBox codes={[a.code]} name={assetName(a)} />
+      {a.kind === 'audio' && a.latest?.file && (
+        // 音效（R-381）：封面右下角试听，写着时长；和卡片的点击分开，不打开详情
+        <PlayChip file={a.latest.file} audio={a.latest.audio} name={label ?? assetName(a)} className="absolute top-[135px] right-2" />
+      )}
       {nv > 1 && onFamily && !selecting && (
         <button className={cx(chipCls, 'absolute top-[136px] left-2 transition hover:bg-black/75')} onClick={onFamily} title={t.asset.openVariants} data-variants={nv} data-open-variants="">
           <Layers className="size-3" />
@@ -550,7 +557,7 @@ export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { 
 
 // ---------- 素材抽屉 ----------
 
-type View = 'image' | 'model' | 'compare' | 'compare3d'
+type View = 'image' | 'model' | 'audio' | 'compare' | 'compare3d'
 
 const inField = (el: HTMLElement) => !!el.closest?.('input, textarea, [contenteditable=true], [role=menu]')
 // 有别的弹层（看大图、别的抽屉）盖在上面时不拦截按键
@@ -816,11 +823,13 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
   const glb = glbOf(a.kind, v)
   // 3D 对比（R-392）：两版都有 GLB 时并排看，动作同步播放
   const pair3d = comparePair(versions.filter((x) => glbOf(a.kind, x)), shownN)
-  const views: View[] = detailViews({ glb: !!glb, pair: !!pair, pair3d: !!pair3d })
+  // 音效（R-381）：先试听；有封面图时才有大图
+  const sound = audioOf(a.kind, v)
+  const views: View[] = detailViews({ glb: !!glb, pair: !!pair, pair3d: !!pair3d, audio: !!sound, image: !!coverOf(a.kind, v) })
   // 有 GLB 的零件打开时直接看 3D（R-395），可切回大图；只有图片的照旧看大图
   const [view, setView] = useState<View>(() => defaultView(a.kind, v))
-  const cur = views.includes(view) ? view : 'image'
-  const previews = a.kind === 'part' ? (v?.previews ?? []).filter((p) => p.mime.startsWith('image/')) : []
+  const cur = views.includes(view) ? view : views[0]
+  const previews = a.kind !== 'image' ? (v?.previews ?? []).filter((p) => p.mime.startsWith('image/')) : []
   const cover = coverOf(a.kind, v)
   const [pick, setPick] = useState<string | null>(null)
   // 只有 GLB 的零件：大图看自动生成的缩略图（R-383），标明是自动生成的
@@ -842,6 +851,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     [t.asset.meta.triangles, v && fmtTris(v.triangles, v.budget) ? <span className={cx(overBudget(v.triangles, v.budget) && 'text-danger')} title={overBudget(v.triangles, v.budget) ? t.asset.overBudget : undefined}>{fmtTris(v.triangles, v.budget)}</span> : ''],
     [t.asset.meta.size, fmtSize(v?.size)],
     [t.asset.meta.pixels, fmtPixels(v?.pixels)],
+    ...audioRows(a.kind === 'audio' ? v?.audio : null),
     [t.asset.meta.source, v?.source],
     [t.asset.meta.license, v?.license],
     // 变体拆开存了（R-380）时在下面的「变体」里逐个列出、可点开；还没拆开的旧数据照旧列 asset.json 里的名字
@@ -879,7 +889,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
           value: x,
           label: (
             <span className="flex items-center gap-1.5">
-              {x === 'image' ? <ImageIcon className="size-3.5" /> : x === 'model' ? <BoxIcon className="size-3.5" /> : x === 'compare3d' ? <Columns2 className="size-3.5" /> : <SplitSquareHorizontal className="size-3.5" />}
+              {x === 'image' ? <ImageIcon className="size-3.5" /> : x === 'audio' ? <AudioLines className="size-3.5" /> : x === 'model' ? <BoxIcon className="size-3.5" /> : x === 'compare3d' ? <Columns2 className="size-3.5" /> : <SplitSquareHorizontal className="size-3.5" />}
               {x === 'compare' && pair ? `${t.asset.view.compare} ${t.asset.ver(pair.before.version)}` : x === 'compare3d' && pair3d ? `${t.asset.view.compare3d} ${t.asset.ver(pair3d.before.version)}` : t.asset.view[x]}
             </span>
           ),
@@ -890,7 +900,9 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
 
   const stageBox = (
     <div className={cx('relative w-full overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]', onStage ? 'min-h-0 flex-1' : 'aspect-[4/3]')} data-stage={cur}>
-      {cur === 'model' && glb ? (
+      {cur === 'audio' && sound ? (
+        <AudioStage key={sound.id} file={sound} audio={v?.audio} />
+      ) : cur === 'model' && glb ? (
         <Suspense fallback={null}>
           <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0 rounded-[11px]" sync={sync} main />
         </Suspense>
@@ -921,6 +933,8 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
   )
 
   const animBar = animated && <AnimBar sync={sync} className={onStage ? 'shrink-0' : 'mt-2'} />
+  // 同一件音效的变体逐个试听（R-381）
+  const plays = sound && <VariantPlays a={a} shown={v} />
 
   const strip = cur === 'image' && previews.length > 1 && (
     <div className={cx('flex gap-3 overflow-x-auto', onStage ? 'shrink-0' : 'mt-2')} aria-label={t.asset.previews} data-views={groups.length}>
@@ -1011,6 +1025,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
           {stageBox}
           {animBar}
           {strip}
+          {plays}
         </div>
         <aside className="flex w-[360px] shrink-0 flex-col border-l border-line bg-surface xl:w-[380px]" data-review-side="">
           {head}
@@ -1029,6 +1044,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
           {stageBox}
           {animBar}
           {strip}
+          {plays}
           {info}
         </div>
         {footer}
@@ -1076,7 +1092,7 @@ function VersionRow({ a, x, latest, active, now, onPick }: { a: Pick<AssetLite, 
 }
 
 // 版本对比：左边旧版、右边新版，拖动分隔线（或方向键）调整；点图进看图，空格切改前 / 改后。触屏上竖着滑照常滚动页面（R-378）。
-function CompareSlider({ kind, before, after }: { kind: 'part' | 'image'; before: Ver; after: Ver }) {
+function CompareSlider({ kind, before, after }: { kind: AssetKind; before: Ver; after: Ver }) {
   const [pos, setPos] = useState(50)
   const b = coverOf(kind, before)!
   const a = coverOf(kind, after)!
@@ -1184,6 +1200,12 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
                         <img src={fileUrl(f.id)} alt="" className="h-full w-full object-contain" draggable={false} />
                       </button>
                     </Lightbox>
+                  ) : m.kind === 'audio' ? (
+                    // 音效（R-381）：并排比较时逐个试听
+                    <>
+                      <AudioCover v={m.latest} className="absolute inset-0" />
+                      {m.latest?.file && <PlayChip file={m.latest.file} audio={m.latest.audio} name={labelOf(m)} className="absolute right-2 bottom-2" />}
+                    </>
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center text-sm text-fg-3">{t.asset.noPreview}</div>
                   )}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/audiometa"
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/store"
@@ -43,7 +44,7 @@ const (
 	guestPushTextRune = 60
 )
 
-// guestUploadMime 认访客能上传的文件：GLB、图片、录屏（MP4 / WebM / MOV）、FBX 动画；别的返回空。
+// guestUploadMime 认访客能上传的文件：GLB、图片、音效（OGG / WAV）、录屏（MP4 / WebM / MOV）、FBX 动画；别的返回空。
 func guestUploadMime(head []byte) string {
 	if m := assetFileMime(head); m != "" {
 		return m
@@ -413,9 +414,10 @@ func (h *Hub) placeAssetComment(ctx context.Context, c store.ShareComment, as, t
 		return c, apiErr(err)
 	}
 	if upload && as == store.PlacedVersion {
-		ok := (d.Kind == protocol.AssetPart && c.File.Mime == glbMime) || (d.Kind == protocol.AssetImage && protocol.IsImage(c.File.Mime))
+		ok := (d.Kind == protocol.AssetPart && c.File.Mime == glbMime) || (d.Kind == protocol.AssetImage && protocol.IsImage(c.File.Mime)) ||
+			(d.Kind == protocol.AssetAudio && audiometa.IsAudioMime(c.File.Mime))
 		if !ok {
-			return c, huma.Error400BadRequest(shareUploadKindMismatch(d.Kind == protocol.AssetPart))
+			return c, huma.Error400BadRequest(shareUploadKindMismatch(d.Kind))
 		}
 		if err := h.storageGate(); err != nil {
 			return c, err
@@ -443,7 +445,7 @@ func (h *Hub) placeAssetComment(ctx context.Context, c store.ShareComment, as, t
 		placedAs, result = store.PlacedReview, r.ID
 	case as == store.PlacedVersion:
 		res, err := h.store.PushAssets(ctx, store.NewAssetPush{PushID: "guest:" + c.ID, ProjectID: d.ProjectID, Submitter: guest, Batch: d.Batch, ByID: d.UID != "", Status: store.AssetPending,
-			Items: []protocol.AssetItem{{Key: d.Key, Kind: d.Kind, Category: d.Category, Group: d.Group, File: &protocol.AssetFile{ID: c.File.ID, Name: c.File.Name, Size: c.File.Size}}}})
+			Items: []protocol.AssetItem{{Key: d.Key, Kind: d.Kind, Category: d.Category, Group: d.Group, File: &protocol.AssetFile{ID: c.File.ID, Name: c.File.Name, Size: c.File.Size}, Audio: h.guestAudio(d.Kind, c.File.ID)}}})
 		if err != nil {
 			h.store.ReleaseShareComment(ctx, c.ID)
 			return c, apiErr(err)
@@ -470,4 +472,12 @@ func (h *Hub) placeAssetComment(ctx context.Context, c store.ShareComment, as, t
 // guestAssetSource 是访客意见送给会话时写的来源（和需求上的访客留言同一种写法）。
 func guestAssetSource(r store.AssetReview) string {
 	return "来自访客「" + r.Author.Name + "」（经分享链接「" + r.Via + "」），由用户放入"
+}
+
+// guestAudio：访客上传收下为音效的新版本时，Hub 读文件头得到时长、声道（R-381；不解码 OGG，WAV 全部读出）。
+func (h *Hub) guestAudio(kind, fileID string) *protocol.AssetAudioInfo {
+	if kind != protocol.AssetAudio {
+		return nil
+	}
+	return h.assetAudio(nil, fileID)
 }

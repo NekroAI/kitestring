@@ -1773,10 +1773,11 @@
             "type": "string"
           },
           "kind": {
-            "description": "part GLB 零件 / image 独立的图",
+            "description": "part GLB 零件 / image 独立的图 / audio 音效（R-381）",
             "enum": [
               "part",
-              "image"
+              "image",
+              "audio"
             ],
             "type": "string"
           },
@@ -1892,6 +1893,62 @@
         ],
         "type": "object"
       },
+      "AssetAudioInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "description": "声道数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "codec": {
+            "description": "编码：pcm（WAV）/ vorbis / opus",
+            "type": "string"
+          },
+          "declared": {
+            "description": "取自 asset.json 声明（文件里读不出）的字段名",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "duration_s": {
+            "description": "时长（秒）",
+            "format": "double",
+            "type": "number"
+          },
+          "loudness_lufs": {
+            "description": "综合响度（LUFS，ITU-R BS.1770）",
+            "format": "double",
+            "type": "number"
+          },
+          "peak_dbfs": {
+            "description": "采样峰值（dBFS）",
+            "format": "double",
+            "type": "number"
+          },
+          "sample_rate": {
+            "description": "采样率（Hz）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "wave": {
+            "description": "波形：均分成若干段，每段的峰值（0–100，满幅 100），没有预览图时画成封面",
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "AssetBaselineInfo": {
         "additionalProperties": false,
         "properties": {
@@ -1973,6 +2030,7 @@
             "enum": [
               "part",
               "image",
+              "audio",
               ""
             ],
             "type": "string"
@@ -2277,10 +2335,11 @@
             "type": "string"
           },
           "kind": {
-            "description": "part GLB 零件 / image 独立的图",
+            "description": "part GLB 零件 / image 独立的图 / audio 音效（R-381）",
             "enum": [
               "part",
-              "image"
+              "image",
+              "audio"
             ],
             "type": "string"
           },
@@ -2547,6 +2606,10 @@
       "AssetItem": {
         "additionalProperties": false,
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/AssetAudioInfo",
+            "description": "音效的时长、声道、响度等（R-381）"
+          },
           "batches": {
             "description": "asset.json：这次带上的批次（可多个，并入素材已有的批次，不删旧的）",
             "items": {
@@ -2579,10 +2642,11 @@
             "type": "string"
           },
           "kind": {
-            "description": "part = GLB 零件，image = 独立的图",
+            "description": "part = GLB 零件，image = 独立的图，audio = 音效（R-381）",
             "enum": [
               "part",
-              "image"
+              "image",
+              "audio"
             ],
             "type": "string"
           },
@@ -3242,6 +3306,10 @@
       "AssetVersion": {
         "additionalProperties": false,
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/AssetAudioInfo",
+            "description": "音效的时长、声道、采样率、响度、峰值、波形（R-381）"
+          },
           "auto_thumb": {
             "$ref": "#/components/schemas/FileRef",
             "description": "自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它"
@@ -13381,10 +13449,11 @@
             "type": "string"
           },
           "asset_kind": {
-            "description": "part 零件 / image 独立的图",
+            "description": "part 零件 / image 独立的图 / audio 音效",
             "enum": [
               "part",
               "image",
+              "audio",
               ""
             ],
             "type": "string"
@@ -13536,10 +13605,11 @@
             "type": "string"
           },
           "asset_kind": {
-            "description": "part 零件 / image 独立的图",
+            "description": "part 零件 / image 独立的图 / audio 音效",
             "enum": [
               "part",
               "image",
+              "audio",
               ""
             ],
             "type": "string"
@@ -16283,6 +16353,7 @@
               "enum": [
                 "part",
                 "image",
+                "audio",
                 ""
               ],
               "type": "string"
@@ -16424,6 +16495,7 @@
               "enum": [
                 "part",
                 "image",
+                "audio",
                 ""
               ],
               "type": "string"
@@ -19345,6 +19417,7 @@
               "enum": [
                 "part",
                 "image",
+                "audio",
                 ""
               ],
               "type": "string"

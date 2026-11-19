@@ -24,14 +24,15 @@ type variantSpec struct {
 	Triangles int               `json:"triangles"`
 	Source    json.RawMessage   `json:"source"`
 	License   json.RawMessage   `json:"license"`
+	Audio     json.RawMessage   `json:"audio"`
 }
 
-// mainFile 是变体的主文件：file，或 files 里按 model、image、texture 的顺序取，再没有取第一个。
+// mainFile 是变体的主文件：file，或 files 里按 model、image、texture、audio、sound 的顺序取，再没有取第一个。
 func (v variantSpec) mainFile() string {
 	if f := strings.TrimSpace(v.File); f != "" {
 		return f
 	}
-	for _, role := range []string{"model", "image", "texture"} {
+	for _, role := range []string{"model", "image", "texture", "audio", "sound"} {
 		if f := v.Files[role]; f != "" {
 			return f
 		}
@@ -96,7 +97,7 @@ type variantBuilt struct {
 
 // variantItems 把素材的非默认变体做成单独的推送条目，返回默认变体名和这些条目（逐件带校验结果）。
 // dirs 是找文件的目录（asset.json 所在目录、previews_base、仓库根）。
-func variantItems(main protocol.AssetItem, src string, raw json.RawMessage, def string, dirs []string, root string) (string, []variantBuilt, []string) {
+func variantItems(main protocol.AssetItem, src string, raw json.RawMessage, def string, dirs []string, root string, ffmpeg bool) (string, []variantBuilt, []string) {
 	list, ok := parseVariants(raw)
 	if !ok {
 		return "", nil, []string{"variants 要写成对象 {\"名字\": {...}} 或数组 [{\"name\": ...}]"}
@@ -165,15 +166,15 @@ func variantItems(main protocol.AssetItem, src string, raw json.RawMessage, def 
 				break
 			}
 			it.File = &protocol.AssetFile{Path: file, Name: filepath.Base(file)}
-			ext := strings.ToLower(filepath.Ext(file))
-			switch {
-			case ext == ".glb":
-				it.Kind = protocol.AssetPart
-			case imageExt[ext]:
-				it.Kind = protocol.AssetImage
+			switch it.Kind = fileKind(file); it.Kind {
+			case protocol.AssetImage:
 				it.Pixels = imageSize(file)
-			default:
-				c.Errors = append(c.Errors, "文件类型不支持："+filepath.Base(file)+"（现在只收 GLB 和图片）")
+			case protocol.AssetAudio:
+				var errs, warns []string
+				it.Audio, errs, warns = audioInfo(file, v.Audio, ffmpeg)
+				c.Errors, c.Warnings, c.Audio = append(c.Errors, errs...), append(c.Warnings, warns...), AudioText(it.Audio)
+			case "":
+				c.Errors = append(c.Errors, "文件类型不支持："+filepath.Base(file)+unsupportedType)
 			}
 			c.Kind = it.Kind
 		}

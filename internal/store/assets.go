@@ -54,7 +54,7 @@ type Asset struct {
 	Key           string         `json:"key" doc:"manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid"`
 	UID           string         `json:"uid,omitempty" doc:"R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空"`
 	Batches       []string       `json:"batches" doc:"素材带过的全部批次（多值）；旧条目是 [batch]"`
-	Kind          string         `json:"kind" enum:"part,image" doc:"part GLB 零件 / image 独立的图"`
+	Kind          string         `json:"kind" enum:"part,image,audio" doc:"part GLB 零件 / image 独立的图 / audio 音效（R-381）"`
 	Category      string         `json:"category"`
 	Group         string         `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版），并排比较用"`
 	Status        string         `json:"status" enum:"wip,pending,approved,rework"`
@@ -75,26 +75,27 @@ type Asset struct {
 
 // AssetVersion 是素材的一个版本。
 type AssetVersion struct {
-	ID        string          `json:"id"`
-	Version   int             `json:"version"`
-	Batch     string          `json:"batch"`
-	Batches   []string        `json:"batches" doc:"这一版推送时带的批次（R-376；旧条目是 [batch]）"`
-	Branch    string          `json:"branch"`
-	Commit    string          `json:"commit"`
-	File      *FileRef        `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`
-	Previews  []AssetPreview  `json:"previews" doc:"零件的预览图"`
-	Triangles int             `json:"triangles,omitempty"`
-	Budget    int             `json:"budget,omitempty" doc:"面数预算上限"`
-	Size      []float64       `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
-	Pixels    []int           `json:"pixels,omitempty" doc:"像素尺寸（宽 / 高）"`
-	Meta      json.RawMessage `json:"meta,omitempty" doc:"旧 manifest：这一项的原文；asset.json：项目特有字段（原样）"`
-	Subtype   string          `json:"subtype,omitempty" doc:"细类（R-394）：asset.json 的 subtype 字段（在项目字段里），资源库按类别 → 细类 → 素材 → 变体分层浏览"`
-	Source    string          `json:"source,omitempty" doc:"来源（R-376）"`
-	License   string          `json:"license,omitempty" doc:"许可（R-376）"`
-	Variants  json.RawMessage `json:"variants,omitempty" doc:"asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核）"`
-	AutoThumb *FileRef        `json:"auto_thumb,omitempty" doc:"自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它"`
-	Submitter AssetSubmitter  `json:"submitter" doc:"这一版的提交者"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID        string                   `json:"id"`
+	Version   int                      `json:"version"`
+	Batch     string                   `json:"batch"`
+	Batches   []string                 `json:"batches" doc:"这一版推送时带的批次（R-376；旧条目是 [batch]）"`
+	Branch    string                   `json:"branch"`
+	Commit    string                   `json:"commit"`
+	File      *FileRef                 `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`
+	Previews  []AssetPreview           `json:"previews" doc:"零件的预览图"`
+	Triangles int                      `json:"triangles,omitempty"`
+	Budget    int                      `json:"budget,omitempty" doc:"面数预算上限"`
+	Size      []float64                `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
+	Pixels    []int                    `json:"pixels,omitempty" doc:"像素尺寸（宽 / 高）"`
+	Audio     *protocol.AssetAudioInfo `json:"audio,omitempty" doc:"音效的时长、声道、采样率、响度、峰值、波形（R-381）"`
+	Meta      json.RawMessage          `json:"meta,omitempty" doc:"旧 manifest：这一项的原文；asset.json：项目特有字段（原样）"`
+	Subtype   string                   `json:"subtype,omitempty" doc:"细类（R-394）：asset.json 的 subtype 字段（在项目字段里），资源库按类别 → 细类 → 素材 → 变体分层浏览"`
+	Source    string                   `json:"source,omitempty" doc:"来源（R-376）"`
+	License   string                   `json:"license,omitempty" doc:"许可（R-376）"`
+	Variants  json.RawMessage          `json:"variants,omitempty" doc:"asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核）"`
+	AutoThumb *FileRef                 `json:"auto_thumb,omitempty" doc:"自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它"`
+	Submitter AssetSubmitter           `json:"submitter" doc:"这一版的提交者"`
+	CreatedAt time.Time                `json:"created_at"`
 }
 
 // AssetPreview 是零件的一张预览图；View 是机位（R-376：文件名「<名字>__<机位>.png」里的机位，网页按它分组；旧数据为空）。
@@ -256,6 +257,9 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 	if n.ByID { // asset.json：来源许可、变体原文变了也记新版本；批次只是元数据，不算
 		parts = append(parts, "s:"+it.Source, "l:"+it.License, "v:"+string(it.Variants))
 	}
+	if d := declaredAudio(it.Audio); d != "" { // 音效（R-381）：从文件读出的随文件内容走；asset.json 声明的值变了也记新版本
+		parts = append(parts, "a:"+d)
+	}
 	batches := cleanBatches(it.Batches)
 	if n.Batch != "" {
 		batches = []string{n.Batch}
@@ -316,11 +320,11 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 	if n.Batch == "" {
 		vbatches = batchesJSON(batches)
 	}
-	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, submitter_kind, submitter_ref, submitter_name, created_at, batches, source, license, variants)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, submitter_kind, submitter_ref, submitter_name, created_at, batches, source, license, variants, audio)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		vid, id, version, n.PushID, n.Batch, n.Branch, n.Commit, fileID, previewsJSON(previews), it.Triangles, it.Budget,
 		jsonOrEmpty(it.Size), jsonOrEmpty(it.Pixels), string(it.Meta), digest, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, at,
-		vbatches, it.Source, it.License, string(it.Variants)); err != nil {
+		vbatches, it.Source, it.License, string(it.Variants), audioJSON(it.Audio)); err != nil {
 		return r, err
 	}
 	reqSet := ""
@@ -398,7 +402,7 @@ type AssetFilter struct {
 const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches,
 	COALESCE((SELECT 'D-' || d.seq FROM asset_baselines b JOIN decisions d ON d.id = b.decision_id WHERE b.id = a.baseline_id AND b.status = 'pending'), '')`
 
-const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants, v.auto_thumb`
+const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants, v.auto_thumb, v.audio`
 
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (Asset, error) {
 	var a Asset
@@ -423,12 +427,12 @@ type versionRow struct {
 	fileID, previews         string
 	size, pixels, meta, crtd string
 	batches, variants        string
-	autoThumb                string
+	autoThumb, audio         string
 }
 
 func (r *versionRow) dst() []any {
 	return []any{&r.v.ID, &r.v.Version, &r.v.Batch, &r.v.Branch, &r.v.Commit, &r.fileID, &r.previews, &r.v.Triangles, &r.v.Budget, &r.size, &r.pixels, &r.meta, &r.v.Submitter.Kind, &r.v.Submitter.Ref, &r.v.Submitter.Name, &r.crtd,
-		&r.batches, &r.v.Source, &r.v.License, &r.variants, &r.autoThumb}
+		&r.batches, &r.v.Source, &r.v.License, &r.variants, &r.autoThumb, &r.audio}
 }
 
 func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
@@ -458,9 +462,47 @@ func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
 			v.AutoThumb = &f
 		}
 	}
+	if r.audio != "" {
+		var a protocol.AssetAudioInfo
+		if json.Unmarshal([]byte(r.audio), &a) == nil {
+			v.Audio = &a
+		}
+	}
 	v.Batches = assetBatches(v.Batch, r.batches)
 	v.CreatedAt = parseTS(r.crtd)
 	return v
+}
+
+// audioJSON：音效的音频信息存成 JSON；不是音效的存空。
+func audioJSON(a *protocol.AssetAudioInfo) string {
+	if a == nil {
+		return ""
+	}
+	b, _ := json.Marshal(a)
+	return string(b)
+}
+
+// declaredAudio：音频信息里取自 asset.json 声明的那几项（算进内容指纹）；没有声明时为空。
+func declaredAudio(a *protocol.AssetAudioInfo) string {
+	if a == nil || len(a.Declared) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, k := range a.Declared {
+		switch k {
+		case "duration_s":
+			parts = append(parts, fmt.Sprintf("%s=%g", k, a.Duration))
+		case "loudness_lufs":
+			if a.Loudness != nil {
+				parts = append(parts, fmt.Sprintf("%s=%g", k, *a.Loudness))
+			}
+		case "peak_dbfs":
+			if a.Peak != nil {
+				parts = append(parts, fmt.Sprintf("%s=%g", k, *a.Peak))
+			}
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 // metaSubtype 取项目字段里的细类（asset.json 的 subtype，R-394）；不是字符串或没写时为空。
