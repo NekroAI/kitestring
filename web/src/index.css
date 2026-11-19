@@ -45,6 +45,15 @@
   --idle: #6f6a5c;
   --idle-soft: #ece6d9;
   --lit: rgb(47 93 140 / 0.16);
+  /* 素材的文件类型种类（R-397）：模型 / 图片 / 音频 / 视频，和状态色（石绿、藤黄、朱砂）错开；标签上照写文字，颜色只帮着扫读 */
+  --kind-model: #5a3f9e;
+  --kind-model-soft: #ebe4f5;
+  --kind-image: #1f6a80;
+  --kind-image-soft: #dcecef;
+  --kind-audio: #9a346c;
+  --kind-audio-soft: #f5e2ec;
+  --kind-video: #9c4a14;
+  --kind-video-soft: #f6e5d8;
   color-scheme: light;
 }
 
@@ -83,6 +92,14 @@
   --idle: #a29c8c;
   --idle-soft: #2e3446;
   --lit: rgb(141 179 226 / 0.2);
+  --kind-model: #c0aef2;
+  --kind-model-soft: #33304f;
+  --kind-image: #86cbe0;
+  --kind-image-soft: #22394a;
+  --kind-audio: #eb9cc8;
+  --kind-audio-soft: #40293c;
+  --kind-video: #f0a36c;
+  --kind-video-soft: #42302a;
   color-scheme: dark;
 }
 
@@ -114,6 +131,14 @@
   --color-danger-soft: var(--danger-soft);
   --color-idle: var(--idle);
   --color-idle-soft: var(--idle-soft);
+  --color-kind-model: var(--kind-model);
+  --color-kind-model-soft: var(--kind-model-soft);
+  --color-kind-image: var(--kind-image);
+  --color-kind-image-soft: var(--kind-image-soft);
+  --color-kind-audio: var(--kind-audio);
+  --color-kind-audio-soft: var(--kind-audio-soft);
+  --color-kind-video: var(--kind-video);
+  --color-kind-video-soft: var(--kind-video-soft);
   --shadow-xs: var(--shadow-sm);
   --shadow-card: var(--shadow);
   --shadow-pop: var(--shadow-lg);

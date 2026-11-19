@@ -58,6 +58,38 @@ export function fileTypesOf(a: Pick<AssetLite, 'latest'>): string[] {
   return x ? [x] : []
 }
 
+// MediaKind（R-397）：文件类型的种类，标签写成「种类 · 文件类型」（模型 · GLB、图片 · PNG），按种类分色。
+export type MediaKind = 'model' | 'image' | 'audio' | 'video' | 'other'
+const MEDIA_EXT: Record<Exclude<MediaKind, 'other'>, string[]> = {
+  model: ['GLB', 'GLTF', 'FBX', 'OBJ', 'BLEND', 'USD', 'USDZ', 'USDA', 'USDC', 'STL', 'DAE', 'PLY', '3DS', 'VOX'],
+  image: ['PNG', 'JPG', 'WEBP', 'GIF', 'SVG', 'BMP', 'TGA', 'PSD', 'EXR', 'HDR', 'KTX2', 'DDS', 'TIF', 'TIFF', 'AVIF'],
+  audio: ['OGG', 'WAV', 'MP3', 'FLAC', 'M4A', 'AAC', 'OPUS'],
+  video: ['MP4', 'WEBM', 'MOV', 'MKV', 'AVI', 'M4V'],
+}
+
+// mediaKindOf：按文件类型（扩展名）定种类；扩展名不认识时看 mime 的大类（model/ image/ audio/ video/），都不是归「其他」。
+export function mediaKindOf(type: string, mime = ''): MediaKind {
+  const x = type.toUpperCase()
+  for (const k of ['model', 'image', 'audio', 'video'] as const) if (MEDIA_EXT[k].includes(x)) return k
+  const m = mime.split('/')[0].toLowerCase()
+  return m === 'model' || m === 'image' || m === 'audio' || m === 'video' ? m : 'other'
+}
+
+export type FileTag = { kind: MediaKind; type: string }
+
+// fileTagsOf（R-397）：卡片、详情上的类型标签，和 fileTypesOf 一样只按主文件算。
+export function fileTagsOf(a: Pick<AssetLite, 'latest'>): FileTag[] {
+  const f = a.latest?.file
+  const x = f ? fileTypeOf(f) : ''
+  return x ? [{ kind: mediaKindOf(x, f!.mime), type: x }] : []
+}
+
+// uniqTags：几件素材的类型标签去重（候选组的卡片用），保持第一次出现的顺序。
+export function uniqTags(tags: FileTag[]): FileTag[] {
+  const seen = new Set<string>()
+  return tags.filter((x) => !seen.has(x.type) && !!seen.add(x.type))
+}
+
 // projectsOf：有素材的项目，最近有更新的在前（资源库页的项目切换只列这些）。
 export function projectsOf(list: AssetLite[]): string[] {
   const last = new Map<string, string>()
@@ -296,6 +328,22 @@ export function variantNames(variants: unknown): string[] {
 
 // glbOf：零件的 GLB；独立的图没有。
 export const glbOf = (kind: 'part' | 'image', v?: VersionLite | null) => (kind === 'part' && v?.file ? v.file : null)
+
+// defaultView（R-395）：详情打开时先看什么——有 GLB 的零件先看 3D，其余看大图。
+export const defaultView = (kind: 'part' | 'image', v?: VersionLite | null): 'model' | 'image' => (glbOf(kind, v) ? 'model' : 'image')
+
+// detailViews（R-395）：详情的视图切换，有 GLB 时 3D 排在最前（默认看它），其后大图、对比、3D 对比。
+export function detailViews(o: { glb: boolean; pair: boolean; pair3d: boolean }): ('image' | 'model' | 'compare' | 'compare3d')[] {
+  return [...(o.glb ? (['model'] as const) : []), 'image' as const, ...(o.pair ? (['compare'] as const) : []), ...(o.pair3d ? (['compare3d'] as const) : [])]
+}
+
+// 宽屏分栏（R-396）：视口不小于 SPLIT_MIN 时资源库右侧固定一栏详情，点素材直接在栏里切换；更窄时仍用抽屉。
+// 1920px 起：去掉侧边栏、目录和详情栏后图片墙还能放三列以上；21:9 带鱼屏（2560 / 3440）都在分栏范围里，1440 这类普通宽度仍是抽屉。
+export const SPLIT_MIN = 1920
+// SPLIT_W：详情栏宽度，视口的 26%，夹在 560～720px 之间（560 和抽屉一样能放下大图和判断栏，720 起再宽只是留白）。
+export const SPLIT_W = { min: 560, vw: 26, max: 720 }
+export const splitWidth = (viewport: number) => Math.round(Math.min(SPLIT_W.max, Math.max(SPLIT_W.min, (viewport * SPLIT_W.vw) / 100)))
+export const splitWidthCss = `clamp(${SPLIT_W.min}px, ${SPLIT_W.vw}vw, ${SPLIT_W.max}px)`
 
 // comparePair：版本对比的两版。shown 是正在看的版本（默认最新），和它前一版比；只有一版时返回 null。
 // versions 新的在前（与 Hub 一致），但这里不依赖顺序。

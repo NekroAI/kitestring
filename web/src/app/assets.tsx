@@ -5,8 +5,8 @@ import { Box as BoxIcon, Check, ChevronDown, ChevronLeft, Columns2, Image as Ima
 import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
-import { cx, relTime, useDesktop, useNow } from '../lib/util'
-import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, facetsOf, fileTypesOf, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { cx, relTime, useDesktop, useMedia, useNow } from '../lib/util'
+import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
@@ -83,6 +83,8 @@ export function AssetsPage() {
   const pendingN = reviewQueue(tiles).length
   // 桌面上审片是全宽的舞台（R-366，D-1713 方案 B）；手机上仍是底部抽屉里逐个翻
   const stage = review.on && desktop
+  // 宽屏（R-396）：详情在右侧分栏里看，不弹抽屉；审片仍是全宽的舞台
+  const split = useSplit()
   const go = (d: AssetDir) => set(dirParams(d))
   const open = all.find((a) => a.code === params.get('asset'))
   const reset = { b: null, c: null, sub: null, old: null, ob: null, ft: null, st: null, asset: null, cmp: null }
@@ -144,7 +146,7 @@ export function AssetsPage() {
       ) : (
         <WallArea>
           {(h) => (
-            <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined} height={h}>
+            <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined} height={h} detail={split && <AssetSplit code={stage ? null : params.get('asset')} onClose={() => set({ asset: null })} height />}>
               {!tiles.length ? (
                 <Card>
                   <Empty
@@ -168,7 +170,7 @@ export function AssetsPage() {
       )}
 
       {stage && <ReviewStage review={review} code={params.get('asset')} all={all} />}
-      <AssetDrawer code={stage ? null : params.get('asset')} review={review.on ? review : undefined} onClose={() => set({ asset: null, rv: null })} />
+      <AssetDrawer code={stage || split ? null : params.get('asset')} review={review.on ? review : undefined} onClose={() => set({ asset: null, rv: null })} />
       <CompareDrawer gkey={params.get('cmp')} all={all} onClose={() => set({ cmp: null })} onOpen={(code) => set({ asset: code, cmp: null })} />
     </>
   )
@@ -399,17 +401,29 @@ export function AssetCover({ a, v, className, tag = true }: { a: Pick<AssetLite,
   )
 }
 
-// FileTypeTags（R-388）：卡片上的文件类型小标签，一件素材有几种文件就列几个。
-function FileTypeTags({ types }: { types: string[] }) {
-  if (!types.length) return null
+// 类型标签按种类分色（R-397）：颜色是设计令牌（index.css 的 --kind-*），深浅色各一套；「其他」用中性色。
+const kindTone: Record<MediaKind, string> = {
+  model: 'bg-kind-model-soft text-kind-model',
+  image: 'bg-kind-image-soft text-kind-image',
+  audio: 'bg-kind-audio-soft text-kind-audio',
+  video: 'bg-kind-video-soft text-kind-video',
+  other: 'bg-sunken text-fg-2',
+}
+
+// FileTypeTags（R-388、R-397）：类型标签写成「种类 · 文件类型」（模型 · GLB、图片 · PNG），按种类分色，文字照写不只靠颜色。
+// 卡片、详情、分享页共用；一件素材有几种文件就列几个。
+export function FileTypeTags({ tags, className }: { tags: FileTag[]; className?: string }) {
+  if (!tags.length) return null
   return (
-    <div className="mt-1 flex gap-1 overflow-hidden" data-file-types="">
-      {types.map((x) => (
-        <span key={x} className="rounded bg-sunken px-1.5 font-mono text-[11px] leading-[16px] text-fg-2">
-          {x}
+    <span className={cx('flex min-w-0 gap-1 overflow-hidden', className)} data-file-types="">
+      {tags.map((x) => (
+        <span key={x.type} className={cx('shrink-0 rounded px-1.5 text-[11px] leading-[18px] font-medium whitespace-nowrap', kindTone[x.kind])} data-kind={x.kind}>
+          {t.asset.media[x.kind]}
+          {t.common.sep}
+          <span className="font-mono">{x.type}</span>
         </span>
       ))}
-    </div>
+    </span>
   )
 }
 
@@ -432,7 +446,7 @@ export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean
             {assetName(a)}
           </div>
           <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.uid ? subtypeOf(a) || a.category : a.category, t.asset.ver(a.version))}</div>
-          <FileTypeTags types={fileTypesOf(a)} />
+          <FileTypeTags tags={fileTagsOf(a)} className="mt-1" />
         </div>
       </button>
     </div>
@@ -460,7 +474,7 @@ export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { 
           {tile.group}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(tile.batch, tile.assets[0].category, t.asset.candidates(tile.assets.map(candidateLabel)))}</div>
-        <FileTypeTags types={[...new Set(tile.assets.flatMap(fileTypesOf))]} />
+        <FileTypeTags tags={uniqTags(tile.assets.flatMap(fileTagsOf))} className="mt-1" />
       </div>
     </button>
   )
@@ -499,42 +513,92 @@ function useReviewNav(code: string | null, review: Review | undefined, shell: Re
   return { prev, next, pos: review && code ? review.queue.indexOf(code) + 1 : 0 }
 }
 
+// useSplit（R-396）：视口够宽（SPLIT_MIN）时资源库右侧固定一栏详情，点素材直接在栏里切换，不遮挡图片墙；更窄时仍用抽屉。
+export const useSplit = () => useMedia(`(min-width: ${SPLIT_MIN}px)`)
+
+// DetailInner：抽屉和宽屏详情栏共用的内容（审片导航、加载 / 出错、素材详情），只换外壳。
+function DetailInner({ q, review, onClose, shell, code }: { q: ReturnType<typeof useAsset>; review?: Review; onClose: () => void; shell: React.RefObject<HTMLDivElement | null>; code: string | null }) {
+  const a = q.data
+  const { prev, next, pos } = useReviewNav(code, review, shell)
+  return (
+    <>
+      {review && (
+        <ReviewNav
+          pos={pos}
+          total={review.queue.length}
+          prev={!!prev}
+          next={!!next}
+          finished={review.finished}
+          onPrev={() => prev && review.go(prev)}
+          onNext={() => next && review.go(next)}
+          onExit={() => review.exit()}
+        />
+      )}
+      {q.isError ? (
+        <div className="p-6">
+          <ErrorState error={q.error} />
+        </div>
+      ) : !a ? (
+        <div className="space-y-3 px-5 py-5">
+          <Skeleton className="h-6 w-1/2" />
+          <Skeleton className="aspect-[4/3] w-full rounded-xl" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : (
+        <AssetBody key={a.code} a={a} onClose={onClose} keys={!!review} shell={shell} />
+      )}
+    </>
+  )
+}
+
 export function AssetDrawer({ code, review, onClose }: { code: string | null; review?: Review; onClose: () => void }) {
   const ex = useContext(AssetExtrasContext)
   const q = (ex?.useDetail ?? useAsset)(code)
-  const a = q.data
   const shell = useRef<HTMLDivElement>(null)
-  const { prev, next, pos } = useReviewNav(code, review, shell)
   return (
-    <Panel open={!!code} onClose={onClose} wide bare title={a?.key ?? t.asset.title}>
+    <Panel open={!!code} onClose={onClose} wide bare title={q.data?.key ?? t.asset.title}>
       <div ref={shell} className="flex min-h-0 flex-1 flex-col">
-        {review && (
-          <ReviewNav
-            pos={pos}
-            total={review.queue.length}
-            prev={!!prev}
-            next={!!next}
-            finished={review.finished}
-            onPrev={() => prev && review.go(prev)}
-            onNext={() => next && review.go(next)}
-            onExit={() => review.exit()}
-          />
-        )}
-        {q.isError ? (
-          <div className="p-6">
-            <ErrorState error={q.error} />
-          </div>
-        ) : !a ? (
-          <div className="space-y-3 px-5 py-5">
-            <Skeleton className="h-6 w-1/2" />
-            <Skeleton className="aspect-[4/3] w-full rounded-xl" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-        ) : (
-          <AssetBody key={a.code} a={a} onClose={onClose} keys={!!review} shell={shell} />
-        )}
+        <DetailInner q={q} review={review} onClose={onClose} shell={shell} code={code} />
       </div>
     </Panel>
+  )
+}
+
+// AssetSplit（R-396）：宽屏时资源库右侧固定的详情栏，内容和抽屉一样（3D / 大图 / 对比、动作播放、判断栏或访客底栏）。
+// 没选素材时写一句提示；Esc 关掉当前素材（有别的弹层盖着、或正在输入时不拦截）。
+// height 给了时（所有者页铺满一屏）占满这一屏的高度；不给时（分享页整页滚动）贴在顶部、高一屏。
+export function AssetSplit({ code, onClose, height }: { code: string | null; onClose: () => void; height?: boolean }) {
+  const ex = useContext(AssetExtrasContext)
+  const q = (ex?.useDetail ?? useAsset)(code)
+  const shell = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    if (!code) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || inField(e.target as HTMLElement) || covered(null)) return
+      e.preventDefault()
+      close.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [code])
+  return (
+    <aside
+      ref={shell}
+      style={{ width: splitWidthCss }}
+      className={cx('flex shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-card', height ? 'h-full' : 'sticky top-4 h-[calc(100dvh-2rem)] self-start')}
+      aria-label={t.asset.detail}
+      data-asset-split={code ?? ''}
+    >
+      {code ? (
+        <DetailInner q={q} onClose={onClose} shell={shell} code={code} />
+      ) : (
+        <div className="flex flex-1 items-center justify-center p-6">
+          <Empty icon={<Images />} title={t.asset.splitEmpty} />
+        </div>
+      )}
+    </aside>
   )
 }
 
@@ -684,9 +748,9 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
   const glb = glbOf(a.kind, v)
   // 3D 对比（R-392）：两版都有 GLB 时并排看，动作同步播放
   const pair3d = comparePair(versions.filter((x) => glbOf(a.kind, x)), shownN)
-  const views: View[] = ['image', ...(glb ? (['model'] as View[]) : []), ...(pair ? (['compare'] as View[]) : []), ...(pair3d ? (['compare3d'] as View[]) : [])]
-  // 没有预览图的零件（例如访客交的新版本，R-365）打开时直接看 3D
-  const [view, setView] = useState<View>(() => (glb && !coverOf(a.kind, v) ? 'model' : 'image'))
+  const views: View[] = detailViews({ glb: !!glb, pair: !!pair, pair3d: !!pair3d })
+  // 有 GLB 的零件打开时直接看 3D（R-395），可切回大图；只有图片的照旧看大图
+  const [view, setView] = useState<View>(() => defaultView(a.kind, v))
   const cur = views.includes(view) ? view : 'image'
   const previews = a.kind === 'part' ? (v?.previews ?? []).filter((p) => p.mime.startsWith('image/')) : []
   const cover = coverOf(a.kind, v)
@@ -703,7 +767,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     [t.asset.meta.batch, batchesOf(a.uid ? a : (v ?? a)).join(t.asset.listSep)],
     [t.asset.meta.category, a.category],
     [t.asset.meta.subtype, v?.subtype],
-    [t.asset.meta.fileType, fileTypesOf({ latest: v }).join(t.asset.listSep)],
+    [t.asset.meta.fileType, fileTagsOf({ latest: v }).length ? <FileTypeTags tags={fileTagsOf({ latest: v })} /> : ''],
     [t.asset.meta.previews, v?.previews?.length ? t.asset.previewCount(v.previews.length) : ''],
     [t.asset.meta.branch, v?.branch],
     [t.asset.meta.commit, v?.commit ? <span className="font-mono text-[12px]">{v.commit.slice(0, 10)}</span> : ''],

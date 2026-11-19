@@ -229,9 +229,9 @@ function DirTags({ b, go }: { b: Browse; go: (d: AssetDir) => void }) {
   )
 }
 
-// DirBrowser：桌面左目录 + 右边（面包屑、图片墙）；手机面包屑 + 横滑标签 + 图片墙。
+// DirBrowser：桌面左目录 + 中间（面包屑、图片墙）+ 宽屏时右侧详情栏（detail，R-396）；手机面包屑 + 横滑标签 + 图片墙。
 // height 给了时（所有者页铺满一屏）目录和图片墙各自滚动；不给时（分享页整页滚动）目录贴在顶部。
-export function DirBrowser({ b, go, openName, height, children }: { b: Browse; go: (d: AssetDir) => void; openName?: string; height?: number; children: ReactNode }) {
+export function DirBrowser({ b, go, openName, height, detail, children }: { b: Browse; go: (d: AssetDir) => void; openName?: string; height?: number; detail?: ReactNode; children: ReactNode }) {
   return (
     <div className="lg:flex lg:gap-5" style={height ? { height } : undefined}>
       <aside
@@ -247,6 +247,7 @@ export function DirBrowser({ b, go, openName, height, children }: { b: Browse; g
         <DirTags b={b} go={go} />
         {children}
       </div>
+      {detail}
     </div>
   )
 }

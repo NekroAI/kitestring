@@ -267,6 +267,11 @@ export const zh = {
     allCategories: '全部类别',
     allFileTypes: '全部文件类型',
     fileType: '文件类型',
+    // 类型标签的种类（R-397）：标签写成「种类 · 文件类型」，如「模型 · GLB」
+    media: { model: '模型', image: '图片', audio: '音频', video: '视频', other: '其他' } as Record<string, string>,
+    // 宽屏分栏（R-396）：右侧详情栏没选素材时
+    detail: '素材详情',
+    splitEmpty: '点选素材查看详情',
     batch: '批次',
     category: '类别',
     project: '项目',

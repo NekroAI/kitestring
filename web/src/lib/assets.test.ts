@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetName, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { assetName, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -269,4 +269,45 @@ test('素材名去掉命名空间和类别，变体按 asset.json 数', () => {
   assert.equal(variantCount(idAsset('core:concept.a', '', 'approved', { a: {}, b: {}, c: {} })), 3)
   assert.equal(variantCount(idAsset('core:concept.a', '')), 0)
   assert.equal(subtypeOf(idAsset('core:concept.a', 'gear')), 'gear')
+})
+
+test('类型标签（R-397）：按文件类型分种类，写成「种类 · 文件类型」用的种类和类型', () => {
+  assert.equal(mediaKindOf('GLB'), 'model')
+  assert.equal(mediaKindOf('fbx'), 'model')
+  assert.equal(mediaKindOf('PNG'), 'image')
+  assert.equal(mediaKindOf('JPG'), 'image')
+  assert.equal(mediaKindOf('OGG'), 'audio')
+  assert.equal(mediaKindOf('MP4'), 'video')
+  assert.equal(mediaKindOf('XYZ', 'image/x-foo'), 'image')
+  assert.equal(mediaKindOf('TTF', 'font/ttf'), 'other')
+  assert.equal(mediaKindOf(''), 'other')
+  const f = (name: string, mime: string) => ({ id: name, name, mime, size: 1 })
+  const lat = (file: ReturnType<typeof f> | null, previews: ReturnType<typeof f>[] = []) => ({ latest: { id: 'v', version: 1, batch: '', branch: '', commit: '', file, previews, created_at: '' } })
+  assert.deepEqual(fileTagsOf(lat(f('a.glb', 'model/gltf-binary'), [f('a__front.png', 'image/png')])), [{ kind: 'model', type: 'GLB' }])
+  assert.deepEqual(fileTagsOf(lat(f('b.jpeg', 'image/jpeg'))), [{ kind: 'image', type: 'JPG' }])
+  assert.deepEqual(fileTagsOf(lat(null)), [])
+  assert.deepEqual(fileTagsOf({ latest: null }), [])
+  assert.deepEqual(uniqTags([{ kind: 'image', type: 'PNG' }, { kind: 'model', type: 'GLB' }, { kind: 'image', type: 'PNG' }]), [{ kind: 'image', type: 'PNG' }, { kind: 'model', type: 'GLB' }])
+})
+
+test('详情默认视图（R-395）：有 GLB 的零件先看 3D，3D 排在切换的最前；只有图片的照旧看大图', () => {
+  const f = (name: string, mime: string) => ({ id: name, name, mime, size: 1 })
+  const v = (file: ReturnType<typeof f> | null, previews: ReturnType<typeof f>[] = []) => ({ id: 'v', version: 1, batch: '', branch: '', commit: '', file, previews, created_at: '' })
+  assert.equal(defaultView('part', v(f('a.glb', 'model/gltf-binary'), [f('a__front.png', 'image/png')])), 'model')
+  assert.equal(defaultView('part', v(f('a.glb', 'model/gltf-binary'))), 'model')
+  assert.equal(defaultView('image', v(f('c.png', 'image/png'))), 'image')
+  assert.equal(defaultView('part', v(null, [f('a.png', 'image/png')])), 'image')
+  assert.equal(defaultView('part', null), 'image')
+  assert.deepEqual(detailViews({ glb: true, pair: true, pair3d: true }), ['model', 'image', 'compare', 'compare3d'])
+  assert.deepEqual(detailViews({ glb: false, pair: true, pair3d: false }), ['image', 'compare'])
+  assert.deepEqual(detailViews({ glb: false, pair: false, pair3d: false }), ['image'])
+})
+
+test('宽屏分栏（R-396）：1920px 起分栏，详情栏宽度 560～720px', () => {
+  assert.equal(SPLIT_MIN, 1920)
+  assert.equal(splitWidth(1920), 560)
+  assert.equal(splitWidth(2560), 666)
+  assert.equal(splitWidth(3440), 720)
+  assert.equal(splitWidth(5120), 720)
+  assert.equal(splitWidthCss, 'clamp(560px, 26vw, 720px)')
 })

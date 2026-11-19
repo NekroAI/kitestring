@@ -12,7 +12,7 @@ import { downloadUrl, NoDownloadContext } from '../ui/attach'
 import { DraftField, useDraft } from '../app/draft'
 import { FrameChip, useFrameSink } from '../app/animBar'
 import type { Frame } from '../lib/anim'
-import { AssetDrawer, AssetExtrasContext, CompareDrawer, FacetMenu, SectionWall, WallGrid, type AssetExtras, type Detail } from '../app/assets'
+import { AssetDrawer, AssetExtrasContext, AssetSplit, CompareDrawer, FacetMenu, SectionWall, useSplit, WallGrid, type AssetExtras, type Detail } from '../app/assets'
 import { DirBrowser, dirParams, useBrowse } from '../app/assetDir'
 import { gk, guestAssetDetail, postComment, postUpload, useGuestAssets, useMyComments } from './data'
 import { mineText } from './slots'
@@ -44,6 +44,8 @@ export function GuestAssets({ token }: { token: string }) {
   const tiles = b.tiles
   const go = (d: AssetDir) => set(dirParams(d))
   const open = all.find((a) => a.code === params.get('asset'))
+  // 宽屏（R-396）：和所有者页一样右侧固定详情栏，不弹抽屉
+  const split = useSplit()
   const perm = q.data?.perm ?? 'view'
   const allow = !!q.data?.allow_download
   const useDetail = useMemo(() => guestAssetDetail(token), [token])
@@ -56,6 +58,7 @@ export function GuestAssets({ token }: { token: string }) {
   return (
     // 和所有者的资源库页一样铺满宽度（R-383），图片墙宽屏上一行放得更多；整页在访客上下文里，自动缩略图只在本页渲染、不回传
     <AssetExtrasContext.Provider value={extras}>
+    <NoDownloadContext.Provider value={!allow}>
     <div className="w-full px-4 py-5 sm:px-6 lg:px-8" data-guest-assets="">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="font-display text-[22px] font-semibold tracking-wide text-fg">{t.guest.assets}</h1>
@@ -84,7 +87,7 @@ export function GuestAssets({ token }: { token: string }) {
           {t.guest.noAssets}
         </div>
       ) : (
-        <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined}>
+        <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined} detail={split && <AssetSplit code={params.get('asset')} onClose={() => set({ asset: null })} />}>
           {!tiles.length ? (
             <div className="flex flex-col items-center gap-2 py-16 text-sm text-fg-3">
               <Images className="size-8" strokeWidth={1.4} />
@@ -95,11 +98,10 @@ export function GuestAssets({ token }: { token: string }) {
           )}
         </DirBrowser>
       )}
-      <NoDownloadContext.Provider value={!allow}>
-        <AssetDrawer code={params.get('asset')} onClose={() => set({ asset: null })} />
-        <CompareDrawer gkey={params.get('cmp')} all={all} onClose={() => set({ cmp: null })} onOpen={(code) => set({ asset: code, cmp: null })} />
-      </NoDownloadContext.Provider>
+      <AssetDrawer code={split ? null : params.get('asset')} onClose={() => set({ asset: null })} />
+      <CompareDrawer gkey={params.get('cmp')} all={all} onClose={() => set({ cmp: null })} onOpen={(code) => set({ asset: code, cmp: null })} />
     </div>
+    </NoDownloadContext.Provider>
     </AssetExtrasContext.Provider>
   )
 }
