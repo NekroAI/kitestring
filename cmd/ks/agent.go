@@ -874,6 +874,9 @@ func runWait(args []string) error {
 				break
 			}
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。你需要常驻在线：重新运行 ks wait 继续待命%s。\n", waited, map[bool]string{true: "", false: "（在后台运行）"}[codex])
+		} else if res.Lite {
+			// 轻接入（R-359）：一轮只挂一次，超时就收尾
+			fmt.Printf("[Kitestring] 等了 %s，没有发给你的答复或消息。请结束本轮：用一两句话说明做到哪、在等什么；不要再运行 ks wait 续等。之后到的答复，会在用户下次发消息时送达。\n", waited)
 		} else if codex {
 			fmt.Printf("[Kitestring] 等了 %s，用户没有新的答复。请结束本轮：用一两句话说明做到哪、在等用户什么；不要再运行 ks wait 续等。用户在 Kitestring 上答复后，会在下次对话时送达给你。\n", waited)
 		} else {

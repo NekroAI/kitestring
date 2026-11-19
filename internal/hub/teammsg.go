@@ -74,9 +74,9 @@ func deliveryOf(d store.Decision, x store.Session, ok bool, at time.Time) Delive
 		out.Status, out.Reason = OfflineSt, "已关闭，不再送达"
 	case !ok:
 		out.Status, out.Reason = OfflineSt, "收件会话不存在"
-	case x.StoppedAt != nil && x.Role != "":
+	case x.StoppedAt != nil && roles.Member(x.Role):
 		out.Status, out.Reason = PendingWakeSt, "会话已停下，消息照常排队，用户开启新会话接任（"+takeoverCmd(x.Role)+"）时转交"
-	case x.OfflineAt != nil && x.Role != "":
+	case x.OfflineAt != nil && roles.Member(x.Role):
 		out.Status, out.Reason = PendingWakeSt, "会话已下线，消息照常排队，用户开启新会话接任（"+takeoverCmd(x.Role)+"）时转交"
 	case sessionOffline(x):
 		out.Status, out.Reason = OfflineSt, offlineWhy(x)+"；会话恢复后才会收到"
@@ -241,7 +241,8 @@ func (h *Hub) registerAgentBroadcast(api huma.API) {
 			at := time.Now()
 			var sent []store.Decision
 			for _, x := range list {
-				if x.Key == me.Key || (len(filter) > 0 && !filter[x.Role]) {
+				// 轻接入（R-359）只收点名发给它的消息：发给全体的广播不送，--role lite 点名时才送
+				if x.Key == me.Key || (len(filter) > 0 && !filter[x.Role]) || (len(filter) == 0 && x.Role == roles.Lite) {
 					continue
 				}
 				if sessionOffline(x) {

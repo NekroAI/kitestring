@@ -52,7 +52,7 @@ func (h *Hub) announcePresence(ctx context.Context, subject store.Session, role,
 		seen[k] = true
 	}
 	for _, x := range list {
-		if seen[x.Key] || !presenceOnline(x) {
+		if seen[x.Key] || !presenceOnline(x) || x.Role == roles.Lite { // 轻接入不收团队动态（R-359）
 			continue
 		}
 		seen[x.Key] = true
@@ -123,6 +123,13 @@ func (h *Hub) onRoleChange(ctx context.Context, prev store.Session, role string,
 		return
 	}
 	active := prev.RetiredAt == nil && prev.OfflineAt == nil && prev.StoppedAt == nil
+	// 轻接入（R-359）不是团队身份：进入 / 退出轻接入按无身份算，不通知别的会话
+	if !roles.Member(role) {
+		role = ""
+	}
+	if !roles.Member(prev.Role) {
+		prev.Role = ""
+	}
 	skip := map[string]bool{}
 	for _, o := range demoted {
 		skip[o.Key] = true // 被接任的旧会话另有「已被接任」的纸鸢提醒
@@ -153,7 +160,7 @@ func (h *Hub) onRoleChange(ctx context.Context, prev store.Session, role string,
 // onSessionEnded：有身份、还在担任身份的会话结束了（终端关闭 / SessionEnd），告诉本项目其他在线会话。
 // 已空等下线、停下后下线、被接任的不再重复通知。
 func (h *Hub) onSessionEnded(ctx context.Context, prev *store.Session, next store.Session) {
-	if prev == nil || next.Background || next.Role == "" || next.ProjectID == "" {
+	if prev == nil || next.Background || !roles.Member(next.Role) || next.ProjectID == "" {
 		return
 	}
 	if sessionOffline(*prev) || next.State != store.StateEnded {
@@ -197,7 +204,7 @@ func (h *Hub) onlineSection(ctx context.Context, projectID, me string) ovSection
 			line += "@" + e.Device
 		}
 		line += " · " + e.StatusLabel
-		if x.Role != "" {
+		if roles.Member(x.Role) {
 			has[x.Role] = true
 			withRole = append(withRole, line)
 		} else {

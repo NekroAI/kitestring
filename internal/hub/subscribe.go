@@ -30,6 +30,9 @@ func defaultWaitOn(role string) []string {
 
 // effectiveWaitOn：存下的订阅（空为按身份默认，none 为不订阅）实际订阅了哪些事件。
 func effectiveWaitOn(role, stored string) []string {
+	if role == roles.Lite {
+		return nil // 轻接入（R-359）只被发给它的事唤醒，不订阅别的会话的事件
+	}
 	switch stored {
 	case "", protocol.OnDefault:
 		return defaultWaitOn(role)

@@ -93,7 +93,9 @@ agent 调用：
   decision answer <D-x> --answer 答复 --reason 理由 --risk low   Aide 在用户的授权窗口内代答（R-163）
   写作规范：证据第一句是结论（40 字以内），再逐条写验收判定；证据超 600 字、决策说明超 400 字时照常保存并提示压缩
   表达块：req evidence / decision raise / plan submit 可加 --blocks 块.json（清单、对比、截图、流程、指标、改动范围、选项、表格），纸鸢统一渲染
-  role <aide|pm|dev|advisor|reviewer|none>   声明本会话的身份（Aide / PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动交出身份
+  role <aide|pm|dev|advisor|reviewer|lite|none>   声明本会话的身份（Aide / PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动交出身份；
+                         lite 是轻接入（R-359）：不担任身份，只用决策、凭据等服务，打印几行短说明
+  help [服务]            不带参数打印本帮助；带服务名（decision / secret / ask / wait / role）只打印这项服务的用法（轻接入按需取用）
   takeover <身份> [--tool claude|codex] [--print]
                          交接（R-224）：在项目目录启动新会话并带接任提示，新会话声明身份时自动读到上一任的交接
   handoff [--doing 做到一半的事] [--agreements 口头约定] [--caveats 注意事项] | --file 交接.json|.md
@@ -168,7 +170,7 @@ func main() {
 	case "secret":
 		err = runSecret(args)
 	case "help", "--help", "-h":
-		fmt.Println(usage)
+		err = runHelp(args)
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(1)

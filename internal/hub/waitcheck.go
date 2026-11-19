@@ -10,6 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -90,7 +91,7 @@ func (h *Hub) checkWait(ctx context.Context, key, text string, afterTimeout bool
 		}
 		return waitCheck{Items: []string{}, MaxWait: store.WaitMaxDefault.String()}, nil
 	}
-	if x.OfflineAt != nil && x.Role != "" {
+	if x.OfflineAt != nil && roles.Member(x.Role) {
 		return waitCheck{Items: []string{}, Retired: true, Offline: true, Hint: offlineDoneHint(x.Role, h.handedOff(ctx, x))}, nil
 	}
 	if x.RetiredAt != nil {
@@ -134,7 +135,7 @@ func (h *Hub) checkWait(ctx context.Context, key, text string, afterTimeout bool
 	if out.Asking {
 		out.Hint = "[Kitestring] 注意：你最后的回复像是在问用户，但面板上没有你提的待答决策、待验收需求或待批准的计划 / 待验收的阶段——用户在面板上看不到你在等什么。" +
 			"要问用户的事，先用 decision_raise（命令行 ks decision raise）发上去，用户在面板上一答就会唤醒你；对话里的问句不会出现在用户的「待处理」里，用户看不到。本次照常等待。\n"
-	} else {
+	} else if x.Role != roles.Lite { // 轻接入（R-359）每轮本来就挂一轮，等发给它的消息，不用这条提示
 		out.Hint = "[Kitestring] 提示：你名下没有等用户处理的事项（待答决策、待验收需求、待批准的计划或待验收的阶段）。只是待命接收需求的话照常等就行；" +
 			"如果其实在等用户回答，用户在面板上看不到——先用 decision_raise 发上去。\n"
 	}

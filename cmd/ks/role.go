@@ -26,7 +26,7 @@ func runRole(args []string) error {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("用法：ks role <%s|none>（也认中文名和别称，如 主助理、参谋、主调度）", strings.Join(roles.All, "|"))
+		return fmt.Errorf("用法：ks role <%s|lite|none>（也认中文名和别称，如 主助理、参谋、主调度；lite 是轻接入）", strings.Join(roles.All, "|"))
 	}
 	role, ok := roles.Resolve(strings.Join(fs.Args(), " "))
 	if !ok {
@@ -34,6 +34,7 @@ func runRole(args []string) error {
 		for _, r := range roles.All {
 			b.WriteString("\n  ks role " + r + "  " + roles.AliasLine(r))
 		}
+		b.WriteString("\n  ks role " + roles.Lite + "  " + roles.AliasLine(roles.Lite) + "（轻接入：不担任身份，只用服务）")
 		return fmt.Errorf("未知身份 %q，可选（后面是也认的叫法）：%s\n清除身份用 none", strings.Join(fs.Args(), " "), b.String())
 	}
 	key := currentSession(*session)

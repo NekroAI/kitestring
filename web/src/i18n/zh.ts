@@ -630,6 +630,9 @@ export const zh = {
     get dev() {
       return rt`${both('dev')}：经你批准${'pm'}的建议后开启，并行处理${'pm'}指派的需求，常驻`
     },
+    get lite() {
+      return `${both('lite')}：不担任身份，只用决策、凭据等服务，不记需求、不交证据。可以有多个，不常驻`
+    },
   } as Record<string, string>,
   presence: { standby: '待命', working: '运行中', idle: '空闲', ended: '已结束' } as Record<string, string>,
   permMode: {

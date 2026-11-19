@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/roles"
 )
 
 // 挂起等待（D-10）：Agent 做完一段后在后台运行 ks wait。Hub 推来针对该会话的新答复、修改意见或留言时，
@@ -38,6 +39,7 @@ type WaitResult struct {
 	Session  string `json:"session_key,omitempty"`
 	Timeout  string `json:"timeout,omitempty"`  // 实际用的最长等待时间
 	Resident bool   `json:"resident,omitempty"` // 会话是 PM / 开发，要求常驻在线：超时后接着等（R-83）
+	Lite     bool   `json:"lite,omitempty"`     // 会话是轻接入（R-359）：超时就结束本轮，不续挂
 	Error    string `json:"error,omitempty"`
 }
 
@@ -128,7 +130,11 @@ func (d *Daemon) handleWait(w http.ResponseWriter, r *http.Request) {
 	}
 	d.mu.Unlock()
 
-	res := WaitResult{Reason: reason, Session: key, Timeout: timeout.String(), Resident: d.resident(key)}
+	d.liteEndWait(key, reason)
+	d.mu.Lock()
+	lite := d.roles[key] == roles.Lite
+	d.mu.Unlock()
+	res := WaitResult{Reason: reason, Session: key, Timeout: timeout.String(), Resident: d.resident(key), Lite: lite}
 	if reason == "delivered" {
 		res.Text = d.injection(protocol.Event{Name: "UserPromptSubmit", Tool: tool, SessionID: sid, TurnID: "ks-wait"})
 	}

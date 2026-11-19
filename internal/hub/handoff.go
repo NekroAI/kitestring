@@ -61,7 +61,7 @@ func (h *Hub) requestHandoff(ctx context.Context, key string) (*handoffOut, erro
 	if err != nil {
 		return nil, apiErr(err)
 	}
-	if x.Role == "" || x.ProjectID == "" {
+	if !roles.Member(x.Role) || x.ProjectID == "" {
 		return nil, huma.Error409Conflict("这个会话没有身份，不需要交接")
 	}
 	if x.State == store.StateEnded {
@@ -174,7 +174,7 @@ func (h *Hub) writeHandoff(ctx context.Context, in *handoffWriteIn) (string, err
 	if err != nil {
 		return "", apiErr(err)
 	}
-	if x.Role == "" || x.ProjectID == "" {
+	if !roles.Member(x.Role) || x.ProjectID == "" {
 		return "", huma.Error409Conflict("你没有身份，不需要交接（交接给的是主调度、主助理等身份）")
 	}
 	if strings.TrimSpace(b.Caveats) == "" {
@@ -238,7 +238,7 @@ func handoffText(hd store.Handoff, role string) string {
 
 // takeOver：会话声明身份后接任同项目同身份的最新交接；旧会话交出身份（身份清除、标记交出身份）并收到通知。返回要注入的交接内容。
 func (h *Hub) takeOver(ctx context.Context, x store.Session, role string, demoted []string) (string, []string) {
-	if role == "" || x.ProjectID == "" {
+	if !roles.Member(role) || x.ProjectID == "" {
 		return "", demoted
 	}
 	hd, err := h.store.TakeHandoff(ctx, x.ProjectID, role, x.Key)

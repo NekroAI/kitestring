@@ -42,7 +42,7 @@ func wakeAbilityAt(x store.Session, at time.Time) (now bool, why string) {
 	if x.StoppedAt != nil && x.OfflineAt == nil {
 		return false, "正在停下，消息先排队，接任的新会话会收到"
 	}
-	if x.OfflineAt != nil && (x.Role != "" || x.StoppedAt != nil) {
+	if x.OfflineAt != nil && (roles.Member(x.Role) || x.StoppedAt != nil) {
 		return false, "已下线，消息照常排队，接任的新会话会收到"
 	}
 	switch x.State {

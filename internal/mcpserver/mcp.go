@@ -26,7 +26,7 @@ var instructions = strings.Replace(instructionsTmpl, "{{ROLES}}", roles.Team(), 
 
 // dshInstructionsNote 放在 DSH 会话的说明最前面：DSH 的待命由 Host 插件负责，
 // 与 Claude / Codex 自己挂 ks wait 的方式不同，先说清楚再让模型读通用说明。
-const dshInstructionsNote = `你在 DeepSeek Harness（DSH）中运行，纸鸢 Host 插件负责待命：这一轮结束后插件会自动保持在线，用户在纸鸢上答复、验收或派工时，会在同一个会话里唤醒你。不要运行 ks wait，也不要为了等用户而让回合保持不结束；下面关于 ks wait 的说明对 DSH 不适用。
+const dshInstructionsNote = `你在 DeepSeek Harness（DSH）中运行，纸鸢 Host 插件负责待命：这一轮结束后插件会自动保持在线，用户在纸鸢上答复、验收或派工时，会在同一个会话里唤醒你。不要运行 ks wait，也不要为了等用户而让回合保持不结束；身份提示词里关于 ks wait 的说明对 DSH 不适用。
 
 `
 
@@ -38,25 +38,11 @@ func instructionsFor(client string) string {
 	return instructions
 }
 
-const instructionsTmpl = `Kitestring 是用户的多 agent 驾驶舱，用户通过它统一查看需求、回答决策。
-- 会话身份：用户让你担任某个身份时（如“接管 PM”“当参谋”“做主助理”“当顾问”“做开发”“当评审”），运行 shell 命令 ks role aide|advisor|reviewer|pm|dev（也认中文名和别称，如 ks role 参谋），按它输出的身份提示词工作。各身份的职责与别称：
+const instructionsTmpl = `Kitestring（纸鸢）是用户的多 agent 驾驶舱：用户在上面统一查看需求、回答决策、管理凭据。会话默认不担任身份，不用背纸鸢的流程。
+- 会话身份：用户让你担任某个身份时（如“接管 PM”“当参谋”“做主助理”“当顾问”“做开发”“当评审”），运行 shell 命令 ks role aide|advisor|reviewer|pm|dev（也认中文名和别称，如 ks role 参谋），按它输出的身份提示词工作；需求、验收证据、团队消息、ks wait 等流程规矩都在身份提示词里。各身份的职责与别称：
 {{ROLES}}
-- 开始一项工作前，用 req_list 看当前项目已有需求；开始做某条需求时用 session_link_req 关联本会话（待开始的需求会自动变为进行中；草稿只有主调度 / 主助理关联、且项目开了「允许主调度 / 主助理放行草稿」才会记一次放行并变为进行中；开发、顾问等其他身份或没开时只关联、仍是草稿，要请主调度或用户放行）。
-- 用户提出的新需求、你发现必须做的事，用 req_create 记下来，避免遗漏；用户在对话里提的每条需求、反馈都要记。你记下的需求是草稿，用户确认（改为待开始）后才会排进会话的待办；会话空闲时，排给你的待开始需求会整批送达。
-- 需要用户决策的问题用 decision_raise 提出（附选项与推荐），不要只埋在对话里。提错了或要修订，用 decision_withdraw 撤回（可用 replaced_by 指向新决策），不要并排再挂一条。用户在 Kitestring 中作答后，答复会在用户下一次发消息时自动注入你的上下文。
-- 决策后果链：按用户在某条决策里的答复新建需求时，req_create 带 from_decision（D-x）；接着某条决策往下问、或要推翻它的结论时，decision_raise 带 from_decision（推翻时再加 overturns = true）。
-- 开发完成后把需求状态设为 review（待验收）并用 evidence_attach 附上证据；done 只能由用户验收后设置。截图类证据务必附上 images。界面类证据的截图用真实数据，改到证据 / 决策显示时新旧两种格式都要截图。
-- 写给用户读的文字（证据、阶段小结、决策）：中文、短句、先结论，不要写成技术日志。具体写法见 evidence_attach、stage_submit、decision_raise 的说明；超过字数阈值时照常保存，但返回里会提示你压缩。
-- 会话之间：细节用 req_comment 写进需求留言，team_tell（旧名 pm_notify）的消息只放编号加一句话请对方去看；本项目有哪些会话、谁现在能立即送达，用 team_sessions（ks team sessions）查。点对点用 team_tell（to 填身份或会话键），好几个会话都要知道用 team_broadcast（要动手的广播只有主调度、主助理能发，别人用 fyi = true 只告知）；发出后用 team_sent 看已送达 / 待送达 / 无法送达。关联或在做的需求默认订阅，有变动时收到一句话提醒（自己引起的不通知）；别的需求要跟进用 req_watch 订阅，不想收用 req_watch off = true 退订，req_watching 看订阅了哪些。
-- 表达块：这三个工具都可以附 blocks（验收清单、前后对比、截图、流程图、指标、改动范围、选项、小表格），纸鸢统一画出来。能用块就不写长文：验收证据给 verdict 一句结论加 checklist 逐条判定，界面类附截图或前后对比，流程类附流程图。提到需求、计划、决策时写编号（R-12 / P-3 / D-40），纸鸢会画成印记。
-- 设计类需求（kind = design）只是标注，由你按情况判断：界面 / 交互有几种做法、需要用户决策时，用 decision_raise 交 2～3 套方案并在 option_images 附上每套的效果图（要试交互的用 option_prototypes 附可交互原型），用户选定后再实现；做法明确时可以直接做。用户明确说“出方案 / 先设计”时先交方案。
-- 只有一个方案 / 计划需要用户点头时，用 decision_raise 的 approval = true（可在 images 附方案图）：用户会批准或拒绝，并可能附言，按附言调整。
-- 第三方凭据（API Token、账户 ID 等）：需要时用 secret_request（或 ks secret request）申请，写清用途、关联需求、建议有效期、允许的命令，以及每个值的获取方式（按服务写清步骤，指导用户快速取到），用户名、Account ID 这类不是密钥的值标为不敏感（plain / --plain）；用户在纸鸢上填值并授权后结果送到你这里（用户可能附言写使用注意事项，如「只读」「别在生产库跑」，照着做）。之后用 shell 命令 ks secret run <编号 S-x> -- <命令> 运行（每条凭据有稳定编号 S-x，申请结果和 secret_list 里都有；命令里写编号，不写名称，名称可能被改），值只作为这条命令的环境变量出现；secret_list 看本项目能用的凭据。不要让用户在终端里输入或粘贴凭据，不要打印、回显值或写进文件（确需落盘时申请里说明，用户单独授权后用 ks secret write）。取用因授权范围被拒（命令不在允许范围内、未授权写入磁盘、授权到期或被撤销）时，用 secret_amend（或 ks secret amend）申请修改授权，写明要改什么和理由；不要让用户去凭据页手动改，也不要让用户照着你写的命令文本敲。换 Token（到期、泄露或定期更新）也用 secret_amend 的 replace（--replace）申请替换值，写明理由和新值的获取方式，不要新建一条凭据；用户填新值，你拿不到值，批准后凭据名不变、照常取用。
-- 计划：用户给出较大的目标时，可用 plan_create 拆成有顺序的阶段（阶段内可放多条需求），用户批准后才开始。计划开始或阶段解锁时，该阶段的需求会指派给你；阶段内需求都做完（待验收）后，用 stage_submit 交阶段小结，用户验收整个阶段后下一阶段自动指派给你。计划被用户退回（附意见）时用 plan_update 修改并重新提交。plan_get 查看计划进度。
-- 做完一段、需要用户验收或答复才能继续时，可以用 shell 命令 ks wait 挂起等待：用户在 Kitestring 上答复、验收或留言后它会输出内容并退出，你按输出继续；超时则结束本轮。只在确实等用户时使用，不要用它做定时或自动续跑。
-  - Claude Code：在后台运行（默认、也最多等 55 分钟，醒来时提示缓存还有效；项目设置可调得更短，--timeout 超过上限按上限截断；后台任务的超时要设得比它长）。主调度 / 主助理 / 开发连续空等累计到项目设置的时长（默认 4 小时）时，醒来会收到写交接下线的指示：handoff_write 写交接后结束本轮，不再挂 ks wait，它结束时你会被唤醒。
-  - Codex：没有“后台命令结束后唤醒”的机制，要在前台运行 ks wait（自动最多等 30 分钟，不用加 --timeout；shell 工具的超时设成 35 分钟以上）。命令还在运行时继续等它结束，不要中断、不要重复运行。超时时它会提示你收尾：照做，用一两句话说明进度和在等什么，然后结束本轮，不要再运行 ks wait 续等。前台等待期间这一轮一直开着，Codex 会定期查看命令输出，每次消耗少量额度（主要是缓存读取），所以最多 30 分钟。
-  - 订阅事件（--on）：主助理 / 主调度挂 ks wait 时，还会在本项目别的会话提决策（decision）、交验收（review）、把需求设为受阻（blocked）、交阶段小结（stage）时被唤醒，收到一句说明；用户在网页上改项目设置（放行开关、自动派发、授权窗口）时是 settings，改需求状态时是 status（status 之外，指派需求的主调度和关联在线会话本来就会收到，不用订阅）。不加 --on 沿用上次，从没设过按身份默认：主助理订阅 decision,review,settings，主调度订阅 review,blocked,settings，顾问、开发等其它身份不订阅；例：ks wait --on decision,review,blocked，--on none 不订阅，--on default 恢复默认。这只是告诉你，不是指派；不进用户收件箱、不推送。`
+- 轻接入：用户说「轻接入纸鸢」「轻接入」时运行 ks role lite，只用决策、凭据、求助主助理等服务，不担任身份。
+- 不担任身份时也能直接用服务：要用户定的事用 decision_raise（或 ks decision raise），要第三方凭据用 secret_request（或 ks secret request）。各服务的用法用到时再看：ks help <服务>（ks help 列出全部）。`
 
 // Run 以 stdio 运行 MCP server。clientName 是调用方（目前只区分 dsh），影响呈现给模型的说明。
 func Run(ctx context.Context, clientName string) error {

@@ -16,6 +16,9 @@ const (
 	Advisor  = "advisor"
 	Reviewer = "reviewer"
 	Aide     = "aide"
+	// Lite：轻接入（R-359）。不是身份（不在 All 里、不占唯一位、不常驻），只用纸鸢的服务；存进会话的 role 字段，
+	// 好让工作台显示、daemon 按它调整 Stop hook 与 ks wait。判断「有没有身份」用 Member。
+	Lite = "lite"
 )
 
 var (
@@ -29,13 +32,17 @@ var (
 	reviewerPrompt string
 	//go:embed aide.md
 	aidePrompt string
+	//go:embed common.md
+	commonRules string
+	//go:embed lite.md
+	litePrompt string
 )
 
 // labels：英文简写（R-124、D-118、R-190）；内部标识 pm / dev / advisor / reviewer / aide 不变。
-var labels = map[string]string{PM: "PM", Dev: "Dev", Advisor: "Adv", Reviewer: "Rev", Aide: "Aide"}
+var labels = map[string]string{PM: "PM", Dev: "Dev", Advisor: "Adv", Reviewer: "Rev", Aide: "Aide", Lite: "Lite"}
 
 // cnames：中文名（R-190）：PM 的中文名是「主调度」，「主」字头 = 每个项目只有一个。
-var cnames = map[string]string{PM: "主调度", Dev: "开发", Advisor: "顾问", Reviewer: "评审", Aide: "主助理"}
+var cnames = map[string]string{PM: "主调度", Dev: "开发", Advisor: "顾问", Reviewer: "评审", Aide: "主助理", Lite: "轻接入"}
 
 // aliases：用户对 Agent 说的别称（R-190），ks role 也认得它们。只写别称，标识、英文简写、中文名自动算进去。
 var aliases = map[string][]string{
@@ -44,13 +51,20 @@ var aliases = map[string][]string{
 	Reviewer: {"审查", "审查员", "reviewer", "review"},
 	PM:       {"调度", "项目经理", "统筹", "manager"},
 	Dev:      {"程序员", "developer"},
+	Lite:     {"轻接入纸鸢", "轻量接入", "轻量", "light"},
 }
 
 // All 是全部身份，按展示顺序：替你判断（主助理、顾问、评审）在前，替你干活（主调度、开发）在后。
 var All = []string{Aide, Advisor, Reviewer, PM, Dev}
 
-// Valid 判断身份是否合法；空串表示无身份。
+// resolvable：ks role 认得的全部说法所属（五个身份加轻接入）。
+var resolvable = append(append([]string{}, All...), Lite)
+
+// Valid 判断身份是否合法（含轻接入）；空串表示无身份。
 func Valid(role string) bool { return role == "" || labels[role] != "" }
+
+// Member 判断是不是团队里的身份（主助理、顾问、评审、主调度、开发）；无身份和轻接入都不是（R-359）。
+func Member(role string) bool { return role != "" && role != Lite && labels[role] != "" }
 
 // Label 返回身份的英文简写（PM / Dev / Adv / Rev / Aide）。
 func Label(role string) string { return labels[role] }
@@ -84,7 +98,7 @@ func Resolve(s string) (string, bool) {
 		return "", true
 	}
 	for _, try := range []string{k, trimVerb(k)} {
-		for _, role := range All {
+		for _, role := range resolvable {
 			if try == role || try == norm(labels[role]) || try == norm(cnames[role]) {
 				return role, true
 			}
@@ -123,6 +137,7 @@ var duties = map[string]string{
 	Reviewer: "替你判断：只做审查，意见挂在需求上；任意工具（含 Codex）的会话都能担任",
 	PM:       "替你干活，每项目唯一、常驻：排期、派子任务、合并部署、写简报",
 	Dev:      "替你干活，用户批准才开：实现主调度派的需求",
+	Lite:     "不担任身份，只用纸鸢的服务（决策、凭据、求助主助理），不记需求、不交证据、不发团队消息；不占唯一位，可多个",
 }
 
 // Duty 返回身份的一句话职责。
@@ -134,6 +149,7 @@ func Team() string {
 	for _, role := range All {
 		fmt.Fprintf(&b, "- %s——%s；别称：%s（ks role %s）\n", Display(role), duties[role], strings.Join(append([]string{cnames[role], labels[role]}, aliases[role]...), "、"), role)
 	}
+	fmt.Fprintf(&b, "- %s——%s；别称：%s（ks role %s）\n", Display(Lite), duties[Lite], strings.Join(append([]string{cnames[Lite]}, aliases[Lite]...), "、"), Lite)
 	b.WriteString("- 子任务：子任务、子代理、subagent——主调度 / 主助理派出的一次性后台子代理，不是身份，不用 ks role。\n")
 	b.WriteString("用户说「PM」「接管 PM」「让 PM 去做」都指主调度；说「参谋」「助理」指主助理。")
 	return b.String()
@@ -168,16 +184,27 @@ func BodyHash(body string) string {
 	return hex.EncodeToString(h[:8])
 }
 
-// Compose 把正文拼上固定的身份抬头（抬头不可改写）；body 为空时用默认模板。
+// Compose 把正文拼上固定的身份抬头和通用流程规矩（都不可改写）；body 为空时用默认模板。
+// 通用流程规矩原来写在 MCP 说明里，R-359 起只随身份提示词下发：只有担任身份的会话才背流程。
+// 轻接入只返回它那几行短说明（LitePrompt），不带流程规矩和团队表。
 func Compose(role, body string) string {
+	if role == Lite {
+		return LitePrompt()
+	}
 	if labels[role] == "" {
 		return ""
 	}
 	if strings.TrimSpace(body) == "" {
 		body = DefaultBody(role)
 	}
-	return fmt.Sprintf("[Kitestring] 你的会话身份：%s（用户可在 Kitestring 上看到；改身份用 ks role）。\n%s\n团队里的身份与别称（用户这样叫时指的是谁）：\n%s\n", Display(role), strings.TrimSpace(body), Team())
+	return fmt.Sprintf("[Kitestring] 你的会话身份：%s（用户可在 Kitestring 上看到；改身份用 ks role）。\n%s\n纸鸢的通用做法（担任身份时照做）：\n%s\n团队里的身份与别称（用户这样叫时指的是谁）：\n%s\n", Display(role), strings.TrimSpace(body), CommonRules(), Team())
 }
+
+// CommonRules 是各身份共用的流程规矩（需求、决策、证据、团队消息、凭据、计划、ks wait）。
+func CommonRules() string { return strings.TrimSpace(commonRules) }
+
+// LitePrompt 是 ks role lite 输出的轻接入说明（LiteMax 字以内），各服务的用法用 ks help <服务> 按需取。
+func LitePrompt() string { return strings.TrimSpace(litePrompt) + "\n" }
 
 // Prompt 返回注入给 Agent 的默认身份提示词；无身份时为空。用户改写过的版本由 Hub 下发（R-98）。
 func Prompt(role string) string { return Compose(role, "") }

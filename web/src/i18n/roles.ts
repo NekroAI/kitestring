@@ -7,8 +7,9 @@ export type RoleLang = 'auto' | 'zh' | 'en'
 
 const KEY = 'ks.roleNames'
 const NAMES: Record<'zh' | 'en', Record<string, string>> = {
-  zh: { aide: '主助理', advisor: '顾问', reviewer: '评审', pm: '主调度', dev: '开发' },
-  en: { aide: 'Aide', advisor: 'Adv', reviewer: 'Rev', pm: 'PM', dev: 'Dev' },
+  // lite：轻接入（R-359），不是身份，只用纸鸢的服务；会话卡上照样显示标
+  zh: { aide: '主助理', advisor: '顾问', reviewer: '评审', pm: '主调度', dev: '开发', lite: '轻接入' },
+  en: { aide: 'Aide', advisor: 'Adv', reviewer: 'Rev', pm: 'PM', dev: 'Dev', lite: 'Lite' },
 }
 
 // 界面语言：目前只有中文。将来加了英文界面，这里返回当前界面语言即可。

@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
+	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/store"
 )
 
@@ -153,9 +154,9 @@ func webDelivery(a store.Act, x store.Session, turnOpen bool) *WebDelivery {
 		return &WebDelivery{Status: "woke", Reason: "已送达，处理中"}
 	case a.Status == store.DecDelivered:
 		return &WebDelivery{Status: "delivered", Reason: "已送达"}
-	case x.OfflineAt != nil && x.StoppedAt != nil && x.Role == "":
+	case x.OfflineAt != nil && x.StoppedAt != nil && !roles.Member(x.Role):
 		return &WebDelivery{Status: "offline", Reason: "会话已停下，消息已排队"}
-	case x.OfflineAt != nil && x.Role != "":
+	case x.OfflineAt != nil && roles.Member(x.Role):
 		return &WebDelivery{Status: "offline", Reason: "会话已下线，消息已排队，新会话接任时转交", Command: takeoverCmd(x.Role)}
 	case x.RetiredAt != nil:
 		return &WebDelivery{Status: "offline", Reason: "身份已由新会话接任，这个会话不会再收到"}

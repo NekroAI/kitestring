@@ -41,6 +41,9 @@ func (h *Hub) customRolePrompt(ctx context.Context, role string) (rolePromptRec,
 
 // rolePromptFor 返回注入给 Agent 的完整身份提示词：优先用户改写版，否则默认模板。
 func (h *Hub) rolePromptFor(ctx context.Context, role string) string {
+	if !roles.Member(role) {
+		return roles.Prompt(role) // 轻接入（R-359）没有可改写的正文
+	}
 	if r, ok := h.customRolePrompt(ctx, role); ok {
 		return roles.Compose(role, r.Body)
 	}

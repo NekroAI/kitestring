@@ -84,7 +84,7 @@ func (h *Hub) goOffline(ctx context.Context, x store.Session, idle time.Duration
 		to = h.liveRoleExcept(ctx, x.ProjectID, roles.Aide, x.Key)
 	}
 	// 本项目其他在线会话也收到同一条（R-319）；都是只告知，不唤醒
-	if x.Role != "" {
+	if roles.Member(x.Role) {
 		text := fmt.Sprintf("%s%s 已连续待命 %s，按项目设置写交接后下线。点名给这个会话的消息照常排队，用户开新会话（%s）接任时转给新会话。", roles.Name(x.Role), sessionName(x), humanMinutes(idle), takeoverCmd(x.Role))
 		h.announcePresence(ctx, x, x.Role, presenceDown, text, []string{to}, nil)
 	}

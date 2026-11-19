@@ -45,11 +45,15 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			ov := ""
-			if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil && role != "" {
-				ov = h.overview(ctx, x, role, overviewHead, gitWait) // 接手概览（R-245）：按身份从记录生成，交接只写纸鸢里没有的
+			ov, notes := "", ""
+			if roles.Member(role) {
+				if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil {
+					ov = h.overview(ctx, x, role, overviewHead, gitWait) // 接手概览（R-245）：按身份从记录生成，交接只写纸鸢里没有的
+				}
+				notes = h.roleNotes(ctx, in.Body.SessionKey)
 			}
-			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+h.roleNotes(ctx, in.Body.SessionKey)+ov+handoff+offlineBacklogNote(backlog), demoted
+			// 轻接入（R-359）只拿几行短说明：没有接手概览、子任务模型策略、验证说明这些流程内容
+			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+notes+ov+handoff+offlineBacklogNote(backlog), demoted
 			out.Body.Handoff = handoff != ""
 			if out.Body.Demoted == nil {
 				out.Body.Demoted = []string{}
@@ -58,7 +62,7 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 		})
 }
 
-const roleUsage = "身份只能是 aide（主助理）、advisor（顾问）、reviewer（评审）、pm（主调度）、dev（开发）之一，也认中文名和别称（清除身份用 none）"
+const roleUsage = "身份只能是 aide（主助理）、advisor（顾问）、reviewer（评审）、pm（主调度）、dev（开发）之一，也认中文名和别称；轻接入用 lite，清除身份用 none"
 
 // setRole 设置会话身份；接任主调度 / 主助理时通知被降级的旧会话，并把身份下发给相关设备。
 // 同项目同身份有上一任写好的交接时一并接任（R-224）：返回要注入的交接内容，上一任交出身份。
@@ -73,7 +77,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 	}
 	// 先记下接任前各个下线会话（SetRole 会清掉被接任者的身份）
 	offline := map[string]store.Session{}
-	if role != "" && x.ProjectID != "" {
+	if roles.Member(role) && x.ProjectID != "" {
 		if list, err := h.store.RoleSessions(ctx, x.ProjectID); err == nil {
 			for _, o := range list {
 				if o.Key != key && o.Role == role && (o.OfflineAt != nil || o.StoppedAt != nil) {

@@ -26,6 +26,9 @@ func (d *Daemon) stopGuard(ev protocol.Event) string {
 	if ev.Name == "UserPromptSubmit" {
 		d.mu.Lock()
 		delete(d.stopBlocks, key)
+		if ev.Source != protocol.SourceAuto {
+			delete(d.liteRound, key) // 你发了新消息：新的一轮，结束时再挂一轮 ks wait（R-359）；ks wait 结束带来的自动消息不算
+		}
 		d.mu.Unlock()
 		return ""
 	}
@@ -39,6 +42,9 @@ func (d *Daemon) stopGuard(ev protocol.Event) string {
 	d.mu.Lock()
 	role := d.roles[key]
 	d.mu.Unlock()
+	if role == roles.Lite {
+		return d.liteGuard(ev, key)
+	}
 	if !roles.Resident(role) {
 		return ""
 	}
@@ -64,6 +70,54 @@ func (d *Daemon) stopGuard(ev protocol.Event) string {
 		d.mu.Unlock()
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// liteGuard：轻接入会话结束一轮时（R-359），没挂着 ks wait 就拦下一次，提示挂一轮再结束；
+// 同一轮只提醒一次，这一轮已等到超时的不再拦（不续挂）。不做常驻：不反复拦，也不算空等下线。
+func (d *Daemon) liteGuard(ev protocol.Event, key string) string {
+	if ev.AgentID != "" {
+		return "" // 子任务结束不算这一轮结束
+	}
+	for deadline := time.Now().Add(waitGrace); ; {
+		d.mu.Lock()
+		_, parked := d.waiting[key]
+		state := d.liteRound[key]
+		if parked || state != "" {
+			d.mu.Unlock()
+			return ""
+		}
+		if time.Now().After(deadline) {
+			d.liteRound[key] = "reminded"
+			d.mu.Unlock()
+			return liteReason(ev.Tool)
+		}
+		d.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// liteEndWait 记下轻接入会话这一轮 ks wait 的结果（R-359）：等到答复的清掉记录（处理完再结束时还挂一轮），
+// 超时的记为 timeout（结束时不再拦、不续挂）。
+func (d *Daemon) liteEndWait(key, reason string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.roles[key] != roles.Lite {
+		return
+	}
+	switch reason {
+	case "delivered":
+		delete(d.liteRound, key)
+	case "timeout":
+		d.liteRound[key] = "timeout"
+	}
+}
+
+func liteReason(tool string) string {
+	how := "在后台运行 ks wait（Bash 工具设 run_in_background，工具超时设得比 55 分钟长）"
+	if tool == protocol.ToolCodex {
+		how = "在前台运行 ks wait（最多等 30 分钟）"
+	}
+	return "[Kitestring] 轻接入：结束本轮前" + how + "，挂一轮等发给你的答复和消息（你提的决策被答复、发给你的团队消息），然后结束本轮。到了会唤醒你继续；超时就结束本轮，不再续挂。"
 }
 
 // holdReply 留下被拦下的那次结束时的回复（R-109）。

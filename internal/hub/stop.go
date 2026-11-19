@@ -125,7 +125,7 @@ func (h *Hub) stopSession(ctx context.Context, x store.Session, tellTeam bool) e
 	h.pushRoles(ctx, x.DeviceID)
 	h.decisionsChanged(ctx, d)
 	h.sessionChanged(x.Key)
-	if tellTeam && x.Role != "" && x.ProjectID != "" {
+	if tellTeam && roles.Member(x.Role) && x.ProjectID != "" {
 		to := h.liveRoleExcept(ctx, x.ProjectID, roles.PM, x.Key)
 		if x.Role == roles.PM {
 			to = h.liveRoleExcept(ctx, x.ProjectID, roles.Aide, x.Key)
@@ -151,6 +151,9 @@ func (h *Hub) stopSession(ctx context.Context, x store.Session, tellTeam bool) e
 // stopAsk：送给会话的停下提醒（第一句是不含工具名的事实，1.3 节）。
 func stopAsk(role, project string, agents int) string {
 	var b strings.Builder
+	if !roles.Member(role) {
+		role = "" // 轻接入（R-359）按无身份：停在稳妥处即可，不写交接
+	}
 	if role == "" {
 		b.WriteString("用户让你停下。不开新的工作，把手上这一步做到能停的地方（该提交的提交、该保存的保存），用一两句话说明做到哪，然后结束本轮；不要再运行 ks wait，结束时纸鸢不会拦你。需要用户定的事照常用 decision_raise 提出。")
 		return b.String()
@@ -179,6 +182,9 @@ func stopAsk(role, project string, agents int) string {
 
 // stopDoneHint：已停下的会话又运行 ks wait 时的提示（R-291）。
 func stopDoneHint(role string, handed bool) string {
+	if !roles.Member(role) {
+		role = ""
+	}
 	if role == "" {
 		return "[Kitestring] 用户已让你停下，不要再挂 ks wait：用一两句话说明做到哪，然后结束本轮。\n"
 	}
@@ -240,7 +246,7 @@ func (h *Hub) trackStopped(ctx context.Context, next store.Session, ev protocol.
 
 // announceStopped：有身份的会话停下后下线，只告知本项目其他在线会话（R-319）。
 func (h *Hub) announceStopped(ctx context.Context, x store.Session) {
-	if x.Role == "" {
+	if !roles.Member(x.Role) {
 		return
 	}
 	h.announcePresence(ctx, x, x.Role, presenceDown, fmt.Sprintf("%s%s 已停下并下线。点名给这个会话的消息照常排队，用户开新会话（%s）接任时转过去。", roles.Name(x.Role), sessionName(x), takeoverCmd(x.Role)), nil, nil)

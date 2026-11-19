@@ -61,6 +61,7 @@ type Daemon struct {
 	roles         map[string]string // 会话键 → 身份（Hub 下发，R-82）
 	customPrompts map[string]string // 身份 → 用户改写后的提示词正文（Hub 下发，R-98）
 	stopBlocks    map[string]int    // 会话键 → 连续拦下结束的次数（R-83）；挂上 ks wait 或你发新消息时清零
+	liteRound     map[string]string // 轻接入会话这一轮的等待（R-359）：reminded 已提醒挂一轮 ks wait，timeout 这一轮已等到超时；你发新消息、等到答复时清除
 	heldReply     map[string]string // 会话键 → 被拦下的那次结束时的回复，并到这一轮真正结束时上送（R-109）
 	waitSeq       int64
 	tools         toolsState             // 各会话的 Kitestring 工具版本（R-59）
@@ -102,7 +103,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
 	d.toolCond = sync.NewCond(&d.mu)
 	if d.usage, err = openUsage(q.db); err != nil {
 		q.close()
@@ -830,6 +831,9 @@ func (d *Daemon) rolePrompt(ev protocol.Event) string {
 	body := d.customPrompts[role]
 	d.mu.Unlock()
 	p := roles.Compose(role, body)
+	if role == roles.Lite {
+		return p // 轻接入（R-359）压缩后只补那几行短说明，不附纸鸢里的流程状态
+	}
 	if p != "" {
 		if ev.Tool == protocol.ToolDSH {
 			p = dshRoleNote + p
