@@ -53,3 +53,20 @@ func TestRulesFile(t *testing.T) {
 		}
 	}
 }
+
+func TestAddressProblems(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"https://mycorp.com/a", "a.b.cn", "http://nas.myhome.top:8080", "8.8.8.8", "121.5.6.7:3000", "https://cdn.foo.io"} {
+		if len(r.AddressProblems(s)) == 0 {
+			t.Errorf("应拦下：%s", s)
+		}
+	}
+	for _, s := range []string{"https://example.com", "https://cdn.example.com/x", "a.example.org", "ks.example", "http://localhost:7000", "127.0.0.1", "192.0.2.10", "198.51.100.7", "203.0.113.9", "192.168.1.5", "zh.ts", "R-1.2", "第 1.2 版"} {
+		if got := r.AddressProblems(s); len(got) != 0 {
+			t.Errorf("应放行：%s，却报 %v", s, got)
+		}
+	}
+}

@@ -13,7 +13,7 @@ import (
 
 // Config 是 daemon 配置文件内容。
 type Config struct {
-	HubURL string `json:"hub_url"` // 例：http://hub.local:7310
+	HubURL string `json:"hub_url"` // 例：http://hub.example:7310
 	Token  string `json:"token"`
 }
 

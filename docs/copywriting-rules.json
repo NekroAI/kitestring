@@ -1,5 +1,6 @@
 {
   "$comment": "界面文案自动检查规则（docs/copywriting.md 第 6 节）。前端 web/src/lib/copy.test.ts 与后端 internal/copyrules 共用这一份。改术语表时同步改 forbidden 和 statusSets；豁免只写在 allow 里，必须写 reason，拦不到任何问题的豁免会报错。",
+  "addressTlds": ["com","net","org","io","cn","dev","app","ai","me","co","xyz","top","cc","tv","site","cloud","run","info","biz","tech","online","link","pro","club","fun","vip","wang","shop","store","page","sh"],
   "forbidden": [
     { "word": "访客评论", "use": "访客留言" },
     { "word": "待审核", "use": "待收" },
@@ -102,6 +103,7 @@
   ],
   "buttonMax": 6,
   "allow": [
+    { "key": "settings.notify.barkKeyTip", "rules": ["address"], "reason": "Bark 官方推送服务的真实地址，用户要在 Bark App 里对照这个地址取 Key，不能换成示例域名（R-372）" },
     { "key": "time.short*", "rules": ["spacing"], "reason": "状态胶囊、泳道刻度这类放不下汉字单位的位置用 d h m s 缩写（D-1162）" },
     { "key": "settings.devices.g.*", "reason": "设备接入指引是第 2 层，可写命令和技术名（copywriting.md 2.5）" },
     { "key": "asset.ver", "rules": ["spacing"], "reason": "素材版本号写作 v2（字母和数字连写，美术审核的通用写法，copywriting.md 5.12）；占位参数是汉字才被判成中英文相连" },

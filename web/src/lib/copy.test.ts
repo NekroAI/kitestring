@@ -13,6 +13,7 @@ type Rules = {
   forbidden: { word: string; use: string }[]
   statusSets: Record<string, string[]>
   statusKeys: Record<string, string[]>
+  addressTlds: string[]
   buttons: string[]
   buttonMax: number
   allow: Allow[]
@@ -78,6 +79,28 @@ const glob = (pat: string, path: string) => (pat.endsWith('*') ? path.startsWith
 const isButton = (path: string) => rules.buttons.some((p) => glob(p, path))
 const strip = (s: string) => s.replace(/甲|R-1、R-2|R-1 等 \d+ 条|\d+/g, '').replace(/…$/, '')
 
+// 域名与 IP 只写保留示例值（R-372）：域名 example.com / .net / .org 及其子域、.example / .test / .invalid / .localhost 后缀，
+// IP 用 192.0.2.0/24、198.51.100.0/24、203.0.113.0/24，本机和内网地址（127.x、10.x、172.16–31.x、192.168.x、0.0.0.0）放行
+export function addressProblems(s: string, tlds: string[]): string[] {
+  const bad: string[] = []
+  const host = (h: string) => {
+    const l = h.toLowerCase().replace(/\.$/, '')
+    return /(^|\.)example\.(com|net|org)$/.test(l) || /\.(example|test|invalid|localhost)$/.test(l) || l === 'localhost'
+  }
+  for (const m of s.matchAll(/https?:\/\/([A-Za-z0-9.-]+)/g)) if (!/^[\d.]+$/.test(m[1]) && !host(m[1])) bad.push(m[1])
+  const tld = new RegExp(`(?<![A-Za-z0-9@./-])(?:[A-Za-z0-9-]+\\.)+(?:${tlds.join('|')})(?![A-Za-z0-9-])`, 'gi')
+  for (const m of s.matchAll(tld)) if (!host(m[0]) && !bad.includes(m[0])) bad.push(m[0])
+  for (const m of s.matchAll(/(?<![\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\d.]*\d)/g)) {
+    const [a, b, c] = [+m[1], +m[2], +m[3]]
+    if ([a, b, c, +m[4]].some((n) => n > 255)) continue
+    const ok =
+      a === 127 || a === 10 || a === 0 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0 && c === 2) || (a === 198 && b === 51 && c === 100) || (a === 203 && b === 0 && c === 113)
+    if (!ok) bad.push(m[0])
+  }
+  return bad
+}
+
 type Rule = { id: string; check: (s: string, path: string) => string | null }
 const RULES: Rule[] = [
   {
@@ -108,6 +131,13 @@ const RULES: Rule[] = [
     check: (s) => {
       const m = s.match(/[一-鿿][A-Za-z0-9]|[A-Za-z0-9][一-鿿]/)
       return m ? `中英文 / 数字之间要留空格：「${m[0]}」` : null
+    },
+  },
+  {
+    id: 'address',
+    check: (s) => {
+      const bad = addressProblems(s, rules.addressTlds)
+      return bad.length ? `域名和 IP 只写保留示例值（example.com、192.0.2.x 等）：${bad.join('、')}` : null
     },
   },
   { id: 'timeAbbrev', check: (s, path) => (/\d+\s?[smhd]\s?前/.test(`${s}\n${numTexts.get(path) ?? ''}`) ? '相对时间用中文单位：「5 分钟前」' : null) },
@@ -167,4 +197,14 @@ test('豁免都写了理由，且仍然有效', () => {
   assert.deepEqual(noReason, [], '豁免必须写理由')
   const stale = rules.allow.filter((a) => !used.has(a)).map((a) => `${a.key}${a.rules ? `（${a.rules.join('、')}）` : ''}`)
   assert.deepEqual(stale, [], '这些豁免已拦不到任何问题，从 docs/copywriting-rules.json 删掉')
+})
+
+test('域名与 IP 检查：拦非保留值，放行示例值和本机地址', () => {
+  const t = rules.addressTlds
+  for (const s of ['https://mycorp.com/a', 'a.b.cn', 'http://nas.myhome.top:8080', '8.8.8.8', '121.5.6.7:3000', 'https://cdn.foo.io']) {
+    assert.ok(addressProblems(s, t).length > 0, `应拦下：${s}`)
+  }
+  for (const s of ['https://example.com', 'https://cdn.example.com/x', 'a.example.org', 'ks.example', 'http://localhost:7000', '127.0.0.1', '192.0.2.10', '198.51.100.7', '203.0.113.9', '192.168.1.5', 'zh.ts', 'R-1.2']) {
+    assert.deepEqual(addressProblems(s, t), [], `应放行：${s}`)
+  }
 })

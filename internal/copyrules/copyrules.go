@@ -21,7 +21,9 @@ type Rules struct {
 		Use  string `json:"use"`
 	} `json:"forbidden"`
 	StatusSets map[string][]string `json:"statusSets"`
-	Allow      []struct {
+	// AddressTlds 是检查裸域名时认的后缀（R-372）。
+	AddressTlds []string `json:"addressTlds"`
+	Allow       []struct {
 		Key    string   `json:"key"`
 		Rules  []string `json:"rules"`
 		Except []string `json:"except"`
@@ -109,7 +111,70 @@ var (
 	spacingRe = regexp.MustCompile(`\p{Han}[A-Za-z0-9]|[A-Za-z0-9]\p{Han}`)
 	abbrevRe  = regexp.MustCompile(`\d+\s?[smhd]\s?前`)
 	clauseRe  = regexp.MustCompile(`[，。；]`)
+	urlHostRe = regexp.MustCompile(`https?://([A-Za-z0-9.-]+)`)
+	ipv4Re    = regexp.MustCompile(`(^|[^\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})($|[^\d]|\.[^\d]|\.$)`)
 )
+
+// reservedHost 报告主机名是不是保留示例值：example.com / .net / .org 及其子域，.example / .test / .invalid / .localhost 后缀，localhost。
+func reservedHost(h string) bool {
+	h = strings.TrimSuffix(strings.ToLower(h), ".")
+	if h == "localhost" {
+		return true
+	}
+	for _, d := range []string{"example.com", "example.net", "example.org"} {
+		if h == d || strings.HasSuffix(h, "."+d) {
+			return true
+		}
+	}
+	for _, sfx := range []string{".example", ".test", ".invalid", ".localhost"} {
+		if strings.HasSuffix(h, sfx) {
+			return true
+		}
+	}
+	return false
+}
+
+// AddressProblems 返回文字里的非保留域名和公网 IPv4：域名只许 example.com 等保留名，IP 只许文档网段（192.0.2 / 198.51.100 / 203.0.113），
+// 本机和内网地址（127.x、10.x、172.16–31.x、192.168.x、0.0.0.0）放行。规则同前端 copy.test.ts 的 addressProblems。
+func (r *Rules) AddressProblems(s string) []string {
+	var bad []string
+	add := func(x string) {
+		for _, b := range bad {
+			if b == x {
+				return
+			}
+		}
+		bad = append(bad, x)
+	}
+	for _, m := range urlHostRe.FindAllStringSubmatch(s, -1) {
+		if strings.Trim(m[1], "0123456789.") != "" && !reservedHost(m[1]) {
+			add(m[1])
+		}
+	}
+	if len(r.AddressTlds) > 0 {
+		tld := regexp.MustCompile(`(?i)(^|[^A-Za-z0-9@./-])((?:[A-Za-z0-9-]+\.)+(?:` + strings.Join(r.AddressTlds, "|") + `))($|[^A-Za-z0-9-])`)
+		for _, m := range tld.FindAllStringSubmatch(s, -1) {
+			if !reservedHost(m[2]) {
+				add(m[2])
+			}
+		}
+	}
+	for _, m := range ipv4Re.FindAllStringSubmatch(s, -1) {
+		var n [4]int
+		over := false
+		for i := range n {
+			fmt.Sscanf(m[i+2], "%d", &n[i])
+			over = over || n[i] > 255
+		}
+		a, b, c := n[0], n[1], n[2]
+		ok := over || a == 127 || a == 10 || a == 0 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31) ||
+			(a == 192 && b == 0 && c == 2) || (a == 198 && b == 51 && c == 100) || (a == 203 && b == 0 && c == 113)
+		if !ok {
+			add(fmt.Sprintf("%d.%d.%d.%d", a, b, c, n[3]))
+		}
+	}
+	return bad
+}
 
 // Check 按 copywriting.md 第 6 节检查一段显示在网页上的文字（与前端 copy.test.ts 的 RULES 相同，按钮长度除外），
 // 返回全部问题，没有问题时为空。
@@ -147,6 +212,9 @@ func (r *Rules) Check(s string) []string {
 	}
 	if m := spacingRe.FindString(s); m != "" {
 		bad = append(bad, "中英文 / 数字之间要留空格：「"+m+"」")
+	}
+	if a := r.AddressProblems(s); len(a) > 0 {
+		bad = append(bad, "域名和 IP 只写保留示例值（example.com、192.0.2.x 等）："+strings.Join(a, "、"))
 	}
 	if abbrevRe.MatchString(s) {
 		bad = append(bad, "相对时间用中文单位：「5 分钟前」")
