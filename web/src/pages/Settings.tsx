@@ -1097,6 +1097,7 @@ function Storage() {
           ) : (
             <dd className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger sm:col-span-2">
               <div className="font-medium break-all">{v.reason}</div>
+              {v.hint && <div className="mt-1 break-all">{v.hint}</div>}
               <div className="mt-1">{L.unavailableHint}</div>
             </dd>
           )}

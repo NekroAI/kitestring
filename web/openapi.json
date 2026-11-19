@@ -13463,6 +13463,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "hint": {
+            "description": "不可用时怎么处理（如 macOS 的访问授权步骤）",
+            "type": "string"
+          },
           "ok": {
             "description": "目录可用（存在且能写）；不可用时拒收上传",
             "type": "boolean"

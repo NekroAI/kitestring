@@ -59,6 +59,13 @@ mkdir -p "$DIR"
 cp "$tmp/ks" "$DIR/.ks.new"
 chmod 755 "$DIR/.ks.new"
 mv -f "$DIR/.ks.new" "$DIR/ks"
+# macOS 的包里还有 Hub 的固定启动器（R-354）：放在 ks 旁边，ks install --hub 第一次注册时从这里装到
+# ~/.kitestring/bin/ks-launcher；那份装好后不会被替换（macOS 的访问授权记在它上面）。
+if [ -f "$tmp/ks-launcher" ]; then
+  cp "$tmp/ks-launcher" "$DIR/.ks-launcher.new"
+  chmod 755 "$DIR/.ks-launcher.new"
+  mv -f "$DIR/.ks-launcher.new" "$DIR/ks-launcher"
+fi
 
 echo "✓ 已安装 $("$DIR/ks" version) → $DIR/ks"
 case ":$PATH:" in

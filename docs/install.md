@@ -36,10 +36,22 @@ ks install --hub --claude=false --codex=false --daemon=false \
 You can also run `ks hub serve --files-dir <dir>` directly, or set `KS_FILES_DIR` (`--files-dir` wins). When you re-run `ks install --hub` later without `--hub-files-dir`, it keeps the directory configured in the installed service instead of going back to the default; to go back to the default, pass `--hub-files-dir default` (write `./default` for a directory literally named default).
 
 - The directory must already exist; the Hub never creates it, because creating it under an unmounted drive's mount point would silently write to the system disk.
-- If the directory is missing or not writable, the Hub still starts but rejects uploads, logs the reason, and **Settings → Account → Attachment storage** shows "storage unavailable" with the reason. Every upload checks again, so remounting the drive needs no restart.
+- If the directory is missing, not writable, blocked by macOS privacy protection, or the check gets no answer within 5 seconds (usually macOS waiting on a permission prompt), the Hub still starts but rejects uploads, logs the reason, and **Settings → Account → Attachment storage** shows "storage unavailable" with the reason and how to grant access. While unavailable it re-checks every 30 seconds and before every upload, so remounting the drive or granting access needs no restart.
 - Attachments uploaded before the change can stay in `~/.kitestring/files` and remain viewable (read-only; new files go only to the new directory). To move them, see "Moving attachments and deployment backups to another disk" below.
 - **Settings → Account → Attachment storage** shows the current location and how much space is used.
 - **Attachments are not part of deployment backups**: `scripts/deploy.sh` backs up only the binary and the database. Back up the attachment directory (default or custom) yourself.
+
+### The Hub launcher (macOS)
+
+On macOS the Hub service runs through a small, fixed launcher: `~/.kitestring/bin/ks-launcher` (`$KS_HOME/bin/ks-launcher` when `KS_HOME` is set). It only starts the `ks hub serve …` command after it, forwards stop signals, and returns the same exit code (source in `cmd/ks-launcher`).
+
+- **Why**: when the attachment directory is on an external drive, macOS requires the background service to be granted access; without it, file operations hang waiting for a system prompt. `ks` is ad-hoc signed, so macOS identifies it by its contents, and every upgrade or deploy that replaces `ks` loses the grant. A launcher that never changes keeps the grant, and every new `ks` started under it inherits it, so you grant access once.
+- **Installation**: `ks install --hub` installs it if it is missing (from the `ks-launcher` next to `ks`, shipped in the macOS release archive; `scripts/deploy.sh` installs it when deploying from source) and writes the service command as `<ks-launcher> <ks> hub serve …`. Only the Hub uses it: only the Hub reads and writes the attachment directory, and the daemon service is unchanged.
+- **Granting access**: the first access to the external drive shows a prompt; allow it. Or add `~/.kitestring/bin/ks-launcher` up front under **System Settings → Privacy & Security → Full Disk Access** (press ⌘⇧G in the file picker to type the path) and turn it on, or allow ks-launcher to access "Removable Volumes" under **Files and Folders**. Until then **Settings → Account → Attachment storage** shows "storage unavailable" with these steps; it recovers on its own once access is granted.
+- **Never replace it**: `ks install` and `scripts/deploy.sh` install it only when it is missing and never replace an existing one (if it differs from a fresh build they only print a note). Do not overwrite it by hand; `ks uninstall` leaves it in place too.
+- **If it is deleted or replaced**: re-running `ks install --hub` (or a deploy) installs a new one, which has to be granted access again as above; remove the old entry in System Settings.
+
+To switch a machine whose Hub service is already registered: after deploying (or upgrading), run `ks install --hub --claude=false --codex=false --daemon=false` once. The attachment directory configured before is kept. Then grant access as above.
 
 ### Moving attachments and deployment backups to another disk
 

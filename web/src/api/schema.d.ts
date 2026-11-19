@@ -7270,6 +7270,8 @@ export interface components {
              * @description 目录里的文件数（含缩略图）
              */
             files: number;
+            /** @description 不可用时怎么处理（如 macOS 的访问授权步骤） */
+            hint?: string;
             /** @description 目录可用（存在且能写）；不可用时拒收上传 */
             ok: boolean;
             /** @description 不可用的原因 */

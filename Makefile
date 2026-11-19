@@ -5,8 +5,10 @@ LDFLAGS := -s -w -X github.com/NekroAI/kitestring/internal/version.Version=$(VER
 
 .PHONY: build test vet clean deploy
 
+# bin/ks-launcher 是 Hub 的固定启动器（R-354，macOS 用）：不带版本号，内容只随源码和 Go 版本变；装好后部署不替换它
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ks ./cmd/ks
+	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ks-launcher ./cmd/ks-launcher
 
 test:
 	go test ./...

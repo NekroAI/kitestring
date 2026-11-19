@@ -279,7 +279,7 @@ func runHub(args []string) error {
 	}
 	switch sub {
 	case "serve":
-		_ = h.CheckFiles() // 启动时检查附件目录；不可用只写日志、拒收上传，Hub 照常启动
+		// 附件目录在 Start 里后台检查、不阻塞监听（R-367）：不可用只写日志、拒收上传，Hub 照常启动
 		return h.Start(ctx, *addr, web.Handler())
 	case "passwd":
 		pw, err := readPassword()

@@ -34,7 +34,7 @@ jobs:
         run: go test ./...
       - name: 交叉编译
         run: |
-          # 每个包只有一个文件：kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz，内含 ks、LICENSE、README；
+          # 每个包只有一个文件：kitestring-<版本>-<darwin|linux>-<arm64|amd64>.tar.gz，内含 ks、LICENSE、README（macOS 另有 ks-launcher）；
           # Windows 是 kitestring-<版本>-windows-<arm64|amd64>.zip，内含 ks.exe（与 install.ps1、ks update 一致）
           v=$(tr -d '[:space:]' < VERSION)
           ldflags="-s -w -X github.com/NekroAI/kitestring/internal/version.Version=$v -X github.com/NekroAI/kitestring/internal/version.Commit=$(git rev-parse --short HEAD)"
@@ -44,6 +44,10 @@ jobs:
             out="build/kitestring-$v-$os-$arch"
             mkdir -p "$out"
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o "$out/ks" ./cmd/ks
+            # macOS 包另带 Hub 的固定启动器（R-354），install.sh 放到 ks 旁边，ks install --hub 从那里装
+            if [ "$os" = darwin ]; then
+              CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" -o "$out/ks-launcher" ./cmd/ks-launcher
+            fi
             cp LICENSE README.md README.zh-CN.md "$out/"
             tar -czf "dist/kitestring-$v-$os-$arch.tar.gz" -C "$out" .
           done

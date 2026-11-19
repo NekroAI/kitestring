@@ -18,6 +18,8 @@
 #   KS_BACKUP_DIR     部署备份目录（旧程序、数据库、DSH 插件副本），见下面「备份目录」
 #   KS_KEEP_BACKUPS   备份目录里 ks-*、hub-*.db、dsh-plugin-* 各保留最近几份，默认 10
 #   KS_VERIFY_TIMEOUT 部署后等待服务就绪的秒数，默认 30
+#   KS_LAUNCHER       Hub 的固定启动器，默认 $KS_HOME/bin/ks-launcher（只用于 macOS，见下面「启动器」）
+#   KS_HUB_PLIST      hub 服务的 plist，默认 ~/Library/LaunchAgents/$LAUNCHD_HUB.plist（只读，用来提示是否已经经启动器运行）
 #
 # 备份范围：只备份程序（ks）、DSH 插件和数据库（hub.db），不备份附件。
 # 附件（附件、原型包、缩略图）默认在 $KS_HOME/files；Hub 服务用 --files-dir 或 KS_FILES_DIR
@@ -30,6 +32,10 @@
 # 指定的目录必须已存在且能写，部署不替你创建（外置硬盘没挂上时在挂载点下建目录会写到系统盘）；
 # 不可用时部署在构建之前就失败退出，什么都不改，也不改写到默认目录。回滚从这个目录取旧程序。
 # 把已有备份搬过去用 scripts/migrate-storage.sh（拷贝并核对文件数和 sha256，见 docs/install.zh-CN.md「附件目录」）。
+#
+# 启动器（R-354，macOS）：Hub 服务经固定启动器 $KS_HOME/bin/ks-launcher 运行，macOS 的访问授权（外置硬盘）记在它上面。
+# 部署在替换程序之前用 scripts/install-launcher.sh 安装（没有时）和核对（可执行）它，绝不替换已有的那份，
+# 内容和新构建的不同也只提示——替换后授权失效，要在系统设置里重新允许。见 docs/install.zh-CN.md「Hub 的启动器」。
 set -euo pipefail
 
 DRY=0
@@ -37,7 +43,7 @@ TARGET=""
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
-    -h | --help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,38p' "$0"; exit 0 ;;
     -*) echo "未知参数：$a" >&2; exit 2 ;;
     *) TARGET="$a" ;;
   esac
@@ -51,6 +57,8 @@ LAUNCHD_HUB="${LAUNCHD_HUB:-ai.nekro.kitestring.hub}"
 LAUNCHD_DAEMON="${LAUNCHD_DAEMON:-ai.nekro.kitestring.daemon}"
 KS_LAUNCHCTL="${KS_LAUNCHCTL:-launchctl}"
 KS_VERIFY_TIMEOUT="${KS_VERIFY_TIMEOUT:-30}"
+KS_LAUNCHER="${KS_LAUNCHER:-$KS_HOME/bin/ks-launcher}"
+KS_HUB_PLIST="${KS_HUB_PLIST:-$HOME/Library/LaunchAgents/$LAUNCHD_HUB.plist}"
 KS_KEEP_BACKUPS="${KS_KEEP_BACKUPS:-10}"
 export KS_HOME
 
@@ -243,7 +251,7 @@ log "目标提交：${WANT}；构建目录：${BUILD}；安装路径：${KS_BIN}
 
 # 2. 构建
 STEP="删除旧 bin/ks"
-run rm -f "$BUILD/bin/ks"
+run rm -f "$BUILD/bin/ks" "$BUILD/bin/ks-launcher"
 STEP="构建前端（pnpm install --frozen-lockfile && pnpm build）"
 if [ "$DRY" = 1 ]; then
   log "[dry-run] cd $BUILD/web && pnpm install --frozen-lockfile && pnpm build"
@@ -266,6 +274,18 @@ else
     *"$WANT"*) ;;
     *) log "新构建的提交号不是 $WANT"; false ;;
   esac
+fi
+
+# 启动器（R-354）：没有就装，有就只核对、绝不替换；Hub 已经经它运行而它没了时在替换程序之前停下
+STEP="安装 / 核对启动器 $KS_LAUNCHER"
+if [ "$(uname -s)" = Darwin ]; then
+  if [ "$DRY" = 1 ]; then
+    "$REPO/scripts/install-launcher.sh" --dry-run "$BUILD/bin/ks-launcher" "$KS_LAUNCHER" "$KS_HUB_PLIST"
+  else
+    "$REPO/scripts/install-launcher.sh" "$BUILD/bin/ks-launcher" "$KS_LAUNCHER" "$KS_HUB_PLIST"
+  fi
+else
+  log "不是 macOS，跳过启动器"
 fi
 
 # 3. 备份

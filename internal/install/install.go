@@ -51,8 +51,10 @@ type Options struct {
 	HubFilesDir string // hub 服务的 --files-dir（R-353）；空 = 沿用已安装 hub 服务里的目录，没有则用默认目录（R-354）
 	// HubFilesDirDefault：显式改回默认附件目录（--hub-files-dir default，R-354）
 	HubFilesDirDefault bool
-	DryRun             bool
-	Out                io.Writer
+	// HubLauncher：hub 服务经这个固定启动器运行（macOS，R-354），空 = 直接运行 ks
+	HubLauncher string
+	DryRun      bool
+	Out         io.Writer
 }
 
 // Run 执行安装或卸载。
@@ -99,6 +101,9 @@ func Run(o Options, uninstall bool) error {
 			if !uninstall {
 				if note := resolveHubFilesDir(&o, runtime.GOOS, home); note != "" {
 					fmt.Fprintln(o.Out, "  "+note)
+				}
+				if runtime.GOOS == "darwin" && o.HubLauncher == "" {
+					o.HubLauncher = ensureLauncher(o, home) // R-354：缺失时先装，已有的不替换
 				}
 			}
 			return service(o, home, "hub", hubArgv(o), uninstall)
@@ -470,9 +475,13 @@ func codexMCP(o Options, home string, remove bool) error {
 }
 
 // service 注册常驻服务：macOS 用 launchd，Linux 用 systemd --user，Windows 用任务计划程序（见 schtasks.go）。
-// hubArgv 是 hub 常驻服务的启动命令；指定了附件目录时带上 --files-dir（R-353）。
+// hubArgv 是 hub 常驻服务的启动命令；指定了附件目录时带上 --files-dir（R-353）；
+// 有固定启动器时放在最前面：<ks-launcher> <ks> hub serve …（R-354）。
 func hubArgv(o Options) []string {
 	argv := []string{o.KS, "hub", "serve", "--addr", o.HubAddr}
+	if o.HubLauncher != "" {
+		argv = append([]string{o.HubLauncher}, argv...)
+	}
 	if o.HubFilesDir != "" {
 		argv = append(argv, "--files-dir", o.HubFilesDir)
 	}
@@ -508,7 +517,9 @@ func launchd(o Options, home, role string, argv []string, remove bool) error {
 	label := launchLabel + "." + role
 	path := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	_ = run(Options{DryRun: o.DryRun, Out: io.Discard}, "launchctl", "bootout", domain+"/"+label)
+	if !o.DryRun {
+		_, _ = launchctl("bootout", domain+"/"+label)
+	}
 	if remove {
 		if o.DryRun {
 			fmt.Fprintf(o.Out, "  将删除 %s\n", path)
@@ -526,7 +537,7 @@ func launchd(o Options, home, role string, argv []string, remove bool) error {
 	if err := writeFile(o, path, []byte(plist), 0o644); err != nil {
 		return err
 	}
-	if err := run(o, "launchctl", "bootstrap", domain, path); err != nil {
+	if err := bootstrap(o, domain, label, path); err != nil {
 		return err
 	}
 	fmt.Fprintf(o.Out, "✓ %s 服务（launchd：%s）\n", role, label)
