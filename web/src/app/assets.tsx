@@ -4,7 +4,7 @@ import { Box as BoxIcon, ChevronDown, Columns2, Image as ImageIcon, Images, List
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { candidateLabel, comparePair, coverOf, facetsOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewQueue, stepQueue, wallTiles, type AssetLite, type AssetStatus, type FileLite, type WallTile } from '../lib/assets'
+import { batchesOf, candidateLabel, comparePair, metaRows, variantNames, viewGroups, coverOf, facetsOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewQueue, stepQueue, wallTiles, type AssetLite, type AssetStatus, type FileLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
@@ -252,7 +252,7 @@ export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean
         <div className="truncate text-sm font-medium text-fg" title={a.key}>
           {a.key}
         </div>
-        <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(a.batch, a.category, t.asset.ver(a.version))}</div>
+        <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.category, t.asset.ver(a.version))}</div>
       </div>
     </button>
   )
@@ -369,17 +369,26 @@ function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void
   const cover = coverOf(a.kind, v)
   const [pick, setPick] = useState<string | null>(null)
   const main = previews.find((p) => p.id === pick) ?? cover
+  // 按机位分组（R-376）：预览图按机位排在一起，缩略图下标出机位
+  const groups = viewGroups(previews)
+  const ordered = groups.flatMap((g) => g.items)
+  const variants = variantNames(v?.variants)
   const meta: [string, ReactNode][] = [
     [t.asset.meta.code, a.code],
-    [t.asset.meta.batch, v?.batch ?? a.batch],
+    [t.asset.meta.batch, batchesOf(a.uid ? a : (v ?? a)).join(t.asset.listSep)],
     [t.asset.meta.category, a.category],
     [t.asset.meta.branch, v?.branch],
     [t.asset.meta.commit, v?.commit ? <span className="font-mono text-[12px]">{v.commit.slice(0, 10)}</span> : ''],
     [t.asset.meta.triangles, v && fmtTris(v.triangles, v.budget) ? <span className={cx(overBudget(v.triangles, v.budget) && 'text-danger')} title={overBudget(v.triangles, v.budget) ? t.asset.overBudget : undefined}>{fmtTris(v.triangles, v.budget)}</span> : ''],
     [t.asset.meta.size, fmtSize(v?.size)],
     [t.asset.meta.pixels, fmtPixels(v?.pixels)],
+    [t.asset.meta.source, v?.source],
+    [t.asset.meta.license, v?.license],
+    [t.asset.meta.variants, variants.join(t.asset.listSep)],
     [t.asset.meta.submitter, v ? submitterName(v.submitter) : ''],
   ]
+  // 项目特有字段（R-376）：asset.json 里纸鸢不认识的字段，原样展示
+  const fields = metaRows(v?.meta)
   const rows = meta.filter(([, val]) => val !== undefined && val !== '' && val !== null)
 
   return (
@@ -425,7 +434,7 @@ function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void
           ) : cur === 'compare' && pair ? (
             <CompareSlider kind={a.kind} before={pair.before} after={pair.after} />
           ) : main ? (
-            <Lightbox f={main} group={previews.length > 1 ? previews : undefined}>
+            <Lightbox f={main} group={ordered.length > 1 ? ordered : undefined}>
               <button className="absolute inset-0 cursor-zoom-in">
                 <img src={fileUrl(main.id)} alt="" className="h-full w-full object-contain" draggable={false} />
               </button>
@@ -439,11 +448,18 @@ function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void
         </div>
 
         {cur === 'image' && previews.length > 1 && (
-          <div className="mt-2 flex gap-2 overflow-x-auto" aria-label={t.asset.previews}>
-            {previews.map((p) => (
-              <button key={p.id} onClick={() => setPick(p.id)} className={cx('h-14 w-20 shrink-0 overflow-hidden rounded-lg border', (main?.id ?? '') === p.id ? 'border-accent ring-2 ring-accent/30' : 'border-line')}>
-                <ThumbImg id={p.id} alt="" className="h-full w-full object-cover" />
-              </button>
+          <div className="mt-2 flex gap-3 overflow-x-auto" aria-label={t.asset.previews} data-views={groups.length}>
+            {groups.map((g) => (
+              <div key={g.view} className="flex shrink-0 flex-col gap-1">
+                <div className="flex gap-2">
+                  {g.items.map((p) => (
+                    <button key={p.id} onClick={() => setPick(p.id)} title={p.name} className={cx('h-14 w-20 shrink-0 overflow-hidden rounded-lg border', (main?.id ?? '') === p.id ? 'border-accent ring-2 ring-accent/30' : 'border-line')}>
+                      <ThumbImg id={p.id} alt="" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+                {g.view && <span className="truncate text-center text-[12px] text-fg-3">{g.view}</span>}
+              </div>
             ))}
           </div>
         )}
@@ -456,6 +472,22 @@ function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void
             </div>
           ))}
         </dl>
+
+        {fields.length > 0 && (
+          <section className="mt-4" data-fields>
+            <h3 className="mb-2 text-[13px] font-medium text-fg-3">{t.asset.projectFields}</h3>
+            <dl className="overflow-hidden rounded-xl border border-line text-[13px]">
+              {fields.map(([k, val]) => (
+                <div key={k} className="flex min-w-0 gap-3 border-b border-line px-3 py-2 last:border-b-0">
+                  <dt className="w-24 shrink-0 truncate font-mono text-[12px] text-fg-3" title={k}>
+                    {k}
+                  </dt>
+                  <dd className="min-w-0 break-all text-fg">{val}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
 
         {versions.length > 0 && (
           <section className="mt-5">

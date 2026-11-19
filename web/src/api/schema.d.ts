@@ -114,6 +114,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** 一条素材和它的全部版本；ref 是编号 A-x 或素材 id（按 id 时默认在会话所在项目里找） */
         get: operations["agent-get-asset"];
         put?: never;
         post?: never;
@@ -3338,7 +3339,10 @@ export interface components {
             session_key: string;
         };
         Asset: {
+            /** @description 旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches */
             batch: string;
+            /** @description 素材带过的全部批次（多值）；旧条目是 [batch] */
+            batches: string[] | null;
             category: string;
             /** @description 素材编号 A-x */
             code: string;
@@ -3347,7 +3351,7 @@ export interface components {
             /** @description 同一用途的候选分组（概念图 A / B 版），并排比较用 */
             group?: string;
             id: string;
-            /** @description manifest 的 id；独立的图是文件名去扩展名 */
+            /** @description manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid */
             key: string;
             /**
              * @description part GLB 零件 / image 独立的图
@@ -3367,6 +3371,8 @@ export interface components {
             status_at?: string;
             /** @description 最近一次提交素材的人（返工意见送它） */
             submitter: components["schemas"]["AssetSubmitter"];
+            /** @description R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空 */
+            uid?: string;
             /** Format: date-time */
             updated_at: string;
             /**
@@ -3399,7 +3405,10 @@ export interface components {
         AssetDetail: {
             /** @description 附件（R-365：访客上传、你收下为附件的文件），新的在前 */
             attachments: components["schemas"]["AssetAttachment"][] | null;
+            /** @description 旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches */
             batch: string;
+            /** @description 素材带过的全部批次（多值）；旧条目是 [batch] */
+            batches: string[] | null;
             category: string;
             /** @description 素材编号 A-x */
             code: string;
@@ -3408,7 +3417,7 @@ export interface components {
             /** @description 同一用途的候选分组（概念图 A / B 版），并排比较用 */
             group?: string;
             id: string;
-            /** @description manifest 的 id；独立的图是文件名去扩展名 */
+            /** @description manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid */
             key: string;
             /**
              * @description part GLB 零件 / image 独立的图
@@ -3430,6 +3439,8 @@ export interface components {
             status_at?: string;
             /** @description 最近一次提交素材的人（返工意见送它） */
             submitter: components["schemas"]["AssetSubmitter"];
+            /** @description R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空 */
+            uid?: string;
             /** Format: date-time */
             updated_at: string;
             /**
@@ -3461,6 +3472,8 @@ export interface components {
              * @description 字节数
              */
             size?: number;
+            /** @description 预览图的机位（R-376：文件名「<名字>__<机位>.png」里的机位），网页按它分组 */
+            view?: string;
         };
         AssetHaveInBody: {
             /** @description 要查的文件 sha256 */
@@ -3473,6 +3486,8 @@ export interface components {
             };
         };
         AssetItem: {
+            /** @description asset.json：这次带上的批次（可多个，并入素材已有的批次，不删旧的） */
+            batches?: string[] | null;
             /**
              * Format: int64
              * @description 面数预算上限
@@ -3491,7 +3506,9 @@ export interface components {
              * @enum {string}
              */
             kind: "part" | "image";
-            /** @description manifest 里这一项的原文 */
+            /** @description asset.json：许可（CC0、自有……） */
+            license?: string;
+            /** @description 旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样） */
             meta?: unknown;
             /** @description 图的像素尺寸（宽 / 高） */
             pixels?: number[] | null;
@@ -3499,11 +3516,15 @@ export interface components {
             previews?: components["schemas"]["AssetFile"][] | null;
             /** @description 尺寸（米，x / y / z） */
             size?: number[] | null;
+            /** @description asset.json：来源（自制、外包、网址……） */
+            source?: string;
             /**
              * Format: int64
              * @description 面数（三角形）
              */
             triangles?: number;
+            /** @description asset.json：具名变体的原文（先原样存下，变体的版本与审核见 R-380） */
+            variants?: unknown;
         };
         AssetListView: {
             assets: components["schemas"]["Asset"][] | null;
@@ -3512,11 +3533,26 @@ export interface components {
             /** @description 素材状态全集，按展示顺序 */
             statuses: string[] | null;
         };
+        AssetPreview: {
+            /** @description 改动框：按图片原始尺寸的比例坐标（0～1） */
+            boxes?: components["schemas"]["Box"][] | null;
+            id: string;
+            mime: string;
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** @description 截图的一句话标题 */
+            title?: string;
+            /** @description 机位 */
+            view?: string;
+        };
         AssetPush: {
-            /** @description 批次（如 G11e1） */
+            /** @description 批次（如 G11e1）；按 id 推送时可空（批次写在每条素材的 batches 里） */
             batch: string;
             /** @description 素材所在分支 */
             branch?: string;
+            /** @description R-376：按 asset.json 推送，素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，key 就是 id，批次只是元数据；不写是旧的按批次推送 */
+            by_id?: boolean;
             /** @description 素材所在提交 */
             commit?: string;
             /** @description 素材 */
@@ -3552,6 +3588,8 @@ export interface components {
         };
         AssetPushResult: {
             batch: string;
+            /** @description 按 asset.json（素材 id）推送 */
+            by_id?: boolean;
             items: components["schemas"]["AssetPushItemResult"][] | null;
             /** @description 项目名 */
             project: string;
@@ -3641,6 +3679,8 @@ export interface components {
         };
         AssetVersion: {
             batch: string;
+            /** @description 这一版推送时带的批次（R-376；旧条目是 [batch]） */
+            batches: string[] | null;
             branch: string;
             /**
              * Format: int64
@@ -3653,18 +3693,24 @@ export interface components {
             /** @description 主文件：零件的 GLB，独立的图本身 */
             file?: components["schemas"]["FileRef"];
             id: string;
-            /** @description manifest 里这一项的原文 */
+            /** @description 许可（R-376） */
+            license?: string;
+            /** @description 旧 manifest：这一项的原文；asset.json：项目特有字段（原样） */
             meta?: unknown;
             /** @description 像素尺寸（宽 / 高） */
             pixels?: number[] | null;
             /** @description 零件的预览图 */
-            previews: components["schemas"]["FileRef"][] | null;
+            previews: components["schemas"]["AssetPreview"][] | null;
             /** @description 尺寸（米，x / y / z） */
             size?: number[] | null;
+            /** @description 来源（R-376） */
+            source?: string;
             /** @description 这一版的提交者 */
             submitter: components["schemas"]["AssetSubmitter"];
             /** Format: int64 */
             triangles?: number;
+            /** @description asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核） */
+            variants?: unknown;
             /** Format: int64 */
             version: number;
         };
@@ -7974,6 +8020,8 @@ export interface operations {
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
                 kind?: "part" | "image" | "";
+                /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
+                id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
                 session_key?: string;
             };
@@ -8071,9 +8119,15 @@ export interface operations {
     };
     "agent-get-asset": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 项目 ID：按素材 id 找时限定项目 */
+                project?: string;
+                /** @description 不写 project 时按会话所在项目找 */
+                session_key?: string;
+            };
             header?: never;
             path: {
+                /** @description 编号 A-x、素材 ID 或素材 id（如 core:weapon.carbine） */
                 ref: string;
             };
             cookie?: never;
@@ -9847,6 +9901,8 @@ export interface operations {
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
                 kind?: "part" | "image" | "";
+                /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
+                id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
                 session_key?: string;
             };

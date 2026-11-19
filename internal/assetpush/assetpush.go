@@ -299,13 +299,41 @@ func gitHead(dir string) (branch, commit string) {
 	return branch, commit
 }
 
+// DryRunText 是旧的按批次推送 --dry-run 的输出：逐件列出要推的素材，不推送（R-376）。
+func DryRunText(p protocol.AssetPush, notes []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "批次 %s：%d 条素材（--dry-run：只整理，没有推送）\n", p.Batch, len(p.Items))
+	for _, it := range p.Items {
+		kind := "图"
+		if it.Kind == protocol.AssetPart {
+			kind = "零件"
+		}
+		line := fmt.Sprintf("  %s  %s", kind, it.Key)
+		if it.Category != "" {
+			line += " · " + it.Category
+		}
+		if len(it.Previews) > 0 {
+			line += fmt.Sprintf(" · 预览图 %d 张", len(it.Previews))
+		}
+		b.WriteString(line + "\n")
+	}
+	for _, n := range notes {
+		b.WriteString("提示：" + n + "\n")
+	}
+	return b.String()
+}
+
 var resultLabel = map[string]string{"created": "新素材", "updated": "新版本", "unchanged": "未变"}
 
 // Text 是 ks asset push 与 MCP asset_push 的输出。
 func Text(p protocol.AssetPush, out protocol.AssetPushReply, notes []string) string {
 	var b strings.Builder
 	if out.Queued {
-		fmt.Fprintf(&b, "%s，批次 %s 的 %d 条素材已排队，连上 Hub 后自动补传（ks asset queue 查看）。\n", out.Reason, p.Batch, len(p.Items))
+		what := "批次 " + p.Batch + " 的"
+		if p.ByID {
+			what = "asset.json 里的"
+		}
+		fmt.Fprintf(&b, "%s，%s %d 条素材已排队，连上 Hub 后自动补传（ks asset queue 查看）。\n", out.Reason, what, len(p.Items))
 	} else if r := out.Result; r != nil {
 		counts := map[string]int{}
 		for _, it := range r.Items {
@@ -317,7 +345,11 @@ func Text(p protocol.AssetPush, out protocol.AssetPushReply, notes []string) str
 				parts = append(parts, fmt.Sprintf("%s %d 条", resultLabel[k], counts[k]))
 			}
 		}
-		fmt.Fprintf(&b, "已推送批次 %s（项目「%s」）：%s", r.Batch, r.Project, strings.Join(parts, "，"))
+		if p.ByID {
+			fmt.Fprintf(&b, "已按素材 id 推送 %d 件（项目「%s」）：%s", len(r.Items), r.Project, strings.Join(parts, "，"))
+		} else {
+			fmt.Fprintf(&b, "已推送批次 %s（项目「%s」）：%s", r.Batch, r.Project, strings.Join(parts, "，"))
+		}
 		if r.Reused > 0 {
 			fmt.Fprintf(&b, "；Hub 已有的 %d 个文件未重传", r.Reused)
 		}

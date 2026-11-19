@@ -1,6 +1,10 @@
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"regexp"
+	"strings"
+)
 
 // 资源库（R-351）：Agent 用 ks asset push / MCP asset_push 把一批素材（manifest + 预览图 + GLB）推进资源库。
 // 流向：CLI / MCP 读 manifest、配好预览图，把本机路径交给 daemon（POST /assets/push）；
@@ -20,6 +24,7 @@ type AssetFile struct {
 	SHA256 string `json:"sha256,omitempty" doc:"内容的 sha256（daemon 算）"`
 	Size   int64  `json:"size,omitempty" doc:"字节数"`
 	ID     string `json:"id,omitempty" doc:"Hub 附件 ID（先传到 /api/agent/assets/files，或已有同 sha256 的附件）"`
+	View   string `json:"view,omitempty" doc:"预览图的机位（R-376：文件名「<名字>__<机位>.png」里的机位），网页按它分组"`
 }
 
 // AssetItem 是一条素材（manifest 里的一项，或预览目录里一张独立的图）。
@@ -34,7 +39,12 @@ type AssetItem struct {
 	Budget    int             `json:"budget,omitempty" doc:"面数预算上限"`
 	Size      []float64       `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
 	Pixels    []int           `json:"pixels,omitempty" doc:"图的像素尺寸（宽 / 高）"`
-	Meta      json.RawMessage `json:"meta,omitempty" doc:"manifest 里这一项的原文"`
+	Meta      json.RawMessage `json:"meta,omitempty" doc:"旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样）"`
+	// 以下是 asset.json 推送（R-376）的通用字段；旧的按批次推送不写
+	Batches  []string        `json:"batches,omitempty" doc:"asset.json：这次带上的批次（可多个，并入素材已有的批次，不删旧的）"`
+	Source   string          `json:"source,omitempty" doc:"asset.json：来源（自制、外包、网址……）"`
+	License  string          `json:"license,omitempty" doc:"asset.json：许可（CC0、自有……）"`
+	Variants json.RawMessage `json:"variants,omitempty" doc:"asset.json：具名变体的原文（先原样存下，变体的版本与审核见 R-380）"`
 }
 
 // AssetPush 是一次推送（一批素材）。
@@ -43,7 +53,8 @@ type AssetPush struct {
 	SessionKey  string      `json:"session_key,omitempty" doc:"提交素材的会话"`
 	Project     string      `json:"project,omitempty" doc:"记进哪个项目（项目名、git remote 或项目 ID）；不写记进会话所在项目"`
 	Requirement string      `json:"requirement,omitempty" doc:"关联需求（R-x，可不填）"`
-	Batch       string      `json:"batch" doc:"批次（如 G11e1）"`
+	ByID        bool        `json:"by_id,omitempty" doc:"R-376：按 asset.json 推送，素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，key 就是 id，批次只是元数据；不写是旧的按批次推送"`
+	Batch       string      `json:"batch" doc:"批次（如 G11e1）；按 id 推送时可空（批次写在每条素材的 batches 里）"`
 	Branch      string      `json:"branch,omitempty" doc:"素材所在分支"`
 	Commit      string      `json:"commit,omitempty" doc:"素材所在提交"`
 	Status      string      `json:"status,omitempty" enum:"wip,pending," doc:"推送后的状态：pending 待审（默认）/ wip 制作中"`
@@ -63,6 +74,7 @@ type AssetPushResult struct {
 	PushID  string                `json:"push_id"`
 	Project string                `json:"project" doc:"项目名"`
 	Batch   string                `json:"batch"`
+	ByID    bool                  `json:"by_id,omitempty" doc:"按 asset.json（素材 id）推送"`
 	Items   []AssetPushItemResult `json:"items"`
 	Reused  int                   `json:"reused" doc:"Hub 已有、没有重传的文件数（按 sha256 去重）"`
 }
@@ -79,9 +91,46 @@ type AssetPushReply struct {
 type AssetJob struct {
 	ID        string `json:"id"`
 	Batch     string `json:"batch"`
+	ByID      bool   `json:"by_id,omitempty" doc:"按 asset.json（素材 id）推送"`
 	Items     int    `json:"items"`
 	State     string `json:"state" enum:"queued,failed" doc:"queued 等待补传 / failed 被 Hub 拒收（原因见 error）"`
 	Error     string `json:"error,omitempty"`
 	Tries     int    `json:"tries"`
 	CreatedAt string `json:"created_at"`
+}
+
+// R-376：素材 id 的格式是「命名空间:路径」，如 core:weapon.carbine。
+// 命名空间用小写字母、数字、_ . -；路径用字母、数字、_ . - /（/ 分层）。id 带冒号，所以预览图文件名不写完整 id，
+// 只写冒号后的名字（「<名字>__<机位>.png」），Windows 上也能用。
+var (
+	assetNSRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]*$`)
+	assetPathRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_./-]*$`)
+)
+
+// CheckAssetID 校验素材 id，合格返回空，不合格返回一句原因（接在 id 后面）。
+func CheckAssetID(id string) string {
+	ns, path, ok := strings.Cut(id, ":")
+	switch {
+	case !ok:
+		return "要带命名空间，写成「命名空间:名字」，如 core:weapon.carbine"
+	case len(id) > 128:
+		return "太长（最多 128 个字符）"
+	case !assetNSRe.MatchString(ns):
+		return "的命名空间只能用小写字母、数字和 _ . -，且以字母或数字开头"
+	case !assetPathRe.MatchString(path) || strings.Contains(path, "//") || strings.HasSuffix(path, "/") || strings.HasSuffix(path, "."):
+		return "冒号后只能用字母、数字和 _ . - /，不能以 / 或 . 结尾"
+	}
+	return ""
+}
+
+// AssetName 是素材 id 冒号后的名字（预览图文件名「<名字>__<机位>.png」里的名字）；路径带 / 时取最后一段。
+func AssetName(id string) string {
+	_, path, ok := strings.Cut(id, ":")
+	if !ok {
+		path = id
+	}
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		path = path[i+1:]
+	}
+	return path
 }

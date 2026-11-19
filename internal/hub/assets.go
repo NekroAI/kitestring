@@ -180,6 +180,7 @@ type assetListIn struct {
 	Category   string `query:"category"`
 	Status     string `query:"status" enum:"wip,pending,approved,rework,"`
 	Kind       string `query:"kind" enum:"part,image,"`
+	ID         string `query:"id" doc:"R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）"`
 	SessionKey string `query:"session_key" doc:"Agent 用：不写 project 时列会话所在项目"`
 }
 
@@ -187,10 +188,16 @@ type assetListOut struct{ Body AssetListView }
 
 type assetGetOut struct{ Body store.AssetDetail }
 
+type agentAssetGetIn struct {
+	Ref        string `path:"ref" doc:"编号 A-x、素材 ID 或素材 id（如 core:weapon.carbine）"`
+	Project    string `query:"project" doc:"项目 ID：按素材 id 找时限定项目"`
+	SessionKey string `query:"session_key" doc:"不写 project 时按会话所在项目找"`
+}
+
 func (h *Hub) listAssets(ctx context.Context, in *assetListIn, project string) (*assetListOut, error) {
 	out := &assetListOut{}
 	var err error
-	out.Body.Assets, err = h.store.ListAssets(ctx, store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind})
+	out.Body.Assets, err = h.store.ListAssets(ctx, store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind, ID: in.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -255,9 +262,18 @@ func (h *Hub) registerAssetsAgent(api huma.API) {
 			}
 			return h.listAssets(ctx, in, project)
 		})
-	huma.Register(api, huma.Operation{OperationID: "agent-get-asset", Method: http.MethodGet, Path: "/api/agent/assets/{ref}", Tags: tag},
-		func(ctx context.Context, in *refPath) (*assetGetOut, error) {
-			d, err := h.store.GetAsset(ctx, in.Ref)
+	huma.Register(api, huma.Operation{OperationID: "agent-get-asset", Method: http.MethodGet, Path: "/api/agent/assets/{ref}", Tags: tag, Summary: "一条素材和它的全部版本；ref 是编号 A-x 或素材 id（按 id 时默认在会话所在项目里找）"},
+		func(ctx context.Context, in *agentAssetGetIn) (*assetGetOut, error) {
+			project := in.Project
+			if project == "" && in.SessionKey != "" {
+				if x, err := h.store.GetSession(ctx, in.SessionKey); err == nil {
+					project = x.ProjectID
+				}
+			}
+			d, err := h.store.FindAsset(ctx, project, in.Ref)
+			if errors.Is(err, store.ErrAssetAmbiguous) {
+				return nil, huma.Error409Conflict(err.Error() + "（--project）")
+			}
 			return &assetGetOut{Body: d}, apiErr(err)
 		})
 }
@@ -266,7 +282,9 @@ func (h *Hub) registerAssetsAgent(api huma.API) {
 func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.AssetPushResult, error) {
 	var res protocol.AssetPushResult
 	batch := strings.TrimSpace(p.Batch)
-	if batch == "" {
+	if p.ByID {
+		batch = "" // 按 asset.json 推送：批次写在每条素材的 batches 里
+	} else if batch == "" {
 		return res, errors.New("要写批次（batch），例如 G11e1")
 	}
 	if len(p.Items) == 0 {
@@ -305,6 +323,19 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 			return res, fmt.Errorf("素材 %s 在这一批里出现了两次", it.Key)
 		}
 		seen[it.Key] = true
+		if p.ByID {
+			if msg := protocol.CheckAssetID(it.Key); msg != "" {
+				return res, fmt.Errorf("素材 id %s %s", it.Key, msg)
+			}
+			if strings.TrimSpace(it.Category) == "" {
+				return res, fmt.Errorf("素材 %s 没写类别（category）", it.Key)
+			}
+			if len(it.Variants) > 0 && !json.Valid(it.Variants) {
+				it.Variants = nil
+			}
+		} else if len(it.Batches) > 0 || it.Source != "" || it.License != "" || len(it.Variants) > 0 {
+			return res, fmt.Errorf("素材 %s：batches / source / license / variants 只用于按 asset.json 推送", it.Key)
+		}
 		if it.File == nil || it.File.ID == "" {
 			return res, fmt.Errorf("素材 %s 没有主文件", it.Key)
 		}
@@ -347,7 +378,7 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 		sub.Name = x.Title
 	}
 	out, err := h.store.PushAssets(ctx, store.NewAssetPush{PushID: p.PushID, ProjectID: proj.ID, ProjectName: proj.Name, Submitter: sub,
-		RequirementID: reqID, Batch: batch, Branch: p.Branch, Commit: p.Commit, Status: p.Status, Items: p.Items})
+		RequirementID: reqID, Batch: batch, Branch: p.Branch, Commit: p.Commit, Status: p.Status, Items: p.Items, ByID: p.ByID})
 	if err == nil {
 		h.broker.publish("assets") // 资源库页（R-351 第 3 步）收到后重新拉列表
 		h.refreshReviewTargets(ctx, out)

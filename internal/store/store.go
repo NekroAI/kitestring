@@ -62,6 +62,7 @@ func Open(path string) (*Store, error) {
 		// 泳道补找工具调用的开始（PreToolStart）按 tool_use_id 直接定位，不再把一天里的调用逐条 LIKE（R-382）。
 		// 只收 PreToolUse；表达式要和 PreToolStart 里的一字不差，查询才用得上
 		`CREATE INDEX IF NOT EXISTS events_tooluse ON events(session_key, json_extract(payload, '$.tool_use_id'), time) WHERE name = 'PreToolUse'`,
+		`CREATE INDEX IF NOT EXISTS assets_uid ON assets(project_id, uid)`,
 	} {
 		if _, err := db.Exec(ix); err != nil {
 			db.Close()
@@ -250,6 +251,13 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"share_comments", "result_ref", "TEXT NOT NULL DEFAULT ''"},
 	{"asset_reviews", "via", "TEXT NOT NULL DEFAULT ''"},
 	{"asset_reviews", "addend", "TEXT NOT NULL DEFAULT ''"},
+	// 资源库以素材 id 为主（R-376）：asset.json 推送的稳定 id、多值批次、来源许可、变体原文；旧条目不动（uid 空、批次看 batch）
+	{"assets", "uid", "TEXT NOT NULL DEFAULT ''"},
+	{"assets", "batches", "TEXT NOT NULL DEFAULT '[]'"},
+	{"asset_versions", "batches", "TEXT NOT NULL DEFAULT '[]'"},
+	{"asset_versions", "source", "TEXT NOT NULL DEFAULT ''"},
+	{"asset_versions", "license", "TEXT NOT NULL DEFAULT ''"},
+	{"asset_versions", "variants", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

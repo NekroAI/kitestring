@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/assetpush"
@@ -16,11 +18,16 @@ import (
 )
 
 const assetUsage = `用法：
-  ks asset push [manifest.json] --previews <目录> [--previews <目录>] --batch <批次> [--category 类别] [--status wip] [--req R-x] [--project 项目] [--branch 分支] [--commit 提交]
-      把一批素材推进资源库：manifest 里的 GLB 是零件，预览目录里文件名以零件 id 开头的图挂到零件上，其余是独立的图（目录图、概念图……，文件名去扩展名当 id）。
+  ks asset push <asset.json|目录>... [--category 类别] [--id 素材 id|前缀*] [--batch 批次] [--categories 类别表] [--previews <目录>] [--dry-run] [--skip-invalid] [--status wip] [--req R-x] [--project 项目]
+      按 asset.json 推送（推荐）：素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，批次是可多值的元数据。
+      给目录时逐个找下面的 asset.json；--category、--id 只推其中一部分；--batch 给每件素材再带上一个批次。
+      推送前先在本地逐件校验并报告；有错时整批不推（--skip-invalid 只推合格的），--dry-run 只校验不推送。
+      预览图文件名写「<名字>__<机位>.png」（名字不含冒号），挂不上的逐个列出。字段、项目配置和命名规则见 ks asset help。
+  ks asset push [manifest.json] --previews <目录> [--previews <目录>] --batch <批次> [--category 类别] [--dry-run] [--status wip] [--req R-x] [--project 项目] [--branch 分支] [--commit 提交]
+      旧的按批次推送（仍可用）：manifest 里的 GLB 是零件，预览目录里文件名以零件 id 开头的图挂到零件上，其余是独立的图（目录图、概念图……，文件名去扩展名当 id）。
       同一批次里同一 id 内容有变的重推记为新版本（旧版本保留），内容相同的不新增；Hub 已有的文件不重传；未连接 Hub 时排队，连上后自动补传。
-  ks asset list [--batch 批次] [--status wip|pending|approved|rework] [--category 类别] [--project 项目 ID] [--json]
-  ks asset get <A-x> [--json]   素材和它的全部版本
+  ks asset list [--id 素材 id|前缀*] [--batch 批次] [--status wip|pending|approved|rework] [--category 类别] [--project 项目 ID] [--json]
+  ks asset get <素材 id|A-x> [--json]   素材和它的全部版本
   ks asset queue                 本机排队等补传、或被 Hub 拒收的推送`
 
 var assetStatusLabel = map[string]string{store.AssetWIP: "制作中", store.AssetPending: "待审", store.AssetApproved: "通过", store.AssetRework: "返工"}
@@ -30,6 +37,10 @@ func runAsset(args []string) error {
 		return errors.New(assetUsage)
 	}
 	sub, args := args[0], args[1:]
+	if sub == "help" || sub == "-h" || sub == "--help" {
+		fmt.Print(assetUsage + "\n\n" + assetpush.FormatHelp)
+		return nil
+	}
 	var previews stringList
 	fs := flag.NewFlagSet("asset "+sub, flag.ContinueOnError)
 	fs.Var(&previews, "previews", "push：预览图目录，可重复")
@@ -41,14 +52,18 @@ func runAsset(args []string) error {
 	branch := fs.String("branch", "", "push：分支（不写从 git 读）")
 	commit := fs.String("commit", "", "push：提交（不写从 git 读）")
 	asJSON := fs.Bool("json", false, "输出原始 JSON")
+	dryRun := fs.Bool("dry-run", false, "push：只在本地校验、报告，不推送")
+	skipInvalid := fs.Bool("skip-invalid", false, "push（asset.json）：有错的素材跳过，只推合格的")
+	categories := fs.String("categories", "", "push（asset.json）：类别允许表（JSON 数组或 {\"categories\": [...]}）；不写时用仓库里 "+assetpush.ConfigFile+" 的 categories")
+	id := fs.String("id", "", "list：素材 id（如 core:weapon.carbine）或编号 A-x，末尾带 * 按前缀查；push（asset.json）：只推这些")
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	allowed := map[string][]string{
-		"push":  {"previews", "batch", "category", "status", "req", "project", "branch", "commit", "json"},
-		"list":  {"batch", "category", "status", "project", "json"},
-		"get":   {"json"},
+		"push":  {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories"},
+		"list":  {"id", "batch", "category", "status", "project", "json"},
+		"get":   {"project", "json"},
 		"queue": {"json"},
 	}
 	ok, known := allowed[sub]
@@ -61,13 +76,27 @@ func runAsset(args []string) error {
 	ctx := context.Background()
 	switch sub {
 	case "push":
+		if fs.NArg() >= 1 && assetpush.IsAssetJSON(fs.Arg(0)) {
+			return pushByID(ctx, assetpush.IDOptions{Paths: fs.Args(), Previews: previews, Batch: *batch, Categories: *categories, OnlyCat: *category, OnlyID: *id, SkipInvalid: *skipInvalid,
+				Status: *status, Branch: *branch, Commit: *commit, Project: *project, Requirement: *req, SessionKey: cliSession(*session)}, *dryRun, *asJSON)
+		}
 		if fs.NArg() > 1 {
 			return errors.New(assetUsage)
+		}
+		if *skipInvalid || *categories != "" || *id != "" {
+			return errors.New("--skip-invalid、--categories、--id 只用于按 asset.json 推送")
 		}
 		p, notes, err := assetpush.Build(assetpush.Options{Manifest: fs.Arg(0), Previews: previews, Batch: *batch, Category: *category, Status: *status,
 			Branch: *branch, Commit: *commit, Project: *project, Requirement: *req, SessionKey: cliSession(*session)})
 		if err != nil {
 			return err
+		}
+		if *dryRun {
+			if *asJSON {
+				return printJSON(p)
+			}
+			fmt.Print(assetpush.DryRunText(p, notes))
+			return nil
 		}
 		var out protocol.AssetPushReply
 		if err := client.New(15*time.Minute).Do(ctx, "POST", "/assets/push", p, &out); err != nil {
@@ -80,7 +109,7 @@ func runAsset(args []string) error {
 		return nil
 	case "list":
 		q := url.Values{}
-		for k, v := range map[string]string{"batch": *batch, "category": *category, "status": *status, "project": *project, "session_key": cliSession(*session)} {
+		for k, v := range map[string]string{"id": *id, "batch": *batch, "category": *category, "status": *status, "project": *project, "session_key": cliSession(*session)} {
 			if v != "" {
 				q.Set(k, v)
 			}
@@ -107,13 +136,24 @@ func runAsset(args []string) error {
 			return errors.New(assetUsage)
 		}
 		var d store.AssetDetail
-		if err := client.New(20*time.Second).Do(ctx, "GET", "/agent/assets/"+url.PathEscape(fs.Arg(0)), nil, &d); err != nil {
+		q := url.Values{}
+		for k, v := range map[string]string{"project": *project, "session_key": cliSession(*session)} {
+			if v != "" {
+				q.Set(k, v)
+			}
+		}
+		if err := client.New(20*time.Second).Do(ctx, "GET", "/agent/assets/"+url.PathEscape(fs.Arg(0))+"?"+q.Encode(), nil, &d); err != nil {
 			return err
 		}
 		if *asJSON {
 			return printJSON(d)
 		}
 		fmt.Println(assetLine(d.Asset))
+		if v := d.Latest; v != nil {
+			for _, s := range assetFacts(*v) {
+				fmt.Println("  " + s)
+			}
+		}
 		for _, v := range d.Versions {
 			fmt.Printf("  第 %d 版 · %s · %s %s", v.Version, v.CreatedAt.Local().Format("01-02 15:04"), v.Branch, v.Commit)
 			if v.File != nil {
@@ -121,6 +161,9 @@ func runAsset(args []string) error {
 			}
 			if len(v.Previews) > 0 {
 				fmt.Printf(" · 预览图 %d 张", len(v.Previews))
+				if views := previewViews(v.Previews); len(views) > 0 {
+					fmt.Printf("（%s）", strings.Join(views, "、"))
+				}
 			}
 			fmt.Println()
 		}
@@ -153,7 +196,11 @@ func runAsset(args []string) error {
 			return nil
 		}
 		for _, j := range out.Jobs {
-			line := fmt.Sprintf("%s  %s · %d 条素材 · ", j.ID, j.Batch, j.Items)
+			what := j.Batch
+			if j.ByID {
+				what = "asset.json"
+			}
+			line := fmt.Sprintf("%s  %s · %d 条素材 · ", j.ID, what, j.Items)
 			if j.State == "failed" {
 				line += "被 Hub 拒收：" + j.Error
 			} else {
@@ -193,10 +240,99 @@ func reviewAuthor(x store.AssetAuthor) string {
 	return "未知"
 }
 
+// pushByID 按 asset.json 推送（R-376）：先本地逐件校验并报告；有错时不推（--skip-invalid 只推合格的），--dry-run 只校验。
+func pushByID(ctx context.Context, o assetpush.IDOptions, dryRun, asJSON bool) error {
+	p, rep, err := assetpush.BuildByID(o)
+	if err != nil {
+		return err
+	}
+	bad := rep.Bad()
+	var stop error
+	switch {
+	case bad > 0 && !o.SkipInvalid:
+		stop = fmt.Errorf("有 %d 件素材有错，整批没有推送：改好后重推，或加 --skip-invalid 只推合格的", bad)
+	case len(p.Items) == 0:
+		stop = errors.New("没有合格的素材，没有推送")
+	}
+	if dryRun || stop != nil {
+		if asJSON {
+			if err := printJSON(map[string]any{"report": rep, "pushed": false}); err != nil {
+				return err
+			}
+		} else {
+			fmt.Print(assetpush.ReportText(rep))
+		}
+		if dryRun {
+			if !asJSON {
+				fmt.Println("（--dry-run：只校验，没有推送）")
+			}
+			if bad > 0 {
+				return fmt.Errorf("有 %d 件素材有错", bad)
+			}
+			return nil
+		}
+		return stop
+	}
+	if !asJSON {
+		fmt.Print(assetpush.ReportText(rep))
+	}
+	var out protocol.AssetPushReply
+	if err := client.New(15*time.Minute).Do(ctx, "POST", "/assets/push", p, &out); err != nil {
+		return err
+	}
+	if asJSON {
+		return printJSON(map[string]any{"report": rep, "pushed": true, "reply": out})
+	}
+	fmt.Print(assetpush.Text(p, out, nil))
+	if bad > 0 {
+		fmt.Printf("有错的 %d 件已跳过，没有推送（见上面的校验报告）。\n", bad)
+	}
+	return nil
+}
+
+func previewViews(ps []store.AssetPreview) []string {
+	var out []string
+	for _, p := range ps {
+		if p.View != "" && !slices.Contains(out, p.View) {
+			out = append(out, p.View)
+		}
+	}
+	return out
+}
+
+// assetFacts：素材 id 推送的通用字段（批次、来源、许可、变体、项目字段）。
+func assetFacts(v store.AssetVersion) []string {
+	var out []string
+	if v.Source != "" || v.License != "" {
+		out = append(out, "来源 "+orDash(v.Source)+" · 许可 "+orDash(v.License))
+	}
+	if len(v.Variants) > 0 {
+		out = append(out, "变体（原文）："+string(v.Variants))
+	}
+	if len(v.Meta) > 0 {
+		out = append(out, "项目字段："+string(v.Meta))
+	}
+	return out
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
 func assetLine(a store.Asset) string {
-	s := fmt.Sprintf("%s  %s/%s  第 %d 版 · %s", a.Code, a.Batch, a.Key, a.Version, assetStatusLabel[a.Status])
+	name := a.Batch + "/" + a.Key
+	if a.UID != "" {
+		name = a.UID
+	}
+	s := fmt.Sprintf("%s  %s  第 %d 版 · %s", a.Code, name, a.Version, assetStatusLabel[a.Status])
 	if a.Category != "" {
 		s += " · " + a.Category
+	}
+	if a.UID != "" && len(a.Batches) > 0 {
+		s += " · 批次 " + strings.Join(a.Batches, "、")
 	}
 	if v := a.Latest; v != nil && v.Triangles > 0 {
 		s += fmt.Sprintf(" · %d 面", v.Triangles)

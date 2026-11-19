@@ -720,6 +720,8 @@ CREATE TABLE IF NOT EXISTS assets (
 	status_at      TEXT NOT NULL DEFAULT '',
 	created_at     TEXT NOT NULL,
 	updated_at     TEXT NOT NULL,
+	uid            TEXT NOT NULL DEFAULT '',   -- R-376：按 asset.json 推送的素材的稳定 id（带命名空间，如 core:weapon.carbine）；此时 batch 为空、key = uid。旧的按批次推送的条目为空
+	batches        TEXT NOT NULL DEFAULT '[]', -- R-376：素材带过的批次（JSON 数组，多值元数据，推送时并入）；旧条目为空数组，批次看 batch
 	UNIQUE(project_id, batch, key)
 );
 CREATE INDEX IF NOT EXISTS assets_project ON assets(project_id, batch, updated_at);
@@ -748,6 +750,10 @@ CREATE TABLE IF NOT EXISTS asset_versions (
 	submitter_ref  TEXT NOT NULL DEFAULT '',
 	submitter_name TEXT NOT NULL DEFAULT '',
 	created_at  TEXT NOT NULL,
+	batches     TEXT NOT NULL DEFAULT '[]', -- R-376：这一版推送时带的批次（JSON 数组）
+	source      TEXT NOT NULL DEFAULT '',   -- R-376：来源
+	license     TEXT NOT NULL DEFAULT '',   -- R-376：许可
+	variants    TEXT NOT NULL DEFAULT '',   -- R-376：asset.json 里具名变体的原文（R-380 再拆成各自的版本与审核）
 	UNIQUE(asset_id, version)
 );
 

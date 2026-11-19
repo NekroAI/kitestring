@@ -5,14 +5,16 @@ export type AssetStatus = 'wip' | 'pending' | 'approved' | 'rework'
 export const ASSET_STATUSES: AssetStatus[] = ['wip', 'pending', 'approved', 'rework']
 
 export type FileLite = { id: string; name: string; mime: string; size: number }
+export type PreviewLite = FileLite & { view?: string }
 export type VersionLite = {
   id: string
   version: number
   batch: string
+  batches?: string[] | null
   branch: string
   commit: string
   file?: FileLite | null
-  previews?: FileLite[] | null
+  previews?: PreviewLite[] | null
   triangles?: number
   budget?: number
   size?: number[] | null
@@ -24,7 +26,9 @@ export type AssetLite = {
   code: string
   project_id: string
   batch: string
+  batches?: string[] | null
   key: string
+  uid?: string
   kind: 'part' | 'image'
   category: string
   group?: string
@@ -43,6 +47,12 @@ export function projectsOf(list: AssetLite[]): string[] {
   return [...last.entries()].sort((a, b) => b[1].localeCompare(a[1]) || a[0].localeCompare(b[0])).map(([p]) => p)
 }
 
+// batchesOf：素材带过的全部批次（R-376：按素材 id 推送的素材批次是多值；旧条目只有 batch）。
+export function batchesOf(a: Pick<AssetLite, 'batch' | 'batches'>): string[] {
+  if (a.batches && a.batches.length) return a.batches
+  return a.batch ? [a.batch] : []
+}
+
 // 批次名按自然顺序排（G2 在 G11 前面，G11e1 在 G11e2 前面）。
 const natural = new Intl.Collator('zh', { numeric: true, sensitivity: 'base' })
 export const naturalSort = (xs: Iterable<string>) => [...xs].sort(natural.compare)
@@ -53,7 +63,7 @@ export function facetsOf(list: AssetLite[], project: string) {
   const counts: Record<string, number> = Object.fromEntries(ASSET_STATUSES.map((s) => [s, 0]))
   for (const a of inProj) counts[a.status] = (counts[a.status] ?? 0) + 1
   return {
-    batches: naturalSort(new Set(inProj.map((a) => a.batch))),
+    batches: naturalSort(new Set(inProj.flatMap(batchesOf))),
     categories: naturalSort(new Set(inProj.map((a) => a.category).filter(Boolean))),
     counts,
     total: inProj.length,
@@ -61,7 +71,7 @@ export function facetsOf(list: AssetLite[], project: string) {
 }
 
 export function filterAssets(list: AssetLite[], f: AssetFilter): AssetLite[] {
-  return list.filter((a) => a.project_id === f.project && (!f.batch || a.batch === f.batch) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status))
+  return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status))
 }
 
 // 图片墙上的一格：单个素材，或同一用途的一组候选（概念图 A / B 版）。
@@ -123,6 +133,39 @@ export function coverOf(kind: 'part' | 'image', v?: VersionLite | null): FileLit
   if (kind === 'image') return isImg(v.file) ? v.file! : null
   const ps = (v.previews ?? []).filter(isImg)
   return ps.find((p) => /closeup/i.test(p.name)) ?? ps[0] ?? null
+}
+
+// viewGroups（R-376）：预览图按机位分组，机位按第一次出现的顺序；没有机位的（旧数据）归在空机位一组。
+export function viewGroups<P extends { view?: string }>(previews: P[]): { view: string; items: P[] }[] {
+  const out: { view: string; items: P[] }[] = []
+  for (const p of previews) {
+    const v = p.view ?? ''
+    const g = out.find((x) => x.view === v)
+    if (g) g.items.push(p)
+    else out.push({ view: v, items: [p] })
+  }
+  return out
+}
+
+// 纸鸢认识的通用字段（asset.json 与旧 manifest），项目字段里不再重复列出。
+// budget、size 等写成对象时（里面常有项目自己的检查项）照样列出，只有数字 / 数组的已在面数、尺寸里显示。
+const GENERIC = new Set(['format', 'id', 'file', 'category', 'previews', 'batch', 'batches', 'variants', 'default_variant', 'source', 'sources', 'license', 'group', 'triangles', 'budget_max', 'pixels', 'dimensions_px'])
+const SHOWN_UNLESS_OBJECT = new Set(['budget', 'size', 'bounds_m', 'bounds_local_m', 'dimensions_m'])
+const isObj = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v)
+
+// metaRows（R-376）：项目特有字段，原样展示为「字段 · 值」；值不是字符串、数字、布尔时写成紧凑的 JSON。
+export function metaRows(meta: unknown): [string, string][] {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return []
+  return Object.entries(meta as Record<string, unknown>)
+    .filter(([k, v]) => !GENERIC.has(k) && !(SHOWN_UNLESS_OBJECT.has(k) && !isObj(v)) && v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => [k, typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : JSON.stringify(v)])
+}
+
+// variantNames（R-376）：asset.json 里具名变体的名字——对象写法取键，数组写法取 name。
+export function variantNames(variants: unknown): string[] {
+  if (Array.isArray(variants)) return variants.map((x) => (isObj(x) ? String((x as { name?: unknown }).name ?? '') : '')).filter(Boolean)
+  if (isObj(variants)) return Object.keys(variants as object)
+  return []
 }
 
 // glbOf：零件的 GLB；独立的图没有。

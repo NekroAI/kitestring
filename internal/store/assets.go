@@ -17,6 +17,8 @@ import (
 )
 
 // 资源库（R-351）：素材与版本。一条素材 = 项目 + 批次 + key；内容有变的重推记为新版本，旧版本与原文件全部保留。
+// R-376 起按 asset.json 推送的素材以带命名空间的稳定 id（uid，如 core:weapon.carbine）为主键：batch 为空、key = uid，
+// 批次降为多值元数据（batches，推送时并入）。旧的按批次推送的条目不动，两种共存（取代 / 迁移见 R-380）。
 
 // 素材状态。
 const (
@@ -48,8 +50,10 @@ type Asset struct {
 	ID            string         `json:"id"`
 	Code          string         `json:"code" doc:"素材编号 A-x"`
 	ProjectID     string         `json:"project_id"`
-	Batch         string         `json:"batch"`
-	Key           string         `json:"key" doc:"manifest 的 id；独立的图是文件名去扩展名"`
+	Batch         string         `json:"batch" doc:"旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches"`
+	Key           string         `json:"key" doc:"manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid"`
+	UID           string         `json:"uid,omitempty" doc:"R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空"`
+	Batches       []string       `json:"batches" doc:"素材带过的全部批次（多值）；旧条目是 [batch]"`
 	Kind          string         `json:"kind" enum:"part,image" doc:"part GLB 零件 / image 独立的图"`
 	Category      string         `json:"category"`
 	Group         string         `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版），并排比较用"`
@@ -68,17 +72,27 @@ type AssetVersion struct {
 	ID        string          `json:"id"`
 	Version   int             `json:"version"`
 	Batch     string          `json:"batch"`
+	Batches   []string        `json:"batches" doc:"这一版推送时带的批次（R-376；旧条目是 [batch]）"`
 	Branch    string          `json:"branch"`
 	Commit    string          `json:"commit"`
 	File      *FileRef        `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`
-	Previews  []FileRef       `json:"previews" doc:"零件的预览图"`
+	Previews  []AssetPreview  `json:"previews" doc:"零件的预览图"`
 	Triangles int             `json:"triangles,omitempty"`
 	Budget    int             `json:"budget,omitempty" doc:"面数预算上限"`
 	Size      []float64       `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
 	Pixels    []int           `json:"pixels,omitempty" doc:"像素尺寸（宽 / 高）"`
-	Meta      json.RawMessage `json:"meta,omitempty" doc:"manifest 里这一项的原文"`
+	Meta      json.RawMessage `json:"meta,omitempty" doc:"旧 manifest：这一项的原文；asset.json：项目特有字段（原样）"`
+	Source    string          `json:"source,omitempty" doc:"来源（R-376）"`
+	License   string          `json:"license,omitempty" doc:"许可（R-376）"`
+	Variants  json.RawMessage `json:"variants,omitempty" doc:"asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核）"`
 	Submitter AssetSubmitter  `json:"submitter" doc:"这一版的提交者"`
 	CreatedAt time.Time       `json:"created_at"`
+}
+
+// AssetPreview 是零件的一张预览图；View 是机位（R-376：文件名「<名字>__<机位>.png」里的机位，网页按它分组；旧数据为空）。
+type AssetPreview struct {
+	FileRef
+	View string `json:"view,omitempty" doc:"机位"`
 }
 
 // AssetDetail 是素材与它的全部版本（新的在前）。
@@ -114,6 +128,7 @@ type NewAssetPush struct {
 	Branch        string
 	Commit        string
 	Status        string // wip / pending（默认）
+	ByID          bool   // R-376：按素材 id 推送（key 是 uid，Batch 为空，批次在每条素材的 Batches 里）
 	Items         []protocol.AssetItem
 	Reused        int
 }
@@ -147,7 +162,10 @@ func fileSHA(ctx context.Context, t *sql.Tx, id string) (string, error) {
 // PushAssets 登记一批素材：新素材建档；已有素材内容有变记为新版本、状态回到待审（或制作中）；内容相同的不动。
 // 同一 PushID 重放时原样返回第一次的结果（daemon 补传可能重复提交）。
 func (s *Store) PushAssets(ctx context.Context, n NewAssetPush) (protocol.AssetPushResult, error) {
-	res := protocol.AssetPushResult{PushID: n.PushID, Project: n.ProjectName, Batch: n.Batch, Items: []protocol.AssetPushItemResult{}, Reused: n.Reused}
+	res := protocol.AssetPushResult{PushID: n.PushID, Project: n.ProjectName, Batch: n.Batch, ByID: n.ByID, Items: []protocol.AssetPushItemResult{}, Reused: n.Reused}
+	if n.ByID {
+		n.Batch = ""
+	}
 	status := n.Status
 	if status == "" {
 		status = AssetPending
@@ -198,7 +216,7 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 		}
 		parts = append(parts, "f:"+sha)
 	}
-	previews := []FileRef{}
+	previews := []AssetPreview{}
 	var pshas []string
 	for _, p := range it.Previews {
 		sha, err := fileSHA(ctx, t, p.ID)
@@ -210,18 +228,31 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 		if err := t.QueryRowContext(ctx, `SELECT id, name, mime, size FROM files WHERE id = ?`, p.ID).Scan(&f.ID, &f.Name, &f.Mime, &f.Size); err != nil {
 			return r, err
 		}
-		previews = append(previews, f)
+		previews = append(previews, AssetPreview{FileRef: f})
+	}
+	for i, p := range it.Previews {
+		previews[i].View = p.View
+		if p.View != "" {
+			pshas[i] += "@" + p.View // 机位改名也算内容有变
+		}
 	}
 	slices.Sort(pshas)
 	for _, p := range pshas {
 		parts = append(parts, "p:"+p)
 	}
+	if n.ByID { // asset.json：来源许可、变体原文变了也记新版本；批次只是元数据，不算
+		parts = append(parts, "s:"+it.Source, "l:"+it.License, "v:"+string(it.Variants))
+	}
+	batches := cleanBatches(it.Batches)
+	if n.Batch != "" {
+		batches = []string{n.Batch}
+	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
 	digest := hex.EncodeToString(sum[:])
 
-	var id, latest string
+	var id, latest, had string
 	var seq, version int
-	err := t.QueryRowContext(ctx, `SELECT id, seq, version, latest_id FROM assets WHERE project_id = ? AND batch = ? AND key = ?`, n.ProjectID, n.Batch, it.Key).Scan(&id, &seq, &version, &latest)
+	err := t.QueryRowContext(ctx, `SELECT id, seq, version, latest_id, batches FROM assets WHERE project_id = ? AND batch = ? AND key = ?`, n.ProjectID, n.Batch, it.Key).Scan(&id, &seq, &version, &latest, &had)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		id = protocol.NewID()
@@ -229,8 +260,12 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 			return r, err
 		}
 		version = 0
-		if _, err := t.ExecContext(ctx, `INSERT INTO assets(id, seq, project_id, batch, key, kind, category, grp, status, version, submitter_kind, submitter_ref, submitter_name, requirement_id, status_at, created_at, updated_at)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`, id, seq, n.ProjectID, n.Batch, it.Key, it.Kind, it.Category, it.Group, status, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, n.RequirementID, at, at, at); err != nil {
+		uid := ""
+		if n.Batch == "" {
+			uid = it.Key
+		}
+		if _, err := t.ExecContext(ctx, `INSERT INTO assets(id, seq, project_id, batch, key, kind, category, grp, status, version, submitter_kind, submitter_ref, submitter_name, requirement_id, status_at, created_at, updated_at, uid, batches)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, seq, n.ProjectID, n.Batch, it.Key, it.Kind, it.Category, it.Group, status, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, n.RequirementID, at, at, at, uid, batchesJSON(uidBatches(uid, nil, batches))); err != nil {
 			return r, err
 		}
 		r.Result = "created"
@@ -241,18 +276,38 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 		if err := t.QueryRowContext(ctx, `SELECT digest FROM asset_versions WHERE id = ?`, latest).Scan(&old); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return r, err
 		}
+		merged := had
+		if n.Batch == "" { // 按 id 推送的素材：这次带的批次并入（只增不删）
+			merged = batchesJSON(cleanBatches(append(parseBatches(had), batches...)))
+		}
 		if old == digest {
+			// 内容没变不新增版本，但批次是元数据，照样并入（同一素材进了新批次）
+			if merged != had {
+				if _, err := t.ExecContext(ctx, `UPDATE assets SET batches = ?, updated_at = ? WHERE id = ?`, merged, at, id); err != nil {
+					return r, err
+				}
+			}
 			r.Code, r.Version, r.Result = AssetCode(seq), version, "unchanged"
 			return r, nil
+		}
+		if merged != had {
+			if _, err := t.ExecContext(ctx, `UPDATE assets SET batches = ? WHERE id = ?`, merged, id); err != nil {
+				return r, err
+			}
 		}
 		r.Result = "updated"
 	}
 	version++
 	vid := protocol.NewID()
-	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, submitter_kind, submitter_ref, submitter_name, created_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		vid, id, version, n.PushID, n.Batch, n.Branch, n.Commit, fileID, filesJSON(previews), it.Triangles, it.Budget,
-		jsonOrEmpty(it.Size), jsonOrEmpty(it.Pixels), string(it.Meta), digest, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, at); err != nil {
+	vbatches := "[]"
+	if n.Batch == "" {
+		vbatches = batchesJSON(batches)
+	}
+	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, submitter_kind, submitter_ref, submitter_name, created_at, batches, source, license, variants)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		vid, id, version, n.PushID, n.Batch, n.Branch, n.Commit, fileID, previewsJSON(previews), it.Triangles, it.Budget,
+		jsonOrEmpty(it.Size), jsonOrEmpty(it.Pixels), string(it.Meta), digest, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, at,
+		vbatches, it.Source, it.License, string(it.Variants)); err != nil {
 		return r, err
 	}
 	reqSet := ""
@@ -267,6 +322,44 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 	}
 	r.Code, r.Version = AssetCode(seq), version
 	return r, nil
+}
+
+// cleanBatches 去掉空白和重复，保持顺序。
+func cleanBatches(xs []string) []string {
+	out := []string{}
+	for _, x := range xs {
+		if x = strings.TrimSpace(x); x != "" && !slices.Contains(out, x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// uidBatches：新建素材时存的 batches 列——按 id 推送的存这次带的批次；旧条目留空（批次看 batch 列）。
+func uidBatches(uid string, had, add []string) []string {
+	if uid == "" {
+		return nil
+	}
+	return cleanBatches(append(had, add...))
+}
+
+func batchesJSON(xs []string) string {
+	if len(xs) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(xs)
+	return string(b)
+}
+
+func parseBatches(s string) []string {
+	var out []string
+	_ = json.Unmarshal([]byte(s), &out)
+	return cleanBatches(out)
+}
+
+// assetBatches：素材（或版本）的全部批次——旧条目只有 batch 列，按 id 推送的看 batches 列。
+func assetBatches(batch, raw string) []string {
+	return cleanBatches(append([]string{batch}, parseBatches(raw)...))
 }
 
 func jsonOrEmpty[T any](v []T) string {
@@ -284,21 +377,23 @@ type AssetFilter struct {
 	Category  string
 	Status    string
 	Kind      string
+	ID        string // R-376：素材 id（uid）或编号 A-x；末尾带 * 时按 id 前缀查（如 core:weapon.*）
 }
 
-const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at`
+const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches`
 
-const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at`
+const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants`
 
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (Asset, error) {
 	var a Asset
 	var seq int
-	var statusAt, created, updated string
-	dst := append([]any{&a.ID, &seq, &a.ProjectID, &a.Batch, &a.Key, &a.Kind, &a.Category, &a.Group, &a.Status, &a.Version, &a.Submitter.Kind, &a.Submitter.Ref, &a.Submitter.Name, &a.RequirementID, &statusAt, &created, &updated}, extra...)
+	var statusAt, created, updated, batches string
+	dst := append([]any{&a.ID, &seq, &a.ProjectID, &a.Batch, &a.Key, &a.Kind, &a.Category, &a.Group, &a.Status, &a.Version, &a.Submitter.Kind, &a.Submitter.Ref, &a.Submitter.Name, &a.RequirementID, &statusAt, &created, &updated, &a.UID, &batches}, extra...)
 	if err := row.Scan(dst...); err != nil {
 		return a, err
 	}
 	a.Code = AssetCode(seq)
+	a.Batches = assetBatches(a.Batch, batches)
 	if statusAt != "" {
 		t := parseTS(statusAt)
 		a.StatusAt = &t
@@ -311,15 +406,18 @@ type versionRow struct {
 	v                        AssetVersion
 	fileID, previews         string
 	size, pixels, meta, crtd string
+	batches, variants        string
 }
 
 func (r *versionRow) dst() []any {
-	return []any{&r.v.ID, &r.v.Version, &r.v.Batch, &r.v.Branch, &r.v.Commit, &r.fileID, &r.previews, &r.v.Triangles, &r.v.Budget, &r.size, &r.pixels, &r.meta, &r.v.Submitter.Kind, &r.v.Submitter.Ref, &r.v.Submitter.Name, &r.crtd}
+	return []any{&r.v.ID, &r.v.Version, &r.v.Batch, &r.v.Branch, &r.v.Commit, &r.fileID, &r.previews, &r.v.Triangles, &r.v.Budget, &r.size, &r.pixels, &r.meta, &r.v.Submitter.Kind, &r.v.Submitter.Ref, &r.v.Submitter.Name, &r.crtd,
+		&r.batches, &r.v.Source, &r.v.License, &r.variants}
 }
 
 func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
 	v := r.v
-	v.Previews = parseFiles(r.previews)
+	v.Previews = []AssetPreview{}
+	_ = json.Unmarshal([]byte(r.previews), &v.Previews)
 	if r.fileID != "" {
 		if f, err := s.GetFile(ctx, r.fileID); err == nil {
 			v.File = &f
@@ -334,6 +432,10 @@ func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
 	if r.meta != "" && json.Valid([]byte(r.meta)) {
 		v.Meta = json.RawMessage(r.meta)
 	}
+	if r.variants != "" && json.Valid([]byte(r.variants)) {
+		v.Variants = json.RawMessage(r.variants)
+	}
+	v.Batches = assetBatches(v.Batch, r.batches)
 	v.CreatedAt = parseTS(r.crtd)
 	return v
 }
@@ -342,10 +444,28 @@ func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
 func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) {
 	var where []string
 	var args []any
-	for _, c := range []struct{ col, v string }{{"a.project_id", f.ProjectID}, {"a.batch", f.Batch}, {"a.category", f.Category}, {"a.status", f.Status}, {"a.kind", f.Kind}} {
+	for _, c := range []struct{ col, v string }{{"a.project_id", f.ProjectID}, {"a.category", f.Category}, {"a.status", f.Status}, {"a.kind", f.Kind}} {
 		if c.v != "" {
 			where = append(where, c.col+" = ?")
 			args = append(args, c.v)
+		}
+	}
+	if b := strings.TrimSpace(f.Batch); b != "" {
+		where = append(where, assetInBatch)
+		args = append(args, b, b)
+	}
+	if id := strings.TrimSpace(f.ID); id != "" {
+		pre, prefix := strings.CutSuffix(id, "*")
+		switch {
+		case prefix:
+			where = append(where, "a.uid != '' AND substr(a.uid, 1, ?) = ?")
+			args = append(args, len(pre), pre)
+		case assetSeq(id) > 0:
+			where = append(where, "a.seq = ?")
+			args = append(args, assetSeq(id))
+		default:
+			where = append(where, "(a.uid = ? OR a.id = ?)")
+			args = append(args, id, id)
 		}
 	}
 	q := `SELECT ` + assetCols + `, ` + versionCols + ` FROM assets a JOIN asset_versions v ON v.id = a.latest_id`
@@ -384,19 +504,35 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) 
 	return out, nil
 }
 
-// GetAsset 读一条素材和它的全部版本；ref 是 ID 或编号 A-x。
+// assetInBatch：素材带过这个批次（旧条目看 batch 列，按 id 推送的看 batches）。参数：批次 ×2。
+const assetInBatch = `(a.batch = ? OR EXISTS (SELECT 1 FROM json_each(a.batches) WHERE value = ?))`
+
+// assetSeq 解析编号 A-x，不是编号返回 0。
+func assetSeq(ref string) int {
+	n, ok := strings.CutPrefix(strings.ToUpper(strings.TrimSpace(ref)), "A-")
+	if !ok {
+		return 0
+	}
+	seq, err := strconv.Atoi(n)
+	if err != nil || seq <= 0 {
+		return 0
+	}
+	return seq
+}
+
+// ErrAssetAmbiguous 是素材 id 在多个项目里都有、又没指定项目。
+var ErrAssetAmbiguous = errors.New("多个项目里都有这个素材 id，请指定项目")
+
+// GetAsset 读一条素材和它的全部版本；ref 是 ID、编号 A-x 或素材 id（uid；多个项目都有时报 ErrAssetAmbiguous）。
 func (s *Store) GetAsset(ctx context.Context, ref string) (AssetDetail, error) {
+	return s.FindAsset(ctx, "", ref)
+}
+
+// FindAsset 同 GetAsset；projectID 不为空时素材 id 只在这个项目里找（R-376）。
+func (s *Store) FindAsset(ctx context.Context, projectID, ref string) (AssetDetail, error) {
 	var d AssetDetail
 	ref = strings.TrimSpace(ref)
-	q, arg := `SELECT `+assetCols+` FROM assets a WHERE a.id = ?`, any(ref)
-	if n, ok := strings.CutPrefix(strings.ToUpper(ref), "A-"); ok {
-		seq, err := strconv.Atoi(n)
-		if err != nil {
-			return d, ErrNotFound
-		}
-		q, arg = `SELECT `+assetCols+` FROM assets a WHERE a.seq = ?`, seq
-	}
-	a, err := scanAsset(s.db.QueryRowContext(ctx, q, arg))
+	a, err := s.findAssetRow(ctx, projectID, ref)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, ErrNotFound
 	}
@@ -435,6 +571,44 @@ func (s *Store) GetAsset(ctx context.Context, ref string) (AssetDetail, error) {
 	return d, err
 }
 
+func (s *Store) findAssetRow(ctx context.Context, projectID, ref string) (Asset, error) {
+	if seq := assetSeq(ref); seq > 0 {
+		return scanAsset(s.db.QueryRowContext(ctx, `SELECT `+assetCols+` FROM assets a WHERE a.seq = ?`, seq))
+	}
+	if strings.HasPrefix(strings.ToUpper(ref), "A-") || ref == "" {
+		return Asset{}, sql.ErrNoRows
+	}
+	a, err := scanAsset(s.db.QueryRowContext(ctx, `SELECT `+assetCols+` FROM assets a WHERE a.id = ?`, ref))
+	if !errors.Is(err, sql.ErrNoRows) {
+		return a, err
+	}
+	q, args := `SELECT `+assetCols+` FROM assets a WHERE a.uid = ?`, []any{ref}
+	if projectID != "" {
+		q += ` AND a.project_id = ?`
+		args = append(args, projectID)
+	}
+	rows, err := s.db.QueryContext(ctx, q+` LIMIT 2`, args...)
+	if err != nil {
+		return a, err
+	}
+	defer rows.Close()
+	var got []Asset
+	for rows.Next() {
+		x, err := scanAsset(rows)
+		if err != nil {
+			return a, err
+		}
+		got = append(got, x)
+	}
+	switch len(got) {
+	case 0:
+		return a, sql.ErrNoRows
+	case 1:
+		return got[0], rows.Err()
+	}
+	return a, ErrAssetAmbiguous
+}
+
 // AssetFacets 是一个项目里素材的批次和类别（筛选项用），按名称排序。
 type AssetFacets struct {
 	Batches    []string       `json:"batches"`
@@ -448,7 +622,7 @@ func (s *Store) ListAssetFacets(ctx context.Context, projectID string) (AssetFac
 	for _, st := range AssetStatuses {
 		f.Counts[st] = 0
 	}
-	q, args := `SELECT batch, category, status FROM assets`, []any{}
+	q, args := `SELECT batch, batches, category, status FROM assets`, []any{}
 	if projectID != "" {
 		q += ` WHERE project_id = ?`
 		args = append(args, projectID)
@@ -459,12 +633,14 @@ func (s *Store) ListAssetFacets(ctx context.Context, projectID string) (AssetFac
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var b, c, st string
-		if err := rows.Scan(&b, &c, &st); err != nil {
+		var b, bs, c, st string
+		if err := rows.Scan(&b, &bs, &c, &st); err != nil {
 			return f, err
 		}
-		if !slices.Contains(f.Batches, b) {
-			f.Batches = append(f.Batches, b)
+		for _, x := range assetBatches(b, bs) {
+			if !slices.Contains(f.Batches, x) {
+				f.Batches = append(f.Batches, x)
+			}
 		}
 		if c != "" && !slices.Contains(f.Categories, c) {
 			f.Categories = append(f.Categories, c)
@@ -499,4 +675,9 @@ func (s *Store) SetAssetStatus(ctx context.Context, id, from, to string) error {
 		_, err := t.ExecContext(ctx, `UPDATE assets SET status = ?, status_at = ?, updated_at = ? WHERE id = ?`, to, at, at, id)
 		return err
 	})
+}
+
+func previewsJSON(ps []AssetPreview) string {
+	b, _ := json.Marshal(ps)
+	return string(b)
 }

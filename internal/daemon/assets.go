@@ -158,7 +158,7 @@ func (q *queue) assetJobsList() []protocol.AssetJob {
 		}
 		var p protocol.AssetPush
 		_ = json.Unmarshal([]byte(raw), &p)
-		j.Batch, j.Items = p.Batch, len(p.Items)
+		j.Batch, j.ByID, j.Items = p.Batch, p.ByID, len(p.Items)
 		out = append(out, j)
 	}
 	return out
@@ -195,7 +195,7 @@ func (d *Daemon) handleAssetPush(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "推送内容无法解析："+err.Error())
 		return
 	}
-	if strings.TrimSpace(p.Batch) == "" {
+	if strings.TrimSpace(p.Batch) == "" && !p.ByID {
 		writeProblem(w, http.StatusBadRequest, "要写批次（--batch），例如 G11e1")
 		return
 	}

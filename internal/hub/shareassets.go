@@ -158,8 +158,10 @@ func guestFacets(list []store.Asset) store.AssetFacets {
 		f.Counts[st] = 0
 	}
 	for _, a := range list {
-		if !slices.Contains(f.Batches, a.Batch) {
-			f.Batches = append(f.Batches, a.Batch)
+		for _, b := range a.Batches {
+			if !slices.Contains(f.Batches, b) {
+				f.Batches = append(f.Batches, b)
+			}
 		}
 		if a.Category != "" && !slices.Contains(f.Categories, a.Category) {
 			f.Categories = append(f.Categories, a.Category)
@@ -419,7 +421,7 @@ func (h *Hub) placeAssetComment(ctx context.Context, c store.ShareComment, as, t
 		}
 		placedAs, result = store.PlacedReview, r.ID
 	case as == store.PlacedVersion:
-		res, err := h.store.PushAssets(ctx, store.NewAssetPush{PushID: "guest:" + c.ID, ProjectID: d.ProjectID, Submitter: guest, Batch: d.Batch, Status: store.AssetPending,
+		res, err := h.store.PushAssets(ctx, store.NewAssetPush{PushID: "guest:" + c.ID, ProjectID: d.ProjectID, Submitter: guest, Batch: d.Batch, ByID: d.UID != "", Status: store.AssetPending,
 			Items: []protocol.AssetItem{{Key: d.Key, Kind: d.Kind, Category: d.Category, Group: d.Group, File: &protocol.AssetFile{ID: c.File.ID, Name: c.File.Name, Size: c.File.Size}}}})
 		if err != nil {
 			h.store.ReleaseShareComment(ctx, c.ID)

@@ -1643,7 +1643,18 @@
         "additionalProperties": false,
         "properties": {
           "batch": {
+            "description": "旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches",
             "type": "string"
+          },
+          "batches": {
+            "description": "素材带过的全部批次（多值）；旧条目是 [batch]",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "category": {
             "type": "string"
@@ -1664,7 +1675,7 @@
             "type": "string"
           },
           "key": {
-            "description": "manifest 的 id；独立的图是文件名去扩展名",
+            "description": "manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid",
             "type": "string"
           },
           "kind": {
@@ -1703,6 +1714,10 @@
             "$ref": "#/components/schemas/AssetSubmitter",
             "description": "最近一次提交素材的人（返工意见送它）"
           },
+          "uid": {
+            "description": "R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空",
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -1719,6 +1734,7 @@
           "project_id",
           "batch",
           "key",
+          "batches",
           "kind",
           "category",
           "status",
@@ -1796,7 +1812,18 @@
             ]
           },
           "batch": {
+            "description": "旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches",
             "type": "string"
+          },
+          "batches": {
+            "description": "素材带过的全部批次（多值）；旧条目是 [batch]",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "category": {
             "type": "string"
@@ -1817,7 +1844,7 @@
             "type": "string"
           },
           "key": {
-            "description": "manifest 的 id；独立的图是文件名去扩展名",
+            "description": "manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid",
             "type": "string"
           },
           "kind": {
@@ -1866,6 +1893,10 @@
             "$ref": "#/components/schemas/AssetSubmitter",
             "description": "最近一次提交素材的人（返工意见送它）"
           },
+          "uid": {
+            "description": "R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空",
+            "type": "string"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -1894,6 +1925,7 @@
           "project_id",
           "batch",
           "key",
+          "batches",
           "kind",
           "category",
           "status",
@@ -1964,6 +1996,10 @@
             "description": "字节数",
             "format": "int64",
             "type": "integer"
+          },
+          "view": {
+            "description": "预览图的机位（R-376：文件名「\u003c名字\u003e__\u003c机位\u003e.png」里的机位），网页按它分组",
+            "type": "string"
           }
         },
         "required": [
@@ -2010,6 +2046,16 @@
       "AssetItem": {
         "additionalProperties": false,
         "properties": {
+          "batches": {
+            "description": "asset.json：这次带上的批次（可多个，并入素材已有的批次，不删旧的）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "budget": {
             "description": "面数预算上限",
             "format": "int64",
@@ -2039,8 +2085,12 @@
             ],
             "type": "string"
           },
+          "license": {
+            "description": "asset.json：许可（CC0、自有……）",
+            "type": "string"
+          },
           "meta": {
-            "description": "manifest 里这一项的原文"
+            "description": "旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样）"
           },
           "pixels": {
             "description": "图的像素尺寸（宽 / 高）",
@@ -2074,10 +2124,17 @@
               "null"
             ]
           },
+          "source": {
+            "description": "asset.json：来源（自制、外包、网址……）",
+            "type": "string"
+          },
           "triangles": {
             "description": "面数（三角形）",
             "format": "int64",
             "type": "integer"
+          },
+          "variants": {
+            "description": "asset.json：具名变体的原文（先原样存下，变体的版本与审核见 R-380）"
           }
         },
         "required": [
@@ -2120,16 +2177,63 @@
         ],
         "type": "object"
       },
+      "AssetPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "boxes": {
+            "description": "改动框：按图片原始尺寸的比例坐标（0～1）",
+            "items": {
+              "$ref": "#/components/schemas/Box"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "截图的一句话标题",
+            "type": "string"
+          },
+          "view": {
+            "description": "机位",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mime",
+          "size"
+        ],
+        "type": "object"
+      },
       "AssetPush": {
         "additionalProperties": false,
         "properties": {
           "batch": {
-            "description": "批次（如 G11e1）",
+            "description": "批次（如 G11e1）；按 id 推送时可空（批次写在每条素材的 batches 里）",
             "type": "string"
           },
           "branch": {
             "description": "素材所在分支",
             "type": "string"
+          },
+          "by_id": {
+            "description": "R-376：按 asset.json 推送，素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，key 就是 id，批次只是元数据；不写是旧的按批次推送",
+            "type": "boolean"
           },
           "commit": {
             "description": "素材所在提交",
@@ -2215,6 +2319,10 @@
         "properties": {
           "batch": {
             "type": "string"
+          },
+          "by_id": {
+            "description": "按 asset.json（素材 id）推送",
+            "type": "boolean"
           },
           "items": {
             "items": {
@@ -2443,6 +2551,16 @@
           "batch": {
             "type": "string"
           },
+          "batches": {
+            "description": "这一版推送时带的批次（R-376；旧条目是 [batch]）",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "branch": {
             "type": "string"
           },
@@ -2465,8 +2583,12 @@
           "id": {
             "type": "string"
           },
+          "license": {
+            "description": "许可（R-376）",
+            "type": "string"
+          },
           "meta": {
-            "description": "manifest 里这一项的原文"
+            "description": "旧 manifest：这一项的原文；asset.json：项目特有字段（原样）"
           },
           "pixels": {
             "description": "像素尺寸（宽 / 高）",
@@ -2482,7 +2604,7 @@
           "previews": {
             "description": "零件的预览图",
             "items": {
-              "$ref": "#/components/schemas/FileRef"
+              "$ref": "#/components/schemas/AssetPreview"
             },
             "type": [
               "array",
@@ -2500,6 +2622,10 @@
               "null"
             ]
           },
+          "source": {
+            "description": "来源（R-376）",
+            "type": "string"
+          },
           "submitter": {
             "$ref": "#/components/schemas/AssetSubmitter",
             "description": "这一版的提交者"
@@ -2507,6 +2633,9 @@
           "triangles": {
             "format": "int64",
             "type": "integer"
+          },
+          "variants": {
+            "description": "asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核）"
           },
           "version": {
             "format": "int64",
@@ -2517,6 +2646,7 @@
           "id",
           "version",
           "batch",
+          "batches",
           "branch",
           "commit",
           "previews",
@@ -15164,6 +15294,16 @@
             }
           },
           {
+            "description": "R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）",
+            "explode": false,
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "description": "R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）",
+              "type": "string"
+            }
+          },
+          {
             "description": "Agent 用：不写 project 时列会话所在项目",
             "explode": false,
             "in": "query",
@@ -15289,10 +15429,32 @@
         "operationId": "agent-get-asset",
         "parameters": [
           {
+            "description": "编号 A-x、素材 ID 或素材 id（如 core:weapon.carbine）",
             "in": "path",
             "name": "ref",
             "required": true,
             "schema": {
+              "description": "编号 A-x、素材 ID 或素材 id（如 core:weapon.carbine）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "项目 ID：按素材 id 找时限定项目",
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "description": "项目 ID：按素材 id 找时限定项目",
+              "type": "string"
+            }
+          },
+          {
+            "description": "不写 project 时按会话所在项目找",
+            "explode": false,
+            "in": "query",
+            "name": "session_key",
+            "schema": {
+              "description": "不写 project 时按会话所在项目找",
               "type": "string"
             }
           }
@@ -15319,6 +15481,7 @@
             "description": "Error"
           }
         },
+        "summary": "一条素材和它的全部版本；ref 是编号 A-x 或素材 id（按 id 时默认在会话所在项目里找）",
         "tags": [
           "agent"
         ]
@@ -17799,6 +17962,16 @@
                 "image",
                 ""
               ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）",
+            "explode": false,
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "description": "R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）",
               "type": "string"
             }
           },

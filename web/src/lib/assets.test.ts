@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, facetsOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, facetsOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -139,4 +139,39 @@ test('审核：撤销期显示、可下的结论、意见去向、前后切换',
   assert.equal(stepQueue(q, 'A-3', 1), null)
   assert.equal(stepQueue(q, 'A-1', -1), null)
   assert.equal(stepQueue(q, 'A-9', 1), 'A-1')
+})
+
+test('按素材 id 推送的素材批次是多值：分面列出全部批次，按任一批次都筛得到；旧条目仍按 batch（R-376）', () => {
+  const byId = mk({ key: 'core:weapon.carbine', uid: 'core:weapon.carbine', batch: '', batches: ['G11e1', 'G12'] })
+  const old = mk({ key: 'wheel' })
+  assert.deepEqual(batchesOf(byId), ['G11e1', 'G12'])
+  assert.deepEqual(batchesOf(old), ['G11e1'])
+  assert.deepEqual(batchesOf({ batch: '', batches: [] }), [])
+  assert.deepEqual(facetsOf([byId, old], 'p1').batches, ['G11e1', 'G12'])
+  const f = { project: 'p1', batch: 'G12', category: '', status: '' }
+  assert.deepEqual(filterAssets([byId, old], f).map((a) => a.key), ['core:weapon.carbine'])
+  assert.equal(filterAssets([byId, old], { ...f, batch: 'G11e1' }).length, 2)
+})
+
+test('预览图按机位分组，机位按出现顺序；旧数据没有机位归在一组（R-376）', () => {
+  const ps = [{ id: '1', view: 'front' }, { id: '2', view: 'side' }, { id: '3', view: 'front' }, { id: '4' }]
+  assert.deepEqual(
+    viewGroups(ps).map((g) => [g.view, g.items.map((x) => x.id)]),
+    [['front', ['1', '3']], ['side', ['2']], ['', ['4']]],
+  )
+})
+
+test('项目字段原样展示，通用字段不重复列出（R-376）', () => {
+  assert.deepEqual(metaRows({ lod: 2, faction: 'red', rig: { bones: 12 }, id: 'x', triangles: 3, empty: '' }), [
+    ['lod', '2'],
+    ['faction', 'red'],
+    ['rig', '{"bones":12}'],
+  ])
+  // budget、size 写成对象时（带项目自己的检查项）照样列出，写成数字 / 数组的已在面数、尺寸里
+  assert.deepEqual(metaRows({ budget: { triangles: 784, max_surfaces: 2 }, size: [1, 2, 3] }), [['budget', '{"triangles":784,"max_surfaces":2}']])
+  assert.deepEqual(variantNames({ default: {}, v2: {} }), ['default', 'v2'])
+  assert.deepEqual(variantNames([{ name: 'desert' }, {}]), ['desert'])
+  assert.deepEqual(variantNames(null), [])
+  assert.deepEqual(metaRows(null), [])
+  assert.deepEqual(metaRows([1, 2]), [])
 })

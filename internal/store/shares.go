@@ -168,7 +168,7 @@ func (s *Store) NormShareItems(ctx context.Context, items []ShareItem, prev ...S
 				err = ErrNotFound
 				break
 			}
-			err = s.db.QueryRowContext(ctx, `SELECT id FROM assets WHERE project_id = ? AND `+col+` = ? LIMIT 1`, pid, name).Scan(new(string))
+			err = s.db.QueryRowContext(ctx, `SELECT a.id FROM assets a WHERE a.project_id = ? AND `+assetScopeCond(col), assetScopeArgs(pid, col, name)...).Scan(new(string))
 		case ShareKindAsset:
 			var d AssetDetail
 			if d, err = s.GetAsset(ctx, ref); err == nil {
@@ -666,7 +666,7 @@ func (s *Store) ResolveShare(ctx context.Context, items []ShareItem) (ShareScope
 		if !it.Auto {
 			continue
 		}
-		rs, err := s.db.QueryContext(ctx, `SELECT id FROM assets WHERE project_id = ? AND `+col+` = ?`, pid, name)
+		rs, err := s.db.QueryContext(ctx, `SELECT a.id FROM assets a WHERE a.project_id = ? AND `+assetScopeCond(col), assetScopeArgs(pid, col, name)...)
 		if err != nil {
 			return sc, err
 		}
@@ -976,4 +976,19 @@ func (s *Store) ShareLinkByID(ctx context.Context, id string) (ShareLink, error)
 		return ShareLink{}, ErrNotFound
 	}
 	return ls[0], nil
+}
+
+// assetScopeCond：分享挂在批次 / 类别上时，哪些素材算在里面（R-376：按素材 id 推送的素材批次是多值，看 batches）。
+func assetScopeCond(col string) string {
+	if col == "batch" {
+		return assetInBatch
+	}
+	return `a.category = ?`
+}
+
+func assetScopeArgs(pid, col, name string) []any {
+	if col == "batch" {
+		return []any{pid, name, name}
+	}
+	return []any{pid, name}
 }
