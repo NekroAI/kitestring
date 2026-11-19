@@ -114,6 +114,11 @@ func TestAssetBatchReview(t *testing.T) {
 		t.Fatal("预检不写入")
 	}
 	e.do(e.owner, "POST", "/api/asset-batches", map[string]any{"filter": map[string]string{"project": "p1"}, "verdict": "rework"}, nil, 400) // 返工要意见
+	var noNote AssetBatchOut
+	e.do(e.owner, "POST", "/api/asset-batches", map[string]any{"filter": map[string]string{"project": "p1", "batch": "S1"}, "verdict": "rework", "dry_run": true}, &noNote, 200) // 预检可以先不写意见
+	if noNote.Count != 2 {
+		t.Fatalf("不写意见也能预检返工：%+v", noNote)
+	}
 	var out AssetBatchOut
 	e.do(e.owner, "POST", "/api/asset-batches", map[string]any{"assets": []string{x.wheel.Code, x.crate.Code, x.other.Code}, "verdict": "rework", "comment": "颜色太亮"}, &out, 200)
 	if out.Count != 3 || out.BatchID == "" || out.Messages != 1 {

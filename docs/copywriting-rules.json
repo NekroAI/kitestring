@@ -98,7 +98,7 @@
     "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk",
     "guest.enter", "guest.toolsAll", "guest.toolsFold", "share.inbox.place", "share.inbox.ignore", "share.inbox.raw", "share.inbox.rewrite", "guest.leave", "guest.send", "guest.toWhole",
     "secret.create", "secret.replace", "secret.revoke", "secret.regrant", "secret.fill", "secret.fillRow", "secret.edit", "secret.reject", "secret.save", "secret.addProject", "secret.addCmd", "secret.addField",
-    "asset.clearFilter", "asset.openOne", "asset.review.mode", "asset.review.exit",
+    "asset.clearFilter", "asset.openOne", "asset.review.mode", "asset.review.exit", "asset.multi.enter", "asset.multi.exit", "asset.multi.clear", "asset.multi.pass", "asset.multi.back", "asset.multi.undo", "asset.multi.undoOk", "asset.reviewers.menu",
     "share.inbox.placeAsset", "share.inbox.takeVersion", "share.inbox.takeAttach", "share.inbox.asRework", "share.inbox.asNote", "guest.upload", "guest.download"
   ],
   "buttonMax": 6,

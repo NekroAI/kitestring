@@ -721,6 +721,63 @@
         ],
         "type": "object"
       },
+      "Agent-review-asset-batchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "description": "素材：编号 A-x、ID 或素材 id；不给时按 filter 选",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "comment": {
+            "description": "共用的意见；返工时必填（或附图）",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "dry_run": {
+            "description": "只预检：返回会改几件、跳过哪些，不写入",
+            "type": "boolean"
+          },
+          "files": {
+            "description": "附图（附件 ID）",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "filter": {
+            "$ref": "#/components/schemas/AssetBatchFilter",
+            "description": "筛选条件：当前筛选结果全选（与 assets 同时给时取交集）"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "verdict": {
+            "description": "approved 通过 / rework 返工",
+            "enum": [
+              "approved",
+              "rework"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key",
+          "verdict"
+        ],
+        "type": "object"
+      },
       "Agent-revoke-arrangementRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1002,6 +1059,19 @@
         "required": [
           "session_key",
           "text"
+        ],
+        "type": "object"
+      },
+      "Agent-undo-asset-batchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
         ],
         "type": "object"
       },
@@ -1662,6 +1732,10 @@
       "Asset": {
         "additionalProperties": false,
         "properties": {
+          "baseline": {
+            "description": "R-393：申请标为已在用、等用户批准的决策 D-x；没有挂着的申请时为空",
+            "type": "string"
+          },
           "batch": {
             "description": "旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches",
             "type": "string"
@@ -1801,6 +1875,244 @@
         ],
         "type": "object"
       },
+      "AssetBaselineInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "description": "申请标为已在用的件数（仍在待审 / 制作中的；已通过、返工中的不申请）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "decision": {
+            "description": "等用户批准的决策 D-x；没有可申请的素材时为空",
+            "type": "string"
+          },
+          "note": {
+            "description": "没有提申请的原因",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "AssetBatch": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/AssetSubmitter"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "count": {
+            "description": "这次改了几件",
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "undone": {
+            "type": "boolean"
+          },
+          "verdict": {
+            "enum": [
+              "approved",
+              "rework"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "verdict",
+          "comment",
+          "count",
+          "author",
+          "created_at",
+          "undone"
+        ],
+        "type": "object"
+      },
+      "AssetBatchFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "batch": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "id": {
+            "description": "素材 id 或编号 A-x；末尾带 * 按前缀查",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "part",
+              "image",
+              ""
+            ],
+            "type": "string"
+          },
+          "project": {
+            "description": "项目 ID（Agent 用时固定为会话所在项目）",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "wip",
+              "pending",
+              "approved",
+              "rework",
+              ""
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AssetBatchIn": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "description": "素材：编号 A-x、ID 或素材 id；不给时按 filter 选",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "comment": {
+            "description": "共用的意见；返工时必填（或附图）",
+            "maxLength": 20000,
+            "type": "string"
+          },
+          "dry_run": {
+            "description": "只预检：返回会改几件、跳过哪些，不写入",
+            "type": "boolean"
+          },
+          "files": {
+            "description": "附图（附件 ID）",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "filter": {
+            "$ref": "#/components/schemas/AssetBatchFilter",
+            "description": "筛选条件：当前筛选结果全选（与 assets 同时给时取交集）"
+          },
+          "verdict": {
+            "description": "approved 通过 / rework 返工",
+            "enum": [
+              "approved",
+              "rework"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "AssetBatchOut": {
+        "additionalProperties": false,
+        "properties": {
+          "assets": {
+            "description": "会改 / 改了的素材编号",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "batch_id": {
+            "description": "这次批量审核的 ID，撤销用",
+            "type": "string"
+          },
+          "count": {
+            "description": "会改（预检）/ 改了的件数",
+            "format": "int64",
+            "type": "integer"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "messages": {
+            "description": "意见合并后送出的条数（每个收件会话一条）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "description": "跳过的素材和原因（已是这个状态、状态不能这样改、预检后变了）",
+            "items": {
+              "$ref": "#/components/schemas/AssetSkip"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "dry_run",
+          "count",
+          "assets",
+          "skipped",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "AssetBatchUndoOut": {
+        "additionalProperties": false,
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/AssetBatch"
+          },
+          "kept": {
+            "description": "之后又有新版本或被改过、没有还原的素材",
+            "items": {
+              "$ref": "#/components/schemas/AssetSkip"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "restored": {
+            "description": "还原了的素材编号",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "batch",
+          "restored",
+          "kept"
+        ],
+        "type": "object"
+      },
       "AssetCountsOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -1830,6 +2142,10 @@
               "array",
               "null"
             ]
+          },
+          "baseline": {
+            "description": "R-393：申请标为已在用、等用户批准的决策 D-x；没有挂着的申请时为空",
+            "type": "string"
           },
           "batch": {
             "description": "旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches",
@@ -2282,6 +2598,10 @@
       "AssetPush": {
         "additionalProperties": false,
         "properties": {
+          "baseline": {
+            "description": "R-393：申请标为已在用（游戏里已经在用的历史素材）：推送后先挂在一条申请上，同时提一条批准类决策给用户，批准后整批记为通过，拒绝则是普通待审",
+            "type": "boolean"
+          },
           "batch": {
             "description": "批次（如 G11e1）；按 id 推送时可空（批次写在每条素材的 batches 里）",
             "type": "string"
@@ -2376,6 +2696,10 @@
       "AssetPushResult": {
         "additionalProperties": false,
         "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/AssetBaselineInfo",
+            "description": "申请标为已在用（--baseline）的结果"
+          },
           "batch": {
             "type": "string"
           },
@@ -2582,6 +2906,49 @@
         "required": [
           "asset",
           "review"
+        ],
+        "type": "object"
+      },
+      "AssetReviewersOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "sessions": {
+            "description": "授权了批量审素材的会话键",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "type": "object"
+      },
+      "AssetSkip": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "status",
+          "why"
         ],
         "type": "object"
       },
@@ -12523,6 +12890,18 @@
         ],
         "type": "object"
       },
+      "Set-asset-reviewerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "allow"
+        ],
+        "type": "object"
+      },
       "Set-role-promptRequest": {
         "additionalProperties": false,
         "properties": {
@@ -14850,6 +15229,16 @@
         ],
         "type": "object"
       },
+      "Undo-asset-batchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_id": {
+            "description": "要撤销的那次（须是最近一次）；不写撤销最近一次",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Update-passkeyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -15422,6 +15811,88 @@
           }
         },
         "summary": "撤销一条当前安排（R-245）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/asset-batches": {
+      "post": {
+        "operationId": "agent-review-asset-batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-review-asset-batchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetBatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "用户授权的会话批量通过 / 返工本项目的素材（ks asset review）；dry_run 只预检",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/asset-batches/undo": {
+      "post": {
+        "operationId": "agent-undo-asset-batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-undo-asset-batchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetBatchUndoOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤销本会话最近一次批量审核",
         "tags": [
           "agent"
         ]
@@ -18253,6 +18724,88 @@
         ]
       }
     },
+    "/api/asset-batches": {
+      "post": {
+        "operationId": "review-asset-batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetBatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetBatchOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "批量通过 / 返工素材（按列表或当前筛选）；dry_run 只预检件数；意见按收件会话合并成一条送达",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/asset-batches/undo": {
+      "post": {
+        "operationId": "undo-asset-batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Undo-asset-batchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetBatchUndoOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "撤销最近一次批量审核：没再被改过的素材还原为审核前的状态，没送达的意见关闭、已送达的补一条「已撤销」",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
     "/api/asset-counts": {
       "get": {
         "operationId": "asset-counts",
@@ -18279,6 +18832,88 @@
           }
         },
         "summary": "全部项目各状态的素材数（侧边栏的待审数）",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/asset-reviewers": {
+      "get": {
+        "operationId": "list-asset-reviewers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetReviewersOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "授权了批量审素材的会话（ks asset review，默认没有）",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/asset-reviewers/{key}": {
+      "put": {
+        "operationId": "set-asset-reviewer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Set-asset-reviewerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetReviewersOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "授权 / 收回会话批量审素材（只限本项目的素材）",
         "tags": [
           "assets"
         ]

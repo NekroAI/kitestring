@@ -305,6 +305,15 @@ export function useAssets() {
   })
 }
 
+// useAssetReviewers（R-393）：授权了批量审素材的会话键（ks asset review，默认没有）。授权变化时 Hub 推送 sessions。
+export function useAssetReviewers() {
+  return useQuery({
+    queryKey: ['sessions', 'asset-reviewers'],
+    queryFn: () => unwrap(api.GET('/api/asset-reviewers')),
+    select: (d) => d.sessions ?? [],
+  })
+}
+
 // normAssetDetail：素材详情的空数组补齐（访客页 R-365 也用）。
 export const normAssetDetail = (d: Schemas['AssetDetail']) => ({
   ...d,

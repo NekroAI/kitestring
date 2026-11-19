@@ -56,6 +56,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/asset-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 用户授权的会话批量通过 / 返工本项目的素材（ks asset review）；dry_run 只预检 */
+        post: operations["agent-review-asset-batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/asset-batches/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销本会话最近一次批量审核 */
+        post: operations["agent-undo-asset-batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/assets": {
         parameters: {
             query?: never;
@@ -968,6 +1002,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/asset-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量通过 / 返工素材（按列表或当前筛选）；dry_run 只预检件数；意见按收件会话合并成一条送达 */
+        post: operations["review-asset-batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/asset-batches/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 撤销最近一次批量审核：没再被改过的素材还原为审核前的状态，没送达的意见关闭、已送达的补一条「已撤销」 */
+        post: operations["undo-asset-batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/asset-counts": {
         parameters: {
             query?: never;
@@ -978,6 +1046,40 @@ export interface paths {
         /** 全部项目各状态的素材数（侧边栏的待审数） */
         get: operations["asset-counts"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/asset-reviewers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 授权了批量审素材的会话（ks asset review，默认没有） */
+        get: operations["list-asset-reviewers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/asset-reviewers/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 授权 / 收回会话批量审素材（只限本项目的素材） */
+        put: operations["set-asset-reviewer"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3073,6 +3175,24 @@ export interface components {
             /** @description 目标状态：ready（草稿 / 已搁置 → 待开始）或 draft（已搁置 → 草稿） */
             to: string;
         };
+        "Agent-review-asset-batchRequest": {
+            /** @description 素材：编号 A-x、ID 或素材 id；不给时按 filter 选 */
+            assets?: string[] | null;
+            /** @description 共用的意见；返工时必填（或附图） */
+            comment?: string;
+            /** @description 只预检：返回会改几件、跳过哪些，不写入 */
+            dry_run?: boolean;
+            /** @description 附图（附件 ID） */
+            files?: string[] | null;
+            /** @description 筛选条件：当前筛选结果全选（与 assets 同时给时取交集） */
+            filter?: components["schemas"]["AssetBatchFilter"];
+            session_key: string;
+            /**
+             * @description approved 通过 / rework 返工
+             * @enum {string}
+             */
+            verdict: "approved" | "rework";
+        };
         "Agent-revoke-arrangementRequest": {
             session_key: string;
         };
@@ -3166,6 +3286,9 @@ export interface components {
             to?: string;
             /** @description 指定收件会话键（tool:id）：本项目没结束的会话，没有身份的也行（R-249）；与 to（身份）同时填时身份要对得上。本项目有多个顾问 / 评审 / 开发时用它点名；不填则发给该身份最近活跃的一个（R-248） */
             to_session?: string;
+        };
+        "Agent-undo-asset-batchRequest": {
+            session_key: string;
         };
         "Agent-update-planRequest": {
             /** @description 不给表示不改目标 */
@@ -3377,6 +3500,8 @@ export interface components {
             session_key: string;
         };
         Asset: {
+            /** @description R-393：申请标为已在用、等用户批准的决策 D-x；没有挂着的申请时为空 */
+            baseline?: string;
             /** @description 旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches */
             batch: string;
             /** @description 素材带过的全部批次（多值）；旧条目是 [batch] */
@@ -3434,6 +3559,86 @@ export interface components {
              */
             version: number;
         };
+        AssetBaselineInfo: {
+            /**
+             * Format: int64
+             * @description 申请标为已在用的件数（仍在待审 / 制作中的；已通过、返工中的不申请）
+             */
+            count: number;
+            /** @description 等用户批准的决策 D-x；没有可申请的素材时为空 */
+            decision?: string;
+            /** @description 没有提申请的原因 */
+            note?: string;
+        };
+        AssetBatch: {
+            author: components["schemas"]["AssetSubmitter"];
+            comment: string;
+            /**
+             * Format: int64
+             * @description 这次改了几件
+             */
+            count: number;
+            created_at: string;
+            id: string;
+            undone: boolean;
+            /** @enum {string} */
+            verdict: "approved" | "rework";
+        };
+        AssetBatchFilter: {
+            batch?: string;
+            category?: string;
+            /** @description 素材 id 或编号 A-x；末尾带 * 按前缀查 */
+            id?: string;
+            /** @enum {string} */
+            kind?: "part" | "image" | "";
+            /** @description 项目 ID（Agent 用时固定为会话所在项目） */
+            project?: string;
+            /** @enum {string} */
+            status?: "wip" | "pending" | "approved" | "rework" | "";
+        };
+        AssetBatchIn: {
+            /** @description 素材：编号 A-x、ID 或素材 id；不给时按 filter 选 */
+            assets?: string[] | null;
+            /** @description 共用的意见；返工时必填（或附图） */
+            comment?: string;
+            /** @description 只预检：返回会改几件、跳过哪些，不写入 */
+            dry_run?: boolean;
+            /** @description 附图（附件 ID） */
+            files?: string[] | null;
+            /** @description 筛选条件：当前筛选结果全选（与 assets 同时给时取交集） */
+            filter?: components["schemas"]["AssetBatchFilter"];
+            /**
+             * @description approved 通过 / rework 返工
+             * @enum {string}
+             */
+            verdict: "approved" | "rework";
+        };
+        AssetBatchOut: {
+            /** @description 会改 / 改了的素材编号 */
+            assets: string[] | null;
+            /** @description 这次批量审核的 ID，撤销用 */
+            batch_id?: string;
+            /**
+             * Format: int64
+             * @description 会改（预检）/ 改了的件数
+             */
+            count: number;
+            dry_run: boolean;
+            /**
+             * Format: int64
+             * @description 意见合并后送出的条数（每个收件会话一条）
+             */
+            messages: number;
+            /** @description 跳过的素材和原因（已是这个状态、状态不能这样改、预检后变了） */
+            skipped: components["schemas"]["AssetSkip"][] | null;
+        };
+        AssetBatchUndoOut: {
+            batch: components["schemas"]["AssetBatch"];
+            /** @description 之后又有新版本或被改过、没有还原的素材 */
+            kept: components["schemas"]["AssetSkip"][] | null;
+            /** @description 还原了的素材编号 */
+            restored: string[] | null;
+        };
         AssetCountsOutBody: {
             /** @description 全部项目各状态的素材数 */
             counts: {
@@ -3443,6 +3648,8 @@ export interface components {
         AssetDetail: {
             /** @description 附件（R-365：访客上传、你收下为附件的文件），新的在前 */
             attachments: components["schemas"]["AssetAttachment"][] | null;
+            /** @description R-393：申请标为已在用、等用户批准的决策 D-x；没有挂着的申请时为空 */
+            baseline?: string;
             /** @description 旧的按批次推送的批次；按素材 id 推送的为空，批次看 batches */
             batch: string;
             /** @description 素材带过的全部批次（多值）；旧条目是 [batch] */
@@ -3608,6 +3815,8 @@ export interface components {
             view?: string;
         };
         AssetPush: {
+            /** @description R-393：申请标为已在用（游戏里已经在用的历史素材）：推送后先挂在一条申请上，同时提一条批准类决策给用户，批准后整批记为通过，拒绝则是普通待审 */
+            baseline?: boolean;
             /** @description 批次（如 G11e1）；按 id 推送时可空（批次写在每条素材的 batches 里） */
             batch: string;
             /** @description 素材所在分支 */
@@ -3648,6 +3857,8 @@ export interface components {
             version: number;
         };
         AssetPushResult: {
+            /** @description 申请标为已在用（--baseline）的结果 */
+            baseline?: components["schemas"]["AssetBaselineInfo"];
             batch: string;
             /** @description 按 asset.json（素材 id）推送 */
             by_id?: boolean;
@@ -3730,6 +3941,16 @@ export interface components {
         AssetReviewOutBody: {
             asset: components["schemas"]["AssetDetail"];
             review: components["schemas"]["AssetReview"];
+        };
+        AssetReviewersOutBody: {
+            /** @description 授权了批量审素材的会话键 */
+            sessions: string[] | null;
+        };
+        AssetSkip: {
+            code: string;
+            name: string;
+            status: string;
+            why: string;
         };
         AssetSubmitter: {
             /**
@@ -7021,6 +7242,9 @@ export interface components {
             rev: number;
             sessions: components["schemas"]["Session"][] | null;
         };
+        "Set-asset-reviewerRequest": {
+            allow: boolean;
+        };
         "Set-role-promptRequest": {
             /** @description 提示词正文（不含固定的身份抬头）；与默认模板一致时等同于恢复默认 */
             body: string;
@@ -7864,6 +8088,10 @@ export interface components {
             /** @description 时间正序 */
             turns: components["schemas"]["Turn"][] | null;
         };
+        "Undo-asset-batchRequest": {
+            /** @description 要撤销的那次（须是最近一次）；不写撤销最近一次 */
+            batch_id?: string;
+        };
         "Update-passkeyRequest": {
             name: string;
         };
@@ -8114,6 +8342,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArrangeOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-review-asset-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-review-asset-batchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetBatchOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-undo-asset-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-undo-asset-batchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetBatchUndoOut"];
                 };
             };
             /** @description Error */
@@ -10033,6 +10327,72 @@ export interface operations {
             };
         };
     };
+    "review-asset-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetBatchIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetBatchOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "undo-asset-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Undo-asset-batchRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetBatchUndoOut"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "asset-counts": {
         parameters: {
             query?: never;
@@ -10049,6 +10409,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetCountsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-asset-reviewers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetReviewersOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-asset-reviewer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Set-asset-reviewerRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetReviewersOutBody"];
                 };
             };
             /** @description Error */

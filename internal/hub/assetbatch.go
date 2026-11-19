@@ -203,7 +203,8 @@ func (h *Hub) reviewAssetBatch(ctx context.Context, in AssetBatchIn, projectID s
 	if in.Verdict != store.AssetApproved && in.Verdict != store.AssetRework {
 		return out, huma.Error400BadRequest("审核结论只能是 approved（通过）或 rework（返工）")
 	}
-	if in.Verdict == store.AssetRework && strings.TrimSpace(in.Comment) == "" && len(in.Files) == 0 {
+	// 预检只核对个数，意见可以还没写（网页先核对个数、再在确认框里写返工意见）
+	if in.Verdict == store.AssetRework && !in.DryRun && strings.TrimSpace(in.Comment) == "" && len(in.Files) == 0 {
 		return out, huma.Error400BadRequest("返工需写明修改意见")
 	}
 	f := in.Filter.store()

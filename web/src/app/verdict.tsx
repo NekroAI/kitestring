@@ -86,6 +86,9 @@ export function usePendingMap() {
   return pending
 }
 
+// pendingEntry：不订阅地读一件事当前的撤销状态（批量审核共用一次提交时，看哪些还没撤销，R-393）。
+export const pendingEntry = (key: string) => pending.get(key)
+
 // usePending：某件事是否在撤销期 / 盖印中（key 例如需求编号 R-12、plan:P-3、stage:P-3:2、dec:D-8、grant:G-2、release:R-12）。
 export function usePending(key: string | undefined) {
   const m = usePendingMap()

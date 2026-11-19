@@ -17,6 +17,8 @@ import { useFillHeight } from './pool'
 import { AnimBar, FrameCtx, type FrameCtxValue, type FrameMark } from './animBar'
 import { createAnimSync, type AnimSync, type Frame } from '../lib/anim'
 import { useAdvance, usePending, usePendingMap } from './verdict'
+import { BaselineChip, BaselineLink, BatchBar, PickBox, ReviewerMenu, SelectButton, SelectCtx, UndoLastBatch, useTileClick, useWallSelect } from './assetBatch'
+import { tileCodes } from '../lib/assetBatch'
 
 // 资源库页（R-351 第 3 步，D-1713 方案 B 的图片墙部分）：按项目浏览会话推送的素材。
 // 图片墙按批次 / 类别 / 状态筛选；点一格在右侧抽屉里看大图、3D（three.js 按需加载）、版本对比；
@@ -25,6 +27,7 @@ import { useAdvance, usePending, usePendingMap } from './verdict'
 // ← → 切换、P 通过、R 返工；下了判断停在这一件，3 秒撤销期走完才翻到下一个待审的（docs/principles.md 第 8 条）。
 //
 // 目录层级（R-394）：左侧目录 / 手机横滑标签按类别 → 细类逐层筛，图片墙按下一层分组，见 app/assetDir.tsx。
+// 批量审核（R-393）：页头「多选」后点选格子（Shift 连选）或全选当前筛选结果，底部操作条一次通过 / 返工，见 app/assetBatch.tsx。
 // URL：?p=项目 ID、?b=批次、?c=类别、?sub=细类、?old=1&ob=批次（按批次（旧）一栏）、?st=状态、?ft=文件类型，?asset=A-x 打开素材抽屉，?cmp=批次/组名 打开并排比较，?rv=1 审片模式。
 
 const Viewer3D = lazy(() => import('./viewer3d'))
@@ -88,6 +91,11 @@ export function AssetsPage() {
   const go = (d: AssetDir) => set(dirParams(d))
   const open = all.find((a) => a.code === params.get('asset'))
   const reset = { b: null, c: null, sub: null, old: null, ob: null, ft: null, st: null, asset: null, cmp: null }
+  // 多选（R-393）：墙上的顺序用于 Shift 连选和「全选」；换项目时退出多选
+  const order = useMemo(() => b.sections.flatMap((s) => tileCodes(s.tiles)), [b.sections])
+  const ws = useWallSelect(order)
+  const exitSelect = ws.exit
+  useEffect(() => exitSelect(), [project]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -117,6 +125,13 @@ export function AssetsPage() {
           </div>
         )}
         <span className="flex-1" />
+        {project && (
+          <div className="flex flex-wrap items-center gap-1">
+            <UndoLastBatch />
+            <ReviewerMenu project={project} />
+            <SelectButton on={ws.api.on} onClick={ws.api.on ? ws.exit : ws.start} />
+          </div>
+        )}
         {project && (
           <Tip content={pendingN ? t.asset.review.modeTip(pendingN) : t.asset.review.noQueue}>
             <span>
@@ -162,7 +177,10 @@ export function AssetsPage() {
                   />
                 </Card>
               ) : (
-                <SectionWall b={b} go={go} active={params.get('asset')} activeGroup={params.get('cmp')} onOpen={(code) => set({ asset: code, cmp: null })} onGroup={(k) => set({ cmp: k, asset: null })} />
+                <SelectCtx.Provider value={ws.api}>
+                  <SectionWall b={b} go={go} active={params.get('asset')} activeGroup={params.get('cmp')} onOpen={(code) => set({ asset: code, cmp: null })} onGroup={(k) => set({ cmp: k, asset: null })} />
+                  {ws.api.on && <BatchBar sel={ws.sel} list={all} total={order.length} onAll={ws.all} onClear={ws.clear} onExit={ws.exit} />}
+                </SelectCtx.Provider>
               )}
             </DirBrowser>
           )}
@@ -430,13 +448,17 @@ export function FileTypeTags({ tags, className }: { tags: FileTag[]; className?:
 // AssetCard：一件素材。外层留给多选（R-393）的勾选框，不嵌进按钮里；有几个变体在右上角标出（变体在抽屉里列出，D-2114）。
 export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpen: () => void }) {
   const nv = variantCount(a)
+  const tap = useTileClick([a.code], onOpen)
   return (
-    <div className="relative min-w-0" data-asset-tile={a.code}>
-      <button onClick={onOpen} className={cx(cardCls(active), 'w-full')} data-asset={a.code}>
+    <div className="group/tile relative min-w-0" data-asset-tile={a.code}>
+      <button onClick={tap.onClick} className={cx(cardCls(active || tap.picked), 'w-full')} data-asset={a.code}>
         <AssetCover a={a} v={a.latest} className="h-[164px] w-full shrink-0" />
-        <AssetBadge status={a.status} code={a.code} className="absolute top-2 left-2 shadow-xs" />
+        <span className="absolute top-2 left-2 flex flex-col items-start gap-1">
+          <AssetBadge status={a.status} code={a.code} className="shadow-xs" />
+          <BaselineChip code={a.baseline} />
+        </span>
         {nv > 1 && (
-          <span className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-black/50 px-1.5 text-[11px] leading-[20px] text-white" data-variants={nv}>
+          <span className={cx('absolute top-2 flex items-center gap-1 rounded-md bg-black/50 px-1.5 text-[11px] leading-[20px] text-white', tap.pickable ? 'right-10' : 'right-2')} data-variants={nv}>
             <Layers className="size-3" />
             {t.asset.dir.variants(nv)}
           </span>
@@ -449,6 +471,7 @@ export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean
           <FileTypeTags tags={fileTagsOf(a)} className="mt-1" />
         </div>
       </button>
+      <PickBox codes={[a.code]} name={assetName(a)} />
     </div>
   )
 }
@@ -457,26 +480,31 @@ export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { 
   const shown = tile.assets.slice(0, 3)
   const pend = usePendingMap()
   const st = groupStatus(tile.assets.map((a) => ({ status: pendingStatus(a.status, pend.get(reviewKey(a.code))?.act) })))
+  const codes = tile.assets.map((a) => a.code)
+  const tap = useTileClick(codes, onOpen)
   return (
-    <button onClick={onOpen} className={cardCls(active)} data-group={tile.key}>
-      <div className="flex h-[164px] w-full shrink-0 gap-px bg-line">
-        {shown.map((a) => (
-          <div key={a.id} className="relative min-w-0 flex-1">
-            <AssetCover a={a} v={a.latest} tag={false} className="h-full w-full" />
-            <span className="absolute bottom-1.5 left-1.5 rounded bg-black/55 px-1.5 text-[11px] font-semibold text-white">{candidateLabel(a)}</span>
-          </div>
-        ))}
-      </div>
-      <AssetBadge status={st} className="absolute top-2 left-2 shadow-xs" />
-      <Columns2 className="absolute top-2 right-2 size-6 rounded-md bg-black/45 p-1 text-white" />
-      <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
-        <div className="truncate text-sm font-medium text-fg" title={tile.group}>
-          {tile.group}
+    <div className="group/tile relative min-w-0" data-group-tile={tile.key}>
+      <button onClick={tap.onClick} className={cx(cardCls(active || tap.picked), 'w-full')} data-group={tile.key}>
+        <div className="flex h-[164px] w-full shrink-0 gap-px bg-line">
+          {shown.map((a) => (
+            <div key={a.id} className="relative min-w-0 flex-1">
+              <AssetCover a={a} v={a.latest} tag={false} className="h-full w-full" />
+              <span className="absolute bottom-1.5 left-1.5 rounded bg-black/55 px-1.5 text-[11px] font-semibold text-white">{candidateLabel(a)}</span>
+            </div>
+          ))}
         </div>
-        <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(tile.batch, tile.assets[0].category, t.asset.candidates(tile.assets.map(candidateLabel)))}</div>
-        <FileTypeTags tags={uniqTags(tile.assets.flatMap(fileTagsOf))} className="mt-1" />
-      </div>
-    </button>
+        <AssetBadge status={st} className="absolute top-2 left-2 shadow-xs" />
+        <Columns2 className={cx('absolute top-2 size-6 rounded-md bg-black/45 p-1 text-white', tap.pickable ? 'right-10' : 'right-2')} />
+        <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
+          <div className="truncate text-sm font-medium text-fg" title={tile.group}>
+            {tile.group}
+          </div>
+          <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(tile.batch, tile.assets[0].category, t.asset.candidates(tile.assets.map(candidateLabel)))}</div>
+          <FileTypeTags tags={uniqTags(tile.assets.flatMap(fileTagsOf))} className="mt-1" />
+        </div>
+      </button>
+      <PickBox codes={codes} name={tile.group} />
+    </div>
   )
 }
 
@@ -921,6 +949,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
         </div>
         <div className="mt-1 text-[13px] text-fg-3">{metaLine(a.code, t.asset.ver(a.version), relTime(a.updated_at, now))}</div>
       </div>
+      <BaselineLink code={a.baseline} />
       <AssetBadge status={a.status as AssetStatus} code={a.code} className="mt-1" />
       {!onStage && (
         <Button variant="ghost" size="icon-sm" aria-label={t.common.close} onClick={onClose} className="max-lg:hidden">

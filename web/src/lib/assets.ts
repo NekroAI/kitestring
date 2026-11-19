@@ -39,6 +39,7 @@ export type AssetLite = {
   version: number
   updated_at: string
   latest?: VersionLite | null
+  baseline?: string // R-393：推送时申请标为已在用、等你批准的决策 D-x
 }
 
 export type AssetFilter = { project: string; batch: string; category: string; status: string; ftype?: string }
@@ -376,9 +377,10 @@ export const overBudget = (n?: number, budget?: number) => !!n && !!budget && n 
 export const fmtPixels = (p?: number[] | null) => (p && p.length >= 2 ? `${p[0]} × ${p[1]}` : '')
 
 // reviewQueue（给第 4 步的审片模式用）：当前筛选下待审的素材，按图片墙顺序；同组候选按组内顺序展开。
+// 申请标为已在用的（R-393）等你批准那条决策，不逐个审，不进队列。
 export function reviewQueue(tiles: WallTile[]): string[] {
   const out: string[] = []
-  for (const t of tiles) for (const a of t.type === 'one' ? [t.asset] : t.assets) if (a.status === 'pending') out.push(a.code)
+  for (const t of tiles) for (const a of t.type === 'one' ? [t.asset] : t.assets) if (a.status === 'pending' && !a.baseline) out.push(a.code)
   return out
 }
 

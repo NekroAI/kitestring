@@ -69,6 +69,13 @@ export function useActions() {
     // 资源库的审核（R-351）：version / from 是审核时看到的最新版本和状态，变了 Hub 返回 409
     reviewAsset: (code: string, body: { verdict: 'approved' | 'rework'; comment?: string; files?: string[]; version?: number; from?: 'wip' | 'pending' | 'approved' | 'rework'; frame?: { anim: string; t: number; v: number } }) =>
       send(() => unwrap(api.POST('/api/assets/{ref}/review', { params: { path: { ref: code } }, body })), ['assets', 'decisions', 'sessions'], fail.reviewAsset(body.verdict === 'approved' ? t.verdict.pass('asset') : t.verdict.back('asset'), code)),
+    // 批量审核（R-393）：dry_run 只预检个数和跳过的，不写入；意见按收件会话合并成一条送达
+    reviewAssetBatch: (body: { assets: string[]; verdict: 'approved' | 'rework'; comment?: string; dry_run?: boolean }) =>
+      send(() => unwrap(api.POST('/api/asset-batches', { body })), body.dry_run ? [] : ['assets', 'decisions', 'sessions'], fail.reviewAssetBatch(body.verdict === 'approved' ? t.verdict.pass('asset') : t.verdict.back('asset'), body.assets.length)),
+    undoAssetBatch: (batchId: string) =>
+      run(() => unwrap(api.POST('/api/asset-batches/undo', { body: { batch_id: batchId } })), ['assets', 'decisions', 'sessions'], fail.undoAssetBatch),
+    setAssetReviewer: (key: string, allow: boolean) =>
+      run(() => unwrap(api.PUT('/api/asset-reviewers/{key}', { params: { path: { key } }, body: { allow } })), ['sessions'], allow ? fail.allowAssetReviewer : fail.denyAssetReviewer),
     note: (ref: string, comment: string, files: string[]) =>
       send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions'], fail.note(ref)),
     assign: (ref: string, sessionKey: string, comment = '') =>

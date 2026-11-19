@@ -60,7 +60,7 @@ agent 调用：
   commit list|link|ci ...   需求关联的提交与 CI（R-156）：标题末尾写（R-x）的提交自动关联；link 手动关联，ci 上报 CI 结果（只记录，不改仓库）
   secret request|amend|list|run|write ... 凭据（R-295）：request 申请（用户在网页上填值并授权）；amend 申请修改授权；run <编号 S-x> -- <命令> 把值作为这条命令的环境变量运行（命令里写编号，ks secret list 看编号）；
                                  write 写入磁盘（要单独授权）；没有打印明文的命令，不要再让用户在终端里输入凭据（ks secret help 看用法）
-  asset push|list|summary|get|queue|help ...  资源库（R-351、R-376）：push 按 asset.json 推送（素材 id 为主键，推送前本地逐件校验，--dry-run 只校验），旧的 manifest 按批次推送仍可用；
+  asset push|list|summary|get|review|queue|help ...  资源库（R-351、R-376、R-393）：push 按 asset.json 推送（素材 id 为主键，推送前本地逐件校验，--dry-run 只校验），旧的 manifest 按批次推送仍可用；
                                  重推有变记新版本、未连接 Hub 时排队补传；summary 先看统计、list / get 按 id、类别、批次、状态查（默认最多 50 条，别整表拉 --json；ks asset help 看用法和 asset.json 写法）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team sessions [--role 身份|none] [--all-projects] [--all] [--json]
