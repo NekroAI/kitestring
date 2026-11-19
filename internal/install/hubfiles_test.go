@@ -19,7 +19,7 @@ func TestParseServiceArgvRoundTrip(t *testing.T) {
 		{"/bin/ks", "hub", "serve", "--files-dir", `/a/"q"\b`},
 	}
 	for _, argv := range cases {
-		if got := parseServiceArgv("darwin", plistContent("x.hub", argv, "/tmp/hub.log")); !slices.Equal(got, argv) {
+		if got := parseServiceArgv("darwin", plistContent("x.hub", argv, "/tmp/hub.log", true)); !slices.Equal(got, argv) {
 			t.Errorf("plist：%q -> %q", argv, got)
 		}
 		if got := parseServiceArgv("linux", unitContent("hub", argv)); !slices.Equal(got, argv) {
@@ -38,7 +38,7 @@ func writeHubConf(t *testing.T, goos, home string, argv []string) {
 	var data []byte
 	switch goos {
 	case "darwin":
-		data = []byte(plistContent(launchLabel+".hub", argv, "/tmp/hub.log"))
+		data = []byte(plistContent(launchLabel+".hub", argv, "/tmp/hub.log", true))
 	case "linux":
 		data = []byte(unitContent("hub", argv))
 	case "windows":

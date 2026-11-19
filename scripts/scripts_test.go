@@ -189,3 +189,34 @@ func TestMigrateStorage(t *testing.T) {
 		t.Fatalf("旧目录还在")
 	}
 }
+
+// R-382：hub 的 plist 缺 ProcessType 时，dry-run 说明会先备份再补上、hub 改用 bootout + bootstrap 重启；已有的不动，照旧 kickstart
+func TestDeployHubPlistProcessType(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("只在 macOS 上补 plist")
+	}
+	home := t.TempDir()
+	plist := filepath.Join(t.TempDir(), "ai.nekro.kitestring.hub.plist")
+	write := func(extra string) {
+		c := "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\">\n<dict>\n\t<key>Label</key>\n\t<string>ai.nekro.kitestring.hub</string>\n" + extra + "</dict>\n</plist>\n"
+		if err := os.WriteFile(plist, []byte(c), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("")
+	out, code := runScript(t, deployEnv(t, home, "KS_HUB_PLIST="+plist), "deploy.sh", "--dry-run")
+	if code != 0 || !strings.Contains(out, "补 ProcessType Interactive") || !strings.Contains(out, "hub-plist-") ||
+		!strings.Contains(out, "bootout gui/0/ai.nekro.kitestring.hub") || !strings.Contains(out, "bootstrap gui/0 "+plist) ||
+		strings.Contains(out, "kickstart -k gui/0/ai.nekro.kitestring.hub\n") {
+		t.Fatalf("缺 ProcessType 时应备份、补上并 bootout + bootstrap（退出码 %d）：%s", code, out)
+	}
+	if b, _ := os.ReadFile(plist); strings.Contains(string(b), "ProcessType") {
+		t.Fatal("dry-run 不该改 plist")
+	}
+	write("\t<key>ProcessType</key>\n\t<string>Interactive</string>\n")
+	out, code = runScript(t, deployEnv(t, home, "KS_HUB_PLIST="+plist), "deploy.sh", "--dry-run")
+	if code != 0 || !strings.Contains(out, "hub 的 plist 不用改") || strings.Contains(out, "bootout") ||
+		!strings.Contains(out, "kickstart -k gui/0/ai.nekro.kitestring.hub") {
+		t.Fatalf("已有 ProcessType 时不动、照旧 kickstart（退出码 %d）：%s", code, out)
+	}
+}

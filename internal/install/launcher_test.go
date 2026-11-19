@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -20,7 +21,7 @@ func TestHubArgvWithLauncher(t *testing.T) {
 	if !slices.Equal(argv, want) {
 		t.Fatalf("%v", argv)
 	}
-	plist := plistContent(launchLabel+".hub", argv, "/u/.kitestring/logs/hub.log")
+	plist := plistContent(launchLabel+".hub", argv, "/u/.kitestring/logs/hub.log", true)
 	if got := parseServiceArgv("darwin", plist); !slices.Equal(got, want) {
 		t.Fatalf("plist 里的启动参数：%v", got)
 	}
@@ -227,5 +228,31 @@ func TestLaunchdWritesLauncherPlist(t *testing.T) {
 	}
 	if got := parseServiceArgv("darwin", string(b)); len(got) < 2 || got[0] != o.HubLauncher || got[1] != "/u/ks" {
 		t.Fatalf("%v", got)
+	}
+}
+
+// R-382：Hub 的 plist 带 ProcessType Interactive，后台服务（daemon）的不带；有 plutil 时核对格式合法。
+func TestPlistProcessType(t *testing.T) {
+	hub := plistContent(launchLabel+".hub", []string{"/u/ks", "hub", "serve"}, "/u/hub.log", true)
+	if !strings.Contains(hub, "<key>ProcessType</key>\n\t<string>Interactive</string>") {
+		t.Fatalf("Hub 的 plist 应带 ProcessType Interactive：\n%s", hub)
+	}
+	daemon := plistContent(launchLabel+".daemon", []string{"/u/ks", "daemon"}, "/u/daemon.log", false)
+	if strings.Contains(daemon, "ProcessType") {
+		t.Fatalf("后台服务的 plist 不应带 ProcessType：\n%s", daemon)
+	}
+	if got := parseServiceArgv("darwin", hub); !slices.Equal(got, []string{"/u/ks", "hub", "serve"}) {
+		t.Fatalf("加了 ProcessType 后仍应读回启动参数：%v", got)
+	}
+	plutil, err := exec.LookPath("plutil")
+	if err != nil {
+		return
+	}
+	for _, c := range []string{hub, daemon} {
+		p := filepath.Join(t.TempDir(), "x.plist")
+		os.WriteFile(p, []byte(c), 0o644)
+		if out, err := exec.Command(plutil, "-lint", p).CombinedOutput(); err != nil {
+			t.Fatalf("plist 格式不对：%v %s", err, out)
+		}
 	}
 }

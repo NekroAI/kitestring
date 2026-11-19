@@ -5,13 +5,18 @@ LDFLAGS := -s -w -X github.com/NekroAI/kitestring/internal/version.Version=$(VER
 
 .PHONY: build test vet clean deploy
 
+# 构建和测试降优先级（R-382）：本机的 Hub 和全量测试 / 构建抢 CPU 时网页接口会慢到几秒，
+# 所以 go build / go test 用 nice -n 10，测试再限 -p 4（同时最多 4 个包）。要全速跑时：make test NICE= GOTEST_P=
+NICE     ?= nice -n 10
+GOTEST_P ?= -p 4
+
 # bin/ks-launcher 是 Hub 的固定启动器（R-354，macOS 用）：不带版本号，内容只随源码和 Go 版本变；装好后部署不替换它
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ks ./cmd/ks
-	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o bin/ks-launcher ./cmd/ks-launcher
+	CGO_ENABLED=0 $(NICE) go build -trimpath -ldflags "$(LDFLAGS)" -o bin/ks ./cmd/ks
+	CGO_ENABLED=0 $(NICE) go build -trimpath -ldflags "-s -w" -o bin/ks-launcher ./cmd/ks-launcher
 
 test:
-	go test ./...
+	$(NICE) go test $(GOTEST_P) ./...
 
 vet:
 	go vet ./...

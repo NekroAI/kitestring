@@ -19,7 +19,7 @@
 #   KS_KEEP_BACKUPS   备份目录里 ks-*、hub-*.db、dsh-plugin-* 各保留最近几份，默认 10
 #   KS_VERIFY_TIMEOUT 部署后等待服务就绪的秒数，默认 30
 #   KS_LAUNCHER       Hub 的固定启动器，默认 $KS_HOME/bin/ks-launcher（只用于 macOS，见下面「启动器」）
-#   KS_HUB_PLIST      hub 服务的 plist，默认 ~/Library/LaunchAgents/$LAUNCHD_HUB.plist（只读，用来提示是否已经经启动器运行）
+#   KS_HUB_PLIST      hub 服务的 plist，默认 ~/Library/LaunchAgents/$LAUNCHD_HUB.plist（用来提示是否已经经启动器运行；缺 ProcessType 时补上，见下面「Hub 的 ProcessType」）
 #
 # 备份范围：只备份程序（ks）、DSH 插件和数据库（hub.db），不备份附件。
 # 附件（附件、原型包、缩略图）默认在 $KS_HOME/files；Hub 服务用 --files-dir 或 KS_FILES_DIR
@@ -36,6 +36,11 @@
 # 启动器（R-354，macOS）：Hub 服务经固定启动器 $KS_HOME/bin/ks-launcher 运行，macOS 的访问授权（外置硬盘）记在它上面。
 # 部署在替换程序之前用 scripts/install-launcher.sh 安装（没有时）和核对（可执行）它，绝不替换已有的那份，
 # 内容和新构建的不同也只提示——替换后授权失效，要在系统设置里重新允许。见 docs/install.zh-CN.md「Hub 的启动器」。
+#
+# Hub 的 ProcessType（R-382，macOS）：ks install 生成的 hub plist 带 ProcessType Interactive，让 Hub 和全量测试 / 构建
+# 抢 CPU 时仍按前台应用调度。之前装的 plist 没有这一项时，部署在替换程序之后补上（先备份到备份目录 hub-plist-<时间>.plist），
+# 这次 hub 改用 bootout + bootstrap 重启（kickstart 不重读 plist），bootstrap 报 5 / 37 时重试（R-367）；
+# 回滚时连 plist 一起恢复。已有 ProcessType 的不动，照旧 kickstart。
 set -euo pipefail
 
 DRY=0
@@ -89,6 +94,8 @@ PLUGIN_REPLACED=0
 WT=""
 HAD_OLD=0
 REPLACED=0
+HUB_PLIST_BACKUP="$BACKUP_DIR/hub-plist-$TS.plist"
+PLIST_PATCHED=0
 STEP="初始化"
 
 log() { printf '[deploy] %s\n' "$*"; }
@@ -108,8 +115,41 @@ cleanup() {
 }
 
 restart_services() {
-  run "$KS_LAUNCHCTL" kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_HUB"
+  if [ "$PLIST_PATCHED" = 1 ]; then
+    reload_hub
+  else
+    run "$KS_LAUNCHCTL" kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_HUB"
+  fi
   run "$KS_LAUNCHCTL" kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_DAEMON"
+}
+
+# reload_hub：plist 改过后让 launchd 重读——bootout，等它卸载完，再 bootstrap；报 5 / 37（上一份还没卸载完）时重试，
+# 与 ks install 的 bootstrap 一致（R-367）
+reload_hub() {
+  local svc="$LAUNCHD_PREFIX/$LAUNCHD_HUB" i rc=0
+  run "$KS_LAUNCHCTL" bootout "$svc" || true
+  if [ "$DRY" != 1 ]; then
+    for i in $(seq 1 20); do
+      "$KS_LAUNCHCTL" print "$svc" >/dev/null 2>&1 || break
+      sleep 0.5
+    done
+  fi
+  for i in 1 2 3 4 5; do
+    rc=0
+    run "$KS_LAUNCHCTL" bootstrap "$LAUNCHD_PREFIX" "$KS_HUB_PLIST" || rc=$?
+    [ "$rc" = 0 ] && return 0
+    case "$rc" in
+      5 | 37) log "launchctl bootstrap 退出码 ${rc}，1 秒后重试（第 $i 次）"; sleep 1 ;;
+      *) break ;;
+    esac
+  done
+  log "launchctl bootstrap $LAUNCHD_PREFIX $KS_HUB_PLIST 失败（退出码 ${rc}）"
+  return "$rc"
+}
+
+# hub_plist_needs_process_type：macOS、plist 存在且还没有 ProcessType 时为真
+hub_plist_needs_process_type() {
+  [ "$(uname -s)" = Darwin ] && [ -f "$KS_HUB_PLIST" ] && ! grep -q '<key>ProcessType</key>' "$KS_HUB_PLIST"
 }
 
 # verify <期望提交>：核对版本、首页脚本、daemon 连接；失败时在 STEP 里写明哪一步，并返回非零
@@ -170,9 +210,17 @@ rollback_plugin() {
   fi
 }
 
+# rollback_plist：补过 ProcessType 的 hub plist 恢复成部署前的那份（restart_services 随后用 bootout + bootstrap 重读）
+rollback_plist() {
+  [ "$PLIST_PATCHED" = 1 ] || return 0
+  cp "$HUB_PLIST_BACKUP" "$KS_HUB_PLIST"
+  log "已恢复 hub 的 plist $HUB_PLIST_BACKUP -> $KS_HUB_PLIST"
+}
+
 rollback() {
   log "开始回滚"
   rollback_plugin || log "恢复 DSH 插件副本失败，请人工处理：$PLUGIN_BACKUP"
+  rollback_plist || log "恢复 hub 的 plist 失败，请人工处理：$HUB_PLIST_BACKUP"
   if [ "$HAD_OLD" = 1 ] && [ -f "$ROLLBACK_BIN" ]; then
     rm -f "$KS_BIN"
     cp "$ROLLBACK_BIN" "$KS_BIN"
@@ -256,7 +304,8 @@ STEP="构建前端（pnpm install --frozen-lockfile && pnpm build）"
 if [ "$DRY" = 1 ]; then
   log "[dry-run] cd $BUILD/web && pnpm install --frozen-lockfile && pnpm build"
 else
-  (cd "$BUILD/web" && pnpm install --frozen-lockfile && pnpm build)
+  # 构建降优先级（R-382），少和在跑的 Hub 抢 CPU；后端的 make build 里也是 nice
+  (cd "$BUILD/web" && pnpm install --frozen-lockfile && nice -n 10 pnpm build)
 fi
 STEP="构建后端（make build）"
 if [ "$DRY" = 1 ]; then
@@ -352,6 +401,22 @@ else
   PLUGIN_REPLACED=1
   mv "$PLUGIN_DIR.new" "$PLUGIN_DIR"
   log "DSH 插件副本：$PLUGIN_DIR"
+fi
+# Hub 的 ProcessType（R-382）：缺这一项时先备份再补上，已有就不动
+STEP="给 hub 的 plist 补 ProcessType Interactive"
+if hub_plist_needs_process_type; then
+  if [ "$DRY" = 1 ]; then
+    log "[dry-run] 备份 $KS_HUB_PLIST -> ${HUB_PLIST_BACKUP}，补 ProcessType Interactive；hub 这次用 bootout + bootstrap 重启"
+  else
+    cp "$KS_HUB_PLIST" "$HUB_PLIST_BACKUP"
+    PLIST_PATCHED=1
+    /usr/libexec/PlistBuddy -c "Add :ProcessType string Interactive" "$KS_HUB_PLIST"
+    plutil -lint "$KS_HUB_PLIST" >/dev/null
+    log "hub 的 plist 已补 ProcessType Interactive（原来的备份在 ${HUB_PLIST_BACKUP}）"
+  fi
+  PLIST_PATCHED=1
+else
+  log "hub 的 plist 不用改（已有 ProcessType、不是 macOS 或没有 ${KS_HUB_PLIST}）"
 fi
 STEP="重启 hub 和 daemon"
 restart_services

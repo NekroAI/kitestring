@@ -533,7 +533,7 @@ func launchd(o Options, home, role string, argv []string, remove bool) error {
 	if !o.DryRun {
 		_ = os.MkdirAll(logDir, 0o700)
 	}
-	plist := plistContent(label, argv, filepath.Join(logDir, role+".log"))
+	plist := plistContent(label, argv, filepath.Join(logDir, role+".log"), role == "hub")
 	if err := writeFile(o, path, []byte(plist), 0o644); err != nil {
 		return err
 	}
@@ -545,10 +545,17 @@ func launchd(o Options, home, role string, argv []string, remove bool) error {
 }
 
 // plistContent 是 launchd 服务定义（parseServiceArgv 据此读回启动参数）。
-func plistContent(label string, argv []string, logFile string) string {
+// interactive 为 true 时（Hub）加 ProcessType Interactive（R-382）：本机跑全量测试、构建时 Hub 和它们抢 CPU，
+// 网页接口会慢到几秒；Interactive 让 launchd 按前台应用对待它、不加资源限制。不用 Nice -5：负的 nice 要 root，
+// 用户级服务设了也不一定生效。scripts/deploy.sh 会给已装好的 plist 补上这一项（plistProcessType 要和这里一致）。
+func plistContent(label string, argv []string, logFile string, interactive bool) string {
 	var args strings.Builder
 	for _, a := range argv {
 		fmt.Fprintf(&args, "\t\t<string>%s</string>\n", xmlEscape(a))
+	}
+	processType := ""
+	if interactive {
+		processType = "\t<key>ProcessType</key>\n\t<string>" + plistProcessType + "</string>\n"
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -568,14 +575,17 @@ func plistContent(label string, argv []string, logFile string) string {
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>StandardOutPath</key>
+%s	<key>StandardOutPath</key>
 	<string>%s</string>
 	<key>StandardErrorPath</key>
 	<string>%s</string>
 </dict>
 </plist>
-`, label, args.String(), logFile, logFile)
+`, label, args.String(), processType, logFile, logFile)
 }
+
+// plistProcessType 是 Hub 服务的 launchd ProcessType（R-382），见 plistContent。
+const plistProcessType = "Interactive"
 
 func xmlEscape(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
