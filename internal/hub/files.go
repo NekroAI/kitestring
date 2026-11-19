@@ -63,7 +63,7 @@ func fileMime(name string, head []byte) string {
 	return m
 }
 
-// SetFilesDir 设置附件存放目录。
+// SetFilesDir 设置附件存放目录（默认目录：不存在时自动创建）。指定外置目录用 ConfigureFilesDir。
 func (h *Hub) SetFilesDir(dir string) { h.filesDir = dir }
 
 func (h *Hub) filePath(id string) string { return filepath.Join(h.filesDir, id) }
@@ -71,8 +71,9 @@ func (h *Hub) filePath(id string) string { return filepath.Join(h.filesDir, id) 
 // handleUpload 接收 multipart 字段 file，返回 FileRef。
 func (h *Hub) handleUpload(uploader func(*http.Request) string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if h.filesDir == "" {
-			writeErr(w, http.StatusServiceUnavailable, "未配置附件目录")
+		// 先查目录再收文件（R-353）：外置硬盘没挂上时直接拒收，不往系统盘写
+		if err := h.checkFiles(); err != nil {
+			writeErr(w, http.StatusServiceUnavailable, "无法上传："+err.Error())
 			return
 		}
 		set, err := h.Settings(r.Context())
@@ -93,10 +94,6 @@ func (h *Hub) handleUpload(uploader func(*http.Request) string) http.HandlerFunc
 			return
 		}
 		defer f.Close()
-		if err := os.MkdirAll(h.filesDir, 0o700); err != nil {
-			writeErr(w, http.StatusInternalServerError, err.Error())
-			return
-		}
 		tmp, err := os.CreateTemp(h.filesDir, "upload-*")
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
@@ -159,7 +156,7 @@ func (h *Hub) handleDownload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	path, ctype := h.filePath(ref.ID), ref.Mime
+	path, ctype := h.readPath(ref.ID), ref.Mime
 	// ?w=480 要缩小版（R-246）；生成不了就回落原图
 	if tw := thumbWidth(r.URL.Query().Get("w")); tw > 0 && !r.URL.Query().Has("download") {
 		if tp, tt, ok := h.thumbFile(ref.ID, ref.Mime, tw); ok {
@@ -168,6 +165,10 @@ func (h *Hub) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := os.Open(path)
 	if err != nil {
+		if cerr := h.checkFiles(); cerr != nil {
+			writeErr(w, http.StatusServiceUnavailable, "无法读取附件："+cerr.Error())
+			return
+		}
 		writeErr(w, http.StatusNotFound, "附件文件丢失")
 		return
 	}

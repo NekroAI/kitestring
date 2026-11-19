@@ -1143,6 +1143,7 @@ func (h *Hub) registerWeb(api huma.API) {
 		})
 
 	// 设置
+	h.registerStorage(api)
 	huma.Register(api, huma.Operation{OperationID: "get-settings", Method: http.MethodGet, Path: "/api/settings", Tags: tag("settings")},
 		func(ctx context.Context, _ *empty) (*settingsOut, error) { return h.settingsView(ctx) })
 	huma.Register(api, huma.Operation{OperationID: "update-settings", Method: http.MethodPut, Path: "/api/settings", Tags: tag("settings")},

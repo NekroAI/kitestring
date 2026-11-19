@@ -29,6 +29,7 @@ test('文件块的图标、类型、大小', () => {
   assert.equal(fmtSize(512), '512 B')
   assert.equal(fmtSize(1536), '1.5 KB')
   assert.equal(fmtSize(3 * 1024 * 1024), '3.0 MB')
+  assert.equal(fmtSize(1.5 * 1024 * 1024 * 1024), '1.5 GB')
 })
 
 test('上传上限按类型取', () => {

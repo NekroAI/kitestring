@@ -17,6 +17,11 @@
 #   KS_EXPECT_COMMIT  部署后核对用的期望提交号，默认取构建目录的 HEAD（试跑造失败用）
 #   KS_KEEP_BACKUPS   $KS_HOME/backups 里 ks-* 和 hub-*.db 各保留最近几份，默认 10
 #   KS_VERIFY_TIMEOUT 部署后等待服务就绪的秒数，默认 30
+#
+# 备份范围：只备份程序（ks）、DSH 插件和数据库（hub.db），不备份附件。
+# 附件（附件、原型包、缩略图）默认在 $KS_HOME/files；Hub 服务用 --files-dir 或 KS_FILES_DIR
+# 指定了别的目录（如外置硬盘，见 docs/install.zh-CN.md「附件目录」）时在那个目录。两种情况都不在部署备份里，需要自行备份。
+# 部署不读写附件目录；外置硬盘没挂上时 Hub 照常启动、核对照常通过，只是拒收上传（设置页显示「存储不可用」）。
 set -euo pipefail
 
 DRY=0
@@ -24,7 +29,7 @@ TARGET=""
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
-    -h | --help) sed -n '2,17p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,24p' "$0"; exit 0 ;;
     -*) echo "未知参数：$a" >&2; exit 2 ;;
     *) TARGET="$a" ;;
   esac

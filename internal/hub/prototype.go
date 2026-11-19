@@ -74,8 +74,8 @@ type protoUploadOut struct {
 
 // handleProtoUpload 接收原型包：multipart 字段 file（zip）、title、entry、cover（封面附件 ID）、requirement、version_of、session_key。
 func (h *Hub) handleProtoUpload(w http.ResponseWriter, r *http.Request) {
-	if h.filesDir == "" {
-		writeErr(w, http.StatusServiceUnavailable, "未配置附件目录")
+	if err := h.checkFiles(); err != nil { // R-353：附件目录不可用时拒收
+		writeErr(w, http.StatusServiceUnavailable, "无法上传："+err.Error())
 		return
 	}
 	set, err := h.Settings(r.Context())
@@ -103,10 +103,6 @@ func (h *Hub) handleProtoUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if rs := []rune(title); len(rs) > 60 {
 		title = string(rs[:60])
-	}
-	if err := os.MkdirAll(h.filesDir, 0o700); err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
 	}
 	tmp, err := os.CreateTemp(h.filesDir, "upload-*")
 	if err != nil {
@@ -248,7 +244,7 @@ func (h *Hub) serveProto(w http.ResponseWriter, r *http.Request, p store.Prototy
 		protoErr(w, http.StatusMethodNotAllowed, "原型只能读")
 		return
 	}
-	zipPath := h.filePath(p.FileID)
+	zipPath := h.readPath(p.FileID)
 	if rel == "" && r.URL.Query().Has("download") {
 		f, err := os.Open(zipPath)
 		if err != nil {

@@ -2437,6 +2437,18 @@ export const zh = {
     },
 
     account: {
+      storage: {
+        title: '附件存储',
+        hint: '附件、原型包和缩略图存放在这个目录。启动 Hub 时用 --files-dir 或环境变量 KS_FILES_DIR 指定，例如外置硬盘上的目录。部署备份不包含附件。',
+        dir: '存储位置',
+        defaultDir: '默认',
+        customDir: '已指定',
+        used: '已用',
+        usedValue: (size: string, n: number) => `${size} · ${n} 个文件`,
+        ok: '可用',
+        unavailable: '存储不可用',
+        unavailableHint: '上传会被拒绝，已有附件暂时无法打开。目录恢复后刷新即可，无需重启 Hub。',
+      },
       publicUrl: '对外地址',
       publicUrlTip: '通知里的链接和分享的访客链接都用这个地址。没填时访客链接用浏览器当前地址。',
       upload: {

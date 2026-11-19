@@ -2533,6 +2533,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 附件存储：目录、是否可用及原因、已用量 */
+        get: operations["get-storage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/token-prices": {
         parameters: {
             query?: never;
@@ -6785,6 +6802,26 @@ export interface components {
             message: string;
             /** @description 这次停下的会话键 */
             stopped: string[] | null;
+        };
+        StorageView: {
+            /** @description 是否用 --files-dir / KS_FILES_DIR 指定；false 为数据库旁的默认目录 */
+            configured: boolean;
+            /** @description 附件目录（附件、原型包、缩略图都在这里） */
+            dir: string;
+            /**
+             * Format: int64
+             * @description 目录里的文件数（含缩略图）
+             */
+            files: number;
+            /** @description 目录可用（存在且能写）；不可用时拒收上传 */
+            ok: boolean;
+            /** @description 不可用的原因 */
+            reason?: string;
+            /**
+             * Format: int64
+             * @description 目录里文件的总大小（字节）
+             */
+            used_bytes: number;
         };
         "Subscribe-pushRequest": {
             auth: string;
@@ -12766,6 +12803,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusChangesOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageView"];
                 };
             };
             /** @description Error */

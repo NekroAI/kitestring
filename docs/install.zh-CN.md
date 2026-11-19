@@ -23,6 +23,24 @@ ks install --hub --claude=false --codex=false --daemon=false   # 注册为常驻
 
 浏览器打开 `http://<hub 地址>:7310` 登录。要从外网访问，请放在带 HTTPS 的反向代理后面，或自行映射端口。
 
+### 附件目录
+
+附件、原型包和缩略图默认存在数据库旁的 `~/.kitestring/files`。系统盘空间紧张时，可以放到别的磁盘（例如常接的外置硬盘），数据库仍留在原处：
+
+```sh
+mkdir -p /Volumes/DataSSD/kitestring-files                     # 目录要先建好
+ks install --hub --claude=false --codex=false --daemon=false \
+  --hub-files-dir /Volumes/DataSSD/kitestring-files            # 写进常驻服务的 --files-dir
+```
+
+也可以直接运行 `ks hub serve --files-dir <目录>`，或设置环境变量 `KS_FILES_DIR`（`--files-dir` 优先）。之后重跑 `ks install --hub` 时要带上同样的 `--hub-files-dir`，否则服务会改回默认目录。
+
+- 指定的目录必须已经存在，Hub 不会替你创建：外置硬盘没挂上时，在挂载点下建目录会把附件悄悄写到系统盘。
+- 目录不存在或不能写时，Hub 照常启动，但拒收上传，日志写明原因，「设置 → 账户 → 附件存储」显示「存储不可用」和原因；每次上传前都会再检查一次，硬盘重新挂上后不用重启。
+- 改目录前已有的附件可以留在 `~/.kitestring/files`，照常能看（只读，新附件只写到新目录）；想搬过去用 `rsync -a ~/.kitestring/files/ <新目录>/`。
+- 「设置 → 账户 → 附件存储」显示当前存储位置和已用量。
+- **附件不在部署备份范围内**：`scripts/deploy.sh` 只备份程序和数据库，附件目录（无论默认还是指定）需要自行备份。
+
 ## 3. 每台开发设备
 
 在网页「设置 → 设备」点「接入设备」，起个名字。弹出的接入指引按平台和你用的工具给出完整命令，照着执行就能连上；令牌只在这时显示一次。还没连上的设备，列表里显示「已创建，等它连上」，点「接入指引」可以再打开（不再显示令牌）。下面是同样的步骤。

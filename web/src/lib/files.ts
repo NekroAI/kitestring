@@ -59,7 +59,8 @@ export function fmtSize(n: number) {
   if (!(n > 0)) return '0 B'
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
-  return `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 * 1024 ? 1 : 0)} GB`
 }
 
 // limitFor：浏览器里按类型选上传上限（MB），没拿到设置时交给 Hub 检查

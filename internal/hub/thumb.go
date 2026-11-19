@@ -79,12 +79,12 @@ func (h *Hub) thumbFile(id, mime string, w int) (path, ctype string, ok bool) {
 	}
 	thumbSem <- struct{}{}
 	defer func() { <-thumbSem }()
-	data, err := os.ReadFile(h.filePath(id))
+	data, err := os.ReadFile(h.readPath(id))
 	if err != nil {
 		return "", "", false
 	}
 	out, ext := makeThumb(data, w)
-	_ = os.MkdirAll(h.thumbDir(), 0o700)
+	_ = os.Mkdir(h.thumbDir(), 0o700) // 只建 thumbs 这一层（R-353）：附件目录不在时不连带建出来，免得写到系统盘
 	if out == nil {
 		_ = os.WriteFile(base+".none", nil, 0o600)
 		return "", "", false

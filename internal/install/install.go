@@ -45,11 +45,12 @@ type Options struct {
 	// NoAutostart：Windows 上注册服务但不随登录启动（任务计划程序不加登录触发器）
 	NoAutostart bool
 	// ClaudeDirs 是命令行指定的 Claude 配置目录（R-240）；安装时并入本机记录，卸载时只处理这些（为空则处理全部）
-	ClaudeDirs []profile.Dir
-	Status     bool // 只列出各配置目录的接入状态
-	HubAddr    string
-	DryRun     bool
-	Out        io.Writer
+	ClaudeDirs  []profile.Dir
+	Status      bool // 只列出各配置目录的接入状态
+	HubAddr     string
+	HubFilesDir string // hub 服务的 --files-dir（R-353），空 = 默认目录
+	DryRun      bool
+	Out         io.Writer
 }
 
 // Run 执行安装或卸载。
@@ -93,7 +94,7 @@ func Run(o Options, uninstall bool) error {
 	}
 	if o.Hub {
 		step("hub 服务", func() error {
-			return service(o, home, "hub", []string{o.KS, "hub", "serve", "--addr", o.HubAddr}, uninstall)
+			return service(o, home, "hub", hubArgv(o), uninstall)
 		})
 	}
 	if o.Codex && !uninstall && !o.DryRun {
@@ -453,6 +454,15 @@ func codexMCP(o Options, home string, remove bool) error {
 }
 
 // service 注册常驻服务：macOS 用 launchd，Linux 用 systemd --user，Windows 用任务计划程序（见 schtasks.go）。
+// hubArgv 是 hub 常驻服务的启动命令；指定了附件目录时带上 --files-dir（R-353）。
+func hubArgv(o Options) []string {
+	argv := []string{o.KS, "hub", "serve", "--addr", o.HubAddr}
+	if o.HubFilesDir != "" {
+		argv = append(argv, "--files-dir", o.HubFilesDir)
+	}
+	return argv
+}
+
 func service(o Options, home, role string, argv []string, remove bool) error {
 	switch runtime.GOOS {
 	case "darwin":

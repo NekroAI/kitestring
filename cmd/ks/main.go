@@ -30,7 +30,7 @@ const usage = `纸鸢 Kitestring —— 多设备、多 agent 的个人驾驶舱
 用法：ks <命令> [参数]
 
 服务端：
-  hub [serve]            启动 Hub（--addr 监听地址，默认 0.0.0.0:7310）
+  hub [serve]            启动 Hub（--addr 监听地址，默认 0.0.0.0:7310；--files-dir 附件目录，默认数据库旁的 files）
   hub passwd             设置 Web 登录密码
   hub device-add <名称>  新增设备并打印设备 token
   hub device-revoke <名称>  吊销设备（token 立即失效）
@@ -228,6 +228,7 @@ func runHub(args []string) error {
 	fs := flag.NewFlagSet("hub", flag.ContinueOnError)
 	addr := fs.String("addr", "0.0.0.0:7310", "监听地址")
 	data := fs.String("data", "", "数据库路径（默认 ~/.kitestring/hub.db）")
+	filesDir := fs.String("files-dir", "", "附件目录（附件、原型包、缩略图；默认数据库旁的 files，也可用环境变量 KS_FILES_DIR）。指定的目录必须已存在，不可用时拒收上传")
 	svc := fs.Bool("service", false, "由常驻服务启动：日志写进 ~/.kitestring/logs/hub.log（ks install 注册 Windows 服务时使用）")
 	// 参数可写在位置参数之后（如 device-add <名称> --data x）：否则会静默落到默认数据库
 	if err := parseAnywhere(fs, args); err != nil {
@@ -258,7 +259,14 @@ func runHub(args []string) error {
 	if dbPath == "" {
 		dbPath = filepath.Join(daemon.Home(), "hub.db")
 	}
-	h.SetFilesDir(filepath.Join(filepath.Dir(dbPath), "files"))
+	defFiles := filepath.Join(filepath.Dir(dbPath), "files")
+	if dir, err := hubFilesDir(*filesDir, os.Getenv("KS_FILES_DIR")); err != nil {
+		return err
+	} else if dir != "" {
+		h.ConfigureFilesDir(dir, defFiles) // R-353：外置目录；旧附件从默认目录只读
+	} else {
+		h.SetFilesDir(defFiles)
+	}
 	h.SetSecretKeyFile(filepath.Join(filepath.Dir(dbPath), "secret.key")) // 凭据主密钥（R-295）：与数据库同目录的单独文件，不进数据库
 	ctx := signalContext()
 	if svcCtx != nil {
@@ -266,6 +274,7 @@ func runHub(args []string) error {
 	}
 	switch sub {
 	case "serve":
+		_ = h.CheckFiles() // 启动时检查附件目录；不可用只写日志、拒收上传，Hub 照常启动
 		return h.Start(ctx, *addr, web.Handler())
 	case "passwd":
 		pw, err := readPassword()
@@ -401,4 +410,24 @@ func mcpClient(args []string) string {
 		return ""
 	}
 	return *client
+}
+
+// hubFilesDir 定附件目录（R-353）：--files-dir 优先，其次 KS_FILES_DIR；都没写返回空（用默认目录）。
+// 支持 ~/ 开头，转成绝对路径。
+func hubFilesDir(flagVal, envVal string) (string, error) {
+	dir := strings.TrimSpace(flagVal)
+	if dir == "" {
+		dir = strings.TrimSpace(envVal)
+	}
+	if dir == "" {
+		return "", nil
+	}
+	if dir == "~" || strings.HasPrefix(dir, "~/") || strings.HasPrefix(dir, `~\`) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		dir = filepath.Join(home, dir[1:])
+	}
+	return filepath.Abs(dir)
 }

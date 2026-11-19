@@ -12598,6 +12598,45 @@
         ],
         "type": "object"
       },
+      "StorageView": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "description": "是否用 --files-dir / KS_FILES_DIR 指定；false 为数据库旁的默认目录",
+            "type": "boolean"
+          },
+          "dir": {
+            "description": "附件目录（附件、原型包、缩略图都在这里）",
+            "type": "string"
+          },
+          "files": {
+            "description": "目录里的文件数（含缩略图）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "ok": {
+            "description": "目录可用（存在且能写）；不可用时拒收上传",
+            "type": "boolean"
+          },
+          "reason": {
+            "description": "不可用的原因",
+            "type": "string"
+          },
+          "used_bytes": {
+            "description": "目录里文件的总大小（字节）",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dir",
+          "configured",
+          "ok",
+          "used_bytes",
+          "files"
+        ],
+        "type": "object"
+      },
       "Subscribe-pushRequest": {
         "additionalProperties": false,
         "properties": {
@@ -21494,6 +21533,37 @@
         "summary": "需求状态变更历史：按需求 / 项目 / 时间段查（R-153）",
         "tags": [
           "requirements"
+        ]
+      }
+    },
+    "/api/storage": {
+      "get": {
+        "operationId": "get-storage",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "附件存储：目录、是否可用及原因、已用量",
+        "tags": [
+          "settings"
         ]
       }
     },

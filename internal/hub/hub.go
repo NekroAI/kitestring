@@ -95,6 +95,7 @@ type Hub struct {
 	guests   *loginLimiter // 分享访问密码的错误次数（R-281），和网页登录分开计
 	ai       aiGuard
 	filesDir string
+	files    filesState // 附件目录可用状态（R-353）
 
 	mu          sync.Mutex
 	conns       map[string]*deviceConn // deviceID → 连接

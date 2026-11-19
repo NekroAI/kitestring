@@ -18,6 +18,7 @@ import { Modal, useConfirm } from '../ui/overlay'
 import { useActions, useBusy } from '../app/actions'
 import { DeviceGuide } from '../app/deviceGuide'
 import { canMaskText, secretInputProps } from '../lib/secrets'
+import { fmtSize } from '../lib/files'
 
 type Tab = 'devices' | 'notify' | 'prompts' | 'ai' | 'appearance' | 'account'
 const tabs: { id: Tab; icon: LucideIcon }[] = [
@@ -1062,6 +1063,48 @@ function RolePrompts() {
   )
 }
 
+// 附件存储（R-353）：目录、是否可用（不可用时显示原因）、已用量
+function Storage() {
+  const q = useQuery({ queryKey: ['settings', 'storage'], queryFn: () => unwrap(api.GET('/api/storage')), refetchOnWindowFocus: true })
+  const L = t.settings.account.storage
+  const v = q.data
+  return (
+    <Card className="space-y-4 p-4 sm:p-5">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-fg">{L.title}</span>
+          {v && (v.ok ? <Badge tone="run" icon={<CheckCircle2 className="size-3" />}>{L.ok}</Badge> : <Badge tone="danger" icon={<XCircle className="size-3" />}>{L.unavailable}</Badge>)}
+        </div>
+        <p className="mt-1 text-xs text-fg-3">{L.hint}</p>
+      </div>
+      {q.isError ? (
+        <ErrorState error={q.error} onRetry={() => void q.refetch()} />
+      ) : !v ? (
+        <Skeleton className="h-12" />
+      ) : (
+        <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[5rem_minmax(0,1fr)]">
+          <dt className="text-fg-3">{L.dir}</dt>
+          <dd className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 font-mono text-xs break-all text-fg">{v.dir}</span>
+            <Badge tone="neutral" className="shrink-0">{v.configured ? L.customDir : L.defaultDir}</Badge>
+          </dd>
+          {v.ok ? (
+            <>
+              <dt className="text-fg-3">{L.used}</dt>
+              <dd className="tabular text-fg">{L.usedValue(fmtSize(v.used_bytes), v.files)}</dd>
+            </>
+          ) : (
+            <dd className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger sm:col-span-2">
+              <div className="font-medium break-all">{v.reason}</div>
+              <div className="mt-1">{L.unavailableHint}</div>
+            </dd>
+          )}
+        </dl>
+      )}
+    </Card>
+  )
+}
+
 // 附件大小上限（R-72、R-221）：图片、录屏、其它文件分开设，网页和 Agent 上传都按这里的值检查。
 function UploadLimits() {
   const q = useSettings()
@@ -1200,6 +1243,7 @@ function Account({ version }: { version: string }) {
           </div>
         </Field>
       </Card>
+      <Storage />
       <UploadLimits />
       <DevRequestLimit />
       <CompactLimit />

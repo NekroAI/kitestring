@@ -23,6 +23,24 @@ ks install --hub --claude=false --codex=false --daemon=false   # run the Hub as 
 
 Open `http://<hub address>:7310` in a browser and sign in. To reach the Hub from outside your network, put it behind a reverse proxy with HTTPS or forward the port yourself.
 
+### Attachment directory
+
+Attachments, prototype bundles and thumbnails live in `~/.kitestring/files` next to the database by default. If the system disk is short on space you can keep them on another disk (for example an always-attached external drive); the database stays where it is:
+
+```sh
+mkdir -p /Volumes/DataSSD/kitestring-files                     # the directory must exist
+ks install --hub --claude=false --codex=false --daemon=false \
+  --hub-files-dir /Volumes/DataSSD/kitestring-files            # passed to the service as --files-dir
+```
+
+You can also run `ks hub serve --files-dir <dir>` directly, or set `KS_FILES_DIR` (`--files-dir` wins). When you re-run `ks install --hub` later, pass the same `--hub-files-dir`, or the service goes back to the default directory.
+
+- The directory must already exist; the Hub never creates it, because creating it under an unmounted drive's mount point would silently write to the system disk.
+- If the directory is missing or not writable, the Hub still starts but rejects uploads, logs the reason, and **Settings → Account → Attachment storage** shows "storage unavailable" with the reason. Every upload checks again, so remounting the drive needs no restart.
+- Attachments uploaded before the change can stay in `~/.kitestring/files` and remain viewable (read-only; new files go only to the new directory). To move them: `rsync -a ~/.kitestring/files/ <new dir>/`.
+- **Settings → Account → Attachment storage** shows the current location and how much space is used.
+- **Attachments are not part of deployment backups**: `scripts/deploy.sh` backs up only the binary and the database. Back up the attachment directory (default or custom) yourself.
+
 ## 3. Every development machine
 
 In the web UI, open **Settings → Devices** and click **Add device**. The setup guide that opens gives the full commands for your platform and tools; the token is shown only this once. A device that has never connected is listed as waiting to connect, with a button that reopens the guide (without the token). The same steps:
