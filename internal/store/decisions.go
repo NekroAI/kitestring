@@ -37,6 +37,7 @@ const (
 	KindTell       = "tell"        // 会话之间的团队消息（R-135 / R-116）：开发交验收、给 PM 留言、开发上线；只送给 Agent，不进你的收件箱
 	KindEdit       = "edit"        // 修改记录（R-134）：Agent 改了需求的标题 / 描述 / 验收标准 / 优先级 / 类型，blocks 里是改前改后；只留痕，不送达
 	KindComment    = "comment"     // 会话留言（R-249）：会话在需求下写的细节，answer 是正文、answer_files 是附图、blocks 是表达块，assigned_by / from_role 是留言的会话和它当时的身份；进时间线，不送达
+	// KindAssetReview（资源库的审核意见，R-351）定义在 assetreviews.go
 )
 
 // Decision 是一条待用户决策的问题。
@@ -73,7 +74,7 @@ type Decision struct {
 	RecOption        int        `json:"rec_option" doc:"推荐的是第几个选项（从 0 开始，-1 = 没有）：提问时明确给出，或推荐文字与某个选项完全相同（R-239）"`
 	RecPick          *int       `json:"-"`           // 只用于创建：提问方明确给的推荐序号；CreateDecision 据此和推荐文字定 RecOption
 	ShortTitle       string     `json:"short_title"` // 模型生成的短标题
-	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell,release,edit,comment"`
+	Kind             string     `json:"kind" enum:"decision,feedback,note,assign,plan,queue,role,review_task,tell,release,edit,comment,asset_review"`
 	AnswerFiles      []FileRef  `json:"answer_files"`
 	RequirementTitle string     `json:"requirement_title,omitempty"`
 	Status           string     `json:"status"`
@@ -233,14 +234,14 @@ func (s *Store) CreateDecision(ctx context.Context, d Decision) (Decision, error
 			return err
 		}
 		n := now()
-		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole || d.Kind == KindReviewTask || d.Kind == KindTell {
+		if d.Kind == KindFeedback || d.Kind == KindNote || d.Kind == KindAssign || d.Kind == KindPlan || d.Kind == KindQueue || d.Kind == KindRole || d.Kind == KindReviewTask || d.Kind == KindTell || d.Kind == KindAssetReview {
 			// 修改意见：用户写下即为答复，直接进入“已决策待接收”。
 			_, err := t.ExecContext(ctx, `INSERT INTO decisions(id, seq, session_key, origin_session, project_id, requirement_id, plan_id, question, context, options, recommendation, kind, status, answer, answer_files, answered_at, created_at, assigned_by, from_role, from_agent, reply_to, fyi, broadcast_id, about_key, about_role) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Context, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy, d.FromRole, d.FromAgent, d.ReplyTo, d.Kind == KindTell && d.FYI, d.BroadcastID, d.AboutKey, d.AboutRole)
+				id, seq, nullStr(d.SessionKey), nullStr(d.SessionKey), nullStr(d.ProjectID), nullStr(d.RequirementID), nullStr(d.PlanID), d.Question, d.Context, d.Kind, DecAnswered, d.Answer, filesJSON(d.AnswerFiles), n, n, d.AssignedBy, d.FromRole, d.FromAgent, d.ReplyTo, QuietKind(d.Kind) && d.FYI, d.BroadcastID, d.AboutKey, d.AboutRole)
 			if err != nil {
 				return err
 			}
-			if d.SessionKey != "" && !(d.Kind == KindTell && d.FYI) {
+			if d.SessionKey != "" && !(QuietKind(d.Kind) && d.FYI) {
 				// 点名送给它的（指派、排队送达、留言、团队消息、身份通知）：待命超时的开发恢复正常（R-229）
 				if _, err := t.ExecContext(ctx, `UPDATE sessions SET idle_at = '' WHERE key = ? AND idle_at <> ''`, d.SessionKey); err != nil {
 					return err

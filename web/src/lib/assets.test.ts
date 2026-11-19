@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { candidateLabel, comparePair, coverOf, facetsOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, facetsOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -111,4 +111,32 @@ test('审片队列：只取待审，按图片墙顺序，同组候选展开；�
   assert.equal(nextInQueue(q, 2, (c) => st[c]), 0)
   st['A-1'] = 'rework'
   assert.equal(nextInQueue(q, 2, (c) => st[c]), null)
+})
+
+// R-351 第 4 步：撤销期里先按审核后的状态显示；能下的结论与 Hub 的状态机一致；意见去向的提示；审片模式的前后切换
+test('审核：撤销期显示、可下的结论、意见去向、前后切换', () => {
+  assert.equal(pendingStatus('pending', 'pass'), 'approved')
+  assert.equal(pendingStatus('pending', 'back'), 'rework')
+  assert.equal(pendingStatus('pending', undefined), 'pending')
+  assert.equal(canReview('pending', 'approved'), true)
+  assert.equal(canReview('pending', 'rework'), true)
+  assert.equal(canReview('approved', 'approved'), false)
+  assert.equal(canReview('approved', 'rework'), true)
+  assert.equal(canReview('rework', 'approved'), true)
+  assert.equal(canReview('rework', 'rework'), false)
+  assert.equal(canReview('wip', 'approved'), false)
+  const sessions = [
+    { key: 'claude:a', state: 'parked', title: '美术零件' },
+    { key: 'claude:b', state: 'ended', title: '旧会话' },
+  ]
+  assert.deepEqual(recipientOf({ kind: 'session', ref: 'claude:a', name: '推送时的标题' }, sessions), { kind: 'submitter', name: '美术零件' })
+  assert.deepEqual(recipientOf({ kind: 'session', ref: 'claude:b' }, sessions), { kind: 'pm' })
+  assert.deepEqual(recipientOf({ kind: 'session', ref: 'claude:x' }, sessions), { kind: 'unknown' })
+  assert.deepEqual(recipientOf({ kind: 'guest', ref: 'g1', name: '小王' }, sessions), { kind: 'unknown' })
+  const q = ['A-1', 'A-2', 'A-3']
+  assert.equal(stepQueue(q, 'A-2', 1), 'A-3')
+  assert.equal(stepQueue(q, 'A-2', -1), 'A-1')
+  assert.equal(stepQueue(q, 'A-3', 1), null)
+  assert.equal(stepQueue(q, 'A-1', -1), null)
+  assert.equal(stepQueue(q, 'A-9', 1), 'A-1')
 })

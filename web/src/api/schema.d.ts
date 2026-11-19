@@ -950,6 +950,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/asset-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 全部项目各状态的素材数（侧边栏的待审数） */
+        get: operations["asset-counts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assets": {
         parameters: {
             query?: never;
@@ -978,6 +995,23 @@ export interface paths {
         get: operations["get-asset"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{ref}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 审核素材：通过或返工并写意见，意见送回提交素材的会话（已结束时送同项目主调度） */
+        post: operations["review-asset"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3307,6 +3341,12 @@ export interface components {
              */
             version: number;
         };
+        AssetCountsOutBody: {
+            /** @description 全部项目各状态的素材数 */
+            counts: {
+                [key: string]: number;
+            };
+        };
         AssetDetail: {
             batch: string;
             category: string;
@@ -3328,6 +3368,8 @@ export interface components {
             latest?: components["schemas"]["AssetVersion"];
             project_id: string;
             requirement_id?: string;
+            /** @description 审核记录（R-351 第 4 步），新的在前 */
+            reviews: components["schemas"]["AssetReview"][] | null;
             /** @enum {string} */
             status: "wip" | "pending" | "approved" | "rework";
             /**
@@ -3468,6 +3510,68 @@ export interface components {
              * @description Hub 已有、没有重传的文件数（按 sha256 去重）
              */
             reused: number;
+        };
+        AssetReview: {
+            asset_id: string;
+            /** @description 写意见的人：user 你 / session 会话 / guest 分享页访客（R-365 预留） */
+            author: components["schemas"]["AssetSubmitter"];
+            comment: string;
+            /** Format: date-time */
+            created_at: string;
+            decision_code?: string;
+            /** Format: date-time */
+            delivered_at?: string;
+            /**
+             * @description answered 待送达 / delivered 已送达 / closed 已关闭；没有送达记录时为空
+             * @enum {string}
+             */
+            delivery?: "answered" | "delivered" | "closed" | "";
+            files: components["schemas"]["FileRef"][] | null;
+            id: string;
+            /**
+             * @description submitter 提交素材的会话 / pm 提交的会话已结束，转给同项目主调度
+             * @enum {string}
+             */
+            sent_as?: "submitter" | "pm" | "";
+            /** @description 收件会话当时的标题 */
+            sent_name?: string;
+            /** @description 意见送给的会话键；空 = 没有可送达的会话 */
+            sent_to?: string;
+            /**
+             * @description approved 通过 / rework 返工
+             * @enum {string}
+             */
+            verdict: "approved" | "rework";
+            /**
+             * Format: int64
+             * @description 审核时的最新版本
+             */
+            version: number;
+        };
+        AssetReviewInBody: {
+            /** @description 意见；返工时必填（或附图） */
+            comment?: string;
+            /** @description 附图（附件 ID） */
+            files?: string[] | null;
+            /**
+             * @description 审核时看到的状态；不为空时要求仍是它，否则 409
+             * @enum {string}
+             */
+            from?: "wip" | "pending" | "approved" | "rework" | "";
+            /**
+             * @description approved 通过 / rework 返工
+             * @enum {string}
+             */
+            verdict: "approved" | "rework";
+            /**
+             * Format: int64
+             * @description 审核时看到的最新版本；不为 0 时要求仍是最新，否则 409
+             */
+            version?: number;
+        };
+        AssetReviewOutBody: {
+            asset: components["schemas"]["AssetDetail"];
+            review: components["schemas"]["AssetReview"];
         };
         AssetSubmitter: {
             /**
@@ -4184,7 +4288,7 @@ export interface components {
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment" | "asset_review";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             option_prototypes?: (components["schemas"]["Prototype"][] | null)[] | null;
             options: string[] | null;
@@ -4303,7 +4407,7 @@ export interface components {
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             id: string;
             /** @enum {string} */
-            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment";
+            kind: "decision" | "feedback" | "note" | "assign" | "plan" | "queue" | "role" | "review_task" | "tell" | "release" | "edit" | "comment" | "asset_review";
             option_files: (components["schemas"]["FileRef"][] | null)[] | null;
             option_prototypes?: (components["schemas"]["Prototype"][] | null)[] | null;
             options: string[] | null;
@@ -9487,6 +9591,35 @@ export interface operations {
             };
         };
     };
+    "asset-counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetCountsOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "list-assets": {
         parameters: {
             query?: {
@@ -9543,6 +9676,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "review-asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetReviewInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetReviewOutBody"];
                 };
             };
             /** @description Error */

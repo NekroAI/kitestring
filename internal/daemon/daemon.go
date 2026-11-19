@@ -705,7 +705,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 		return ""
 	}
 	var b strings.Builder
-	var answers, feedback, notes, replies, assigns, plans, queue, roleNotes, reviewTasks, tells []protocol.Decision
+	var answers, feedback, notes, replies, assigns, plans, queue, roleNotes, reviewTasks, tells, assetReviews []protocol.Decision
 	for _, dec := range fresh {
 		switch dec.Kind {
 		case "feedback":
@@ -728,6 +728,8 @@ func (d *Daemon) injection(ev protocol.Event) string {
 			reviewTasks = append(reviewTasks, dec)
 		case "tell":
 			tells = append(tells, dec)
+		case "asset_review":
+			assetReviews = append(assetReviews, dec)
 		default:
 			answers = append(answers, dec)
 		}
@@ -744,6 +746,13 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	if len(feedback) > 0 {
 		b.WriteString("[Kitestring] 用户验收后退回了以下需求，请按修改意见继续处理，完成后重新提交验收：\n")
 		for _, dec := range feedback {
+			d.writeItem(&b, dec)
+		}
+	}
+	if len(assetReviews) > 0 {
+		// 资源库的审核意见（R-351）：像决策答复一样送回提交素材的会话；提交的会话已结束时转给主调度（意见里写明）
+		b.WriteString("[Kitestring] 用户在资源库审核了以下素材：返工的按意见修改，改好后在同一批次重新推送（ks asset push 或 asset_push），内容有变会记为新版本、回到待审；通过的不用再改。ks asset get A-x 可看版本和全部审核记录：\n")
+		for _, dec := range assetReviews {
 			d.writeItem(&b, dec)
 		}
 	}
@@ -909,6 +918,14 @@ func (d *Daemon) writeItem(b *strings.Builder, dec protocol.Decision) {
 		}
 		if dec.Replyable {
 			fmt.Fprintf(b, "  要回复就用 ks team tell --reply %s <回复>（或 team_tell / pm_notify 的 reply_to），会自动送回发消息的一方。\n", dec.Code)
+		}
+	case "asset_review":
+		lines := strings.Split(strings.TrimSpace(dec.Answer), "\n")
+		fmt.Fprintf(b, "- %s\n", lines[0])
+		for _, line := range lines[1:] {
+			if line = strings.TrimSpace(line); line != "" {
+				fmt.Fprintf(b, "  %s\n", line)
+			}
 		}
 	case "assign", "review_task":
 		fmt.Fprintf(b, "- %s「%s」\n", dec.ReqCode, oneLine(dec.ReqTitle))

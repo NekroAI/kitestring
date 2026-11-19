@@ -85,6 +85,7 @@ type AssetVersion struct {
 type AssetDetail struct {
 	Asset
 	Versions []AssetVersion `json:"versions"`
+	Reviews  []AssetReview  `json:"reviews" doc:"审核记录（R-351 第 4 步），新的在前"`
 }
 
 // 提交者的三种（R-351；guest 给 R-365 资源库分享预留，访客在分享页上传素材）。
@@ -423,7 +424,11 @@ func (s *Store) GetAsset(ctx context.Context, ref string) (AssetDetail, error) {
 	if len(d.Versions) > 0 {
 		d.Latest = &d.Versions[0]
 	}
-	return d, rows.Err()
+	if err := rows.Err(); err != nil {
+		return d, err
+	}
+	d.Reviews, err = s.ListAssetReviews(ctx, a.ID)
+	return d, err
 }
 
 // AssetFacets 是一个项目里素材的批次和类别（筛选项用），按名称排序。

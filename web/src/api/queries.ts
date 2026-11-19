@@ -309,9 +309,18 @@ export function useAsset(ref: string | null) {
   return useQuery({
     queryKey: ['assets', 'detail', ref ?? ''],
     queryFn: () => unwrap(api.GET('/api/assets/{ref}', { params: { path: { ref: ref! } } })),
-    select: (d) => ({ ...d, latest: d.latest ? normVersion(d.latest) : undefined, versions: (d.versions ?? []).map(normVersion) }),
+    select: (d) => ({ ...d, latest: d.latest ? normVersion(d.latest) : undefined, versions: (d.versions ?? []).map(normVersion), reviews: (d.reviews ?? []).map((r) => ({ ...r, files: r.files ?? [] })) }),
     enabled: !!ref,
     retry: false,
+  })
+}
+
+// 侧边栏「资源库」旁的待审数（R-351 第 4 步）：全部项目各状态的素材数，推送、审核后随 assets 主题刷新。
+export function useAssetCounts() {
+  return useQuery({
+    queryKey: ['assets', 'counts'],
+    queryFn: () => unwrap(api.GET('/api/asset-counts')),
+    select: (d) => d.counts ?? {},
   })
 }
 

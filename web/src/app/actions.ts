@@ -66,6 +66,9 @@ export function useActions() {
     closeDecision: (ref: string, why: { reason?: string; replaced_by?: string } = {}) => run(() => unwrap(api.POST('/api/decisions/{ref}/close', { params: { path: { ref } }, body: why })), ['decisions', 'sessions', 'requirements'], fail.close(ref)),
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
       send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions', 'morning'], fail.review(items)),
+    // 资源库的审核（R-351）：version / from 是审核时看到的最新版本和状态，变了 Hub 返回 409
+    reviewAsset: (code: string, body: { verdict: 'approved' | 'rework'; comment?: string; files?: string[]; version?: number; from?: 'wip' | 'pending' | 'approved' | 'rework' }) =>
+      send(() => unwrap(api.POST('/api/assets/{ref}/review', { params: { path: { ref: code } }, body })), ['assets', 'decisions', 'sessions'], fail.reviewAsset(body.verdict === 'approved' ? t.verdict.pass('asset') : t.verdict.back('asset'), code)),
     note: (ref: string, comment: string, files: string[]) =>
       send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions'], fail.note(ref)),
     assign: (ref: string, sessionKey: string, comment = '') =>

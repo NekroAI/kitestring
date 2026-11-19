@@ -84,6 +84,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAgentArrange(agentAPI)
 	h.registerSecretsAgent(agentAPI)
 	h.registerAssetsWeb(webAPI) // 资源库（R-351）
+	h.registerAssetReviewWeb(webAPI)
 	h.registerAssetsAgent(agentAPI)
 
 	root := http.NewServeMux()
@@ -185,6 +186,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerSecretsWeb(api)
 	h.registerSecretsAgent(api)
 	h.registerAssetsWeb(api)
+	h.registerAssetReviewWeb(api)
 	h.registerAssetsAgent(api)
 	return api.OpenAPI()
 }

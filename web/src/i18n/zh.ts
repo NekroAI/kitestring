@@ -16,7 +16,7 @@ import { both, roleNames, rt } from './roles.ts'
 // joinCodes：R-1、R-2 两条以内全写，再多写「R-1 等 3 条」（R-243）
 const joinCodes = (codes: string[]) => (codes.length <= 2 ? codes.join('、') : `${codes[0]} 等 ${codes.length} 条`)
 
-export type Scene = 'accept' | 'plan' | 'approval' | 'request' | 'answer' | 'permit' | 'guest'
+export type Scene = 'accept' | 'plan' | 'approval' | 'request' | 'answer' | 'permit' | 'guest' | 'asset'
 const VERB: Record<Scene, { pass: string; back: string }> = {
   accept: { pass: '通过', back: '退回' },
   plan: { pass: '批准', back: '退回' },
@@ -25,6 +25,7 @@ const VERB: Record<Scene, { pass: string; back: string }> = {
   answer: { pass: '回答', back: '' },
   permit: { pass: '允许', back: '拒绝' },
   guest: { pass: '放入', back: '忽略' },
+  asset: { pass: '通过', back: '返工' }, // 资源库的审核（R-351）：「通过」「返工」既是动作也是素材状态（copywriting 5.12）
 }
 const ACC = VERB.accept
 
@@ -48,7 +49,7 @@ export const zh = {
     backByAdvice: '按建议退回',
     noteByAdvice: '附言（选填，主助理的建议会一并送达会话；可附图片或文件）',
     noteOptional: '附言（可选，可附图片或文件）',
-    needNote: (s: Scene) => (s === 'accept' || s === 'plan' ? `${VERB[s].back}需写明修改意见` : `${VERB[s].back}需写明理由`),
+    needNote: (s: Scene) => (s === 'accept' || s === 'plan' || s === 'asset' ? `${VERB[s].back}需写明修改意见` : `${VERB[s].back}需写明理由`),
     // 撤销条：「3 秒后通过」「R-12 · 3 秒后退回」「D-8 · 3 秒后拒绝」「R-12 · 3 秒后改为进行中」
     pending: (act: string, s: number | string) => `${s} 秒后${act}`,
     move: (status: string) => `改为${status}`,
@@ -255,6 +256,35 @@ export const zh = {
     compareSub: (batch: string, n: number) => `${batch} · ${n} 张候选`,
     openOne: '查看详情',
     notFound: '素材不存在或已删除',
+    // 审核（R-351 第 4 步）：通过 / 返工沿用 3 秒撤销期，意见送回提交素材的会话，已结束时送同项目主调度
+    review: {
+      note: '意见（返工时必填，可附图片或文件）',
+      sendTo: (name: string) => `意见送达「${name}」`,
+      sendToSession: '意见送达提交素材的会话',
+      sendToPM: '提交素材的会话已结束，意见送达主调度',
+      wip: '制作中，推送为待审后可审核',
+      latestOnly: (ver: string) => `审核的是最新版 ${ver}`,
+      history: '审核记录',
+      // 审核记录一行：「你返工了 v1」，作者区分你 / 会话 / 访客（D-1782）
+      by: { user: '你', session: (name: string) => (name ? `「${name}」` : '会话'), guest: (name: string) => `访客「${name}」` },
+      did: (who: string, verdict: string) => `${who}${verdict}了`,
+      delivered: (name: string) => `已送达「${name}」`,
+      waiting: (name: string) => `待送达「${name}」`,
+      viaPM: '提交素材的会话已结束，转给主调度',
+      closed: '已关闭，不再送达',
+      noTarget: '没有可送达的会话',
+      anySession: '会话',
+      // 审片模式：当前筛选下的待审素材逐个过，← → 切换，P 通过，R 返工
+      mode: '审片',
+      modeTip: (n: number) => `逐个审核当前筛选下的 ${n} 个待审素材`,
+      noQueue: '当前筛选下没有待审素材',
+      position: (i: number, n: number) => `审片 ${i} / ${n}`,
+      prev: '上一个',
+      next: '下一个',
+      exit: '退出审片',
+      keySwitch: '切换',
+      allDone: '待审素材已全部审完',
+    },
   },
   secret: {
     title: '凭据',
@@ -515,6 +545,7 @@ export const zh = {
     requirements: '需求',
     comms: '通讯',
     commsTip: (n: number) => `待送达消息 ${n} 条`,
+    assetsTip: (n: number) => `待审素材 ${n} 个`,
     shares: '分享',
     secrets: '凭据',
     assets: '资源库',
@@ -891,6 +922,7 @@ export const zh = {
   fail: {
     answer: (refs: string[]) => (refs.length === 1 ? `提交 ${refs[0]} 的答复` : `提交 ${refs.length} 条答复`),
     reassign: (ref: string) => `转交 ${ref}`,
+    reviewAsset: (verdict: string, code: string) => `${verdict} ${code}`,
     close: (ref: string) => `关闭 ${ref}`,
     resend: (ref: string) => `重新送达 ${ref}`,
     override: (ref: string) => `推翻 ${ref} 的代答`,
@@ -2203,6 +2235,7 @@ export const zh = {
       plan: '计划进展',
       role: '身份变更',
       review_task: '指派审查',
+      asset_review: '审核意见',
     } as Record<string, string>,
     // 送达状态
     dl: {

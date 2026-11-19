@@ -1,40 +1,40 @@
-import { createContext, lazy, Suspense, useContext, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
-import { Box as BoxIcon, ChevronDown, Columns2, Image as ImageIcon, Images, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
-import { useAsset, useAssets, useProjects, type Asset } from '../api/queries'
+import { Box as BoxIcon, ChevronDown, Columns2, Image as ImageIcon, Images, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
+import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow } from '../lib/util'
-import { candidateLabel, comparePair, coverOf, facetsOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, overBudget, projectsOf, wallTiles, type AssetLite, type AssetStatus, type FileLite, type WallTile } from '../lib/assets'
-import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton } from '../ui/base'
+import { candidateLabel, comparePair, coverOf, facetsOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewQueue, stepQueue, wallTiles, type AssetLite, type AssetStatus, type FileLite, type WallTile } from '../lib/assets'
+import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, type ViewShot } from '../ui/attach'
+import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
+import { useAdvance, usePending, usePendingMap } from './verdict'
 
 // 资源库页（R-351 第 3 步，D-1713 方案 B 的图片墙部分）：按项目浏览会话推送的素材。
 // 图片墙按批次 / 类别 / 状态筛选；点一格在右侧抽屉里看大图、3D（three.js 按需加载）、版本对比；
 // 同一用途的候选（概念图 A / B 版）在墙上收成一格，点开并排比较。
-// 审核（通过 / 返工）和审片模式是第 4 步：抽屉底部和页头各留了插槽（AssetReviewContext），这里不渲染任何审核按钮。
+// 审核（第 4 步）：抽屉底部是通过 / 返工的判断栏（app/assetReview.tsx），页头「审片」把当前筛选下的待审素材排成队列逐个过：
+// ← → 切换、P 通过、R 返工；下了判断停在这一件，3 秒撤销期走完才翻到下一个待审的（docs/principles.md 第 8 条）。
 //
-// URL：?p=项目 ID、?b=批次、?c=类别、?st=状态，?asset=A-x 打开素材抽屉，?cmp=批次/组名 打开并排比较。
+// URL：?p=项目 ID、?b=批次、?c=类别、?st=状态，?asset=A-x 打开素材抽屉，?cmp=批次/组名 打开并排比较，?rv=1 审片模式。
 
 const Viewer3D = lazy(() => import('./viewer3d'))
 
-// 第 4 步的接口：审核栏与审片入口。drawer 渲染在素材抽屉底部（拿到当前素材和正在看的版本；意见送 a.submitter：
-// session 送会话、已结束时送同项目主调度，guest 留给 R-365；审核意见作者的区分（你 / 会话 / 访客）在第 4 步建）；
-// header 渲染在页头右侧（拿到当前筛选下的图片墙，审片队列用 lib/assets 的 reviewQueue 取）。
-export type AssetReviewSlots = {
-  drawer?: (a: Asset, shownVersion: number) => ReactNode
-  header?: (tiles: WallTile[]) => ReactNode
-}
-export const AssetReviewContext = createContext<AssetReviewSlots>({})
-
 const tone: Record<AssetStatus, 'neutral' | 'wait' | 'run' | 'danger'> = { wip: 'neutral', pending: 'wait', approved: 'run', rework: 'danger' }
-export function AssetBadge({ status, className }: { status: AssetStatus; className?: string }) {
+// AssetBadge：素材状态；传了 code 时撤销期里先按审核后的状态显示（结果立刻到位）。
+export function AssetBadge({ status, code, className }: { status: AssetStatus; code?: string; className?: string }) {
+  const e = usePending(code ? reviewKey(code) : undefined)
+  const st = pendingStatus(status, e?.act)
   return (
-    <Badge tone={tone[status]} className={className}>
-      {t.asset.status[status]}
+    <Badge tone={tone[st]} className={className}>
+      {t.asset.status[st]}
     </Badge>
   )
 }
+
+// Review：审片模式。queue 是进入时冻结的待审队列（之后审过的留在原位，← → 还能翻回去看）。
+type Review = { queue: string[]; finished: boolean; go: (code: string) => void; advance: () => void; exit: () => void }
 
 function useAssetParams() {
   const [params, setParams] = useSearchParams()
@@ -54,7 +54,6 @@ export function AssetsPage() {
   const list = useAssets()
   const projects = useProjects()
   const { params, set } = useAssetParams()
-  const slots = useContext(AssetReviewContext)
   const all = useMemo(() => (list.data?.assets ?? []) as AssetLite[], [list.data])
   const projIds = useMemo(() => projectsOf(all), [all])
   const project = projIds.includes(params.get('p') ?? '') ? params.get('p')! : (projIds[0] ?? '')
@@ -66,6 +65,8 @@ export function AssetsPage() {
   const tiles = useMemo(() => wallTiles(shown), [shown])
   const nameOf = (id: string) => (projects.data?.projects ?? []).find((p) => p.id === id)?.name ?? id
   const filtered = !!(batch || category || status)
+  const review = useReviewMode(all, tiles, params.get('rv') === '1', params.get('asset'), set)
+  const pendingN = reviewQueue(tiles).length
 
   return (
     <>
@@ -83,7 +84,16 @@ export function AssetsPage() {
           />
         )}
         <span className="flex-1" />
-        {slots.header?.(tiles)}
+        {project && (
+          <Tip content={pendingN ? t.asset.review.modeTip(pendingN) : t.asset.review.noQueue}>
+            <span>
+              <Button size="sm" variant={pendingN ? 'primary' : 'secondary'} disabled={!pendingN} icon={<ListChecks className="size-4" />} onClick={review.start} data-review-start="">
+                {t.asset.review.mode}
+                {pendingN > 0 && <span className="tabular">{pendingN}</span>}
+              </Button>
+            </span>
+          </Tip>
+        )}
         {project && <span className="text-[13px] text-fg-3 tabular">{t.asset.total(facets.total)}</span>}
       </div>
 
@@ -140,10 +150,57 @@ export function AssetsPage() {
         </div>
       )}
 
-      <AssetDrawer code={params.get('asset')} onClose={() => set({ asset: null })} />
+      <AssetDrawer code={params.get('asset')} review={review.on ? review : undefined} onClose={() => set({ asset: null, rv: null })} />
       <CompareDrawer gkey={params.get('cmp')} all={all} onClose={() => set({ cmp: null })} onOpen={(code) => set({ asset: code, cmp: null })} />
     </>
   )
+}
+
+// useReviewMode：审片模式。进入时把当前筛选下的待审素材排成队列（图片墙顺序，候选组展开）；
+// 下了判断后由抽屉里的 useAdvance 在撤销期走完时翻到下一个仍待审的，都审完就停在这里写「已全部审完」。
+function useReviewMode(all: AssetLite[], tiles: WallTile[], on: boolean, code: string | null, set: (kv: Record<string, string | null>) => void) {
+  const pend = usePendingMap()
+  const [queue, setQueue] = useState<string[]>([])
+  const [finished, setFinished] = useState(false)
+  // 带着 ?rv=1 刷新回来：按当前筛选重新排队，正在看的那个排在最前
+  useEffect(() => {
+    if (!on || queue.length || !all.length) return
+    const q = reviewQueue(tiles)
+    if (code && !q.includes(code)) q.unshift(code)
+    if (q.length) setQueue(q)
+  }, [on, all.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const statusOf = (c: string) => {
+    const a = all.find((x) => x.code === c)
+    return a ? pendingStatus(a.status, pend.get(reviewKey(c))?.act) : undefined
+  }
+  const go = (c: string) => {
+    setFinished(false)
+    set({ asset: c, cmp: null })
+  }
+  return {
+    on: on && queue.length > 0,
+    queue,
+    finished,
+    go,
+    start: () => {
+      const q = reviewQueue(tiles)
+      if (!q.length) return
+      setQueue(q)
+      setFinished(false)
+      set({ asset: q[0], rv: '1', cmp: null })
+    },
+    advance: () => {
+      const i = code ? queue.indexOf(code) : -1
+      const j = nextInQueue(queue, Math.max(0, i), statusOf)
+      if (j === null) setFinished(true)
+      else go(queue[j])
+    },
+    exit: () => {
+      setQueue([])
+      setFinished(false)
+      set({ rv: null })
+    },
+  }
 }
 
 function FacetMenu({ label, allLabel, value, options, onChange }: { label: string; allLabel: string; value: string; options: string[]; onChange: (v: string) => void }) {
@@ -185,7 +242,7 @@ function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpe
   return (
     <button onClick={onOpen} className={cardCls(active)} data-asset={a.code}>
       <Cover f={coverOf(a.kind, a.latest)} className="h-[164px] w-full" />
-      <AssetBadge status={a.status} className="absolute top-2 left-2 shadow-xs" />
+      <AssetBadge status={a.status} code={a.code} className="absolute top-2 left-2 shadow-xs" />
       <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
         <div className="truncate text-sm font-medium text-fg" title={a.key}>
           {a.key}
@@ -198,6 +255,8 @@ function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpe
 
 function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { type: 'group' }>; active: boolean; onOpen: () => void }) {
   const shown = tile.assets.slice(0, 3)
+  const pend = usePendingMap()
+  const st = groupStatus(tile.assets.map((a) => ({ status: pendingStatus(a.status, pend.get(reviewKey(a.code))?.act) })))
   return (
     <button onClick={onOpen} className={cardCls(active)} data-group={tile.key}>
       <div className="flex h-[164px] w-full gap-px bg-line">
@@ -208,7 +267,7 @@ function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { type: '
           </div>
         ))}
       </div>
-      <AssetBadge status={groupStatus(tile.assets)} className="absolute top-2 left-2 shadow-xs" />
+      <AssetBadge status={st} className="absolute top-2 left-2 shadow-xs" />
       <Columns2 className="absolute top-2 right-2 size-6 rounded-md bg-black/45 p-1 text-white" />
       <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
         <div className="truncate text-sm font-medium text-fg" title={tile.group}>
@@ -224,11 +283,49 @@ function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { type: '
 
 type View = 'image' | 'model' | 'compare'
 
-function AssetDrawer({ code, onClose }: { code: string | null; onClose: () => void }) {
+function AssetDrawer({ code, review, onClose }: { code: string | null; review?: Review; onClose: () => void }) {
   const q = useAsset(code)
   const a = q.data
+  const shell = useRef<HTMLDivElement>(null)
+  // 审片模式：下了判断停在这一件，撤销期走完盖印后翻到下一个待审的；撤销期内撤回不翻，自己翻走则取消这次自动跳转
+  useAdvance(code ? reviewKey(code) : undefined, !!review && !review.finished, () => review?.advance(), () => code && review?.go(code))
+  const prev = review && code ? stepQueue(review.queue, code, -1) : null
+  const next = review && code ? stepQueue(review.queue, code, 1) : null
+  const nav = useRef({ prev, next, go: review?.go })
+  nav.current = { prev, next, go: review?.go }
+  // ← → 切换（输入时、看大图时不拦截）
+  useEffect(() => {
+    if (!review) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
+      const el = e.target as HTMLElement
+      if (el.closest?.('input, textarea, [contenteditable=true], [role=menu]')) return
+      if ([...document.querySelectorAll('[data-ks-modal]')].some((m) => !shell.current || !m.contains(shell.current))) return
+      const to = e.key === 'ArrowLeft' ? nav.current.prev : e.key === 'ArrowRight' ? nav.current.next : null
+      if (to) {
+        e.preventDefault()
+        nav.current.go?.(to)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [!!review]) // eslint-disable-line react-hooks/exhaustive-deps
+  const pos = review && code ? review.queue.indexOf(code) + 1 : 0
   return (
     <Panel open={!!code} onClose={onClose} wide bare title={a?.key ?? t.asset.title}>
+      <div ref={shell} className="flex min-h-0 flex-1 flex-col">
+        {review && (
+          <ReviewNav
+            pos={pos}
+            total={review.queue.length}
+            prev={!!prev}
+            next={!!next}
+            finished={review.finished}
+            onPrev={() => prev && review.go(prev)}
+            onNext={() => next && review.go(next)}
+            onExit={review.exit}
+          />
+        )}
       {q.isError ? (
         <div className="p-6">
           <ErrorState error={q.error} />
@@ -240,8 +337,9 @@ function AssetDrawer({ code, onClose }: { code: string | null; onClose: () => vo
           <Skeleton className="h-24 w-full" />
         </div>
       ) : (
-        <AssetBody key={a.code} a={a} onClose={onClose} />
+        <AssetBody key={a.code} a={a} onClose={onClose} keys={!!review} shell={shell} />
       )}
+      </div>
     </Panel>
   )
 }
@@ -249,8 +347,7 @@ function AssetDrawer({ code, onClose }: { code: string | null; onClose: () => vo
 type Detail = NonNullable<ReturnType<typeof useAsset>['data']>
 type Ver = Detail['versions'][number]
 
-function AssetBody({ a, onClose }: { a: Detail; onClose: () => void }) {
-  const slots = useContext(AssetReviewContext)
+function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void; keys: boolean; shell: React.RefObject<HTMLDivElement | null> }) {
   const now = useNow()
   const versions = a.versions
   const [shownN, setShownN] = useState(a.version)
@@ -286,7 +383,7 @@ function AssetBody({ a, onClose }: { a: Detail; onClose: () => void }) {
           </div>
           <div className="mt-1 text-[13px] text-fg-3">{metaLine(a.code, t.asset.ver(a.version), relTime(a.updated_at, now))}</div>
         </div>
-        <AssetBadge status={a.status as AssetStatus} className="mt-1" />
+        <AssetBadge status={a.status as AssetStatus} code={a.code} className="mt-1" />
         <Button variant="ghost" size="icon-sm" aria-label={t.common.close} onClick={onClose} className="max-lg:hidden">
           <X className="size-4" />
         </Button>
@@ -362,8 +459,9 @@ function AssetBody({ a, onClose }: { a: Detail; onClose: () => void }) {
             </div>
           </section>
         )}
+        <ReviewHistory reviews={a.reviews} />
       </div>
-      {slots.drawer?.(a as Asset, v?.version ?? a.version)}
+      <ReviewBar a={a} shown={v?.version ?? a.version} keys={keys} barRef={shell} />
     </div>
   )
 }
@@ -453,7 +551,7 @@ function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | null; al
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <b className="text-sm text-fg">{candidateLabel(m)}</b>
-                  <AssetBadge status={m.status} />
+                  <AssetBadge status={m.status} code={m.code} />
                   <span className="min-w-0 flex-1 truncate text-xs text-fg-3">{metaLine(m.code, t.asset.ver(m.version))}</span>
                   <Button size="sm" variant="ghost" onClick={() => onOpen(m.code)}>
                     {t.asset.openOne}

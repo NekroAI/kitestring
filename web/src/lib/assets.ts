@@ -165,6 +165,46 @@ export function reviewQueue(tiles: WallTile[]): string[] {
   return out
 }
 
+// ---------- 审核（R-351 第 4 步） ----------
+
+// reviewKey：素材审核在撤销期调度器（app/verdict.tsx 的 schedule）里的键。
+export const reviewKey = (code: string) => `asset:${code}`
+
+// pendingStatus：撤销期里结果立刻到位（docs/principles.md 第 8 条）——通过 / 返工还没生效时，图片墙和抽屉先按审核后的状态显示。
+export function pendingStatus(status: AssetStatus, act?: string): AssetStatus {
+  if (act === 'pass') return 'approved'
+  if (act === 'back') return 'rework'
+  return status
+}
+
+// canReview：这个状态能不能下这个结论（与 Hub 的 AssetCanMove 一致：制作中不能审；已通过只能改判返工，已返工只能改判通过）。
+export function canReview(status: AssetStatus, verdict: 'approved' | 'rework'): boolean {
+  if (status === 'pending') return true
+  if (status === 'approved') return verdict === 'rework'
+  if (status === 'rework') return verdict === 'approved'
+  return false
+}
+
+export type Recipient = { kind: 'submitter'; name: string } | { kind: 'pm' } | { kind: 'unknown' }
+
+// recipientOf：意见会送到哪里（审核前在判断栏旁提示；实际收件人以 Hub 为准）。提交者是会话且还没结束 → 送它；
+// 已结束 → 送同项目主调度；会话不在列表里（已清理）或提交者不是会话 → 不确定，只写「会话」。
+export function recipientOf(sub: { kind: string; ref?: string; name?: string } | undefined, sessions: { key: string; state: string; title?: string }[]): Recipient {
+  if (sub?.kind !== 'session' || !sub.ref) return { kind: 'unknown' }
+  const x = sessions.find((s) => s.key === sub.ref)
+  if (!x) return { kind: 'unknown' }
+  if (x.state === 'ended') return { kind: 'pm' }
+  return { kind: 'submitter', name: x.title || sub.name || '' }
+}
+
+// stepQueue：审片模式里 ← / → 在队列里前后切换（不跳过已审的，回头还能看）；到头返回 null。
+export function stepQueue(queue: string[], cur: string, d: 1 | -1): string | null {
+  const i = queue.indexOf(cur)
+  if (i < 0) return queue[0] ?? null
+  const j = i + d
+  return j >= 0 && j < queue.length ? queue[j] : null
+}
+
 // nextInQueue（第 4 步）：from 之后下一个仍待审的；后面没有就从头找；都审完返回 null。
 export function nextInQueue(queue: string[], from: number, statusOf: (code: string) => string | undefined): number | null {
   const n = queue.length

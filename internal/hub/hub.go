@@ -445,7 +445,7 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 			continue
 		}
 		pd := protocol.Decision{ID: d.ID, Code: d.Code, SessionKey: d.SessionKey, Question: d.Question, Answer: proxyText(d), Delivered: d.Status == store.DecDelivered,
-			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: d.Kind == store.KindTell && d.FYI,
+			Kind: d.Kind, ReqCode: d.RequirementCode, ReqTitle: d.RequirementTitle, Quiet: store.QuietKind(d.Kind) && d.FYI,
 			Replyable: d.Kind == store.KindTell && d.AssignedBy != ""}
 		if d.Kind == store.KindFeedback {
 			pd.Advice = d.Context
@@ -519,6 +519,10 @@ func (h *Hub) staleDelivered(ctx context.Context, list []store.Decision) map[str
 			stale[d.ID] = true // 身份变更只送达一次；压缩后补发的是当前身份的提示词
 			continue
 		}
+		if d.Kind == store.KindAssetReview {
+			stale[d.ID] = h.assetReviewStale(ctx, d) // 资源库的审核意见（R-351）：只补还在返工、没有新版本的
+			continue
+		}
 		if d.RequirementID == "" {
 			continue
 		}
@@ -546,7 +550,7 @@ func (h *Hub) decisionsChanged(ctx context.Context, d store.Decision) {
 	if d.SessionKey == "" {
 		return
 	}
-	if !(d.Kind == store.KindTell && d.FYI) {
+	if !(store.QuietKind(d.Kind) && d.FYI) {
 		h.clearIdle(ctx, d.SessionKey) // 点名给它的（指派、答复、指名消息）照常唤醒，同时恢复待命超时的开发（R-229）
 	}
 	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {

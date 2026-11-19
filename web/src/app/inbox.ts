@@ -92,7 +92,8 @@ export function useWorkbench() {
       th.urgency = Math.min(th.urgency, 3)
     }
     // 待转交：已答复但目标会话已结束（改状态申请 R-188 不算：批准时纸鸢已经改好，结果只是告诉申请方）
-    for (const d of ds.filter((x) => x.status === 'answered' && x.kind !== 'role' && x.kind !== 'tell' && x.request_kind !== 'status')) {
+    // 资源库里「通过」的审核意见只告知（R-351）：提交的会话结束了也不用转交
+    for (const d of ds.filter((x) => x.status === 'answered' && x.kind !== 'role' && x.kind !== 'tell' && x.request_kind !== 'status' && !(x.kind === 'asset_review' && x.fyi))) {
       const s = d.session_key ? byKey.get(d.session_key) : undefined
       if (s && s.state !== 'ended' && s.state !== 'lost') continue
       const th = s ? thread(s.key, projectOf(s), s) : projectThread(d.project_id ?? '', d.project_name ?? '')

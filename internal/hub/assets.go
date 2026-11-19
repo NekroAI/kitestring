@@ -350,6 +350,7 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 		RequirementID: reqID, Batch: batch, Branch: p.Branch, Commit: p.Commit, Status: p.Status, Items: p.Items})
 	if err == nil {
 		h.broker.publish("assets") // 资源库页（R-351 第 3 步）收到后重新拉列表
+		h.refreshReviewTargets(ctx, out)
 	}
 	return out, err
 }

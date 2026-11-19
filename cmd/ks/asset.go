@@ -124,6 +124,19 @@ func runAsset(args []string) error {
 			}
 			fmt.Println()
 		}
+		if len(d.Reviews) > 0 {
+			fmt.Println("审核记录（新的在前）：")
+			for _, r := range d.Reviews {
+				fmt.Printf("  %s · 第 %d 版 · %s · %s", r.CreatedAt.Local().Format("01-02 15:04"), r.Version, assetStatusLabel[r.Verdict], reviewAuthor(r.Author))
+				if r.Comment != "" {
+					fmt.Printf("：%s", r.Comment)
+				}
+				if len(r.Files) > 0 {
+					fmt.Printf("（附图 %d 张）", len(r.Files))
+				}
+				fmt.Println()
+			}
+		}
 		return nil
 	default: // queue
 		var out struct {
@@ -162,6 +175,22 @@ func printJSON(v any) error {
 	}
 	fmt.Println(string(b))
 	return nil
+}
+
+// reviewAuthor：审核意见的作者（R-351）——用户 / 会话 / 访客（访客给 R-365 资源库分享预留）。
+func reviewAuthor(x store.AssetAuthor) string {
+	switch x.Kind {
+	case store.SubmitterUser:
+		return "用户"
+	case store.SubmitterGuest:
+		return "访客「" + x.Name + "」"
+	case store.SubmitterSession:
+		if x.Name != "" {
+			return "会话「" + x.Name + "」"
+		}
+		return "会话"
+	}
+	return "未知"
 }
 
 func assetLine(a store.Asset) string {

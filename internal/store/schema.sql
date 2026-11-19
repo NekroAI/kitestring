@@ -745,3 +745,26 @@ CREATE TABLE IF NOT EXISTS asset_pushes (
 
 -- 附件按 sha256 去重（R-351）用
 CREATE INDEX IF NOT EXISTS files_sha ON files(sha256);
+
+-- 素材的审核记录（R-351 第 4 步）：每次「通过」「返工」记一行，旧的不删（改判也是新的一行）。
+-- version 是审核时的最新版本；author_* 是写意见的人：user 你 / session 会话 / guest 分享页访客（R-365 预留，ref 是访客链接 ID），含义同 assets.submitter_*。
+-- 意见用 decisions 里 kind = asset_review 的一条送达（decision_id）：sent_to 是收件会话，sent_as = submitter 提交素材的会话 /
+-- pm 提交的会话已结束、转给同项目主调度 / 空 = 没有可送达的会话；sent_name 是收件会话当时的标题。
+CREATE TABLE IF NOT EXISTS asset_reviews (
+	id          TEXT PRIMARY KEY,
+	asset_id    TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+	version     INTEGER NOT NULL,
+	verdict     TEXT NOT NULL,
+	comment     TEXT NOT NULL DEFAULT '',
+	files       TEXT NOT NULL DEFAULT '[]',
+	author_kind TEXT NOT NULL DEFAULT '',
+	author_ref  TEXT NOT NULL DEFAULT '',
+	author_name TEXT NOT NULL DEFAULT '',
+	decision_id TEXT NOT NULL DEFAULT '',
+	sent_to     TEXT NOT NULL DEFAULT '',
+	sent_as     TEXT NOT NULL DEFAULT '',
+	sent_name   TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS asset_reviews_asset ON asset_reviews(asset_id, created_at);
+CREATE INDEX IF NOT EXISTS asset_reviews_decision ON asset_reviews(decision_id);

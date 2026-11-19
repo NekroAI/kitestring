@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { RefIndexProvider } from '../ui/refmark'
 import { ArrowLeftRight, Box, FolderKanban, KeyRound, LayoutDashboard, ListTodo, Monitor, PanelLeftClose, PanelLeftOpen, Search, Settings2, Share2, WifiOff } from 'lucide-react'
-import { useCommsPending, useLiveUpdates } from '../api/queries'
+import { useAssetCounts, useCommsPending, useLiveUpdates } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useNow, usePref } from '../lib/util'
 import { Tip } from '../ui/base'
@@ -56,16 +56,19 @@ function Count({ n, tone = 'seal' }: { n: number; tone?: 'seal' | 'wait' }) {
 
 // 通讯旁的黄色数字（R-249）：还在等对方醒来的消息。只是提示，不进「要你处理」，所以用黄色而不是朱砂
 // 分享旁的数字只数待收的访客留言（R-281），同样用黄色：访客留言不挡进行中的工作
-function navCount(to: string, todo: number, unsent: number, guests = 0): { n: number; tone: 'seal' | 'wait'; tip?: string } {
+// 资源库旁的数字是待审素材数（R-351），同样用黄色：只是提示，不进「待处理」
+function navCount(to: string, todo: number, unsent: number, guests = 0, assets = 0): { n: number; tone: 'seal' | 'wait'; tip?: string } {
   if (to === '/') return { n: todo, tone: 'seal' }
   if (to === '/comms') return { n: unsent, tone: 'wait', tip: unsent ? t.nav.commsTip(unsent) : undefined }
   if (to === '/shares') return { n: guests, tone: 'wait', tip: guests ? t.share.inbox.pending(guests) : undefined }
+  if (to === '/assets') return { n: assets, tone: 'wait', tip: assets ? t.nav.assetsTip(assets) : undefined }
   return { n: 0, tone: 'seal' }
 }
 
 // 侧边栏可折叠成图标栏（R-18）：⌘\ 或底部按钮切换，记在本机。折叠后名称在悬停提示里。
 function Sidebar({ todo, unsent, commsTo, guests, connected, collapsed, onToggle }: { todo: number; unsent: number; commsTo: string; guests: number; connected: boolean; collapsed: boolean; onToggle: () => void }) {
   const wb = useWorkbench()
+  const assets = useAssetCounts().data?.pending ?? 0
   const now = useNow()
   const { openPalette } = useCommand()
   const c = collapsed
@@ -98,7 +101,7 @@ function Sidebar({ todo, unsent, commsTo, guests, connected, collapsed, onToggle
       </Tip>
       <nav className="space-y-0.5">
         {nav.map((n) => {
-          const k = navCount(n.to, todo, unsent, guests)
+          const k = navCount(n.to, todo, unsent, guests, assets)
           return (
           <Tip key={n.to} side="right" content={c ? (n.keys ? withKey(k.tip ? `${n.label} · ${k.tip}` : n.label, n.keys) : n.label) : null}>
             {/* 外面包一层：Tip 的 asChild 会把 NavLink 的函数 className 拼成字符串 */}
