@@ -337,7 +337,7 @@ export function FacetMenu({ label, allLabel, value, options, onChange }: { label
 // 图片墙的一格：高度固定（设计原则第 3 条），名字截断。
 const cardCls = (active: boolean) =>
   cx(
-    'group relative flex h-[232px] flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition hover:border-line-strong active:scale-[.99]',
+    'group relative flex h-[220px] flex-col overflow-hidden rounded-2xl border bg-surface text-left shadow-card transition hover:border-line-strong active:scale-[.99]',
     active ? 'border-accent ring-2 ring-accent/30' : 'border-line',
   )
 const metaLine = (...xs: (string | number | undefined)[]) => xs.filter((x) => x !== undefined && x !== '').join(t.common.sep)
@@ -497,8 +497,10 @@ export function AssetCard({ a, active, onOpen, variants = 0, onFamily, label }: 
           <div className="truncate text-sm font-medium text-fg" title={a.key}>
             {label ?? assetName(a)}
           </div>
-          <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.uid ? subtypeOf(a) || a.category : a.category, t.asset.ver(a.version))}</div>
-          <FileTypeTags tags={fileTagsOf(a)} className="mt-1" />
+          <div className="mt-0.5 flex items-center gap-2">
+            <div className="min-w-0 flex-1 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.uid ? subtypeOf(a) || a.category : a.category, t.asset.ver(a.version))}</div>
+            <FileTypeTags tags={fileTagsOf(a)} className="shrink-0" />
+          </div>
         </div>
       </button>
       <PickBox codes={[a.code]} name={assetName(a)} />
@@ -535,8 +537,10 @@ export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { 
           <div className="truncate text-sm font-medium text-fg" title={tile.group}>
             {tile.group}
           </div>
-          <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(tile.batch, tile.assets[0].category, t.asset.candidates(tile.assets.map(candidateLabel)))}</div>
-          <FileTypeTags tags={uniqTags(tile.assets.flatMap(fileTagsOf))} className="mt-1" />
+          <div className="mt-0.5 flex items-center gap-2">
+            <div className="min-w-0 flex-1 truncate text-xs text-fg-3">{metaLine(tile.batch, tile.assets[0].category, t.asset.candidates(tile.assets.map(candidateLabel)))}</div>
+            <FileTypeTags tags={uniqTags(tile.assets.flatMap(fileTagsOf))} className="shrink-0" />
+          </div>
         </div>
       </button>
       <PickBox codes={codes} name={tile.group} />
@@ -888,13 +892,13 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     <div className={cx('relative w-full overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]', onStage ? 'min-h-0 flex-1' : 'aspect-[4/3]')} data-stage={cur}>
       {cur === 'model' && glb ? (
         <Suspense fallback={null}>
-          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0" sync={sync} main />
+          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0 rounded-[11px]" sync={sync} main />
         </Suspense>
       ) : cur === 'compare3d' && pair3d ? (
         <Suspense fallback={null}>
           <div className="absolute inset-0 grid grid-cols-2 divide-x divide-line" data-compare3d="">
             {[pair3d.before, pair3d.after].map((x) => (
-              <Viewer3D key={x.id} url={fileUrl(glbOf(a.kind, x)!.id)} className="relative min-w-0" sync={sync} label={t.asset.ver(x.version)} main={x === pair3d.after} />
+              <Viewer3D key={x.id} url={fileUrl(glbOf(a.kind, x)!.id)} className={cx('relative min-w-0', x === pair3d.before ? 'rounded-l-[11px]' : 'rounded-r-[11px]')} sync={sync} label={t.asset.ver(x.version)} main={x === pair3d.after} />
             ))}
           </div>
         </Suspense>
@@ -1149,7 +1153,7 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
               <div key={m.id} className="min-w-0" data-candidate={labelOf(m)}>
                 <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]">
                   <Suspense fallback={null}>
-                    <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0" sync={sync} label={labelOf(m)} main={i === 0} />
+                    <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0 rounded-[11px]" sync={sync} label={labelOf(m)} main={i === 0} />
                   </Suspense>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
