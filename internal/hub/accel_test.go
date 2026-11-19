@@ -42,7 +42,7 @@ func TestNormalizeAccelURL(t *testing.T) {
 			t.Errorf("normalizeAccelURL(%q) = %q, %v", in, got, err)
 		}
 	}
-	for _, in := range []string{"ks.example.com", "ftp://a.com", "https://", "https://a.com/?x=1", "https://u:p@a.com", "javascript:alert(1)"} {
+	for _, in := range []string{"ks.example.com", "ftp://example.com", "https://", "https://example.com/?x=1", "https://u:p@example.com", "javascript:alert(1)"} {
 		if _, err := normalizeAccelURL(in); err == nil {
 			t.Errorf("normalizeAccelURL(%q) 应报错", in)
 		}
