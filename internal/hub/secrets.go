@@ -226,6 +226,11 @@ func (h *Hub) secretView(ctx context.Context, x store.Secret) store.Secret {
 	if l, err := h.store.LastSecretUse(ctx, x.ID); err == nil {
 		x.LastUse = l
 	}
+	return h.secretMask(x)
+}
+
+// secretMask 清掉敏感字段的值，只留不敏感字段的明文（secretView 去掉最近一次使用的部分）。
+func (h *Hub) secretMask(x store.Secret) store.Secret {
 	x.Fields = slices.Clone(x.Fields)
 	var vals map[string]string
 	for i, f := range x.Fields {
@@ -683,10 +688,19 @@ func (h *Hub) registerSecretsWeb(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			// 各凭据最近一次使用一次查回来，不逐个查（R-382）
+			ids := make([]string, len(list))
+			for i, x := range list {
+				ids[i] = x.ID
+			}
+			uses, err := h.store.LastSecretUses(ctx, ids)
 			out := &secretsOut{}
 			out.Body.Secrets = make([]store.Secret, len(list))
 			for i, x := range list {
-				out.Body.Secrets[i] = h.secretView(ctx, x)
+				if err == nil {
+					x.LastUse = uses[x.ID]
+				}
+				out.Body.Secrets[i] = h.secretMask(x)
 			}
 			return out, nil
 		})

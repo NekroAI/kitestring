@@ -126,7 +126,7 @@ func (h *Hub) startNudge(ctx context.Context, r store.Requirement, to string, wa
 
 // closeStaleNudges 关掉还没送达、但需求已开始处理（不在待开始，或已交给别的会话）的提醒；返回关掉了几条。
 func (h *Hub) closeStaleNudges(ctx context.Context) int {
-	list, err := h.store.ListDecisions(ctx, []string{store.DecAnswered}, 1000)
+	list, err := h.store.ListDecisionsKind(ctx, []string{store.DecAnswered}, 1000, store.KindTell) // 只取团队消息（R-382）
 	if err != nil {
 		return 0
 	}

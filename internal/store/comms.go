@@ -37,19 +37,30 @@ func (s *Store) UnsentTells(ctx context.Context, projectID string, limit int) ([
 // DecisionCodes 把决策 ID 换成编号（D-x），查不到的不出现在结果里。
 func (s *Store) DecisionCodes(ctx context.Context, ids []string) (map[string]string, error) {
 	out := map[string]string{}
+	seen := map[string]bool{}
+	var want []string
 	for _, id := range ids {
-		if id == "" {
-			continue
+		if id != "" && !seen[id] {
+			seen[id] = true
+			want = append(want, id)
 		}
-		if _, ok := out[id]; ok {
-			continue
-		}
-		var seq int
-		err := s.db.QueryRowContext(ctx, `SELECT seq FROM decisions WHERE id = ?`, id).Scan(&seq)
-		if err != nil {
-			continue
-		}
-		out[id] = decCode(seq)
 	}
-	return out, nil
+	// 一次查回来，不逐个查（R-382）
+	err := eachChunk(want, func(ph string, args []any) error {
+		rows, err := s.db.QueryContext(ctx, `SELECT id, seq FROM decisions WHERE id IN (`+ph+`)`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			var seq int
+			if err := rows.Scan(&id, &seq); err != nil {
+				return err
+			}
+			out[id] = decCode(seq)
+		}
+		return rows.Err()
+	})
+	return out, err
 }

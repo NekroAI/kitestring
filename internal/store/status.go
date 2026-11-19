@@ -167,8 +167,7 @@ type StatusQuery struct {
 
 // ListStatusChanges 按时间正序列出状态变化。
 func (s *Store) ListStatusChanges(ctx context.Context, q StatusQuery) ([]StatusChange, error) {
-	sqlq := `SELECT c.id, c.requirement_id, r.seq, c.from_status, c.to_status, c.actor, c.session_key, c.role, c.via, c.ref, c.reason_kind, c.reason, c.session_title, c.at
-		FROM status_changes c JOIN requirements r ON r.id = c.requirement_id WHERE 1 = 1`
+	sqlq := statusChangeSelect
 	var args []any
 	if q.RequirementID != "" {
 		sqlq += ` AND c.requirement_id = ?`
@@ -198,15 +197,26 @@ func (s *Store) ListStatusChanges(ctx context.Context, q StatusQuery) ([]StatusC
 	defer rows.Close()
 	out := []StatusChange{}
 	for rows.Next() {
-		var c StatusChange
-		var seq int
-		var at string
-		if err := rows.Scan(&c.ID, &c.RequirementID, &seq, &c.From, &c.To, &c.Actor, &c.Session, &c.Role, &c.Via, &c.Ref, &c.ReasonKind, &c.Reason, &c.SessionTitle, &at); err != nil {
+		c, err := scanStatusChange(rows)
+		if err != nil {
 			return nil, err
 		}
-		c.RequirementCode = reqCode(seq)
-		c.At = parseTS(at)
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+const statusChangeSelect = `SELECT c.id, c.requirement_id, r.seq, c.from_status, c.to_status, c.actor, c.session_key, c.role, c.via, c.ref, c.reason_kind, c.reason, c.session_title, c.at
+		FROM status_changes c JOIN requirements r ON r.id = c.requirement_id WHERE 1 = 1`
+
+func scanStatusChange(row interface{ Scan(...any) error }) (StatusChange, error) {
+	var c StatusChange
+	var seq int
+	var at string
+	if err := row.Scan(&c.ID, &c.RequirementID, &seq, &c.From, &c.To, &c.Actor, &c.Session, &c.Role, &c.Via, &c.Ref, &c.ReasonKind, &c.Reason, &c.SessionTitle, &at); err != nil {
+		return c, err
+	}
+	c.RequirementCode = reqCode(seq)
+	c.At = parseTS(at)
+	return c, nil
 }

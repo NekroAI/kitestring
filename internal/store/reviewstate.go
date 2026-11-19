@@ -64,6 +64,16 @@ func reviewScore(p *blocks.Payload) (pass, fail, total int) {
 // ReviewOf 推出 r 这一轮的评审验证情况。r 要带 StatusChanges、Feedback（含审查任务）、Reviews。
 // 「这一轮」从最近一次进入待验收算起；之前的审查任务（例如进行中时交的代码审查）不算。
 func (s *Store) ReviewOf(ctx context.Context, r Requirement, now time.Time) *ReviewState {
+	return reviewOf(r, now, func(key string) string {
+		if x, err := s.GetSession(ctx, key); err == nil {
+			return x.Title
+		}
+		return ""
+	})
+}
+
+// reviewOf 同 ReviewOf；title 取会话标题（意见里没带标题快照时用），列表里批量查好再传进来（R-382）。
+func reviewOf(r Requirement, now time.Time, title func(key string) string) *ReviewState {
 	if r.Status != ReqReview {
 		return nil
 	}
@@ -122,9 +132,7 @@ func (s *Store) ReviewOf(ctx context.Context, r Requirement, now time.Time) *Rev
 		}
 	}
 	if out.SessionTitle == "" {
-		if x, err := s.GetSession(ctx, out.SessionKey); err == nil {
-			out.SessionTitle = x.Title
-		}
+		out.SessionTitle = title(out.SessionKey)
 	}
 	return out
 }
@@ -142,24 +150,4 @@ func reviewLine(s string, n int) string {
 		return line
 	}
 	return ""
-}
-
-// fillReviewState 给列表里的待验收需求补上评审验证情况（列表不带证据和记录，这里按条补查）。
-func (s *Store) fillReviewState(ctx context.Context, r *Requirement) error {
-	if r.Status != ReqReview {
-		return nil
-	}
-	full := *r
-	var err error
-	if full.StatusChanges, err = s.ListStatusChanges(ctx, StatusQuery{RequirementID: r.ID}); err != nil {
-		return err
-	}
-	if full.Reviews, err = s.ListReviews(ctx, r.ID); err != nil {
-		return err
-	}
-	if full.Feedback, err = s.queryDecs(ctx, decSelect+` WHERE x.requirement_id = ? AND x.kind = ? ORDER BY x.seq DESC`, r.ID, KindReviewTask); err != nil {
-		return err
-	}
-	r.Review = s.ReviewOf(ctx, full, time.Now())
-	return nil
 }

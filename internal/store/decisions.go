@@ -305,6 +305,46 @@ func (s *Store) ListDecisions(ctx context.Context, statuses []string, limit int)
 	return s.queryDecs(ctx, q, args...)
 }
 
+// ListDecisionsKind 是 ListDecisions(statuses, limit) 里 kind 为 kind 的那些（顺序相同）：在库里按种类过滤，
+// 不把最近上千条决策整行读出来再在内存里挑（R-382：每分钟的巡查这样读，占着读连接一两秒）。
+func (s *Store) ListDecisionsKind(ctx context.Context, statuses []string, limit int, kind string) ([]Decision, error) {
+	inner, args := decWindow(statuses, limit)
+	return s.queryDecs(ctx, decSelect+` WHERE x.seq IN (`+inner+`) AND x.kind = ? ORDER BY x.seq DESC`, append(args, kind)...)
+}
+
+// LatestPlanNotes：ListDecisions(statuses, limit) 里计划进展（kind = plan）每个计划最新一条的编号（计划 ID → seq）。
+func (s *Store) LatestPlanNotes(ctx context.Context, statuses []string, limit int) (map[string]int, error) {
+	inner, args := decWindow(statuses, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT plan_id, MAX(seq) FROM decisions WHERE seq IN (`+inner+`) AND kind = ? AND COALESCE(plan_id, '') <> '' GROUP BY plan_id`, append(args, KindPlan)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		var seq int
+		if err := rows.Scan(&id, &seq); err != nil {
+			return nil, err
+		}
+		out[id] = seq
+	}
+	return out, rows.Err()
+}
+
+// decWindow 是 ListDecisions(statuses, limit) 选中的那些决策编号的子查询。
+func decWindow(statuses []string, limit int) (string, []any) {
+	q := `SELECT seq FROM decisions`
+	var args []any
+	if len(statuses) > 0 {
+		q += ` WHERE status IN (?` + strings.Repeat(", ?", len(statuses)-1) + `)`
+		for _, st := range statuses {
+			args = append(args, st)
+		}
+	}
+	return q + ` ORDER BY seq DESC LIMIT ?`, append(args, limit)
+}
+
 func (s *Store) queryDecs(ctx context.Context, q string, args ...any) ([]Decision, error) {
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {

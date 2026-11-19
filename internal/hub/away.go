@@ -223,24 +223,6 @@ func (h *Hub) proxyGrant(ctx context.Context, projectID string) (store.Grant, er
 	return g, nil
 }
 
-// awayGrant 返回这次离开给项目开的授权窗口（没有时取项目当前生效的窗口，按这次离开的范围收窄；scope = none 时没有）。
-func (h *Hub) awayGrant(ctx context.Context, a store.Away, projectID string) *store.Grant {
-	gs, err := h.store.AwayGrants(ctx, a.ID)
-	if err == nil {
-		for i := len(gs) - 1; i >= 0; i-- {
-			if gs[i].ProjectID == projectID {
-				return &gs[i]
-			}
-		}
-	}
-	if g, err := h.store.ActiveGrant(ctx, projectID); err == nil {
-		if g, ok := clampGrantByAway(g, a.Scope); ok {
-			return &g
-		}
-	}
-	return nil
-}
-
 var expectZh = map[int]string{30: "30 分钟", 120: "2 小时", 480: "8 小时", 0: "不确定"}
 
 // openAwayGrants：开始离开时给各项目在岗的主助理开授权窗口（scope = none 时只告诉它这次不代答）。
@@ -481,16 +463,15 @@ func (h *Hub) awayReport(ctx context.Context, a store.Away, now time.Time) (Away
 	for _, x := range advice {
 		adv[x.RequirementCode] = x
 	}
+	mc := h.newMorningCache() // 各项目共用的数据一次查回来（R-382）
+	mc.shared = &a.StartedAt
 	for _, p := range ps {
 		if p.Hidden {
 			continue
 		}
-		var note *store.MorningNote
-		if n, err := h.store.GetMorning(ctx, p.ID); err == nil {
-			note = &n
-		}
-		g := h.awayGrant(ctx, a, p.ID)
-		pr, err := h.periodReport(ctx, p, a.StartedAt, g, note)
+		note := mc.note(ctx, p.ID)
+		g := mc.awayGrant(ctx, a, p.ID)
+		pr, err := h.periodReport(ctx, mc, p, a.StartedAt, g, note)
 		if err != nil {
 			return r, err
 		}
@@ -498,7 +479,7 @@ func (h *Hub) awayReport(ctx context.Context, a store.Away, now time.Time) (Away
 		r.Counts.Proxied += len(pr.Proxied)
 		r.Counts.Released += len(pr.Releases)
 		r.Counts.Delivered += len(pr.Done)
-		items, err := h.awayWaiting(ctx, p, g, adv, pushed)
+		items, err := h.awayWaiting(ctx, mc, p, g, adv, pushed)
 		if err != nil {
 			return r, err
 		}
@@ -545,9 +526,9 @@ func trimPeriod(pr *MorningReport, until time.Time) {
 }
 
 // awayWaiting 列出项目里还在等你的事：待答复决策、待批准的计划、受阻、待验收。
-func (h *Hub) awayWaiting(ctx context.Context, p store.Project, g *store.Grant, adv map[string]store.Advice, pushed map[string]bool) ([]awayItem, error) {
+func (h *Hub) awayWaiting(ctx context.Context, mc *morningCache, p store.Project, g *store.Grant, adv map[string]store.Advice, pushed map[string]bool) ([]awayItem, error) {
 	out := []awayItem{}
-	pending, err := h.store.PendingDecisions(ctx, p.ID)
+	pending, err := mc.pendingOf(ctx, p.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -567,7 +548,7 @@ func (h *Hub) awayWaiting(ctx context.Context, p store.Project, g *store.Grant, 
 		}
 		out = append(out, it)
 	}
-	plans, err := h.store.ListPlans(ctx, p.ID)
+	plans, err := mc.plansOf(ctx, p.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -576,11 +557,14 @@ func (h *Hub) awayWaiting(ctx context.Context, p store.Project, g *store.Grant, 
 			out = append(out, awayItem{Kind: "plan", Ref: x.Code, Title: x.Title, ProjectName: p.Name, First: true, Reason: awayPlanUserOnly, Pushed: pushed[x.Code]})
 		}
 	}
-	reqs, err := h.store.ListRequirements(ctx, p.ID, []string{store.ReqReview, store.ReqBlocked})
+	reqs, err := mc.reqsOf(ctx, p.ID) // 同 ListRequirements(p.ID, 待验收 + 受阻)：全部取回后在下面按状态挑
 	if err != nil {
 		return nil, err
 	}
 	for _, x := range reqs {
+		if x.Status != store.ReqReview && x.Status != store.ReqBlocked {
+			continue
+		}
 		if x.Status == store.ReqBlocked {
 			out = append(out, awayItem{Kind: "blocked", Ref: x.Code, Title: x.Title, ProjectName: p.Name, First: true, Reason: "受阻"})
 			continue

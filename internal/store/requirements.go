@@ -335,13 +335,23 @@ func (s *Store) ListRequirements(ctx context.Context, projectID string, statuses
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	rows.Close()
+	// 关联会话、评审验证情况按批查回来，不逐条查（R-382）
+	ids := make([]string, len(out))
 	for i := range out {
-		if err := s.fillReqSessions(ctx, &out[i]); err != nil {
-			return nil, err
+		ids[i] = out[i].ID
+	}
+	links, err := s.reqSessionsOf(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		if ks := links[out[i].ID]; ks != nil {
+			out[i].Sessions = ks
 		}
-		if err := s.fillReviewState(ctx, &out[i]); err != nil {
-			return nil, err
-		}
+	}
+	if err := s.fillReviewStates(ctx, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

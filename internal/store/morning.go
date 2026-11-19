@@ -126,6 +126,64 @@ func (s *Store) ReviewAdvice(ctx context.Context, projectID string) ([]Advice, e
 	return out, rows.Err()
 }
 
+// 下面几个 …All 是对应函数的全部项目版（项目 → 结果），每个项目的条件、排序、条数上限与逐个项目查一致；
+// 离开期间小结给每个项目都出一份，起点相同，一次查回来再按项目分开（R-382：原来每个项目各查五六次）。
+
+// ProjectDecisionsSinceAll 是 ProjectDecisionsSince 的全部项目版。
+func (s *Store) ProjectDecisionsSinceAll(ctx context.Context, kind string, since time.Time, limit int) (map[string][]Decision, error) {
+	return s.decsByProject(ctx, decSelect+` WHERE x.id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY seq DESC) AS n
+		FROM decisions WHERE project_id IS NOT NULL AND kind = ? AND created_at >= ?) WHERE n <= ?) ORDER BY x.seq DESC`, kind, ts(since), limit)
+}
+
+// ProxiedSinceAll 是 ProxiedSince 的全部项目版。
+func (s *Store) ProxiedSinceAll(ctx context.Context, since time.Time) (map[string][]Decision, error) {
+	return s.decsByProject(ctx, decSelect+` WHERE x.id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY proxy_at DESC) AS n
+		FROM decisions WHERE project_id IS NOT NULL AND proxy_by <> '' AND proxy_at >= ?) WHERE n <= 100) ORDER BY x.proxy_at DESC`, ts(since))
+}
+
+// PendingDecisionsAll 是 PendingDecisions 的全部项目版。
+func (s *Store) PendingDecisionsAll(ctx context.Context) (map[string][]Decision, error) {
+	return s.decsByProject(ctx, decSelect+` WHERE x.project_id IS NOT NULL AND x.kind = ? AND x.status = ? ORDER BY x.seq`, KindDecision, DecPending)
+}
+
+func (s *Store) decsByProject(ctx context.Context, q string, args ...any) (map[string][]Decision, error) {
+	list, err := s.queryDecs(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]Decision{}
+	for _, d := range list {
+		out[d.ProjectID] = append(out[d.ProjectID], d)
+	}
+	return out, nil
+}
+
+// EvidenceSinceAll 是 EvidenceSince 的全部项目版。
+func (s *Store) EvidenceSinceAll(ctx context.Context, since time.Time) (map[string][]Delivery, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT r.project_id, e.requirement_id, e.kind, e.summary, e.link, e.payload, e.created_at FROM evidence e
+		JOIN requirements r ON r.id = e.requirement_id
+		WHERE r.project_id IS NOT NULL AND e.kind <> ? AND e.voided = 0 AND e.created_at >= ? ORDER BY e.created_at`, EvidenceReview, ts(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]Delivery{}
+	for rows.Next() {
+		var pid string
+		var d Delivery
+		var payload, at string
+		if err := rows.Scan(&pid, &d.RequirementID, &d.Kind, &d.Summary, &d.Link, &payload, &at); err != nil {
+			return nil, err
+		}
+		if p := blocks.Decode[blocks.Payload](payload); p != nil {
+			d.Verdict = p.Verdict
+		}
+		d.At = parseTS(at)
+		out[pid] = append(out[pid], d)
+	}
+	return out, rows.Err()
+}
+
 // ProjectDecisionsSince 列出项目里 since 之后创建的某类决策（新的在前）。
 func (s *Store) ProjectDecisionsSince(ctx context.Context, projectID, kind string, since time.Time, limit int) ([]Decision, error) {
 	return s.queryDecs(ctx, decSelect+` WHERE x.project_id = ? AND x.kind = ? AND x.created_at >= ? ORDER BY x.seq DESC LIMIT ?`, projectID, kind, ts(since), limit)

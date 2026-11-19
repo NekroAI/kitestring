@@ -18,21 +18,19 @@ const noticeClosed = "只告知的计划进展，目标会话已结束，不用�
 
 // noticeSweep 关掉目标会话已结束的只告知记录；返回关掉了几条。
 func (h *Hub) noticeSweep(ctx context.Context) int {
-	list, err := h.store.ListDecisions(ctx, []string{store.DecAnswered}, 1000)
+	// 只取计划进展（在库里按种类过滤，R-382：原来每分钟把最近三千条决策整行读出来再挑）
+	list, err := h.store.ListDecisionsKind(ctx, []string{store.DecAnswered}, 1000, store.KindPlan)
 	if err != nil {
 		h.log.Warn("查只告知的记录失败", "err", err)
 		return 0
 	}
-	latest := map[string]int{} // 计划 → 最新一条进展的编号（含已送达的）
-	active := map[string]bool{}
-	all, err := h.store.ListDecisions(ctx, []string{store.DecAnswered, store.DecDelivered}, 2000)
-	if err != nil {
+	if len(list) == 0 {
 		return 0
 	}
-	for _, d := range all {
-		if d.Kind == store.KindPlan && d.PlanID != "" && seqOf(d.Code) > latest[d.PlanID] {
-			latest[d.PlanID] = seqOf(d.Code)
-		}
+	active := map[string]bool{}
+	latest, err := h.store.LatestPlanNotes(ctx, []string{store.DecAnswered, store.DecDelivered}, 2000) // 计划 → 最新一条进展的编号（含已送达的）
+	if err != nil {
+		return 0
 	}
 	n := 0
 	for _, d := range list {

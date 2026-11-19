@@ -246,8 +246,34 @@ func (b *commsBuilder) delivery(ctx context.Context, d store.Decision) Delivery 
 	return deliveryOf(d, *x, true, b.at)
 }
 
+// prefetch 把这批消息涉及的会话（收件方、发件方）一次查回来放进缓存，不逐个查（R-382）。
+func (b *commsBuilder) prefetch(ctx context.Context, list []store.Decision) {
+	var keys []string
+	seen := map[string]bool{}
+	for _, d := range list {
+		for _, k := range []string{d.SessionKey, d.AssignedBy} {
+			if _, ok := b.sessions[k]; ok || seen[k] {
+				continue
+			}
+			seen[k] = true
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return
+	}
+	got, err := b.h.store.GetSessions(ctx, keys)
+	if err != nil {
+		return // 留给 session() 逐个查
+	}
+	for _, k := range keys {
+		b.sessions[k] = got[k] // 查不到的记为 nil，同 session()
+	}
+}
+
 // build 把消息行（新的在前）拼成条目；同一次广播的各行合成一条。
 func (b *commsBuilder) build(ctx context.Context, list []store.Decision) []CommsMsg {
+	b.prefetch(ctx, list)
 	var ids []string
 	for _, d := range list {
 		if d.ReplyTo != "" {

@@ -103,13 +103,13 @@ func grantEnd(g store.Grant) time.Time {
 }
 
 // morningWindow 算项目的离开期间：返回起点、据以计算的窗口；ok = false 表示不出小结。
-func (h *Hub) morningWindow(ctx context.Context, projectID string, note *store.MorningNote, at time.Time) (time.Time, *store.Grant, bool) {
+func (h *Hub) morningWindow(ctx context.Context, mc *morningCache, projectID string, note *store.MorningNote, at time.Time) (time.Time, *store.Grant, bool) {
 	// 暂时离开（R-210）：起点就是点「离开」的时刻（离开中，或结束不到 12 小时）；从没点过离开的老数据沿用下面的推算
-	if a, err := h.store.LatestAway(ctx); err == nil && (a.Active() || at.Sub(*a.EndedAt) < morningTTL) {
-		return a.StartedAt, h.awayGrant(ctx, a, projectID), true
+	if a, err := mc.latestAway(ctx); err == nil && (a.Active() || at.Sub(*a.EndedAt) < morningTTL) {
+		mc.shared = &a.StartedAt // 各项目同一个起点：期间的记录一次查回来
+		return a.StartedAt, mc.awayGrant(ctx, a, projectID), true
 	}
-	if gs, err := h.store.ListGrants(ctx, projectID, 1); err == nil && len(gs) > 0 {
-		g := gs[0]
+	if g, ok := mc.latestGrant(ctx, projectID); ok {
 		if g.Status == store.GrantActive || at.Sub(grantEnd(g)) < morningTTL {
 			return g.CreatedAt, &g, true
 		}
@@ -118,6 +118,181 @@ func (h *Hub) morningWindow(ctx context.Context, projectID string, note *store.M
 		return note.At.Add(-morningTTL), nil, true
 	}
 	return time.Time{}, nil, false
+}
+
+// morningCache 是一次小结请求里各项目共用的数据：第一次用到时一次查回来，各项目从这里取
+// （R-382：原来每个项目各查一遍总述、最近的离开、最近的窗口和需求列表，二十几个项目一次请求查库近百次）。
+// 只在一次请求里用，不跨请求缓存。查询出错时与原来逐个查出错一样处理：当作没有。
+type morningCache struct {
+	h          *Hub
+	notes      map[string]store.MorningNote
+	away       *store.Away
+	awayErr    error
+	awayGrants map[string][]store.Grant // 离开编号 → 这次离开开的窗口
+	latest     map[string]store.Grant   // 项目 → 最近一个窗口
+	active     map[string]store.Grant   // 项目 → 生效中的窗口
+	reqs       map[string][]store.Requirement
+	plans      map[string][]store.Plan
+	pending    map[string][]store.Decision // 项目 → 待答复的决策
+	// shared：各项目共用的起点（离开期间小结都从点「离开」那一刻算起）；这个起点之后的记录一次查回来放进 period
+	shared *time.Time
+	period *periodBatch
+}
+
+// periodBatch 是 shared 起点之后全部项目的记录（项目 → 列表），periodReport 从这里取。
+type periodBatch struct {
+	evidence map[string][]store.Delivery
+	tells    map[string][]store.Decision
+	releases map[string][]store.Decision
+	proxied  map[string][]store.Decision
+}
+
+func (h *Hub) newMorningCache() *morningCache {
+	return &morningCache{h: h, awayGrants: map[string][]store.Grant{}}
+}
+
+// note：项目的小结总述，没有时为 nil（同 GetMorning）。
+func (mc *morningCache) note(ctx context.Context, projectID string) *store.MorningNote {
+	if mc.notes == nil {
+		ns, err := mc.h.store.MorningNotes(ctx)
+		if err != nil {
+			ns = map[string]store.MorningNote{}
+		}
+		mc.notes = ns
+	}
+	if n, ok := mc.notes[projectID]; ok {
+		return &n
+	}
+	return nil
+}
+
+// latestAway：最近一次离开（同 LatestAway）。
+func (mc *morningCache) latestAway(ctx context.Context) (store.Away, error) {
+	if mc.away == nil {
+		a, err := mc.h.store.LatestAway(ctx)
+		mc.away, mc.awayErr = &a, err
+	}
+	return *mc.away, mc.awayErr
+}
+
+// latestGrant：项目最近一个窗口（同 ListGrants(projectID, 1) 的第一条）。
+func (mc *morningCache) latestGrant(ctx context.Context, projectID string) (store.Grant, bool) {
+	if mc.latest == nil {
+		gs, err := mc.h.store.LatestGrants(ctx)
+		if err != nil {
+			gs = map[string]store.Grant{}
+		}
+		mc.latest = gs
+	}
+	g, ok := mc.latest[projectID]
+	return g, ok
+}
+
+// awayGrant 返回这次离开给项目开的授权窗口（没有时取项目当前生效的窗口，按这次离开的范围收窄；scope = none 时没有）。
+func (mc *morningCache) awayGrant(ctx context.Context, a store.Away, projectID string) *store.Grant {
+	gs, ok := mc.awayGrants[a.ID]
+	if !ok {
+		var err error
+		if gs, err = mc.h.store.AwayGrants(ctx, a.ID); err != nil {
+			gs = nil
+		}
+		mc.awayGrants[a.ID] = gs
+	}
+	for i := len(gs) - 1; i >= 0; i-- {
+		if gs[i].ProjectID == projectID {
+			g := gs[i]
+			return &g
+		}
+	}
+	if mc.active == nil {
+		as, err := mc.h.store.ActiveGrants(ctx)
+		if err != nil {
+			as = map[string]store.Grant{}
+		}
+		mc.active = as
+	}
+	if g, ok := mc.active[projectID]; ok {
+		if g, ok := clampGrantByAway(g, a.Scope); ok {
+			return &g
+		}
+	}
+	return nil
+}
+
+// pendingOf：项目里待答复的决策（同 PendingDecisions，全部项目一次取回后按项目分组）。
+func (mc *morningCache) pendingOf(ctx context.Context, projectID string) ([]store.Decision, error) {
+	if mc.pending == nil {
+		m, err := mc.h.store.PendingDecisionsAll(ctx)
+		if err != nil {
+			return nil, err
+		}
+		mc.pending = m
+	}
+	return orEmpty(mc.pending[projectID]), nil
+}
+
+// plansOf：项目的计划（同 ListPlans(projectID)，全部计划一次取回后按项目分组）。
+func (mc *morningCache) plansOf(ctx context.Context, projectID string) ([]store.Plan, error) {
+	if mc.plans == nil {
+		all, err := mc.h.store.ListPlans(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+		mc.plans = map[string][]store.Plan{}
+		for _, x := range all {
+			mc.plans[x.ProjectID] = append(mc.plans[x.ProjectID], x)
+		}
+	}
+	return orEmpty(mc.plans[projectID]), nil
+}
+
+// periodOf：since 是各项目共用的起点时，返回这个起点之后全部项目的记录（第一次用到时查）；否则为 nil，由调用方逐个项目查。
+func (mc *morningCache) periodOf(ctx context.Context, since time.Time) (*periodBatch, error) {
+	if mc.shared == nil || !since.Equal(*mc.shared) {
+		return nil, nil
+	}
+	if mc.period != nil {
+		return mc.period, nil
+	}
+	st := mc.h.store
+	b := &periodBatch{}
+	var err error
+	if b.evidence, err = st.EvidenceSinceAll(ctx, since); err != nil {
+		return nil, err
+	}
+	if b.tells, err = st.ProjectDecisionsSinceAll(ctx, store.KindTell, since, 200); err != nil {
+		return nil, err
+	}
+	if b.releases, err = st.ProjectDecisionsSinceAll(ctx, store.KindRelease, since, 100); err != nil {
+		return nil, err
+	}
+	if b.proxied, err = st.ProxiedSinceAll(ctx, since); err != nil {
+		return nil, err
+	}
+	mc.period = b
+	return b, nil
+}
+
+func orEmpty[T any](v []T) []T {
+	if v == nil {
+		return []T{}
+	}
+	return v
+}
+
+// reqsOf：项目的需求（同 ListRequirements(projectID, nil)，全部需求一次取回后按项目分组）。
+func (mc *morningCache) reqsOf(ctx context.Context, projectID string) ([]store.Requirement, error) {
+	if mc.reqs == nil {
+		all, err := mc.h.store.ListRequirements(ctx, "", nil)
+		if err != nil {
+			return nil, err
+		}
+		mc.reqs = map[string][]store.Requirement{}
+		for _, x := range all {
+			mc.reqs[x.ProjectID] = append(mc.reqs[x.ProjectID], x)
+		}
+	}
+	return mc.reqs[projectID], nil
 }
 
 // holdReason 说明参谋为什么没代答 d（窗口 g 生效或刚结束时）；空表示参谋还可以代答。
@@ -134,14 +309,11 @@ func holdReason(d store.Decision, g store.Grant, at time.Time) (string, string) 
 	return "", ""
 }
 
-func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, out *morningOut) error {
-	var note *store.MorningNote
-	if n, err := h.store.GetMorning(ctx, p.ID); err == nil {
-		note = &n
-	}
-	since, g, ok := h.morningWindow(ctx, p.ID, note, at)
+func (h *Hub) morningReport(ctx context.Context, mc *morningCache, p store.Project, at time.Time, out *morningOut) error {
+	note := mc.note(ctx, p.ID)
+	since, g, ok := h.morningWindow(ctx, mc, p.ID, note, at)
 	if g != nil {
-		pending, err := h.store.PendingDecisions(ctx, p.ID)
+		pending, err := mc.pendingOf(ctx, p.ID)
 		if err != nil {
 			return err
 		}
@@ -157,7 +329,7 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 	if !ok {
 		return nil
 	}
-	r, err := h.periodReport(ctx, p, since, g, note)
+	r, err := h.periodReport(ctx, mc, p, since, g, note)
 	if err != nil {
 		return err
 	}
@@ -166,13 +338,13 @@ func (h *Hub) morningReport(ctx context.Context, p store.Project, at time.Time, 
 }
 
 // periodReport 汇总项目 since 之后的一段时间：完成了什么、团队消息、替你定了什么、留给你的计数。
-func (h *Hub) periodReport(ctx context.Context, p store.Project, since time.Time, g *store.Grant, note *store.MorningNote) (MorningReport, error) {
+func (h *Hub) periodReport(ctx context.Context, mc *morningCache, p store.Project, since time.Time, g *store.Grant, note *store.MorningNote) (MorningReport, error) {
 	if note != nil && note.At.Before(since) {
 		note = nil // 上一次离开时写的总述
 	}
 	r := MorningReport{ProjectID: p.ID, ProjectName: p.Name, Since: since, Grant: g, Note: note, Done: []morningDone{}, Tells: []morningTell{}, Releases: []morningRelease{}, Blocked: []string{}}
 
-	reqs, err := h.store.ListRequirements(ctx, p.ID, nil)
+	reqs, err := mc.reqsOf(ctx, p.ID)
 	if err != nil {
 		return r, err
 	}
@@ -189,8 +361,14 @@ func (h *Hub) periodReport(ctx context.Context, p store.Project, since time.Time
 	sort.Strings(r.Blocked)
 
 	// ① 完成了什么
-	evs, err := h.store.EvidenceSince(ctx, p.ID, since)
+	pb, err := mc.periodOf(ctx, since)
 	if err != nil {
+		return r, err
+	}
+	var evs []store.Delivery
+	if pb != nil {
+		evs = pb.evidence[p.ID]
+	} else if evs, err = h.store.EvidenceSince(ctx, p.ID, since); err != nil {
 		return r, err
 	}
 	idx := map[string]int{}
@@ -214,8 +392,10 @@ func (h *Hub) periodReport(ctx context.Context, p store.Project, since time.Time
 	}
 	sort.SliceStable(r.Done, func(a, b int) bool { return r.Done[a].At.After(r.Done[b].At) })
 
-	tells, err := h.store.ProjectDecisionsSince(ctx, p.ID, store.KindTell, since, 200)
-	if err != nil {
+	var tells []store.Decision
+	if pb != nil {
+		tells = pb.tells[p.ID]
+	} else if tells, err = h.store.ProjectDecisionsSince(ctx, p.ID, store.KindTell, since, 200); err != nil {
 		return r, err
 	}
 	r.TellCount = len(tells)
@@ -227,19 +407,23 @@ func (h *Hub) periodReport(ctx context.Context, p store.Project, since time.Time
 	}
 
 	// ② 替你定了什么
-	if r.Proxied, err = h.store.ProxiedSince(ctx, p.ID, since); err != nil {
-		return r, err
-	}
-	rels, err := h.store.ProjectDecisionsSince(ctx, p.ID, store.KindRelease, since, 100)
-	if err != nil {
-		return r, err
+	var rels []store.Decision
+	if pb != nil {
+		r.Proxied, rels = orEmpty(pb.proxied[p.ID]), pb.releases[p.ID]
+	} else {
+		if r.Proxied, err = h.store.ProxiedSince(ctx, p.ID, since); err != nil {
+			return r, err
+		}
+		if rels, err = h.store.ProjectDecisionsSince(ctx, p.ID, store.KindRelease, since, 100); err != nil {
+			return r, err
+		}
 	}
 	for _, d := range rels {
 		r.Releases = append(r.Releases, morningRelease{Code: d.Code, RequirementCode: d.RequirementCode, RequirementTitle: d.RequirementTitle, By: d.AssignedBy, Role: d.Context, Reason: d.Answer, Withdrawn: d.CloseReason != "", At: d.CreatedAt})
 	}
 
 	// ③④ 只计数
-	pending, err := h.store.PendingDecisions(ctx, p.ID)
+	pending, err := mc.pendingOf(ctx, p.ID)
 	if err != nil {
 		return r, err
 	}
@@ -271,11 +455,12 @@ func (h *Hub) registerMorningWeb(api huma.API) {
 				return nil, err
 			}
 			at := time.Now()
+			mc := h.newMorningCache()
 			for _, p := range ps {
 				if (in.ProjectID != "" && p.ID != in.ProjectID) || (in.ProjectID == "" && p.Hidden) {
 					continue
 				}
-				if err := h.morningReport(ctx, p, at, out); err != nil {
+				if err := h.morningReport(ctx, mc, p, at, out); err != nil {
 					return nil, err
 				}
 			}

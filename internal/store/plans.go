@@ -260,66 +260,93 @@ func (s *Store) GetPlan(ctx context.Context, ref string) (Plan, error) {
 }
 
 func (s *Store) fillStages(ctx context.Context, x *Plan) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, seq, title, status, summary, summary_blocks, summary_at, passed_at FROM plan_stages WHERE plan_id = ? ORDER BY seq`, x.ID)
-	if err != nil {
-		return err
+	return s.fillPlansStages(ctx, []*Plan{x})
+}
+
+// fillPlansStages 给一批计划补阶段和各阶段的需求：阶段、需求各一次查回来（R-382：原来每个计划各查两次）。
+func (s *Store) fillPlansStages(ctx context.Context, list []*Plan) error {
+	if len(list) == 0 {
+		return nil
 	}
-	for rows.Next() {
-		var st Stage
-		var sumAt, passAt, sumBlocks string
-		if err := rows.Scan(&st.ID, &st.Seq, &st.Title, &st.Status, &st.Summary, &sumBlocks, &sumAt, &passAt); err != nil {
-			rows.Close()
+	byID := make(map[string]*Plan, len(list))
+	ids := make([]string, 0, len(list))
+	for _, x := range list {
+		if _, ok := byID[x.ID]; !ok {
+			ids = append(ids, x.ID)
+		}
+		byID[x.ID] = x
+	}
+	type stageRef struct {
+		plan *Plan
+		i    int
+	}
+	stageAt := map[string]stageRef{} // 阶段 ID → 哪个计划的第几个阶段
+	err := eachChunk(ids, func(ph string, args []any) error {
+		rows, err := s.db.QueryContext(ctx, `SELECT plan_id, id, seq, title, status, summary, summary_blocks, summary_at, passed_at FROM plan_stages WHERE plan_id IN (`+ph+`) ORDER BY plan_id, seq`, args...)
+		if err != nil {
 			return err
 		}
-		st.SummaryAt = parseNullTS(sql.NullString{String: sumAt, Valid: sumAt != ""})
-		if bs := blocks.Decode[[]blocks.Block](sumBlocks); bs != nil {
-			st.SummaryBlocks = *bs
-		}
-		st.PassedAt = parseNullTS(sql.NullString{String: passAt, Valid: passAt != ""})
-		st.Requirements = []PlanReq{}
-		x.Stages = append(x.Stages, st)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	rows, err = s.db.QueryContext(ctx, `SELECT r.id, r.seq, r.title, r.status, r.priority, r.kind, r.stage_id,
-		COALESCE((SELECT e.payload FROM evidence e WHERE e.requirement_id = r.id AND e.kind <> 'review' AND e.voided = 0 AND e.payload <> '' ORDER BY e.created_at DESC LIMIT 1), '')
-		FROM requirements r JOIN plan_stages ps ON ps.id = r.stage_id WHERE ps.plan_id = ? ORDER BY r.seq`, x.ID)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	idx := map[string]int{}
-	for i, st := range x.Stages {
-		idx[st.ID] = i
-	}
-	for rows.Next() {
-		var r PlanReq
-		var seq int
-		var sid, payload string
-		if err := rows.Scan(&r.ID, &seq, &r.Title, &r.Status, &r.Priority, &r.Kind, &sid, &payload); err != nil {
-			return err
-		}
-		r.CheckPass, r.CheckTotal = blocks.Decode[blocks.Payload](payload).Score()
-		r.Code = reqCode(seq)
-		if i, ok := idx[sid]; ok {
-			x.Stages[i].Requirements = append(x.Stages[i].Requirements, r)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, st := range x.Stages {
-		if st.Status != StagePassed {
-			if x.Current == 0 {
-				x.Current = st.Seq
+		defer rows.Close()
+		for rows.Next() {
+			var st Stage
+			var pid, sumAt, passAt, sumBlocks string
+			if err := rows.Scan(&pid, &st.ID, &st.Seq, &st.Title, &st.Status, &st.Summary, &sumBlocks, &sumAt, &passAt); err != nil {
+				return err
 			}
-			continue
+			st.SummaryAt = parseNullTS(sql.NullString{String: sumAt, Valid: sumAt != ""})
+			if bs := blocks.Decode[[]blocks.Block](sumBlocks); bs != nil {
+				st.SummaryBlocks = *bs
+			}
+			st.PassedAt = parseNullTS(sql.NullString{String: passAt, Valid: passAt != ""})
+			st.Requirements = []PlanReq{}
+			if x := byID[pid]; x != nil {
+				stageAt[st.ID] = stageRef{x, len(x.Stages)}
+				x.Stages = append(x.Stages, st)
+			}
 		}
-		for _, r := range st.Requirements {
-			if r.Status != ReqDone && r.Status != ReqShelved {
-				x.Paused = true
+		return rows.Err()
+	})
+	if err != nil {
+		return err
+	}
+	err = eachChunk(ids, func(ph string, args []any) error {
+		rows, err := s.db.QueryContext(ctx, `SELECT r.id, r.seq, r.title, r.status, r.priority, r.kind, r.stage_id,
+		COALESCE((SELECT e.payload FROM evidence e WHERE e.requirement_id = r.id AND e.kind <> 'review' AND e.voided = 0 AND e.payload <> '' ORDER BY e.created_at DESC LIMIT 1), '')
+		FROM requirements r JOIN plan_stages ps ON ps.id = r.stage_id WHERE ps.plan_id IN (`+ph+`) ORDER BY r.seq`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r PlanReq
+			var seq int
+			var sid, payload string
+			if err := rows.Scan(&r.ID, &seq, &r.Title, &r.Status, &r.Priority, &r.Kind, &sid, &payload); err != nil {
+				return err
+			}
+			r.CheckPass, r.CheckTotal = blocks.Decode[blocks.Payload](payload).Score()
+			r.Code = reqCode(seq)
+			if at, ok := stageAt[sid]; ok {
+				at.plan.Stages[at.i].Requirements = append(at.plan.Stages[at.i].Requirements, r)
+			}
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return err
+	}
+	for _, x := range list {
+		for _, st := range x.Stages {
+			if st.Status != StagePassed {
+				if x.Current == 0 {
+					x.Current = st.Seq
+				}
+				continue
+			}
+			for _, r := range st.Requirements {
+				if r.Status != ReqDone && r.Status != ReqShelved {
+					x.Paused = true
+				}
 			}
 		}
 	}
@@ -352,10 +379,12 @@ func (s *Store) ListPlans(ctx context.Context, projectID string) ([]Plan, error)
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	ptrs := make([]*Plan, len(out))
 	for i := range out {
-		if err := s.fillStages(ctx, &out[i]); err != nil {
-			return nil, err
-		}
+		ptrs[i] = &out[i]
+	}
+	if err := s.fillPlansStages(ctx, ptrs); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

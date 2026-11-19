@@ -236,12 +236,16 @@ func scanSecret(row interface{ Scan(...any) error }) (Secret, error) {
 
 // fillSecretProjects 补上授权项目的名字；项目已删除的写 ID。
 func (s *Store) fillSecretProjects(ctx context.Context, x *Secret) {
+	fillSecretProjectNames(x, func(id string) string { return s.projectName(ctx, id) })
+}
+
+func fillSecretProjectNames(x *Secret, name func(id string) string) {
 	x.ProjectNames = make([]string, len(x.Projects))
 	for i, id := range x.Projects {
-		x.ProjectNames[i] = s.projectName(ctx, id)
+		x.ProjectNames[i] = name(id)
 	}
 	if x.Ask != nil && x.Ask.ProjectID != "" {
-		x.Ask.ProjectName = s.projectName(ctx, x.Ask.ProjectID)
+		x.Ask.ProjectName = name(x.Ask.ProjectID)
 	}
 	if x.Ask != nil && x.Ask.Allowed == nil {
 		x.Ask.Allowed = []string{}
@@ -434,8 +438,24 @@ func (s *Store) ListSecrets(ctx context.Context) ([]Secret, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	// 项目名一次取回，不逐个凭据逐个项目查（R-382）
+	names := map[string]string{}
+	if rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM projects`); err == nil {
+		for rows.Next() {
+			var id, name string
+			if rows.Scan(&id, &name) == nil {
+				names[id] = name
+			}
+		}
+		rows.Close()
+	}
 	for i := range out {
-		s.fillSecretProjects(ctx, &out[i])
+		fillSecretProjectNames(&out[i], func(id string) string {
+			if n, ok := names[id]; ok {
+				return n
+			}
+			return id
+		})
 	}
 	return out, nil
 }
@@ -516,6 +536,24 @@ func (s *Store) ListSecretLogs(ctx context.Context, secretID string) ([]SecretLo
 }
 
 // LastSecretUse 是凭据最近一次取用（含被拒、写入磁盘）。
+// LastSecretUses 一次取回一批凭据各自最近一次使用（凭据 ID → 记录，没用过的不在里面），对应逐个的 LastSecretUse（R-382）。
+func (s *Store) LastSecretUses(ctx context.Context, ids []string) (map[string]*SecretLog, error) {
+	out := map[string]*SecretLog{}
+	err := eachChunk(ids, func(ph string, args []any) error {
+		args = append([]any{SecretLogUse, SecretLogWrite}, args...)
+		list, err := s.querySecretLogs(ctx, secretLogSelect+` WHERE l.rowid IN (SELECT (SELECT y.rowid FROM secret_logs y WHERE y.secret_id = x.id AND y.kind IN (?, ?) ORDER BY y.at DESC, y.rowid DESC LIMIT 1)
+			FROM secrets x WHERE x.id IN (`+ph+`))`, args...)
+		if err != nil {
+			return err
+		}
+		for i := range list {
+			out[list[i].SecretID] = &list[i]
+		}
+		return nil
+	})
+	return out, err
+}
+
 func (s *Store) LastSecretUse(ctx context.Context, secretID string) (*SecretLog, error) {
 	list, err := s.querySecretLogs(ctx, secretLogSelect+` WHERE l.secret_id = ? AND l.kind IN (?, ?) ORDER BY l.at DESC, l.rowid DESC LIMIT 1`, secretID, SecretLogUse, SecretLogWrite)
 	if err != nil || len(list) == 0 {

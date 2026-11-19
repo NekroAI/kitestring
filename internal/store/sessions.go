@@ -212,6 +212,37 @@ func (s *Store) GetSession(ctx context.Context, key string) (Session, error) {
 	return x, err
 }
 
+// GetSessions 按会话键一次读取一批会话（含关联字段，同 GetSession）；查不到的不在结果里（R-382）。
+func (s *Store) GetSessions(ctx context.Context, keys []string) (map[string]*Session, error) {
+	var list []*Session
+	err := eachChunk(keys, func(ph string, args []any) error {
+		rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.key IN (`+ph+`)`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			x, err := scanSession(rows)
+			if err != nil {
+				return err
+			}
+			list = append(list, &x)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := s.fillSessionLinks(ctx, list); err != nil {
+		return nil, err
+	}
+	out := make(map[string]*Session, len(list))
+	for _, x := range list {
+		out[x.Key] = x
+	}
+	return out, nil
+}
+
 // ListSessions 列出 activeWithin 内活跃过的会话，以及更早但仍有待答复决策的会话。
 // background 为假时不含后台任务（工作台与各种计数用），为真时只列后台任务（⌘K 里找它们，R-179）。
 func (s *Store) ListSessions(ctx context.Context, activeWithin time.Duration, background bool) ([]Session, error) {
@@ -239,17 +270,14 @@ func (s *Store) ListSessions(ctx context.Context, activeWithin time.Duration, ba
 	return out, s.fillSessionLinks(ctx, ptrs)
 }
 
+// fillSessionLinks 补会话的关联需求、待答决策数、活跃度、最近动作与时间线刻度。
+// 关联需求、待答数、活跃度按批查回来（R-382：原来每个会话各查几次，会话列表一次请求查库近百次）；
+// 最近动作和刻度只有没结束的会话要，仍逐个查（每个都只取最近十几条）。
 func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
+	if err := s.fillSessionBatch(ctx, list); err != nil {
+		return err
+	}
 	for _, x := range list {
-		if err := s.fillReqRefs(ctx, x); err != nil {
-			return err
-		}
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM decisions WHERE session_key = ? AND status = 'pending'`, x.Key).Scan(&x.PendingDecisions); err != nil {
-			return err
-		}
-		if err := s.fillActivity(ctx, x); err != nil {
-			return err
-		}
 		if x.State != StateEnded {
 			if err := s.fillRecentTools(ctx, x); err != nil {
 				return err
@@ -260,6 +288,93 @@ func (s *Store) fillSessionLinks(ctx context.Context, list []*Session) error {
 		}
 	}
 	return nil
+}
+
+// fillSessionBatch 按批补关联需求（按关联先后）、待答决策数和活跃度，对应逐个的 fillReqRefs、待答计数和 fillActivity。
+func (s *Store) fillSessionBatch(ctx context.Context, list []*Session) error {
+	if len(list) == 0 {
+		return nil
+	}
+	byKey := make(map[string][]*Session, len(list))
+	keys := make([]string, 0, len(list))
+	now := time.Now()
+	from := now.Add(-activityBuckets * activityStep)
+	var activeKeys []string
+	for _, x := range list {
+		if _, ok := byKey[x.Key]; !ok {
+			keys = append(keys, x.Key)
+			if !x.LastActiveAt.Before(from) {
+				activeKeys = append(activeKeys, x.Key)
+			}
+		}
+		byKey[x.Key] = append(byKey[x.Key], x)
+		x.Activity = make([]int, activityBuckets)
+		x.PendingDecisions = 0
+	}
+	err := eachChunk(keys, func(ph string, args []any) error {
+		rows, err := s.db.QueryContext(ctx, `SELECT rs.session_key, r.id, r.seq, r.title, r.status FROM requirement_sessions rs JOIN requirements r ON r.id = rs.requirement_id
+			WHERE rs.session_key IN (`+ph+`) ORDER BY rs.linked_at`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var k string
+			var r RequirementRef
+			var seq int
+			if err := rows.Scan(&k, &r.ID, &seq, &r.Title, &r.Status); err != nil {
+				return err
+			}
+			r.Code = reqCode(seq)
+			for _, x := range byKey[k] {
+				x.Requirements = append(x.Requirements, r)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		rows.Close()
+		rows, err = s.db.QueryContext(ctx, `SELECT session_key, COUNT(*) FROM decisions WHERE session_key IN (`+ph+`) AND status = 'pending' GROUP BY session_key`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var k string
+			var n int
+			if err := rows.Scan(&k, &n); err != nil {
+				return err
+			}
+			for _, x := range byKey[k] {
+				x.PendingDecisions = n
+			}
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return err
+	}
+	return eachChunk(activeKeys, func(ph string, args []any) error {
+		rows, err := s.db.QueryContext(ctx, `SELECT session_key, time FROM events WHERE session_key IN (`+ph+`) AND time >= ? AND name <> 'KsTasks'`, append(args, ts(from))...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var k, t string
+			if err := rows.Scan(&k, &t); err != nil {
+				return err
+			}
+			i := int(parseTS(t).Sub(from) / activityStep)
+			if i < 0 || i >= activityBuckets {
+				continue
+			}
+			for _, x := range byKey[k] {
+				x.Activity[i]++
+			}
+		}
+		return rows.Err()
+	})
 }
 
 // fillReqRefs 补会话关联的需求（按关联先后）。
@@ -680,31 +795,6 @@ const (
 	activityBuckets = 12
 	activityStep    = 5 * time.Minute
 )
-
-func (s *Store) fillActivity(ctx context.Context, x *Session) error {
-	x.Activity = make([]int, activityBuckets)
-	now := time.Now()
-	from := now.Add(-activityBuckets * activityStep)
-	if x.LastActiveAt.Before(from) {
-		return nil
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT time FROM events WHERE session_key = ? AND time >= ? AND name <> 'KsTasks'`, x.Key, ts(from))
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var t string
-		if err := rows.Scan(&t); err != nil {
-			return err
-		}
-		i := int(parseTS(t).Sub(from) / activityStep)
-		if i >= 0 && i < activityBuckets {
-			x.Activity[i]++
-		}
-	}
-	return rows.Err()
-}
 
 // SetRole 设置会话身份（R-82）。同一项目只保留一个 PM：设为 pm 时，同项目原来的 PM 降为无身份，
 // 返回被降级的会话键。会话不属于任何项目时不做唯一性处理。
