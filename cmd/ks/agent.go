@@ -652,7 +652,7 @@ func runDecision(args []string) error {
 	var opts, optImgs, optImgSets stringList
 	fs.Var(&opts, "option", "选项，可重复")
 	fs.Var(&optImgs, "option-image", "选项的效果图路径，按 --option 的顺序一一对应，可重复")
-	fs.Var(&optImgSets, "option-images", "选项的多张效果图：每个选项写一次，值是这个选项的图片路径、用逗号隔开（如 a.png,b.png），按 --option 的顺序一一对应，没有图的选项写空字符串；用户在决策卡上点开可左右切换。与 --option-image 可混用")
+	fs.Var(&optImgSets, "option-images", "选项的多张效果图：每个选项写一次，值是这个选项的图片路径、用逗号隔开（如 a.png,b.png；路径里不能带逗号），按 --option 的顺序一一对应，没有图的选项写空字符串；用户在决策卡上点开可左右切换。与 --option-image 可混用")
 	var protos, optProtos stringList
 	fs.Var(&protos, "prototype", protoFlagHelp)
 	fs.Var(&optProtos, "option-prototype", "选项的可交互原型，按 --option 的顺序一一对应（没有的写空字符串），写法同 --prototype")
