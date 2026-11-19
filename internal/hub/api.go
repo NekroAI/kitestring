@@ -87,6 +87,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAssetsWeb(webAPI) // 资源库（R-351）
 	h.registerAssetReviewWeb(webAPI)
 	h.registerAssetsAgent(agentAPI)
+	h.registerAssetBatchWeb(webAPI) // 资源库批量审核（R-393）
+	h.registerAssetBatchAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -196,6 +198,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAssetsWeb(api)
 	h.registerAssetReviewWeb(api)
 	h.registerAssetsAgent(api)
+	h.registerAssetBatchWeb(api)
+	h.registerAssetBatchAgent(api)
 	return api.OpenAPI()
 }
 
@@ -981,6 +985,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				h.awayUser(ctx, "answer", d.ProjectID, d.Code, d.Question, brief(approvalText(d), 80))
 				h.onRequestAnswered(ctx, d)                              // 批准开 Dev 会话 → 推送接入语（R-169）
 				h.applyStatusRequest(ctx, d)                             // 批准改状态申请 → 纸鸢改状态（R-188）
+				h.applyAssetBaseline(ctx, d)                             // 申请标为已在用：批准 → 整批通过，拒绝 → 普通待审（R-393）
 				h.afterSecretRequest(ctx, d, answerNote(d.Answer, "拒绝")) // 拒绝凭据申请 → 没填过值的凭据删除（R-295）
 				h.watchDecisionAnswered(ctx, d, "")                      // 关联决策被作答，告诉订阅了这条需求的会话（R-249 P4）
 				out.Body.Decisions = append(out.Body.Decisions, d)

@@ -241,15 +241,6 @@ func (s *Store) ListAssetReviews(ctx context.Context, assetID string) ([]AssetRe
 	return out, rows.Err()
 }
 
-// AssetReviewByDecision 找送达记录对应的审核（恢复 / 压缩后补发前判断还有没有用）。
-func (s *Store) AssetReviewByDecision(ctx context.Context, decisionID string) (AssetReview, error) {
-	r, _, err := scanReview(s.db.QueryRowContext(ctx, `SELECT `+reviewCols+` FROM asset_reviews r LEFT JOIN decisions x ON x.id = r.decision_id WHERE r.decision_id = ?`, decisionID))
-	if errors.Is(err, sql.ErrNoRows) {
-		return r, ErrNotFound
-	}
-	return r, err
-}
-
 // AssetCounts 数各状态的素材（全部项目），侧边栏的待审数用。
 func (s *Store) AssetCounts(ctx context.Context) (map[string]int, error) {
 	out := map[string]int{}

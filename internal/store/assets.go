@@ -65,6 +65,7 @@ type Asset struct {
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 	Latest        *AssetVersion  `json:"latest,omitempty" doc:"最新版本"`
+	Baseline      string         `json:"baseline,omitempty" doc:"R-393：申请标为已在用、等用户批准的决策 D-x；没有挂着的申请时为空"`
 }
 
 // AssetVersion 是素材的一个版本。
@@ -319,7 +320,7 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 		args = append(args, n.RequirementID)
 	}
 	args = append(args, at, at, id)
-	if _, err := t.ExecContext(ctx, `UPDATE assets SET version = ?, latest_id = ?, kind = ?, category = ?, grp = ?, status = ?, submitter_kind = ?, submitter_ref = ?, submitter_name = ?`+reqSet+`, status_at = ?, updated_at = ? WHERE id = ?`, args...); err != nil {
+	if _, err := t.ExecContext(ctx, `UPDATE assets SET version = ?, latest_id = ?, kind = ?, category = ?, grp = ?, status = ?, submitter_kind = ?, submitter_ref = ?, submitter_name = ?, baseline_id = ''`+reqSet+`, status_at = ?, updated_at = ? WHERE id = ?`, args...); err != nil {
 		return r, err
 	}
 	r.Code, r.Version = AssetCode(seq), version
@@ -384,7 +385,8 @@ type AssetFilter struct {
 	Offset    int    // R-391：跳过前几条（分页）
 }
 
-const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches`
+const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches,
+	COALESCE((SELECT 'D-' || d.seq FROM asset_baselines b JOIN decisions d ON d.id = b.decision_id WHERE b.id = a.baseline_id AND b.status = 'pending'), '')`
 
 const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants, v.auto_thumb`
 
@@ -392,7 +394,7 @@ func scanAsset(row interface{ Scan(...any) error }, extra ...any) (Asset, error)
 	var a Asset
 	var seq int
 	var statusAt, created, updated, batches string
-	dst := append([]any{&a.ID, &seq, &a.ProjectID, &a.Batch, &a.Key, &a.Kind, &a.Category, &a.Group, &a.Status, &a.Version, &a.Submitter.Kind, &a.Submitter.Ref, &a.Submitter.Name, &a.RequirementID, &statusAt, &created, &updated, &a.UID, &batches}, extra...)
+	dst := append([]any{&a.ID, &seq, &a.ProjectID, &a.Batch, &a.Key, &a.Kind, &a.Category, &a.Group, &a.Status, &a.Version, &a.Submitter.Kind, &a.Submitter.Ref, &a.Submitter.Name, &a.RequirementID, &statusAt, &created, &updated, &a.UID, &batches, &a.Baseline}, extra...)
 	if err := row.Scan(dst...); err != nil {
 		return a, err
 	}

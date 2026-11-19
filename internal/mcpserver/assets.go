@@ -25,6 +25,7 @@ type assetPushIn struct {
 	DryRun      bool     `json:"dry_run,omitempty" jsonschema:"只在本地校验、逐件报告，不推送"`
 	SkipInvalid bool     `json:"skip_invalid,omitempty" jsonschema:"asset.json：有错的素材跳过，只推合格的（默认有错时整批不推）"`
 	Status      string   `json:"status,omitempty" jsonschema:"推送后的状态：pending 待审（默认）/ wip 制作中"`
+	Baseline    bool     `json:"baseline,omitempty" jsonschema:"申请标为已在用：游戏里已经在用的历史素材，推送后自动提一条批准类决策给用户，批准后整批记为通过（不进待审），拒绝则照常待审；只用于真正已在用的历史素材"`
 	Requirement string   `json:"requirement,omitempty" jsonschema:"关联需求 R-x"`
 	Project     string   `json:"project,omitempty" jsonschema:"记进哪个项目（项目名或 git remote）；不填记进会话所在项目"`
 	Branch      string   `json:"branch,omitempty" jsonschema:"分支；不填从 git 读"`
@@ -34,6 +35,7 @@ type assetPushIn struct {
 const assetPushDesc = `把素材推进纸鸢的资源库，用户在网页上集中浏览和审核（与 shell 命令 ks asset push 相同，字段细节见 ks help asset）。
 推荐按 asset.json 推送：素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，批次是可多值的元数据。一件素材一个 asset.json（可传目录，逐个找 asset.json），或一个文件里 "assets": [...] 列多件。通用字段由纸鸢定义：id、category（允许的类别在项目的 .kitestring/assets.json 的 categories）、file（GLB 或图片，不写时取 variants 里默认变体的文件）、previews（[{path, view}] 或路径）、batches、sources / source（来源）、license（许可）、variants（具名变体，先原样存下）；其它字段原样存进 meta，网页上展示。
 预览图文件名写「<名字>__<机位>.png」，名字是 id 冒号后的部分或去掉类别前缀的部分（core:weapon.carbine → carbine），不写完整 id（冒号在 Windows 上不能用），如 carbine__front.png；项目配置的 previews_base（如 art/{category}/{name}）下 previews 目录里的图按所在目录归属；previews_base 空着时只按 previews 列表和 asset.json 所在目录找。不合命名、挂不上素材的图逐个列出，不推送。文件名含 Windows 不允许的字符（: * ? " < > | 等）或只差大小写的重名会提示。
+历史素材（游戏里已经在用）可加 baseline 申请标为已在用：自动提一条批准类决策给用户，批准后整批记为通过，不用用户逐件点。
 推送前先在本地逐件校验并报告；有错时整批不推（skip_invalid 只推合格的），dry_run 只校验。同一 id 内容有变的重推记为新版本，旧版本保留；内容相同的不新增版本，只并入新的批次。
 旧的按批次推送仍可用：manifest.json 里的 GLB 是零件，预览目录里文件名以零件 id 开头的图挂到零件上，其余是独立的图。未连接 Hub 时排队，连上后自动补传。`
 
@@ -56,6 +58,7 @@ func (t *tools) registerAssets(s *mcp.Server) {
 				case len(p.Items) == 0:
 					return text(report + "没有合格的素材，没有推送。"), nil, nil
 				}
+				p.Baseline = in.Baseline
 				var out protocol.AssetPushReply
 				if err := client.New(15*time.Minute).Do(ctx, "POST", "/assets/push", p, &out); err != nil {
 					return nil, nil, err
@@ -70,6 +73,7 @@ func (t *tools) registerAssets(s *mcp.Server) {
 			if in.DryRun {
 				return text(assetpush.DryRunText(p, notes)), nil, nil
 			}
+			p.Baseline = in.Baseline
 			var out protocol.AssetPushReply
 			if err := client.New(15*time.Minute).Do(ctx, "POST", "/assets/push", p, &out); err != nil {
 				return nil, nil, err

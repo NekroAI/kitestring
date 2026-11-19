@@ -58,6 +58,7 @@ type AssetPush struct {
 	Branch      string      `json:"branch,omitempty" doc:"素材所在分支"`
 	Commit      string      `json:"commit,omitempty" doc:"素材所在提交"`
 	Status      string      `json:"status,omitempty" enum:"wip,pending," doc:"推送后的状态：pending 待审（默认）/ wip 制作中"`
+	Baseline    bool        `json:"baseline,omitempty" doc:"R-393：申请标为已在用（游戏里已经在用的历史素材）：推送后先挂在一条申请上，同时提一条批准类决策给用户，批准后整批记为通过，拒绝则是普通待审"`
 	Items       []AssetItem `json:"items" doc:"素材"`
 }
 
@@ -77,6 +78,15 @@ type AssetPushResult struct {
 	ByID    bool                  `json:"by_id,omitempty" doc:"按 asset.json（素材 id）推送"`
 	Items   []AssetPushItemResult `json:"items"`
 	Reused  int                   `json:"reused" doc:"Hub 已有、没有重传的文件数（按 sha256 去重）"`
+	// R-393：--baseline 推送时的申请
+	Baseline *AssetBaselineInfo `json:"baseline,omitempty" doc:"申请标为已在用（--baseline）的结果"`
+}
+
+// AssetBaselineInfo 是一次「申请标为已在用」：哪条决策在等用户批准、申请了几件。
+type AssetBaselineInfo struct {
+	Decision string `json:"decision,omitempty" doc:"等用户批准的决策 D-x；没有可申请的素材时为空"`
+	Count    int    `json:"count" doc:"申请标为已在用的件数（仍在待审 / 制作中的；已通过、返工中的不申请）"`
+	Note     string `json:"note,omitempty" doc:"没有提申请的原因"`
 }
 
 // AssetPushReply 是 daemon 回给 CLI / MCP 的结果：要么已入库（Result），要么排队等补传（Queued）。

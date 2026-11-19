@@ -264,6 +264,10 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"asset_reviews", "frame", "TEXT NOT NULL DEFAULT ''"},
 	{"share_comments", "frame", "TEXT NOT NULL DEFAULT ''"},
 	{"share_comments", "shot_id", "TEXT NOT NULL DEFAULT ''"},
+	// 资源库批量审核（R-393）：素材挂着的「申请标为已在用」；审核记录属于哪次批量操作、审核前的状态（撤销时还原）
+	{"assets", "baseline_id", "TEXT NOT NULL DEFAULT ''"},
+	{"asset_reviews", "batch_id", "TEXT NOT NULL DEFAULT ''"},
+	{"asset_reviews", "prev_status", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

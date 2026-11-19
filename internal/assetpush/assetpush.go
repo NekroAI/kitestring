@@ -362,6 +362,17 @@ func Text(p protocol.AssetPush, out protocol.AssetPushReply, notes []string) str
 		for _, it := range r.Items {
 			fmt.Fprintf(&b, "  %s  %s  第 %d 版（%s）\n", it.Code, it.Key, it.Version, resultLabel[it.Result])
 		}
+		if x := r.Baseline; x != nil {
+			switch {
+			case x.Decision != "":
+				fmt.Fprintf(&b, "已申请把 %d 件标为已在用（%s）：在用户的「待处理」里等批准，批准前素材显示为待审；用户批准后整批记为通过，拒绝则照常待审。不要再请用户去网页上逐件通过。\n", x.Count, x.Decision)
+			case x.Note != "":
+				b.WriteString("标为已在用：" + x.Note + "\n")
+			}
+		}
+	}
+	if out.Queued && p.Baseline {
+		b.WriteString("补传成功后会自动提「申请标为已在用」给用户批准。\n")
 	}
 	for _, n := range notes {
 		b.WriteString("提示：" + n + "\n")

@@ -19,11 +19,13 @@ import (
 )
 
 const assetUsage = `用法：
-  ks asset push <asset.json|目录>... [--category 类别] [--id 素材 id|前缀*] [--batch 批次] [--categories 类别表] [--previews <目录>] [--dry-run] [--skip-invalid] [--status wip] [--req R-x] [--project 项目]
+  ks asset push <asset.json|目录>... [--category 类别] [--id 素材 id|前缀*] [--batch 批次] [--categories 类别表] [--previews <目录>] [--dry-run] [--skip-invalid] [--status wip] [--baseline] [--req R-x] [--project 项目]
       按 asset.json 推送（推荐）：素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，批次是可多值的元数据。
       给目录时逐个找下面的 asset.json；--category、--id 只推其中一部分；--batch 给每件素材再带上一个批次。
       推送前先在本地逐件校验并报告；有错时整批不推（--skip-invalid 只推合格的），--dry-run 只校验不推送。
       预览图文件名写「<名字>__<机位>.png」（名字不含冒号），挂不上的逐个列出。字段、项目配置和命名规则见 ks asset help。
+      --baseline：申请标为已在用（游戏里已经在用的历史素材）。推送后自动提一条批准类决策给用户，批准后整批记为通过、不进待审，
+      拒绝则照常待审；之后有新版本照常回到待审。只用于真正已在用的历史素材。
   ks asset push [manifest.json] --previews <目录> [--previews <目录>] --batch <批次> [--category 类别] [--dry-run] [--status wip] [--req R-x] [--project 项目] [--branch 分支] [--commit 提交]
       旧的按批次推送（仍可用）：manifest 里的 GLB 是零件，预览目录里文件名以零件 id 开头的图挂到零件上，其余是独立的图（目录图、概念图……，文件名去扩展名当 id）。
       同一批次里同一 id 内容有变的重推记为新版本（旧版本保留），内容相同的不新增；Hub 已有的文件不重传；未连接 Hub 时排队，连上后自动补传。
@@ -33,7 +35,10 @@ const assetUsage = `用法：
       筛选（--status / --category / --batch / --id 前缀*）比翻页更省；--offset 翻页，--all 取全部。
       --json 默认只给精简字段（id、类别、状态、版本、批次、预览图个数），--full 才给完整内容；不要整表拉 --json，先用 summary 和筛选。
   ks asset get <素材 id|A-x> [--history] [--json]   素材的最新版本和最近 3 条审核意见；--history 才给历史版本和全部审核记录
-  ks asset queue                 本机排队等补传、或被 Hub 拒收的推送`
+  ks asset queue                 本机排队等补传、或被 Hub 拒收的推送
+  ks asset review <A-x|素材 id>... | [--id 前缀*] [--batch 批次] [--category 类别] [--status 状态] [--kind part|image]  --approve | --rework --comment 意见  [--dry-run]
+      批量通过 / 返工本项目的素材（只限用户在网页上授权了的会话，默认不开）：给素材或筛选条件，--dry-run 只预检件数。
+      意见按收件会话合并成一条送达。ks asset review --undo 撤销本会话最近一次批量审核。`
 
 var assetStatusLabel = map[string]string{store.AssetWIP: "制作中", store.AssetPending: "待审", store.AssetApproved: "通过", store.AssetRework: "返工"}
 
@@ -67,11 +72,18 @@ func runAsset(args []string) error {
 	categories := fs.String("categories", "", "push（asset.json）：类别允许表（JSON 数组或 {\"categories\": [...]}）；不写时用仓库里 "+assetpush.ConfigFile+" 的 categories")
 	id := fs.String("id", "", "list：素材 id（如 core:weapon.carbine）或编号 A-x，末尾带 * 按前缀查；push（asset.json）：只推这些")
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
+	baseline := fs.Bool("baseline", false, "push：申请标为已在用（历史素材），自动提决策给用户批准")
+	approve := fs.Bool("approve", false, "review：批量通过")
+	rework := fs.Bool("rework", false, "review：批量返工（要写 --comment）")
+	comment := fs.String("comment", "", "review：共用的意见")
+	kind := fs.String("kind", "", "review：只审这个类型（part / image）")
+	undo := fs.Bool("undo", false, "review：撤销本会话最近一次批量审核")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	allowed := map[string][]string{
-		"push":    {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories"},
+		"push":    {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories", "baseline"},
+		"review":  {"id", "batch", "category", "status", "kind", "approve", "rework", "comment", "dry-run", "undo", "json"},
 		"list":    {"id", "batch", "category", "status", "project", "json", "limit", "offset", "all", "full"},
 		"summary": {"project", "json"},
 		"get":     {"project", "json", "history"},
@@ -87,9 +99,12 @@ func runAsset(args []string) error {
 	ctx := context.Background()
 	switch sub {
 	case "push":
+		if *baseline && *status == store.AssetWIP {
+			return errors.New("--baseline（申请标为已在用）不能和 --status wip 一起用")
+		}
 		if fs.NArg() >= 1 && assetpush.IsAssetJSON(fs.Arg(0)) {
 			return pushByID(ctx, assetpush.IDOptions{Paths: fs.Args(), Previews: previews, Batch: *batch, Categories: *categories, OnlyCat: *category, OnlyID: *id, SkipInvalid: *skipInvalid,
-				Status: *status, Branch: *branch, Commit: *commit, Project: *project, Requirement: *req, SessionKey: cliSession(*session)}, *dryRun, *asJSON)
+				Status: *status, Branch: *branch, Commit: *commit, Project: *project, Requirement: *req, SessionKey: cliSession(*session)}, *baseline, *dryRun, *asJSON)
 		}
 		if fs.NArg() > 1 {
 			return errors.New(assetUsage)
@@ -102,6 +117,7 @@ func runAsset(args []string) error {
 		if err != nil {
 			return err
 		}
+		p.Baseline = *baseline
 		if *dryRun {
 			if *asJSON {
 				return printJSON(p)
@@ -118,6 +134,9 @@ func runAsset(args []string) error {
 		}
 		fmt.Print(assetpush.Text(p, out, notes))
 		return nil
+	case "review":
+		return assetReview(ctx, cliSession(*session), fs.Args(), assetReviewFlags{id: *id, batch: *batch, category: *category, status: *status, kind: *kind,
+			approve: *approve, rework: *rework, comment: *comment, dryRun: *dryRun, undo: *undo, json: *asJSON})
 	case "summary":
 		var out protocol.AssetSummary
 		if err := client.New(20*time.Second).Do(ctx, "GET", "/agent/assets-summary?"+assetQuery(map[string]string{"project": *project}, *session).Encode(), nil, &out); err != nil {
@@ -275,11 +294,12 @@ func reviewAuthor(x store.AssetAuthor) string {
 }
 
 // pushByID 按 asset.json 推送（R-376）：先本地逐件校验并报告；有错时不推（--skip-invalid 只推合格的），--dry-run 只校验。
-func pushByID(ctx context.Context, o assetpush.IDOptions, dryRun, asJSON bool) error {
+func pushByID(ctx context.Context, o assetpush.IDOptions, baseline, dryRun, asJSON bool) error {
 	p, rep, err := assetpush.BuildByID(o)
 	if err != nil {
 		return err
 	}
+	p.Baseline = baseline
 	bad := rep.Bad()
 	var stop error
 	switch {

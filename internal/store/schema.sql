@@ -796,6 +796,50 @@ CREATE TABLE IF NOT EXISTS asset_reviews (
 CREATE INDEX IF NOT EXISTS asset_reviews_asset ON asset_reviews(asset_id, created_at);
 CREATE INDEX IF NOT EXISTS asset_reviews_decision ON asset_reviews(decision_id);
 
+-- 申请标为已在用（R-393）：--baseline 推送的历史素材先挂在一条申请上，同一次推送提一条批准类决策（decision_id）给用户；
+-- 用户批准时整批记为通过（审核记录写明由用户批准的历史导入），拒绝时转为普通待审。push_id 唯一：daemon 补传重放不重复申请。
+-- status：pending 等用户批准 / approved 已批准 / rejected 已拒绝。assets.baseline_id 指向素材当前挂着的申请（有新版本时清空）。
+CREATE TABLE IF NOT EXISTS asset_baselines (
+	id           TEXT PRIMARY KEY,
+	push_id      TEXT NOT NULL UNIQUE,
+	project_id   TEXT NOT NULL DEFAULT '',
+	session_key  TEXT NOT NULL DEFAULT '',
+	session_name TEXT NOT NULL DEFAULT '',
+	decision_id  TEXT NOT NULL DEFAULT '',
+	status       TEXT NOT NULL DEFAULT 'pending',
+	created_at   TEXT NOT NULL,
+	decided_at   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS asset_baselines_decision ON asset_baselines(decision_id);
+-- 申请里的素材和申请时的版本：批准时只通过仍是这一版、仍在待审 / 制作中的
+CREATE TABLE IF NOT EXISTS asset_baseline_items (
+	baseline_id TEXT NOT NULL REFERENCES asset_baselines(id) ON DELETE CASCADE,
+	asset_id    TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+	version     INTEGER NOT NULL,
+	PRIMARY KEY(baseline_id, asset_id)
+);
+
+-- 批量审核（R-393）：一次批量通过 / 返工记一行；这一次的审核记录 asset_reviews.batch_id 指向它，prev_status 是审核前的状态，撤销时还原。
+-- author_* 含义同 asset_reviews；undone_at 非空表示已撤销。
+CREATE TABLE IF NOT EXISTS asset_review_batches (
+	id          TEXT PRIMARY KEY,
+	verdict     TEXT NOT NULL,
+	comment     TEXT NOT NULL DEFAULT '',
+	count       INTEGER NOT NULL DEFAULT 0,
+	author_kind TEXT NOT NULL DEFAULT '',
+	author_ref  TEXT NOT NULL DEFAULT '',
+	author_name TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL,
+	undone_at   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS asset_review_batches_author ON asset_review_batches(author_kind, author_ref, created_at);
+
+-- 可以批量审素材的会话（R-393 第 4 条）：用户在网页上授权，默认没有；授权后会话可用 ks asset review 批量通过 / 返工本项目的素材
+CREATE TABLE IF NOT EXISTS asset_reviewers (
+	session_key TEXT PRIMARY KEY,
+	granted_at  TEXT NOT NULL
+);
+
 -- 素材的附件（R-365）：访客上传、你收下为附件的文件（动画文件、参考视频等），不算版本；version 是收下时的最新版本，submitter_* 含义同 assets
 CREATE TABLE IF NOT EXISTS asset_attachments (
 	id             TEXT PRIMARY KEY,

@@ -204,11 +204,19 @@ func (h *Hub) refreshReviewTargets(ctx context.Context, res protocol.AssetPushRe
 }
 
 // assetReviewStale：已送达的审核意见，恢复 / 压缩上下文后还要不要补发——只补还在返工、且没有新版本的。
+// 批量审核合并成一条送达（R-393）时，其中还有一件仍需要就补发。
 func (h *Hub) assetReviewStale(ctx context.Context, d store.Decision) bool {
-	r, err := h.store.AssetReviewByDecision(ctx, d.ID)
-	if err != nil || r.Verdict != store.AssetRework {
+	rs, err := h.store.AssetReviewsByDecision(ctx, d.ID)
+	if err != nil {
 		return true
 	}
-	a, err := h.store.GetAsset(ctx, r.AssetID)
-	return err != nil || a.Status != store.AssetRework || a.Version > r.Version
+	for _, r := range rs {
+		if r.Verdict != store.AssetRework {
+			continue
+		}
+		if a, err := h.store.GetAsset(ctx, r.AssetID); err == nil && a.Status == store.AssetRework && a.Version <= r.Version {
+			return false
+		}
+	}
+	return true
 }

@@ -384,6 +384,9 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 	if len(p.Items) == 0 {
 		return res, errors.New("这一批没有素材")
 	}
+	if p.Baseline && p.Status == store.AssetWIP {
+		return res, errors.New("--baseline（申请标为已在用）不能和 --status wip 一起用")
+	}
 	var proj store.Project
 	if q := strings.TrimSpace(p.Project); q != "" {
 		var err error
@@ -476,6 +479,9 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 	if err == nil {
 		h.broker.publish("assets") // 资源库页（R-351 第 3 步）收到后重新拉列表
 		h.refreshReviewTargets(ctx, out)
+		if p.Baseline {
+			out.Baseline = h.startAssetBaseline(ctx, p, proj, sub, out)
+		}
 	}
 	return out, err
 }
