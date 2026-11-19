@@ -52,6 +52,7 @@ func Run(ctx context.Context, clientName string) error {
 	t.registerTeam(s)
 	t.registerReview(s)
 	t.registerCommits(s)
+	t.registerAssets(s)
 	return s.Run(ctx, &mcp.StdioTransport{})
 }
 

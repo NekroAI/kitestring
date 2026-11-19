@@ -41,6 +41,7 @@ var extMime = map[string]string{
 	".csv": "text/csv; charset=utf-8", ".tsv": "text/tab-separated-values; charset=utf-8", ".json": "application/json",
 	".jsonl": "application/x-ndjson", ".ndjson": "application/x-ndjson", ".yaml": "application/yaml", ".yml": "application/yaml",
 	".xml": "application/xml", ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8", ".svg": "image/svg+xml",
+	".glb": "model/gltf-binary", ".gltf": "model/gltf+json",
 	".pdf": "application/pdf", ".zip": "application/zip", ".gz": "application/gzip", ".tar": "application/x-tar",
 }
 

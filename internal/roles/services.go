@@ -19,7 +19,7 @@ type Service struct {
 	Text    string
 }
 
-// Services 是 ks help <服务> 认的全部服务，按展示顺序。资源库（R-351）上线后在这里补一项。
+// Services 是 ks help <服务> 认的全部服务，按展示顺序。
 var Services = []Service{
 	{Name: "decision", Aliases: []string{"决策", "decisions"}, Title: "要用户定的事提到纸鸢上", Text: `决策（ks decision raise，MCP 工具 decision_raise）：要用户定的事提到纸鸢上，用户在网页或手机上答复。
 - 一次只问一件事：--question 一句话（60 字以内），--option 选项（可重复），--recommend 推荐及理由，--context 背景（400 字以内）。
@@ -32,6 +32,11 @@ var Services = []Service{
 - 取用：ks secret run S-x -- <命令>，值只作为这条命令的环境变量出现；命令里写编号 S-x，ks secret list 看能用的。
 - 被拒（命令不在范围、到期、没授权写盘）或要换 Token：ks secret amend S-x --reason 理由（--add-allow、--replace 等）。
 - 不要打印、回显值，不要让用户在终端里输入或粘贴凭据。完整用法：ks secret help。`},
+	{Name: "asset", Aliases: []string{"资源库", "素材", "assets"}, Title: "把美术素材推进资源库给用户审核", Text: `资源库（ks asset push，MCP 工具 asset_push）：把一批素材推进纸鸢，用户在网页上集中浏览、标通过或返工。
+- ks asset push <manifest.json> --previews <预览图目录> --batch G11e1：manifest 里的 GLB 是零件，文件名以零件 id 开头的预览图挂到零件上；其余图是独立的图（目录图、概念图，文件名去扩展名当 id）。面数、尺寸从 manifest 读，分支和提交从 git 读。
+- 返工后在同一批次重推：内容有变记为新版本，旧版本保留；没变的不新增。
+- 未连接 Hub 时排队，连上后自动补传（ks asset queue 查看）；GLB 超限、存储不可用会直接报错。
+- ks asset list 看状态，ks asset get A-x 看版本。`},
 	{Name: "ask", Aliases: []string{"求助", "aide", "主助理"}, Title: "设计取舍问主助理", Text: `求助主助理：设计取舍、拿不准的判断，用 ks team tell --to aide <问题，写清选项和倾向>（MCP 工具 team_tell），问完不等，先做不受影响的部分；答复送回本会话，挂着 ks wait 时立刻唤醒。
 - 消息只放一两句（120 字以内）；细节多时先写进需求留言（ks req comment R-x）。
 - 本项目没有主助理时退回给主调度；都没有时用 ks decision raise 问用户。

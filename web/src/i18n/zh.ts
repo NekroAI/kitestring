@@ -2461,6 +2461,7 @@ export const zh = {
         video: '录屏（MB）',
         file: '其它文件（MB）',
         prototype: '原型包（MB）',
+        glb: 'GLB 模型（MB）',
       },
       devRequest: {
         get title() {

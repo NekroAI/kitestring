@@ -36,7 +36,10 @@ func openQueue(path string) (*queue, error) {
 			cwd TEXT NOT NULL DEFAULT '', cmd TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '',
 			first_seen TEXT NOT NULL, ended_at TEXT, exit_code INTEGER,
 			stop_at TEXT, stop_signal TEXT NOT NULL DEFAULT '', stop_result TEXT NOT NULL DEFAULT '',
-			PRIMARY KEY (pid, start));`)
+			PRIMARY KEY (pid, start));
+		-- 资源库待补传的推送（R-351）：payload 是 AssetPush（文件写 sha256，内容在 asset-spool/<sha256>）；
+		-- state：queued 等待补传 / failed 被 Hub 拒收（error 是原因，7 天后清掉）
+		CREATE TABLE IF NOT EXISTS asset_jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL, state TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', tries INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);`)
 	if err != nil {
 		db.Close()
 		return nil, err

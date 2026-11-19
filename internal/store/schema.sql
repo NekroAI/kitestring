@@ -680,3 +680,62 @@ CREATE TABLE IF NOT EXISTS secret_logs (
 	finished_at    TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS secret_logs_secret ON secret_logs(secret_id, at);
+
+-- 资源库（R-351）：按项目组织的素材索引。一条素材 = 项目 + 批次 + key（manifest 的 id；独立的图用文件名去扩展名）。
+-- kind：part GLB 零件（主文件是 GLB，挂预览图）/ image 独立的图（目录图、概念图、动作对比图，主文件就是图）。
+-- status：wip 制作中 / pending 待审 / approved 通过 / rework 返工（状态机见 assets.go 的 AssetCanMove）。
+-- seq 是全局编号 A-<seq>；version / latest_id 是最新版本；session_key 是最近一次提交素材的会话（返工意见送它）。
+CREATE TABLE IF NOT EXISTS assets (
+	id             TEXT PRIMARY KEY,
+	seq            INTEGER NOT NULL UNIQUE,
+	project_id     TEXT NOT NULL,
+	batch          TEXT NOT NULL,
+	key            TEXT NOT NULL,
+	kind           TEXT NOT NULL,
+	category       TEXT NOT NULL DEFAULT '',
+	grp            TEXT NOT NULL DEFAULT '',
+	status         TEXT NOT NULL DEFAULT 'pending',
+	version        INTEGER NOT NULL DEFAULT 1,
+	latest_id      TEXT NOT NULL DEFAULT '',
+	session_key    TEXT NOT NULL DEFAULT '',
+	requirement_id TEXT NOT NULL DEFAULT '',
+	status_at      TEXT NOT NULL DEFAULT '',
+	created_at     TEXT NOT NULL,
+	updated_at     TEXT NOT NULL,
+	UNIQUE(project_id, batch, key)
+);
+CREATE INDEX IF NOT EXISTS assets_project ON assets(project_id, batch, updated_at);
+
+-- 素材的版本：每次内容有变的推送记一版，旧版本连同原文件全部保留（文件在 files 表，按 sha256 去重）。
+-- file_id 是主文件（GLB 或独立的图），previews 是预览图（FileRef 列表）；digest 是全部文件 sha256 拼起来的指纹，
+-- 与最新版相同的重推不新增版本。size 是尺寸（米，JSON 数组），pixels 是图的像素尺寸，meta 是 manifest 里这一项的原文。
+CREATE TABLE IF NOT EXISTS asset_versions (
+	id          TEXT PRIMARY KEY,
+	asset_id    TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+	version     INTEGER NOT NULL,
+	push_id     TEXT NOT NULL DEFAULT '',
+	batch       TEXT NOT NULL DEFAULT '',
+	branch      TEXT NOT NULL DEFAULT '',
+	commit_sha  TEXT NOT NULL DEFAULT '',
+	file_id     TEXT NOT NULL DEFAULT '',
+	previews    TEXT NOT NULL DEFAULT '[]',
+	triangles   INTEGER NOT NULL DEFAULT 0,
+	budget      INTEGER NOT NULL DEFAULT 0,
+	size        TEXT NOT NULL DEFAULT '',
+	pixels      TEXT NOT NULL DEFAULT '',
+	meta        TEXT NOT NULL DEFAULT '',
+	digest      TEXT NOT NULL DEFAULT '',
+	session_key TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL,
+	UNIQUE(asset_id, version)
+);
+
+-- 一次推送的结果（R-351）：daemon 补传重放同一 push_id 时原样返回，不重复记版本。
+CREATE TABLE IF NOT EXISTS asset_pushes (
+	id         TEXT PRIMARY KEY,
+	result     TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+
+-- 附件按 sha256 去重（R-351）用
+CREATE INDEX IF NOT EXISTS files_sha ON files(sha256);

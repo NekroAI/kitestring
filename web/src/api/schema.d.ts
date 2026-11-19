@@ -56,6 +56,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 资源库素材列表（默认会话所在项目） */
+        get: operations["agent-list-assets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/assets/have": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 按 sha256 查 Hub 已有的文件（推送前去重） */
+        post: operations["agent-asset-have"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/assets/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 提交一批素材（文件先传好）；同一 push_id 重复提交返回第一次的结果 */
+        post: operations["agent-asset-push"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/assets/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["agent-get-asset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/away": {
         parameters: {
             query?: never;
@@ -877,6 +944,40 @@ export interface paths {
         put?: never;
         /** 用户撤销一条当前安排（R-245） */
         post: operations["revoke-arrangement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 资源库素材列表（带最新版本），可按项目、批次、类别、状态、类型筛选 */
+        get: operations["list-assets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 一条素材和它的全部版本（新的在前） */
+        get: operations["get-asset"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3167,6 +3268,234 @@ export interface components {
             comment?: string;
             /** @description Rev 会话键（身份必须是 reviewer） */
             session_key: string;
+        };
+        Asset: {
+            batch: string;
+            category: string;
+            /** @description 素材编号 A-x */
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description 同一用途的候选分组（概念图 A / B 版），并排比较用 */
+            group?: string;
+            id: string;
+            /** @description manifest 的 id；独立的图是文件名去扩展名 */
+            key: string;
+            /**
+             * @description part GLB 零件 / image 独立的图
+             * @enum {string}
+             */
+            kind: "part" | "image";
+            /** @description 最新版本 */
+            latest?: components["schemas"]["AssetVersion"];
+            project_id: string;
+            requirement_id?: string;
+            /** @description 最近一次提交素材的会话 */
+            session_key: string;
+            /** @enum {string} */
+            status: "wip" | "pending" | "approved" | "rework";
+            /**
+             * Format: date-time
+             * @description 状态最近一次变化的时间
+             */
+            status_at?: string;
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * Format: int64
+             * @description 最新版本号
+             */
+            version: number;
+        };
+        AssetDetail: {
+            batch: string;
+            category: string;
+            /** @description 素材编号 A-x */
+            code: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description 同一用途的候选分组（概念图 A / B 版），并排比较用 */
+            group?: string;
+            id: string;
+            /** @description manifest 的 id；独立的图是文件名去扩展名 */
+            key: string;
+            /**
+             * @description part GLB 零件 / image 独立的图
+             * @enum {string}
+             */
+            kind: "part" | "image";
+            /** @description 最新版本 */
+            latest?: components["schemas"]["AssetVersion"];
+            project_id: string;
+            requirement_id?: string;
+            /** @description 最近一次提交素材的会话 */
+            session_key: string;
+            /** @enum {string} */
+            status: "wip" | "pending" | "approved" | "rework";
+            /**
+             * Format: date-time
+             * @description 状态最近一次变化的时间
+             */
+            status_at?: string;
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * Format: int64
+             * @description 最新版本号
+             */
+            version: number;
+            versions: components["schemas"]["AssetVersion"][] | null;
+        };
+        AssetFacets: {
+            batches: string[] | null;
+            categories: string[] | null;
+            /** @description 各状态的素材数 */
+            counts: {
+                [key: string]: number;
+            };
+        };
+        AssetFile: {
+            /** @description Hub 附件 ID（先传到 /api/agent/assets/files，或已有同 sha256 的附件） */
+            id?: string;
+            /** @description 文件名 */
+            name: string;
+            /** @description 本机路径（只在本机传给 daemon 时有） */
+            path?: string;
+            /** @description 内容的 sha256（daemon 算） */
+            sha256?: string;
+            /**
+             * Format: int64
+             * @description 字节数
+             */
+            size?: number;
+        };
+        AssetHaveInBody: {
+            /** @description 要查的文件 sha256 */
+            sha256: string[] | null;
+        };
+        AssetHaveOutBody: {
+            /** @description Hub 已有的文件：sha256 → 附件 */
+            files: {
+                [key: string]: components["schemas"]["FileRef"];
+            };
+        };
+        AssetItem: {
+            /**
+             * Format: int64
+             * @description 面数预算上限
+             */
+            budget?: number;
+            /** @description 类别（manifest 的 category，或目录图 / 概念图 / 对比图） */
+            category?: string;
+            /** @description 主文件：零件的 GLB，独立的图本身 */
+            file?: components["schemas"]["AssetFile"];
+            /** @description 同一用途的候选分组（概念图 A / B 版去掉末尾的 _A / _B） */
+            group?: string;
+            /** @description 素材 ID：manifest 的 id；独立的图用文件名（去扩展名） */
+            key: string;
+            /**
+             * @description part = GLB 零件，image = 独立的图
+             * @enum {string}
+             */
+            kind: "part" | "image";
+            /** @description manifest 里这一项的原文 */
+            meta?: unknown;
+            /** @description 图的像素尺寸（宽 / 高） */
+            pixels?: number[] | null;
+            /** @description 零件的预览图 */
+            previews?: components["schemas"]["AssetFile"][] | null;
+            /** @description 尺寸（米，x / y / z） */
+            size?: number[] | null;
+            /**
+             * Format: int64
+             * @description 面数（三角形）
+             */
+            triangles?: number;
+        };
+        AssetListView: {
+            assets: components["schemas"]["Asset"][] | null;
+            /** @description 这个项目全部素材的批次、类别和各状态数量（不受筛选影响） */
+            facets: components["schemas"]["AssetFacets"];
+            /** @description 素材状态全集，按展示顺序 */
+            statuses: string[] | null;
+        };
+        AssetPush: {
+            /** @description 批次（如 G11e1） */
+            batch: string;
+            /** @description 素材所在分支 */
+            branch?: string;
+            /** @description 素材所在提交 */
+            commit?: string;
+            /** @description 素材 */
+            items: components["schemas"]["AssetItem"][] | null;
+            /** @description 记进哪个项目（项目名、git remote 或项目 ID）；不写记进会话所在项目 */
+            project?: string;
+            /** @description 这次推送的 ID（daemon 生成），补传重放时按它去重 */
+            push_id?: string;
+            /** @description 关联需求（R-x，可不填） */
+            requirement?: string;
+            /** @description 提交素材的会话 */
+            session_key?: string;
+            /**
+             * @description 推送后的状态：pending 待审（默认）/ wip 制作中
+             * @enum {string}
+             */
+            status?: "wip" | "pending" | "";
+        };
+        AssetPushItemResult: {
+            /** @description 素材编号 A-x */
+            code: string;
+            key: string;
+            /**
+             * @description created 新素材 / updated 记为新版本 / unchanged 内容与最新版相同，未新增版本
+             * @enum {string}
+             */
+            result: "created" | "updated" | "unchanged";
+            /**
+             * Format: int64
+             * @description 现在的最新版本号
+             */
+            version: number;
+        };
+        AssetPushResult: {
+            batch: string;
+            items: components["schemas"]["AssetPushItemResult"][] | null;
+            /** @description 项目名 */
+            project: string;
+            push_id: string;
+            /**
+             * Format: int64
+             * @description Hub 已有、没有重传的文件数（按 sha256 去重）
+             */
+            reused: number;
+        };
+        AssetVersion: {
+            batch: string;
+            branch: string;
+            /**
+             * Format: int64
+             * @description 面数预算上限
+             */
+            budget?: number;
+            commit: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description 主文件：零件的 GLB，独立的图本身 */
+            file?: components["schemas"]["FileRef"];
+            id: string;
+            /** @description manifest 里这一项的原文 */
+            meta?: unknown;
+            /** @description 像素尺寸（宽 / 高） */
+            pixels?: number[] | null;
+            /** @description 零件的预览图 */
+            previews: components["schemas"]["FileRef"][] | null;
+            session_key: string;
+            /** @description 尺寸（米，x / y / z） */
+            size?: number[] | null;
+            /** Format: int64 */
+            triangles?: number;
+            /** Format: int64 */
+            version: number;
         };
         "Assign-requirementRequest": {
             comment?: string;
@@ -6343,6 +6672,11 @@ export interface components {
             upload_file_mb?: number;
             /**
              * Format: int64
+             * @description 资源库 GLB 模型大小上限（MB），0 或留空用默认 50
+             */
+            upload_glb_mb?: number;
+            /**
+             * Format: int64
              * @description 图片大小上限（MB），0 或留空用默认 10
              */
             upload_image_mb?: number;
@@ -6380,6 +6714,11 @@ export interface components {
              * @description 其它文件（图片、录屏以外）大小上限（MB）
              */
             upload_file_mb: number;
+            /**
+             * Format: int64
+             * @description 资源库 GLB 模型大小上限（MB，R-351）
+             */
+            upload_glb_mb: number;
             /**
              * Format: int64
              * @description 图片大小上限（MB）
@@ -7279,6 +7618,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArrangeOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-list-assets": {
+        parameters: {
+            query?: {
+                /** @description 项目 ID；不写列出全部项目 */
+                project?: string;
+                batch?: string;
+                category?: string;
+                status?: "wip" | "pending" | "approved" | "rework" | "";
+                kind?: "part" | "image" | "";
+                /** @description Agent 用：不写 project 时列会话所在项目 */
+                session_key?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetListView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-asset-have": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetHaveInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetHaveOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-asset-push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetPush"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetPushResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-get-asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDetail"];
                 };
             };
             /** @description Error */
@@ -8988,6 +9462,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArrangeOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-assets": {
+        parameters: {
+            query?: {
+                /** @description 项目 ID；不写列出全部项目 */
+                project?: string;
+                batch?: string;
+                category?: string;
+                status?: "wip" | "pending" | "approved" | "rework" | "";
+                kind?: "part" | "image" | "";
+                /** @description Agent 用：不写 project 时列会话所在项目 */
+                session_key?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetListView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDetail"];
                 };
             };
             /** @description Error */

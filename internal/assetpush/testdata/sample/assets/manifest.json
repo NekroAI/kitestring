@@ -1,0 +1,56 @@
+{
+  "batch": "S1",
+  "version": "0.1.0",
+  "date": "2026-11-19",
+  "generator": "kitestring test fixture",
+  "units": "metres",
+  "assets": [
+    {
+      "id": "crate",
+      "file": "crate.glb",
+      "category": "cover",
+      "triangles": 4,
+      "budget_max": 400,
+      "bounds_m": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "size": [
+          0.5,
+          0.5,
+          0.5
+        ]
+      }
+    },
+    {
+      "id": "wheel",
+      "file": "wheel.glb",
+      "triangles": 4,
+      "budget_max": 1500,
+      "bounds_local_m": {
+        "min": [
+          0,
+          0,
+          0
+        ],
+        "max": [
+          0.76,
+          0.76,
+          0.76
+        ],
+        "size": [
+          0.76,
+          0.76,
+          0.76
+        ]
+      }
+    }
+  ]
+}

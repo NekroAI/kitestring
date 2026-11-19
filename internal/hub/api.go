@@ -83,6 +83,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerCommsWeb(webAPI)
 	h.registerAgentArrange(agentAPI)
 	h.registerSecretsAgent(agentAPI)
+	h.registerAssetsWeb(webAPI) // 资源库（R-351）
+	h.registerAssetsAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -106,6 +108,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	root.Handle("GET /api/agent/files/{id}", h.requireDevice(http.HandlerFunc(h.handleDownload)))
 	// 可交互原型（R-197）：Agent 交原型包；原型在隔离路径里打开，不认登录（令牌或访客签名就是凭据）
 	root.Handle("POST /api/agent/prototypes", h.requireDevice(http.HandlerFunc(h.handleProtoUpload)))
+	// 资源库（R-351）：素材文件（GLB、图片），按 sha256 去重
+	root.Handle("POST /api/agent/assets/files", h.requireDevice(http.HandlerFunc(h.handleAssetFile)))
 	root.Handle("/p/{token}/{path...}", http.HandlerFunc(h.handleProto))
 	root.Handle("/p/g/{link}/{proto}/{sig}/{path...}", http.HandlerFunc(h.handleGuestProto))
 	root.Handle("/api/", h.requireWeb(webMux))
@@ -180,6 +184,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAgentArrange(api)
 	h.registerSecretsWeb(api)
 	h.registerSecretsAgent(api)
+	h.registerAssetsWeb(api)
+	h.registerAssetsAgent(api)
 	return api.OpenAPI()
 }
 
@@ -507,6 +513,7 @@ type SettingsView struct {
 	VideoMB       int                `json:"upload_video_mb" doc:"录屏大小上限（MB）"`
 	FileMB        int                `json:"upload_file_mb" doc:"其它文件（图片、录屏以外）大小上限（MB）"`
 	PrototypeMB   int                `json:"upload_prototype_mb" doc:"可交互原型包（zip）大小上限（MB，R-197）"`
+	GLBMB         int                `json:"upload_glb_mb" doc:"资源库 GLB 模型大小上限（MB，R-351）"`
 	DevRequestMin int                `json:"dev_request_minutes" doc:"PM 推荐开 Dev 会话的批准时限（分钟），到点没批视为拒绝"`
 	CompactTokens int                `json:"compact_tokens" doc:"建议压缩阈值（token）：会话上下文超过它时标「建议压缩」、圆环变红，到一半变黄（R-224、R-225）"`
 }
@@ -523,6 +530,7 @@ type settingsIn struct {
 		VideoMB       int                `json:"upload_video_mb,omitempty" minimum:"0" maximum:"4096" doc:"录屏大小上限（MB），0 或留空用默认 50"`
 		FileMB        int                `json:"upload_file_mb,omitempty" minimum:"0" maximum:"4096" doc:"其它文件大小上限（MB），0 或留空用默认 20"`
 		PrototypeMB   int                `json:"upload_prototype_mb,omitempty" minimum:"0" maximum:"4096" doc:"可交互原型包（zip）大小上限（MB），0 或留空用默认 20"`
+		GLBMB         int                `json:"upload_glb_mb,omitempty" minimum:"0" maximum:"4096" doc:"资源库 GLB 模型大小上限（MB），0 或留空用默认 50"`
 		DevRequestMin int                `json:"dev_request_minutes,omitempty" minimum:"0" maximum:"1440" doc:"PM 推荐开 Dev 会话的批准时限（分钟），0 或留空用默认 30"`
 		CompactTokens int                `json:"compact_tokens,omitempty" minimum:"0" maximum:"2000000" doc:"建议压缩阈值（token），0 或留空用默认 30 万；最低 5 万"`
 	}
@@ -541,7 +549,7 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 	return &settingsOut{Body: SettingsView{
 		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
-		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), PrototypeMB: int(s.Upload.protoBytes() >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0), CompactTokens: s.compactTokens(),
+		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), PrototypeMB: int(s.Upload.protoBytes() >> 20), GLBMB: int(s.Upload.glbBytes() >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0), CompactTokens: s.compactTokens(),
 	}}, nil
 }
 
@@ -1161,7 +1169,7 @@ func (h *Hub) registerWeb(api huma.API) {
 				cur.Summary.APIKey = b.SummaryKey
 			}
 			cur.NotifyDefault = b.NotifyDefault
-			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB, FileMB: b.FileMB, PrototypeMB: b.PrototypeMB}
+			cur.Upload = UploadLimits{ImageMB: b.ImageMB, VideoMB: b.VideoMB, FileMB: b.FileMB, PrototypeMB: b.PrototypeMB, GLBMB: b.GLBMB}
 			cur.DevRequestMinutes = b.DevRequestMin
 			cur.CompactTokens = b.CompactTokens
 			if err := h.SaveSettings(ctx, cur); err != nil {

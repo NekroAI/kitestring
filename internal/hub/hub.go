@@ -64,12 +64,15 @@ type UploadLimits struct {
 	FileMB  int `json:"file_mb,omitempty"`
 	// PrototypeMB：可交互原型包（zip）的上限（R-197），0 = 默认 20
 	PrototypeMB int `json:"prototype_mb,omitempty"`
+	// GLBMB：资源库的 GLB 模型上限（R-351），0 = 默认 50
+	GLBMB int `json:"glb_mb,omitempty"`
 }
 
 const (
 	defaultImageMB = 10
 	defaultVideoMB = 50
 	defaultFileMB  = 20
+	defaultGLBMB   = 50
 	maxUploadMB    = 4096
 )
 

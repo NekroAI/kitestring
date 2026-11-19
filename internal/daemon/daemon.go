@@ -71,6 +71,8 @@ type Daemon struct {
 	orphanKick    chan struct{}
 	usage         *usageScanner // token 用量（R-206）
 	shells        *shellTracker // 后台命令（R-208）
+	assetMu       sync.Mutex    // 资源库推送（R-351）：同一时间只推一批
+	assetKick     chan struct{}
 }
 
 type toolUse struct {
@@ -103,7 +105,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1)}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1), assetKick: make(chan struct{}, 1)}
 	d.toolCond = sync.NewCond(&d.mu)
 	if d.usage, err = openUsage(q.db); err != nil {
 		q.close()
@@ -150,6 +152,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// 插件直接上报的 token 用量（目前是 DSH）：写进同一个 usage_minutes 表，随原有批次发给 Hub。
 	mux.HandleFunc("POST /usage", d.handleUsage)
 	mux.Handle("/agent/", d.watchTools(d.proxy))
+	// 资源库推送（R-351）：文件先进本机暂存区和队列，Hub 连不上时补传
+	mux.HandleFunc("POST /assets/push", d.handleAssetPush)
+	mux.HandleFunc("GET /assets/queue", d.handleAssetQueue)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
@@ -157,6 +162,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	go d.watchInstances(ctx)
 	go d.watchTasks(ctx)
 	go d.watchUsage(ctx)
+	go d.watchAssets(ctx)
 
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -209,6 +215,7 @@ func (d *Daemon) session(ctx context.Context) error {
 	d.setConnected(true)
 	d.log.Info("已连接 Hub")
 	d.resendOrphans()
+	d.kickAssets()
 	d.usage.reset()
 	d.shells.reset()
 
