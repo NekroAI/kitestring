@@ -33,13 +33,34 @@ ks install --hub --claude=false --codex=false --daemon=false \
   --hub-files-dir /Volumes/DataSSD/kitestring-files            # 写进常驻服务的 --files-dir
 ```
 
-也可以直接运行 `ks hub serve --files-dir <目录>`，或设置环境变量 `KS_FILES_DIR`（`--files-dir` 优先）。之后重跑 `ks install --hub` 时要带上同样的 `--hub-files-dir`，否则服务会改回默认目录。
+也可以直接运行 `ks hub serve --files-dir <目录>`，或设置环境变量 `KS_FILES_DIR`（`--files-dir` 优先）。之后重跑 `ks install --hub` 不带 `--hub-files-dir` 时，沿用已安装服务里配置的目录，不会改回默认；要改回默认写 `--hub-files-dir default`（目录名恰好叫 default 时写成 `./default`）。
 
 - 指定的目录必须已经存在，Hub 不会替你创建：外置硬盘没挂上时，在挂载点下建目录会把附件悄悄写到系统盘。
 - 目录不存在或不能写时，Hub 照常启动，但拒收上传，日志写明原因，「设置 → 账户 → 附件存储」显示「存储不可用」和原因；每次上传前都会再检查一次，硬盘重新挂上后不用重启。
-- 改目录前已有的附件可以留在 `~/.kitestring/files`，照常能看（只读，新附件只写到新目录）；想搬过去用 `rsync -a ~/.kitestring/files/ <新目录>/`。
+- 改目录前已有的附件可以留在 `~/.kitestring/files`，照常能看（只读，新附件只写到新目录）；想搬过去见下面「把附件和部署备份搬到别的磁盘」。
 - 「设置 → 账户 → 附件存储」显示当前存储位置和已用量。
 - **附件不在部署备份范围内**：`scripts/deploy.sh` 只备份程序和数据库，附件目录（无论默认还是指定）需要自行备份。
+
+### 把附件和部署备份搬到别的磁盘
+
+`scripts/deploy.sh` 的部署备份（旧程序、数据库、DSH 插件副本）默认在 `~/.kitestring/backups`。可以换到别的目录：环境变量 `KS_BACKUP_DIR`，或把路径写进 `~/.kitestring/backup-dir` 文件（第一行，之后每次部署都用它）。指定的目录必须已存在且能写；外置硬盘没挂上时部署在构建前就失败退出，什么都不改，也不会改写到默认目录。仍保留最近 10 份（`KS_KEEP_BACKUPS`），回滚从这个目录取旧程序。
+
+已有的附件和备份用 `scripts/migrate-storage.sh` 搬：完整拷贝，核对文件数和每个文件的 sha256，核对记录写到 `~/.kitestring/migrations/`；核对通过才提示下一步，删除旧副本要单独一步并显式确认。各步都支持 `--dry-run`。以外置硬盘 `/Volumes/DataSSD` 为例：
+
+```sh
+mkdir /Volumes/DataSSD/kitestring                                        # 上一层要先建好
+scripts/migrate-storage.sh copy ~/.kitestring/files   /Volumes/DataSSD/kitestring/files
+scripts/migrate-storage.sh copy ~/.kitestring/backups /Volumes/DataSSD/kitestring/backups
+# 两个都显示「结果：通过」后切换配置
+ks install --hub --claude=false --codex=false --daemon=false --hub-files-dir /Volumes/DataSSD/kitestring/files
+echo /Volumes/DataSSD/kitestring/backups > ~/.kitestring/backup-dir
+# 在「设置 → 账户 → 附件存储」确认位置，打开几个新旧附件看看；再拷一次补上期间新增的文件
+scripts/migrate-storage.sh copy ~/.kitestring/files /Volumes/DataSSD/kitestring/files
+scripts/migrate-storage.sh delete-old ~/.kitestring/files   /Volumes/DataSSD/kitestring/files   --confirm-delete-old
+scripts/migrate-storage.sh delete-old ~/.kitestring/backups /Volumes/DataSSD/kitestring/backups --confirm-delete-old
+```
+
+`verify` 只核对、不拷贝。核对的标准是旧目录里每个文件在新目录里都有且 sha256 一致；新目录多出来的文件（切换后新传的附件）会列出数量，但不算不通过。
 
 ## 3. 每台开发设备
 

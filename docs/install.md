@@ -33,13 +33,34 @@ ks install --hub --claude=false --codex=false --daemon=false \
   --hub-files-dir /Volumes/DataSSD/kitestring-files            # passed to the service as --files-dir
 ```
 
-You can also run `ks hub serve --files-dir <dir>` directly, or set `KS_FILES_DIR` (`--files-dir` wins). When you re-run `ks install --hub` later, pass the same `--hub-files-dir`, or the service goes back to the default directory.
+You can also run `ks hub serve --files-dir <dir>` directly, or set `KS_FILES_DIR` (`--files-dir` wins). When you re-run `ks install --hub` later without `--hub-files-dir`, it keeps the directory configured in the installed service instead of going back to the default; to go back to the default, pass `--hub-files-dir default` (write `./default` for a directory literally named default).
 
 - The directory must already exist; the Hub never creates it, because creating it under an unmounted drive's mount point would silently write to the system disk.
 - If the directory is missing or not writable, the Hub still starts but rejects uploads, logs the reason, and **Settings → Account → Attachment storage** shows "storage unavailable" with the reason. Every upload checks again, so remounting the drive needs no restart.
-- Attachments uploaded before the change can stay in `~/.kitestring/files` and remain viewable (read-only; new files go only to the new directory). To move them: `rsync -a ~/.kitestring/files/ <new dir>/`.
+- Attachments uploaded before the change can stay in `~/.kitestring/files` and remain viewable (read-only; new files go only to the new directory). To move them, see "Moving attachments and deployment backups to another disk" below.
 - **Settings → Account → Attachment storage** shows the current location and how much space is used.
 - **Attachments are not part of deployment backups**: `scripts/deploy.sh` backs up only the binary and the database. Back up the attachment directory (default or custom) yourself.
+
+### Moving attachments and deployment backups to another disk
+
+`scripts/deploy.sh` keeps deployment backups (old binary, database, DSH plugin copy) in `~/.kitestring/backups` by default. To use another directory, set `KS_BACKUP_DIR`, or write the path on the first line of `~/.kitestring/backup-dir` (used by every later deploy). The directory must already exist and be writable; if the drive is not mounted, the deploy fails before building, changes nothing, and never falls back to the default directory. The latest 10 backups are kept (`KS_KEEP_BACKUPS`), and rollback reads the old binary from this directory.
+
+Move existing attachments and backups with `scripts/migrate-storage.sh`: it copies everything, checks the file count and every file's sha256, and writes a record to `~/.kitestring/migrations/`. It suggests the next step only when the check passes, and deleting the old copy is a separate step that needs explicit confirmation. Every step supports `--dry-run`. With an external drive at `/Volumes/DataSSD`:
+
+```sh
+mkdir /Volumes/DataSSD/kitestring                                        # the parent must exist
+scripts/migrate-storage.sh copy ~/.kitestring/files   /Volumes/DataSSD/kitestring/files
+scripts/migrate-storage.sh copy ~/.kitestring/backups /Volumes/DataSSD/kitestring/backups
+# once both say the check passed, switch the configuration
+ks install --hub --claude=false --codex=false --daemon=false --hub-files-dir /Volumes/DataSSD/kitestring/files
+echo /Volumes/DataSSD/kitestring/backups > ~/.kitestring/backup-dir
+# check Settings → Account → Attachment storage and open a few old and new attachments; copy again to pick up files added meanwhile
+scripts/migrate-storage.sh copy ~/.kitestring/files /Volumes/DataSSD/kitestring/files
+scripts/migrate-storage.sh delete-old ~/.kitestring/files   /Volumes/DataSSD/kitestring/files   --confirm-delete-old
+scripts/migrate-storage.sh delete-old ~/.kitestring/backups /Volumes/DataSSD/kitestring/backups --confirm-delete-old
+```
+
+`verify` checks without copying. The check passes when every file in the old directory exists in the new one with the same sha256; extra files in the new directory (attachments uploaded after the switch) are counted but do not fail the check.
 
 ## 3. Every development machine
 

@@ -15,13 +15,21 @@
 #   LAUNCHD_DAEMON    daemon 服务名，默认 ai.nekro.kitestring.daemon
 #   KS_LAUNCHCTL      launchctl 命令，默认 launchctl（试跑可换成空操作脚本）
 #   KS_EXPECT_COMMIT  部署后核对用的期望提交号，默认取构建目录的 HEAD（试跑造失败用）
-#   KS_KEEP_BACKUPS   $KS_HOME/backups 里 ks-* 和 hub-*.db 各保留最近几份，默认 10
+#   KS_BACKUP_DIR     部署备份目录（旧程序、数据库、DSH 插件副本），见下面「备份目录」
+#   KS_KEEP_BACKUPS   备份目录里 ks-*、hub-*.db、dsh-plugin-* 各保留最近几份，默认 10
 #   KS_VERIFY_TIMEOUT 部署后等待服务就绪的秒数，默认 30
 #
 # 备份范围：只备份程序（ks）、DSH 插件和数据库（hub.db），不备份附件。
 # 附件（附件、原型包、缩略图）默认在 $KS_HOME/files；Hub 服务用 --files-dir 或 KS_FILES_DIR
 # 指定了别的目录（如外置硬盘，见 docs/install.zh-CN.md「附件目录」）时在那个目录。两种情况都不在部署备份里，需要自行备份。
 # 部署不读写附件目录；外置硬盘没挂上时 Hub 照常启动、核对照常通过，只是拒收上传（设置页显示「存储不可用」）。
+#
+# 备份目录（R-354）：按顺序取 环境变量 KS_BACKUP_DIR、文件 $KS_HOME/backup-dir 第一行写的路径（可用 ~/ 开头），
+# 都没有时用 $KS_HOME/backups。放到外置硬盘上时写进 $KS_HOME/backup-dir，之后每次部署都用它，不用每次带环境变量：
+#   echo /Volumes/DataSSD/kitestring/backups > ~/.kitestring/backup-dir
+# 指定的目录必须已存在且能写，部署不替你创建（外置硬盘没挂上时在挂载点下建目录会写到系统盘）；
+# 不可用时部署在构建之前就失败退出，什么都不改，也不改写到默认目录。回滚从这个目录取旧程序。
+# 把已有备份搬过去用 scripts/migrate-storage.sh（拷贝并核对文件数和 sha256，见 docs/install.zh-CN.md「附件目录」）。
 set -euo pipefail
 
 DRY=0
@@ -29,7 +37,7 @@ TARGET=""
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
-    -h | --help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,32p' "$0"; exit 0 ;;
     -*) echo "未知参数：$a" >&2; exit 2 ;;
     *) TARGET="$a" ;;
   esac
@@ -48,7 +56,22 @@ export KS_HOME
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TS="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="$KS_HOME/backups"
+# 备份目录（R-354）：KS_BACKUP_DIR > $KS_HOME/backup-dir > $KS_HOME/backups
+BACKUP_DIR_FILE="$KS_HOME/backup-dir"
+BACKUP_DIR_FROM=""
+if [ -n "${KS_BACKUP_DIR:-}" ]; then
+  BACKUP_DIR="$KS_BACKUP_DIR"
+  BACKUP_DIR_FROM="环境变量 KS_BACKUP_DIR"
+elif [ -f "$BACKUP_DIR_FILE" ] && [ -n "$(head -n1 "$BACKUP_DIR_FILE" | tr -d '[:space:]')" ]; then
+  BACKUP_DIR="$(head -n1 "$BACKUP_DIR_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  BACKUP_DIR_FROM="$BACKUP_DIR_FILE"
+else
+  BACKUP_DIR="$KS_HOME/backups"
+fi
+case "$BACKUP_DIR" in
+  \~) BACKUP_DIR="$HOME" ;;
+  \~/*) BACKUP_DIR="$HOME/${BACKUP_DIR#??}" ;;
+esac
 ROLLBACK_BIN="$BACKUP_DIR/ks-$TS"
 DB_BACKUP="$BACKUP_DIR/hub-$TS.db"
 PLUGIN_DIR="$KS_HOME/dsh-plugin"
@@ -175,6 +198,30 @@ trap 'fail' ERR
 trap cleanup EXIT
 set -E
 
+# 0. 检查备份目录：指定了目录（环境变量或 backup-dir 文件）时必须已存在且能写，不替它创建、不改用默认目录
+STEP="检查备份目录"
+if [ -n "$BACKUP_DIR_FROM" ]; then
+  why=""
+  if [ ! -e "$BACKUP_DIR" ]; then
+    why="不存在（外置硬盘没挂上？）"
+  elif [ ! -d "$BACKUP_DIR" ]; then
+    why="不是文件夹"
+  elif [ ! -w "$BACKUP_DIR" ]; then
+    why="不能写"
+  elif [ "$DRY" != 1 ]; then
+    probe="$(mktemp "$BACKUP_DIR/.ks-deploy-probe.XXXXXX" 2>/dev/null)" && rm -f "$probe" || why="写不进去"
+  fi
+  if [ -n "$why" ]; then
+    log "备份目录不可用：$BACKUP_DIR ${why}（来自 ${BACKUP_DIR_FROM}）"
+    log "部署没有改任何东西。挂上硬盘或改好 ${BACKUP_DIR_FROM} 后重跑；不会改写到默认目录 $KS_HOME/backups"
+    trap - ERR
+    exit 1
+  fi
+  log "备份目录：${BACKUP_DIR}（来自 ${BACKUP_DIR_FROM}）"
+else
+  log "备份目录：${BACKUP_DIR}（默认）"
+fi
+
 # 1. 确定构建目录
 STEP="确定构建目录"
 BUILD="$REPO"
@@ -236,7 +283,7 @@ else
   log "没有 $KS_HOME/hub.db，跳过数据库备份"
 fi
 
-# 备份保留策略：只清 $KS_HOME/backups，ks-* 和 hub-*.db 各保留最近 KS_KEEP_BACKUPS 份（文件名带时间，按名字排序）
+# 备份保留策略：只清备份目录 $BACKUP_DIR，ks-*、hub-*.db、dsh-plugin-* 各保留最近 KS_KEEP_BACKUPS 份（文件名带时间，按名字排序）
 STEP="清理旧备份"
 prune_backups() {
   local pattern="$1" f

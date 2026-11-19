@@ -48,9 +48,11 @@ type Options struct {
 	ClaudeDirs  []profile.Dir
 	Status      bool // 只列出各配置目录的接入状态
 	HubAddr     string
-	HubFilesDir string // hub 服务的 --files-dir（R-353），空 = 默认目录
-	DryRun      bool
-	Out         io.Writer
+	HubFilesDir string // hub 服务的 --files-dir（R-353）；空 = 沿用已安装 hub 服务里的目录，没有则用默认目录（R-354）
+	// HubFilesDirDefault：显式改回默认附件目录（--hub-files-dir default，R-354）
+	HubFilesDirDefault bool
+	DryRun             bool
+	Out                io.Writer
 }
 
 // Run 执行安装或卸载。
@@ -94,6 +96,11 @@ func Run(o Options, uninstall bool) error {
 	}
 	if o.Hub {
 		step("hub 服务", func() error {
+			if !uninstall {
+				if note := resolveHubFilesDir(&o, runtime.GOOS, home); note != "" {
+					fmt.Fprintln(o.Out, "  "+note)
+				}
+			}
 			return service(o, home, "hub", hubArgv(o), uninstall)
 		})
 	}
@@ -166,6 +173,15 @@ func hookLine(hm map[string]any) string {
 		}
 	}
 	return line
+}
+
+// unitContent 是 systemd --user 服务定义（parseServiceArgv 据此读回启动参数）。
+func unitContent(role string, argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = shellQuote(a)
+	}
+	return fmt.Sprintf("[Unit]\nDescription=Kitestring %s\nAfter=network-online.target\n\n[Service]\nExecStart=%s\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n", role, strings.Join(quoted, " "))
 }
 
 func shellQuote(s string) string {
@@ -506,11 +522,24 @@ func launchd(o Options, home, role string, argv []string, remove bool) error {
 	if !o.DryRun {
 		_ = os.MkdirAll(logDir, 0o700)
 	}
+	plist := plistContent(label, argv, filepath.Join(logDir, role+".log"))
+	if err := writeFile(o, path, []byte(plist), 0o644); err != nil {
+		return err
+	}
+	if err := run(o, "launchctl", "bootstrap", domain, path); err != nil {
+		return err
+	}
+	fmt.Fprintf(o.Out, "✓ %s 服务（launchd：%s）\n", role, label)
+	return nil
+}
+
+// plistContent 是 launchd 服务定义（parseServiceArgv 据此读回启动参数）。
+func plistContent(label string, argv []string, logFile string) string {
 	var args strings.Builder
 	for _, a := range argv {
 		fmt.Fprintf(&args, "\t\t<string>%s</string>\n", xmlEscape(a))
 	}
-	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -534,15 +563,7 @@ func launchd(o Options, home, role string, argv []string, remove bool) error {
 	<string>%s</string>
 </dict>
 </plist>
-`, label, args.String(), filepath.Join(logDir, role+".log"), filepath.Join(logDir, role+".log"))
-	if err := writeFile(o, path, []byte(plist), 0o644); err != nil {
-		return err
-	}
-	if err := run(o, "launchctl", "bootstrap", domain, path); err != nil {
-		return err
-	}
-	fmt.Fprintf(o.Out, "✓ %s 服务（launchd：%s）\n", role, label)
-	return nil
+`, label, args.String(), logFile, logFile)
 }
 
 func xmlEscape(s string) string {
@@ -563,11 +584,7 @@ func systemd(o Options, home, role string, argv []string, remove bool) error {
 		fmt.Fprintf(o.Out, "✓ 已移除 %s 服务\n", role)
 		return nil
 	}
-	quoted := make([]string, len(argv))
-	for i, a := range argv {
-		quoted[i] = shellQuote(a)
-	}
-	content := fmt.Sprintf("[Unit]\nDescription=Kitestring %s\nAfter=network-online.target\n\n[Service]\nExecStart=%s\nRestart=always\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n", role, strings.Join(quoted, " "))
+	content := unitContent(role, argv)
 	if err := writeFile(o, path, []byte(content), 0o644); err != nil {
 		return err
 	}
