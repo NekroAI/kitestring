@@ -68,7 +68,7 @@ func (l *slowLog) pcsHere() []uintptr {
 	return pcs[:n]
 }
 
-// callerOf 取栈里本项目的前三个函数（跳过本文件与 database/sql），形如 store.(*Store).X ← hub.(*Hub).Y。
+// callerOf 取栈里本项目的前三个函数（跳过本文件、dbx.go 与 database/sql），形如 store.(*Store).X ← hub.(*Hub).Y。
 func callerOf(pcs []uintptr) string {
 	if len(pcs) == 0 {
 		return ""
@@ -77,7 +77,8 @@ func callerOf(pcs []uintptr) string {
 	var out []string
 	for {
 		f, more := frames.Next()
-		if strings.Contains(f.Function, "kitestring/internal/") && !strings.HasSuffix(f.File, "slowlog.go") {
+		// 跳过本文件和读写分流的 dbx.go：留出位置给真正的调用方（R-382：原来三格里有一格总是 dbx，看不到是哪个接口或巡查）
+		if strings.Contains(f.Function, "kitestring/internal/") && !strings.HasSuffix(f.File, "slowlog.go") && !strings.HasSuffix(f.File, "dbx.go") {
 			name := f.Function[strings.LastIndex(f.Function, "/")+1:]
 			out = append(out, name)
 			if len(out) == 3 {
@@ -89,6 +90,23 @@ func callerOf(pcs []uintptr) string {
 		}
 	}
 	return strings.Join(out, " ← ")
+}
+
+// ---------- 每个请求的查库次数（R-382） ----------
+
+type queryCountKey struct{}
+
+// WithQueryCount 在 ctx 上挂一个计数器：之后用这个 ctx 执行的每条语句（查询和写入）加一。
+// 慢请求日志用它写出单个请求查了多少次库，逐条查库（N+1）一眼可见。
+func WithQueryCount(ctx context.Context) (context.Context, *atomic.Int64) {
+	n := new(atomic.Int64)
+	return context.WithValue(ctx, queryCountKey{}, n), n
+}
+
+func countQuery(ctx context.Context) {
+	if n, ok := ctx.Value(queryCountKey{}).(*atomic.Int64); ok {
+		n.Add(1)
+	}
 }
 
 // ---------- 驱动包装 ----------
@@ -139,6 +157,7 @@ func (c *timedConn) PrepareContext(ctx context.Context, query string) (driver.St
 }
 
 func (c *timedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	countQuery(ctx)
 	start, pcs := time.Now(), c.slow.pcsHere()
 	r, err := c.Conn.(driver.ExecerContext).ExecContext(ctx, query, args)
 	c.slow.done("exec", query, start, pcs)
@@ -146,6 +165,7 @@ func (c *timedConn) ExecContext(ctx context.Context, query string, args []driver
 }
 
 func (c *timedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	countQuery(ctx)
 	start, pcs := time.Now(), c.slow.pcsHere()
 	r, err := c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
 	if err != nil {
