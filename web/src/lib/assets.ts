@@ -39,7 +39,22 @@ export type AssetLite = {
   latest?: VersionLite | null
 }
 
-export type AssetFilter = { project: string; batch: string; category: string; status: string }
+export type AssetFilter = { project: string; batch: string; category: string; status: string; ftype?: string }
+
+// fileTypeOf（R-388）：一个文件的文件类型，取扩展名大写（glb → GLB，jpeg → JPG）；没有扩展名时取 mime 的子类型。
+export function fileTypeOf(f: Pick<FileLite, 'name' | 'mime'>): string {
+  const m = /\.([A-Za-z0-9]+)$/.exec(f.name)
+  let x = m ? m[1].toUpperCase() : ((f.mime.split('/')[1] ?? '').split(/[+;]/)[0] || '').toUpperCase()
+  if (x === 'JPEG') x = 'JPG'
+  return x
+}
+
+// fileTypesOf（R-388）：一件素材最新一版里全部文件的文件类型（主文件在前，再是预览图），去重；自动生成的缩略图不算。
+export function fileTypesOf(a: Pick<AssetLite, 'latest'>): string[] {
+  const v = a.latest
+  const fs = [v?.file, ...(v?.previews ?? [])].filter((f): f is FileLite => !!f)
+  return [...new Set(fs.map(fileTypeOf).filter(Boolean))]
+}
 
 // projectsOf：有素材的项目，最近有更新的在前（资源库页的项目切换只列这些）。
 export function projectsOf(list: AssetLite[]): string[] {
@@ -66,13 +81,14 @@ export function facetsOf(list: AssetLite[], project: string) {
   return {
     batches: naturalSort(new Set(inProj.flatMap(batchesOf))),
     categories: naturalSort(new Set(inProj.map((a) => a.category).filter(Boolean))),
+    fileTypes: naturalSort(new Set(inProj.flatMap(fileTypesOf))),
     counts,
     total: inProj.length,
   }
 }
 
 export function filterAssets(list: AssetLite[], f: AssetFilter): AssetLite[] {
-  return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status))
+  return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status) && (!f.ftype || fileTypesOf(a).includes(f.ftype)))
 }
 
 // 图片墙上的一格：单个素材，或同一用途的一组候选（概念图 A / B 版）。

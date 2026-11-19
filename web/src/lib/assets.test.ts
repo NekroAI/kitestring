@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -196,4 +196,20 @@ test('审片进度（R-366）：队列里已审的个数（撤销期里按审核
   const st: Record<string, string> = { a: 'approved', b: 'pending', c: 'rework', d: 'pending' }
   assert.deepEqual(reviewProgress(['a', 'b', 'c', 'd'], (c) => st[c]), { done: 2, approved: 1, rework: 1 })
   assert.deepEqual(reviewProgress([], (c) => st[c]), { done: 0, approved: 0, rework: 0 })
+})
+
+test('文件类型：取扩展名，主文件和预览图都算，可与其他筛选组合（R-388）', () => {
+  assert.equal(fileTypeOf({ name: 'a.glb', mime: 'model/gltf-binary' }), 'GLB')
+  assert.equal(fileTypeOf({ name: 'a.jpeg', mime: 'image/jpeg' }), 'JPG')
+  assert.equal(fileTypeOf({ name: 'noext', mime: 'audio/ogg' }), 'OGG')
+  const f = (name: string, mime: string) => ({ id: name, name, mime, size: 1 })
+  const mk = (key: string, status: AssetLite['status'], file: ReturnType<typeof f>, previews: ReturnType<typeof f>[] = []): AssetLite =>
+    ({ id: key, code: key, project_id: 'p1', batch: 'B1', key, kind: 'part', category: '车轮', status, version: 1, updated_at: '', latest: { id: key, version: 1, batch: 'B1', branch: '', commit: '', file, previews, created_at: '' } })
+  const list = [mk('a', 'pending', f('a.glb', 'model/gltf-binary'), [f('a__front.png', 'image/png')]), mk('b', 'approved', f('b.svg', 'image/svg+xml')), mk('c', 'pending', f('c.ttf', 'font/ttf'))]
+  assert.deepEqual(fileTypesOf(list[0]), ['GLB', 'PNG'])
+  assert.deepEqual(facetsOf(list, 'p1').fileTypes, ['GLB', 'PNG', 'SVG', 'TTF'])
+  const base = { project: 'p1', batch: '', category: '', status: '' }
+  assert.deepEqual(filterAssets(list, { ...base, ftype: 'PNG' }).map((a) => a.key), ['a'])
+  assert.deepEqual(filterAssets(list, { ...base, ftype: 'GLB', status: 'approved' }).map((a) => a.key), [])
+  assert.deepEqual(filterAssets(list, { ...base, ftype: 'TTF', status: 'pending', category: '车轮', batch: 'B1' }).map((a) => a.key), ['c'])
 })

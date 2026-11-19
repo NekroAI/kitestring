@@ -6,7 +6,7 @@ import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useDesktop, useNow } from '../lib/util'
-import { batchesOf, candidateLabel, comparePair, metaRows, variantNames, viewGroups, coverOf, facetsOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, wallTiles, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { batchesOf, candidateLabel, comparePair, metaRows, variantNames, viewGroups, coverOf, facetsOf, fileTypesOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, wallTiles, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
@@ -71,11 +71,12 @@ export function AssetsPage() {
   const batch = params.get('b') ?? ''
   const category = params.get('c') ?? ''
   const status = params.get('st') ?? ''
+  const ftype = params.get('ft') ?? ''
   const facets = useMemo(() => facetsOf(all, project), [all, project])
-  const shown = useMemo(() => filterAssets(all, { project, batch, category, status }), [all, project, batch, category, status])
+  const shown = useMemo(() => filterAssets(all, { project, batch, category, status, ftype }), [all, project, batch, category, status, ftype])
   const tiles = useMemo(() => wallTiles(shown), [shown])
   const nameOf = (id: string) => (projects.data?.projects ?? []).find((p) => p.id === id)?.name ?? id
-  const filtered = !!(batch || category || status)
+  const filtered = !!(batch || category || status || ftype)
   const review = useReviewMode(all, tiles, params.get('rv') === '1', params.get('asset'), set)
   const pendingN = reviewQueue(tiles).length
   // 桌面上审片是全宽的舞台（R-366，D-1713 方案 B）；手机上仍是底部抽屉里逐个翻
@@ -93,7 +94,7 @@ export function AssetsPage() {
                 {nameOf(project)}
               </Button>
             }
-            items={projIds.map((p) => ({ label: nameOf(p), checked: p === project, onSelect: () => set({ p, b: null, c: null, st: null, asset: null, cmp: null }) }))}
+            items={projIds.map((p) => ({ label: nameOf(p), checked: p === project, onSelect: () => set({ p, b: null, c: null, ft: null, st: null, asset: null, cmp: null }) }))}
           />
         )}
         {project && (
@@ -106,6 +107,7 @@ export function AssetsPage() {
             />
             <FacetMenu label={t.asset.batch} allLabel={t.asset.allBatches} value={batch} options={facets.batches} onChange={(v) => set({ b: v || null })} />
             <FacetMenu label={t.asset.category} allLabel={t.asset.allCategories} value={category} options={facets.categories} onChange={(v) => set({ c: v || null })} />
+            <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
           </div>
         )}
         <span className="flex-1" />
@@ -144,7 +146,7 @@ export function AssetsPage() {
               title={t.asset.noMatch}
               action={
                 filtered && (
-                  <Button size="sm" onClick={() => set({ b: null, c: null, st: null })}>
+                  <Button size="sm" onClick={() => set({ b: null, c: null, ft: null, st: null })}>
                     {t.asset.clearFilter}
                   </Button>
                 )
@@ -360,6 +362,20 @@ export function AssetCover({ a, v, className, tag = true }: { a: Pick<AssetLite,
   )
 }
 
+// FileTypeTags（R-388）：卡片上的文件类型小标签，一件素材有几种文件就列几个。
+function FileTypeTags({ types }: { types: string[] }) {
+  if (!types.length) return null
+  return (
+    <div className="mt-1 flex gap-1 overflow-hidden" data-file-types="">
+      {types.map((x) => (
+        <span key={x} className="rounded bg-sunken px-1.5 font-mono text-[11px] leading-[16px] text-fg-2">
+          {x}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpen: () => void }) {
   return (
     <button onClick={onOpen} className={cardCls(active)} data-asset={a.code}>
@@ -370,6 +386,7 @@ export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean
           {a.key}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.category, t.asset.ver(a.version))}</div>
+        <FileTypeTags types={fileTypesOf(a)} />
       </div>
     </button>
   )
@@ -396,6 +413,7 @@ export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { 
           {tile.group}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(tile.batch, tile.assets[0].category, t.asset.candidates(tile.assets.map(candidateLabel)))}</div>
+        <FileTypeTags types={[...new Set(tile.assets.flatMap(fileTypesOf))]} />
       </div>
     </button>
   )
@@ -635,6 +653,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     [t.asset.meta.code, a.code],
     [t.asset.meta.batch, batchesOf(a.uid ? a : (v ?? a)).join(t.asset.listSep)],
     [t.asset.meta.category, a.category],
+    [t.asset.meta.fileType, fileTypesOf({ latest: v }).join(t.asset.listSep)],
     [t.asset.meta.branch, v?.branch],
     [t.asset.meta.commit, v?.commit ? <span className="font-mono text-[12px]">{v.commit.slice(0, 10)}</span> : ''],
     [t.asset.meta.triangles, v && fmtTris(v.triangles, v.budget) ? <span className={cx(overBudget(v.triangles, v.budget) && 'text-danger')} title={overBudget(v.triangles, v.budget) ? t.asset.overBudget : undefined}>{fmtTris(v.triangles, v.budget)}</span> : ''],
@@ -715,7 +734,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
       <dl className={cx('overflow-hidden rounded-xl border border-line text-[13px]', !onStage && 'mt-4')}>
         {rows.map(([k, val]) => (
           <div key={k} className="flex min-w-0 gap-3 border-b border-line px-3 py-2 last:border-b-0">
-            <dt className="w-10 shrink-0 text-fg-3">{k}</dt>
+            <dt className="w-[4.5em] shrink-0 text-fg-3">{k}</dt>
             <dd className="min-w-0 truncate text-fg">{val}</dd>
           </div>
         ))}

@@ -35,8 +35,9 @@ export function GuestAssets({ token }: { token: string }) {
   const batch = params.get('b') ?? ''
   const category = params.get('c') ?? ''
   const status = params.get('st') ?? ''
+  const ftype = params.get('ft') ?? ''
   const facets = useMemo(() => facetsOf(all, ''), [all])
-  const shown = useMemo(() => filterAssets(all, { project: '', batch, category, status }), [all, batch, category, status])
+  const shown = useMemo(() => filterAssets(all, { project: '', batch, category, status, ftype }), [all, batch, category, status, ftype])
   const tiles = useMemo(() => wallTiles(shown), [shown])
   const perm = q.data?.perm ?? 'view'
   const allow = !!q.data?.allow_download
@@ -65,6 +66,7 @@ export function GuestAssets({ token }: { token: string }) {
           />
           <FacetMenu label={t.asset.batch} allLabel={t.asset.allBatches} value={batch} options={facets.batches} onChange={(v) => set({ b: v || null })} />
           <FacetMenu label={t.asset.category} allLabel={t.asset.allCategories} value={category} options={facets.categories} onChange={(v) => set({ c: v || null })} />
+            <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
         </div>
       )}
       {q.isPending ? (
