@@ -250,9 +250,10 @@ export function Shell() {
     <div className="min-h-dvh">
       <Sidebar todo={todo} unsent={unsent} commsTo={commsTo} guests={wb.guests.length} connected={connected} collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <MobileHeader connected={connected} />
-      <main className={cx('pb-24 transition-[padding] duration-200 ease-out', pathname === '/' ? 'lg:pb-5' : 'lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
-        {/* 工作台是一屏驾驶舱，用满任意宽度（R-170，去掉原来 1880px 的上限）、需求池盘面随屏幕一直放宽到 3600px（R-133，2K / 4K / 21:9 用满），其余页面保持 1360px 的阅读宽度 */}
-        <div className={cx('mx-auto px-4 pt-5 sm:px-6 lg:px-10', pathname === '/' ? 'lg:pt-6' : 'lg:pt-9', pathname === '/' ? '' : pathname === '/requirements' ? 'max-w-[3600px]' : 'max-w-[1360px]')}>
+      <main className={cx('pb-24 transition-[padding] duration-200 ease-out', pathname === '/' || pathname === '/assets' ? 'lg:pb-5' : 'lg:pb-10', collapsed ? 'lg:pl-16' : 'lg:pl-[232px]')}>
+        {/* 工作台是一屏驾驶舱，用满任意宽度（R-170，去掉原来 1880px 的上限）；资源库同样铺满全屏、图片墙在区域里滚动（R-383）；
+            需求池盘面随屏幕一直放宽到 3600px（R-133，2K / 4K / 21:9 用满），其余页面保持 1360px 的阅读宽度 */}
+        <div className={cx('mx-auto px-4 pt-5 sm:px-6 lg:px-10', (pathname === '/' || pathname === '/assets') ? 'lg:pt-6' : 'lg:pt-9', (pathname === '/' || pathname === '/assets') ? '' : pathname === '/requirements' ? 'max-w-[3600px]' : 'max-w-[1360px]')}>
           {pathname !== '/' && <AwayBar now={now} />}
           <Outlet />
         </div>

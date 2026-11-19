@@ -10,7 +10,7 @@ import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Input, Segmented, Skeleton, Textarea, Tip } from '../ui/base'
 import { downloadUrl, NoDownloadContext } from '../ui/attach'
 import { DraftField, useDraft } from '../app/draft'
-import { AssetCard, AssetDrawer, AssetExtrasContext, CompareDrawer, FacetMenu, GroupCard, type AssetExtras, type Detail } from '../app/assets'
+import { AssetDrawer, AssetExtrasContext, AssetWall, CompareDrawer, FacetMenu, WallGrid, type AssetExtras, type Detail } from '../app/assets'
 import { gk, guestAssetDetail, postComment, postUpload, useGuestAssets, useMyComments } from './data'
 import { mineText } from './slots'
 import { Failed } from './views'
@@ -48,7 +48,9 @@ export function GuestAssets({ token }: { token: string }) {
 
   if (q.isError) return <Failed error={q.error} onRetry={() => q.refetch()} />
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6" data-guest-assets="">
+    // 和所有者的资源库页一样铺满宽度（R-383），图片墙宽屏上一行放得更多；整页在访客上下文里，自动缩略图只在本页渲染、不回传
+    <AssetExtrasContext.Provider value={extras}>
+    <div className="w-full px-4 py-5 sm:px-6 lg:px-8" data-guest-assets="">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="font-display text-[22px] font-semibold tracking-wide text-fg">{t.guest.assets}</h1>
         <span className="text-[13px] text-fg-3 tabular">{t.asset.total(facets.total)}</span>
@@ -66,34 +68,25 @@ export function GuestAssets({ token }: { token: string }) {
         </div>
       )}
       {q.isPending ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
+        <WallGrid>
           {Array.from({ length: 6 }, (_, i) => (
             <Skeleton key={i} className="h-[232px] rounded-2xl" />
           ))}
-        </div>
+        </WallGrid>
       ) : !tiles.length ? (
         <div className="flex flex-col items-center gap-2 py-16 text-sm text-fg-3">
           <Images className="size-8" strokeWidth={1.4} />
           {facets.total ? t.asset.noMatch : t.guest.noAssets}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
-          {tiles.map((tile) =>
-            tile.type === 'one' ? (
-              <AssetCard key={tile.asset.id} a={tile.asset} active={params.get('asset') === tile.asset.code} onOpen={() => set({ asset: tile.asset.code, cmp: null })} />
-            ) : (
-              <GroupCard key={tile.key} tile={tile} active={params.get('cmp') === tile.key} onOpen={() => set({ cmp: tile.key, asset: null })} />
-            ),
-          )}
-        </div>
+        <AssetWall tiles={tiles} active={params.get('asset')} activeGroup={params.get('cmp')} onOpen={(code) => set({ asset: code, cmp: null })} onGroup={(k) => set({ cmp: k, asset: null })} />
       )}
       <NoDownloadContext.Provider value={!allow}>
-        <AssetExtrasContext.Provider value={extras}>
-          <AssetDrawer code={params.get('asset')} onClose={() => set({ asset: null })} />
-        </AssetExtrasContext.Provider>
+        <AssetDrawer code={params.get('asset')} onClose={() => set({ asset: null })} />
         <CompareDrawer gkey={params.get('cmp')} all={all} onClose={() => set({ cmp: null })} onOpen={(code) => set({ asset: code, cmp: null })} />
       </NoDownloadContext.Provider>
     </div>
+    </AssetExtrasContext.Provider>
   )
 }
 

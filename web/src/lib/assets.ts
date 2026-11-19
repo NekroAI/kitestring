@@ -19,6 +19,7 @@ export type VersionLite = {
   budget?: number
   size?: number[] | null
   pixels?: number[] | null
+  auto_thumb?: FileLite | null
   created_at: string
 }
 export type AssetLite = {
@@ -134,6 +135,17 @@ export function coverOf(kind: 'part' | 'image', v?: VersionLite | null): FileLit
   const ps = (v.previews ?? []).filter(isImg)
   return ps.find((p) => /closeup/i.test(p.name)) ?? ps[0] ?? null
 }
+
+// wallCover（R-383）：图片墙、胶片条、版本列表用的封面。有预览图用预览图；只有 GLB 的零件用自动生成的缩略图（auto = true，界面上标明）。
+export function wallCover(kind: 'part' | 'image', v?: VersionLite | null): { file: FileLite; auto: boolean } | null {
+  const c = coverOf(kind, v)
+  if (c) return { file: c, auto: false }
+  if (kind === 'part' && v?.file && v.auto_thumb && isImg(v.auto_thumb)) return { file: v.auto_thumb, auto: true }
+  return null
+}
+
+// needsAutoThumb（R-383）：这一版要不要在浏览器里把模型渲染成缩略图——零件、有 GLB、没有预览图、还没有自动缩略图。
+export const needsAutoThumb = (kind: 'part' | 'image', v?: VersionLite | null) => kind === 'part' && !!v?.file && !coverOf(kind, v) && !v.auto_thumb
 
 // viewGroups（R-376）：预览图按机位分组，机位按第一次出现的顺序；没有机位的（旧数据）归在空机位一组。
 export function viewGroups<P extends { view?: string }>(previews: P[]): { view: string; items: P[] }[] {
@@ -256,4 +268,20 @@ export function nextInQueue(queue: string[], from: number, statusOf: (code: stri
     if (i !== from && statusOf(queue[i]) === 'pending') return i
   }
   return null
+}
+
+// reviewProgress（R-366）：审片顶栏的「已审 n / 共几项」和审完后的小结——队列里已不是待审的个数，其中通过、返工各几个。
+// statusOf 传撤销期里按审核后的状态（pendingStatus），结果立刻到位。
+export function reviewProgress(queue: string[], statusOf: (code: string) => string | undefined) {
+  let done = 0
+  let approved = 0
+  let rework = 0
+  for (const c of queue) {
+    const s = statusOf(c)
+    if (!s || s === 'pending') continue
+    done++
+    if (s === 'approved') approved++
+    if (s === 'rework') rework++
+  }
+  return { done, approved, rework }
 }

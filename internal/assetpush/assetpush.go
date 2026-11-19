@@ -97,7 +97,7 @@ func Build(o Options) (protocol.AssetPush, []string, error) {
 	}
 	for _, it := range p.Items {
 		if it.Kind == protocol.AssetPart && len(it.Previews) == 0 {
-			notes = append(notes, "零件 "+it.Key+" 没有预览图")
+			notes = append(notes, NoPreviewNote(it.Key))
 		}
 	}
 	if base != "" && (p.Branch == "" || p.Commit == "") {
@@ -297,6 +297,11 @@ func gitHead(dir string) (branch, commit string) {
 		commit = strings.TrimSpace(string(out))
 	}
 	return branch, commit
+}
+
+// NoPreviewNote 是零件没有预览图时的提示（R-383）：资源库会用模型自动生成缩略图，要用自己的图按命名规则补上。
+func NoPreviewNote(key string) string {
+	return "零件 " + key + " 没有预览图，资源库会用模型自动生成缩略图；要用自己的图，在预览目录放「" + key + ".png」或「" + key + "_<后缀>.png」"
 }
 
 // DryRunText 是旧的按批次推送 --dry-run 的输出：逐件列出要推的素材，不推送（R-376）。

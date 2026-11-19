@@ -44,6 +44,10 @@ func TestBuildSample(t *testing.T) {
 	if err != nil || p.Batch != "S2" || len(notes) != 3 || !strings.Contains(notes[0], "--batch S2") {
 		t.Fatalf("批次提示：%v %v", notes, err)
 	}
+	// 没有预览图的零件逐个提示，说明会自动生成缩略图（R-383）
+	if !strings.Contains(notes[1], "零件 crate 没有预览图") && !strings.Contains(notes[1], "零件 wheel 没有预览图") || !strings.Contains(notes[1], "自动生成缩略图") || !strings.Contains(notes[2], "自动生成缩略图") {
+		t.Fatalf("没有预览图的提示：%v", notes)
+	}
 	// 只有预览目录、没写批次
 	if _, _, err := Build(Options{Previews: []string{"testdata/sample/previews"}}); err == nil {
 		t.Fatal("没有批次应报错")

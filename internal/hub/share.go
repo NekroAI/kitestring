@@ -609,6 +609,8 @@ func (h *Hub) assetNodes(ctx context.Context, sc store.ShareScope, v *ShareScope
 				n.Cover = a.Latest.File.ID
 			} else if len(a.Latest.Previews) > 0 {
 				n.Cover = a.Latest.Previews[0].ID
+			} else if a.Latest.AutoThumb != nil {
+				n.Cover = a.Latest.AutoThumb.ID // 只有 GLB 的零件用自动生成的缩略图（R-383）
 			}
 		}
 		v.Nodes = append(v.Nodes, n)

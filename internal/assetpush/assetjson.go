@@ -905,7 +905,7 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 			c.Errors = append(c.Errors, "图片素材不挂预览图（预览图只给 GLB）")
 		}
 		if it.Kind == protocol.AssetPart && len(it.Previews) == 0 {
-			c.Warnings = append(c.Warnings, "没有预览图")
+			c.Warnings = append(c.Warnings, "没有预览图，资源库会用模型自动生成缩略图；要用自己的图，按「<名字>__<机位>.png」放预览图")
 		}
 		seen := map[string]bool{}
 		for _, pv := range it.Previews {

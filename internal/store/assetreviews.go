@@ -272,13 +272,13 @@ type AssetFileUse struct {
 	Attachment bool // 素材的附件
 }
 
-// AssetFileUses 找出引用了附件 id 的素材版本和素材附件。
+// AssetFileUses 找出引用了附件 id 的素材版本（主文件、预览图、自动生成的缩略图）和素材附件。
 func (s *Store) AssetFileUses(ctx context.Context, id string) ([]AssetFileUse, error) {
 	if id == "" || strings.ContainsAny(id, `%_"\`) {
 		return nil, nil
 	}
 	var out []AssetFileUse
-	rows, err := s.db.QueryContext(ctx, `SELECT asset_id, version, file_id = ? FROM asset_versions WHERE file_id = ? OR previews LIKE ?`, id, id, "%"+id+"%")
+	rows, err := s.db.QueryContext(ctx, `SELECT asset_id, version, file_id = ? FROM asset_versions WHERE file_id = ? OR previews LIKE ? OR auto_thumb = ?`, id, id, "%"+id+"%", id)
 	if err != nil {
 		return nil, err
 	}

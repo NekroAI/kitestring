@@ -258,6 +258,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"asset_versions", "source", "TEXT NOT NULL DEFAULT ''"},
 	{"asset_versions", "license", "TEXT NOT NULL DEFAULT ''"},
 	{"asset_versions", "variants", "TEXT NOT NULL DEFAULT ''"},
+	// 只有 GLB、没有预览图的零件：网页把模型渲染成缩略图回传后记在这里（R-383），之后直接用
+	{"asset_versions", "auto_thumb", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

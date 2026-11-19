@@ -2548,6 +2548,10 @@
       "AssetVersion": {
         "additionalProperties": false,
         "properties": {
+          "auto_thumb": {
+            "$ref": "#/components/schemas/FileRef",
+            "description": "自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它"
+          },
           "batch": {
             "type": "string"
           },
@@ -2738,6 +2742,39 @@
           "logged_in",
           "version",
           "passkey_origins"
+        ],
+        "type": "object"
+      },
+      "AutoThumbInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "description": "已上传的缩略图附件 ID（POST /api/files）",
+            "type": "string"
+          },
+          "version": {
+            "description": "第几版",
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "file"
+        ],
+        "type": "object"
+      },
+      "AutoThumbOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "saved": {
+            "description": "这次记下了；false 表示这一版已经有自动缩略图，没有覆盖",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "saved"
         ],
         "type": "object"
       },
@@ -18050,6 +18087,59 @@
           }
         },
         "summary": "一条素材和它的全部版本（新的在前）",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/assets/{ref}/auto-thumb": {
+      "post": {
+        "operationId": "set-asset-auto-thumb",
+        "parameters": [
+          {
+            "description": "编号 A-x 或素材 ID",
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "description": "编号 A-x 或素材 ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoThumbInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoThumbOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "记下网页把模型渲染成的缩略图（R-383）：只给有 GLB、没有预览图的零件；已有时不覆盖",
         "tags": [
           "assets"
         ]

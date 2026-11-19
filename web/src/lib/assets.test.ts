@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, facetsOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -174,4 +174,26 @@ test('项目字段原样展示，通用字段不重复列出（R-376）', () => 
   assert.deepEqual(variantNames(null), [])
   assert.deepEqual(metaRows(null), [])
   assert.deepEqual(metaRows([1, 2]), [])
+})
+
+test('封面（R-383）：有预览图用预览图；只有 GLB 的零件用自动生成的缩略图并标明；独立的图不需要', () => {
+  const glb: FileLite = { id: 'g', name: 'helmet.glb', mime: 'model/gltf-binary', size: 1 }
+  const png = (id: string, name = `${id}.png`): FileLite => ({ id, name, mime: 'image/png', size: 1 })
+  const v = (o: object) => ({ id: 'v', version: 1, batch: 'G8', branch: '', commit: '', created_at: '', file: glb, ...o })
+  assert.deepEqual(wallCover('part', v({ previews: [png('p')] })), { file: png('p'), auto: false })
+  assert.equal(wallCover('part', v({ previews: [] })), null)
+  assert.deepEqual(wallCover('part', v({ previews: [], auto_thumb: png('t') })), { file: png('t'), auto: true })
+  // 有预览图时不用自动缩略图
+  assert.equal(wallCover('part', v({ previews: [png('p')], auto_thumb: png('t') }))?.auto, false)
+  assert.equal(needsAutoThumb('part', v({ previews: [] })), true)
+  assert.equal(needsAutoThumb('part', v({ previews: [], auto_thumb: png('t') })), false)
+  assert.equal(needsAutoThumb('part', v({ previews: [png('p')] })), false)
+  assert.equal(needsAutoThumb('part', v({ file: null })), false)
+  assert.equal(needsAutoThumb('image', v({ file: png('c') })), false)
+})
+
+test('审片进度（R-366）：队列里已审的个数（撤销期里按审核后的状态算），通过 / 返工各几个', () => {
+  const st: Record<string, string> = { a: 'approved', b: 'pending', c: 'rework', d: 'pending' }
+  assert.deepEqual(reviewProgress(['a', 'b', 'c', 'd'], (c) => st[c]), { done: 2, approved: 1, rework: 1 })
+  assert.deepEqual(reviewProgress([], (c) => st[c]), { done: 0, approved: 0, rework: 0 })
 })

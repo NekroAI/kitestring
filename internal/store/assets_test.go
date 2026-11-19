@@ -143,3 +143,55 @@ func TestAssetSubmitter(t *testing.T) {
 		t.Fatalf("列表里的最新版也带提交者：%+v", list)
 	}
 }
+
+// R-383：只有 GLB、没有预览图的零件记下自动生成的缩略图，列表和详情都带上；已有时不覆盖；有预览图的零件、独立的图不收。
+func TestAssetAutoThumb(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	file := func(name, mime, sha string) protocol.AssetFile {
+		f, err := s.CreateFile(ctx, name, mime, sha, 10, "device:x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return protocol.AssetFile{ID: f.ID, Name: name}
+	}
+	glb, glb2 := file("helmet.glb", "model/gltf-binary", "g1"), file("vest.glb", "model/gltf-binary", "g2")
+	prev, cat := file("vest_closeup.png", "image/png", "p1"), file("cat.png", "image/png", "c1")
+	th1, th2 := file("auto1.png", "image/png", "t1"), file("auto2.png", "image/png", "t2")
+	r, err := s.PushAssets(ctx, NewAssetPush{ProjectID: "p1", Batch: "G8", Items: []protocol.AssetItem{
+		{Key: "helmet", Kind: protocol.AssetPart, File: &glb},
+		{Key: "vest", Kind: protocol.AssetPart, File: &glb2, Previews: []protocol.AssetFile{prev}},
+		{Key: "g8_catalog", Kind: protocol.AssetImage, File: &cat},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helmet, vest, img := r.Items[0].Code, r.Items[1].Code, r.Items[2].Code
+	if ok, err := s.SetAssetAutoThumb(ctx, helmet, 1, th1.ID); !ok || err != nil {
+		t.Fatalf("只有 GLB 的零件应记下：%v %v", ok, err)
+	}
+	if ok, err := s.SetAssetAutoThumb(ctx, helmet, 1, th2.ID); ok || err != nil {
+		t.Fatalf("已有时不覆盖：%v %v", ok, err)
+	}
+	for _, ref := range []string{vest, img} {
+		if _, err := s.SetAssetAutoThumb(ctx, ref, 1, th2.ID); !errors.Is(err, ErrAutoThumbNotNeeded) {
+			t.Fatalf("%s 不需要自动缩略图：%v", ref, err)
+		}
+	}
+	if _, err := s.SetAssetAutoThumb(ctx, helmet, 9, th2.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("没有这一版：%v", err)
+	}
+	d, _ := s.GetAsset(ctx, helmet)
+	if d.Versions[0].AutoThumb == nil || d.Versions[0].AutoThumb.ID != th1.ID {
+		t.Fatalf("详情应带自动缩略图：%+v", d.Versions[0])
+	}
+	list, _ := s.ListAssets(ctx, AssetFilter{ProjectID: "p1"})
+	for _, a := range list {
+		if (a.Code == helmet) != (a.Latest.AutoThumb != nil) {
+			t.Fatalf("列表里只有 %s 带自动缩略图：%s %+v", helmet, a.Code, a.Latest.AutoThumb)
+		}
+	}
+	if uses, _ := s.AssetFileUses(ctx, th1.ID); len(uses) != 1 || uses[0].Main {
+		t.Fatalf("自动缩略图按预览图放行（访客页）：%+v", uses)
+	}
+}

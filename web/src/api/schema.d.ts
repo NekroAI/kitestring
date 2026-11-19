@@ -1002,6 +1002,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assets/{ref}/auto-thumb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 记下网页把模型渲染成的缩略图（R-383）：只给有 GLB、没有预览图的零件；已有时不覆盖 */
+        post: operations["set-asset-auto-thumb"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assets/{ref}/review": {
         parameters: {
             query?: never;
@@ -3678,6 +3695,8 @@ export interface components {
             ref?: string;
         };
         AssetVersion: {
+            /** @description 自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它 */
+            auto_thumb?: components["schemas"]["FileRef"];
             batch: string;
             /** @description 这一版推送时带的批次（R-376；旧条目是 [batch]） */
             batches: string[] | null;
@@ -3736,6 +3755,19 @@ export interface components {
             /** @description 登记过 passkey 的网页来源，登录页据此显示 passkey 登录（R-7） */
             passkey_origins: string[] | null;
             version: string;
+        };
+        AutoThumbInBody: {
+            /** @description 已上传的缩略图附件 ID（POST /api/files） */
+            file: string;
+            /**
+             * Format: int64
+             * @description 第几版
+             */
+            version: number;
+        };
+        AutoThumbOutBody: {
+            /** @description 这次记下了；false 表示这一版已经有自动缩略图，没有覆盖 */
+            saved: boolean;
         };
         Away: {
             /**
@@ -9950,6 +9982,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetDetail"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-asset-auto-thumb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 编号 A-x 或素材 ID */
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoThumbInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoThumbOutBody"];
                 };
             };
             /** @description Error */

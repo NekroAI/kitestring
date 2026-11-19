@@ -85,6 +85,7 @@ type AssetVersion struct {
 	Source    string          `json:"source,omitempty" doc:"来源（R-376）"`
 	License   string          `json:"license,omitempty" doc:"许可（R-376）"`
 	Variants  json.RawMessage `json:"variants,omitempty" doc:"asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核）"`
+	AutoThumb *FileRef        `json:"auto_thumb,omitempty" doc:"自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它"`
 	Submitter AssetSubmitter  `json:"submitter" doc:"这一版的提交者"`
 	CreatedAt time.Time       `json:"created_at"`
 }
@@ -382,7 +383,7 @@ type AssetFilter struct {
 
 const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches`
 
-const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants`
+const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants, v.auto_thumb`
 
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (Asset, error) {
 	var a Asset
@@ -407,11 +408,12 @@ type versionRow struct {
 	fileID, previews         string
 	size, pixels, meta, crtd string
 	batches, variants        string
+	autoThumb                string
 }
 
 func (r *versionRow) dst() []any {
 	return []any{&r.v.ID, &r.v.Version, &r.v.Batch, &r.v.Branch, &r.v.Commit, &r.fileID, &r.previews, &r.v.Triangles, &r.v.Budget, &r.size, &r.pixels, &r.meta, &r.v.Submitter.Kind, &r.v.Submitter.Ref, &r.v.Submitter.Name, &r.crtd,
-		&r.batches, &r.v.Source, &r.v.License, &r.variants}
+		&r.batches, &r.v.Source, &r.v.License, &r.variants, &r.autoThumb}
 }
 
 func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
@@ -435,9 +437,44 @@ func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
 	if r.variants != "" && json.Valid([]byte(r.variants)) {
 		v.Variants = json.RawMessage(r.variants)
 	}
+	if r.autoThumb != "" {
+		if f, err := s.GetFile(ctx, r.autoThumb); err == nil {
+			v.AutoThumb = &f
+		}
+	}
 	v.Batches = assetBatches(v.Batch, r.batches)
 	v.CreatedAt = parseTS(r.crtd)
 	return v
+}
+
+// ErrAutoThumbNotNeeded：这一版不需要自动缩略图（不是零件、没有 GLB，或已经有预览图）。
+var ErrAutoThumbNotNeeded = errors.New("这一版不需要自动生成缩略图：只给有 GLB、没有预览图的零件")
+
+// SetAssetAutoThumb 记下某一版自动生成的缩略图（R-383）。只给有 GLB、没有预览图的零件；
+// 已经有了就不覆盖（几个页面同时渲染时先到的为准），返回 false。
+func (s *Store) SetAssetAutoThumb(ctx context.Context, ref string, version int, fileID string) (bool, error) {
+	d, err := s.GetAsset(ctx, ref)
+	if err != nil {
+		return false, err
+	}
+	var v *AssetVersion
+	for i := range d.Versions {
+		if d.Versions[i].Version == version {
+			v = &d.Versions[i]
+		}
+	}
+	if v == nil {
+		return false, fmt.Errorf("%w：%s 没有第 %d 版", ErrNotFound, d.Code, version)
+	}
+	if d.Kind != "part" || v.File == nil || len(v.Previews) > 0 {
+		return false, ErrAutoThumbNotNeeded
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE asset_versions SET auto_thumb = ? WHERE id = ? AND auto_thumb = ''`, fileID, v.ID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }
 
 // ListAssets 列出素材（带最新版本），按批次、编号排序。

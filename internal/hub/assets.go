@@ -222,6 +222,44 @@ func (h *Hub) registerAssetsWeb(api huma.API) {
 			d, err := h.store.GetAsset(ctx, in.Ref)
 			return &assetGetOut{Body: d}, apiErr(err)
 		})
+	huma.Register(api, huma.Operation{OperationID: "set-asset-auto-thumb", Method: http.MethodPost, Path: "/api/assets/{ref}/auto-thumb", Tags: tag,
+		Summary: "记下网页把模型渲染成的缩略图（R-383）：只给有 GLB、没有预览图的零件；已有时不覆盖"},
+		func(ctx context.Context, in *autoThumbIn) (*autoThumbOut, error) {
+			f, err := h.store.GetFile(ctx, in.Body.File)
+			if err != nil {
+				return nil, huma.Error400BadRequest("缩略图文件不存在：" + in.Body.File)
+			}
+			if f.Mime != "image/png" && f.Mime != "image/webp" && f.Mime != "image/jpeg" {
+				return nil, huma.Error400BadRequest("缩略图要是 PNG、WebP 或 JPEG")
+			}
+			set, err := h.store.SetAssetAutoThumb(ctx, in.Ref, in.Body.Version, f.ID)
+			if errors.Is(err, store.ErrAutoThumbNotNeeded) {
+				return nil, huma.Error409Conflict(err.Error())
+			}
+			if err != nil {
+				return nil, apiErr(err)
+			}
+			if set {
+				h.broker.publish("assets")
+			}
+			out := &autoThumbOut{}
+			out.Body.Saved = set
+			return out, nil
+		})
+}
+
+type autoThumbIn struct {
+	Ref  string `path:"ref" doc:"编号 A-x 或素材 ID"`
+	Body struct {
+		Version int    `json:"version" minimum:"1" doc:"第几版"`
+		File    string `json:"file" doc:"已上传的缩略图附件 ID（POST /api/files）"`
+	}
+}
+
+type autoThumbOut struct {
+	Body struct {
+		Saved bool `json:"saved" doc:"这次记下了；false 表示这一版已经有自动缩略图，没有覆盖"`
+	}
 }
 
 func (h *Hub) registerAssetsAgent(api huma.API) {

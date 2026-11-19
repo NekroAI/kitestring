@@ -276,6 +276,9 @@ export const zh = {
     candidates: (labels: string[]) => `候选 ${labels.join(' / ')}`,
     view: { image: '大图', model: '3D', compare: '对比' } as Record<string, string>,
     noPreview: '暂无预览图',
+    // 只有 GLB、没有预览图的零件（R-383）：页面按模型自动生成缩略图，标明是自动生成的
+    autoThumb: '自动生成',
+    autoThumbTip: '没有预览图，按模型自动生成的缩略图',
     loading3d: '模型加载中',
     fail3d: '模型加载失败',
     hint3d: '拖动旋转，滚轮缩放',
@@ -332,6 +335,12 @@ export const zh = {
       exit: '退出审片',
       keySwitch: '切换',
       allDone: '待审素材已全部审完',
+      // 桌面的审片舞台（R-366）：顶栏进度、底部胶片条、审完的小结
+      reviewed: (i: number, n: number) => `已审 ${i} / ${n}`,
+      keyExit: '退出',
+      queue: '待审队列',
+      summary: (n: number, ok: number, back: number) => `本轮 ${n} 个：通过 ${ok}，返工 ${back}`,
+      backToWall: '回到资源库',
     },
   },
   secret: {
