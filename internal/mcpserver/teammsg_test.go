@@ -101,7 +101,7 @@ func TestTeamMessagingTools(t *testing.T) {
 		}
 		return res.Content[0].(*mcp.TextContent).Text
 	}
-	tellArgs := map[string]any{"text": "R-1 看一下", "to": "codex:cx", "requirement": "R-1", "fyi": true}
+	tellArgs := map[string]any{"text": "R-1 看一下", "to": "codex:cx", "requirement": "R-1", "fyi": true, "project": "rollcall"}
 	run("team_tell", tellArgs)
 	run("pm_notify", tellArgs)
 	run("team_broadcast", map[string]any{"text": "部署了", "roles": "dev,reviewer", "fyi": true})
@@ -114,7 +114,7 @@ func TestTeamMessagingTools(t *testing.T) {
 	if len(calls) != 4 {
 		t.Fatalf("应发 4 个请求：%+v", calls)
 	}
-	want := map[string]any{"session_key": "dsh:me", "agent_id": "sub-1", "text": "R-1 看一下", "to": "codex:cx", "requirement": "R-1", "fyi": true}
+	want := map[string]any{"session_key": "dsh:me", "agent_id": "sub-1", "text": "R-1 看一下", "to": "codex:cx", "requirement": "R-1", "fyi": true, "project": "rollcall"}
 	if calls[0].Path != "/agent/team/tell" || !reflect.DeepEqual(calls[0].Body, want) || !reflect.DeepEqual(calls[0], calls[1]) {
 		t.Fatalf("team_tell 与 pm_notify 应发同一个请求、发送方来自 meta：%+v", calls[:2])
 	}

@@ -13,6 +13,11 @@ import (
 // 找不到、或对应多个项目时报错并列出可选项目，不退回会话所在项目。
 // 范围沿用设备令牌现有的权限：Hub 上任一项目都能记（D-1744）。
 func (h *Hub) targetProject(ctx context.Context, q string) (store.Project, error) {
+	return h.findProject(ctx, q, "未记下需求")
+}
+
+// findProject 同 targetProject，tail 是找不到时报错的结尾（「未记下需求」「消息没有送出」：R-379 团队消息跨项目也用它）。
+func (h *Hub) findProject(ctx context.Context, q, tail string) (store.Project, error) {
 	q = strings.TrimSpace(q)
 	all, err := h.store.ListProjects(ctx)
 	if err != nil {
@@ -52,11 +57,11 @@ func (h *Hub) targetProject(ctx context.Context, q string) (store.Project, error
 			}
 		}
 		if len(shown) == 0 {
-			return store.Project{}, huma.Error400BadRequest("找不到项目「" + q + "」，Hub 上还没有项目。未记下需求")
+			return store.Project{}, huma.Error400BadRequest("找不到项目「" + q + "」，Hub 上还没有项目。" + tail)
 		}
-		return store.Project{}, huma.Error400BadRequest("找不到项目「" + q + "」。可选项目：" + projectChoices(shown, false) + "。按项目名或 git remote 指定。未记下需求")
+		return store.Project{}, huma.Error400BadRequest("找不到项目「" + q + "」。可选项目：" + projectChoices(shown, false) + "。按项目名或 git remote 指定。" + tail)
 	default:
-		return store.Project{}, huma.Error400BadRequest("「" + q + "」对应多个项目：" + projectChoices(hits, true) + "。改用 git remote 或项目 ID 指定。未记下需求")
+		return store.Project{}, huma.Error400BadRequest("「" + q + "」对应多个项目：" + projectChoices(hits, true) + "。改用 git remote 或项目 ID 指定。" + tail)
 	}
 }
 

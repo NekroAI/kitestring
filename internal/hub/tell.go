@@ -22,6 +22,7 @@ import (
 // 按身份寻址（R-191）：ks team tell / pm_notify 的 to 选 pm / aide / reviewer，发给本项目现在没结束的那个会话，不认会话名；
 // 没有主助理时退回主调度并注明。消息上记下发送方（assigned_by、from_role）和子任务（from_agent），
 // reply_to 回复时据此送回提问方：子任务的回复送到它所属的会话，并注明转给哪个子任务。
+// 跨项目（R-379）：主调度、主助理加 project 发给其他项目的会话，消息记在对方项目名下、正文写明来源项目；回复按发送方会话所在项目送回。
 
 // livePM：key 是不是 projectID 里没结束的 PM 会话。
 func (h *Hub) livePM(ctx context.Context, key, projectID string) bool {
@@ -245,8 +246,46 @@ func (h *Hub) liveIn(ctx context.Context, key, projectID string) bool {
 	return err == nil && x.ProjectID == projectID && x.State != store.StateEnded && x.State != store.StateLost && x.DoneAt == nil
 }
 
-// tellRoles 是团队消息可以按身份寻址的收件身份（R-191；R-249 加上开发）。
-var tellRoles = map[string]bool{roles.PM: true, roles.Aide: true, roles.Reviewer: true, roles.Advisor: true, roles.Dev: true}
+// tellRoles 是团队消息可以按身份寻址的收件身份（R-191；R-249 加上开发；R-379 加上轻接入：其他项目常常只有轻接入的会话）。
+var tellRoles = map[string]bool{roles.PM: true, roles.Aide: true, roles.Reviewer: true, roles.Advisor: true, roles.Dev: true, roles.Lite: true}
+
+// crossSenders 是能跨项目发团队消息的身份（R-379）：主调度、主助理（含它们派出的子任务）。
+var crossSenders = map[string]bool{roles.PM: true, roles.Aide: true}
+
+// projectName 是项目的名称，查不到时用 ID。
+func (h *Hub) projectName(ctx context.Context, id string) string {
+	if p, err := h.store.GetProject(ctx, id); err == nil && p.Name != "" {
+		return p.Name
+	}
+	return id
+}
+
+// reachable 列出项目 projectID 里现在能收团队消息的会话（R-379）：跨项目按身份找不到收件人时写进报错，方便改用会话键发。
+func (h *Hub) reachable(ctx context.Context, projectID string) string {
+	list, _, err := h.store.SessionRoster(ctx, projectID, false, 0)
+	if err != nil {
+		return ""
+	}
+	var parts []string
+	for _, x := range list {
+		if sessionOffline(x) {
+			continue
+		}
+		if len(parts) == 8 {
+			parts = append(parts, "……")
+			break
+		}
+		s := x.Key + "（" + roleOrNone(x.Role)
+		if x.Title != "" {
+			s += "「" + brief(x.Title, 20) + "」"
+		}
+		parts = append(parts, s+"）")
+	}
+	if len(parts) == 0 {
+		return "该项目现在没有在线的会话。"
+	}
+	return "该项目现在可送达的会话：" + strings.Join(parts, "、") + "；改用 --to <会话键> 发。"
+}
 
 // looksLikeSessionKey：--to 填的是会话键（tool:id）而不是身份（R-249）。
 func looksLikeSessionKey(s string) bool { return strings.Contains(s, ":") }
@@ -291,7 +330,7 @@ func (h *Hub) registerAgentTell(api huma.API) {
 	h.registerAgentBroadcast(api)
 	huma.Register(api, huma.Operation{OperationID: "agent-tell-pm", Method: http.MethodPost, Path: "/api/agent/team/tell", Tags: []string{"agent"},
 		Summary:     "给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）",
-		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。"},
+		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey     string `json:"session_key" minLength:"1" doc:"调用者"`
@@ -303,6 +342,7 @@ func (h *Hub) registerAgentTell(api huma.API) {
 				FYI            bool   `json:"fyi,omitempty" doc:"只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、指派、回复，立刻唤醒）。部署 / 重启、进展通报这类用 true"`
 				SessionClaimed bool   `json:"session_claimed,omitempty" doc:"session_key 是调用方用 --session 自报的（自动识别不到当前会话时，R-248）：hub 校验它是没结束、属于某个项目的会话，并在返回里注明按它认定发送方"`
 				AgentID        string `json:"agent_id,omitempty" doc:"发消息的子任务的 agent_id；会话主线程发时为空，ks 命令和 MCP 自动带上"`
+				Project        string `json:"project,omitempty" doc:"发给其他项目的会话（R-379）：项目名或项目 ID；只有主调度、主助理能填，to / to_session 按对方项目的身份或会话键寻址。回复时不填"`
 			}
 		}) (*tellOut, error) {
 			me, err := h.store.GetSession(ctx, in.Body.SessionKey)
@@ -335,7 +375,25 @@ func (h *Hub) registerAgentTell(api huma.API) {
 			if in.Body.FYI {
 				question = quietTellQ
 			}
-			msg := store.Decision{Kind: store.KindTell, ProjectID: me.ProjectID, RequirementID: reqID, Question: question, AssignedBy: me.Key, FromRole: me.Role, FromAgent: agent, FYI: in.Body.FYI}
+			// 跨项目（R-379）：pid 是收件会话所在的项目，消息记在它名下（对方项目的通讯页、晨报看得到）；
+			// 发送方仍是当前会话，team sent 按发送方查，回复按发送方会话所在项目送回。
+			pid, cross := me.ProjectID, false
+			if q := strings.TrimSpace(in.Body.Project); q != "" {
+				if strings.TrimSpace(in.Body.ReplyTo) != "" {
+					return nil, huma.Error400BadRequest("回复不用填项目：回复会送回发那条消息的一方，不管它在哪个项目；要另发给别人请去掉 reply_to")
+				}
+				p, err := h.findProject(ctx, q, "消息没有送出")
+				if err != nil {
+					return nil, err
+				}
+				if p.ID != me.ProjectID {
+					if !crossSenders[me.Role] {
+						return nil, huma.Error403Forbidden("只有主调度、主助理能给其他项目的会话发团队消息，你是" + roleOrNone(me.Role) + "，消息没有送出；要转告其他项目，请告诉本项目的主助理或主调度（ks team tell --to aide）。")
+					}
+					pid, cross = p.ID, true
+				}
+			}
+			msg := store.Decision{Kind: store.KindTell, ProjectID: pid, RequirementID: reqID, Question: question, AssignedBy: me.Key, FromRole: me.Role, FromAgent: agent, FYI: in.Body.FYI}
 			from := h.senderName(ctx, me, agent)
 			var toRole, note string
 			if ref := strings.TrimSpace(in.Body.ReplyTo); ref != "" {
@@ -355,16 +413,24 @@ func (h *Hub) registerAgentTell(api huma.API) {
 				msg.ReplyTo = orig.ID
 				msg.SessionKey = orig.AssignedBy
 				toRole = orig.FromRole
-				if !h.liveIn(ctx, orig.AssignedBy, me.ProjectID) {
+				// 跨项目发来的消息（R-379）：回复送回发送方所在的项目
+				if sx, err := h.store.GetSession(ctx, orig.AssignedBy); err == nil && sx.ProjectID != "" && sx.ProjectID != me.ProjectID {
+					pid, cross = sx.ProjectID, true
+					msg.ProjectID = pid
+				}
+				if !h.liveIn(ctx, orig.AssignedBy, pid) {
 					// 提问的会话已结束：它当时是主调度 / 主助理的，送给现在接任的那个
 					msg.SessionKey = ""
 					if roles.Unique(orig.FromRole) {
-						msg.SessionKey = h.liveRole(ctx, me.ProjectID, orig.FromRole)
+						msg.SessionKey = h.liveRole(ctx, pid, orig.FromRole)
 					}
 					if msg.SessionKey == "" {
 						return nil, huma.Error409Conflict(fmt.Sprintf("发 %s 的会话 %s 已结束，回复没有送出；有需要可以按身份另发（不填 reply_to）。", orig.Code, orig.AssignedBy))
 					}
 					note = fmt.Sprintf("（原本回复给 %s，它已结束，转给现在的%s）", orig.AssignedBy, roles.Name(orig.FromRole))
+				}
+				if cross {
+					from = "项目「" + h.projectName(ctx, me.ProjectID) + "」的" + from // 对方看到来源项目（R-379）
 				}
 				head := fmt.Sprintf("%s 回复 %s", from, orig.Code)
 				if orig.FromAgent != "" {
@@ -384,7 +450,7 @@ func (h *Hub) registerAgentTell(api huma.API) {
 				if toText != "" {
 					r, ok := roles.Resolve(toText)
 					if !ok || !tellRoles[r] {
-						return nil, huma.Error400BadRequest("收件身份只能是 pm（主调度）、aide（主助理）、reviewer（评审）、advisor（顾问）或 dev（开发），也可以直接填会话键（tool:id）；收到的是「" + toText + "」")
+						return nil, huma.Error400BadRequest("收件身份只能是 pm（主调度）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）或 lite（轻接入），也可以直接填会话键（tool:id）；收到的是「" + toText + "」")
 					}
 					role = r
 				}
@@ -393,8 +459,13 @@ func (h *Hub) registerAgentTell(api huma.API) {
 					switch {
 					case err != nil:
 						return nil, huma.Error404NotFound("没有会话 " + ts + "，消息没有送出；用 ks team sessions 看本项目的会话")
-					case x.ProjectID != me.ProjectID:
-						return nil, huma.Error409Conflict("会话 " + ts + " 不属于本项目，消息没有送出")
+					case x.ProjectID != pid && cross:
+						return nil, huma.Error409Conflict("会话 " + ts + " 不属于项目「" + h.projectName(ctx, pid) + "」，消息没有送出；" + h.reachable(ctx, pid))
+					case x.ProjectID != pid && x.ProjectID != "" && crossSenders[me.Role]:
+						name := h.projectName(ctx, x.ProjectID)
+						return nil, huma.Error409Conflict("会话 " + ts + " 不属于本项目（它在项目「" + name + "」），消息没有送出；要跨项目发请加 --project " + name + "（MCP 填 project）")
+					case x.ProjectID != pid:
+						return nil, huma.Error409Conflict("会话 " + ts + " 不属于本项目，消息没有送出；只有主调度、主助理能给其他项目的会话发消息，请告诉本项目的主助理或主调度转告")
 					case sessionOffline(x):
 						return nil, huma.Error409Conflict("会话 " + ts + " 不在线（" + offlineWhy(x) + "），消息没有送出、已退回给你；用 ks team sessions 看现在在线的会话")
 					}
@@ -407,9 +478,13 @@ func (h *Hub) registerAgentTell(api huma.API) {
 				if ts != "" {
 					msg.SessionKey = ts
 				} else if roles.Unique(role) {
-					msg.SessionKey = h.liveRole(ctx, me.ProjectID, role) // 主调度 / 主助理每项目唯一；自己发给自己由下面统一处理（子任务可以发给所属会话）
+					msg.SessionKey = h.liveRole(ctx, pid, role) // 主调度 / 主助理每项目唯一；自己发给自己由下面统一处理（子任务可以发给所属会话）
 				} else {
-					msg.SessionKey = h.liveRoleExcept(ctx, me.ProjectID, role, me.Key) // 顾问 / 评审 / 开发可能有多个，不选回自己
+					msg.SessionKey = h.liveRoleExcept(ctx, pid, role, me.Key) // 顾问 / 评审 / 开发 / 轻接入可能有多个，不选回自己
+				}
+				if msg.SessionKey == "" && cross {
+					// 跨项目找不到这个身份（R-379）：不退回、不静默，报错并列出那个项目可送达的会话键
+					return nil, huma.Error409Conflict("项目「" + h.projectName(ctx, pid) + "」现在没有在线的" + roles.Name(role) + "会话，消息没有送出；" + h.reachable(ctx, pid))
 				}
 				if msg.SessionKey == "" {
 					switch role {
@@ -425,10 +500,15 @@ func (h *Hub) registerAgentTell(api huma.API) {
 						return nil, huma.Error409Conflict("本项目现在没有在线的评审会话，消息没有送出；要审查请让主调度派审查任务，要用户决策的事用 decision_raise。")
 					case roles.Dev:
 						return nil, huma.Error409Conflict("本项目现在没有在线的开发会话（不含你自己），消息没有送出；指派请告诉主调度。")
+					case roles.Lite:
+						return nil, huma.Error409Conflict("本项目现在没有在线的轻接入会话（不含你自己），消息没有送出；用 ks team sessions 看现在在线的会话。")
 					default:
 						out.Body.Message = noPMNote
 						return out, nil
 					}
+				}
+				if cross {
+					from = "项目「" + h.projectName(ctx, me.ProjectID) + "」的" + from // 对方看到来源项目（R-379）
 				}
 				msg.Answer = from + " 留言" + note + "：" + text
 			}
@@ -452,6 +532,9 @@ func (h *Hub) registerAgentTell(api huma.API) {
 			who := roles.Name(toRole)
 			if who == "" {
 				who = "会话"
+			}
+			if cross {
+				who = "项目「" + h.projectName(ctx, pid) + "」的" + who // 跨项目（R-379）
 			}
 			out.Body.Message = fmt.Sprintf("%s 已送给%s %s（%s）：%s——%s；用户不会收到。", d.Code, who, d.SessionKey, st.Tool, st.StatusLabel, st.Reason)
 			if in.Body.FYI {

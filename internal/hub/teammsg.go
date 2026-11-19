@@ -169,6 +169,7 @@ type sentMsg struct {
 	FYI         bool       `json:"fyi"`
 	Requirement string     `json:"requirement,omitempty"`
 	Text        string     `json:"text"`
+	Project     string     `json:"project,omitempty" doc:"跨项目发的（R-379）：收件会话所在的项目名；本项目内的为空"`
 	CreatedAt   time.Time  `json:"created_at"`
 	Recipients  []Delivery `json:"recipients"`
 }
@@ -362,6 +363,9 @@ func (h *Hub) registerAgentBroadcast(api huma.API) {
 				first := g[0]
 				m := sentMsg{Code: first.Code, Broadcast: first.BroadcastID != "", BroadcastID: first.BroadcastID, FYI: first.FYI,
 					Requirement: first.RequirementCode, Text: sentText(first.Answer, me.Key), CreatedAt: first.CreatedAt, Recipients: h.deliveries(ctx, g)}
+				if first.ProjectID != "" && first.ProjectID != me.ProjectID {
+					m.Project = h.projectName(ctx, first.ProjectID)
+				}
 				out.Body.Messages = append(out.Body.Messages, m)
 			}
 			out.Body.Text = sentTextAll(out.Body.Messages, strings.TrimSpace(in.Ref) != "")
@@ -400,6 +404,9 @@ func sentTextAll(ms []sentMsg, one bool) string {
 		head := m.Code + " 点对点"
 		if m.Broadcast {
 			head = fmt.Sprintf("%s 广播（%d 个收件人）", m.Code, len(m.Recipients))
+		}
+		if m.Project != "" {
+			head += " · 发往项目「" + m.Project + "」"
 		}
 		fmt.Fprintf(&b, "%s · %s · %s「%s」", head, kind, m.CreatedAt.Local().Format("01-02 15:04"), brief(m.Text, 40))
 		counts := map[string]int{}

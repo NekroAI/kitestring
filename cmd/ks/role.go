@@ -210,12 +210,13 @@ func runTeam(args []string) error {
 	allProjects := fs.Bool("all-projects", false, "sessions：列所有项目的会话（不只本项目）")
 	all := fs.Bool("all", false, "sessions：也列已结束的会话（最近活跃的 50 个）")
 	asJSON := fs.Bool("json", false, "sessions / tell / broadcast / sent：输出原始 JSON")
+	project := fs.String("project", "", "tell：发给其他项目的会话（项目名或项目 ID，R-379）；只有主调度、主助理能发，--to 按对方项目的身份（也可填 lite 轻接入）或会话键寻址")
 	fyi := fs.Bool("fyi", false, "tell / broadcast：只告知（R-227）——对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上；默认要对方动手（提问、求裁定、指派、回复），立刻唤醒。部署 / 重启、进展通报用 --fyi")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	teamFlags := map[string][]string{
-		"tell":      {"to-session", "req", "to", "reply", "json", "fyi"},
+		"tell":      {"to-session", "req", "to", "reply", "json", "fyi", "project"},
 		"broadcast": {"role", "req", "json", "fyi"},
 		"sent":      {"json"},
 		"sessions":  {"role", "all-projects", "all", "json"},
@@ -314,14 +315,14 @@ func runTeam(args []string) error {
 		return printText("/agent/team/sent?"+q.Encode(), *asJSON)
 	}
 	if tell {
-		// ks team tell <文字> [--to aide|pm|reviewer] [--reply D-x] [--req R-x]：按身份给本项目的团队成员发消息，
-		// 或回复收到的团队消息；只送给 Agent、不进用户收件箱（R-135 / R-191）
+		// ks team tell <文字> [--to aide|pm|reviewer] [--reply D-x] [--req R-x] [--project 项目]：按身份给本项目的团队成员发消息，
+		// 或回复收到的团队消息；主调度 / 主助理加 --project 发给其他项目的会话（R-379）；只送给 Agent、不进用户收件箱（R-135 / R-191）
 		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
 		if text == "" {
-			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer|advisor] [--req R-x]\n      ks team tell --reply D-x <回复>\n消息只做通知：编号加一句话（%d 字以内），细节先写进 ks req comment", writing.MessageMax)
+			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer|advisor] [--req R-x]\n      ks team tell --project <项目名> --to <身份或会话键> <要说的话>（只有主调度、主助理能跨项目发）\n      ks team tell --reply D-x <回复>\n消息只做通知：编号加一句话（%d 字以内），细节先写进 ks req comment", writing.MessageMax)
 		}
 		body := map[string]any{"session_key": key, "text": text}
-		for k, v := range map[string]string{"requirement": *req, "to": *to, "to_session": *toSession, "reply_to": *reply, "agent_id": agent} {
+		for k, v := range map[string]string{"requirement": *req, "to": *to, "to_session": *toSession, "reply_to": *reply, "project": *project, "agent_id": agent} {
 			if v != "" {
 				body[k] = v
 			}

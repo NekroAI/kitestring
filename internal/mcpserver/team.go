@@ -143,6 +143,7 @@ type tellIn struct {
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"回复收到的团队消息时填它的编号（D-x）：回复自动送回发消息的一方"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
 	FYI         bool   `json:"fyi,omitempty" jsonschema:"只告知（R-227）：对方不必动手，不唤醒它挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上。部署 / 重启、进展通报填 true；提问、求裁定、指派、回复不填（立刻唤醒）"`
+	Project     string `json:"project,omitempty" jsonschema:"发给其他项目的会话（R-379）：项目名或项目 ID；只有主调度、主助理能填，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址。回复时不填"`
 }
 
 type broadcastIn struct {
@@ -158,7 +159,7 @@ type sentIn struct {
 }
 
 // tellDesc 是 team_tell（旧名 pm_notify）的说明。
-const tellDesc = "点对点给本项目的团队成员发消息（命令行 ks team tell；旧名 pm_notify，参数相同）：按身份或会话键送给本项目没结束的那个会话。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回；to = dev（开发）：发给最近活跃的开发；to 也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收，对方已结束或失联时报错退回。返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达，之后用 team_sent 查。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻唤醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被唤醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。消息只做通知：放编号加一句话（120 字以内，超出照常发送并提示），细节先用 req_comment 写进需求留言，再发消息请对方去看。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。"
+const tellDesc = "点对点给本项目的团队成员发消息（命令行 ks team tell；旧名 pm_notify，参数相同）：按身份或会话键送给本项目没结束的那个会话。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回；to = dev（开发）：发给最近活跃的开发；to 也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收，对方已结束或失联时报错退回。返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达，之后用 team_sent 查。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻唤醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被唤醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。消息只做通知：放编号加一句话（120 字以内，超出照常发送并提示），细节先用 req_comment 写进需求留言，再发消息请对方去看。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。跨项目（R-379）：主调度、主助理填 project（项目名）发给其他项目的会话，to 按对方项目的身份（也可填 lite 轻接入）或会话键寻址，对方没有该身份的在线会话时报错并列出可送达的会话键；对方看到来源项目和发送者，回复照常送回你，team_sent 查送达；其他身份跨项目发会被拒绝。字数和只告知 / 要动手两档照旧。"
 
 func (t *tools) registerTeam(s *mcp.Server) {
 	tell := func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
@@ -169,7 +170,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 		var out struct {
 			Message string `json:"message"`
 		}
-		body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "to_session": in.ToSession, "reply_to": in.ReplyTo, "agent_id": agent}
+		body := map[string]any{"session_key": key, "text": in.Text, "requirement": in.Requirement, "to": in.To, "to_session": in.ToSession, "reply_to": in.ReplyTo, "project": in.Project, "agent_id": agent}
 		dropEmpty(body)
 		if in.FYI {
 			body["fyi"] = true

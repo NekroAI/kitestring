@@ -85,6 +85,10 @@ func TestOptionsBeforeOrAfterPositional(t *testing.T) {
 			{"tell", "你好", "--to", "aide", "--req", "R-9", "--fyi", "--session", "claude:t1"},
 			{"tell", "--to", "aide", "--req", "R-9", "--fyi", "--session", "claude:t1", "你好"},
 		}, "/agent/team/tell", map[string]any{"text": "你好", "to": "aide", "requirement": "R-9", "fyi": true}},
+		{"team tell --project", runTeam, [][]string{
+			{"tell", "--project", "rollcall", "--to", "lite", "你好", "--session", "claude:t1"},
+			{"tell", "你好", "--to", "lite", "--session", "claude:t1", "--project", "rollcall"},
+		}, "/agent/team/tell", map[string]any{"text": "你好", "to": "lite", "project": "rollcall"}},
 	}
 	for _, c := range cases {
 		for i, args := range c.args {
