@@ -450,8 +450,9 @@ func getAgent(ctx context.Context, q interface {
 // PreToolStart 在事件记录里找某次工具调用的开始（hub 重启后丢了内存里的记录时用），只往前找一天。
 func (s *Store) PreToolStart(ctx context.Context, key, toolUseID string, end time.Time) (protocol.Event, bool) {
 	var p string
-	err := s.db.QueryRowContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name = 'PreToolUse' AND time >= ? AND time <= ? AND payload LIKE ? ORDER BY time DESC LIMIT 1`,
-		key, ts(end.Add(-24*time.Hour)), ts(end), `%"tool_use_id":"`+toolUseID+`"%`).Scan(&p)
+	// 走 events_tooluse 索引按 tool_use_id 直接定位（R-382：原来 payload LIKE 逐条比对一天里的调用，线上一次 1.8 秒）
+	err := s.db.QueryRowContext(ctx, `SELECT payload FROM events WHERE session_key = ? AND name = 'PreToolUse' AND json_extract(payload, '$.tool_use_id') = ? AND time >= ? AND time <= ? ORDER BY time DESC LIMIT 1`,
+		key, toolUseID, ts(end.Add(-24*time.Hour)), ts(end)).Scan(&p)
 	if err != nil {
 		return protocol.Event{}, false
 	}

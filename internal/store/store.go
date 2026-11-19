@@ -55,6 +55,13 @@ func Open(path string) (*Store, error) {
 		`CREATE UNIQUE INDEX IF NOT EXISTS secrets_seq ON secrets(seq)`,
 		// 需求列表每条需求都按 requirement_id 查决策（待答数、最近一次放行），没有索引时整表扫描（R-374）
 		`CREATE INDEX IF NOT EXISTS decisions_req ON decisions(requirement_id, kind)`,
+		// 需求的证据、计划页每条需求的最新证据都按 requirement_id 查，没有索引时每次整表扫证据（R-382）
+		`CREATE INDEX IF NOT EXISTS evidence_req ON evidence(requirement_id, created_at)`,
+		// 授权窗口的代答计数按 proxy_by 查决策，没有索引时每个窗口整表扫一遍（R-382）
+		`CREATE INDEX IF NOT EXISTS decisions_proxy ON decisions(proxy_by, proxy_at)`,
+		// 泳道补找工具调用的开始（PreToolStart）按 tool_use_id 直接定位，不再把一天里的调用逐条 LIKE（R-382）。
+		// 只收 PreToolUse；表达式要和 PreToolStart 里的一字不差，查询才用得上
+		`CREATE INDEX IF NOT EXISTS events_tooluse ON events(session_key, json_extract(payload, '$.tool_use_id'), time) WHERE name = 'PreToolUse'`,
 	} {
 		if _, err := db.Exec(ix); err != nil {
 			db.Close()
