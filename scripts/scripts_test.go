@@ -30,10 +30,12 @@ func runScript(t *testing.T, env []string, name string, args ...string) (string,
 	return string(out), code
 }
 
-// deployEnv 是演示环境：数据、安装路径都在临时目录，launchctl 换成 true
+// deployEnv 是演示环境：数据、安装路径都在临时目录，launchctl 换成 true；
+// daemon 的 plist 默认指向临时目录里不存在的文件（不碰本机 ~/Library/LaunchAgents）
 func deployEnv(t *testing.T, home string, extra ...string) []string {
 	bin := filepath.Join(home, "bin", "ks")
-	return append([]string{"KS_HOME=" + home, "KS_BIN=" + bin, "KS_HUB_URL=http://127.0.0.1:1", "LAUNCHD_PREFIX=gui/0", "KS_LAUNCHCTL=true", "KS_BACKUP_DIR="}, extra...)
+	daemonPlist := filepath.Join(home, "ai.nekro.kitestring.daemon.plist")
+	return append([]string{"KS_HOME=" + home, "KS_BIN=" + bin, "KS_HUB_URL=http://127.0.0.1:1", "LAUNCHD_PREFIX=gui/0", "KS_LAUNCHCTL=true", "KS_BACKUP_DIR=", "KS_DAEMON_PLIST=" + daemonPlist}, extra...)
 }
 
 // R-354：指定的备份目录不可用（外置硬盘没挂上）时，deploy.sh 在构建前失败退出，不建目录、不动程序
@@ -215,8 +217,36 @@ func TestDeployHubPlistProcessType(t *testing.T) {
 	}
 	write("\t<key>ProcessType</key>\n\t<string>Interactive</string>\n")
 	out, code = runScript(t, deployEnv(t, home, "KS_HUB_PLIST="+plist), "deploy.sh", "--dry-run")
-	if code != 0 || !strings.Contains(out, "hub 的 plist 不用改") || strings.Contains(out, "bootout") ||
+	if code != 0 || !strings.Contains(out, "hub 的 plist 不用改") || strings.Contains(out, "bootout gui/0/ai.nekro.kitestring.hub") ||
 		!strings.Contains(out, "kickstart -k gui/0/ai.nekro.kitestring.hub") {
 		t.Fatalf("已有 ProcessType 时不动、照旧 kickstart（退出码 %d）：%s", code, out)
+	}
+}
+
+// R-386：daemon 换程序后一律 bootout + bootstrap 重启（kickstart -k 可能因启动约束要不回来而一直 spawn failed）；
+// 没有 daemon 的 plist 时退回 kickstart -k；回滚走同一个 restart_services
+func TestDeployDaemonReload(t *testing.T) {
+	home := t.TempDir()
+	plist := filepath.Join(home, "ai.nekro.kitestring.daemon.plist")
+	out, code := runScript(t, deployEnv(t, home), "deploy.sh", "--dry-run")
+	if code != 0 || !strings.Contains(out, "kickstart -k gui/0/ai.nekro.kitestring.daemon") || strings.Contains(out, "bootout gui/0/ai.nekro.kitestring.daemon") {
+		t.Fatalf("没有 daemon 的 plist 时应退回 kickstart -k（退出码 %d）：%s", code, out)
+	}
+	if err := os.WriteFile(plist, []byte("<plist/>\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code = runScript(t, deployEnv(t, home), "deploy.sh", "--dry-run")
+	boot := strings.Index(out, "bootout gui/0/ai.nekro.kitestring.daemon")
+	strap := strings.Index(out, "bootstrap gui/0 "+plist)
+	if code != 0 || boot < 0 || strap < boot || strings.Contains(out, "kickstart -k gui/0/ai.nekro.kitestring.daemon") {
+		t.Fatalf("有 daemon 的 plist 时应 bootout 再 bootstrap、不用 kickstart（退出码 %d）：%s", code, out)
+	}
+	src, err := os.ReadFile("deploy.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 部署和回滚都经 restart_services → restart_daemon 重启 daemon，别处不再有 daemon 的 kickstart -k
+	if strings.Count(string(src), `kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_DAEMON"`) != 1 {
+		t.Fatal("daemon 的 kickstart -k 只应留在没有 plist 时的退路里")
 	}
 }

@@ -20,6 +20,7 @@
 #   KS_VERIFY_TIMEOUT 部署后等待服务就绪的秒数，默认 30
 #   KS_LAUNCHER       Hub 的固定启动器，默认 $KS_HOME/bin/ks-launcher（只用于 macOS，见下面「启动器」）
 #   KS_HUB_PLIST      hub 服务的 plist，默认 ~/Library/LaunchAgents/$LAUNCHD_HUB.plist（用来提示是否已经经启动器运行；缺 ProcessType 时补上，见下面「Hub 的 ProcessType」）
+#   KS_DAEMON_PLIST   daemon 服务的 plist，默认 ~/Library/LaunchAgents/$LAUNCHD_DAEMON.plist（daemon 用它 bootout + bootstrap 重启，见下面「daemon 的重启」）
 #
 # 备份范围：只备份程序（ks）、DSH 插件和数据库（hub.db），不备份附件。
 # 附件（附件、原型包、缩略图）默认在 $KS_HOME/files；Hub 服务用 --files-dir 或 KS_FILES_DIR
@@ -41,6 +42,10 @@
 # 抢 CPU 时仍按前台应用调度。之前装的 plist 没有这一项时，部署在替换程序之后补上（先备份到备份目录 hub-plist-<时间>.plist），
 # 这次 hub 改用 bootout + bootstrap 重启（kickstart 不重读 plist），bootstrap 报 5 / 37 时重试（R-367）；
 # 回滚时连 plist 一起恢复。已有 ProcessType 的不动，照旧 kickstart。
+#
+# daemon 的重启（R-386，macOS）：daemon 直接运行 $KS_BIN，部署和回滚换了程序后都用 bootout + bootstrap 重启（报 5 / 37 时重试），
+# 不用 kickstart -k——launchd 按程序签名记的启动约束（LWCR）在换程序后可能要不回来，daemon 会一直 spawn failed（退出码 78），
+# 原因见 restart_daemon 的注释。没有 $KS_DAEMON_PLIST 时退回 kickstart -k。hub 经启动器运行、启动器不换，不受影响。
 set -euo pipefail
 
 DRY=0
@@ -48,7 +53,7 @@ TARGET=""
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
-    -h | --help) sed -n '2,38p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,48p' "$0"; exit 0 ;;
     -*) echo "未知参数：$a" >&2; exit 2 ;;
     *) TARGET="$a" ;;
   esac
@@ -64,6 +69,7 @@ KS_LAUNCHCTL="${KS_LAUNCHCTL:-launchctl}"
 KS_VERIFY_TIMEOUT="${KS_VERIFY_TIMEOUT:-30}"
 KS_LAUNCHER="${KS_LAUNCHER:-$KS_HOME/bin/ks-launcher}"
 KS_HUB_PLIST="${KS_HUB_PLIST:-$HOME/Library/LaunchAgents/$LAUNCHD_HUB.plist}"
+KS_DAEMON_PLIST="${KS_DAEMON_PLIST:-$HOME/Library/LaunchAgents/$LAUNCHD_DAEMON.plist}"
 KS_KEEP_BACKUPS="${KS_KEEP_BACKUPS:-10}"
 export KS_HOME
 
@@ -115,18 +121,35 @@ cleanup() {
 }
 
 restart_services() {
+  local rc=0
   if [ "$PLIST_PATCHED" = 1 ]; then
-    reload_hub
+    reload_service "$LAUNCHD_HUB" "$KS_HUB_PLIST" || rc=$?
   else
-    run "$KS_LAUNCHCTL" kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_HUB"
+    run "$KS_LAUNCHCTL" kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_HUB" || rc=$?
   fi
-  run "$KS_LAUNCHCTL" kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_DAEMON"
+  restart_daemon || rc=$?
+  return "$rc"
 }
 
-# reload_hub：plist 改过后让 launchd 重读——bootout，等它卸载完，再 bootstrap；报 5 / 37（上一份还没卸载完）时重试，
+# restart_daemon（R-386）：daemon 直接运行 $KS_BIN，换了程序后一律 bootout + bootstrap，不用 kickstart -k。
+# 登录时载入的 daemon 带着 launchd 记下的启动约束（LWCR，按程序的签名哈希）；换程序后 kickstart 会先违反约束、
+# 再向后台项目管理（BTM）按旧条目要新约束。期间若有别的 bootstrap 让 launchd 扫了 LaunchAgents 目录（如 hub 重读 plist），
+# BTM 已把 daemon 的条目换成新编号，旧编号要不到约束，daemon 就一直 spawn failed（退出码 78 EX_CONFIG、needs LWCR update），
+# 回滚换回旧程序也一样，只有 bootout + bootstrap 能恢复。bootstrap 重新登记条目，不受这个影响。
+# 没有 daemon 的 plist（不是 launchd 装的）时退回 kickstart -k。
+restart_daemon() {
+  if [ -f "$KS_DAEMON_PLIST" ]; then
+    reload_service "$LAUNCHD_DAEMON" "$KS_DAEMON_PLIST"
+  else
+    log "没有 daemon 的 plist ${KS_DAEMON_PLIST}，daemon 用 kickstart -k 重启"
+    run "$KS_LAUNCHCTL" kickstart -k "$LAUNCHD_PREFIX/$LAUNCHD_DAEMON"
+  fi
+}
+
+# reload_service <服务名> <plist>：让 launchd 重新载入——bootout，等它卸载完，再 bootstrap；报 5 / 37（上一份还没卸载完）时重试，
 # 与 ks install 的 bootstrap 一致（R-367）
-reload_hub() {
-  local svc="$LAUNCHD_PREFIX/$LAUNCHD_HUB" i rc=0
+reload_service() {
+  local svc="$LAUNCHD_PREFIX/$1" plist="$2" i rc=0
   run "$KS_LAUNCHCTL" bootout "$svc" || true
   if [ "$DRY" != 1 ]; then
     for i in $(seq 1 20); do
@@ -136,15 +159,22 @@ reload_hub() {
   fi
   for i in 1 2 3 4 5; do
     rc=0
-    run "$KS_LAUNCHCTL" bootstrap "$LAUNCHD_PREFIX" "$KS_HUB_PLIST" || rc=$?
+    run "$KS_LAUNCHCTL" bootstrap "$LAUNCHD_PREFIX" "$plist" || rc=$?
     [ "$rc" = 0 ] && return 0
     case "$rc" in
       5 | 37) log "launchctl bootstrap 退出码 ${rc}，1 秒后重试（第 $i 次）"; sleep 1 ;;
       *) break ;;
     esac
   done
-  log "launchctl bootstrap $LAUNCHD_PREFIX $KS_HUB_PLIST 失败（退出码 ${rc}）"
+  log "launchctl bootstrap $LAUNCHD_PREFIX $plist 失败（退出码 ${rc}）"
   return "$rc"
+}
+
+# log_daemon_state：核对失败时记下 daemon 在 launchd 里的状态，便于看出 spawn failed / needs LWCR update 一类问题
+log_daemon_state() {
+  local st
+  st="$("$KS_LAUNCHCTL" print "$LAUNCHD_PREFIX/$LAUNCHD_DAEMON" 2>&1 | grep -E '^[[:space:]]*(state|job state|last exit code|properties) =' | sed 's/^[[:space:]]*//' | tr '\n' ';' || true)"
+  log "daemon 在 launchd 里：${st:-（查不到）}"
 }
 
 # hub_plist_needs_process_type：macOS、plist 存在且还没有 ProcessType 时为真
@@ -195,6 +225,7 @@ verify() {
     sleep 1
   done
   log "ks status 没有显示 connected：$out"
+  log_daemon_state
   return 1
 }
 
@@ -406,7 +437,7 @@ fi
 STEP="给 hub 的 plist 补 ProcessType Interactive"
 if hub_plist_needs_process_type; then
   if [ "$DRY" = 1 ]; then
-    log "[dry-run] 备份 $KS_HUB_PLIST -> ${HUB_PLIST_BACKUP}，补 ProcessType Interactive；hub 这次用 bootout + bootstrap 重启"
+    log "[dry-run] 备份 $KS_HUB_PLIST -> ${HUB_PLIST_BACKUP}，补 ProcessType Interactive；hub 这次用 bootout + bootstrap 重启（daemon 一律如此，R-386）"
   else
     cp "$KS_HUB_PLIST" "$HUB_PLIST_BACKUP"
     PLIST_PATCHED=1
