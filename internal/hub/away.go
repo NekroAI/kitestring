@@ -67,6 +67,8 @@ func eventClass(event string) (pushClass, string) {
 		return pushUnsure, awayEventReason["approval"]
 	case notify.EventDeviceLost:
 		return pushUnsure, awayEventReason["device"]
+	case notify.EventShareGuest:
+		return pushMerge, awayEventReason["guest"]
 	}
 	return pushUnsure, ""
 }

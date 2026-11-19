@@ -120,6 +120,7 @@ var awayEventReason = map[string]string{
 	"reply":    "会话待回复",
 	"approval": "等待授权",
 	"device":   "设备离线",
+	"guest":    "访客留言",
 }
 
 const (
@@ -244,7 +245,40 @@ const (
 	shareCommentTarget  = "只能在需求、决策、证据或阶段上留言"
 	shareCommentTooMany = "留言过于频繁，10 分钟后再试"
 	shareCommentPickReq = "选择要放入的需求（这个阶段里的需求）"
+	// 资源库分享（R-365）
+	shareCommentNoPerm     = "这条链接只能查看，不能留言"
+	shareUploadNoPerm      = "这条链接不能上传文件"
+	shareUploadUnavailable = "暂时不能上传，稍后再试"
+	shareUploadTooMany     = "上传过于频繁，10 分钟后再试"
+	shareUploadNoFile      = "没有收到文件"
+	shareUploadType        = "只能上传 GLB 模型、FBX 动画、图片（PNG、JPEG、WebP、GIF）和录屏（MP4、WebM、MOV）"
+	shareNoDownload        = "这个分享不提供原文件下载"
+	shareUploadPickAs      = "选择收下为新版本还是附件"
+	shareAssetPickAs       = "选择作为返工意见还是只送意见"
 )
+
+// shareUploadTooBig 是访客上传的文件超出上限时的提示。
+func shareUploadTooBig(glb, image, video int64) string {
+	return fmt.Sprintf("文件太大：模型不能超过 %d MB、图片 %d MB、录屏 %d MB", glb, image, video)
+}
+
+// shareUploadKindMismatch：收下为新版本时类型要和素材一致。
+func shareUploadKindMismatch(part bool) string {
+	if part {
+		return "零件的新版本只能是 GLB 模型，可以收下为附件"
+	}
+	return "独立的图的新版本只能是图片，可以收下为附件"
+}
+
+// pushGuestCommentTitle / pushGuestUploadTitle / pushGuestBody 是访客留言、上传时的推送（R-365）。
+func pushGuestCommentTitle(name string) string { return "访客「" + name + "」留言" }
+func pushGuestUploadTitle(name string) string  { return "访客「" + name + "」上传了文件" }
+func pushGuestBody(on, text string) string {
+	if on == "" {
+		return text
+	}
+	return on + "：" + text
+}
 
 // ---------- 凭据（R-295）：取用被拒的原因，记在取用记录里、显示在凭据详情的「结果」列 ----------
 
@@ -291,6 +325,8 @@ func copyTexts() map[string]string {
 		"pushSessionBody":  pushSessionBody("Claude Code", "甲", "摘要。"), "pushSessionBody0": pushSessionBody("Codex", "", ""),
 		"pushDeviceLostTitle": pushDeviceLostTitle("甲"), "pushDeviceLostBody": pushDeviceLostBody,
 		"pushNeedDevsTitle": pushNeedDevsTitle(2, "甲"), "pushNeedDevsBody": pushNeedDevsBody("甲"),
+		"pushGuestCommentTitle": pushGuestCommentTitle("小王"), "pushGuestUploadTitle": pushGuestUploadTitle("小王"), "pushGuestBody": pushGuestBody("A-3「wheel」v2", "颜色再亮一点"),
+		"shareUploadTooBig": shareUploadTooBig(50, 10, 50), "shareUploadKindMismatch": shareUploadKindMismatch(true), "shareUploadKindMismatch2": shareUploadKindMismatch(false),
 		"pushTestTitle": pushTestTitle, "pushTestBody": pushTestBody, "notifyTestTitle": notifyTestTitle, "notifyTestBody": notifyTestBody,
 		"awaySettledTitle": awaySettledTitle, "awaySettledPushTitle": awaySettledPushTitle, "awaySettledReason": awaySettledReason,
 		"awayProxyQuiet": awayProxyQuiet, "awayNoGrant": awayNoGrant, "awayPlanUserOnly": awayPlanUserOnly, "awayNoAdvice": awayNoAdvice,

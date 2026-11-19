@@ -8,8 +8,9 @@ export type GuestRef = { kind: 'req' | 'plan' | 'dec'; code: string; title: stri
 type DecRef = { code: string; req: string; title: string; status: string }
 
 // guestPath：访客页里的地址。会话键里有冒号，整段编码。
-export function guestPath(token: string, kind?: 'req' | 'plan' | 'session', ref?: string): string {
+export function guestPath(token: string, kind?: 'req' | 'plan' | 'session' | 'assets', ref?: string): string {
   const base = `/s/${encodeURIComponent(token)}`
+  if (kind === 'assets') return `${base}/a` // 资源库（R-365）
   if (!kind || !ref) return base
   const seg = kind === 'req' ? 'r' : kind === 'plan' ? 'p' : 's'
   return `${base}/${seg}/${encodeURIComponent(ref)}`

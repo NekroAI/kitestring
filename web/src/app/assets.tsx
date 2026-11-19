@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { Box as BoxIcon, ChevronDown, Columns2, Image as ImageIcon, Images, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
 import { useAsset, useAssets, useProjects } from '../api/queries'
@@ -7,7 +7,7 @@ import { cx, relTime, useNow } from '../lib/util'
 import { candidateLabel, comparePair, coverOf, facetsOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewQueue, stepQueue, wallTiles, type AssetLite, type AssetStatus, type FileLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
-import { fileUrl, Lightbox, ThumbImg, type ViewShot } from '../ui/attach'
+import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
 import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
 import { useAdvance, usePending, usePendingMap } from './verdict'
 
@@ -20,6 +20,11 @@ import { useAdvance, usePending, usePendingMap } from './verdict'
 // URL：?p=项目 ID、?b=批次、?c=类别、?st=状态，?asset=A-x 打开素材抽屉，?cmp=批次/组名 打开并排比较，?rv=1 审片模式。
 
 const Viewer3D = lazy(() => import('./viewer3d'))
+
+// AssetExtras：抽屉的数据来源和底栏。所有者用 /api/assets 和判断栏；访客页（R-365）换成 /api/share/<token>/assets，
+// 底栏换成访客的留言、上传、下载，不显示审核记录。
+export type AssetExtras = { useDetail: typeof useAsset; footer: (a: Detail, shown: number) => ReactNode }
+export const AssetExtrasContext = createContext<AssetExtras | null>(null)
 
 const tone: Record<AssetStatus, 'neutral' | 'wait' | 'run' | 'danger'> = { wip: 'neutral', pending: 'wait', approved: 'run', rework: 'danger' }
 // AssetBadge：素材状态；传了 code 时撤销期里先按审核后的状态显示（结果立刻到位）。
@@ -203,7 +208,7 @@ function useReviewMode(all: AssetLite[], tiles: WallTile[], on: boolean, code: s
   }
 }
 
-function FacetMenu({ label, allLabel, value, options, onChange }: { label: string; allLabel: string; value: string; options: string[]; onChange: (v: string) => void }) {
+export function FacetMenu({ label, allLabel, value, options, onChange }: { label: string; allLabel: string; value: string; options: string[]; onChange: (v: string) => void }) {
   if (options.length < 2 && !value) return null
   return (
     <Menu
@@ -238,7 +243,7 @@ function Cover({ f, className }: { f: FileLite | null; className?: string }) {
   return <ThumbImg id={f.id} alt="" loading="lazy" draggable={false} className={cx('bg-sunken object-cover', className)} />
 }
 
-function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpen: () => void }) {
+export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpen: () => void }) {
   return (
     <button onClick={onOpen} className={cardCls(active)} data-asset={a.code}>
       <Cover f={coverOf(a.kind, a.latest)} className="h-[164px] w-full" />
@@ -253,7 +258,7 @@ function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpe
   )
 }
 
-function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { type: 'group' }>; active: boolean; onOpen: () => void }) {
+export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { type: 'group' }>; active: boolean; onOpen: () => void }) {
   const shown = tile.assets.slice(0, 3)
   const pend = usePendingMap()
   const st = groupStatus(tile.assets.map((a) => ({ status: pendingStatus(a.status, pend.get(reviewKey(a.code))?.act) })))
@@ -283,8 +288,9 @@ function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { type: '
 
 type View = 'image' | 'model' | 'compare'
 
-function AssetDrawer({ code, review, onClose }: { code: string | null; review?: Review; onClose: () => void }) {
-  const q = useAsset(code)
+export function AssetDrawer({ code, review, onClose }: { code: string | null; review?: Review; onClose: () => void }) {
+  const ex = useContext(AssetExtrasContext)
+  const q = (ex?.useDetail ?? useAsset)(code)
   const a = q.data
   const shell = useRef<HTMLDivElement>(null)
   // 审片模式：下了判断停在这一件，撤销期走完盖印后翻到下一个待审的；撤销期内撤回不翻，自己翻走则取消这次自动跳转
@@ -344,10 +350,11 @@ function AssetDrawer({ code, review, onClose }: { code: string | null; review?: 
   )
 }
 
-type Detail = NonNullable<ReturnType<typeof useAsset>['data']>
+export type Detail = NonNullable<ReturnType<typeof useAsset>['data']>
 type Ver = Detail['versions'][number]
 
 function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void; keys: boolean; shell: React.RefObject<HTMLDivElement | null> }) {
+  const ex = useContext(AssetExtrasContext)
   const now = useNow()
   const versions = a.versions
   const [shownN, setShownN] = useState(a.version)
@@ -355,7 +362,8 @@ function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void
   const pair = comparePair(versions.filter((x) => coverOf(a.kind, x)), shownN)
   const glb = glbOf(a.kind, v)
   const views: View[] = ['image', ...(glb ? (['model'] as View[]) : []), ...(pair ? (['compare'] as View[]) : [])]
-  const [view, setView] = useState<View>('image')
+  // 没有预览图的零件（例如访客交的新版本，R-365）打开时直接看 3D
+  const [view, setView] = useState<View>(() => (glb && !coverOf(a.kind, v) ? 'model' : 'image'))
   const cur = views.includes(view) ? view : 'image'
   const previews = a.kind === 'part' ? (v?.previews ?? []).filter((p) => p.mime.startsWith('image/')) : []
   const cover = coverOf(a.kind, v)
@@ -459,10 +467,30 @@ function AssetBody({ a, onClose, keys, shell }: { a: Detail; onClose: () => void
             </div>
           </section>
         )}
-        <ReviewHistory reviews={a.reviews} />
+        <Attachments list={a.attachments} now={now} />
+        {!ex && <ReviewHistory reviews={a.reviews} />}
       </div>
-      <ReviewBar a={a} shown={v?.version ?? a.version} keys={keys} barRef={shell} />
+      {ex ? ex.footer(a, v?.version ?? a.version) : <ReviewBar a={a} shown={v?.version ?? a.version} keys={keys} barRef={shell} />}
     </div>
+  )
+}
+
+// Attachments：素材的附件（R-365：访客上传、你收下为附件的文件），图片和录屏能直接看，其它显示为文件块。
+function Attachments({ list, now }: { list: Detail['attachments']; now: number }) {
+  if (!list.length) return null
+  return (
+    <section className="mt-5" data-attachments="">
+      <h3 className="mb-2 text-[13px] font-medium text-fg-3">{t.asset.attachments}</h3>
+      <ul className="space-y-2">
+        {list.map((x) => (
+          <li key={x.id} className="rounded-xl border border-line px-3 py-2.5">
+            <Thumbs files={[x.file]} size="sm" />
+            <div className="mt-1.5 truncate text-xs text-fg-3">{metaLine(submitterName(x.submitter), t.asset.ver(x.version), relTime(x.created_at, now))}</div>
+            {x.note && <p className="mt-1 text-[13px] whitespace-pre-wrap text-fg-2">{x.note}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -524,7 +552,7 @@ function CompareSlider({ kind, before, after }: { kind: 'part' | 'image'; before
 
 // ---------- 并排比较（同一用途的候选） ----------
 
-function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | null; all: AssetLite[]; onClose: () => void; onOpen: (code: string) => void }) {
+export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | null; all: AssetLite[]; onClose: () => void; onOpen: (code: string) => void }) {
   const members = gkey ? groupMembers(all, gkey) : []
   const shots: ViewShot[] = members.map((m) => coverOf(m.kind, m.latest)).filter((f): f is FileLite => !!f)
   const first = members[0]

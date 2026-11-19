@@ -2389,6 +2389,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/share/{token}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：分享里的素材（图片墙） */
+        get: operations["guest-assets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/share/{token}/assets/{ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 访客：一条素材和分享里它的版本、附件 */
+        get: operations["guest-asset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/share/{token}/comments": {
         parameters: {
             query?: never;
@@ -3341,6 +3375,21 @@ export interface components {
              */
             version: number;
         };
+        AssetAttachment: {
+            /** Format: date-time */
+            created_at: string;
+            file: components["schemas"]["FileRef"];
+            id: string;
+            /** @description 访客上传时写的说明 */
+            note?: string;
+            /** @description 上传的人（访客） */
+            submitter: components["schemas"]["AssetSubmitter"];
+            /**
+             * Format: int64
+             * @description 收下时素材的最新版本
+             */
+            version: number;
+        };
         AssetCountsOutBody: {
             /** @description 全部项目各状态的素材数 */
             counts: {
@@ -3348,6 +3397,8 @@ export interface components {
             };
         };
         AssetDetail: {
+            /** @description 附件（R-365：访客上传、你收下为附件的文件），新的在前 */
+            attachments: components["schemas"]["AssetAttachment"][] | null;
             batch: string;
             category: string;
             /** @description 素材编号 A-x */
@@ -3512,8 +3563,10 @@ export interface components {
             reused: number;
         };
         AssetReview: {
+            /** @description 访客的意见：你放入时写的附言 */
+            addend?: string;
             asset_id: string;
-            /** @description 写意见的人：user 你 / session 会话 / guest 分享页访客（R-365 预留） */
+            /** @description 写意见的人：user 你 / session 会话 / guest 分享页访客（由你放入，R-365） */
             author: components["schemas"]["AssetSubmitter"];
             comment: string;
             /** Format: date-time */
@@ -3538,15 +3591,17 @@ export interface components {
             /** @description 意见送给的会话键；空 = 没有可送达的会话 */
             sent_to?: string;
             /**
-             * @description approved 通过 / rework 返工
+             * @description approved 通过 / rework 返工 / note 只送意见（访客的意见，不改状态）
              * @enum {string}
              */
-            verdict: "approved" | "rework";
+            verdict: "approved" | "rework" | "note";
             /**
              * Format: int64
-             * @description 审核时的最新版本
+             * @description 审核时的最新版本；访客的意见是访客看的那一版
              */
             version: number;
+            /** @description 访客的意见：经由的分享名称 */
+            via?: string;
         };
         AssetReviewInBody: {
             /** @description 意见；返工时必填（或附图） */
@@ -4788,37 +4843,68 @@ export interface components {
             /** @description 参谋代答过的决策（新的在前） */
             proxied: components["schemas"]["Decision"][] | null;
         };
+        GuestAssetsView: {
+            /** @description 分享允许下载素材原文件 */
+            allow_download: boolean;
+            /** @description 分享里的素材（最新版本是分享里能看的最新一版） */
+            assets: components["schemas"]["Asset"][] | null;
+            /** @description 分享里素材的批次、类别和各状态数量 */
+            facets: components["schemas"]["AssetFacets"];
+            /**
+             * @description 这条链接的权限：view 只看 / comment 可留言 / upload 可上传
+             * @enum {string}
+             */
+            perm: "view" | "comment" | "upload";
+            statuses: string[] | null;
+        };
         GuestComment: {
             /** Format: date-time */
             created_at: string;
+            /** @description 上传的文件名；没有时是一条留言 */
+            file_name?: string;
             id: string;
+            /**
+             * @description 素材：放入成了什么——review 意见 / version 新版本 / attachment 附件
+             * @enum {string}
+             */
+            placed_as?: "review" | "version" | "attachment" | "";
             /** @description 所属需求编号 */
             req?: string;
             /**
-             * @description pending 待分享者处理 / placed 已放入需求 / ignored 分享者已看过、没有放入
+             * @description pending 待分享者处理 / placed 已放入需求（素材：已放入 / 已收下）/ ignored 分享者已看过、没有放入
              * @enum {string}
              */
             status: "pending" | "placed" | "ignored";
             /** @description 决策编号；阶段是所属计划编号 */
             target_code?: string;
             /** @enum {string} */
-            target_kind: "req" | "dec" | "evidence" | "stage";
+            target_kind: "req" | "dec" | "evidence" | "stage" | "asset";
             target_ref: string;
             /** Format: int64 */
             target_seq?: number;
             target_title?: string;
             text: string;
+            /**
+             * Format: int64
+             * @description 素材：针对第几版
+             */
+            version?: number;
         };
         GuestCommentInBody: {
             /**
-             * @description 留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段
+             * @description 留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段 / asset 素材（R-365）
              * @enum {string}
              */
-            target_kind: "req" | "dec" | "evidence" | "stage";
-            /** @description 需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID */
+            target_kind: "req" | "dec" | "evidence" | "stage" | "asset";
+            /** @description 需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID、素材编号 A-x */
             target_ref: string;
             /** @description 留言正文，最多 2000 字 */
             text: string;
+            /**
+             * Format: int64
+             * @description 素材：针对第几版；不写为分享里能看的最新一版
+             */
+            version?: number;
         };
         GuestCommentsOutBody: {
             /** @description 这条链接写过的留言，新的在前，最多 50 条 */
@@ -4852,6 +4938,8 @@ export interface components {
             web?: boolean;
         };
         GuestMetaOutBody: {
+            /** @description 分享允许下载素材原文件（R-365） */
+            allow_download: boolean;
             /** Format: date-time */
             expires_at?: string;
             /** @description 这条链接的访客名字 */
@@ -4859,6 +4947,11 @@ export interface components {
             /** @description 分享名称 */
             name: string;
             needs_password: boolean;
+            /**
+             * @description 这条链接的权限（R-365）：view 只看 / comment 可留言 / upload 可上传
+             * @enum {string}
+             */
+            perm: "view" | "comment" | "upload";
             /** @description 已输过密码（或没设密码），可以看内容 */
             unlocked: boolean;
         };
@@ -4881,7 +4974,7 @@ export interface components {
             /** @description 决策编号 D-x；阶段是所属计划编号 P-x */
             target_code?: string;
             /** @enum {string} */
-            target_kind: "req" | "dec" | "evidence" | "stage";
+            target_kind: "req" | "dec" | "evidence" | "stage" | "asset";
             /**
              * Format: int64
              * @description 阶段：第几阶段
@@ -4893,6 +4986,11 @@ export interface components {
         GuestOverviewOutBody: {
             /** @description 最近动态（只收有明确记录的事件），新的在前，最多 50 条 */
             activity: components["schemas"]["ShareActivity"][] | null;
+            /**
+             * Format: int64
+             * @description 分享里资源库素材的条数（R-365）；有素材时目录里有「资源库」
+             */
+            assets: number;
             /** @description 分享里的计划、需求编号：文字里提到的其它编号只显示编号、不能点开 */
             codes: string[] | null;
             /** @description 需求状态分布：状态 → 条数 */
@@ -4910,6 +5008,11 @@ export interface components {
              * @description 服务端时间，网页据此算「多久前」
              */
             now: string;
+            /**
+             * @description 这条链接的权限（R-365），改了权限后随实时通道刷新
+             * @enum {string}
+             */
+            perm: "view" | "comment" | "upload";
             /** @description 分享里的会话，运行中的在前 */
             sessions: components["schemas"]["GuestSession"][] | null;
         };
@@ -5607,6 +5710,11 @@ export interface components {
         PlaceInBody: {
             /** @description 附言（可选） */
             addend?: string;
+            /**
+             * @description 素材上的留言、上传放入成什么；需求上的留言不填
+             * @enum {string}
+             */
+            as?: "rework" | "note" | "version" | "attachment" | "";
             /** @description 挂在阶段上的留言放进哪条需求（R-x）；其它对象不填，放进留言所属的需求 */
             requirement?: string;
             /** @description 改写放入时的正文；不填为原样放入 */
@@ -5614,7 +5722,7 @@ export interface components {
         };
         PlaceOutBody: {
             comment: components["schemas"]["ShareComment"];
-            /** @description 放入后成为的需求留言 */
+            /** @description 放入后成为的需求留言；素材上的留言、上传为空（结果看 comment 的 placed_as） */
             decision: components["schemas"]["Decision"];
         };
         Plan: {
@@ -6878,22 +6986,49 @@ export interface components {
             to?: string;
         };
         ShareComment: {
+            asset_batch?: string;
+            /** @description 素材的 key */
+            asset_key?: string;
+            /**
+             * @description part 零件 / image 独立的图
+             * @enum {string}
+             */
+            asset_kind?: "part" | "image" | "";
+            /**
+             * Format: int64
+             * @description 素材现在的最新版本
+             */
+            asset_latest?: number;
+            /**
+             * Format: int64
+             * @description 访客看的是第几版
+             */
+            asset_version?: number;
             /** Format: date-time */
             created_at: string;
             /** @description 放入后成为的需求留言编号 D-x */
             decision_code?: string;
+            /** @description 访客上传的文件；没有时是一条留言 */
+            file?: components["schemas"]["FileRef"];
             /** @description 访客名字（访客链接的名字） */
             guest_name: string;
             /** Format: date-time */
             handled_at?: string;
             id: string;
             link_id: string;
+            /**
+             * @description 放入成了什么：review 意见 / version 新版本 / attachment 附件
+             * @enum {string}
+             */
+            placed_as?: "review" | "version" | "attachment" | "";
             plan_id?: string;
             plan_title?: string;
             project_id?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
+            /** @description 收下后的版本号（v3）或附件 ID、审核记录 ID */
+            result_ref?: string;
             share_id: string;
             share_name: string;
             /**
@@ -6901,11 +7036,11 @@ export interface components {
              * @enum {string}
              */
             status: "pending" | "placed" | "ignored";
-            /** @description 决策编号 D-x；阶段是所属计划编号 P-x */
+            /** @description 决策编号 D-x；阶段是所属计划编号 P-x；素材是 A-x */
             target_code?: string;
             /** @enum {string} */
-            target_kind: "req" | "dec" | "evidence" | "stage";
-            /** @description 需求 / 决策 / 证据 / 阶段的 ID */
+            target_kind: "req" | "dec" | "evidence" | "stage" | "asset";
+            /** @description 需求 / 决策 / 证据 / 阶段 / 素材的 ID */
             target_ref: string;
             /**
              * Format: int64
@@ -6917,24 +7052,51 @@ export interface components {
             text: string;
         };
         ShareCommentView: {
+            asset_batch?: string;
+            /** @description 素材的 key */
+            asset_key?: string;
+            /**
+             * @description part 零件 / image 独立的图
+             * @enum {string}
+             */
+            asset_kind?: "part" | "image" | "";
+            /**
+             * Format: int64
+             * @description 素材现在的最新版本
+             */
+            asset_latest?: number;
+            /**
+             * Format: int64
+             * @description 访客看的是第几版
+             */
+            asset_version?: number;
             /** @description 挂在阶段上的留言：放入时可选的需求（这个阶段的需求） */
             choices?: components["schemas"]["RequirementRef"][] | null;
             /** Format: date-time */
             created_at: string;
             /** @description 放入后成为的需求留言编号 D-x */
             decision_code?: string;
+            /** @description 访客上传的文件；没有时是一条留言 */
+            file?: components["schemas"]["FileRef"];
             /** @description 访客名字（访客链接的名字） */
             guest_name: string;
             /** Format: date-time */
             handled_at?: string;
             id: string;
             link_id: string;
+            /**
+             * @description 放入成了什么：review 意见 / version 新版本 / attachment 附件
+             * @enum {string}
+             */
+            placed_as?: "review" | "version" | "attachment" | "";
             plan_id?: string;
             plan_title?: string;
             project_id?: string;
             requirement_code?: string;
             requirement_id?: string;
             requirement_title?: string;
+            /** @description 收下后的版本号（v3）或附件 ID、审核记录 ID */
+            result_ref?: string;
             share_id: string;
             share_name: string;
             /**
@@ -6942,11 +7104,11 @@ export interface components {
              * @enum {string}
              */
             status: "pending" | "placed" | "ignored";
-            /** @description 决策编号 D-x；阶段是所属计划编号 P-x */
+            /** @description 决策编号 D-x；阶段是所属计划编号 P-x；素材是 A-x */
             target_code?: string;
             /** @enum {string} */
-            target_kind: "req" | "dec" | "evidence" | "stage";
-            /** @description 需求 / 决策 / 证据 / 阶段的 ID */
+            target_kind: "req" | "dec" | "evidence" | "stage" | "asset";
+            /** @description 需求 / 决策 / 证据 / 阶段 / 素材的 ID */
             target_ref: string;
             /**
              * Format: int64
@@ -6962,13 +7124,14 @@ export interface components {
             comments: components["schemas"]["ShareCommentView"][] | null;
         };
         ShareCreateInBody: {
+            allow_download?: boolean;
             /**
              * Format: date-time
              * @description 到期时间；省略表示永久。7 天 / 30 天 / 自定义由网页换算成时间
              */
             expires_at?: string;
             items: components["schemas"]["ShareItemIn"][] | null;
-            /** @description 同时建好的访客链接名字（每个访客一条） */
+            /** @description 同时建好的访客链接名字（每个访客一条，权限是可留言） */
             links?: string[] | null;
             name: string;
             /** @description 访问密码，可选；所有链接共用 */
@@ -6986,10 +7149,12 @@ export interface components {
         ShareItem: {
             /** @description 包含以后新增的：计划后来新增的阶段和需求、阶段后来放进的需求、需求后来关联的会话自动纳入 */
             auto: boolean;
+            /** Format: int64 */
+            cap?: number;
             /** @description 被单独取消：上级开着「包含以后新增的」也不会把它带回来 */
             excluded: boolean;
             /** @enum {string} */
-            kind: "plan" | "stage" | "req" | "session";
+            kind: "plan" | "stage" | "req" | "session" | "asset_batch" | "asset_cat" | "asset";
             ref: string;
         };
         ShareItemIn: {
@@ -6998,44 +7163,78 @@ export interface components {
             /** @description 单独取消：上级开着「包含以后新增的」也不纳入 */
             excluded?: boolean;
             /** @enum {string} */
-            kind: "plan" | "stage" | "req" | "session";
-            /** @description 计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键 */
+            kind: "plan" | "stage" | "req" | "session" | "asset_batch" | "asset_cat" | "asset";
+            /** @description 计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键；资源库批次 / 类别写「项目 ID/名称」，素材写 ID 或 A-x */
             ref: string;
         };
         ShareLinkInBody: {
             /** @description 访客的名字，如「小王」 */
             name: string;
+            /**
+             * @description 权限：view 只看 / comment 可留言（默认）/ upload 可上传（含留言）
+             * @enum {string}
+             */
+            perm?: "view" | "comment" | "upload" | "";
         };
         ShareLinkUpdateInBody: {
             name?: string;
+            /**
+             * @description 改权限；不传 = 不改
+             * @enum {string}
+             */
+            perm?: "view" | "comment" | "upload" | "";
             /** @description true 撤回（下一次访问即拒绝）/ false 恢复 */
             revoked?: boolean;
         };
         ShareLinkView: {
+            /**
+             * Format: int64
+             * @description 这条链接写过的留言条数（不含上传）
+             */
+            comments: number;
             /** Format: date-time */
             created_at: string;
+            /**
+             * Format: int64
+             * @description 下载素材原文件的次数
+             */
+            downloads: number;
             id: string;
+            /** Format: date-time */
+            last_download_at?: string;
             /** Format: date-time */
             last_visit_at?: string;
             name: string;
             /** @description 访客页路径 /s/<token> */
             path: string;
+            /**
+             * @description view 只看 / comment 可留言 / upload 可上传（含留言）
+             * @enum {string}
+             */
+            perm: "view" | "comment" | "upload";
             /** Format: date-time */
             revoked_at?: string;
             share_id: string;
             token: string;
+            /**
+             * Format: int64
+             * @description 这条链接上传过的文件个数
+             */
+            uploads: number;
             /** @description 按设置里的对外地址拼好的完整链接；没填对外地址时为空，网页用当前地址拼 */
             url?: string;
             /** Format: int64 */
             visits: number;
         };
         ShareNode: {
-            /** @description 计划、需求的编号；阶段是所属计划的编号 */
+            /** @description 计划、需求、素材的编号；阶段是所属计划的编号 */
             code?: string;
+            /** @description 素材：最新版本的封面图（附件 ID） */
+            cover?: string;
             /** @enum {string} */
-            kind: "plan" | "stage" | "req" | "session";
+            kind: "plan" | "stage" | "req" | "session" | "asset_batch" | "asset_cat" | "asset";
             parents: string[] | null;
-            /** @description 计划 / 阶段 / 需求的 ID，会话键 */
+            /** @description 计划 / 阶段 / 需求的 ID，会话键；资源库的批次、类别是「项目 ID/名称」，素材是素材 ID */
             ref: string;
             /** @description 会话的身份 */
             role?: string;
@@ -7047,11 +7246,21 @@ export interface components {
             /** @description 计划 / 阶段 / 需求的状态；会话是显示状态的原始值（state） */
             status?: string;
             title: string;
+            /**
+             * Format: int64
+             * @description 素材：最新版本号
+             */
+            version?: number;
         };
         SharePreviewInBody: {
             items: components["schemas"]["ShareItemIn"][] | null;
         };
         ShareScopeView: {
+            /**
+             * Format: int64
+             * @description 资源库素材条数（R-365）
+             */
+            assets: number;
             nodes: components["schemas"]["ShareNode"][] | null;
             /** Format: int64 */
             plans: number;
@@ -7063,6 +7272,8 @@ export interface components {
             stages: number;
         };
         ShareUpdateInBody: {
+            /** @description 访客能否下载素材原文件（R-365）；不传 = 不改 */
+            allow_download?: boolean;
             /** Format: date-time */
             expires_at?: string;
             /** @description 改成永久 */
@@ -7074,6 +7285,7 @@ export interface components {
             password?: string;
         };
         ShareView: {
+            allow_download: boolean;
             /** Format: date-time */
             created_at: string;
             /**
@@ -12820,6 +13032,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GuestMetaOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestAssetsView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "guest-asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                ref: string;
+            };
+            cookie?: {
+                ks_share?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDetail"];
                 };
             };
             /** @description Error */

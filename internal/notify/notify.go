@@ -25,6 +25,8 @@ const (
 	EventNeedDevs = "need_devs"
 	// EventAwaySettled：暂时离开期间能处理的都处理完了（R-210），每次离开最多 1 条。跟随「新决策」的订阅，不单独设开关。
 	EventAwaySettled = "away_settled"
+	// EventShareGuest：访客在分享页上留言、上传文件（R-365）。跟随「新决策」的订阅，不单独设开关。
+	EventShareGuest = "share_guest"
 )
 
 // AllEvents 是可配置的通知事件，用于设置页展示。
@@ -44,7 +46,7 @@ type Message struct {
 
 // Wants 判断配置是否订阅了该事件。
 func Wants(cfg store.NotifyConfig, event string) bool {
-	if event == EventNeedDevs || event == EventAwaySettled {
+	if event == EventNeedDevs || event == EventAwaySettled || event == EventShareGuest {
 		event = EventDecisionRaised
 	}
 	events := cfg.Events

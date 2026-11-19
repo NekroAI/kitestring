@@ -34,6 +34,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerPublic(publicAPI)
 	h.registerShareGuest(guestAPI) // 分享访客（R-281）：免登录只读，单独一组路由，不经 requireWeb
 	h.registerShareGuestComments(guestAPI)
+	h.registerShareGuestAssets(guestAPI) // 资源库分享（R-365）
 	h.registerShareWeb(webAPI)
 	h.registerShareComments(webAPI)
 	h.registerSecretsWeb(webAPI) // 凭据（R-295）：只挂网页登录与设备两组路由，访客路由没有
@@ -98,6 +99,7 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	root.Handle("/api/share/", guestMethodGuard(guestMux))
 	root.Handle("GET /api/share/{token}/files/{id}", http.HandlerFunc(h.handleGuestFile))
 	root.Handle("GET /api/share/{token}/stream", http.HandlerFunc(h.serveGuestStream))
+	root.Handle("POST /api/share/{token}/uploads", http.HandlerFunc(h.handleGuestUpload)) // 访客上传（R-365），只进待收队列
 	root.Handle("/api/agent/", h.requireDevice(agentMux))
 	root.Handle("/api/device/ws", h.requireDevice(http.HandlerFunc(h.serveDeviceWS)))
 	root.Handle("/api/stream", h.requireWeb(http.HandlerFunc(h.broker.serve)))
@@ -136,6 +138,7 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerPublic(api)
 	h.registerShareGuest(api)
 	h.registerShareGuestComments(api)
+	h.registerShareGuestAssets(api)
 	h.registerShareWeb(api)
 	h.registerShareComments(api)
 	h.registerWeb(api)

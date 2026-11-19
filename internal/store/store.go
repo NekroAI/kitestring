@@ -216,6 +216,18 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"secrets", "retired", "TEXT NOT NULL DEFAULT ''"},
 	// 凭据的稳定编号 S-<seq>（R-326）：老凭据按创建先后补上
 	{"secrets", "seq", "INTEGER NOT NULL DEFAULT 0"},
+	// 资源库分享（R-365）：下载开关、单个素材的版本上限、链接的权限档和下载次数、访客对素材的留言和上传、访客意见的来源
+	{"shares", "allow_download", "INTEGER NOT NULL DEFAULT 0"},
+	{"share_items", "cap", "INTEGER NOT NULL DEFAULT 0"},
+	{"share_links", "perm", "TEXT NOT NULL DEFAULT 'comment'"},
+	{"share_links", "downloads", "INTEGER NOT NULL DEFAULT 0"},
+	{"share_links", "last_download_at", "TEXT NOT NULL DEFAULT ''"},
+	{"share_comments", "asset_version", "INTEGER NOT NULL DEFAULT 0"},
+	{"share_comments", "file_id", "TEXT NOT NULL DEFAULT ''"},
+	{"share_comments", "placed_as", "TEXT NOT NULL DEFAULT ''"},
+	{"share_comments", "result_ref", "TEXT NOT NULL DEFAULT ''"},
+	{"asset_reviews", "via", "TEXT NOT NULL DEFAULT ''"},
+	{"asset_reviews", "addend", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

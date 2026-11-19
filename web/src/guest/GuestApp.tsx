@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Ban, List, X } from 'lucide-react'
+import { Ban, Images, List, X } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { t } from '../i18n'
 import { actKey, freshOf, guestPath, guestTree, navRows, navSessions, refIndex } from '../lib/guest'
@@ -16,6 +16,7 @@ import { Logo } from '../app/Shell'
 import { gk, unlock, useGuestLive, useGuestMeta, useOverview, type GuestMeta } from './data'
 import { Failed, Loading, OverviewView, PlanView, ReqView, SessionView, type Overview } from './views'
 import { ComposeScope } from './slots'
+import { GuestAssets } from './assets'
 
 // 访客页（R-281 第 3 段）：/s/<token>，免登录、只读。
 // 和所有者的网页完全分开：不挂所有者的导航、设置和任何写操作入口，不调所有者的接口（不会借访客页拿到所有者的登录态），
@@ -220,6 +221,7 @@ function Space({ token, meta }: { token: string; meta: GuestMeta }) {
                     <Route path="r/:code" element={<ReqRoute token={token} ov={ov.data} />} />
                     <Route path="p/:code" element={<PlanRoute token={token} />} />
                     <Route path="s/:key" element={<SessionRoute token={token} ov={ov.data} />} />
+                    <Route path="a" element={<GuestAssets token={token} />} />
                     <Route path="*" element={<OverviewView ov={ov.data} token={token} reqs={reqs} fresh={fresh} />} />
                   </Routes>
                   </ComposeScope>
@@ -258,6 +260,13 @@ function Tree({ token, ov }: { token: string; ov: Overview }) {
       <NavLink end to={guestPath(token)} className={link} style={{ paddingLeft: 8 }}>
         <span className="truncate">{t.guest.overview}</span>
       </NavLink>
+      {ov.assets > 0 && (
+        <NavLink to={guestPath(token, 'assets')} className={link} style={{ paddingLeft: 8 }} data-guest-nav-assets="">
+          <Images className="size-3.5 shrink-0 text-accent" />
+          <span className="truncate">{t.guest.assets}</span>
+          <span className="ml-auto shrink-0 text-xs text-fg-3 tabular">{ov.assets}</span>
+        </NavLink>
+      )}
       <div className="mx-2 mt-2.5 mb-1 text-xs text-fg-3">{t.guest.contentsAria}</div>
       {rows.map((r, i) => {
         const n = r.node

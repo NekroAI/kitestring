@@ -21,6 +21,14 @@ const (
 	GuestOnDec      = "dec"
 	GuestOnEvidence = "evidence"
 	GuestOnStage    = "stage"
+	GuestOnAsset    = "asset" // 资源库素材的某一版（R-365）；带文件时是访客上传
+)
+
+// 访客对素材的留言 / 上传被放入（收下）成了什么（R-365）。
+const (
+	PlacedReview     = "review"     // 留言放入为意见（返工意见或只送意见）
+	PlacedVersion    = "version"    // 上传收下为新版本
+	PlacedAttachment = "attachment" // 上传收下为附件
 )
 
 // 访客留言的状态。
@@ -43,7 +51,7 @@ type GuestOrigin struct {
 	Share   string    `json:"share" doc:"经由的分享名称"`
 	At      time.Time `json:"at" doc:"访客留言的时间"`
 	// 针对的对象：挂在需求本身时 target_kind = req、其余为空
-	TargetKind  string `json:"target_kind" enum:"req,dec,evidence,stage"`
+	TargetKind  string `json:"target_kind" enum:"req,dec,evidence,stage,asset"`
 	TargetCode  string `json:"target_code,omitempty" doc:"决策编号 D-x；阶段是所属计划编号 P-x"`
 	TargetSeq   int    `json:"target_seq,omitempty" doc:"阶段：第几阶段"`
 	TargetTitle string `json:"target_title,omitempty" doc:"证据的结论第一句、阶段标题"`
@@ -60,9 +68,9 @@ type ShareComment struct {
 	GuestName string `json:"guest_name" doc:"访客名字（访客链接的名字）"`
 	ProjectID string `json:"project_id,omitempty"`
 	// 针对的对象
-	TargetKind  string `json:"target_kind" enum:"req,dec,evidence,stage"`
-	TargetRef   string `json:"target_ref" doc:"需求 / 决策 / 证据 / 阶段的 ID"`
-	TargetCode  string `json:"target_code,omitempty" doc:"决策编号 D-x；阶段是所属计划编号 P-x"`
+	TargetKind  string `json:"target_kind" enum:"req,dec,evidence,stage,asset"`
+	TargetRef   string `json:"target_ref" doc:"需求 / 决策 / 证据 / 阶段 / 素材的 ID"`
+	TargetCode  string `json:"target_code,omitempty" doc:"决策编号 D-x；阶段是所属计划编号 P-x；素材是 A-x"`
 	TargetSeq   int    `json:"target_seq,omitempty" doc:"阶段：第几阶段"`
 	TargetTitle string `json:"target_title,omitempty" doc:"证据的结论第一句、阶段标题、决策的问题"`
 	// 所属需求（挂在阶段上时为空）
@@ -76,12 +84,23 @@ type ShareComment struct {
 	DecisionCode     string     `json:"decision_code,omitempty" doc:"放入后成为的需求留言编号 D-x"`
 	CreatedAt        time.Time  `json:"created_at"`
 	HandledAt        *time.Time `json:"handled_at,omitempty"`
+	// 资源库（R-365）：target_kind = asset 时
+	AssetKey     string   `json:"asset_key,omitempty" doc:"素材的 key"`
+	AssetKind    string   `json:"asset_kind,omitempty" enum:"part,image," doc:"part 零件 / image 独立的图"`
+	AssetBatch   string   `json:"asset_batch,omitempty"`
+	AssetVersion int      `json:"asset_version,omitempty" doc:"访客看的是第几版"`
+	AssetLatest  int      `json:"asset_latest,omitempty" doc:"素材现在的最新版本"`
+	File         *FileRef `json:"file,omitempty" doc:"访客上传的文件；没有时是一条留言"`
+	PlacedAs     string   `json:"placed_as,omitempty" enum:"review,version,attachment," doc:"放入成了什么：review 意见 / version 新版本 / attachment 附件"`
+	ResultRef    string   `json:"result_ref,omitempty" doc:"收下后的版本号（v3）或附件 ID、审核记录 ID"`
 }
 
 const shareCommentSelect = `SELECT c.id, c.share_id, COALESCE(sh.name, ''), c.link_id, c.guest_name, COALESCE(NULLIF(r.project_id, ''), NULLIF(pl.project_id, ''), sh.project_id, ''),
 	c.target_kind, c.target_ref, c.requirement_id, COALESCE(r.seq, 0), COALESCE(r.title, ''), c.plan_id, COALESCE(pl.seq, 0), COALESCE(pl.title, ''), c.stage_seq,
 	c.text, c.status, COALESCE(d.seq, 0), c.created_at, c.handled_at,
-	COALESCE(dx.seq, 0), COALESCE(dx.question, ''), COALESCE(ev.payload, ''), COALESCE(ev.summary, ''), COALESCE(ps.title, '')
+	COALESCE(dx.seq, 0), COALESCE(dx.question, ''), COALESCE(ev.payload, ''), COALESCE(ev.summary, ''), COALESCE(ps.title, ''),
+	COALESCE(a.seq, 0), COALESCE(a.key, ''), COALESCE(a.kind, ''), COALESCE(a.batch, ''), COALESCE(a.version, 0), COALESCE(a.project_id, ''),
+	c.asset_version, c.file_id, COALESCE(fl.name, ''), COALESCE(fl.mime, ''), COALESCE(fl.size, 0), c.placed_as, c.result_ref
 	FROM share_comments c
 	LEFT JOIN shares sh ON sh.id = c.share_id
 	LEFT JOIN requirements r ON r.id = c.requirement_id
@@ -89,17 +108,26 @@ const shareCommentSelect = `SELECT c.id, c.share_id, COALESCE(sh.name, ''), c.li
 	LEFT JOIN decisions d ON d.id = c.decision_id
 	LEFT JOIN decisions dx ON c.target_kind = 'dec' AND dx.id = c.target_ref
 	LEFT JOIN evidence ev ON c.target_kind = 'evidence' AND ev.id = c.target_ref
-	LEFT JOIN plan_stages ps ON c.target_kind = 'stage' AND ps.id = c.target_ref`
+	LEFT JOIN plan_stages ps ON c.target_kind = 'stage' AND ps.id = c.target_ref
+	LEFT JOIN assets a ON c.target_kind = 'asset' AND a.id = c.target_ref
+	LEFT JOIN files fl ON c.file_id <> '' AND fl.id = c.file_id`
 
 func scanShareComment(row interface{ Scan(...any) error }) (ShareComment, error) {
 	var c ShareComment
-	var rseq, pseq, dseq, xseq int
-	var created, handled, xq, evVerdict, evSummary, stTitle string
+	var rseq, pseq, dseq, xseq, aseq int
+	var created, handled, xq, evVerdict, evSummary, stTitle, aproj, fileID string
+	var f FileRef
 	err := row.Scan(&c.ID, &c.ShareID, &c.ShareName, &c.LinkID, &c.GuestName, &c.ProjectID,
 		&c.TargetKind, &c.TargetRef, &c.RequirementID, &rseq, &c.RequirementTitle, &c.PlanID, &pseq, &c.PlanTitle, &c.TargetSeq,
-		&c.Text, &c.Status, &dseq, &created, &handled, &xseq, &xq, &evVerdict, &evSummary, &stTitle)
+		&c.Text, &c.Status, &dseq, &created, &handled, &xseq, &xq, &evVerdict, &evSummary, &stTitle,
+		&aseq, &c.AssetKey, &c.AssetKind, &c.AssetBatch, &c.AssetLatest, &aproj,
+		&c.AssetVersion, &fileID, &f.Name, &f.Mime, &f.Size, &c.PlacedAs, &c.ResultRef)
 	if err != nil {
 		return c, err
+	}
+	if fileID != "" {
+		f.ID = fileID
+		c.File = &f
 	}
 	if rseq > 0 {
 		c.RequirementCode = reqCode(rseq)
@@ -122,6 +150,15 @@ func scanShareComment(row interface{ Scan(...any) error }) (ShareComment, error)
 			c.TargetCode = planCode(pseq)
 		}
 		c.TargetTitle = stTitle
+	case GuestOnAsset:
+		if aseq > 0 {
+			c.TargetCode = AssetCode(aseq)
+		}
+		c.TargetTitle = c.AssetKey
+		if aproj != "" {
+			c.ProjectID = aproj
+		}
+		c.TargetSeq = 0
 	default:
 		c.TargetSeq = 0
 	}
@@ -147,17 +184,19 @@ type GuestCommentIn struct {
 	PlanID                     string
 	StageSeq                   int
 	Text                       string
+	AssetVersion               int    // 素材的第几版（R-365）
+	FileID                     string // 访客上传的文件（R-365）；带文件时正文可以为空
 }
 
 // CreateShareComment 记一条待收的访客留言。
 func (s *Store) CreateShareComment(ctx context.Context, in GuestCommentIn) (ShareComment, error) {
 	in.Text = strings.TrimSpace(in.Text)
-	if in.Text == "" {
+	if in.Text == "" && in.FileID == "" {
 		return ShareComment{}, errors.New("留言不能为空")
 	}
 	id := protocol.NewID()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO share_comments(id, share_id, link_id, guest_name, target_kind, target_ref, requirement_id, plan_id, stage_seq, text, status, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, in.ShareID, in.LinkID, in.GuestName, in.TargetKind, in.TargetRef, in.RequirementID, in.PlanID, in.StageSeq, in.Text, GuestPending, now())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO share_comments(id, share_id, link_id, guest_name, target_kind, target_ref, requirement_id, plan_id, stage_seq, text, status, created_at, asset_version, file_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, in.ShareID, in.LinkID, in.GuestName, in.TargetKind, in.TargetRef, in.RequirementID, in.PlanID, in.StageSeq, in.Text, GuestPending, now(), in.AssetVersion, in.FileID)
 	if err != nil {
 		return ShareComment{}, err
 	}
@@ -286,4 +325,38 @@ func (s *Store) StagePlace(ctx context.Context, id string) (string, int, error) 
 		return "", 0, ErrNotFound
 	}
 	return planID, seq, err
+}
+
+// ClaimShareComment 把一条待收的访客留言占住记为已放入（并发下只放入一次）；占不到返回 ErrGuestHandled（R-365 素材的留言和上传用）。
+// 后面的写入失败时用 ReleaseShareComment 放回去。
+func (s *Store) ClaimShareComment(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE share_comments SET status = ?, handled_at = ? WHERE id = ? AND status = ?`, GuestPlaced, now(), id, GuestPending)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, err := s.GetShareComment(ctx, id); err != nil {
+			return err
+		}
+		return ErrGuestHandled
+	}
+	return nil
+}
+
+// ReleaseShareComment 把占住的访客留言放回待收。
+func (s *Store) ReleaseShareComment(ctx context.Context, id string) {
+	_, _ = s.db.ExecContext(ctx, `UPDATE share_comments SET status = ?, handled_at = '' WHERE id = ?`, GuestPending, id)
+}
+
+// SetShareCommentResult 记下访客对素材的留言 / 上传放入成了什么（R-365）。
+func (s *Store) SetShareCommentResult(ctx context.Context, id, as, ref string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE share_comments SET placed_as = ?, result_ref = ? WHERE id = ?`, as, ref, id)
+	return err
+}
+
+// RecentLinkUploads：一条访客链接在 since 之后上传了几个文件、合计多少字节（限流用，R-365）。
+func (s *Store) RecentLinkUploads(ctx context.Context, linkID string, since time.Time) (n int, bytes int64, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(f.size), 0) FROM share_comments c LEFT JOIN files f ON f.id = c.file_id
+		WHERE c.link_id = ? AND c.file_id <> '' AND c.created_at >= ?`, linkID, ts(since)).Scan(&n, &bytes)
+	return n, bytes, err
 }

@@ -84,8 +84,9 @@ type AssetVersion struct {
 // AssetDetail 是素材与它的全部版本（新的在前）。
 type AssetDetail struct {
 	Asset
-	Versions []AssetVersion `json:"versions"`
-	Reviews  []AssetReview  `json:"reviews" doc:"审核记录（R-351 第 4 步），新的在前"`
+	Versions    []AssetVersion    `json:"versions"`
+	Reviews     []AssetReview     `json:"reviews" doc:"审核记录（R-351 第 4 步），新的在前"`
+	Attachments []AssetAttachment `json:"attachments" doc:"附件（R-365：访客上传、你收下为附件的文件），新的在前"`
 }
 
 // 提交者的三种（R-351；guest 给 R-365 资源库分享预留，访客在分享页上传素材）。
@@ -427,7 +428,10 @@ func (s *Store) GetAsset(ctx context.Context, ref string) (AssetDetail, error) {
 	if err := rows.Err(); err != nil {
 		return d, err
 	}
-	d.Reviews, err = s.ListAssetReviews(ctx, a.ID)
+	if d.Reviews, err = s.ListAssetReviews(ctx, a.ID); err != nil {
+		return d, err
+	}
+	d.Attachments, err = s.ListAssetAttachments(ctx, a.ID)
 	return d, err
 }
 

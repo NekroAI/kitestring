@@ -401,6 +401,8 @@ type guestMetaOut struct {
 		NeedsPassword bool       `json:"needs_password"`
 		Unlocked      bool       `json:"unlocked" doc:"已输过密码（或没设密码），可以看内容"`
 		ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+		Perm          string     `json:"perm" enum:"view,comment,upload" doc:"这条链接的权限（R-365）：view 只看 / comment 可留言 / upload 可上传"`
+		AllowDownload bool       `json:"allow_download" doc:"分享允许下载素材原文件（R-365）"`
 	}
 }
 
@@ -428,6 +430,8 @@ type guestOverviewOut struct {
 		Sessions []GuestSession        `json:"sessions" doc:"分享里的会话，运行中的在前"`
 		Activity []store.ShareActivity `json:"activity" doc:"最近动态（只收有明确记录的事件），新的在前，最多 50 条"`
 		Decs     []GuestDecRef         `json:"decs" doc:"分享里需求上访客看得到的决策和留言等记录：文字里提到这些 D-x 时能点开（落到所属需求）"`
+		Assets   int                   `json:"assets" doc:"分享里资源库素材的条数（R-365）；有素材时目录里有「资源库」"`
+		Perm     string                `json:"perm" enum:"view,comment,upload" doc:"这条链接的权限（R-365），改了权限后随实时通道刷新"`
 		Now      time.Time             `json:"now" doc:"服务端时间，网页据此算「多久前」"`
 	}
 }
@@ -490,6 +494,7 @@ func (h *Hub) registerShareGuest(api huma.API) {
 			_ = h.store.TouchShareLink(ctx, l.ID)
 			out := &guestMetaOut{}
 			out.Body.Name, out.Body.Guest, out.Body.NeedsPassword, out.Body.ExpiresAt = x.Name, l.Name, x.HasPassword, x.ExpiresAt
+			out.Body.Perm, out.Body.AllowDownload = l.Perm, x.AllowDownload
 			out.Body.Unlocked = h.unlocked(ctx, x, l, in.Cookie)
 			return out, nil
 		})
@@ -534,7 +539,13 @@ func (h *Hub) registerShareGuest(api huma.API) {
 			}
 			out := &guestOverviewOut{}
 			b := &out.Body
-			b.Name, b.Guest, b.Nodes, b.Now = g.share.Name, g.link.Name, sv.Nodes, time.Now().UTC()
+			b.Name, b.Guest, b.Now, b.Assets, b.Perm = g.share.Name, g.link.Name, time.Now().UTC(), len(g.scope.Assets), g.link.Perm
+			b.Nodes = []ShareNode{}
+			for _, n := range sv.Nodes { // 素材在资源库页里看，目录只放计划、阶段、需求、会话
+				if n.Kind != store.ShareKindAsset && n.Kind != store.ShareKindAssetBatch && n.Kind != store.ShareKindAssetCat {
+					b.Nodes = append(b.Nodes, n)
+				}
+			}
 			b.Codes, b.Counts = []string{}, map[string]int{}
 			var reqIDs, keys []string
 			for _, n := range sv.Nodes {
@@ -735,6 +746,12 @@ func (h *Hub) handleGuestFile(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 资源库素材的文件（R-365）：原文件（主文件、附件）按分享的下载开关，关时带 download 的请求和直接打开一律拒绝；下载记次数
+	assetOK, orig, _, err := h.guestAssetFile(r.Context(), g, r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	allowed := false
 	for _, o := range owners {
 		switch {
@@ -745,6 +762,19 @@ func (h *Hub) handleGuestFile(w http.ResponseWriter, r *http.Request) {
 		case o.StageID != "" && g.scope.Stages[o.StageID]:
 			allowed = true
 		}
+	}
+	if !allowed && assetOK {
+		if orig && wantsDownload(r) {
+			if !g.share.AllowDownload {
+				writeErr(w, http.StatusForbidden, shareNoDownload)
+				return
+			}
+			if r.Method == http.MethodGet && r.Header.Get("Range") == "" {
+				_ = h.store.CountShareDownload(r.Context(), g.link.ID)
+				h.broker.publish("shares")
+			}
+		}
+		allowed = true
 	}
 	if !allowed {
 		writeErr(w, http.StatusNotFound, shareNotIncluded)
@@ -830,14 +860,15 @@ func (h *Hub) serveGuestStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// guestPostPath：访客能 POST 的只有两处——输密码 /api/share/<token>/unlock、留言 /api/share/<token>/comments（R-281 第 4 段）。
+// guestPostPath：访客能 POST 的只有三处——输密码 /api/share/<token>/unlock、留言 /api/share/<token>/comments（R-281 第 4 段）、
+// 上传 /api/share/<token>/uploads（R-365，只有可上传的链接能用）。
 func guestPostPath(p string) bool {
 	rest, ok := strings.CutPrefix(p, "/api/share/")
 	if !ok {
 		return false
 	}
 	parts := strings.Split(rest, "/")
-	return len(parts) == 2 && parts[0] != "" && (parts[1] == "unlock" || parts[1] == "comments")
+	return len(parts) == 2 && parts[0] != "" && (parts[1] == "unlock" || parts[1] == "comments" || parts[1] == "uploads")
 }
 
 // guestMethodGuard：访客接口只有读、输密码和留言，其它方法一律 405。

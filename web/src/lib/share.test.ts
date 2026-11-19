@@ -76,7 +76,7 @@ test('打开 auto：没勾的下级记成单独取消；关掉 auto：现有的�
 test('预选、计数、整理与关系图', () => {
   const items = preset(tr, 'R-1')
   assert.deepEqual(items, [{ kind: 'req', ref: 'r1', auto: true, excluded: false }])
-  assert.deepEqual(counts(tr, resolve(tr, items)), { plans: 0, stages: 0, reqs: 1, sessions: 2 })
+  assert.deepEqual(counts(tr, resolve(tr, items)), { plans: 0, stages: 0, reqs: 1, sessions: 2, assets: 0 })
   assert.deepEqual(tidy(tr, [...items, { kind: 'req', ref: 'r3', auto: false, excluded: true }]), items)
   // 只勾计划和 R-3（阶段 2 被单独取消）：R-3 用虚线连到计划
   let x = check(tr, [], K.p)
@@ -86,4 +86,40 @@ test('预选、计数、整理与关系图', () => {
   assert.deepEqual(g.edges.find((e) => e.to === K.r3), { from: K.p, to: K.r3, direct: false })
   assert.deepEqual(g.edges.find((e) => e.to === K.r1), { from: K.s1, to: K.r1, direct: true })
   assert.deepEqual(toggle(tr, toggle(tr, [], K.r9), K.r9), [])
+})
+
+// 资源库（R-365）：批次 S1 有 w、c 两条素材，类别「车轮」有 w 和 S2 的 b；素材同时挂在批次和类别下。
+const anodes: ShareNode[] = [
+  { kind: 'asset_batch', ref: 'p1/S1', title: 'S1', parents: [] },
+  { kind: 'asset_batch', ref: 'p1/S2', title: 'S2', parents: [] },
+  { kind: 'asset_cat', ref: 'p1/车轮', title: '车轮', parents: [] },
+  { kind: 'asset', ref: 'w', code: 'A-1', title: 'wheel', parents: ['asset_batch|p1/S1', 'asset_cat|p1/车轮'] },
+  { kind: 'asset', ref: 'c', code: 'A-2', title: 'crate', parents: ['asset_batch|p1/S1'] },
+  { kind: 'asset', ref: 'b', code: 'A-3', title: 'bolt', parents: ['asset_batch|p1/S2', 'asset_cat|p1/车轮'] },
+]
+const at = buildTree(anodes)
+const A = { s1: keyOf('asset_batch', 'p1/S1'), cat: keyOf('asset_cat', 'p1/车轮'), w: keyOf('asset', 'w'), c: keyOf('asset', 'c'), b: keyOf('asset', 'b') }
+
+test('资源库：素材挂在批次和类别下；勾批次默认含以后新增的，一条就够', () => {
+  assert.equal(at.batches.length, 2)
+  assert.deepEqual(at.cats, [A.cat])
+  assert.deepEqual(at.ups.get(A.w), [A.s1, A.cat])
+  const items = check(at, [], A.s1)
+  assert.deepEqual(items, [{ kind: 'asset_batch', ref: 'p1/S1', auto: true, excluded: false }])
+  const r = resolve(at, items)
+  assert.ok(r.inc.has(A.w) && r.inc.has(A.c) && !r.inc.has(A.b))
+  assert.equal(r.auto.get(A.w), true, '带进来的素材也含以后的新版本')
+  assert.equal(counts(at, r).assets, 2)
+  assert.deepEqual(graph(at, r.inc).edges, [], '资源库不画进关系图')
+})
+
+test('资源库：单个素材可以关掉「含以后新增」；批次和类别都勾着时取消 wheel 记成单独取消', () => {
+  let items = check(at, [], A.w)
+  assert.deepEqual(items, [{ kind: 'asset', ref: 'w', auto: true, excluded: false }])
+  items = setAuto(at, items, A.w, false)
+  assert.equal(resolve(at, items).auto.get(A.w), false)
+  let x = check(at, check(at, [], A.s1), A.cat)
+  x = uncheck(at, x, A.w)
+  const r = resolve(at, x)
+  assert.ok(!r.inc.has(A.w) && r.inc.has(A.b) && r.inc.has(A.c))
 })

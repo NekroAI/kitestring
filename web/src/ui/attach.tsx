@@ -1,4 +1,4 @@
-import { createContext, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { AnimatePresence, motion, useMotionValueEvent, useTransform } from 'motion/react'
 import { createPortal } from 'react-dom'
 import { Dialog } from 'radix-ui'
@@ -50,6 +50,8 @@ export function ThumbImg({ id, ...rest }: { id: string } & Omit<React.ImgHTMLAtt
   return <img ref={ref} src={tier === null ? undefined : thumbUrl(id, tier)} {...rest} />
 }
 export const downloadUrl = (id: string) => `${fileUrl(id)}?download=1`
+// NoDownloadContext：为真时不显示下载按钮（R-365：资源库分享关了下载时的访客页），看图、播放照常。
+export const NoDownloadContext = createContext(false)
 export { isVideo }
 
 // 正在上传的附件数：没传完时不让发送（否则发出去的留言里没有这个附件）。
@@ -271,6 +273,7 @@ function FileIconBox({ f, className }: { f: { name: string; mime: string }; clas
 // FileChip：非图片附件的文件块——图标、文件名、类型与大小；文本类点了在看图里看内容，其它点了下载。
 // 高度与缩略图一致（sm 48px / md 64px），一行里和图片排在一起不跳。
 export function FileChip({ f, onRemove, size = 'md', group }: { f: FileRef; onRemove?: () => void; size?: 'sm' | 'md'; group?: FileRef[] }) {
+  const noDl = useContext(NoDownloadContext)
   const meta = [typeLabel(f), fmtSize(f.size)].filter(Boolean).join(' · ')
   const body = (
     <>
@@ -290,6 +293,10 @@ export function FileChip({ f, onRemove, size = 'md', group }: { f: FileRef; onRe
             {body}
           </button>
         </Lightbox>
+      ) : noDl ? (
+        <span className={cls} title={f.name}>
+          {body}
+        </span>
       ) : (
         <a href={downloadUrl(f.id)} download={f.name} className={cls} title={t.attach.downloadOf(f.name)} onClick={(e) => e.stopPropagation()}>
           {body}
@@ -387,6 +394,7 @@ export type ViewShot = FileRef & { before?: FileRef | null; cites?: Cite[] | nul
 // 一次手势最多走一页：触控板的惯性滚动到了一页的边界就直接落定，不会连翻。
 // focus：打开时直接放大到这张图的第几个框（验收点旁边的证据小图点进来时）。
 export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; group?: ViewShot[]; focus?: number | null; children: ReactNode }) {
+  const noDl = useContext(NoDownloadContext)
   const [open, setOpen] = useState(false)
   const stop = (e: SyntheticEvent) => e.stopPropagation()
   // 同组里能看的（图片、录屏）；不在组里就只看这一张
@@ -524,9 +532,11 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
                       <span className={cx(seg, 'block', !hideBoxes ? 'bg-white text-black' : 'text-white/80 hover:text-white')}>{t.viewer.boxes}</span>
                     </button>
                   )}
-                  <a href={downloadUrl(cur.id)} download={cur.name} aria-label={t.attach.download} title={t.attach.download} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/12 text-white transition hover:bg-white/25 active:scale-95">
-                    <Download className="size-[17px]" />
-                  </a>
+                  {!noDl && (
+                    <a href={downloadUrl(cur.id)} download={cur.name} aria-label={t.attach.download} title={t.attach.download} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/12 text-white transition hover:bg-white/25 active:scale-95">
+                      <Download className="size-[17px]" />
+                    </a>
+                  )}
                   <Dialog.Close asChild>
                     <button aria-label={t.common.close} className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/12 text-white transition hover:bg-white/25 active:scale-95">
                       <X className="size-[18px]" />

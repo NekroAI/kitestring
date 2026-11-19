@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { ChevronRight, Radio } from 'lucide-react'
+import { ChevronRight, Images, Radio } from 'lucide-react'
 import { ApiError, type Decision, type Evidence, type Requirement } from '../api/client'
 import { t } from '../i18n'
 import { actKey, guestPath, statusBar } from '../lib/guest'
@@ -215,6 +215,14 @@ export function OverviewView({ ov, token, reqs, fresh }: { ov: Overview; token: 
               {t.guest.reqTotal(total)}：{bar.map(([k, n]) => `${t.reqStatus[k] ?? k} ${n}`).join(sep)}
             </p>
           </>
+        )}
+        {ov.assets > 0 && (
+          <Link to={guestPath(token, 'assets')} data-guest-assets-link="" className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[13px] text-fg-2 transition hover:border-line-strong hover:text-fg">
+            <Images className="size-4 text-accent" />
+            {t.guest.assets}
+            <span className="text-fg-3 tabular">{t.asset.total(ov.assets)}</span>
+            <ChevronRight className="size-3.5 text-fg-3" />
+          </Link>
         )}
       </header>
       <div className="grid gap-6 px-4 py-5 sm:px-6 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] xl:gap-0 xl:p-0">

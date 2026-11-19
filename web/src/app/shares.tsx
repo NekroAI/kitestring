@@ -1,13 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, Lock, Milestone, Plus, Share2, SquareTerminal, X } from 'lucide-react'
+import { Box as BoxIcon, ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, Images, Lock, Milestone, Plus, Share2, SquareTerminal, Tag, X } from 'lucide-react'
 import { api, errMsg, unwrap } from '../api/client'
 import { useProjects, useShareCandidates, type Share, type ShareLinkView } from '../api/queries'
 import { t } from '../i18n'
 import { copyText, cx, relTime, useNow, usePref } from '../lib/util'
-import { buildTree, counts, expiryAt, graph, keyOf, linkURL, missing, resolve, setAuto, tidy, toggle, type ExpiryChoice, type ShareItem, type ShareKind, type ShareNode, type ShareTree } from '../lib/share'
+import { buildTree, counts, expiryAt, graph, isAssetKind, keyOf, linkURL, missing, resolve, setAuto, tidy, toggle, type ExpiryChoice, type ShareItem, type ShareKind, type ShareNode, type ShareTree } from '../lib/share'
 import { Button, Card, Empty, Input, Segmented, Skeleton, Switch, Tip } from '../ui/base'
+import { ThumbImg } from '../ui/attach'
 import { Menu, Modal, useConfirm } from '../ui/overlay'
 import { PlanGlyph, ReqGlyph, RefChip } from '../ui/refmark'
 import { RoleTag } from '../ui/marks'
@@ -31,8 +32,8 @@ export function dayText(iso?: string | null) {
 const pad = (n: number) => String(n).padStart(2, '0')
 const isoDay = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
-function countParts(c: { plans: number; stages?: number; reqs: number; sessions: number }) {
-  return [c.plans && t.share.plans(c.plans), c.stages && t.share.stages(c.stages), c.reqs && t.share.reqs(c.reqs), c.sessions && t.share.sessions(c.sessions)].filter(Boolean) as string[]
+function countParts(c: { plans: number; stages?: number; reqs: number; sessions: number; assets?: number }) {
+  return [c.plans && t.share.plans(c.plans), c.stages && t.share.stages(c.stages), c.reqs && t.share.reqs(c.reqs), c.sessions && t.share.sessions(c.sessions), c.assets && t.share.assets(c.assets)].filter(Boolean) as string[]
 }
 
 const statusPill: Record<string, string> = { active: 'bg-run-soft text-run', expired: 'bg-idle-soft text-idle', revoked: 'bg-idle-soft text-idle' }
@@ -51,6 +52,22 @@ export function BackLink({ to, label, className }: { to: string; label: string; 
 
 // NodeLabel：勾选列表、内容清单里的一项：印记 + 编号 + 标题；阶段写「阶段 n」，会话写身份 + 名称。
 function NodeLabel({ n }: { n: ShareNode }) {
+  // 资源库（R-365）：批次、类别写名称；素材带封面、编号和 key
+  if (n.kind === 'asset_batch' || n.kind === 'asset_cat')
+    return (
+      <>
+        {n.kind === 'asset_batch' ? <Images className="size-3.5 shrink-0 text-accent" /> : <Tag className="size-3.5 shrink-0 text-accent" />}
+        <span className="min-w-0 truncate">{n.kind === 'asset_batch' ? t.share.assetBatch(n.title) : t.share.assetCat(n.title)}</span>
+      </>
+    )
+  if (n.kind === 'asset')
+    return (
+      <>
+        {n.cover ? <ThumbImg id={n.cover} alt="" loading="lazy" className="size-6 shrink-0 rounded border border-line object-cover" /> : <BoxIcon className="size-3.5 shrink-0 text-fg-3" />}
+        <span className="shrink-0 font-mono text-[11.5px] text-fg-3">{n.code}</span>
+        <span className="min-w-0 truncate">{n.title}</span>
+      </>
+    )
   if (n.kind === 'session')
     return (
       <>
@@ -70,14 +87,18 @@ function NodeLabel({ n }: { n: ShareNode }) {
 
 // ---------- 关系图（只读） ----------
 
-const graphX: Record<ShareKind, number> = { plan: 4, stage: 84, req: 168, session: 252 }
-const graphW: Record<ShareKind, number> = { plan: 64, stage: 68, req: 68, session: 80 }
+const graphX: Record<ShareKind, number> = { plan: 4, stage: 84, req: 168, session: 252, asset_batch: 0, asset_cat: 0, asset: 0 } // 资源库不画进关系图
+const graphW: Record<ShareKind, number> = { plan: 64, stage: 68, req: 68, session: 80, asset_batch: 0, asset_cat: 0, asset: 0 }
 const reqStroke: Record<string, string> = { done: 'var(--run)', draft: 'var(--fg-3)', review: 'var(--reply)', in_progress: 'var(--accent)', blocked: 'var(--wait)', shelved: 'var(--idle)' }
 
 export function ShareGraph({ tree, inc }: { tree: ShareTree; inc: Set<string> }) {
   const { cols, edges } = useMemo(() => graph(tree, inc), [tree, inc])
   const rows = Math.max(0, ...cols.map((c) => c.keys.length))
-  if (!rows) return <div className="py-8 text-center text-sm text-fg-3">{t.share.picked}</div>
+  if (!rows) {
+    // 只挂了资源库的内容：不画关系图，只说一句（R-365）
+    if ([...inc].some((k) => isAssetKind(k.slice(0, k.indexOf('|'))))) return <p className="py-2 text-xs text-fg-3">{t.share.assetsNote}</p>
+    return <div className="py-8 text-center text-sm text-fg-3">{t.share.picked}</div>
+  }
   const H = 26 + rows * 30
   const pos = new Map<string, { x: number; y: number; w: number }>()
   for (const c of cols) {
@@ -355,6 +376,15 @@ function LinkRows({ x }: { x: Share }) {
   const [name, setName] = useState('')
   const [busy, wrap] = useBusy()
   const copy = async (l: ShareLinkView) => (await copyText(linkURL(l, location.origin))) && toast.success(t.common.copied)
+  const setPerm = async (l: ShareLinkView, perm: 'view' | 'comment' | 'upload') => {
+    if (perm === l.perm) return
+    try {
+      await unwrap(api.PUT('/api/shares/{id}/links/{link}', { params: { path: { id: x.id, link: l.id } }, body: { perm } }))
+      toast(t.share.permSaved(t.share.perm[perm]))
+    } catch (e) {
+      toast.error(errMsg(e, shareFails.perm))
+    }
+  }
   const setRevoked = async (l: ShareLinkView, revoked: boolean) => {
     try {
       await unwrap(api.PUT('/api/shares/{id}/links/{link}', { params: { path: { id: x.id, link: l.id } }, body: { revoked } }))
@@ -382,8 +412,10 @@ function LinkRows({ x }: { x: Share }) {
             <thead>
               <tr className="text-left text-xs text-fg-3">
                 <th className="px-2 py-1.5 font-medium">{t.share.colGuest}</th>
+                <th className="px-2 py-1.5 font-medium">{t.share.colPerm}</th>
                 <th className="px-2 py-1.5 font-medium">{t.share.colLast}</th>
                 <th className="px-2 py-1.5 font-medium max-sm:hidden">{t.share.colVisits}</th>
+                <th className="px-2 py-1.5 font-medium max-sm:hidden">{t.share.colDownloads}</th>
                 <th />
               </tr>
             </thead>
@@ -396,8 +428,25 @@ function LinkRows({ x }: { x: Share }) {
                       {l.revoked_at && <StatusPill status="revoked" />}
                     </span>
                   </td>
+                  <td className="px-1 py-1.5 whitespace-nowrap" data-link-perm={l.perm}>
+                    {l.revoked_at ? (
+                      <span className="px-1 text-fg-3">{t.share.perm[l.perm]}</span>
+                    ) : (
+                      <Menu
+                        align="start"
+                        trigger={
+                          <Button size="sm" variant="ghost" className="text-fg-2">
+                            {t.share.perm[l.perm]}
+                            <ChevronDown className="size-3.5 text-fg-3" />
+                          </Button>
+                        }
+                        items={(['view', 'comment', 'upload'] as const).map((p) => ({ label: t.share.perm[p], hint: t.share.permTip[p], checked: l.perm === p, onSelect: () => void setPerm(l, p) }))}
+                      />
+                    )}
+                  </td>
                   <td className="px-2 py-2 whitespace-nowrap tabular text-fg-3">{l.last_visit_at ? relTime(l.last_visit_at, now) : t.share.never}</td>
                   <td className="px-2 py-2 whitespace-nowrap tabular text-fg-3 max-sm:hidden">{t.share.visits(l.visits)}</td>
+                  <td className="px-2 py-2 whitespace-nowrap tabular text-fg-3 max-sm:hidden">{t.share.visits(l.downloads)}</td>
                   <td className="px-1 py-1.5 text-right whitespace-nowrap">
                     {l.revoked_at ? (
                       <Button size="sm" variant="ghost" onClick={() => void setRevoked(l, false)}>
@@ -465,6 +514,7 @@ function ItemList({ x, tree }: { x: Share; tree: ShareTree }) {
               </span>
             )}
             {it.auto && it.kind !== 'session' && <span className="shrink-0 rounded-full bg-run-soft px-2 text-[11.5px] leading-5 font-medium text-run">{t.share.auto}</span>}
+            {it.kind === 'asset' && !it.auto && !!it.cap && <span className="shrink-0 rounded-full bg-idle-soft px-2 font-mono text-[11.5px] leading-5 text-fg-3">{t.share.capTo(it.cap)}</span>}
           </div>
         )
       })}
@@ -491,6 +541,12 @@ export function ShareDetail({ x }: { x: Share }) {
             <span>{x.expires_at ? (on ? t.share.until(dayText(x.expires_at)) : t.share.expiredAt(dayText(x.expires_at))) : t.share.forever}</span>
             <span aria-hidden>·</span>
             <span>{x.has_password ? t.share.locked : t.share.noPassword}</span>
+            {x.scope.assets > 0 && (
+              <>
+                <span aria-hidden>·</span>
+                <span>{x.allow_download ? t.share.download : t.share.downloadOff}</span>
+              </>
+            )}
             <span aria-hidden>·</span>
             <span>{t.share.createdAt(dayText(x.created_at))}</span>
           </div>
@@ -532,6 +588,7 @@ export function ShareDetail({ x }: { x: Share }) {
           <ItemList x={x} tree={tree} />
           <div className="mt-4 overflow-x-auto border-t border-line pt-4">
             <ShareGraph tree={tree} inc={inc} />
+            {x.scope.assets > 0 && x.scope.nodes.some((n) => !isAssetKind(n.kind)) && <p className="mt-2 text-xs text-fg-3">{t.share.assetsNote}</p>}
           </div>
         </Card>
       </div>
@@ -551,6 +608,7 @@ export type ShareForm = {
   date: string
   items: ShareItem[]
   links: string[]
+  download: boolean // 允许下载素材原文件（R-365），默认关
 }
 
 // normRefs：预选时写的是编号（P-x / R-x），勾选列表到了以后换成 ID，和后端返回的挂载项一致。
@@ -597,10 +655,11 @@ function TreePicker({ tree, items, onChange, preset }: { tree: ShareTree; items:
       if (any) out.add(k)
       return any
     }
-    for (const k of [...tree.plans, ...tree.loose]) walk(k)
+    for (const k of [...tree.plans, ...tree.loose, ...assetTops]) walk(k)
     return out
-  }, [needle, tree])
+  }, [needle, tree]) // eslint-disable-line react-hooks/exhaustive-deps
   const loose = tree.loose.filter((k) => !closedReq(tree.nodes.get(k)?.status) || r.inc.has(k))
+  const assetTops = [...tree.batches, ...tree.cats, ...tree.looseAssets]
   const closedN = tree.loose.length - loose.length
 
   const row = (k: string, depth: number, via: string): ReactNode => {
@@ -633,9 +692,9 @@ function TreePicker({ tree, items, onChange, preset }: { tree: ShareTree; items:
           </label>
           {cut > 0 && <span className="shrink-0 text-[11.5px] text-wait">{t.share.cut(cut)}</span>}
           {on && n.kind !== 'session' && (
-            <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-3">
+            <span className="flex shrink-0 items-center gap-1.5 text-xs text-fg-3" title={n.kind === 'asset' ? t.share.autoVersions : undefined}>
               <span className="max-sm:hidden">{t.share.auto}</span>
-              <span aria-label={t.share.autoAria} className="contents">
+              <span aria-label={n.kind === 'asset' ? t.share.autoVersions : t.share.autoAria} className="contents">
                 <Switch checked={!!r.auto.get(k)} onChange={(v) => onChange(setAuto(tree, items, k, v))} />
               </span>
             </span>
@@ -647,6 +706,12 @@ function TreePicker({ tree, items, onChange, preset }: { tree: ShareTree; items:
   }
 
   const plans = tree.plans.map((k) => row(k, 0, ''))
+  // 资源库（R-365）：批次、类别、批次和类别都不在里面的素材，各成一组
+  const assetGroups: [string, string[]][] = [
+    [t.share.groupBatches, tree.batches],
+    [t.share.groupCats, tree.cats],
+    [t.share.groupAssets, tree.looseAssets],
+  ]
   const looseRows = (hit ? tree.loose : showClosed ? tree.loose : loose).map((k) => row(k, 0, ''))
   const none = hit && !hit.size
   return (
@@ -659,6 +724,14 @@ function TreePicker({ tree, items, onChange, preset }: { tree: ShareTree; items:
         {plans}
         {tree.loose.length > 0 && (!hit || tree.loose.some((k) => hit.has(k))) && <div className="mx-1 mt-3 mb-1 text-xs text-fg-3">{t.share.groupLoose}</div>}
         {looseRows}
+        {assetGroups.map(([label, keys]) =>
+          keys.length > 0 && (!hit || keys.some((k) => hit.has(k))) ? (
+            <div key={label} className="contents">
+              <div className="mx-1 mt-3 mb-1 text-xs text-fg-3">{label}</div>
+              {keys.map((k) => row(k, 0, ''))}
+            </div>
+          ) : null,
+        )}
         {!hit && closedN > 0 && (
           <button type="button" onClick={() => setShowClosed(!showClosed)} aria-expanded={showClosed} className="mx-1 mt-1 flex items-center gap-1.5 self-start text-[13px] text-fg-3 hover:text-fg-2">
             <ChevronDown className={cx('size-3.5 transition-transform', !showClosed && '-rotate-90')} />
@@ -703,7 +776,7 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
         if (!share) {
           const v = await unwrap(
             api.POST('/api/shares', {
-              body: { name: f.name.trim(), project_id: f.project || undefined, password: f.password || undefined, expires_at: at?.toISOString(), items: list, links: f.links },
+              body: { name: f.name.trim(), project_id: f.project || undefined, password: f.password || undefined, expires_at: at?.toISOString(), items: list, links: f.links, allow_download: f.download || undefined },
             }),
           )
           h.drop()
@@ -719,6 +792,7 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
                 password: f.clearPw ? '' : f.password || undefined,
                 ...(expChanged ? (at ? { expires_at: at.toISOString() } : { forever: true }) : {}),
                 items: list,
+                allow_download: f.download,
               },
             }),
           )
@@ -779,6 +853,7 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
             </summary>
             <div className="mt-3 overflow-x-auto">
               <ShareGraph tree={tree} inc={r.inc} />
+              {c.assets > 0 && [...r.inc].some((k) => !isAssetKind(k.slice(0, k.indexOf('|')))) && <p className="mt-2 text-xs text-fg-3">{t.share.assetsNote}</p>}
             </div>
           </details>
         </div>
@@ -814,6 +889,15 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
               </div>
             </div>
             <ExpiryPicker exp={f.exp} date={f.date} onChange={(exp, date) => h.set({ exp, date })} />
+            {c.assets > 0 && (
+              <div data-share-download="">
+                <label className="flex items-center gap-3">
+                  <span className="flex-1 text-[13px] font-medium text-fg-2">{t.share.download}</span>
+                  <Switch checked={f.download} onChange={(v) => h.set({ download: v })} />
+                </label>
+                <p className="mt-1.5 text-xs leading-relaxed text-fg-3">{t.share.downloadHint}</p>
+              </div>
+            )}
           </Card>
           {!share && (
             <Card className="p-4">
@@ -874,7 +958,7 @@ export function ShareEditor({ share, init, draftKey, preset }: { share?: Share; 
 
 // 新建时的初始值：有效期默认 30 天
 export function newForm(project: string, items: ShareItem[]): ShareForm {
-  return { project, name: '', password: '', clearPw: false, exp: '30', date: isoDay(new Date(Date.now() + 30 * 86_400_000)), items, links: [] }
+  return { project, name: '', password: '', clearPw: false, exp: '30', date: isoDay(new Date(Date.now() + 30 * 86_400_000)), items, links: [], download: false }
 }
 
 export function editForm(x: Share): ShareForm {
@@ -885,8 +969,9 @@ export function editForm(x: Share): ShareForm {
     clearPw: false,
     exp: x.expires_at ? 'custom' : 'forever',
     date: x.expires_at ? isoDay(new Date(x.expires_at)) : isoDay(new Date(Date.now() + 30 * 86_400_000)),
-    items: x.items.map((it) => ({ kind: it.kind, ref: it.ref, auto: it.auto, excluded: it.excluded })),
+    items: x.items.map((it) => ({ kind: it.kind, ref: it.ref, auto: it.auto, excluded: it.excluded, cap: it.cap })),
     links: [],
+    download: x.allow_download,
   }
 }
 

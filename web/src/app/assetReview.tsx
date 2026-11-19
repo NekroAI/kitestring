@@ -139,16 +139,25 @@ export function ReviewHistory({ reviews }: { reviews: Review[] }) {
       <ol className="space-y-2">
         {reviews.map((r) => {
           const verdict = t.asset.status[r.verdict]
+          const guest = r.author?.kind === 'guest' // 访客的意见（R-365）：由你放入，写明经由的分享
+          const head = guest ? (r.verdict === 'note' ? R.noted(authorName(r.author)) : R.reworkBy(authorName(r.author))) : R.did(authorName(r.author), verdict)
           return (
-            <li key={r.id} className="rounded-xl border border-line px-3 py-2.5 text-[13px]">
+            <li key={r.id} className="rounded-xl border border-line px-3 py-2.5 text-[13px]" data-review-author={r.author?.kind}>
               <div className="flex min-w-0 items-center gap-2">
-                <span className={cx('size-1.5 shrink-0 rounded-full', r.verdict === 'approved' ? 'bg-run' : 'bg-danger')} />
+                <span className={cx('size-1.5 shrink-0 rounded-full', r.verdict === 'approved' ? 'bg-run' : r.verdict === 'note' ? 'bg-fg-3' : 'bg-danger')} />
                 <span className="min-w-0 flex-1 truncate text-fg">
-                  {R.did(authorName(r.author), verdict)} <b className="font-mono font-medium">{t.asset.ver(r.version)}</b>
+                  {head} <b className="font-mono font-medium">{t.asset.ver(r.version)}</b>
                 </span>
                 <span className="shrink-0 text-xs text-fg-3">{relTime(r.created_at, now)}</span>
               </div>
+              {guest && r.via && <div className="mt-0.5 truncate text-xs text-fg-3">{R.via(r.via)}</div>}
               {r.comment && <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fg-2">{r.comment}</p>}
+              {r.addend && (
+                <p className="mt-1.5 border-t border-dashed border-line pt-1.5 text-[13px] whitespace-pre-wrap text-fg-2">
+                  <b className="mr-1 font-semibold">{R.addend}：</b>
+                  {r.addend}
+                </p>
+              )}
               {(r.files?.length ?? 0) > 0 && (
                 <div className="mt-2">
                   <Thumbs files={r.files} size="sm" />

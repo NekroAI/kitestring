@@ -131,13 +131,14 @@ export function buildAsks(wb: WB): Ask[] {
 // guestAsk：一条待收的访客留言（R-281）。标题是所属需求（挂在阶段上的写计划和阶段）。
 export function guestAsk(c: ShareComment): Ask {
   const stage = c.target_kind === 'stage'
+  const asset = c.target_kind === 'asset' // 资源库（R-365）：标题写素材，没有需求编号
   return {
     key: `v:${c.id}`,
     kind: 'guest',
-    title: stage ? c.target_title || c.plan_title || '' : c.requirement_title || '',
+    title: asset ? `${c.target_code ?? ''}「${c.asset_key ?? ''}」` : stage ? c.target_title || c.plan_title || '' : c.requirement_title || '',
     at: c.created_at,
     counted: true,
-    code: stage ? c.target_code : c.requirement_code,
+    code: asset ? undefined : stage ? c.target_code : c.requirement_code,
     gc: c,
     projectId: c.project_id || '',
     projectName: '',
@@ -145,10 +146,11 @@ export function guestAsk(c: ShareComment): Ask {
 }
 
 // guestTarget：访客留言针对的对象写成一个短标签（挂在需求本身时为空）。
-export function guestTarget(c: { target_kind: string; target_code?: string; target_seq?: number; target_title?: string }) {
+export function guestTarget(c: { target_kind: string; target_code?: string; target_seq?: number; target_title?: string; asset_version?: number }) {
   if (c.target_kind === 'dec') return c.target_code ?? ''
   if (c.target_kind === 'evidence') return t.share.inbox.onEvidence(c.target_title ?? '')
   if (c.target_kind === 'stage') return t.share.inbox.onStage(c.target_code ?? '', c.target_seq ?? 0)
+  if (c.target_kind === 'asset') return t.asset.ver(c.asset_version ?? 0)
   return ''
 }
 
@@ -326,7 +328,7 @@ function statusLine(a: Ask, now: number): React.ReactNode {
       return (
         <>
           {on && <span className="mr-1.5 font-mono text-[11.5px] text-fg-3">{on}</span>}
-          {firstLine(a.gc?.text)}
+          {a.gc?.file ? [a.gc.file.name, firstLine(a.gc.text)].filter(Boolean).join(t.common.sep) : firstLine(a.gc?.text)}
         </>
       )
     }

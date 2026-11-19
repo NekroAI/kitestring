@@ -3,8 +3,12 @@
 // - 明确挂上的项按自己的「包含以后新增的」（auto）；上级开着 auto 时，下面现在和以后的项都算进来，并带着 auto 往下传；
 // - 单独取消的项（excluded）连同只经由它带进来的下级都不算，上级的 auto 不会把它带回来；
 // - 会话按会话键算：在一条需求下取消，所有需求下都不出现。
+// 资源库（R-365）：批次、类别和计划一样是最上层，下面是素材；一条素材同时挂在它的批次和类别下（和会话挂在几条需求下一样）。
+// 素材自己的「包含以后新增的」指以后的新版本：没开时只给到挂上时的那一版。
 
-export type ShareKind = 'plan' | 'stage' | 'req' | 'session'
+export type ShareKind = 'plan' | 'stage' | 'req' | 'session' | 'asset_batch' | 'asset_cat' | 'asset'
+export const ASSET_KINDS: ShareKind[] = ['asset_batch', 'asset_cat', 'asset']
+export const isAssetKind = (k: string) => (ASSET_KINDS as string[]).includes(k)
 
 export type ShareNode = {
   kind: ShareKind
@@ -15,9 +19,11 @@ export type ShareNode = {
   status?: string
   role?: string
   parents?: string[] | null
+  cover?: string
+  version?: number
 }
 
-export type ShareItem = { kind: ShareKind; ref: string; auto: boolean; excluded: boolean }
+export type ShareItem = { kind: ShareKind; ref: string; auto: boolean; excluded: boolean; cap?: number }
 
 export const keyOf = (kind: string, ref: string) => `${kind}|${ref}`
 const splitKey = (key: string) => {
@@ -25,7 +31,8 @@ const splitKey = (key: string) => {
   return { kind: key.slice(0, i) as ShareKind, ref: key.slice(i + 1) }
 }
 
-const upKind: Record<ShareKind, ShareKind | null> = { plan: null, stage: 'plan', req: 'stage', session: 'req' }
+// 素材的上级由后端写成完整的键（asset_batch|… / asset_cat|…），这里不用推
+const upKind: Record<ShareKind, ShareKind | null> = { plan: null, stage: 'plan', req: 'stage', session: 'req', asset_batch: null, asset_cat: null, asset: null }
 
 export type ShareTree = {
   nodes: Map<string, ShareNode>
@@ -34,11 +41,14 @@ export type ShareTree = {
   plans: string[]
   loose: string[] // 不在计划里的需求
   byCode: Map<string, string> // P-x / R-x → 键
+  batches: string[] // 资源库的批次
+  cats: string[] // 资源库的类别
+  looseAssets: string[] // 批次、类别都不在里面的素材
 }
 
 // buildTree 把后端给的节点列表（parents 连上级）排成树。
 export function buildTree(list: ShareNode[]): ShareTree {
-  const tr: ShareTree = { nodes: new Map(), kids: new Map(), ups: new Map(), plans: [], loose: [], byCode: new Map() }
+  const tr: ShareTree = { nodes: new Map(), kids: new Map(), ups: new Map(), plans: [], loose: [], byCode: new Map(), batches: [], cats: [], looseAssets: [] }
   for (const n of list) {
     const k = keyOf(n.kind, n.ref)
     tr.nodes.set(k, n)
@@ -47,11 +57,14 @@ export function buildTree(list: ShareNode[]): ShareTree {
   for (const n of list) {
     const k = keyOf(n.kind, n.ref)
     const uk = upKind[n.kind]
-    const ups = uk ? (n.parents ?? []).map((p) => keyOf(uk, p)).filter((p) => tr.nodes.has(p)) : []
+    const ups = (n.kind === 'asset' ? (n.parents ?? []) : uk ? (n.parents ?? []).map((p) => keyOf(uk, p)) : []).filter((p) => tr.nodes.has(p))
     tr.ups.set(k, ups)
     for (const p of ups) tr.kids.set(p, [...(tr.kids.get(p) ?? []), k])
     if (n.kind === 'plan') tr.plans.push(k)
     else if (n.kind === 'req' && !ups.length) tr.loose.push(k)
+    else if (n.kind === 'asset_batch') tr.batches.push(k)
+    else if (n.kind === 'asset_cat') tr.cats.push(k)
+    else if (n.kind === 'asset' && !ups.length) tr.looseAssets.push(k)
   }
   return tr
 }
@@ -83,14 +96,16 @@ export function resolve(tr: ShareTree, items: ShareItem[]): Resolved {
     return next
   }
   const plans: string[] = []
+  const tops: string[] = [] // 资源库的批次、类别
   for (const it of items) {
     const k = keyOf(it.kind, it.ref)
-    if (it.kind !== 'plan' || it.excluded || !tr.nodes.has(k)) continue
+    if ((it.kind !== 'plan' && it.kind !== 'asset_batch' && it.kind !== 'asset_cat') || it.excluded || !tr.nodes.has(k)) continue
     inc.add(k)
     auto.set(k, it.auto)
-    if (it.auto) plans.push(k)
+    if (it.auto) (it.kind === 'plan' ? plans : tops).push(k)
   }
   level('session', level('req', level('stage', plans)))
+  level('asset', tops)
   return { inc, auto }
 }
 
@@ -122,7 +137,7 @@ export function check(tr: ShareTree, items: ShareItem[], key: string): ShareItem
   if (r.inc.has(key)) return items
   const it = rows.get(key)
   if (inherited(tr, r, key)) rows.delete(key)
-  else rows.set(key, it ? { ...it, excluded: false } : mk(key, splitKey(key).kind === 'plan'))
+  else rows.set(key, it ? { ...it, excluded: false } : mk(key, splitKey(key).kind === 'plan' || isAssetKind(splitKey(key).kind)))
   const r2 = resolve(tr, toList(rows))
   const fill = (k: string) => {
     if (r2.auto.get(k)) return // 开着 auto：下面的自动带上
@@ -145,7 +160,8 @@ export function uncheck(tr: ShareTree, items: ShareItem[], key: string): ShareIt
   else rows.delete(key)
   for (const d of sub) {
     if (!rows.has(d)) continue
-    if (splitKey(d).kind === 'session' && (tr.ups.get(d) ?? []).some((p) => p !== key && !sub.has(p) && r.inc.has(p))) continue
+    const dk = splitKey(d).kind
+    if ((dk === 'session' || dk === 'asset') && (tr.ups.get(d) ?? []).some((p) => p !== key && !sub.has(p) && r.inc.has(p))) continue
     rows.delete(d)
   }
   // 还被别的路径带进来（例如同一会话挂在另一条开着 auto 的需求下）：明确记成单独取消
@@ -185,16 +201,17 @@ export function missing(tr: ShareTree, r: Resolved, key: string): number {
   return n
 }
 
-export type ShareCounts = { plans: number; stages: number; reqs: number; sessions: number }
+export type ShareCounts = { plans: number; stages: number; reqs: number; sessions: number; assets: number }
 export function counts(tr: ShareTree, r: Resolved): ShareCounts {
-  const c: ShareCounts = { plans: 0, stages: 0, reqs: 0, sessions: 0 }
+  const c: ShareCounts = { plans: 0, stages: 0, reqs: 0, sessions: 0, assets: 0 }
   for (const k of r.inc) {
     const kind = splitKey(k).kind
     if (!tr.nodes.has(k)) continue
     if (kind === 'plan') c.plans++
     else if (kind === 'stage') c.stages++
     else if (kind === 'req') c.reqs++
-    else c.sessions++
+    else if (kind === 'session') c.sessions++
+    else if (kind === 'asset') c.assets++
   }
   return c
 }
@@ -225,7 +242,7 @@ export function graph(tr: ShareTree, inc: Set<string>): { cols: GraphCol[]; edge
     }
   }
   for (const k of inc) {
-    if (!tr.nodes.has(k)) continue
+    if (!tr.nodes.has(k) || isAssetKind(splitKey(k).kind)) continue // 资源库不画进关系图
     if (splitKey(k).kind === 'session') {
       for (const p of tr.ups.get(k) ?? []) if (inc.has(p)) edges.push({ from: p, to: k, direct: true })
       continue

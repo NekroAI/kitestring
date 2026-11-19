@@ -30,15 +30,20 @@ const (
 // AssetAuthor 是审核意见的作者，与提交者同一种表示（user 你 / session 会话 / guest 分享页访客）。
 type AssetAuthor = AssetSubmitter
 
+// AssetNote 是只送意见、不改状态的一条（R-365：放入访客的意见时由你选「只送意见」）。
+const AssetNote = "note"
+
 // AssetReview 是一次审核。
 type AssetReview struct {
 	ID       string      `json:"id"`
 	AssetID  string      `json:"asset_id"`
-	Version  int         `json:"version" doc:"审核时的最新版本"`
-	Verdict  string      `json:"verdict" enum:"approved,rework" doc:"approved 通过 / rework 返工"`
+	Version  int         `json:"version" doc:"审核时的最新版本；访客的意见是访客看的那一版"`
+	Verdict  string      `json:"verdict" enum:"approved,rework,note" doc:"approved 通过 / rework 返工 / note 只送意见（访客的意见，不改状态）"`
 	Comment  string      `json:"comment"`
 	Files    []FileRef   `json:"files"`
-	Author   AssetAuthor `json:"author" doc:"写意见的人：user 你 / session 会话 / guest 分享页访客（R-365 预留）"`
+	Author   AssetAuthor `json:"author" doc:"写意见的人：user 你 / session 会话 / guest 分享页访客（由你放入，R-365）"`
+	Via      string      `json:"via,omitempty" doc:"访客的意见：经由的分享名称"`
+	Addend   string      `json:"addend,omitempty" doc:"访客的意见：你放入时写的附言"`
 	SentTo   string      `json:"sent_to,omitempty" doc:"意见送给的会话键；空 = 没有可送达的会话"`
 	SentAs   string      `json:"sent_as,omitempty" enum:"submitter,pm," doc:"submitter 提交素材的会话 / pm 提交的会话已结束，转给同项目主调度"`
 	SentName string      `json:"sent_name,omitempty" doc:"收件会话当时的标题"`
@@ -58,6 +63,10 @@ type NewAssetReview struct {
 	Comment string
 	Files   []FileRef
 	Author  AssetAuthor
+	// 访客的意见（R-365）：由你放入；Verdict 可以是 rework（改返工；本来就是返工时只追加意见）或 note（只送意见、不改状态）
+	Via      string
+	Addend   string
+	Version0 int // 访客看的那一版，记在审核记录上
 }
 
 // ErrAssetStale 是审核时素材已有新版本或状态已变。
@@ -66,8 +75,12 @@ var ErrAssetStale = errors.New("素材已变化")
 // ReviewAsset 记一次审核并改素材状态：返工必须写意见或附图；状态变化要在 AssetCanMove 里。
 func (s *Store) ReviewAsset(ctx context.Context, n NewAssetReview) (AssetReview, Asset, error) {
 	var r AssetReview
-	if n.Verdict != AssetApproved && n.Verdict != AssetRework {
+	guest := n.Author.Kind == SubmitterGuest
+	if n.Verdict != AssetApproved && n.Verdict != AssetRework && !(guest && n.Verdict == AssetNote) {
 		return r, Asset{}, fmt.Errorf("审核结论只能是 approved（通过）或 rework（返工）：%s", n.Verdict)
+	}
+	if guest && n.Verdict == AssetApproved {
+		return r, Asset{}, errors.New("访客的意见不能作为通过")
 	}
 	n.Comment = strings.TrimSpace(n.Comment)
 	if n.Verdict == AssetRework && n.Comment == "" && len(n.Files) == 0 {
@@ -90,25 +103,33 @@ func (s *Store) ReviewAsset(ctx context.Context, n NewAssetReview) (AssetReview,
 		if (n.From != "" && cur != n.From) || (n.Version != 0 && version != n.Version) {
 			return fmt.Errorf("%w：状态已变化，刷新后查看", ErrAssetStale)
 		}
-		if !AssetCanMove(cur, n.Verdict) {
+		// 访客的意见：返工时任何状态都可以改成返工（已是返工只追加意见）；只送意见不改状态
+		move := n.Verdict != AssetNote && !(guest && cur == AssetRework)
+		if move && !guest && !AssetCanMove(cur, n.Verdict) {
 			return fmt.Errorf("%w：%s → %s", ErrAssetMove, cur, n.Verdict)
 		}
-		if _, err := t.ExecContext(ctx, `UPDATE assets SET status = ?, status_at = ?, updated_at = ? WHERE id = ?`, n.Verdict, at, at, d.ID); err != nil {
-			return err
+		if move {
+			if _, err := t.ExecContext(ctx, `UPDATE assets SET status = ?, status_at = ?, updated_at = ? WHERE id = ?`, n.Verdict, at, at, d.ID); err != nil {
+				return err
+			}
+			d.Status = n.Verdict
 		}
-		r = AssetReview{ID: protocol.NewID(), AssetID: d.ID, Version: version, Verdict: n.Verdict, Comment: n.Comment, Files: n.Files, Author: n.Author}
+		v := version
+		if guest && n.Version0 > 0 {
+			v = n.Version0
+		}
+		r = AssetReview{ID: protocol.NewID(), AssetID: d.ID, Version: v, Verdict: n.Verdict, Comment: n.Comment, Files: n.Files, Author: n.Author, Via: n.Via, Addend: n.Addend}
 		if r.Files == nil {
 			r.Files = []FileRef{}
 		}
-		_, err := t.ExecContext(ctx, `INSERT INTO asset_reviews(id, asset_id, version, verdict, comment, files, author_kind, author_ref, author_name, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			r.ID, d.ID, version, n.Verdict, n.Comment, filesJSON(r.Files), n.Author.Kind, n.Author.Ref, n.Author.Name, at)
+		_, err := t.ExecContext(ctx, `INSERT INTO asset_reviews(id, asset_id, version, verdict, comment, files, author_kind, author_ref, author_name, via, addend, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			r.ID, d.ID, v, n.Verdict, n.Comment, filesJSON(r.Files), n.Author.Kind, n.Author.Ref, n.Author.Name, n.Via, n.Addend, at)
 		return err
 	})
 	if err != nil {
 		return r, Asset{}, err
 	}
 	r.CreatedAt = parseTS(at)
-	d.Status = n.Verdict
 	return r, d.Asset, nil
 }
 
@@ -118,7 +139,7 @@ func (s *Store) LinkAssetReview(ctx context.Context, id, decisionID, sentTo, sen
 	return err
 }
 
-const reviewCols = `r.id, r.asset_id, r.version, r.verdict, r.comment, r.files, r.author_kind, r.author_ref, r.author_name, r.sent_to, r.sent_as, r.sent_name,
+const reviewCols = `r.id, r.asset_id, r.version, r.verdict, r.comment, r.files, r.author_kind, r.author_ref, r.author_name, r.sent_to, r.sent_as, r.sent_name, r.via, r.addend,
 	COALESCE(x.seq, 0), COALESCE(x.status, ''), x.delivered_at, r.created_at`
 
 func scanReview(row interface{ Scan(...any) error }) (AssetReview, string, error) {
@@ -126,7 +147,7 @@ func scanReview(row interface{ Scan(...any) error }) (AssetReview, string, error
 	var files, created string
 	var seq int
 	var delivered sql.NullString
-	err := row.Scan(&r.ID, &r.AssetID, &r.Version, &r.Verdict, &r.Comment, &files, &r.Author.Kind, &r.Author.Ref, &r.Author.Name, &r.SentTo, &r.SentAs, &r.SentName,
+	err := row.Scan(&r.ID, &r.AssetID, &r.Version, &r.Verdict, &r.Comment, &files, &r.Author.Kind, &r.Author.Ref, &r.Author.Name, &r.SentTo, &r.SentAs, &r.SentName, &r.Via, &r.Addend,
 		&seq, &r.Delivery, &delivered, &created)
 	if err != nil {
 		return r, "", err
@@ -185,6 +206,105 @@ func (s *Store) AssetCounts(ctx context.Context) (map[string]int, error) {
 			return nil, err
 		}
 		out[st] = n
+	}
+	return out, rows.Err()
+}
+
+// ---------- 附件（R-365） ----------
+
+// AssetAttachment 是素材的一个附件：访客上传、你收下为附件的文件（动画文件、参考视频等），不算版本。
+type AssetAttachment struct {
+	ID        string         `json:"id"`
+	Version   int            `json:"version" doc:"收下时素材的最新版本"`
+	File      FileRef        `json:"file"`
+	Note      string         `json:"note,omitempty" doc:"访客上传时写的说明"`
+	Submitter AssetSubmitter `json:"submitter" doc:"上传的人（访客）"`
+	CreatedAt time.Time      `json:"created_at"`
+}
+
+// AddAssetAttachment 给素材记一个附件。
+func (s *Store) AddAssetAttachment(ctx context.Context, assetID, fileID, note string, sub AssetSubmitter) (AssetAttachment, error) {
+	d, err := s.GetAsset(ctx, assetID)
+	if err != nil {
+		return AssetAttachment{}, err
+	}
+	f, err := s.GetFile(ctx, fileID)
+	if err != nil {
+		return AssetAttachment{}, err
+	}
+	a := AssetAttachment{ID: protocol.NewID(), Version: d.Version, File: f, Note: note, Submitter: sub}
+	at := now()
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO asset_attachments(id, asset_id, version, file_id, note, submitter_kind, submitter_ref, submitter_name, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, d.ID, a.Version, fileID, note, sub.Kind, sub.Ref, sub.Name, at); err != nil {
+		return a, err
+	}
+	_, _ = s.db.ExecContext(ctx, `UPDATE assets SET updated_at = ? WHERE id = ?`, at, d.ID)
+	a.CreatedAt = parseTS(at)
+	return a, nil
+}
+
+// ListAssetAttachments 列出素材的附件，新的在前。
+func (s *Store) ListAssetAttachments(ctx context.Context, assetID string) ([]AssetAttachment, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT x.id, x.version, x.file_id, COALESCE(f.name, ''), COALESCE(f.mime, ''), COALESCE(f.size, 0), x.note, x.submitter_kind, x.submitter_ref, x.submitter_name, x.created_at
+		FROM asset_attachments x LEFT JOIN files f ON f.id = x.file_id WHERE x.asset_id = ? ORDER BY x.created_at DESC, x.rowid DESC`, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []AssetAttachment{}
+	for rows.Next() {
+		var a AssetAttachment
+		var created string
+		if err := rows.Scan(&a.ID, &a.Version, &a.File.ID, &a.File.Name, &a.File.Mime, &a.File.Size, &a.Note, &a.Submitter.Kind, &a.Submitter.Ref, &a.Submitter.Name, &created); err != nil {
+			return nil, err
+		}
+		a.CreatedAt = parseTS(created)
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// AssetFileUse 是引用了某个附件的素材：哪一版的主文件 / 预览图，或素材的附件（R-365 访客页按它放行文件）。
+type AssetFileUse struct {
+	AssetID    string
+	Version    int  // 版本号；附件是收下时的最新版本
+	Main       bool // 这一版的主文件（GLB 或独立的图）：原文件，受下载开关管
+	Attachment bool // 素材的附件
+}
+
+// AssetFileUses 找出引用了附件 id 的素材版本和素材附件。
+func (s *Store) AssetFileUses(ctx context.Context, id string) ([]AssetFileUse, error) {
+	if id == "" || strings.ContainsAny(id, `%_"\`) {
+		return nil, nil
+	}
+	var out []AssetFileUse
+	rows, err := s.db.QueryContext(ctx, `SELECT asset_id, version, file_id = ? FROM asset_versions WHERE file_id = ? OR previews LIKE ?`, id, id, "%"+id+"%")
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var u AssetFileUse
+		if err := rows.Scan(&u.AssetID, &u.Version, &u.Main); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows, err = s.db.QueryContext(ctx, `SELECT asset_id, version FROM asset_attachments WHERE file_id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		u := AssetFileUse{Attachment: true}
+		if err := rows.Scan(&u.AssetID, &u.Version); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
 	}
 	return out, rows.Err()
 }

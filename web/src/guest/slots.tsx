@@ -12,7 +12,7 @@ import { gk, postComment, type GuestComment } from './data'
 
 // 访客留言（R-281 第 4 段）：留言挂在需求、决策、证据、阶段这些具体对象上。
 // 对象旁的「留言」按钮把页面底部的留言框指向它；需求页默认留给整条需求。留言先到分享者的待收队列，确认后才加进需求留言。
-export type CommentTarget = { kind: 'req' | 'dec' | 'evidence' | 'stage'; ref: string; req?: string; label?: string }
+export type CommentTarget = { kind: 'req' | 'dec' | 'evidence' | 'stage' | 'asset'; ref: string; req?: string; label?: string }
 
 type Ctx = { target: CommentTarget | null; setTarget: (x: CommentTarget | null) => void; token: string }
 const ComposeContext = createContext<Ctx | null>(null)
@@ -47,6 +47,7 @@ export function CommentSlot({ target, className }: { target: CommentTarget; clas
 // TargetLabel：留言对象写成印记（需求、决策）或一句短标签（证据、阶段）。
 export function TargetLabel({ x }: { x: Pick<CommentTarget, 'kind' | 'ref' | 'label'> }) {
   if (x.kind === 'req' || x.kind === 'dec') return <RefChip code={x.label ?? x.ref} />
+  if (x.kind === 'asset') return <span className="font-mono text-fg-2">{x.label}</span>
   return <span className="text-fg-2">{x.label}</span>
 }
 
@@ -139,6 +140,7 @@ export function commentTarget(x: GuestComment): CommentTarget {
   if (x.target_kind === 'dec') return { kind: 'dec', ref: x.target_code ?? '', label: x.target_code }
   if (x.target_kind === 'evidence') return { kind: 'evidence', ref: x.target_ref, label: t.guest.onEvidence(x.target_title ?? '') }
   if (x.target_kind === 'stage') return { kind: 'stage', ref: x.target_ref, label: t.guest.onStage(x.target_code ?? '', x.target_seq ?? 0) }
+  if (x.target_kind === 'asset') return { kind: 'asset', ref: x.target_ref, label: t.guest.onAsset(x.target_code ?? x.target_ref, x.version ?? 0) }
   return { kind: 'req', ref: x.req ?? '', label: x.req }
 }
 
@@ -159,13 +161,19 @@ export function MyComments({ items }: { items: GuestComment[] }) {
                 <span className="tabular">{relTime(x.created_at, now)}</span>
               </Tip>
               <Badge tone={statusTone[x.status] ?? 'neutral'} className="ml-auto">
-                {t.guest.mineStatus[x.status] ?? x.status}
+                {mineText(x)}
               </Badge>
             </div>
-            <p className="break-words whitespace-pre-wrap text-fg-2">{x.text}</p>
+            <p className="break-words whitespace-pre-wrap text-fg-2">{x.file_name ? [x.file_name, x.text].filter(Boolean).join(t.common.sep) : x.text}</p>
           </div>
         ))}
       </div>
     </section>
   )
+}
+
+// mineText：访客自己的留言 / 上传的处理结果；素材上的写放入成了什么（R-365）。
+export function mineText(x: Pick<GuestComment, 'status' | 'placed_as' | 'target_kind'>) {
+  if (x.target_kind === 'asset' && x.status === 'placed' && x.placed_as) return t.guest.mineAsset[x.placed_as] ?? t.guest.mineStatus.placed
+  return t.guest.mineStatus[x.status] ?? x.status
 }

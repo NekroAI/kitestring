@@ -7,6 +7,7 @@ import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Segmented, Textarea, Tip } from '../ui/base'
 import { Linkify, RefChip } from '../ui/refmark'
+import { Thumbs } from '../ui/attach'
 import { DraftField, DraftHint, useDraft } from './draft'
 import { guestTarget } from './asks'
 import { PendingCover, schedule, Seal, usePending } from './verdict'
@@ -18,7 +19,7 @@ import { PendingCover, schedule, Seal, usePending } from './verdict'
 const inbox = t.share.inbox
 
 // 放入 / 忽略生效后记在这里：条目离开「待处理」后抽屉里仍显示结果（从缓存打开时不再显示可操作的表单）
-const handled = new Map<string, { act: 'place' | 'ignore'; code?: string }>()
+const handled = new Map<string, { act: 'place' | 'ignore'; code?: string; as?: string; ref?: string }>()
 
 type Origin = NonNullable<Decision['guest']>
 
@@ -62,6 +63,11 @@ function Scroll({ children }: { children: ReactNode }) {
 
 // GuestNoteBody：审批抽屉里处理一条访客留言。
 export function GuestNoteBody({ c, top }: { c: ShareComment; top: ReactNode }) {
+  if (c.target_kind === 'asset') return <GuestAssetBody c={c} top={top} />
+  return <GuestReqNoteBody c={c} top={top} />
+}
+
+function GuestReqNoteBody({ c, top }: { c: ShareComment; top: ReactNode }) {
   const now = useNow()
   const wb = useWorkbench()
   const key = `guest:${c.id}`
@@ -235,6 +241,214 @@ export function GuestNoteBody({ c, top }: { c: ShareComment; top: ReactNode }) {
           <Button variant="primary" disabled={!!pend || !reqCode} onClick={() => go('place')}>
             {inbox.place(reqCode)}
           </Button>
+        </div>
+        <PendingCover k={key} />
+        <Seal k={key} />
+      </footer>
+    </div>
+  )
+}
+
+// ---------- 资源库（R-365）：访客对素材某一版的留言、上传的文件 ----------
+
+type AssetAs = '' | 'rework' | 'note'
+
+// GuestAssetBody：审批抽屉里处理访客对素材的留言或上传。
+// 留言：由你明确选「返工意见」（素材改返工）或「只送意见」（状态不变），可以改写、加附言，以访客为作者送提交素材的会话；
+// 上传：收下为新版本（类型要和素材一致，回到待审）或附件，都标明访客上传；也可以忽略。都走 3 秒撤销期。
+function GuestAssetBody({ c, top }: { c: ShareComment; top: ReactNode }) {
+  const now = useNow()
+  const wb = useWorkbench()
+  const key = `guest:${c.id}`
+  const pend = usePending(key)
+  const live = wb.guests.some((x) => x.id === c.id)
+  const done = handled.get(c.id)
+  const upload = !!c.file
+  const init = { as: '' as AssetAs, mode: 'raw' as 'raw' | 'rewrite', text: c.text, addend: '' }
+  const draft = useDraft(`guest:${c.id}`, init, (x) => x.as !== '' || x.mode !== init.mode || x.text !== init.text || x.addend.trim() !== '')
+  const v = draft.value
+  const rewritten = !upload && v.mode === 'rewrite' && v.text.trim() !== '' && v.text.trim() !== c.text.trim()
+  const fits = upload && (c.asset_kind === 'part' ? c.file?.mime === 'model/gltf-binary' : (c.file?.mime ?? '').startsWith('image/'))
+  const [err, setErr] = useState('')
+  const label = inbox.onAsset(c.target_code ?? '', c.asset_key ?? '', c.asset_version ?? 0)
+
+  const ignore = () =>
+    schedule(key, {
+      act: 'back',
+      scene: 'guest',
+      subject: c.target_code || inbox.title,
+      beacon: { method: 'POST', url: `/api/share-comments/${c.id}/ignore`, body: {} },
+      commit: async () => {
+        try {
+          await unwrap(api.POST('/api/share-comments/{id}/ignore', { params: { path: { id: c.id } } }))
+          handled.set(c.id, { act: 'ignore' })
+          draft.drop()
+          return true
+        } catch (e) {
+          toast.error(errMsg(e, inbox.fail.ignore))
+          return false
+        }
+      },
+    })
+  const go = (as: 'rework' | 'note' | 'version' | 'attachment' | 'ignore') => {
+    setErr('')
+    if (!upload && as !== 'ignore' && v.mode === 'rewrite' && !v.text.trim()) return setErr(inbox.rewriteAria)
+    if (as === 'ignore') return ignore()
+    const body = upload ? { as } : { as, text: rewritten ? v.text.trim() : '', addend: v.addend.trim() }
+    schedule(key, {
+      act: 'pass',
+      scene: 'guest',
+      subject: c.target_code || inbox.title,
+      beacon: { method: 'POST', url: `/api/share-comments/${c.id}/place`, body },
+      commit: async () => {
+        try {
+          const r = await unwrap(api.POST('/api/share-comments/{id}/place', { params: { path: { id: c.id } }, body }))
+          handled.set(c.id, { act: 'place', as: r.comment.placed_as, ref: r.comment.result_ref })
+          draft.drop()
+          return true
+        } catch (e) {
+          toast.error(errMsg(e, upload ? inbox.takeFail : inbox.fail.place))
+          return false
+        }
+      },
+    })
+  }
+
+  const head = (
+    <>
+      <h3 className="font-display text-[17px] leading-snug font-semibold text-balance text-fg">{label}</h3>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-fg-3">
+        <b className="font-semibold tracking-wider text-accent">{t.ask.kind.guest}</b>
+        <span className="font-medium text-fg-2">{c.guest_name}</span>
+        <span aria-hidden>·</span>
+        <span className="min-w-0 truncate">{inbox.via(c.share_name)}</span>
+        <span aria-hidden>·</span>
+        <Tip content={absTime(c.created_at)}>
+          <span className="tabular">{relTime(c.created_at, now)}</span>
+        </Tip>
+      </div>
+    </>
+  )
+
+  if (!live && !pend) {
+    const as = done?.as as keyof typeof inbox.placedAs | undefined
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {top}
+        <Scroll>
+          {head}
+          <div className="grid justify-items-start gap-2">
+            {done?.act === 'ignore' ? (
+              <>
+                <Badge>{inbox.ignored}</Badge>
+                <span className="text-[13px] text-fg-3">{inbox.ignoredHint}</span>
+              </>
+            ) : as === 'version' ? (
+              <Badge tone="run">{inbox.placedAs.version(done?.ref ?? '')}</Badge>
+            ) : as ? (
+              <Badge tone="run">{inbox.placedAs[as] as string}</Badge>
+            ) : (
+              <span className="text-[13px] text-fg-3">{inbox.handled}</span>
+            )}
+          </div>
+        </Scroll>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-guest-asset={upload ? 'upload' : 'comment'}>
+      {top}
+      <Scroll>
+        {head}
+        {upload ? (
+          <section className="grid gap-1.5">
+            <span className="text-[13px] font-medium text-fg-2">{inbox.upload}</span>
+            <Thumbs files={[c.file!]} />
+            {c.text && (
+              <div className="rounded-xl bg-surface-2 px-3.5 py-3 text-[14px] leading-relaxed break-words whitespace-pre-wrap">
+                <span className="mr-1 text-fg-3">{inbox.uploadNote}：</span>
+                {c.text}
+              </div>
+            )}
+            <p className="text-xs text-fg-3">{fits ? inbox.versionHint : inbox.versionKind[c.asset_kind ?? 'part']}</p>
+          </section>
+        ) : (
+          <>
+            <section className="grid gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-fg-3">
+                {inbox.to}
+                <span className="font-mono text-fg-2">{label}</span>
+              </div>
+              <div className="rounded-xl bg-surface-2 px-3.5 py-3 text-[14px] leading-relaxed break-words whitespace-pre-wrap">{c.text}</div>
+            </section>
+            <section className="grid gap-1.5">
+              <span className="text-[13px] font-medium text-fg-2">{inbox.asLabel}</span>
+              <Segmented<'rework' | 'note'>
+                size="sm"
+                value={v.as as 'rework' | 'note'}
+                onChange={(x) => draft.set({ as: x })}
+                options={[
+                  { value: 'rework', label: inbox.asRework },
+                  { value: 'note', label: inbox.asNote },
+                ]}
+              />
+              {v.as && <span className="text-xs text-fg-3">{v.as === 'rework' ? inbox.asReworkHint : inbox.asNoteHint}</span>}
+            </section>
+            <section className="grid gap-1.5">
+              <span className="text-[13px] font-medium text-fg-2">{inbox.mode}</span>
+              <Segmented
+                size="sm"
+                value={v.mode}
+                onChange={(m) => draft.set({ mode: m })}
+                options={[
+                  { value: 'raw', label: inbox.raw },
+                  { value: 'rewrite', label: inbox.rewrite },
+                ]}
+              />
+              {v.mode === 'rewrite' && <Textarea aria-label={inbox.rewriteAria} minRows={3} value={v.text} onChange={(e) => draft.set({ text: e.target.value })} />}
+            </section>
+            <section className="grid gap-1.5">
+              <label htmlFor={`addend-${c.id}`} className="text-[13px] font-medium text-fg-2">
+                {inbox.addend}
+              </label>
+              <DraftField h={draft} empty={init}>
+                {(pad) => <Textarea id={`addend-${c.id}`} minRows={2} placeholder={inbox.addendPlaceholder} value={v.addend} onChange={(e) => draft.set({ addend: e.target.value })} className={pad} />}
+              </DraftField>
+            </section>
+            <p className="text-xs text-fg-3">{inbox.assetPreview}</p>
+          </>
+        )}
+        {err && <p className="text-[13px] text-danger">{err}</p>}
+      </Scroll>
+      <footer className="relative shrink-0 border-t border-line bg-surface px-4 pt-3 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-5">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {!upload && (
+            <span className="mr-auto min-w-[120px] flex-1 text-xs text-fg-3">
+              <DraftHint h={draft}>{''}</DraftHint>
+            </span>
+          )}
+          <Button disabled={!!pend} onClick={() => go('ignore')}>
+            {inbox.ignore}
+          </Button>
+          {upload ? (
+            <>
+              <Button disabled={!!pend} onClick={() => go('attachment')}>
+                {inbox.takeAttach}
+              </Button>
+              <Tip content={fits ? inbox.versionHint : inbox.versionKind[c.asset_kind ?? 'part']}>
+                <span>
+                  <Button variant="primary" disabled={!!pend || !fits} onClick={() => go('version')}>
+                    {inbox.takeVersion}
+                  </Button>
+                </span>
+              </Tip>
+            </>
+          ) : (
+            <Button variant="primary" disabled={!!pend || !v.as} onClick={() => v.as && go(v.as)}>
+              {inbox.placeAsset}
+            </Button>
+          )}
         </div>
         <PendingCover k={key} />
         <Seal k={key} />

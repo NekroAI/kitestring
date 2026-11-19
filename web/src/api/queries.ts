@@ -295,7 +295,7 @@ export function useShareCandidates(projectId: string | undefined, enabled = true
 // 素材详情带全部版本，抽屉里看大图、3D、版本对比用。推送后 Hub 发 assets 主题，两者都重新取。
 export type Asset = Schemas['Asset']
 export type AssetVersion = Schemas['AssetVersion']
-const normVersion = (v: AssetVersion) => ({ ...v, previews: v.previews ?? [], size: v.size ?? [], pixels: v.pixels ?? [] })
+export const normVersion = (v: AssetVersion) => ({ ...v, previews: v.previews ?? [], size: v.size ?? [], pixels: v.pixels ?? [] })
 
 export function useAssets() {
   return useQuery({
@@ -305,11 +305,20 @@ export function useAssets() {
   })
 }
 
+// normAssetDetail：素材详情的空数组补齐（访客页 R-365 也用）。
+export const normAssetDetail = (d: Schemas['AssetDetail']) => ({
+  ...d,
+  latest: d.latest ? normVersion(d.latest) : undefined,
+  versions: (d.versions ?? []).map(normVersion),
+  reviews: (d.reviews ?? []).map((r) => ({ ...r, files: r.files ?? [] })),
+  attachments: d.attachments ?? [],
+})
+
 export function useAsset(ref: string | null) {
   return useQuery({
     queryKey: ['assets', 'detail', ref ?? ''],
     queryFn: () => unwrap(api.GET('/api/assets/{ref}', { params: { path: { ref: ref! } } })),
-    select: (d) => ({ ...d, latest: d.latest ? normVersion(d.latest) : undefined, versions: (d.versions ?? []).map(normVersion), reviews: (d.reviews ?? []).map((r) => ({ ...r, files: r.files ?? [] })) }),
+    select: normAssetDetail,
     enabled: !!ref,
     retry: false,
   })

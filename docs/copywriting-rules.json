@@ -97,13 +97,17 @@
     "share.removeLink", "share.addLink", "share.removePassword", "share.keepPassword", "share.createOk",
     "guest.enter", "guest.toolsAll", "guest.toolsFold", "share.inbox.place", "share.inbox.ignore", "share.inbox.raw", "share.inbox.rewrite", "guest.leave", "guest.send", "guest.toWhole",
     "secret.create", "secret.replace", "secret.revoke", "secret.regrant", "secret.fill", "secret.fillRow", "secret.edit", "secret.reject", "secret.save", "secret.addProject", "secret.addCmd", "secret.addField",
-    "asset.clearFilter", "asset.openOne", "asset.review.mode", "asset.review.exit"
+    "asset.clearFilter", "asset.openOne", "asset.review.mode", "asset.review.exit",
+    "share.inbox.placeAsset", "share.inbox.takeVersion", "share.inbox.takeAttach", "share.inbox.asRework", "share.inbox.asNote", "guest.upload", "guest.download"
   ],
   "buttonMax": 6,
   "allow": [
     { "key": "time.short*", "rules": ["spacing"], "reason": "状态胶囊、泳道刻度这类放不下汉字单位的位置用 d h m s 缩写（D-1162）" },
     { "key": "settings.devices.g.*", "reason": "设备接入指引是第 2 层，可写命令和技术名（copywriting.md 2.5）" },
     { "key": "asset.ver", "rules": ["spacing"], "reason": "素材版本号写作 v2（字母和数字连写，美术审核的通用写法，copywriting.md 5.12）；占位参数是汉字才被判成中英文相连" },
-    { "key": "asset.compareSlider", "rules": ["spacing"], "reason": "同上：版本号 v2 连写" }
+    { "key": "asset.compareSlider", "rules": ["spacing"], "reason": "同上：版本号 v2 连写" },
+    { "key": "share.capTo", "rules": ["spacing"], "reason": "同上：版本号 v2 连写（R-365 素材只给到这一版）" },
+    { "key": "share.inbox.onAsset", "rules": ["spacing"], "reason": "同上：版本号 v2 连写（R-365 访客留言针对的素材版本）" },
+    { "key": "guest.onAsset", "rules": ["spacing"], "reason": "同上：版本号 v2 连写（R-365 访客页留言针对的版本）" }
   ]
 }

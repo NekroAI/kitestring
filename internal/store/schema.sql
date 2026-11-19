@@ -559,11 +559,14 @@ CREATE TABLE IF NOT EXISTS shares (
 	password_hash TEXT NOT NULL DEFAULT '',
 	expires_at    TEXT NOT NULL DEFAULT '',
 	revoked_at    TEXT NOT NULL DEFAULT '',
+	allow_download INTEGER NOT NULL DEFAULT 0, -- 访客能下载素材原文件（R-365），默认关
 	created_at    TEXT NOT NULL,
 	updated_at    TEXT NOT NULL
 );
 
 -- 分享的挂载项：kind = plan | stage | req | session，ref 是计划 / 阶段 / 需求的 ID 或会话键。
+-- 资源库（R-365）：asset_batch / asset_cat 的 ref 是「项目 ID/批次名」「项目 ID/类别名」，asset 的 ref 是素材 ID；
+-- cap：没开 auto 的单个素材只给到挂上时的最新版本（版本号），开着 auto 时为 0（以后的新版本也给）。
 -- auto：包含以后新增的（计划后来新增的阶段和需求、需求后来关联的会话）；excluded：被单独取消，上级的 auto 不会把它带回来
 CREATE TABLE IF NOT EXISTS share_items (
 	share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
@@ -571,10 +574,12 @@ CREATE TABLE IF NOT EXISTS share_items (
 	ref      TEXT NOT NULL,
 	auto     INTEGER NOT NULL DEFAULT 0,
 	excluded INTEGER NOT NULL DEFAULT 0,
+	cap      INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (share_id, kind, ref)
 );
 
 -- 访客链接：每个访客一条，带名字；token 要能随时复制，存原文。撤回后下一次访问即拒绝
+-- perm（R-365）：view 只看 / comment 可留言（默认，R-281 起的链接都是它）/ upload 可上传（含留言）；downloads 是下载素材原文件的次数
 CREATE TABLE IF NOT EXISTS share_links (
 	id            TEXT PRIMARY KEY,
 	share_id      TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
@@ -583,7 +588,10 @@ CREATE TABLE IF NOT EXISTS share_links (
 	created_at    TEXT NOT NULL,
 	revoked_at    TEXT NOT NULL DEFAULT '',
 	last_visit_at TEXT NOT NULL DEFAULT '',
-	visits        INTEGER NOT NULL DEFAULT 0
+	visits        INTEGER NOT NULL DEFAULT 0,
+	perm          TEXT NOT NULL DEFAULT 'comment',
+	downloads     INTEGER NOT NULL DEFAULT 0,
+	last_download_at TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS share_links_share ON share_links(share_id);
 
@@ -603,7 +611,14 @@ CREATE TABLE IF NOT EXISTS share_comments (
 	status         TEXT NOT NULL DEFAULT 'pending',
 	decision_id    TEXT NOT NULL DEFAULT '',
 	created_at     TEXT NOT NULL,
-	handled_at     TEXT NOT NULL DEFAULT ''
+	handled_at     TEXT NOT NULL DEFAULT '',
+	-- 资源库（R-365）：target_kind = asset 时 target_ref 是素材 ID，asset_version 是访客看的版本；
+	-- file_id 不为空 = 访客上传的文件（可上传的链接），收下后 placed_as = version 新版本 / attachment 附件，留言放入后 placed_as = review 返工意见；
+	-- result_ref 是收下后的版本号 / 附件 ID / 审核记录 ID
+	asset_version  INTEGER NOT NULL DEFAULT 0,
+	file_id        TEXT NOT NULL DEFAULT '',
+	placed_as      TEXT NOT NULL DEFAULT '',
+	result_ref     TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS share_comments_status ON share_comments(status, created_at);
 CREATE INDEX IF NOT EXISTS share_comments_link ON share_comments(link_id, created_at);
@@ -764,7 +779,23 @@ CREATE TABLE IF NOT EXISTS asset_reviews (
 	sent_to     TEXT NOT NULL DEFAULT '',
 	sent_as     TEXT NOT NULL DEFAULT '',
 	sent_name   TEXT NOT NULL DEFAULT '',
+	via         TEXT NOT NULL DEFAULT '', -- 访客的意见（R-365）：经由的分享名称
+	addend      TEXT NOT NULL DEFAULT '', -- 访客的意见：你放入时写的附言
 	created_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS asset_reviews_asset ON asset_reviews(asset_id, created_at);
 CREATE INDEX IF NOT EXISTS asset_reviews_decision ON asset_reviews(decision_id);
+
+-- 素材的附件（R-365）：访客上传、你收下为附件的文件（动画文件、参考视频等），不算版本；version 是收下时的最新版本，submitter_* 含义同 assets
+CREATE TABLE IF NOT EXISTS asset_attachments (
+	id             TEXT PRIMARY KEY,
+	asset_id       TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+	version        INTEGER NOT NULL DEFAULT 0,
+	file_id        TEXT NOT NULL,
+	note           TEXT NOT NULL DEFAULT '',
+	submitter_kind TEXT NOT NULL DEFAULT '',
+	submitter_ref  TEXT NOT NULL DEFAULT '',
+	submitter_name TEXT NOT NULL DEFAULT '',
+	created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS asset_attachments_asset ON asset_attachments(asset_id, created_at);

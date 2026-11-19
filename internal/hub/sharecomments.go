@@ -35,8 +35,9 @@ type guestCommentIn struct {
 	Token  string `path:"token"`
 	Cookie string `cookie:"ks_share"`
 	Body   struct {
-		TargetKind string `json:"target_kind" enum:"req,dec,evidence,stage" doc:"留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段"`
-		TargetRef  string `json:"target_ref" doc:"需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID"`
+		TargetKind string `json:"target_kind" enum:"req,dec,evidence,stage,asset" doc:"留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段 / asset 素材（R-365）"`
+		TargetRef  string `json:"target_ref" doc:"需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID、素材编号 A-x"`
+		Version    int    `json:"version,omitempty" doc:"素材：针对第几版；不写为分享里能看的最新一版"`
 		Text       string `json:"text" doc:"留言正文，最多 2000 字"`
 	}
 }
@@ -44,20 +45,31 @@ type guestCommentIn struct {
 // GuestComment 是访客看到的自己的一条留言。
 type GuestComment struct {
 	ID          string    `json:"id"`
-	TargetKind  string    `json:"target_kind" enum:"req,dec,evidence,stage"`
+	TargetKind  string    `json:"target_kind" enum:"req,dec,evidence,stage,asset"`
 	TargetRef   string    `json:"target_ref"`
 	TargetCode  string    `json:"target_code,omitempty" doc:"决策编号；阶段是所属计划编号"`
 	TargetSeq   int       `json:"target_seq,omitempty"`
 	TargetTitle string    `json:"target_title,omitempty"`
 	Req         string    `json:"req,omitempty" doc:"所属需求编号"`
 	Text        string    `json:"text"`
-	Status      string    `json:"status" enum:"pending,placed,ignored" doc:"pending 待分享者处理 / placed 已放入需求 / ignored 分享者已看过、没有放入"`
+	Status      string    `json:"status" enum:"pending,placed,ignored" doc:"pending 待分享者处理 / placed 已放入需求（素材：已放入 / 已收下）/ ignored 分享者已看过、没有放入"`
 	CreatedAt   time.Time `json:"created_at"`
+	// 资源库（R-365）
+	Version  int    `json:"version,omitempty" doc:"素材：针对第几版"`
+	FileName string `json:"file_name,omitempty" doc:"上传的文件名；没有时是一条留言"`
+	PlacedAs string `json:"placed_as,omitempty" enum:"review,version,attachment," doc:"素材：放入成了什么——review 意见 / version 新版本 / attachment 附件"`
 }
 
 func guestComment(c store.ShareComment) GuestComment {
-	return GuestComment{ID: c.ID, TargetKind: c.TargetKind, TargetRef: c.TargetRef, TargetCode: c.TargetCode, TargetSeq: c.TargetSeq, TargetTitle: c.TargetTitle,
-		Req: c.RequirementCode, Text: c.Text, Status: c.Status, CreatedAt: c.CreatedAt}
+	g := GuestComment{ID: c.ID, TargetKind: c.TargetKind, TargetRef: c.TargetRef, TargetCode: c.TargetCode, TargetSeq: c.TargetSeq, TargetTitle: c.TargetTitle,
+		Req: c.RequirementCode, Text: c.Text, Status: c.Status, CreatedAt: c.CreatedAt, Version: c.AssetVersion, PlacedAs: c.PlacedAs}
+	if c.TargetKind == store.GuestOnAsset {
+		g.TargetRef = c.TargetCode // 素材 ID 不给访客，用编号
+	}
+	if c.File != nil {
+		g.FileName = c.File.Name
+	}
+	return g
 }
 
 type guestCommentOut struct{ Body GuestComment }
@@ -69,10 +81,26 @@ type guestCommentsOut struct {
 }
 
 // guestTarget 核对访客留言的对象在分享范围里，返回要记下的 需求 ID / 计划 ID / 阶段序号 和规范化后的对象 ID。
-func (h *Hub) guestTarget(ctx context.Context, g *guestCtx, kind, ref string) (store.GuestCommentIn, error) {
+func (h *Hub) guestTarget(ctx context.Context, g *guestCtx, kind, ref string, version int) (store.GuestCommentIn, error) {
 	in := store.GuestCommentIn{TargetKind: kind}
 	ref = strings.TrimSpace(ref)
 	switch kind {
+	case store.GuestOnAsset: // 资源库素材的某一版（R-365）：素材和那一版都要在分享里
+		d, err := h.store.GetAsset(ctx, ref)
+		if err != nil {
+			return in, notIncluded()
+		}
+		v, ok := g.guestAsset(d)
+		if !ok {
+			return in, notIncluded()
+		}
+		if version == 0 {
+			version = v.Version
+		}
+		if !g.scope.AssetVisible(d.ID, version) || version > d.Version || version < 1 {
+			return in, notIncluded()
+		}
+		in.TargetRef, in.AssetVersion = d.ID, version
 	case store.GuestOnReq:
 		r, err := h.store.GetRequirement(ctx, ref)
 		if err != nil || !g.scope.Reqs[r.ID] {
@@ -103,6 +131,9 @@ func (h *Hub) guestTarget(ctx context.Context, g *guestCtx, kind, ref string) (s
 	default:
 		return in, huma.Error400BadRequest(shareCommentTarget)
 	}
+	if kind != store.GuestOnAsset && version != 0 {
+		return in, huma.Error400BadRequest(shareCommentTarget)
+	}
 	return in, nil
 }
 
@@ -116,6 +147,9 @@ func (h *Hub) registerShareGuestComments(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
+			if store.PermRank(g.link.Perm) < store.PermRank(store.PermComment) {
+				return nil, huma.Error403Forbidden(shareCommentNoPerm) // 只看的链接（R-365）
+			}
 			text := strings.TrimSpace(in.Body.Text)
 			if text == "" {
 				return nil, huma.Error400BadRequest(shareCommentEmpty)
@@ -123,7 +157,7 @@ func (h *Hub) registerShareGuestComments(api huma.API) {
 			if utf8.RuneCountInString(text) > store.GuestTextMax {
 				return nil, huma.Error400BadRequest(shareCommentTooLong(store.GuestTextMax))
 			}
-			ci, err := h.guestTarget(ctx, g, in.Body.TargetKind, in.Body.TargetRef)
+			ci, err := h.guestTarget(ctx, g, in.Body.TargetKind, in.Body.TargetRef, in.Body.Version)
 			if err != nil {
 				return nil, err
 			}
@@ -138,6 +172,7 @@ func (h *Hub) registerShareGuestComments(api huma.API) {
 				return nil, err
 			}
 			h.broker.publish("shares")
+			h.notifyGuest(c)
 			return &guestCommentOut{Body: guestComment(c)}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "guest-comments", Method: http.MethodGet, Path: "/api/share/{token}/comments", Tags: tag, Summary: "访客：这条链接写过的留言和处理结果"},
@@ -184,13 +219,15 @@ type placeIn struct {
 		Text        string `json:"text,omitempty" doc:"改写放入时的正文；不填为原样放入"`
 		Addend      string `json:"addend,omitempty" doc:"附言（可选）"`
 		Requirement string `json:"requirement,omitempty" doc:"挂在阶段上的留言放进哪条需求（R-x）；其它对象不填，放进留言所属的需求"`
+		// As：素材上的（R-365）——留言 rework 作为返工意见（改返工）/ note 只送意见（不改状态）；上传 version 收下为新版本 / attachment 收下为附件
+		As string `json:"as,omitempty" enum:"rework,note,version,attachment," doc:"素材上的留言、上传放入成什么；需求上的留言不填"`
 	}
 }
 
 type placeOut struct {
 	Body struct {
 		Comment  store.ShareComment `json:"comment"`
-		Decision store.Decision     `json:"decision" doc:"放入后成为的需求留言"`
+		Decision store.Decision     `json:"decision" doc:"放入后成为的需求留言；素材上的留言、上传为空（结果看 comment 的 placed_as）"`
 	}
 }
 
@@ -237,6 +274,22 @@ func (h *Hub) registerShareComments(api huma.API) {
 			}
 			if c.Status != store.GuestPending {
 				return nil, huma.Error409Conflict(store.ErrGuestHandled.Error())
+			}
+			if c.TargetKind == store.GuestOnAsset {
+				text := strings.TrimSpace(in.Body.Text)
+				if text == "" {
+					text = c.Text
+				}
+				nc, err := h.placeAssetComment(ctx, c, in.Body.As, text, strings.TrimSpace(in.Body.Addend))
+				if err != nil {
+					return nil, err
+				}
+				out := &placeOut{}
+				out.Body.Comment = nc
+				return out, nil
+			}
+			if in.Body.As != "" {
+				return nil, huma.Error400BadRequest(shareCommentTarget)
 			}
 			ref := c.RequirementID
 			if c.TargetKind == store.GuestOnStage {

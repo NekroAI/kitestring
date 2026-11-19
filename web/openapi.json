@@ -1729,6 +1729,42 @@
         ],
         "type": "object"
       },
+      "AssetAttachment": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "file": {
+            "$ref": "#/components/schemas/FileRef"
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "description": "访客上传时写的说明",
+            "type": "string"
+          },
+          "submitter": {
+            "$ref": "#/components/schemas/AssetSubmitter",
+            "description": "上传的人（访客）"
+          },
+          "version": {
+            "description": "收下时素材的最新版本",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "file",
+          "submitter",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "AssetCountsOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -1749,6 +1785,16 @@
       "AssetDetail": {
         "additionalProperties": false,
         "properties": {
+          "attachments": {
+            "description": "附件（R-365：访客上传、你收下为附件的文件），新的在前",
+            "items": {
+              "$ref": "#/components/schemas/AssetAttachment"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "batch": {
             "type": "string"
           },
@@ -1842,6 +1888,7 @@
         "required": [
           "versions",
           "reviews",
+          "attachments",
           "id",
           "code",
           "project_id",
@@ -2203,12 +2250,16 @@
       "AssetReview": {
         "additionalProperties": false,
         "properties": {
+          "addend": {
+            "description": "访客的意见：你放入时写的附言",
+            "type": "string"
+          },
           "asset_id": {
             "type": "string"
           },
           "author": {
             "$ref": "#/components/schemas/AssetSubmitter",
-            "description": "写意见的人：user 你 / session 会话 / guest 分享页访客（R-365 预留）"
+            "description": "写意见的人：user 你 / session 会话 / guest 分享页访客（由你放入，R-365）"
           },
           "comment": {
             "type": "string"
@@ -2264,17 +2315,22 @@
             "type": "string"
           },
           "verdict": {
-            "description": "approved 通过 / rework 返工",
+            "description": "approved 通过 / rework 返工 / note 只送意见（访客的意见，不改状态）",
             "enum": [
               "approved",
-              "rework"
+              "rework",
+              "note"
             ],
             "type": "string"
           },
           "version": {
-            "description": "审核时的最新版本",
+            "description": "审核时的最新版本；访客的意见是访客看的那一版",
             "format": "int64",
             "type": "integer"
+          },
+          "via": {
+            "description": "访客的意见：经由的分享名称",
+            "type": "string"
           }
         },
         "required": [
@@ -5929,6 +5985,55 @@
         ],
         "type": "object"
       },
+      "GuestAssetsView": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_download": {
+            "description": "分享允许下载素材原文件",
+            "type": "boolean"
+          },
+          "assets": {
+            "description": "分享里的素材（最新版本是分享里能看的最新一版）",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "facets": {
+            "$ref": "#/components/schemas/AssetFacets",
+            "description": "分享里素材的批次、类别和各状态数量"
+          },
+          "perm": {
+            "description": "这条链接的权限：view 只看 / comment 可留言 / upload 可上传",
+            "enum": [
+              "view",
+              "comment",
+              "upload"
+            ],
+            "type": "string"
+          },
+          "statuses": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "assets",
+          "facets",
+          "statuses",
+          "perm",
+          "allow_download"
+        ],
+        "type": "object"
+      },
       "GuestComment": {
         "additionalProperties": false,
         "properties": {
@@ -5936,7 +6041,21 @@
             "format": "date-time",
             "type": "string"
           },
+          "file_name": {
+            "description": "上传的文件名；没有时是一条留言",
+            "type": "string"
+          },
           "id": {
+            "type": "string"
+          },
+          "placed_as": {
+            "description": "素材：放入成了什么——review 意见 / version 新版本 / attachment 附件",
+            "enum": [
+              "review",
+              "version",
+              "attachment",
+              ""
+            ],
             "type": "string"
           },
           "req": {
@@ -5944,7 +6063,7 @@
             "type": "string"
           },
           "status": {
-            "description": "pending 待分享者处理 / placed 已放入需求 / ignored 分享者已看过、没有放入",
+            "description": "pending 待分享者处理 / placed 已放入需求（素材：已放入 / 已收下）/ ignored 分享者已看过、没有放入",
             "enum": [
               "pending",
               "placed",
@@ -5961,7 +6080,8 @@
               "req",
               "dec",
               "evidence",
-              "stage"
+              "stage",
+              "asset"
             ],
             "type": "string"
           },
@@ -5977,6 +6097,11 @@
           },
           "text": {
             "type": "string"
+          },
+          "version": {
+            "description": "素材：针对第几版",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -5993,22 +6118,28 @@
         "additionalProperties": false,
         "properties": {
           "target_kind": {
-            "description": "留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段",
+            "description": "留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段 / asset 素材（R-365）",
             "enum": [
               "req",
               "dec",
               "evidence",
-              "stage"
+              "stage",
+              "asset"
             ],
             "type": "string"
           },
           "target_ref": {
-            "description": "需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID",
+            "description": "需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID、素材编号 A-x",
             "type": "string"
           },
           "text": {
             "description": "留言正文，最多 2000 字",
             "type": "string"
+          },
+          "version": {
+            "description": "素材：针对第几版；不写为分享里能看的最新一版",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -6129,6 +6260,10 @@
       "GuestMetaOutBody": {
         "additionalProperties": false,
         "properties": {
+          "allow_download": {
+            "description": "分享允许下载素材原文件（R-365）",
+            "type": "boolean"
+          },
           "expires_at": {
             "format": "date-time",
             "type": "string"
@@ -6144,6 +6279,15 @@
           "needs_password": {
             "type": "boolean"
           },
+          "perm": {
+            "description": "这条链接的权限（R-365）：view 只看 / comment 可留言 / upload 可上传",
+            "enum": [
+              "view",
+              "comment",
+              "upload"
+            ],
+            "type": "string"
+          },
           "unlocked": {
             "description": "已输过密码（或没设密码），可以看内容",
             "type": "boolean"
@@ -6153,7 +6297,9 @@
           "name",
           "guest",
           "needs_password",
-          "unlocked"
+          "unlocked",
+          "perm",
+          "allow_download"
         ],
         "type": "object"
       },
@@ -6194,7 +6340,8 @@
               "req",
               "dec",
               "evidence",
-              "stage"
+              "stage",
+              "asset"
             ],
             "type": "string"
           },
@@ -6229,6 +6376,11 @@
               "array",
               "null"
             ]
+          },
+          "assets": {
+            "description": "分享里资源库素材的条数（R-365）；有素材时目录里有「资源库」",
+            "format": "int64",
+            "type": "integer"
           },
           "codes": {
             "description": "分享里的计划、需求编号：文字里提到的其它编号只显示编号、不能点开",
@@ -6279,6 +6431,15 @@
             "format": "date-time",
             "type": "string"
           },
+          "perm": {
+            "description": "这条链接的权限（R-365），改了权限后随实时通道刷新",
+            "enum": [
+              "view",
+              "comment",
+              "upload"
+            ],
+            "type": "string"
+          },
           "sessions": {
             "description": "分享里的会话，运行中的在前",
             "items": {
@@ -6299,6 +6460,8 @@
           "sessions",
           "activity",
           "decs",
+          "assets",
+          "perm",
           "now"
         ],
         "type": "object"
@@ -8449,6 +8612,17 @@
             "description": "附言（可选）",
             "type": "string"
           },
+          "as": {
+            "description": "素材上的留言、上传放入成什么；需求上的留言不填",
+            "enum": [
+              "rework",
+              "note",
+              "version",
+              "attachment",
+              ""
+            ],
+            "type": "string"
+          },
           "requirement": {
             "description": "挂在阶段上的留言放进哪条需求（R-x）；其它对象不填，放进留言所属的需求",
             "type": "string"
@@ -8468,7 +8642,7 @@
           },
           "decision": {
             "$ref": "#/components/schemas/Decision",
-            "description": "放入后成为的需求留言"
+            "description": "放入后成为的需求留言；素材上的留言、上传为空（结果看 comment 的 placed_as）"
           }
         },
         "required": [
@@ -12292,6 +12466,32 @@
       "ShareComment": {
         "additionalProperties": false,
         "properties": {
+          "asset_batch": {
+            "type": "string"
+          },
+          "asset_key": {
+            "description": "素材的 key",
+            "type": "string"
+          },
+          "asset_kind": {
+            "description": "part 零件 / image 独立的图",
+            "enum": [
+              "part",
+              "image",
+              ""
+            ],
+            "type": "string"
+          },
+          "asset_latest": {
+            "description": "素材现在的最新版本",
+            "format": "int64",
+            "type": "integer"
+          },
+          "asset_version": {
+            "description": "访客看的是第几版",
+            "format": "int64",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -12299,6 +12499,10 @@
           "decision_code": {
             "description": "放入后成为的需求留言编号 D-x",
             "type": "string"
+          },
+          "file": {
+            "$ref": "#/components/schemas/FileRef",
+            "description": "访客上传的文件；没有时是一条留言"
           },
           "guest_name": {
             "description": "访客名字（访客链接的名字）",
@@ -12312,6 +12516,16 @@
             "type": "string"
           },
           "link_id": {
+            "type": "string"
+          },
+          "placed_as": {
+            "description": "放入成了什么：review 意见 / version 新版本 / attachment 附件",
+            "enum": [
+              "review",
+              "version",
+              "attachment",
+              ""
+            ],
             "type": "string"
           },
           "plan_id": {
@@ -12332,6 +12546,10 @@
           "requirement_title": {
             "type": "string"
           },
+          "result_ref": {
+            "description": "收下后的版本号（v3）或附件 ID、审核记录 ID",
+            "type": "string"
+          },
           "share_id": {
             "type": "string"
           },
@@ -12348,7 +12566,7 @@
             "type": "string"
           },
           "target_code": {
-            "description": "决策编号 D-x；阶段是所属计划编号 P-x",
+            "description": "决策编号 D-x；阶段是所属计划编号 P-x；素材是 A-x",
             "type": "string"
           },
           "target_kind": {
@@ -12356,12 +12574,13 @@
               "req",
               "dec",
               "evidence",
-              "stage"
+              "stage",
+              "asset"
             ],
             "type": "string"
           },
           "target_ref": {
-            "description": "需求 / 决策 / 证据 / 阶段的 ID",
+            "description": "需求 / 决策 / 证据 / 阶段 / 素材的 ID",
             "type": "string"
           },
           "target_seq": {
@@ -12394,6 +12613,32 @@
       "ShareCommentView": {
         "additionalProperties": false,
         "properties": {
+          "asset_batch": {
+            "type": "string"
+          },
+          "asset_key": {
+            "description": "素材的 key",
+            "type": "string"
+          },
+          "asset_kind": {
+            "description": "part 零件 / image 独立的图",
+            "enum": [
+              "part",
+              "image",
+              ""
+            ],
+            "type": "string"
+          },
+          "asset_latest": {
+            "description": "素材现在的最新版本",
+            "format": "int64",
+            "type": "integer"
+          },
+          "asset_version": {
+            "description": "访客看的是第几版",
+            "format": "int64",
+            "type": "integer"
+          },
           "choices": {
             "description": "挂在阶段上的留言：放入时可选的需求（这个阶段的需求）",
             "items": {
@@ -12412,6 +12657,10 @@
             "description": "放入后成为的需求留言编号 D-x",
             "type": "string"
           },
+          "file": {
+            "$ref": "#/components/schemas/FileRef",
+            "description": "访客上传的文件；没有时是一条留言"
+          },
           "guest_name": {
             "description": "访客名字（访客链接的名字）",
             "type": "string"
@@ -12424,6 +12673,16 @@
             "type": "string"
           },
           "link_id": {
+            "type": "string"
+          },
+          "placed_as": {
+            "description": "放入成了什么：review 意见 / version 新版本 / attachment 附件",
+            "enum": [
+              "review",
+              "version",
+              "attachment",
+              ""
+            ],
             "type": "string"
           },
           "plan_id": {
@@ -12444,6 +12703,10 @@
           "requirement_title": {
             "type": "string"
           },
+          "result_ref": {
+            "description": "收下后的版本号（v3）或附件 ID、审核记录 ID",
+            "type": "string"
+          },
           "share_id": {
             "type": "string"
           },
@@ -12460,7 +12723,7 @@
             "type": "string"
           },
           "target_code": {
-            "description": "决策编号 D-x；阶段是所属计划编号 P-x",
+            "description": "决策编号 D-x；阶段是所属计划编号 P-x；素材是 A-x",
             "type": "string"
           },
           "target_kind": {
@@ -12468,12 +12731,13 @@
               "req",
               "dec",
               "evidence",
-              "stage"
+              "stage",
+              "asset"
             ],
             "type": "string"
           },
           "target_ref": {
-            "description": "需求 / 决策 / 证据 / 阶段的 ID",
+            "description": "需求 / 决策 / 证据 / 阶段 / 素材的 ID",
             "type": "string"
           },
           "target_seq": {
@@ -12525,6 +12789,9 @@
       "ShareCreateInBody": {
         "additionalProperties": false,
         "properties": {
+          "allow_download": {
+            "type": "boolean"
+          },
           "expires_at": {
             "description": "到期时间；省略表示永久。7 天 / 30 天 / 自定义由网页换算成时间",
             "format": "date-time",
@@ -12540,7 +12807,7 @@
             ]
           },
           "links": {
-            "description": "同时建好的访客链接名字（每个访客一条）",
+            "description": "同时建好的访客链接名字（每个访客一条，权限是可留言）",
             "items": {
               "type": "string"
             },
@@ -12590,6 +12857,10 @@
             "description": "包含以后新增的：计划后来新增的阶段和需求、阶段后来放进的需求、需求后来关联的会话自动纳入",
             "type": "boolean"
           },
+          "cap": {
+            "format": "int64",
+            "type": "integer"
+          },
           "excluded": {
             "description": "被单独取消：上级开着「包含以后新增的」也不会把它带回来",
             "type": "boolean"
@@ -12599,7 +12870,10 @@
               "plan",
               "stage",
               "req",
-              "session"
+              "session",
+              "asset_batch",
+              "asset_cat",
+              "asset"
             ],
             "type": "string"
           },
@@ -12631,12 +12905,15 @@
               "plan",
               "stage",
               "req",
-              "session"
+              "session",
+              "asset_batch",
+              "asset_cat",
+              "asset"
             ],
             "type": "string"
           },
           "ref": {
-            "description": "计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键",
+            "description": "计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键；资源库批次 / 类别写「项目 ID/名称」，素材写 ID 或 A-x",
             "type": "string"
           }
         },
@@ -12654,6 +12931,16 @@
             "maxLength": 40,
             "minLength": 1,
             "type": "string"
+          },
+          "perm": {
+            "description": "权限：view 只看 / comment 可留言（默认）/ upload 可上传（含留言）",
+            "enum": [
+              "view",
+              "comment",
+              "upload",
+              ""
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -12669,6 +12956,16 @@
             "minLength": 1,
             "type": "string"
           },
+          "perm": {
+            "description": "改权限；不传 = 不改",
+            "enum": [
+              "view",
+              "comment",
+              "upload",
+              ""
+            ],
+            "type": "string"
+          },
           "revoked": {
             "description": "true 撤回（下一次访问即拒绝）/ false 恢复",
             "type": "boolean"
@@ -12679,11 +12976,25 @@
       "ShareLinkView": {
         "additionalProperties": false,
         "properties": {
+          "comments": {
+            "description": "这条链接写过的留言条数（不含上传）",
+            "format": "int64",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
           },
+          "downloads": {
+            "description": "下载素材原文件的次数",
+            "format": "int64",
+            "type": "integer"
+          },
           "id": {
+            "type": "string"
+          },
+          "last_download_at": {
+            "format": "date-time",
             "type": "string"
           },
           "last_visit_at": {
@@ -12697,6 +13008,15 @@
             "description": "访客页路径 /s/\u003ctoken\u003e",
             "type": "string"
           },
+          "perm": {
+            "description": "view 只看 / comment 可留言 / upload 可上传（含留言）",
+            "enum": [
+              "view",
+              "comment",
+              "upload"
+            ],
+            "type": "string"
+          },
           "revoked_at": {
             "format": "date-time",
             "type": "string"
@@ -12706,6 +13026,11 @@
           },
           "token": {
             "type": "string"
+          },
+          "uploads": {
+            "description": "这条链接上传过的文件个数",
+            "format": "int64",
+            "type": "integer"
           },
           "url": {
             "description": "按设置里的对外地址拼好的完整链接；没填对外地址时为空，网页用当前地址拼",
@@ -12723,7 +13048,11 @@
           "name",
           "token",
           "created_at",
-          "visits"
+          "visits",
+          "perm",
+          "downloads",
+          "comments",
+          "uploads"
         ],
         "type": "object"
       },
@@ -12731,7 +13060,11 @@
         "additionalProperties": false,
         "properties": {
           "code": {
-            "description": "计划、需求的编号；阶段是所属计划的编号",
+            "description": "计划、需求、素材的编号；阶段是所属计划的编号",
+            "type": "string"
+          },
+          "cover": {
+            "description": "素材：最新版本的封面图（附件 ID）",
             "type": "string"
           },
           "kind": {
@@ -12739,7 +13072,10 @@
               "plan",
               "stage",
               "req",
-              "session"
+              "session",
+              "asset_batch",
+              "asset_cat",
+              "asset"
             ],
             "type": "string"
           },
@@ -12753,7 +13089,7 @@
             ]
           },
           "ref": {
-            "description": "计划 / 阶段 / 需求的 ID，会话键",
+            "description": "计划 / 阶段 / 需求的 ID，会话键；资源库的批次、类别是「项目 ID/名称」，素材是素材 ID",
             "type": "string"
           },
           "role": {
@@ -12771,6 +13107,11 @@
           },
           "title": {
             "type": "string"
+          },
+          "version": {
+            "description": "素材：最新版本号",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -12802,6 +13143,11 @@
       "ShareScopeView": {
         "additionalProperties": false,
         "properties": {
+          "assets": {
+            "description": "资源库素材条数（R-365）",
+            "format": "int64",
+            "type": "integer"
+          },
           "nodes": {
             "items": {
               "$ref": "#/components/schemas/ShareNode"
@@ -12833,13 +13179,18 @@
           "plans",
           "stages",
           "reqs",
-          "sessions"
+          "sessions",
+          "assets"
         ],
         "type": "object"
       },
       "ShareUpdateInBody": {
         "additionalProperties": false,
         "properties": {
+          "allow_download": {
+            "description": "访客能否下载素材原文件（R-365）；不传 = 不改",
+            "type": "boolean"
+          },
           "expires_at": {
             "format": "date-time",
             "type": "string"
@@ -12874,6 +13225,9 @@
       "ShareView": {
         "additionalProperties": false,
         "properties": {
+          "allow_download": {
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -12965,6 +13319,7 @@
           "name",
           "has_password",
           "status",
+          "allow_download",
           "items",
           "created_at",
           "updated_at"
@@ -21766,6 +22121,110 @@
           }
         },
         "summary": "访客：分享名称、要不要输密码",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/assets": {
+      "get": {
+        "operationId": "guest-assets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestAssetsView"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：分享里的素材（图片墙）",
+        "tags": [
+          "share-guest"
+        ]
+      }
+    },
+    "/api/share/{token}/assets/{ref}": {
+      "get": {
+        "operationId": "guest-asset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "ks_share",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "访客：一条素材和分享里它的版本、附件",
         "tags": [
           "share-guest"
         ]

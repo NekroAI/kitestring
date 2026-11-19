@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, type Schemas } from '../api/client'
+import { normAssetDetail, normVersion } from '../api/queries'
 import { t } from '../i18n'
 
 // 访客页的数据（R-281 第 3 段）：只调 /api/share/<token>/…（免登录、只读），不用所有者的接口客户端，
@@ -16,6 +17,7 @@ export type GuestSessionPage = Schemas['GuestSessionOutBody']
 export type ShareActivity = Schemas['ShareActivity']
 export type GuestPlan = Schemas['Plan']
 export type GuestComment = Schemas['GuestComment']
+export type GuestAssets = Schemas['GuestAssetsView']
 
 const base = (token: string) => `/api/share/${encodeURIComponent(token)}`
 
@@ -42,6 +44,8 @@ export const gk = {
   plan: (token: string, code: string) => ['guest', token, 'plan', code] as const,
   session: (token: string, key: string) => ['guest', token, 'session', key] as const,
   comments: (token: string) => ['guest', token, 'comments'] as const,
+  assets: (token: string) => ['guest', token, 'assets'] as const,
+  asset: (token: string, ref: string) => ['guest', token, 'asset', ref] as const,
 }
 
 const noRetry = (n: number, e: unknown) => !(e instanceof ApiError && e.status < 500) && n < 2
@@ -85,7 +89,7 @@ export function useMyComments(token: string) {
   })
 }
 
-export async function postComment(token: string, body: { target_kind: string; target_ref: string; text: string }) {
+export async function postComment(token: string, body: { target_kind: string; target_ref: string; text: string; version?: number }) {
   return call<GuestComment>(`${base(token)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 
@@ -158,4 +162,37 @@ export function useGuestLive(token: string, enabled: boolean) {
     }
   }, [token, enabled, qc])
   return live
+}
+
+// 资源库（R-365）：分享里的素材。图片墙、详情都随实时通道刷新（权限、下载开关改了也随之更新）。
+export function useGuestAssets(token: string) {
+  return useQuery({
+    queryKey: gk.assets(token),
+    queryFn: () => call<GuestAssets>(`${base(token)}/assets`),
+    select: (d) => ({ ...d, assets: (d.assets ?? []).map((a) => ({ ...a, latest: a.latest ? normVersion(a.latest) : undefined })), statuses: d.statuses ?? [] }),
+    retry: noRetry,
+  })
+}
+
+// guestAssetDetail：和所有者的 useAsset 同样的形状，给共用的素材抽屉用。
+export function guestAssetDetail(token: string) {
+  return function useGuestAsset(ref: string | null) {
+    return useQuery({
+      queryKey: gk.asset(token, ref ?? ''),
+      queryFn: () => call<Schemas['AssetDetail']>(`${base(token)}/assets/${encodeURIComponent(ref!)}`),
+      select: normAssetDetail,
+      enabled: !!ref,
+      retry: noRetry,
+    })
+  }
+}
+
+// postUpload：访客上传一个文件给素材的某一版（可上传的链接），先进分享者的待收队列。
+export async function postUpload(token: string, asset: string, version: number, file: File, note: string) {
+  const fd = new FormData()
+  fd.set('asset', asset)
+  fd.set('version', String(version))
+  fd.set('note', note)
+  fd.set('file', file)
+  return call<GuestComment>(`${base(token)}/uploads`, { method: 'POST', body: fd })
 }

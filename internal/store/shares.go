@@ -27,32 +27,73 @@ const (
 	ShareKindStage   = "stage"
 	ShareKindReq     = "req"
 	ShareKindSession = "session"
+	// 资源库（R-365）：批次、类别（ref 是「项目 ID/名称」）、单个素材（ref 是素材 ID）
+	ShareKindAssetBatch = "asset_batch"
+	ShareKindAssetCat   = "asset_cat"
+	ShareKindAsset      = "asset"
 )
+
+// 访客链接的权限档（R-365）。
+const (
+	PermView    = "view"    // 只看
+	PermComment = "comment" // 可留言（默认）
+	PermUpload  = "upload"  // 可上传（含留言）
+)
+
+// PermRank 用来比较权限档：只看 < 可留言 < 可上传；不认识的按只看。
+func PermRank(p string) int {
+	switch p {
+	case PermComment:
+		return 1
+	case PermUpload:
+		return 2
+	}
+	return 0
+}
+
+// ValidPerm 判断权限档是否合法。
+func ValidPerm(p string) bool { return p == PermView || p == PermComment || p == PermUpload }
+
+// AssetScopeRef 拼资源库批次 / 类别挂载项的 ref。
+func AssetScopeRef(projectID, name string) string { return projectID + "/" + name }
+
+// SplitAssetScopeRef 拆开「项目 ID/名称」。
+func SplitAssetScopeRef(ref string) (projectID, name string, ok bool) {
+	i := strings.IndexByte(ref, '/')
+	if i <= 0 || i == len(ref)-1 {
+		return "", "", false
+	}
+	return ref[:i], ref[i+1:], true
+}
 
 // Share 是一个分享。
 type Share struct {
-	ID          string      `json:"id"`
-	Name        string      `json:"name"`
-	ProjectID   string      `json:"project_id,omitempty"`
-	HasPassword bool        `json:"has_password" doc:"设了访问密码（所有链接共用）"`
-	ExpiresAt   *time.Time  `json:"expires_at,omitempty" doc:"到期时间；省略表示永久"`
-	RevokedAt   *time.Time  `json:"revoked_at,omitempty" doc:"撤回的时间；重新启用时清除"`
-	Status      string      `json:"status" enum:"active,expired,revoked" doc:"active 生效中 / expired 已失效（到期）/ revoked 已撤回"`
-	Items       []ShareItem `json:"items"`
-	Links       []ShareLink `json:"links"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	ProjectID   string     `json:"project_id,omitempty"`
+	HasPassword bool       `json:"has_password" doc:"设了访问密码（所有链接共用）"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty" doc:"到期时间；省略表示永久"`
+	RevokedAt   *time.Time `json:"revoked_at,omitempty" doc:"撤回的时间；重新启用时清除"`
+	Status      string     `json:"status" enum:"active,expired,revoked" doc:"active 生效中 / expired 已失效（到期）/ revoked 已撤回"`
+	// AllowDownload：访客能下载素材原文件（R-365），默认关；关时访客页不显示下载按钮，带 download 的请求也拒绝
+	AllowDownload bool        `json:"allow_download"`
+	Items         []ShareItem `json:"items"`
+	Links         []ShareLink `json:"links"`
+	CreatedAt     time.Time   `json:"created_at"`
+	UpdatedAt     time.Time   `json:"updated_at"`
 
 	PasswordHash string `json:"-"`
 }
 
 // ShareItem 是分享上的一个挂载项。
 type ShareItem struct {
-	Kind string `json:"kind" enum:"plan,stage,req,session"`
+	Kind string `json:"kind" enum:"plan,stage,req,session,asset_batch,asset_cat,asset"`
 	// Ref：计划 / 阶段 / 需求的 ID，会话键。写入时计划、需求也可以写编号（P-x / R-x）
 	Ref      string `json:"ref"`
 	Auto     bool   `json:"auto" doc:"包含以后新增的：计划后来新增的阶段和需求、阶段后来放进的需求、需求后来关联的会话自动纳入"`
 	Excluded bool   `json:"excluded" doc:"被单独取消：上级开着「包含以后新增的」也不会把它带回来"`
+	// Cap：单个素材没开「包含以后新增的」时只给到这一版（挂上时的最新版本）；0 = 不限。由纸鸢填，写入时不用传
+	Cap int `json:"cap,omitempty"`
 }
 
 // ShareLink 是一个访客的链接。
@@ -65,6 +106,12 @@ type ShareLink struct {
 	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
 	LastVisitAt *time.Time `json:"last_visit_at,omitempty"`
 	Visits      int        `json:"visits"`
+	// 资源库分享（R-365）
+	Perm           string     `json:"perm" enum:"view,comment,upload" doc:"view 只看 / comment 可留言 / upload 可上传（含留言）"`
+	Downloads      int        `json:"downloads" doc:"下载素材原文件的次数"`
+	LastDownloadAt *time.Time `json:"last_download_at,omitempty"`
+	Comments       int        `json:"comments" doc:"这条链接写过的留言条数（不含上传）"`
+	Uploads        int        `json:"uploads" doc:"这条链接上传过的文件个数"`
 }
 
 // StatusAt 推算分享在某时刻的状态。
@@ -78,12 +125,12 @@ func (x Share) StatusAt(t time.Time) string {
 	return ShareActive
 }
 
-const shareSelect = `SELECT id, name, COALESCE(project_id, ''), password_hash, expires_at, revoked_at, created_at, updated_at FROM shares`
+const shareSelect = `SELECT id, name, COALESCE(project_id, ''), password_hash, expires_at, revoked_at, allow_download, created_at, updated_at FROM shares`
 
 func scanShare(row interface{ Scan(...any) error }) (Share, error) {
 	var x Share
 	var exp, rev, created, updated string
-	if err := row.Scan(&x.ID, &x.Name, &x.ProjectID, &x.PasswordHash, &exp, &rev, &created, &updated); err != nil {
+	if err := row.Scan(&x.ID, &x.Name, &x.ProjectID, &x.PasswordHash, &exp, &rev, &x.AllowDownload, &created, &updated); err != nil {
 		return x, err
 	}
 	x.HasPassword = x.PasswordHash != ""
@@ -96,13 +143,43 @@ func scanShare(row interface{ Scan(...any) error }) (Share, error) {
 }
 
 // NormShareItems 整理挂载项：计划、需求的编号换成 ID，阶段、会话核对存在；同一项只留一条。
-func (s *Store) NormShareItems(ctx context.Context, items []ShareItem) ([]ShareItem, error) {
+// 单个素材（R-365）：编号 A-x 换成 ID；没开「包含以后新增的」时记下版本上限——prev（修改前的挂载项）里有就沿用，没有就取现在的最新版本。
+func (s *Store) NormShareItems(ctx context.Context, items []ShareItem, prev ...ShareItem) ([]ShareItem, error) {
 	out := []ShareItem{}
 	seen := map[string]bool{}
+	caps := map[string]int{}
+	for _, it := range prev {
+		if it.Kind == ShareKindAsset && it.Cap > 0 {
+			caps[it.Ref] = it.Cap
+		}
+	}
 	for _, it := range items {
 		ref := strings.TrimSpace(it.Ref)
 		var err error
+		it.Cap = 0
 		switch it.Kind {
+		case ShareKindAssetBatch, ShareKindAssetCat:
+			col := "batch"
+			if it.Kind == ShareKindAssetCat {
+				col = "category"
+			}
+			pid, name, ok := SplitAssetScopeRef(ref)
+			if !ok {
+				err = ErrNotFound
+				break
+			}
+			err = s.db.QueryRowContext(ctx, `SELECT id FROM assets WHERE project_id = ? AND `+col+` = ? LIMIT 1`, pid, name).Scan(new(string))
+		case ShareKindAsset:
+			var d AssetDetail
+			if d, err = s.GetAsset(ctx, ref); err == nil {
+				ref = d.ID
+				if !it.Auto && !it.Excluded {
+					it.Cap = d.Version
+					if c, ok := caps[ref]; ok && c <= d.Version {
+						it.Cap = c
+					}
+				}
+			}
 		case ShareKindPlan:
 			var p Plan
 			if p, err = s.GetPlan(ctx, ref); err == nil {
@@ -145,8 +222,8 @@ func (s *Store) CreateShare(ctx context.Context, x Share, items []ShareItem) (Sh
 	x.ID = protocol.NewID()
 	n := now()
 	err := s.tx(ctx, func(t *sql.Tx) error {
-		if _, err := t.ExecContext(ctx, `INSERT INTO shares(id, name, project_id, password_hash, expires_at, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-			x.ID, x.Name, nullStr(x.ProjectID), x.PasswordHash, tsOrEmpty(x.ExpiresAt), n, n); err != nil {
+		if _, err := t.ExecContext(ctx, `INSERT INTO shares(id, name, project_id, password_hash, expires_at, allow_download, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+			x.ID, x.Name, nullStr(x.ProjectID), x.PasswordHash, tsOrEmpty(x.ExpiresAt), x.AllowDownload, n, n); err != nil {
 			return err
 		}
 		return setShareItems(ctx, t, x.ID, items)
@@ -169,7 +246,7 @@ func setShareItems(ctx context.Context, t *sql.Tx, id string, items []ShareItem)
 		return err
 	}
 	for _, it := range items {
-		if _, err := t.ExecContext(ctx, `INSERT INTO share_items(share_id, kind, ref, auto, excluded) VALUES(?, ?, ?, ?, ?)`, id, it.Kind, it.Ref, it.Auto, it.Excluded); err != nil {
+		if _, err := t.ExecContext(ctx, `INSERT INTO share_items(share_id, kind, ref, auto, excluded, cap) VALUES(?, ?, ?, ?, ?, ?)`, id, it.Kind, it.Ref, it.Auto, it.Excluded, it.Cap); err != nil {
 			return err
 		}
 	}
@@ -178,10 +255,11 @@ func setShareItems(ctx context.Context, t *sql.Tx, id string, items []ShareItem)
 
 // ShareUpdate 是对分享的修改；nil 表示不改。
 type ShareUpdate struct {
-	Name         *string
-	PasswordHash *string // "" = 去掉密码
-	ExpiresAt    **time.Time
-	Items        []ShareItem // nil = 不改；空切片 = 清空
+	Name          *string
+	PasswordHash  *string // "" = 去掉密码
+	ExpiresAt     **time.Time
+	Items         []ShareItem // nil = 不改；空切片 = 清空
+	AllowDownload *bool
 }
 
 // UpdateShare 修改分享。
@@ -206,6 +284,11 @@ func (s *Store) UpdateShare(ctx context.Context, id string, u ShareUpdate) (Shar
 		}
 		if u.ExpiresAt != nil {
 			if err := set("expires_at", tsOrEmpty(*u.ExpiresAt)); err != nil {
+				return err
+			}
+		}
+		if u.AllowDownload != nil {
+			if err := set("allow_download", *u.AllowDownload); err != nil {
 				return err
 			}
 		}
@@ -298,7 +381,7 @@ func (s *Store) ListShares(ctx context.Context) ([]Share, error) {
 }
 
 func (s *Store) shareItems(ctx context.Context, id string) ([]ShareItem, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, ref, auto, excluded FROM share_items WHERE share_id = ? ORDER BY rowid`, id)
+	rows, err := s.db.QueryContext(ctx, `SELECT kind, ref, auto, excluded, cap FROM share_items WHERE share_id = ? ORDER BY rowid`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +389,7 @@ func (s *Store) shareItems(ctx context.Context, id string) ([]ShareItem, error) 
 	out := []ShareItem{}
 	for rows.Next() {
 		var it ShareItem
-		if err := rows.Scan(&it.Kind, &it.Ref, &it.Auto, &it.Excluded); err != nil {
+		if err := rows.Scan(&it.Kind, &it.Ref, &it.Auto, &it.Excluded, &it.Cap); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
@@ -314,7 +397,9 @@ func (s *Store) shareItems(ctx context.Context, id string) ([]ShareItem, error) 
 	return out, rows.Err()
 }
 
-const linkSelect = `SELECT id, share_id, name, token, created_at, revoked_at, last_visit_at, visits FROM share_links `
+const linkSelect = `SELECT id, share_id, name, token, created_at, revoked_at, last_visit_at, visits, perm, downloads, last_download_at,
+	(SELECT COUNT(*) FROM share_comments c WHERE c.link_id = share_links.id AND c.file_id = ''),
+	(SELECT COUNT(*) FROM share_comments c WHERE c.link_id = share_links.id AND c.file_id <> '') FROM share_links `
 
 func (s *Store) shareLinks(ctx context.Context, where string, args ...any) ([]ShareLink, error) {
 	rows, err := s.db.QueryContext(ctx, linkSelect+where, args...)
@@ -325,10 +410,11 @@ func (s *Store) shareLinks(ctx context.Context, where string, args ...any) ([]Sh
 	out := []ShareLink{}
 	for rows.Next() {
 		var l ShareLink
-		var created, rev, visit string
-		if err := rows.Scan(&l.ID, &l.ShareID, &l.Name, &l.Token, &created, &rev, &visit, &l.Visits); err != nil {
+		var created, rev, visit, dl string
+		if err := rows.Scan(&l.ID, &l.ShareID, &l.Name, &l.Token, &created, &rev, &visit, &l.Visits, &l.Perm, &l.Downloads, &dl, &l.Comments, &l.Uploads); err != nil {
 			return nil, err
 		}
+		l.LastDownloadAt = parseNullTS(sql.NullString{String: dl, Valid: dl != ""})
 		l.CreatedAt = parseTS(created)
 		l.RevokedAt = parseNullTS(sql.NullString{String: rev, Valid: rev != ""})
 		l.LastVisitAt = parseNullTS(sql.NullString{String: visit, Valid: visit != ""})
@@ -337,13 +423,19 @@ func (s *Store) shareLinks(ctx context.Context, where string, args ...any) ([]Sh
 	return out, rows.Err()
 }
 
-// CreateShareLink 给分享加一条访客链接。
-func (s *Store) CreateShareLink(ctx context.Context, shareID, name, token string) (ShareLink, error) {
+// CreateShareLink 给分享加一条访客链接；perm 为空时是「可留言」。
+func (s *Store) CreateShareLink(ctx context.Context, shareID, name, token, perm string) (ShareLink, error) {
 	if _, err := s.GetShare(ctx, shareID); err != nil {
 		return ShareLink{}, err
 	}
+	if perm == "" {
+		perm = PermComment
+	}
+	if !ValidPerm(perm) {
+		return ShareLink{}, fmt.Errorf("不认识的权限：%s", perm)
+	}
 	id := protocol.NewID()
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO share_links(id, share_id, name, token, created_at) VALUES(?, ?, ?, ?, ?)`, id, shareID, name, token, now()); err != nil {
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO share_links(id, share_id, name, token, perm, created_at) VALUES(?, ?, ?, ?, ?, ?)`, id, shareID, name, token, perm, now()); err != nil {
 		return ShareLink{}, err
 	}
 	return s.GetShareLink(ctx, shareID, id)
@@ -376,10 +468,18 @@ func (s *Store) ShareLinkByToken(ctx context.Context, token string) (ShareLink, 
 	return ls[0], nil
 }
 
-// UpdateShareLink 改链接的名字或撤回 / 恢复；nil 表示不改。
-func (s *Store) UpdateShareLink(ctx context.Context, shareID, id string, name *string, revoked *bool) (ShareLink, error) {
+// UpdateShareLink 改链接的名字、权限档，或撤回 / 恢复；nil / 空表示不改。
+func (s *Store) UpdateShareLink(ctx context.Context, shareID, id string, name *string, revoked *bool, perm ...string) (ShareLink, error) {
 	if _, err := s.GetShareLink(ctx, shareID, id); err != nil {
 		return ShareLink{}, err
+	}
+	if len(perm) > 0 && perm[0] != "" {
+		if !ValidPerm(perm[0]) {
+			return ShareLink{}, fmt.Errorf("不认识的权限：%s", perm[0])
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET perm = ? WHERE id = ?`, perm[0], id); err != nil {
+			return ShareLink{}, err
+		}
 	}
 	if name != nil {
 		if _, err := s.db.ExecContext(ctx, `UPDATE share_links SET name = ? WHERE id = ?`, *name, id); err != nil {
@@ -416,6 +516,12 @@ func (s *Store) TouchShareLink(ctx context.Context, id string) error {
 	return err
 }
 
+// CountShareDownload 记一次素材原文件下载（R-365）。
+func (s *Store) CountShareDownload(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE share_links SET downloads = downloads + 1, last_download_at = ? WHERE id = ?`, now(), id)
+	return err
+}
+
 // ---------- 分享范围 ----------
 
 // ShareScope 是一个分享实际包含的内容：挂载项展开「包含以后新增的」、去掉单独取消的之后的结果。
@@ -424,6 +530,22 @@ type ShareScope struct {
 	Stages   map[string]bool // 阶段 ID
 	Reqs     map[string]bool // 需求 ID
 	Sessions map[string]bool // 会话键
+	// 资源库（R-365）：素材 ID → 版本上限（0 = 不限，以后的新版本也给）；批次、类别是明确挂上的（ref 同挂载项）
+	Assets       map[string]int
+	AssetBatches map[string]bool
+	AssetCats    map[string]bool
+}
+
+// AssetVisible：素材的第 v 版在不在分享里。
+func (sc ShareScope) AssetVisible(id string, v int) bool {
+	c, ok := sc.Assets[id]
+	return ok && (c == 0 || v <= c)
+}
+
+// NewShareScope 是空的分享范围。
+func NewShareScope() ShareScope {
+	return ShareScope{Plans: map[string]bool{}, Stages: map[string]bool{}, Reqs: map[string]bool{}, Sessions: map[string]bool{},
+		Assets: map[string]int{}, AssetBatches: map[string]bool{}, AssetCats: map[string]bool{}}
 }
 
 // HasReq 判断需求在不在分享里。
@@ -433,7 +555,7 @@ func (sc ShareScope) HasReq(id string) bool { return sc.Reqs[id] }
 // 规则：明确挂上的项按自己的 auto；上级开着 auto 时，它下面现在和以后的项都算进来（也带着 auto 往下传），
 // 除非那一项被单独取消（excluded）——单独取消的项连同只经由它带进来的下级都不算。
 func (s *Store) ResolveShare(ctx context.Context, items []ShareItem) (ShareScope, error) {
-	sc := ShareScope{Plans: map[string]bool{}, Stages: map[string]bool{}, Reqs: map[string]bool{}, Sessions: map[string]bool{}}
+	sc := NewShareScope()
 	rows := map[string]ShareItem{}
 	for _, it := range items {
 		rows[it.Kind+"|"+it.Ref] = it
@@ -523,6 +645,60 @@ func (s *Store) ResolveShare(ctx context.Context, items []ShareItem) (ShareScope
 		if n, ok := decide(ShareKindSession, key, inh); ok && n.in {
 			sc.Sessions[key] = true
 		}
+	}
+	// 资源库（R-365）：批次、类别和计划一样是最上层；开着 auto 时下面现在和以后的素材都算（不限版本）
+	assetIn := map[string]bool{}
+	for _, it := range items {
+		if (it.Kind != ShareKindAssetBatch && it.Kind != ShareKindAssetCat) || it.Excluded {
+			continue
+		}
+		pid, name, ok := SplitAssetScopeRef(it.Ref)
+		if !ok {
+			continue
+		}
+		col := "batch"
+		if it.Kind == ShareKindAssetCat {
+			col = "category"
+			sc.AssetCats[it.Ref] = true
+		} else {
+			sc.AssetBatches[it.Ref] = true
+		}
+		if !it.Auto {
+			continue
+		}
+		rs, err := s.db.QueryContext(ctx, `SELECT id FROM assets WHERE project_id = ? AND `+col+` = ?`, pid, name)
+		if err != nil {
+			return sc, err
+		}
+		for rs.Next() {
+			var id string
+			if err := rs.Scan(&id); err != nil {
+				rs.Close()
+				return sc, err
+			}
+			assetIn[id] = true
+		}
+		rs.Close()
+	}
+	for _, it := range items {
+		if it.Kind == ShareKindAsset {
+			if _, ok := assetIn[it.Ref]; !ok {
+				if err := s.db.QueryRowContext(ctx, `SELECT id FROM assets WHERE id = ?`, it.Ref).Scan(new(string)); err == nil {
+					assetIn[it.Ref] = false
+				}
+			}
+		}
+	}
+	for id, inh := range assetIn {
+		n, ok := decide(ShareKindAsset, id, inh)
+		if !ok || !n.in {
+			continue
+		}
+		c := 0
+		if it, ok := rows[ShareKindAsset+"|"+id]; ok && !n.auto {
+			c = it.Cap // 没开 auto：只给到挂上时的那一版
+		}
+		sc.Assets[id] = c
 	}
 	return sc, nil
 }

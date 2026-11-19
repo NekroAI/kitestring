@@ -26,15 +26,18 @@ func shareGuestPath(token string) string { return "/s/" + token }
 
 // ShareNode 是分享范围里的一项，所有者的关系图和访客的目录共用。
 type ShareNode struct {
-	Kind   string `json:"kind" enum:"plan,stage,req,session"`
-	Ref    string `json:"ref" doc:"计划 / 阶段 / 需求的 ID，会话键"`
-	Code   string `json:"code,omitempty" doc:"计划、需求的编号；阶段是所属计划的编号"`
+	Kind   string `json:"kind" enum:"plan,stage,req,session,asset_batch,asset_cat,asset"`
+	Ref    string `json:"ref" doc:"计划 / 阶段 / 需求的 ID，会话键；资源库的批次、类别是「项目 ID/名称」，素材是素材 ID"`
+	Code   string `json:"code,omitempty" doc:"计划、需求、素材的编号；阶段是所属计划的编号"`
 	Seq    int    `json:"seq,omitempty" doc:"阶段：第几阶段"`
 	Title  string `json:"title"`
 	Status string `json:"status,omitempty" doc:"计划 / 阶段 / 需求的状态；会话是显示状态的原始值（state）"`
 	Role   string `json:"role,omitempty" doc:"会话的身份"`
-	// Parents：上级节点的 ref（都在分享里）：阶段 → 计划，需求 → 阶段，会话 → 关联的需求（可能几条）
+	// Parents：上级节点的 ref（都在分享里）：阶段 → 计划，需求 → 阶段，会话 → 关联的需求（可能几条）；
+	// 素材的上级是批次和类别，写成完整的键「asset_batch|ref」「asset_cat|ref」
 	Parents []string `json:"parents"`
+	Cover   string   `json:"cover,omitempty" doc:"素材：最新版本的封面图（附件 ID）"`
+	Version int      `json:"version,omitempty" doc:"素材：最新版本号"`
 }
 
 // ShareScopeView 是分享实际包含的内容，按 计划 → 阶段 → 需求 → 会话 排好。
@@ -44,6 +47,7 @@ type ShareScopeView struct {
 	Stages int         `json:"stages"`
 	Reqs   int         `json:"reqs"`
 	Sess   int         `json:"sessions"`
+	Assets int         `json:"assets" doc:"资源库素材条数（R-365）"`
 }
 
 // ShareLinkView 是所有者看到的访客链接。
@@ -82,8 +86,8 @@ type shareLinkPath struct {
 }
 
 type shareItemIn struct {
-	Kind     string `json:"kind" enum:"plan,stage,req,session"`
-	Ref      string `json:"ref" doc:"计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键"`
+	Kind     string `json:"kind" enum:"plan,stage,req,session,asset_batch,asset_cat,asset"`
+	Ref      string `json:"ref" doc:"计划 / 需求的 ID 或编号（P-x / R-x），阶段 ID，会话键；资源库批次 / 类别写「项目 ID/名称」，素材写 ID 或 A-x"`
 	Auto     bool   `json:"auto,omitempty" doc:"包含以后新增的"`
 	Excluded bool   `json:"excluded,omitempty" doc:"单独取消：上级开着「包含以后新增的」也不纳入"`
 }
@@ -103,7 +107,9 @@ type shareCreateIn struct {
 		Password  string        `json:"password,omitempty" maxLength:"128" doc:"访问密码，可选；所有链接共用"`
 		ExpiresAt *time.Time    `json:"expires_at,omitempty" doc:"到期时间；省略表示永久。7 天 / 30 天 / 自定义由网页换算成时间"`
 		Items     []shareItemIn `json:"items"`
-		Links     []string      `json:"links,omitempty" doc:"同时建好的访客链接名字（每个访客一条）"`
+		Links     []string      `json:"links,omitempty" doc:"同时建好的访客链接名字（每个访客一条，权限是可留言）"`
+		// AllowDownload：访客能下载素材原文件（R-365），默认关
+		AllowDownload bool `json:"allow_download,omitempty"`
 	}
 }
 
@@ -113,9 +119,10 @@ type shareUpdateIn struct {
 		Name     *string `json:"name,omitempty" minLength:"1" maxLength:"80"`
 		Password *string `json:"password,omitempty" maxLength:"128" doc:"不传 = 不改；空串 = 去掉密码；改密码后已输过密码的访客要重新输"`
 		// ExpiresAt / Forever：都不传 = 不改；forever = true 改成永久
-		ExpiresAt *time.Time    `json:"expires_at,omitempty"`
-		Forever   bool          `json:"forever,omitempty" doc:"改成永久"`
-		Items     []shareItemIn `json:"items,omitempty" doc:"不传 = 不改；传了就整组替换"`
+		ExpiresAt     *time.Time    `json:"expires_at,omitempty"`
+		Forever       bool          `json:"forever,omitempty" doc:"改成永久"`
+		Items         []shareItemIn `json:"items,omitempty" doc:"不传 = 不改；传了就整组替换"`
+		AllowDownload *bool         `json:"allow_download,omitempty" doc:"访客能否下载素材原文件（R-365）；不传 = 不改"`
 	}
 }
 
@@ -141,9 +148,20 @@ type shareCandidatesIn struct {
 	ProjectID string `query:"project_id" doc:"只列这个项目的；空 = 全部项目"`
 }
 
-// shareCandidates 把项目里的全部计划、阶段、需求和需求关联的会话当成一个范围，勾选列表按它画。
+// shareCandidates 把项目里的全部计划、阶段、需求和需求关联的会话、资源库的批次 / 类别 / 素材当成一个范围，勾选列表按它画。
 func (h *Hub) shareCandidates(ctx context.Context, projectID string) (store.ShareScope, error) {
-	sc := store.ShareScope{Plans: map[string]bool{}, Stages: map[string]bool{}, Reqs: map[string]bool{}, Sessions: map[string]bool{}}
+	sc := store.NewShareScope()
+	assets, err := h.store.ListAssets(ctx, store.AssetFilter{ProjectID: projectID})
+	if err != nil {
+		return sc, err
+	}
+	for _, a := range assets {
+		sc.Assets[a.ID] = 0
+		sc.AssetBatches[store.AssetScopeRef(a.ProjectID, a.Batch)] = true
+		if a.Category != "" {
+			sc.AssetCats[store.AssetScopeRef(a.ProjectID, a.Category)] = true
+		}
+	}
 	plans, err := h.store.ListPlans(ctx, projectID)
 	if err != nil {
 		return sc, err
@@ -177,6 +195,7 @@ type shareLinkIn struct {
 	ID   string `path:"id"`
 	Body struct {
 		Name string `json:"name" minLength:"1" maxLength:"40" doc:"访客的名字，如「小王」"`
+		Perm string `json:"perm,omitempty" enum:"view,comment,upload," doc:"权限：view 只看 / comment 可留言（默认）/ upload 可上传（含留言）"`
 	}
 }
 
@@ -186,6 +205,7 @@ type shareLinkUpdateIn struct {
 	Body struct {
 		Name    *string `json:"name,omitempty" minLength:"1" maxLength:"40"`
 		Revoked *bool   `json:"revoked,omitempty" doc:"true 撤回（下一次访问即拒绝）/ false 恢复"`
+		Perm    string  `json:"perm,omitempty" enum:"view,comment,upload," doc:"改权限；不传 = 不改"`
 	}
 }
 
@@ -249,7 +269,7 @@ func (h *Hub) registerShareWeb(api huma.API) {
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			x := store.Share{Name: name, ProjectID: b.ProjectID, ExpiresAt: b.ExpiresAt}
+			x := store.Share{Name: name, ProjectID: b.ProjectID, ExpiresAt: b.ExpiresAt, AllowDownload: b.AllowDownload}
 			if x.PasswordHash, err = sharePasswordHash(b.Password); err != nil {
 				return nil, err
 			}
@@ -259,7 +279,7 @@ func (h *Hub) registerShareWeb(api huma.API) {
 			}
 			for _, ln := range b.Links {
 				if ln = strings.TrimSpace(ln); ln != "" {
-					if _, err := h.store.CreateShareLink(ctx, x.ID, ln, randomToken(sharePrefix)); err != nil {
+					if _, err := h.store.CreateShareLink(ctx, x.ID, ln, randomToken(sharePrefix), store.PermComment); err != nil {
 						return nil, err
 					}
 				}
@@ -299,12 +319,17 @@ func (h *Hub) registerShareWeb(api huma.API) {
 				u.ExpiresAt = &b.ExpiresAt
 			}
 			if b.Items != nil {
-				items, err := h.store.NormShareItems(ctx, toItems(b.Items))
+				old, err := h.store.GetShare(ctx, in.ID)
+				if err != nil {
+					return nil, apiErr(err)
+				}
+				items, err := h.store.NormShareItems(ctx, toItems(b.Items), old.Items...) // 单个素材的版本上限沿用修改前的
 				if err != nil {
 					return nil, apiErr(err)
 				}
 				u.Items = items
 			}
+			u.AllowDownload = b.AllowDownload
 			if _, err := h.store.UpdateShare(ctx, in.ID, u); err != nil {
 				return nil, apiErr(err)
 			}
@@ -371,7 +396,7 @@ func (h *Hub) registerShareWeb(api huma.API) {
 			if name == "" {
 				return nil, huma.Error400BadRequest("访客名字不能为空")
 			}
-			l, err := h.store.CreateShareLink(ctx, in.ID, name, randomToken(sharePrefix))
+			l, err := h.store.CreateShareLink(ctx, in.ID, name, randomToken(sharePrefix), in.Body.Perm)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -388,7 +413,7 @@ func (h *Hub) registerShareWeb(api huma.API) {
 				}
 				name = &n
 			}
-			l, err := h.store.UpdateShareLink(ctx, in.ID, in.Link, name, in.Body.Revoked)
+			l, err := h.store.UpdateShareLink(ctx, in.ID, in.Link, name, in.Body.Revoked, in.Body.Perm)
 			if err != nil {
 				return nil, apiErr(err)
 			}
@@ -470,7 +495,7 @@ func (h *Hub) shareView(ctx context.Context, x store.Share) (ShareView, error) {
 
 // scopeView 把分享范围排成 计划 → 阶段 → 需求 → 会话 的节点列表。
 func (h *Hub) scopeView(ctx context.Context, sc store.ShareScope) (ShareScopeView, error) {
-	v := ShareScopeView{Nodes: []ShareNode{}, Plans: len(sc.Plans), Stages: len(sc.Stages), Reqs: len(sc.Reqs), Sess: len(sc.Sessions)}
+	v := ShareScopeView{Nodes: []ShareNode{}, Plans: len(sc.Plans), Stages: len(sc.Stages), Reqs: len(sc.Reqs), Sess: len(sc.Sessions), Assets: len(sc.Assets)}
 	// 计划与阶段
 	plans, err := h.store.ListPlans(ctx, "")
 	if err != nil {
@@ -540,7 +565,55 @@ func (h *Hub) scopeView(ctx context.Context, sc store.ShareScope) (ShareScopeVie
 		}
 		v.Nodes = append(v.Nodes, n)
 	}
-	return v, nil
+	return v, h.assetNodes(ctx, sc, &v)
+}
+
+// assetNodes 把分享里的资源库内容排成节点（R-365）：批次、类别在前（按名称），素材按批次、编号；素材的上级是在分享里的批次和类别。
+func (h *Hub) assetNodes(ctx context.Context, sc store.ShareScope, v *ShareScopeView) error {
+	if len(sc.Assets) == 0 && len(sc.AssetBatches) == 0 && len(sc.AssetCats) == 0 {
+		return nil
+	}
+	group := func(kind string, set map[string]bool) {
+		refs := make([]string, 0, len(set))
+		for r := range set {
+			refs = append(refs, r)
+		}
+		sort.Strings(refs)
+		for _, r := range refs {
+			_, name, _ := store.SplitAssetScopeRef(r)
+			v.Nodes = append(v.Nodes, ShareNode{Kind: kind, Ref: r, Title: name, Parents: []string{}})
+		}
+	}
+	group(store.ShareKindAssetBatch, sc.AssetBatches)
+	group(store.ShareKindAssetCat, sc.AssetCats)
+	if len(sc.Assets) == 0 {
+		return nil
+	}
+	all, err := h.store.ListAssets(ctx, store.AssetFilter{})
+	if err != nil {
+		return err
+	}
+	for _, a := range all {
+		if _, ok := sc.Assets[a.ID]; !ok {
+			continue
+		}
+		n := ShareNode{Kind: store.ShareKindAsset, Ref: a.ID, Code: a.Code, Title: a.Key, Status: a.Status, Version: a.Version, Parents: []string{}}
+		if b := store.AssetScopeRef(a.ProjectID, a.Batch); sc.AssetBatches[b] {
+			n.Parents = append(n.Parents, store.ShareKindAssetBatch+"|"+b)
+		}
+		if c := store.AssetScopeRef(a.ProjectID, a.Category); a.Category != "" && sc.AssetCats[c] {
+			n.Parents = append(n.Parents, store.ShareKindAssetCat+"|"+c)
+		}
+		if a.Latest != nil {
+			if a.Kind == "image" && a.Latest.File != nil {
+				n.Cover = a.Latest.File.ID
+			} else if len(a.Latest.Previews) > 0 {
+				n.Cover = a.Latest.Previews[0].ID
+			}
+		}
+		v.Nodes = append(v.Nodes, n)
+	}
+	return nil
 }
 
 func reqSeq(code string) int {
