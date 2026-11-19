@@ -212,6 +212,8 @@ export function ReqTimeline({ r, decisions, focus }: { r: Requirement; decisions
               {created ? who(created) : <Who actor={r.created_by === 'user' ? 'user' : 'agent'} />}
               <Act>{t.proof.created}</Act>
               {created && created.to !== 'draft' && <StatusFlow c={created} />}
+              {/* 从别的项目记下的需求写明来自哪个项目（R-358），后端存在这次新建的 reason 里 */}
+              {created?.reason && <span data-created-from>{t.common.sep.trim()} {created.reason}</span>}
             </>
           }
         />

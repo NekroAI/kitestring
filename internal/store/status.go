@@ -86,7 +86,7 @@ type StatusChange struct {
 	Via             string    `json:"via" doc:"经由：web 网页 / agent Agent 工具 / create 新建 / link 关联会话（受阻的需求写明原来在等什么） / unblock 等的事完成了自动解除受阻 / release 放行 / withdraw 撤回放行 / revise 退回修改 / accept 验收通过 / assign 交出 / plan 计划 / request 用户批准了 Agent 的改状态申请（ref 是申请的 D-x，R-188）"`
 	Ref             string    `json:"ref,omitempty" doc:"关联记录的编号：D-x 是这次放行、退回修改、撤回的那条放行；P-x 是计划"`
 	ReasonKind      string    `json:"reason_kind,omitempty" enum:"duplicate,changed,dropped,other" doc:"搁置原因的类别：重复 / 方向变了 / 不做了 / 其他（R-157）；只有搁置的变化可能有，旧记录没有"`
-	Reason          string    `json:"reason,omitempty" doc:"搁置原因的一句话（R-157）"`
+	Reason          string    `json:"reason,omitempty" doc:"搁置原因的一句话（R-157）；新建时：从别的项目的会话记下的需求写明来自哪个项目（R-358）"`
 	SessionTitle    string    `json:"session_title,omitempty" doc:"操作时会话的标题快照（R-195）；旧记录没有"`
 	At              time.Time `json:"at"`
 }
@@ -141,8 +141,8 @@ func recordStatus(ctx context.Context, t *sql.Tx, reqID, from, to string) error 
 		rk, rs = NormShelveReason(a.ReasonKind, a.Reason)
 	case ReqBlocked: // 受阻的原因（R-243）；在等的 R-x / D-x 记在 ref
 		_, rs = NormShelveReason("", a.Reason)
-	default: // 解除受阻（等的事完成了，或会话关联开工）时写明原来在等什么（R-269）
-		if from == ReqBlocked && (a.Via == "unblock" || a.Via == "link") {
+	default: // 解除受阻（等的事完成了，或会话关联开工）时写明原来在等什么（R-269）；从别的项目记下的需求写明来自哪个项目（R-358）
+		if (from == ReqBlocked && (a.Via == "unblock" || a.Via == "link")) || (from == "" && a.Via == "create") {
 			_, rs = NormShelveReason("", a.Reason)
 		}
 	}

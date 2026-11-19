@@ -185,6 +185,7 @@ type reqCreateIn struct {
 	Kind         string   `json:"kind,omitempty" jsonschema:"需求类型：design = 设计类（先交方案、用户选定后再实现），不填为普通需求"`
 	FromDecision string   `json:"from_decision,omitempty" jsonschema:"产生这条需求的决策编号（如 D-142）：用户在某条决策里作答后由此新建的需求要填，决策详情里会显示它产生了这条需求"`
 	Images       []string `json:"images,omitempty" jsonschema:"本机图片文件路径（PNG/JPEG/GIF/WebP，默认单张不超过 10 MB，上限可在 Hub 设置里调），如截图"`
+	Project      string   `json:"project,omitempty" jsonschema:"记进哪个项目：项目名、git remote 或项目 ID；不填记进当前会话所在的项目（cd 到别的目录不会改变它）。找不到或对应多个项目时报错并列出可选项目，不会记进当前项目。记进别的项目时不关联当前会话，时间线写明由哪个会话、从哪个项目记的"`
 }
 
 type reqStatusIn struct {
@@ -408,9 +409,9 @@ func (t *tools) register(s *mcp.Server) {
 			}
 			return res, nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。同项目已有同名未关闭需求时照常新建，但返回里会提示，重复的请搁置。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "req_create", Description: "新建需求并自动关联当前会话。用户提出的新需求、你发现必须做的事都应记录，避免遗漏。同项目已有同名未关闭需求时照常新建，但返回里会提示，重复的请搁置。默认记进当前会话所在的项目；要给别的项目记需求时填 project（项目名或 git remote）。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in reqCreateIn) (*mcp.CallToolResult, any, error) {
-			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "kind": in.Kind, "from_decision": in.FromDecision, "session_key": t.sessionKey(ctx, req)}
+			body := map[string]any{"title": in.Title, "detail": in.Detail, "acceptance": in.Acceptance, "status": in.Status, "priority": in.Priority, "source": in.Source, "doc_link": in.DocLink, "kind": in.Kind, "from_decision": in.FromDecision, "project": in.Project, "session_key": t.sessionKey(ctx, req)}
 			dropEmpty(body)
 			ids, err := t.upload(ctx, in.Images)
 			if err != nil {

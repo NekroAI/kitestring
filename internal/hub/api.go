@@ -1270,6 +1270,7 @@ type agentReqIn struct {
 		ReqFields
 		SessionKey   string `json:"session_key,omitempty"`
 		FromDecision string `json:"from_decision,omitempty" doc:"产生这条需求的决策（R-154），如 D-142；用户在某条决策里作答后由此新建的需求要填"`
+		Project      string `json:"project,omitempty" doc:"记进哪个项目（R-358）：项目名、git remote 或项目 ID；不填记进会话所在项目。找不到或对应多个项目时报错并列出可选项目。记进别的项目时不关联当前会话，时间线写明由哪个会话、从哪个项目记的"`
 	}
 }
 
@@ -1311,21 +1312,44 @@ func (h *Hub) registerAgent(api huma.API) {
 			if r.Status == store.ReqReady {
 				r.Status = store.ReqDraft // Agent 记下的需求先停在草稿，你确认后才排进会话的待办（R-66）
 			}
-			if r.ProjectID == "" && in.Body.SessionKey != "" {
+			from := "" // 会话所在项目
+			if in.Body.SessionKey != "" {
 				if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil {
-					r.ProjectID = x.ProjectID
+					from = x.ProjectID
+				}
+			}
+			if strings.TrimSpace(in.Body.Project) != "" {
+				p, err := h.targetProject(ctx, in.Body.Project)
+				if err != nil {
+					return nil, err
+				}
+				r.ProjectID = p.ID
+			}
+			if r.ProjectID == "" {
+				r.ProjectID = from
+			}
+			// 记进别的项目（R-358）：不关联当前会话，免得它出现在那个项目的泳道里；时间线写明从哪个项目记的
+			cross := in.Body.SessionKey != "" && r.ProjectID != from
+			actor := store.Actor{Session: in.Body.SessionKey}
+			if cross {
+				actor.Reason = "会话不属于任何项目"
+				if p, err := h.store.GetProject(ctx, from); err == nil {
+					actor.Reason = "来自项目「" + p.Name + "」"
 				}
 			}
 			var notices []string
 			if ex, err := h.store.OpenRequirementByTitle(ctx, r.ProjectID, r.Title); err == nil {
 				notices = append(notices, fmt.Sprintf("同项目已有同名未关闭需求 %s，这次仍新建了；如果是重复，请搁置新建的这条，改在 %s 上继续", ex.Code, ex.Code))
 			}
-			r, err = h.store.CreateRequirement(store.WithActor(ctx, store.Actor{Session: in.Body.SessionKey}), r)
+			r, err = h.store.CreateRequirement(store.WithActor(ctx, actor), r)
 			if err != nil {
 				return nil, apiErr(err)
 			}
-			if in.Body.SessionKey != "" {
+			if in.Body.SessionKey != "" && !cross {
 				_ = h.store.LinkSession(ctx, r.ID, in.Body.SessionKey)
+			}
+			if cross {
+				notices = append(notices, fmt.Sprintf("%s 记进了项目「%s」，没有关联当前会话；要跟进它的变动用 req_watch（ks req watch %s）订阅", r.Code, r.ProjectName, r.Code))
 			}
 			h.broker.publish("requirements", "sessions")
 			r, err = h.store.GetRequirement(ctx, r.ID)

@@ -3084,6 +3084,8 @@ export interface components {
             kind?: string;
             /** @enum {string} */
             priority?: "P0" | "P1" | "P2" | "P3";
+            /** @description 记进哪个项目（R-358）：项目名、git remote 或项目 ID；不填记进会话所在项目。找不到或对应多个项目时报错并列出可选项目。记进别的项目时不关联当前会话，时间线写明由哪个会话、从哪个项目记的 */
+            project?: string;
             project_id?: string;
             session_key?: string;
             /**
@@ -6761,7 +6763,7 @@ export interface components {
             /** @description 原状态；新建需求时为空 */
             from: string;
             id: string;
-            /** @description 搁置原因的一句话（R-157） */
+            /** @description 搁置原因的一句话（R-157）；新建时：从别的项目的会话记下的需求写明来自哪个项目（R-358） */
             reason?: string;
             /**
              * @description 搁置原因的类别：重复 / 方向变了 / 不做了 / 其他（R-157）；只有搁置的变化可能有，旧记录没有

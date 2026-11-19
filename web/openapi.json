@@ -1366,6 +1366,10 @@
             ],
             "type": "string"
           },
+          "project": {
+            "description": "记进哪个项目（R-358）：项目名、git remote 或项目 ID；不填记进会话所在项目。找不到或对应多个项目时报错并列出可选项目。记进别的项目时不关联当前会话，时间线写明由哪个会话、从哪个项目记的",
+            "type": "string"
+          },
           "project_id": {
             "type": "string"
           },
@@ -12462,7 +12466,7 @@
             "type": "string"
           },
           "reason": {
-            "description": "搁置原因的一句话（R-157）",
+            "description": "搁置原因的一句话（R-157）；新建时：从别的项目的会话记下的需求写明来自哪个项目（R-358）",
             "type": "string"
           },
           "reason_kind": {

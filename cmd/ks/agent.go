@@ -78,7 +78,7 @@ func onlyFlags(fs *flag.FlagSet, name string, allowed ...string) error {
 var reqFlags = map[string][]string{
 	"list":     {"all"},
 	"get":      {},
-	"create":   {"title", "detail", "acceptance", "status", "from-decision", "priority", "image"},
+	"create":   {"title", "detail", "acceptance", "status", "from-decision", "priority", "image", "project"},
 	"edit":     {"title", "detail", "acceptance", "priority", "type", "approval", "reason", "from-decision"},
 	"status":   {"reason", "reason-kind", "on"},
 	"request":  {"reason"},
@@ -350,6 +350,7 @@ func runReq(args []string) error {
 	status := fs.String("status", "", "create：初始状态")
 	fromDec := fs.String("from-decision", "", "create：产生这条需求的决策编号（D-x）；edit：这次修改依据的决策（D-x），时间线上连在那条决策下面")
 	priority := fs.String("priority", "", "create / edit：优先级 P0-P3")
+	project := fs.String("project", "", "create：记进哪个项目（项目名、git remote 或项目 ID，R-358）；不写记进会话所在项目；找不到或有重名时报错并列出可选项目，不会记进当前项目")
 	fs.String("type", "", "edit：需求类型 design（设计类）/ feature（普通）")
 	approval := fs.String("approval", "", "edit：进行中之后改验收标准时，用户已批准的批准类决策编号（D-x）")
 	kind := fs.String("kind", "manual", "evidence：证据类型")
@@ -415,9 +416,9 @@ func runReq(args []string) error {
 		return nil
 	case "create":
 		if *title == "" {
-			return fmt.Errorf("用法：ks req create --title <标题> [--detail ...] [--acceptance ...]")
+			return fmt.Errorf("用法：ks req create --title <标题> [--detail ...] [--acceptance ...] [--project <项目名或 git remote>]")
 		}
-		body := map[string]any{"title": *title, "detail": *detail, "acceptance": *acceptance, "status": *status, "priority": *priority, "from_decision": *fromDec, "session_key": key}
+		body := map[string]any{"title": *title, "detail": *detail, "acceptance": *acceptance, "status": *status, "priority": *priority, "from_decision": *fromDec, "project": *project, "session_key": key}
 		if err := attachFiles(body, images); err != nil {
 			return err
 		}
