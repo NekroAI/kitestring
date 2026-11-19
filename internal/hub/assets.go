@@ -172,6 +172,7 @@ type AssetListView struct {
 	Assets   []store.Asset     `json:"assets"`
 	Facets   store.AssetFacets `json:"facets" doc:"这个项目全部素材的批次、类别和各状态数量（不受筛选影响）"`
 	Statuses []string          `json:"statuses" doc:"素材状态全集，按展示顺序"`
+	Total    int               `json:"total" doc:"符合筛选的素材总数（R-391；Assets 可能只是其中一页）"`
 }
 
 type assetListIn struct {
@@ -182,6 +183,9 @@ type assetListIn struct {
 	Kind       string `query:"kind" enum:"part,image,"`
 	ID         string `query:"id" doc:"R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）"`
 	SessionKey string `query:"session_key" doc:"Agent 用：不写 project 时列会话所在项目"`
+	CwdRemote  string `query:"cwd_remote" doc:"Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）"`
+	Limit      int    `query:"limit" minimum:"0" doc:"R-391：最多返回几条，0 或不写不限"`
+	Offset     int    `query:"offset" minimum:"0" doc:"R-391：跳过前几条（分页）"`
 }
 
 type assetListOut struct{ Body AssetListView }
@@ -190,14 +194,48 @@ type assetGetOut struct{ Body store.AssetDetail }
 
 type agentAssetGetIn struct {
 	Ref        string `path:"ref" doc:"编号 A-x、素材 ID 或素材 id（如 core:weapon.carbine）"`
-	Project    string `query:"project" doc:"项目 ID：按素材 id 找时限定项目"`
+	Project    string `query:"project" doc:"项目名或 ID：按素材 id 找时限定项目"`
 	SessionKey string `query:"session_key" doc:"不写 project 时按会话所在项目找"`
+	CwdRemote  string `query:"cwd_remote" doc:"当前目录的 git remote（R-391）"`
+}
+
+// agentAssetProject 决定 Agent 查询资源库时看哪个项目（R-391）：
+// --project（项目名、ID 或 git remote）> 当前目录的 git remote 对应的项目 > 会话所在项目；都没有返回空（全部项目）。
+// 会话所在项目排在目录之后：会话可能是在别的项目里启动、再进到这个目录干活的。
+func (h *Hub) agentAssetProject(ctx context.Context, project, cwdRemote, sessionKey string) (string, error) {
+	if q := strings.TrimSpace(project); q != "" {
+		p, err := h.findProject(ctx, q, "未查询素材")
+		if err != nil {
+			return "", huma.Error400BadRequest(err.Error())
+		}
+		return p.ID, nil
+	}
+	if q := strings.TrimSpace(cwdRemote); q != "" {
+		if p, err := h.findProject(ctx, q, ""); err == nil {
+			return p.ID, nil
+		}
+	}
+	if sessionKey != "" {
+		if x, err := h.store.GetSession(ctx, sessionKey); err == nil {
+			return x.ProjectID, nil
+		}
+	}
+	return "", nil
+}
+
+type assetSummaryOut struct {
+	Body protocol.AssetSummary
 }
 
 func (h *Hub) listAssets(ctx context.Context, in *assetListIn, project string) (*assetListOut, error) {
 	out := &assetListOut{}
 	var err error
-	out.Body.Assets, err = h.store.ListAssets(ctx, store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind, ID: in.ID})
+	f := store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind, ID: in.ID}
+	if out.Body.Total, err = h.store.CountAssets(ctx, f); err != nil {
+		return nil, err
+	}
+	f.Limit, f.Offset = in.Limit, in.Offset
+	out.Body.Assets, err = h.store.ListAssets(ctx, f)
 	if err != nil {
 		return nil, err
 	}
@@ -292,21 +330,39 @@ func (h *Hub) registerAssetsAgent(api huma.API) {
 		})
 	huma.Register(api, huma.Operation{OperationID: "agent-list-assets", Method: http.MethodGet, Path: "/api/agent/assets", Tags: tag, Summary: "资源库素材列表（默认会话所在项目）"},
 		func(ctx context.Context, in *assetListIn) (*assetListOut, error) {
-			project := in.Project
-			if project == "" && in.SessionKey != "" {
-				if x, err := h.store.GetSession(ctx, in.SessionKey); err == nil {
-					project = x.ProjectID
-				}
+			project, err := h.agentAssetProject(ctx, in.Project, in.CwdRemote, in.SessionKey)
+			if err != nil {
+				return nil, err
 			}
 			return h.listAssets(ctx, in, project)
 		})
+	huma.Register(api, huma.Operation{OperationID: "agent-assets-summary", Method: http.MethodGet, Path: "/api/agent/assets-summary", Tags: tag, Summary: "资源库统计：总数、各状态和各类别的数量、批次（R-391）"},
+		func(ctx context.Context, in *assetListIn) (*assetSummaryOut, error) {
+			project, err := h.agentAssetProject(ctx, in.Project, in.CwdRemote, in.SessionKey)
+			if err != nil {
+				return nil, err
+			}
+			f, err := h.store.ListAssetFacets(ctx, project)
+			if err != nil {
+				return nil, err
+			}
+			out := &assetSummaryOut{}
+			out.Body = protocol.AssetSummary{Statuses: f.Counts, Categories: f.CategoryCounts, Batches: f.Batches}
+			for _, n := range f.Counts {
+				out.Body.Total += n
+			}
+			if project != "" {
+				if p, err := h.store.GetProject(ctx, project); err == nil {
+					out.Body.Project = p.Name
+				}
+			}
+			return out, nil
+		})
 	huma.Register(api, huma.Operation{OperationID: "agent-get-asset", Method: http.MethodGet, Path: "/api/agent/assets/{ref}", Tags: tag, Summary: "一条素材和它的全部版本；ref 是编号 A-x 或素材 id（按 id 时默认在会话所在项目里找）"},
 		func(ctx context.Context, in *agentAssetGetIn) (*assetGetOut, error) {
-			project := in.Project
-			if project == "" && in.SessionKey != "" {
-				if x, err := h.store.GetSession(ctx, in.SessionKey); err == nil {
-					project = x.ProjectID
-				}
+			project, err := h.agentAssetProject(ctx, in.Project, in.CwdRemote, in.SessionKey)
+			if err != nil {
+				return nil, err
 			}
 			d, err := h.store.FindAsset(ctx, project, in.Ref)
 			if errors.Is(err, store.ErrAssetAmbiguous) {

@@ -751,7 +751,11 @@ func (d *Daemon) injection(ev protocol.Event) string {
 	}
 	if len(assetReviews) > 0 {
 		// 资源库的审核意见（R-351）：像决策答复一样送回提交素材的会话；提交的会话已结束时转给主调度（意见里写明）
-		b.WriteString("[Kitestring] 用户在资源库审核了以下素材：返工的按意见修改，改好后在同一批次重新推送（ks asset push 或 asset_push），内容有变会记为新版本、回到待审；通过的不用再改。ks asset get A-x 可看版本和全部审核记录：\n")
+		n := ""
+		if len(assetReviews) > 1 { // 连着审多件时合并成这一条（R-391）
+			n = fmt.Sprintf(" %d 件", len(assetReviews))
+		}
+		b.WriteString("[Kitestring] 用户在资源库审核了以下"+n+"素材：返工的按意见修改，改好后在同一批次重新推送（ks asset push 或 asset_push），内容有变会记为新版本、回到待审；通过的不用再改。ks asset get A-x 可看版本和全部审核记录：\n")
 		for _, dec := range assetReviews {
 			d.writeItem(&b, dec)
 		}

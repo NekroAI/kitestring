@@ -134,3 +134,12 @@ func AssetName(id string) string {
 	}
 	return path
 }
+
+// AssetSummary 是一个项目资源库的统计（R-391）：Agent 查询先看它，再决定要不要筛选列表。
+type AssetSummary struct {
+	Project    string         `json:"project" doc:"项目名；没确定项目时为空（统计全部项目）"`
+	Total      int            `json:"total"`
+	Statuses   map[string]int `json:"statuses" doc:"各状态的素材数"`
+	Categories map[string]int `json:"categories" doc:"各类别的素材数"`
+	Batches    []string       `json:"batches" doc:"全部批次"`
+}

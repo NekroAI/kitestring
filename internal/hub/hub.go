@@ -556,12 +556,45 @@ func (h *Hub) decisionsChanged(ctx context.Context, d store.Decision) {
 	if d.SessionKey == "" {
 		return
 	}
+	if d.Kind == store.KindAssetReview && !d.FYI && assetReviewDelay > 0 {
+		h.deferAssetReview(d)
+		return
+	}
 	if !(store.QuietKind(d.Kind) && d.FYI) {
 		h.clearIdle(ctx, d.SessionKey) // 点名给它的（指派、答复、指名消息）照常唤醒，同时恢复待命超时的开发（R-229）
 	}
 	if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
 		h.pushDecisions(ctx, x.DeviceID)
 	}
+}
+
+// assetReviewDelay：连着审多件素材时攒一攒（R-391）。返工意见一条条产生，每条都会唤醒待命的会话，
+// 会话会被叫醒十次、收到十条消息；攒到这段时间内没有新意见再一起送（会话下一轮开始时的送达不受影响，本来就一次带上全部）。
+var assetReviewDelay = 5 * time.Second
+
+// SetAssetReviewDelay 调整审核意见攒批的等待时间（测试用）。
+func SetAssetReviewDelay(d time.Duration) { assetReviewDelay = d }
+
+// deferAssetReview 在最后一条意见之后 assetReviewDelay 再唤醒会话，期间新的意见顺延，合并成一次送达。
+func (h *Hub) deferAssetReview(d store.Decision) {
+	key := "asset_review|" + d.SessionKey
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if t := h.kicks[key]; t != nil {
+		t.Reset(assetReviewDelay)
+		return
+	}
+	h.kicks[key] = time.AfterFunc(assetReviewDelay, func() {
+		h.mu.Lock()
+		delete(h.kicks, key)
+		h.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		h.clearIdle(ctx, d.SessionKey)
+		if x, err := h.store.GetSession(ctx, d.SessionKey); err == nil {
+			h.pushDecisions(ctx, x.DeviceID)
+		}
+	})
 }
 
 // notifySession 按会话所在项目的工作空间路由通知；同一会话同一事件 60 秒内只发一次。

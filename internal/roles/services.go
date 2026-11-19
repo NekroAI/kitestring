@@ -33,11 +33,9 @@ var Services = []Service{
 - 被拒（命令不在范围、到期、没授权写盘）或要换 Token：ks secret amend S-x --reason 理由（--add-allow、--replace 等）。
 - 不要打印、回显值，不要让用户在终端里输入或粘贴凭据。完整用法：ks secret help。`},
 	{Name: "asset", Aliases: []string{"资源库", "素材", "assets"}, Title: "把美术素材推进资源库给用户审核", Text: `资源库（ks asset push，MCP 工具 asset_push）：推进纸鸢，用户在网页上浏览、标通过或返工。
-- 推荐 ks asset push asset.json [--dry-run]：素材以带命名空间的 id 为主键（如 core:weapon.carbine），批次是可多值的元数据；id、category、file 必填，其它字段进 meta；字段与示例见 ks asset help。
-- 预览图文件名写「<名字>__<机位>.png」，名字是 id 冒号后的部分（weapon.carbine__front.png），不写完整 id（冒号 Windows 不能用）。
-- 推送前本地逐件校验并报告，有错整批不推（--skip-invalid 只推合格的）。旧的 manifest.json --batch 推送仍可用。
-- 改好后重推同一 id 记新版本；未连 Hub 时排队补传。
-- ks asset list [--id 'core:weapon.*'] [--batch] [--status] [--json]；ks asset get <id|A-x>。`},
+- ks asset push asset.json [--dry-run]：素材以带命名空间的 id 为主键（如 core:weapon.carbine），批次是多值元数据；字段、预览图命名见 ks asset help。推送前本地逐件校验，有错整批不推（--skip-invalid 只推合格的）。
+- 改好重推同一 id 记新版本；未连 Hub 时排队补传。
+- 查询：先 ks asset summary 看统计，再 list --status / --category / --id 'core:weapon.*' 筛选（默认当前项目、最多 50 条，--offset 翻页）；单件 get <id|A-x>。不要整表拉 --json。`},
 	{Name: "ask", Aliases: []string{"求助", "aide", "主助理"}, Title: "设计取舍问主助理", Text: `求助主助理：设计取舍、拿不准的判断，用 ks team tell --to aide <问题，写清选项和倾向>（MCP 工具 team_tell），问完不等，先做不受影响的部分；答复送回本会话，挂着 ks wait 时立刻唤醒。
 - 消息只放一两句（120 字以内）；细节多时先写进需求留言（ks req comment R-x）。
 - 本项目没有主助理时退回给主调度；都没有时用 ks decision raise 问用户。

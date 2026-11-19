@@ -379,6 +379,8 @@ type AssetFilter struct {
 	Status    string
 	Kind      string
 	ID        string // R-376：素材 id（uid）或编号 A-x；末尾带 * 时按 id 前缀查（如 core:weapon.*）
+	Limit     int    // R-391：最多返回几条，0 不限
+	Offset    int    // R-391：跳过前几条（分页）
 }
 
 const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches`
@@ -477,8 +479,8 @@ func (s *Store) SetAssetAutoThumb(ctx context.Context, ref string, version int, 
 	return n > 0, nil
 }
 
-// ListAssets 列出素材（带最新版本），按批次、编号排序。
-func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) {
+// assetWhere 把筛选条件拼成 WHERE 子句（ListAssets 与 CountAssets 共用）。
+func assetWhere(f AssetFilter) (string, []any) {
 	var where []string
 	var args []any
 	for _, c := range []struct{ col, v string }{{"a.project_id", f.ProjectID}, {"a.category", f.Category}, {"a.status", f.Status}, {"a.kind", f.Kind}} {
@@ -505,11 +507,29 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) 
 			args = append(args, id, id)
 		}
 	}
-	q := `SELECT ` + assetCols + `, ` + versionCols + ` FROM assets a JOIN asset_versions v ON v.id = a.latest_id`
-	if len(where) > 0 {
-		q += ` WHERE ` + strings.Join(where, " AND ")
+	if len(where) == 0 {
+		return "", args
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY a.batch, a.seq`, args...)
+	return ` WHERE ` + strings.Join(where, " AND "), args
+}
+
+// CountAssets 返回符合筛选的素材总数（不受 Limit / Offset 影响，R-391）。
+func (s *Store) CountAssets(ctx context.Context, f AssetFilter) (int, error) {
+	w, args := assetWhere(f)
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM assets a`+w, args...).Scan(&n)
+	return n, err
+}
+
+// ListAssets 列出素材（带最新版本），按批次、编号排序。
+func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) {
+	w, args := assetWhere(f)
+	q := `SELECT ` + assetCols + `, ` + versionCols + ` FROM assets a JOIN asset_versions v ON v.id = a.latest_id` + w + ` ORDER BY a.batch, a.seq`
+	if f.Limit > 0 {
+		q += ` LIMIT ? OFFSET ?`
+		args = append(args, f.Limit, max(f.Offset, 0))
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -648,14 +668,15 @@ func (s *Store) findAssetRow(ctx context.Context, projectID, ref string) (Asset,
 
 // AssetFacets 是一个项目里素材的批次和类别（筛选项用），按名称排序。
 type AssetFacets struct {
-	Batches    []string       `json:"batches"`
-	Categories []string       `json:"categories"`
-	Counts     map[string]int `json:"counts" doc:"各状态的素材数"`
+	Batches        []string       `json:"batches"`
+	Categories     []string       `json:"categories"`
+	Counts         map[string]int `json:"counts" doc:"各状态的素材数"`
+	CategoryCounts map[string]int `json:"category_counts,omitempty" doc:"各类别的素材数（R-391）"`
 }
 
 // ListAssetFacets 统计项目里素材的批次、类别和各状态数量；projectID 为空时统计全部。
 func (s *Store) ListAssetFacets(ctx context.Context, projectID string) (AssetFacets, error) {
-	f := AssetFacets{Batches: []string{}, Categories: []string{}, Counts: map[string]int{}}
+	f := AssetFacets{Batches: []string{}, Categories: []string{}, Counts: map[string]int{}, CategoryCounts: map[string]int{}}
 	for _, st := range AssetStatuses {
 		f.Counts[st] = 0
 	}
@@ -681,6 +702,9 @@ func (s *Store) ListAssetFacets(ctx context.Context, projectID string) (AssetFac
 		}
 		if c != "" && !slices.Contains(f.Categories, c) {
 			f.Categories = append(f.Categories, c)
+		}
+		if c != "" {
+			f.CategoryCounts[c]++
 		}
 		f.Counts[st]++
 	}

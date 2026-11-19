@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,8 +27,12 @@ const assetUsage = `用法：
   ks asset push [manifest.json] --previews <目录> [--previews <目录>] --batch <批次> [--category 类别] [--dry-run] [--status wip] [--req R-x] [--project 项目] [--branch 分支] [--commit 提交]
       旧的按批次推送（仍可用）：manifest 里的 GLB 是零件，预览目录里文件名以零件 id 开头的图挂到零件上，其余是独立的图（目录图、概念图……，文件名去扩展名当 id）。
       同一批次里同一 id 内容有变的重推记为新版本（旧版本保留），内容相同的不新增；Hub 已有的文件不重传；未连接 Hub 时排队，连上后自动补传。
-  ks asset list [--id 素材 id|前缀*] [--batch 批次] [--status wip|pending|approved|rework] [--category 类别] [--project 项目 ID] [--json]
-  ks asset get <素材 id|A-x> [--json]   素材和它的全部版本
+  ks asset summary [--project 项目] [--json]   只出统计：总数、各状态和各类别的数量、批次（几百字，先看它）
+  ks asset list [--id 素材 id|前缀*] [--batch 批次] [--status wip|pending|approved|rework] [--category 类别] [--project 项目] [--limit N] [--offset N] [--all] [--json] [--full]
+      默认查当前目录所在的项目（--project 填项目名、项目 ID 或 git remote 可改）；默认最多列 50 条，开头给总数和统计。
+      筛选（--status / --category / --batch / --id 前缀*）比翻页更省；--offset 翻页，--all 取全部。
+      --json 默认只给精简字段（id、类别、状态、版本、批次、预览图个数），--full 才给完整内容；不要整表拉 --json，先用 summary 和筛选。
+  ks asset get <素材 id|A-x> [--history] [--json]   素材的最新版本和最近 3 条审核意见；--history 才给历史版本和全部审核记录
   ks asset queue                 本机排队等补传、或被 Hub 拒收的推送`
 
 var assetStatusLabel = map[string]string{store.AssetWIP: "制作中", store.AssetPending: "待审", store.AssetApproved: "通过", store.AssetRework: "返工"}
@@ -48,7 +53,12 @@ func runAsset(args []string) error {
 	category := fs.String("category", "", "push：没写类别的素材用它；list：只列这个类别")
 	status := fs.String("status", "", "push：推送后的状态 wip（制作中），默认 pending（待审）；list：只列这个状态")
 	req := fs.String("req", "", "push：关联需求 R-x")
-	project := fs.String("project", "", "push：记进哪个项目（项目名或 git remote），不写记进会话所在项目；list：项目 ID")
+	project := fs.String("project", "", "push：记进哪个项目（项目名或 git remote），不写记进会话所在项目；list / summary / get：查哪个项目（项目名、项目 ID 或 git remote），不写查当前目录所在的项目")
+	limit := fs.Int("limit", assetListLimit, "list：最多列几条")
+	offset := fs.Int("offset", 0, "list：跳过前几条（翻页）")
+	all := fs.Bool("all", false, "list：不限条数，取全部")
+	full := fs.Bool("full", false, "list --json：给完整内容（默认只给精简字段）")
+	history := fs.Bool("history", false, "get：给历史版本和全部审核记录（默认只给最新版本和最近 3 条审核意见）")
 	branch := fs.String("branch", "", "push：分支（不写从 git 读）")
 	commit := fs.String("commit", "", "push：提交（不写从 git 读）")
 	asJSON := fs.Bool("json", false, "输出原始 JSON")
@@ -61,10 +71,11 @@ func runAsset(args []string) error {
 		return err
 	}
 	allowed := map[string][]string{
-		"push":  {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories"},
-		"list":  {"id", "batch", "category", "status", "project", "json"},
-		"get":   {"project", "json"},
-		"queue": {"json"},
+		"push":    {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories"},
+		"list":    {"id", "batch", "category", "status", "project", "json", "limit", "offset", "all", "full"},
+		"summary": {"project", "json"},
+		"get":     {"project", "json", "history"},
+		"queue":   {"json"},
 	}
 	ok, known := allowed[sub]
 	if !known {
@@ -107,43 +118,56 @@ func runAsset(args []string) error {
 		}
 		fmt.Print(assetpush.Text(p, out, notes))
 		return nil
-	case "list":
-		q := url.Values{}
-		for k, v := range map[string]string{"id": *id, "batch": *batch, "category": *category, "status": *status, "project": *project, "session_key": cliSession(*session)} {
-			if v != "" {
-				q.Set(k, v)
-			}
-		}
-		var out struct {
-			Assets []store.Asset `json:"assets"`
-		}
-		if err := client.New(20*time.Second).Do(ctx, "GET", "/agent/assets?"+q.Encode(), nil, &out); err != nil {
+	case "summary":
+		var out protocol.AssetSummary
+		if err := client.New(20*time.Second).Do(ctx, "GET", "/agent/assets-summary?"+assetQuery(map[string]string{"project": *project}, *session).Encode(), nil, &out); err != nil {
 			return err
 		}
 		if *asJSON {
 			return printJSON(out)
 		}
-		if len(out.Assets) == 0 {
-			fmt.Println("资源库里没有符合条件的素材")
-			return nil
+		fmt.Print(summaryText(out))
+		return nil
+	case "list":
+		lim := *limit
+		if *all {
+			lim = 0
 		}
-		for _, a := range out.Assets {
-			fmt.Println(assetLine(a))
+		if lim < 0 || *offset < 0 {
+			return errors.New("--limit、--offset 不能是负数")
 		}
+		q := assetQuery(map[string]string{"id": *id, "batch": *batch, "category": *category, "status": *status, "project": *project}, *session)
+		q.Set("limit", strconv.Itoa(lim))
+		q.Set("offset", strconv.Itoa(*offset))
+		var out struct {
+			Assets []store.Asset     `json:"assets"`
+			Total  int               `json:"total"`
+			Facets store.AssetFacets `json:"facets"`
+		}
+		if err := client.New(60*time.Second).Do(ctx, "GET", "/agent/assets?"+q.Encode(), nil, &out); err != nil {
+			return err
+		}
+		if *asJSON {
+			if *full {
+				return printJSON(map[string]any{"total": out.Total, "offset": *offset, "shown": len(out.Assets), "assets": out.Assets})
+			}
+			return printJSON(compactList(out.Total, *offset, out.Assets, out.Facets))
+		}
+		fmt.Print(listText(out.Total, *offset, out.Assets, out.Facets, lim > 0))
 		return nil
 	case "get":
 		if fs.NArg() != 1 {
 			return errors.New(assetUsage)
 		}
 		var d store.AssetDetail
-		q := url.Values{}
-		for k, v := range map[string]string{"project": *project, "session_key": cliSession(*session)} {
-			if v != "" {
-				q.Set(k, v)
-			}
-		}
+		var q url.Values
+		q = assetQuery(map[string]string{"project": *project}, *session)
 		if err := client.New(20*time.Second).Do(ctx, "GET", "/agent/assets/"+url.PathEscape(fs.Arg(0))+"?"+q.Encode(), nil, &d); err != nil {
 			return err
+		}
+		versions, reviews := len(d.Versions), len(d.Reviews)
+		if !*history {
+			d = trimDetail(d)
 		}
 		if *asJSON {
 			return printJSON(d)
@@ -167,8 +191,15 @@ func runAsset(args []string) error {
 			}
 			fmt.Println()
 		}
+		if !*history && versions > len(d.Versions) {
+			fmt.Printf("  （还有 %d 个更早的版本，--history 查看）\n", versions-len(d.Versions))
+		}
 		if len(d.Reviews) > 0 {
-			fmt.Println("审核记录（新的在前）：")
+			if *history {
+				fmt.Println("审核记录（新的在前）：")
+			} else {
+				fmt.Println("最近的审核意见（新的在前）：")
+			}
 			for _, r := range d.Reviews {
 				fmt.Printf("  %s · 第 %d 版 · %s · %s", r.CreatedAt.Local().Format("01-02 15:04"), r.Version, assetStatusLabel[r.Verdict], reviewAuthor(r.Author))
 				if r.Comment != "" {
@@ -178,6 +209,9 @@ func runAsset(args []string) error {
 					fmt.Printf("（附图 %d 张）", len(r.Files))
 				}
 				fmt.Println()
+			}
+			if !*history && reviews > len(d.Reviews) {
+				fmt.Printf("  （还有 %d 条更早的审核记录，--history 查看）\n", reviews-len(d.Reviews))
 			}
 		}
 		return nil
