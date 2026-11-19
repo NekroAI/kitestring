@@ -5,14 +5,15 @@ import { toast } from 'sonner'
 import { Download, Images, Upload } from 'lucide-react'
 import { errMsg } from '../api/client'
 import { t } from '../i18n'
-import { facetsOf, filterAssets, wallTiles, type AssetLite } from '../lib/assets'
+import { assetName, facetsOf, type AssetDir, type AssetLite } from '../lib/assets'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Input, Segmented, Skeleton, Textarea, Tip } from '../ui/base'
 import { downloadUrl, NoDownloadContext } from '../ui/attach'
 import { DraftField, useDraft } from '../app/draft'
 import { FrameChip, useFrameSink } from '../app/animBar'
 import type { Frame } from '../lib/anim'
-import { AssetDrawer, AssetExtrasContext, AssetWall, CompareDrawer, FacetMenu, WallGrid, type AssetExtras, type Detail } from '../app/assets'
+import { AssetDrawer, AssetExtrasContext, CompareDrawer, FacetMenu, SectionWall, WallGrid, type AssetExtras, type Detail } from '../app/assets'
+import { DirBrowser, dirParams, useBrowse } from '../app/assetDir'
 import { gk, guestAssetDetail, postComment, postUpload, useGuestAssets, useMyComments } from './data'
 import { mineText } from './slots'
 import { Failed } from './views'
@@ -35,12 +36,14 @@ export function GuestAssets({ token }: { token: string }) {
     })
   const all = useMemo(() => (q.data?.assets ?? []) as AssetLite[], [q.data])
   const batch = params.get('b') ?? ''
-  const category = params.get('c') ?? ''
   const status = params.get('st') ?? ''
   const ftype = params.get('ft') ?? ''
   const facets = useMemo(() => facetsOf(all, ''), [all])
-  const shown = useMemo(() => filterAssets(all, { project: '', batch, category, status, ftype }), [all, batch, category, status, ftype])
-  const tiles = useMemo(() => wallTiles(shown), [shown])
+  // 目录层级（R-394）：和所有者页一样分层，只有分享范围内的素材
+  const b = useBrowse(all, '', params)
+  const tiles = b.tiles
+  const go = (d: AssetDir) => set(dirParams(d))
+  const open = all.find((a) => a.code === params.get('asset'))
   const perm = q.data?.perm ?? 'view'
   const allow = !!q.data?.allow_download
   const useDetail = useMemo(() => guestAssetDetail(token), [token])
@@ -56,7 +59,6 @@ export function GuestAssets({ token }: { token: string }) {
     <div className="w-full px-4 py-5 sm:px-6 lg:px-8" data-guest-assets="">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 className="font-display text-[22px] font-semibold tracking-wide text-fg">{t.guest.assets}</h1>
-        <span className="text-[13px] text-fg-3 tabular">{t.asset.total(facets.total)}</span>
       </div>
       {facets.total > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -64,11 +66,10 @@ export function GuestAssets({ token }: { token: string }) {
             size="sm"
             value={status || 'all'}
             onChange={(v) => set({ st: v === 'all' ? null : v })}
-            options={[{ value: 'all', label: t.asset.all }, ...(q.data?.statuses ?? []).map((s) => ({ value: s, label: t.asset.status[s] ?? s, count: facets.counts[s] }))]}
+            options={[{ value: 'all', label: t.asset.all }, ...(q.data?.statuses ?? []).map((s) => ({ value: s, label: t.asset.status[s] ?? s, count: b.counts[s] ?? 0 }))]}
           />
           <FacetMenu label={t.asset.batch} allLabel={t.asset.allBatches} value={batch} options={facets.batches} onChange={(v) => set({ b: v || null })} />
-          <FacetMenu label={t.asset.category} allLabel={t.asset.allCategories} value={category} options={facets.categories} onChange={(v) => set({ c: v || null })} />
-            <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
+          <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
         </div>
       )}
       {q.isPending ? (
@@ -77,13 +78,22 @@ export function GuestAssets({ token }: { token: string }) {
             <Skeleton key={i} className="h-[232px] rounded-2xl" />
           ))}
         </WallGrid>
-      ) : !tiles.length ? (
+      ) : !facets.total ? (
         <div className="flex flex-col items-center gap-2 py-16 text-sm text-fg-3">
           <Images className="size-8" strokeWidth={1.4} />
-          {facets.total ? t.asset.noMatch : t.guest.noAssets}
+          {t.guest.noAssets}
         </div>
       ) : (
-        <AssetWall tiles={tiles} active={params.get('asset')} activeGroup={params.get('cmp')} onOpen={(code) => set({ asset: code, cmp: null })} onGroup={(k) => set({ cmp: k, asset: null })} />
+        <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined}>
+          {!tiles.length ? (
+            <div className="flex flex-col items-center gap-2 py-16 text-sm text-fg-3">
+              <Images className="size-8" strokeWidth={1.4} />
+              {t.asset.noMatch}
+            </div>
+          ) : (
+            <SectionWall b={b} go={go} active={params.get('asset')} activeGroup={params.get('cmp')} onOpen={(code) => set({ asset: code, cmp: null })} onGroup={(k) => set({ cmp: k, asset: null })} />
+          )}
+        </DirBrowser>
       )}
       <NoDownloadContext.Provider value={!allow}>
         <AssetDrawer code={params.get('asset')} onClose={() => set({ asset: null })} />

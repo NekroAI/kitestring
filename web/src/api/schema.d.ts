@@ -3788,6 +3788,8 @@ export interface components {
             source?: string;
             /** @description 这一版的提交者 */
             submitter: components["schemas"]["AssetSubmitter"];
+            /** @description 细类（R-394）：asset.json 的 subtype 字段（在项目字段里），资源库按类别 → 细类 → 素材 → 变体分层浏览 */
+            subtype?: string;
             /** Format: int64 */
             triangles?: number;
             /** @description asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核） */

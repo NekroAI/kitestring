@@ -138,3 +138,37 @@ func TestPushAssetsByID(t *testing.T) {
 		t.Fatalf("只出现在多值批次里的批次也能挂分享：%v", err)
 	}
 }
+
+// R-394：细类取项目字段里的 subtype，列表和详情的最新版本都带上；没写或不是字符串时为空。
+func TestAssetSubtype(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	f, err := s.CreateFile(ctx, "a.png", "image/png", "s1", 10, "device:x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := protocol.AssetFile{ID: f.ID, Name: "a.png"}
+	items := []protocol.AssetItem{
+		{Key: "core:concept.cargo_mule", Kind: protocol.AssetImage, Category: "concept", File: &file, Meta: json.RawMessage(`{"subtype":" vehicle ","generation":{"method":"external"}}`)},
+		{Key: "core:concept.hats", Kind: protocol.AssetImage, Category: "concept", File: &file, Meta: json.RawMessage(`{"subtype":3}`)},
+		{Key: "core:ui.icon", Kind: protocol.AssetImage, Category: "ui", File: &file},
+	}
+	if _, err := s.PushAssets(ctx, NewAssetPush{ProjectID: "p1", ByID: true, Items: items}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ListAssets(ctx, AssetFilter{ProjectID: "p1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, a := range list {
+		got[a.UID] = a.Latest.Subtype
+	}
+	if got["core:concept.cargo_mule"] != "vehicle" || got["core:concept.hats"] != "" || got["core:ui.icon"] != "" {
+		t.Fatalf("细类：%v", got)
+	}
+	d, err := s.FindAsset(ctx, "p1", "core:concept.cargo_mule")
+	if err != nil || d.Latest.Subtype != "vehicle" {
+		t.Fatalf("详情的细类：%+v %v", d.Latest, err)
+	}
+}

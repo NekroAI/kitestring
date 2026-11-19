@@ -2732,6 +2732,10 @@
             "$ref": "#/components/schemas/AssetSubmitter",
             "description": "这一版的提交者"
           },
+          "subtype": {
+            "description": "细类（R-394）：asset.json 的 subtype 字段（在项目字段里），资源库按类别 → 细类 → 素材 → 变体分层浏览",
+            "type": "string"
+          },
           "triangles": {
             "format": "int64",
             "type": "integer"

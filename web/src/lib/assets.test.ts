@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { assetName, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -213,4 +213,60 @@ test('文件类型：取扩展名，只按主文件算，预览图不算，可�
   assert.deepEqual(filterAssets(list, { ...base, ftype: 'GLB' }).map((a) => a.key), ['a'])
   assert.deepEqual(filterAssets(list, { ...base, ftype: 'GLB', status: 'approved' }).map((a) => a.key), [])
   assert.deepEqual(filterAssets(list, { ...base, ftype: 'TTF', status: 'pending', category: '车轮', batch: 'B1' }).map((a) => a.key), ['c'])
+})
+
+// ---------- 目录层级（R-394） ----------
+const idAsset = (uid: string, sub: string, status: AssetLite['status'] = 'approved', variants?: unknown) => {
+  const [, rest] = uid.split(':')
+  return mk({ key: uid, uid, batch: '', batches: ['G11d'], category: rest.split('.')[0], status, latest: { id: 'v', version: 1, batch: '', branch: '', commit: '', subtype: sub || undefined, variants, created_at: '' } })
+}
+
+test('目录树：类别 → 细类带件数和待审 / 返工数，旧条目单独一栏按批次分', () => {
+  const list = [
+    idAsset('core:concept.cargo_mule', 'vehicle', 'pending'),
+    idAsset('core:concept.hats', 'gear', 'rework'),
+    idAsset('core:concept.supply_truck', 'vehicle'),
+    idAsset('core:vehicle.wheel', ''),
+    mk({ key: 'old1', batch: 'G12', status: 'pending' }),
+    mk({ key: 'old2', batch: 'G2', status: 'rework' }),
+  ]
+  const tr = dirTree(list)
+  assert.deepEqual(tr.all, { total: 6, pending: 2, rework: 2 })
+  assert.deepEqual(tr.cats.map((c) => [c.key, c.total, c.pending, c.rework]), [['concept', 3, 1, 1], ['vehicle', 1, 0, 0]])
+  assert.deepEqual(tr.cats[0].children.map((c) => [c.key, c.total]), [['gear', 1], ['vehicle', 2]])
+  assert.deepEqual(tr.cats[1].children.map((c) => c.key), [''])
+  assert.deepEqual([tr.old.total, tr.old.children.map((c) => c.key)], [2, ['G2', 'G12']])
+  assert.deepEqual(dirCount(tr, { ...ROOT_DIR, cat: 'concept', sub: 'vehicle' }), { key: 'vehicle', total: 2, pending: 1, rework: 0, children: [] })
+  assert.deepEqual(dirCount(tr, { ...ROOT_DIR, old: true, batch: 'G12' }).total, 1)
+  assert.deepEqual(dirCount(tr, { ...ROOT_DIR, cat: 'nope' }).total, 0)
+})
+
+test('点一层筛到这一层；旧条目不进类别，类别里没有旧条目', () => {
+  const a = idAsset('core:concept.cargo_mule', 'vehicle')
+  const old = mk({ key: 'x', batch: 'G12', category: 'concept' })
+  assert.equal(inDir(a, ROOT_DIR) && inDir(old, ROOT_DIR), true)
+  assert.equal(inDir(a, { ...ROOT_DIR, cat: 'concept' }), true)
+  assert.equal(inDir(old, { ...ROOT_DIR, cat: 'concept' }), false)
+  assert.equal(inDir(a, { ...ROOT_DIR, cat: 'concept', sub: 'gear' }), false)
+  assert.equal(inDir(old, { ...ROOT_DIR, old: true, batch: 'G12' }), true)
+  assert.equal(inDir(a, { ...ROOT_DIR, old: true }), false)
+})
+
+test('图片墙按下一层分组：全部按类别（旧条目按批次排在后面）、类别按细类（未分细类在最后）、细类不分组', () => {
+  const list = [idAsset('core:concept.b', 'vehicle'), idAsset('core:concept.a', ''), idAsset('core:audio.c', 'sound'), mk({ key: 'o', batch: 'G9' })]
+  assert.deepEqual(wallSections(list, ROOT_DIR).map((s) => [s.kind, s.key, s.assets.length]), [['cat', 'audio', 1], ['cat', 'concept', 2], ['batch', 'G9', 1]])
+  const concept = list.filter((a) => inDir(a, { ...ROOT_DIR, cat: 'concept' }))
+  assert.deepEqual(wallSections(concept, { ...ROOT_DIR, cat: 'concept' }).map((s) => [s.kind, s.key]), [['sub', 'vehicle'], ['sub', '']])
+  assert.deepEqual(wallSections(concept.slice(1), { ...ROOT_DIR, cat: 'concept' }).map((s) => s.kind), [''])
+  assert.deepEqual(wallSections(concept, { ...ROOT_DIR, cat: 'concept', sub: 'vehicle' }).map((s) => s.kind), [''])
+  assert.deepEqual(wallSections([list[3]], { ...ROOT_DIR, old: true }).map((s) => [s.kind, s.key]), [['batch', 'G9']])
+})
+
+test('素材名去掉命名空间和类别，变体按 asset.json 数', () => {
+  assert.equal(assetName({ uid: 'core:weapon.carbine', key: 'core:weapon.carbine' }), 'carbine')
+  assert.equal(assetName({ uid: 'core:ui.icons.reload', key: '' }), 'icons.reload')
+  assert.equal(assetName({ uid: '', key: 'wheel_A' }), 'wheel_A')
+  assert.equal(variantCount(idAsset('core:concept.a', '', 'approved', { a: {}, b: {}, c: {} })), 3)
+  assert.equal(variantCount(idAsset('core:concept.a', '')), 0)
+  assert.equal(subtypeOf(idAsset('core:concept.a', 'gear')), 'gear')
 })

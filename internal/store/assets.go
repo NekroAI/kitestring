@@ -82,6 +82,7 @@ type AssetVersion struct {
 	Size      []float64       `json:"size,omitempty" doc:"尺寸（米，x / y / z）"`
 	Pixels    []int           `json:"pixels,omitempty" doc:"像素尺寸（宽 / 高）"`
 	Meta      json.RawMessage `json:"meta,omitempty" doc:"旧 manifest：这一项的原文；asset.json：项目特有字段（原样）"`
+	Subtype   string          `json:"subtype,omitempty" doc:"细类（R-394）：asset.json 的 subtype 字段（在项目字段里），资源库按类别 → 细类 → 素材 → 变体分层浏览"`
 	Source    string          `json:"source,omitempty" doc:"来源（R-376）"`
 	License   string          `json:"license,omitempty" doc:"许可（R-376）"`
 	Variants  json.RawMessage `json:"variants,omitempty" doc:"asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核）"`
@@ -435,6 +436,7 @@ func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
 	}
 	if r.meta != "" && json.Valid([]byte(r.meta)) {
 		v.Meta = json.RawMessage(r.meta)
+		v.Subtype = metaSubtype(v.Meta)
 	}
 	if r.variants != "" && json.Valid([]byte(r.variants)) {
 		v.Variants = json.RawMessage(r.variants)
@@ -447,6 +449,18 @@ func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
 	v.Batches = assetBatches(v.Batch, r.batches)
 	v.CreatedAt = parseTS(r.crtd)
 	return v
+}
+
+// metaSubtype 取项目字段里的细类（asset.json 的 subtype，R-394）；不是字符串或没写时为空。
+func metaSubtype(meta json.RawMessage) string {
+	var m struct {
+		Subtype any `json:"subtype"`
+	}
+	if json.Unmarshal(meta, &m) != nil {
+		return ""
+	}
+	s, _ := m.Subtype.(string)
+	return strings.TrimSpace(s)
 }
 
 // ErrAutoThumbNotNeeded：这一版不需要自动缩略图（不是零件、没有 GLB，或已经有预览图）。

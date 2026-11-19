@@ -1,16 +1,17 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Box as BoxIcon, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
+import { Box as BoxIcon, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, Layers, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
 import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useDesktop, useNow } from '../lib/util'
-import { batchesOf, candidateLabel, comparePair, metaRows, variantNames, viewGroups, coverOf, facetsOf, fileTypesOf, filterAssets, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, wallTiles, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, facetsOf, fileTypesOf, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
 import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
+import { DirBrowser, dirParams, sectionDir, sectionLabel, useBrowse, type Browse } from './assetDir'
 import { KeyCaps } from './command'
 import { useFillHeight } from './pool'
 import { AnimBar, FrameCtx, type FrameCtxValue, type FrameMark } from './animBar'
@@ -23,7 +24,8 @@ import { useAdvance, usePending, usePendingMap } from './verdict'
 // 审核（第 4 步）：抽屉底部是通过 / 返工的判断栏（app/assetReview.tsx），页头「审片」把当前筛选下的待审素材排成队列逐个过：
 // ← → 切换、P 通过、R 返工；下了判断停在这一件，3 秒撤销期走完才翻到下一个待审的（docs/principles.md 第 8 条）。
 //
-// URL：?p=项目 ID、?b=批次、?c=类别、?st=状态，?asset=A-x 打开素材抽屉，?cmp=批次/组名 打开并排比较，?rv=1 审片模式。
+// 目录层级（R-394）：左侧目录 / 手机横滑标签按类别 → 细类逐层筛，图片墙按下一层分组，见 app/assetDir.tsx。
+// URL：?p=项目 ID、?b=批次、?c=类别、?sub=细类、?old=1&ob=批次（按批次（旧）一栏）、?st=状态、?ft=文件类型，?asset=A-x 打开素材抽屉，?cmp=批次/组名 打开并排比较，?rv=1 审片模式。
 
 const Viewer3D = lazy(() => import('./viewer3d'))
 
@@ -71,18 +73,19 @@ export function AssetsPage() {
   const projIds = useMemo(() => projectsOf(all), [all])
   const project = projIds.includes(params.get('p') ?? '') ? params.get('p')! : (projIds[0] ?? '')
   const batch = params.get('b') ?? ''
-  const category = params.get('c') ?? ''
   const status = params.get('st') ?? ''
   const ftype = params.get('ft') ?? ''
   const facets = useMemo(() => facetsOf(all, project), [all, project])
-  const shown = useMemo(() => filterAssets(all, { project, batch, category, status, ftype }), [all, project, batch, category, status, ftype])
-  const tiles = useMemo(() => wallTiles(shown), [shown])
+  const b = useBrowse(all, project, params)
+  const tiles = b.tiles
   const nameOf = (id: string) => (projects.data?.projects ?? []).find((p) => p.id === id)?.name ?? id
-  const filtered = !!(batch || category || status || ftype)
   const review = useReviewMode(all, tiles, params.get('rv') === '1', params.get('asset'), set)
   const pendingN = reviewQueue(tiles).length
   // 桌面上审片是全宽的舞台（R-366，D-1713 方案 B）；手机上仍是底部抽屉里逐个翻
   const stage = review.on && desktop
+  const go = (d: AssetDir) => set(dirParams(d))
+  const open = all.find((a) => a.code === params.get('asset'))
+  const reset = { b: null, c: null, sub: null, old: null, ob: null, ft: null, st: null, asset: null, cmp: null }
 
   return (
     <>
@@ -96,7 +99,7 @@ export function AssetsPage() {
                 {nameOf(project)}
               </Button>
             }
-            items={projIds.map((p) => ({ label: nameOf(p), checked: p === project, onSelect: () => set({ p, b: null, c: null, ft: null, st: null, asset: null, cmp: null }) }))}
+            items={projIds.map((p) => ({ label: nameOf(p), checked: p === project, onSelect: () => set({ ...reset, p }) }))}
           />
         )}
         {project && (
@@ -105,15 +108,13 @@ export function AssetsPage() {
               size="sm"
               value={status || 'all'}
               onChange={(v) => set({ st: v === 'all' ? null : v })}
-              options={[{ value: 'all', label: t.asset.all }, ...(list.data?.statuses ?? []).map((s) => ({ value: s, label: t.asset.status[s] ?? s, count: facets.counts[s] }))]}
+              options={[{ value: 'all', label: t.asset.all }, ...(list.data?.statuses ?? []).map((s) => ({ value: s, label: t.asset.status[s] ?? s, count: b.counts[s] ?? 0 }))]}
             />
             <FacetMenu label={t.asset.batch} allLabel={t.asset.allBatches} value={batch} options={facets.batches} onChange={(v) => set({ b: v || null })} />
-            <FacetMenu label={t.asset.category} allLabel={t.asset.allCategories} value={category} options={facets.categories} onChange={(v) => set({ c: v || null })} />
             <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
           </div>
         )}
         <span className="flex-1" />
-        {project && <span className="text-[13px] text-fg-3 tabular">{t.asset.total(facets.total)}</span>}
         {project && (
           <Tip content={pendingN ? t.asset.review.modeTip(pendingN) : t.asset.review.noQueue}>
             <span>
@@ -126,39 +127,45 @@ export function AssetsPage() {
         )}
       </div>
 
-      <WallArea>
-        {list.isPending ? (
-          <WallGrid>
-            {Array.from({ length: 12 }, (_, i) => (
-              <Skeleton key={i} className="h-[232px] rounded-2xl" />
-            ))}
-          </WallGrid>
-        ) : list.isError ? (
-          <ErrorState error={list.error} onRetry={() => list.refetch()} />
-        ) : !project ? (
-          <Card>
-            <Empty icon={<Images />} title={t.asset.empty}>
-              {t.asset.emptyHint}
-            </Empty>
-          </Card>
-        ) : !tiles.length ? (
-          <Card>
-            <Empty
-              icon={<Images />}
-              title={t.asset.noMatch}
-              action={
-                filtered && (
-                  <Button size="sm" onClick={() => set({ b: null, c: null, ft: null, st: null })}>
-                    {t.asset.clearFilter}
-                  </Button>
-                )
-              }
-            />
-          </Card>
-        ) : (
-          <AssetWall tiles={tiles} active={params.get('asset')} activeGroup={params.get('cmp')} onOpen={(code) => set({ asset: code, cmp: null })} onGroup={(k) => set({ cmp: k, asset: null })} />
-        )}
-      </WallArea>
+      {list.isPending ? (
+        <WallGrid>
+          {Array.from({ length: 12 }, (_, i) => (
+            <Skeleton key={i} className="h-[232px] rounded-2xl" />
+          ))}
+        </WallGrid>
+      ) : list.isError ? (
+        <ErrorState error={list.error} onRetry={() => list.refetch()} />
+      ) : !project ? (
+        <Card>
+          <Empty icon={<Images />} title={t.asset.empty}>
+            {t.asset.emptyHint}
+          </Empty>
+        </Card>
+      ) : (
+        <WallArea>
+          {(h) => (
+            <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined} height={h}>
+              {!tiles.length ? (
+                <Card>
+                  <Empty
+                    icon={<Images />}
+                    title={t.asset.noMatch}
+                    action={
+                      b.filtered && (
+                        <Button size="sm" onClick={() => set({ ...reset, p: params.get('p') })}>
+                          {t.asset.clearFilter}
+                        </Button>
+                      )
+                    }
+                  />
+                </Card>
+              ) : (
+                <SectionWall b={b} go={go} active={params.get('asset')} activeGroup={params.get('cmp')} onOpen={(code) => set({ asset: code, cmp: null })} onGroup={(k) => set({ cmp: k, asset: null })} />
+              )}
+            </DirBrowser>
+          )}
+        </WallArea>
+      )}
 
       {stage && <ReviewStage review={review} code={params.get('asset')} all={all} />}
       <AssetDrawer code={stage ? null : params.get('asset')} review={review.on ? review : undefined} onClose={() => set({ asset: null, rv: null })} />
@@ -167,16 +174,12 @@ export function AssetsPage() {
   )
 }
 
-// WallArea：桌面上图片墙铺满页面剩下的高度、在区域里滚动，页头和筛选不动（R-383，和工作台一样一屏）；手机上整页照常滚动。
-function WallArea({ children }: { children: ReactNode }) {
+// WallArea：桌面上目录和图片墙铺满页面剩下的高度、各自滚动，页头和筛选不动（R-383，和工作台一样一屏）；手机上整页照常滚动。
+function WallArea({ children }: { children: (h: number | undefined) => ReactNode }) {
   const desktop = useDesktop()
   const [el, setEl] = useState<HTMLDivElement | null>(null)
   const h = useFillHeight(el, desktop)
-  return (
-    <div ref={setEl} style={desktop && h ? { height: h } : undefined} className="lg:-mx-2 lg:overflow-y-auto lg:overscroll-contain lg:px-2 lg:pb-4" data-asset-wall="">
-      {children}
-    </div>
-  )
+  return <div ref={setEl}>{children(desktop ? h : undefined)}</div>
 }
 
 // 图片墙的格子：每格固定高度（设计原则第 3 条），列数随宽度增加，宽屏上一行放得更多。
@@ -184,8 +187,40 @@ export function WallGrid({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] lg:gap-3.5">{children}</div>
 }
 
+type WallProps = { active: string | null; activeGroup: string | null; onOpen: (code: string) => void; onGroup: (key: string) => void }
+
+// SectionWall（R-394）：图片墙按目录的下一层分组，组名可点进那一层；不分组时直接是一面墙。所有者页和分享页共用。
+export function SectionWall({ b, go, ...p }: WallProps & { b: Browse; go: (d: AssetDir) => void }) {
+  return (
+    <div className="grid gap-5">
+      {b.sections.map((s) => {
+        const to = sectionDir(s, b.dir)
+        const label = sectionLabel(s, b.dir)
+        return (
+          <section key={`${s.kind}:${s.key}`} data-wall-section={s.key}>
+            {s.kind && (
+              <h2 className="mb-2.5 flex items-center gap-2 text-[13px]">
+                {to ? (
+                  <button className="font-medium text-fg-2 hover:text-accent" onClick={() => go(to)}>
+                    {label}
+                  </button>
+                ) : (
+                  <span className="font-medium text-fg-3">{label}</span>
+                )}
+                <span className="text-xs text-fg-3 tabular">{s.assets.length}</span>
+                <span className="h-px flex-1 bg-line" />
+              </h2>
+            )}
+            <AssetWall tiles={s.tiles} {...p} />
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
 // AssetWall：图片墙（所有者页和访客页共用，R-365）。
-export function AssetWall({ tiles, active, activeGroup, onOpen, onGroup }: { tiles: WallTile[]; active: string | null; activeGroup: string | null; onOpen: (code: string) => void; onGroup: (key: string) => void }) {
+export function AssetWall({ tiles, active, activeGroup, onOpen, onGroup }: WallProps & { tiles: WallTile[] }) {
   return (
     <WallGrid>
       {tiles.map((tile) =>
@@ -378,19 +413,29 @@ function FileTypeTags({ types }: { types: string[] }) {
   )
 }
 
+// AssetCard：一件素材。外层留给多选（R-393）的勾选框，不嵌进按钮里；有几个变体在右上角标出（变体在抽屉里列出，D-2114）。
 export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpen: () => void }) {
+  const nv = variantCount(a)
   return (
-    <button onClick={onOpen} className={cardCls(active)} data-asset={a.code}>
-      <AssetCover a={a} v={a.latest} className="h-[164px] w-full shrink-0" />
-      <AssetBadge status={a.status} code={a.code} className="absolute top-2 left-2 shadow-xs" />
-      <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
-        <div className="truncate text-sm font-medium text-fg" title={a.key}>
-          {a.key}
+    <div className="relative min-w-0" data-asset-tile={a.code}>
+      <button onClick={onOpen} className={cx(cardCls(active), 'w-full')} data-asset={a.code}>
+        <AssetCover a={a} v={a.latest} className="h-[164px] w-full shrink-0" />
+        <AssetBadge status={a.status} code={a.code} className="absolute top-2 left-2 shadow-xs" />
+        {nv > 1 && (
+          <span className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-black/50 px-1.5 text-[11px] leading-[20px] text-white" data-variants={nv}>
+            <Layers className="size-3" />
+            {t.asset.dir.variants(nv)}
+          </span>
+        )}
+        <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
+          <div className="truncate text-sm font-medium text-fg" title={a.key}>
+            {assetName(a)}
+          </div>
+          <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.uid ? subtypeOf(a) || a.category : a.category, t.asset.ver(a.version))}</div>
+          <FileTypeTags types={fileTypesOf(a)} />
         </div>
-        <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.category, t.asset.ver(a.version))}</div>
-        <FileTypeTags types={fileTypesOf(a)} />
-      </div>
-    </button>
+      </button>
+    </div>
   )
 }
 
@@ -657,6 +702,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     [t.asset.meta.code, a.code],
     [t.asset.meta.batch, batchesOf(a.uid ? a : (v ?? a)).join(t.asset.listSep)],
     [t.asset.meta.category, a.category],
+    [t.asset.meta.subtype, v?.subtype],
     [t.asset.meta.fileType, fileTypesOf({ latest: v }).join(t.asset.listSep)],
     [t.asset.meta.previews, v?.previews?.length ? t.asset.previewCount(v.previews.length) : ''],
     [t.asset.meta.branch, v?.branch],

@@ -20,6 +20,8 @@ export type VersionLite = {
   size?: number[] | null
   pixels?: number[] | null
   auto_thumb?: FileLite | null
+  subtype?: string
+  variants?: unknown
   created_at: string
 }
 export type AssetLite = {
@@ -89,6 +91,102 @@ export function facetsOf(list: AssetLite[], project: string) {
 
 export function filterAssets(list: AssetLite[], f: AssetFilter): AssetLite[] {
   return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status) && (!f.ftype || fileTypesOf(a).includes(f.ftype)))
+}
+
+// ---------- 目录层级（R-394，D-2093 方案 C） ----------
+// 按素材 id 推送的素材按「类别 → 细类 → 素材」分层（变体先不单独成层，等 R-380 把变体拆开存文件，D-2114）；
+// 旧的按批次推送的条目（没有素材 id）单独一栏「按批次（旧）」，按批次分。
+
+// AssetDir：图片墙现在在目录的哪一层。old = 「按批次（旧）」一栏（batch 是其中的批次）；否则 cat / sub 是类别、细类，都空是全部素材。
+export type AssetDir = { old: boolean; cat: string; sub: string; batch: string }
+export const ROOT_DIR: AssetDir = { old: false, cat: '', sub: '', batch: '' }
+
+export const isLegacy = (a: Pick<AssetLite, 'uid'>) => !a.uid
+export const subtypeOf = (a: Pick<AssetLite, 'latest'>) => a.latest?.subtype ?? ''
+// assetName：素材在目录里的名字——素材 id 去掉命名空间和类别（core:weapon.carbine → carbine）；旧条目用 key。
+export function assetName(a: Pick<AssetLite, 'uid' | 'key'>): string {
+  if (!a.uid) return a.key
+  const rest = a.uid.slice(a.uid.indexOf(':') + 1)
+  return rest.slice(rest.indexOf('.') + 1) || a.uid
+}
+// variantCount：素材的具名变体个数（asset.json 的 variants）。
+export const variantCount = (a: Pick<AssetLite, 'latest'>) => variantNames(a.latest?.variants).length
+
+export function inDir(a: AssetLite, d: AssetDir): boolean {
+  if (d.old) return isLegacy(a) && (!d.batch || a.batch === d.batch)
+  if (!d.cat) return true
+  return !isLegacy(a) && a.category === d.cat && (!d.sub || subtypeOf(a) === d.sub)
+}
+
+// DirCount：一层的件数和待审、返工数。
+export type DirCount = { total: number; pending: number; rework: number }
+export type DirNode = DirCount & { key: string; children: DirNode[] }
+const tally = (c: DirCount, a: Pick<AssetLite, 'status'>) => {
+  c.total++
+  if (a.status === 'pending') c.pending++
+  if (a.status === 'rework') c.rework++
+}
+const zero = (): DirCount => ({ total: 0, pending: 0, rework: 0 })
+
+// dirTree：目录树。list 传项目里按批次、文件类型筛过的素材（状态不筛，待审 / 返工数照样看得到）。
+// cats：按素材 id 推送的素材的类别，每个类别下是细类（没写细类的 key 为空，排在最后）；old：旧条目一栏，下面是批次。
+export function dirTree(list: AssetLite[]): { all: DirCount; cats: DirNode[]; old: DirNode } {
+  const all = zero()
+  const cats = new Map<string, DirNode>()
+  const old: DirNode = { key: '', ...zero(), children: [] }
+  const child = (n: DirNode, key: string) => {
+    let c = n.children.find((x) => x.key === key)
+    if (!c) n.children.push((c = { key, ...zero(), children: [] }))
+    return c
+  }
+  for (const a of list) {
+    tally(all, a)
+    if (isLegacy(a)) {
+      tally(old, a)
+      tally(child(old, a.batch), a)
+      continue
+    }
+    let c = cats.get(a.category)
+    if (!c) cats.set(a.category, (c = { key: a.category, ...zero(), children: [] }))
+    tally(c, a)
+    tally(child(c, subtypeOf(a)), a)
+  }
+  const sortKids = (n: DirNode) => n.children.sort((x, y) => (!x.key ? 1 : !y.key ? -1 : natural.compare(x.key, y.key)))
+  const out = [...cats.values()].sort((x, y) => natural.compare(x.key, y.key))
+  out.forEach(sortKids)
+  sortKids(old)
+  return { all, cats: out, old }
+}
+
+// dirCount：目录里某一层的统计（面包屑、标签用）；找不到时全是 0。
+export function dirCount(tree: ReturnType<typeof dirTree>, d: AssetDir): DirCount {
+  if (d.old) return d.batch ? (tree.old.children.find((x) => x.key === d.batch) ?? zero()) : tree.old
+  if (!d.cat) return tree.all
+  const c = tree.cats.find((x) => x.key === d.cat)
+  if (!c) return zero()
+  return d.sub ? (c.children.find((x) => x.key === d.sub) ?? zero()) : c
+}
+
+// WallSection：图片墙按下一层分的一组。kind 说明 key 是什么：cat 类别 / sub 细类（空 = 未分细类）/ batch 旧条目的批次 / '' 不分组。
+export type WallSection = { kind: 'cat' | 'sub' | 'batch' | ''; key: string; assets: AssetLite[] }
+
+// wallSections：图片墙按目录的下一层分组——全部素材按类别（旧条目在后面按批次）、类别按细类、「按批次（旧）」按批次；
+// 到了细类或某个旧批次就不再分组。只有一组且没有名字时不写组名。
+export function wallSections(list: AssetLite[], d: AssetDir): WallSection[] {
+  const by = (xs: AssetLite[], kind: WallSection['kind'], keyOf: (a: AssetLite) => string, emptyLast = false) => {
+    const m = new Map<string, AssetLite[]>()
+    for (const a of xs) m.set(keyOf(a), [...(m.get(keyOf(a)) ?? []), a])
+    return [...m.entries()]
+      .sort(([x], [y]) => (emptyLast && !x ? 1 : emptyLast && !y ? -1 : natural.compare(x, y)))
+      .map(([key, assets]) => ({ kind, key, assets }))
+  }
+  if (d.old) return d.batch ? [{ kind: '', key: '', assets: list }] : by(list, 'batch', (a) => a.batch)
+  if (d.sub) return [{ kind: '', key: '', assets: list }]
+  if (d.cat) {
+    const s = by(list, 'sub', subtypeOf, true)
+    return s.length === 1 && !s[0].key ? [{ kind: '', key: '', assets: list }] : s
+  }
+  return [...by(list.filter((a) => !isLegacy(a)), 'cat', (a) => a.category), ...by(list.filter(isLegacy), 'batch', (a) => a.batch)]
 }
 
 // 图片墙上的一格：单个素材，或同一用途的一组候选（概念图 A / B 版）。
@@ -177,7 +275,7 @@ export function viewGroups<P extends { view?: string }>(previews: P[]): { view: 
 
 // 纸鸢认识的通用字段（asset.json 与旧 manifest），项目字段里不再重复列出。
 // budget、size 等写成对象时（里面常有项目自己的检查项）照样列出，只有数字 / 数组的已在面数、尺寸里显示。
-const GENERIC = new Set(['format', 'id', 'file', 'category', 'previews', 'batch', 'batches', 'variants', 'default_variant', 'source', 'sources', 'license', 'group', 'triangles', 'budget_max', 'pixels', 'dimensions_px'])
+const GENERIC = new Set(['format', 'id', 'file', 'category', 'subtype', 'previews', 'batch', 'batches', 'variants', 'default_variant', 'source', 'sources', 'license', 'group', 'triangles', 'budget_max', 'pixels', 'dimensions_px'])
 const SHOWN_UNLESS_OBJECT = new Set(['budget', 'size', 'bounds_m', 'bounds_local_m', 'dimensions_m'])
 const isObj = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v)
 

@@ -276,6 +276,19 @@ export const zh = {
     noMatch: '没有符合条件的素材',
     clearFilter: '清除筛选',
     candidates: (labels: string[]) => `候选 ${labels.join(' / ')}`,
+    // 目录层级（R-394）：类别 → 细类 → 素材；旧的按批次推送的条目单独一栏
+    dir: {
+      nav: '目录',
+      all: '全部素材',
+      cats: '类别',
+      noSub: '未分细类',
+      old: '按批次（旧）',
+      expand: '展开细类',
+      collapse: '收起细类',
+      pending: (n: number) => `待审 ${n}`,
+      rework: (n: number) => `返工 ${n}`,
+      variants: (n: number) => `${n} 个变体`,
+    },
     view: { image: '大图', model: '3D', compare: '对比', compare3d: '3D 对比' } as Record<string, string>,
     compareBy: { image: '图片', model: '3D' },
     noPreview: '暂无预览图',
@@ -322,7 +335,7 @@ export const zh = {
     compareHint: '拖动分隔线对比',
     compareSlider: (a: number, b: number) => `对比 v${a} 和 v${b}`,
     ver: (n: number) => `v${n}`,
-    meta: { code: '编号', batch: '批次', category: '类别', fileType: '文件类型', previews: '预览图', branch: '分支', commit: '提交', triangles: '面数', size: '尺寸', pixels: '像素', source: '来源', license: '许可', variants: '变体', submitter: '提交者' },
+    meta: { code: '编号', batch: '批次', category: '类别', subtype: '细类', fileType: '文件类型', previews: '预览图', branch: '分支', commit: '提交', triangles: '面数', size: '尺寸', pixels: '像素', source: '来源', license: '许可', variants: '变体', submitter: '提交者' },
     // 按素材 id 推送（R-376）：批次可多个；asset.json 里纸鸢不认识的字段原样列在「项目字段」
     previewCount: (n: number) => `${n} 张`,
     listSep: '、',
