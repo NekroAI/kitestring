@@ -3242,7 +3242,9 @@ export interface components {
             hard?: "product" | "design" | "semantics" | "permission" | "gate" | "irreversible" | "acceptance";
             /** @description 问题附带的图（例如待批准的方案图）的附件 ID */
             images?: string[] | null;
-            /** @description 每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files */
+            /** @description 每个选项的多张效果图附件 ID（外层与 options 一一对应，内层是该选项的图，按给的顺序排，可留空；R-399）。与 option_images 同时给时，同一选项里 option_images 那张排在前面 */
+            option_image_sets?: (string[] | null)[] | null;
+            /** @description 每个选项一张效果图的附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files；一个选项要放多张用 option_image_sets */
             option_images?: string[] | null;
             /** @description 每个选项的可交互原型 ID（与 options 一一对应，可留空，R-197） */
             option_prototypes?: string[] | null;

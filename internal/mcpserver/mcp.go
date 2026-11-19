@@ -269,7 +269,8 @@ type decisionIn struct {
 	Question          string           `json:"question" jsonschema:"需要用户决策的问题：一句话，只问一件事，脱离对话也能读懂——用户没看过你们的对话，不要写「刚才那个」「按上面说的」，把要定的事和它会带来什么写进这一句（建议 60 字以内）"`
 	Context           string           `json:"context,omitempty" jsonschema:"说明，按“结论 / 依据 / 细节”三段写：结论是你的判断，依据是为什么，细节放最后。不要在这里埋别的要决策的点，那些另开决策。建议 400 字以内"`
 	Options           []string         `json:"options,omitempty" jsonschema:"候选选项"`
-	OptionImages      []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选"`
+	OptionImages      []string         `json:"option_images,omitempty" jsonschema:"每个选项的效果图（本机图片路径，与 options 一一对应，没有的留空字符串）。比较设计方案时用，用户会看图点选。一个选项要放多张（如桌面 / 手机、浅色 / 深色）用 option_image_sets"`
+	OptionImageSets   [][]string       `json:"option_image_sets,omitempty" jsonschema:"每个选项的多张效果图（本机图片路径；外层与 options 一一对应，内层是该选项的图，按给的顺序排，没有的留空数组）。用户在决策卡上看首图和张数，点开可左右切换逐张看；与 option_images 同时给时该选项里 option_images 那张排最前"`
 	OptionPrototypes  []any            `json:"option_prototypes,omitempty" jsonschema:"每个选项的可交互原型（R-197），与 options 一一对应，没有的留空字符串；写法同 prototypes。比较交互方案时用，用户点开每套原型试用后再选。要决策的点里的选项也可以写 prototype"`
 	Prototypes        []any            `json:"prototypes,omitempty" jsonschema:"问题附带的可交互原型（例如待批准方案的原型），写法同 evidence_attach 的 prototypes"`
 	Approval          bool             `json:"approval,omitempty" jsonschema:"请用户批准一个方案 / 计划时设为 true：选项固定为“批准 / 拒绝”，用户两种都可以附言"`
@@ -671,6 +672,23 @@ func (t *tools) register(s *mcp.Server) {
 					ids[i] = up[0]
 				}
 				body["option_images"] = ids
+			}
+			if len(in.OptionImageSets) > 0 {
+				sets := make([][]string, len(in.OptionImageSets))
+				for i, ps := range in.OptionImageSets {
+					sets[i] = []string{}
+					for _, p := range ps {
+						if strings.TrimSpace(p) == "" {
+							continue
+						}
+						up, err := t.uploadCached(ctx, []string{p}, cache)
+						if err != nil {
+							return nil, nil, err
+						}
+						sets[i] = append(sets[i], up[0])
+					}
+				}
+				body["option_image_sets"] = sets
 			}
 			if err := t.addBlocks(ctx, body, in.Blocks, cache); err != nil {
 				return nil, nil, err

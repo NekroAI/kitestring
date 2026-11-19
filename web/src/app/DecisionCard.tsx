@@ -197,7 +197,6 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
   // 方案对比：任一选项带效果图或原型（R-197）时，选项改为看图点选的卡片
   const optProto = (i: number) => d.option_prototypes?.[i]?.[0]
   const visual = (d.option_files ?? []).some((f) => f?.length) || (d.option_prototypes ?? []).some((p) => p?.length)
-  const optImgs = (d.option_files ?? []).flatMap((fs) => fs?.slice(0, 1) ?? [])
   // 在选项效果图上“标注并附上”：把标注图附进答复（附言框常驻，R-161）
   const [incoming, setIncoming] = useState<File[]>([])
 
@@ -274,7 +273,8 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
           <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-2" role="radiogroup">
             {options.map((o, i) => {
               const on = draft.choice === i
-              const img = d.option_files?.[i]?.[0]
+              const imgs = d.option_files?.[i] ?? []
+              const img = imgs[0]
               const pr = optProto(i)
               if (!img && !pr) return null // 没有效果图、原型的选项放到下面的列表里
               return (
@@ -298,9 +298,12 @@ export function DecisionComposer({ d, embedded, drawer, autoFocus }: { d: Decisi
                     img && (
                       <div className="relative aspect-[16/10] overflow-hidden border-b border-line bg-sunken">
                         <ThumbImg id={img.id} alt={o} loading="lazy" className="size-full object-cover object-top transition-transform duration-300 group-hover/opt:scale-[1.02]" />
-                        <span className="absolute top-2 right-2 opacity-0 transition group-hover/opt:opacity-100 pointer-coarse:opacity-100" onClick={(e) => e.stopPropagation()}>
-                          <ZoomButton f={img} group={optImgs} />
+                        <span className={cx('absolute top-2 right-2 transition group-hover/opt:opacity-100 pointer-coarse:opacity-100', imgs.length > 1 ? 'opacity-100' : 'opacity-0')} onClick={(e) => e.stopPropagation()}>
+                          <ZoomButton f={img} group={imgs} />
                         </span>
+                        {imgs.length > 1 && (
+                          <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] font-medium text-white tabular backdrop-blur">{t.decision.imageCount(imgs.length)}</span>
+                        )}
                       </div>
                     )
                   )}

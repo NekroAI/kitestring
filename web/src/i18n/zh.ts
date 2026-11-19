@@ -1422,6 +1422,7 @@ export const zh = {
   decision: {
     fullPlan: '完整方案',
     noImage: '暂无效果图',
+    imageCount: (n: number) => `${n} 张图`,
     approve: '批准', // 多点批准类决策发给 Agent 的答复前缀（后端按「批准」开头判断），不是界面用词，不随 VERB 变
     recommended: '推荐',
     recommendation: '建议',

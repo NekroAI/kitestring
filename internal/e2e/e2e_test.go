@@ -673,6 +673,41 @@ func TestDecisionOptionImages(t *testing.T) {
 	}
 }
 
+// R-399：每个选项可附多张效果图（option_image_sets），旧的一张写法（option_images）照常，两者混用时旧的那张排前面。
+func TestDecisionOptionImageSets(t *testing.T) {
+	setup(t)
+	cwd, _ := os.Getwd()
+	hook(t, "claude", map[string]any{"session_id": "o-2", "cwd": cwd, "hook_event_name": "UserPromptSubmit", "prompt": "出方案", "prompt_id": "p0"})
+	c := client.New(10 * time.Second)
+	dir := t.TempDir()
+	var ids []string
+	for _, n := range []string{"a.png", "b.png", "c.png", "d.png"} {
+		os.WriteFile(dir+"/"+n, tinyPNG, 0o600)
+		var ref store.FileRef
+		if err := c.Upload(context.Background(), "/agent/files", dir+"/"+n, &ref); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, ref.ID)
+	}
+	var d store.Decision
+	body := map[string]any{"question": "用哪个布局？", "options": []string{"A", "B", "C"}, "option_image_sets": [][]string{{ids[0], ids[1], ids[2]}, {}, {ids[3]}}, "session_key": "claude:o-2"}
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", body, &d); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.OptionFiles) != 3 || len(d.OptionFiles[0]) != 3 || len(d.OptionFiles[1]) != 0 || len(d.OptionFiles[2]) != 1 || d.OptionFiles[0][2].ID != ids[2] || d.OptionFiles[0][0].ID != ids[0] {
+		t.Fatalf("多张效果图应按给的顺序存进对应选项：%+v", d.OptionFiles)
+	}
+	// 混用：option_images 的那张排在该选项最前
+	body = map[string]any{"question": "换个问法？", "options": []string{"A", "B"}, "option_images": []string{ids[3], ""}, "option_image_sets": [][]string{{ids[0]}, {ids[1], ids[2]}}, "session_key": "claude:o-2"}
+	var d2 store.Decision
+	if err := c.Do(context.Background(), "POST", "/agent/decisions", body, &d2); err != nil {
+		t.Fatal(err)
+	}
+	if len(d2.OptionFiles[0]) != 2 || d2.OptionFiles[0][0].ID != ids[3] || d2.OptionFiles[0][1].ID != ids[0] || len(d2.OptionFiles[1]) != 2 {
+		t.Fatalf("混用时旧写法那张应排最前：%+v", d2.OptionFiles)
+	}
+}
+
 func TestLinkStartsRequirement(t *testing.T) {
 	e := setup(t)
 	cwd, _ := os.Getwd()

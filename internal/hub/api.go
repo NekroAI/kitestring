@@ -1263,25 +1263,26 @@ type summaryTestOut struct {
 
 type agentDecisionIn struct {
 	Body struct {
-		SessionKey        string   `json:"session_key,omitempty" doc:"提出决策的会话，由 daemon 填写"`
-		Question          string   `json:"question" minLength:"1"`
-		Context           string   `json:"context,omitempty"`
-		Options           []string `json:"options,omitempty"`
-		OptionImages      []string `json:"option_images,omitempty" doc:"每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files"`
-		Approval          bool     `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
-		Images            []string `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
-		Prototypes        []string `json:"prototypes,omitempty" doc:"问题附带的可交互原型 ID（R-197），先传到 /api/agent/prototypes"`
-		OptionPrototypes  []string `json:"option_prototypes,omitempty" doc:"每个选项的可交互原型 ID（与 options 一一对应，可留空，R-197）"`
-		Blocks            []any    `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
-		Points            []any    `json:"points,omitempty" doc:"要决策的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
-		Summary           []string `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
-		Recommendation    string   `json:"recommendation,omitempty"`
-		RecommendedOption *int     `json:"recommended_option,omitempty" doc:"推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配"`
-		Requirement       string   `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号；不写时会话只关联一条没完成的需求就自动挂上（R-241），写 none 表示与在做的需求无关、不挂"`
-		FromDecision      string   `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
-		Overturns         bool     `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
-		Risk              string   `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
-		Hard              string   `json:"hard,omitempty" enum:"product,design,semantics,permission,gate,irreversible,acceptance" doc:"硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收"`
+		SessionKey        string     `json:"session_key,omitempty" doc:"提出决策的会话，由 daemon 填写"`
+		Question          string     `json:"question" minLength:"1"`
+		Context           string     `json:"context,omitempty"`
+		Options           []string   `json:"options,omitempty"`
+		OptionImages      []string   `json:"option_images,omitempty" doc:"每个选项一张效果图的附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files；一个选项要放多张用 option_image_sets"`
+		OptionImageSets   [][]string `json:"option_image_sets,omitempty" doc:"每个选项的多张效果图附件 ID（外层与 options 一一对应，内层是该选项的图，按给的顺序排，可留空；R-399）。与 option_images 同时给时，同一选项里 option_images 那张排在前面"`
+		Approval          bool       `json:"approval,omitempty" doc:"请用户批准：选项固定为“批准 / 拒绝”，两种都可以附言"`
+		Images            []string   `json:"images,omitempty" doc:"问题附带的图（例如待批准的方案图）的附件 ID"`
+		Prototypes        []string   `json:"prototypes,omitempty" doc:"问题附带的可交互原型 ID（R-197），先传到 /api/agent/prototypes"`
+		OptionPrototypes  []string   `json:"option_prototypes,omitempty" doc:"每个选项的可交互原型 ID（与 options 一一对应，可留空，R-197）"`
+		Blocks            []any      `json:"blocks,omitempty" doc:"表达块（R-97），同证据；决策常用 options / compare / table / flow。不合法的块丢掉并在 block_warnings 里说明"`
+		Points            []any      `json:"points,omitempty" doc:"要决策的点（R-112）：[{question, options:[{label, desc, recommended, image}]}]，用户逐点选择；不合法的点丢掉并在 block_warnings 里说明"`
+		Summary           []string   `json:"summary,omitempty" doc:"方案要点，每条一行（以需求编号开头）；有它时网页把完整说明折叠起来"`
+		Recommendation    string     `json:"recommendation,omitempty"`
+		RecommendedOption *int       `json:"recommended_option,omitempty" doc:"推荐的是第几个选项（从 0 开始，R-239）；不填时只有 recommendation 与某个选项文字完全相同才算推荐，不做模糊匹配"`
+		Requirement       string     `json:"requirement,omitempty" doc:"关联需求 ID 或 R-编号；不写时会话只关联一条没完成的需求就自动挂上（R-241），写 none 表示与在做的需求无关、不挂"`
+		FromDecision      string     `json:"from_decision,omitempty" doc:"来源决策（R-154）：这条决策接着哪条决策往下问，或推翻了哪条（D-x）"`
+		Overturns         bool       `json:"overturns,omitempty" doc:"为 true 表示这条决策要推翻 from_decision 的结论（需同时给 from_decision）"`
+		Risk              string     `json:"risk,omitempty" enum:"low,medium,high" doc:"风险档（R-163）：不填按 high。产品方向、设计选型、语义 / 接口 / 权限变更、不可逆或对外操作一律 high；只有 low / medium 的决策可能由参谋在用户的授权窗口内代答"`
+		Hard              string     `json:"hard,omitempty" enum:"product,design,semantics,permission,gate,irreversible,acceptance" doc:"硬规则类别（R-210）：属于其中一类就标上，标了主助理永不代答、风险档按 high。product 产品方向；design 设计选型；semantics 语义 / 接口变更；permission 权限变更；gate 门禁 / 评测；irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）；acceptance 验收"`
 	}
 }
 
@@ -1604,6 +1605,7 @@ func (h *Hub) registerAgent(api huma.API) {
 				d.Approval = true
 				d.Options = []string{"批准", "拒绝"}
 				b.OptionImages = nil
+				b.OptionImageSets = nil
 				b.OptionPrototypes = nil
 			}
 			if d.Prototypes, err = h.store.ResolvePrototypes(ctx, b.Prototypes); err != nil {
@@ -1631,13 +1633,24 @@ func (h *Hub) registerAgent(api huma.API) {
 				}
 				d.ContextFiles = fs
 			}
-			if len(b.OptionImages) > 0 {
-				// 方案对比：每个选项最多一张效果图
+			if len(b.OptionImages) > 0 || len(b.OptionImageSets) > 0 {
+				// 方案对比：每个选项一组效果图（R-399）；旧的 option_images 是每选项一张，排在该选项这一组的最前面
 				d.OptionFiles = make([][]store.FileRef, len(d.Options))
 				for i := range d.Options {
 					d.OptionFiles[i] = []store.FileRef{}
+					var ids []string
 					if i < len(b.OptionImages) && b.OptionImages[i] != "" {
-						fs, err := h.store.ResolveFiles(ctx, []string{b.OptionImages[i]})
+						ids = append(ids, b.OptionImages[i])
+					}
+					if i < len(b.OptionImageSets) {
+						for _, id := range b.OptionImageSets[i] {
+							if id != "" {
+								ids = append(ids, id)
+							}
+						}
+					}
+					if len(ids) > 0 {
+						fs, err := h.store.ResolveFiles(ctx, ids)
 						if err != nil {
 							return nil, err
 						}

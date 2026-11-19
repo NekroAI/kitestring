@@ -1215,8 +1215,24 @@
               "null"
             ]
           },
+          "option_image_sets": {
+            "description": "每个选项的多张效果图附件 ID（外层与 options 一一对应，内层是该选项的图，按给的顺序排，可留空；R-399）。与 option_images 同时给时，同一选项里 option_images 那张排在前面",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "option_images": {
-            "description": "每个选项的效果图附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files",
+            "description": "每个选项一张效果图的附件 ID（与 options 一一对应，可留空），先上传到 /api/agent/files；一个选项要放多张用 option_image_sets",
             "items": {
               "type": "string"
             },

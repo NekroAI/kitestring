@@ -636,7 +636,7 @@ func runDecision(args []string) error {
 		return runAnswer(args[1:])
 	}
 	if len(args) < 1 || args[0] != "raise" {
-		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要决策的点.json] [--summary 方案要点] [--prototype 原型] [--option-prototype 选项的原型]\n%s", decisionGuide)
+		return fmt.Errorf("用法：ks decision withdraw <D-编号> [--reason 原因] [--replaced-by D-y]；ks decision answer <D-编号> --answer 答复 --reason 理由 --risk low --hard-check none（Adv 在授权窗口内代答）；ks decision raise --question <问题> [--context 说明] [--option A --option B] [--recommend ...] [--req R-1] [--risk low|medium|high] [--hard 类别] [--from D-x [--overturns]] [--blocks 块.json] [--points 要决策的点.json] [--summary 方案要点] [--option-image 图 | --option-images 图1,图2 每个选项写一次] [--prototype 原型] [--option-prototype 选项的原型]\n%s", decisionGuide)
 	}
 	fs := flag.NewFlagSet("decision raise", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
@@ -649,9 +649,10 @@ func runDecision(args []string) error {
 	hard := fs.String("hard", "", "硬规则类别（属于其中一类就标上，标了主助理永不代答、风险档按 high）：product 产品方向 / design 设计选型 / semantics 语义或接口变更 / permission 权限变更 / gate 门禁或评测 / irreversible 不可逆或对外操作（删除数据、发布、推送到远端、花钱、对外发消息）/ acceptance 验收")
 	fromDec := fs.String("from", "", "来源决策（D-x）：接着哪条决策往下问，或要推翻哪条")
 	overturns := fs.Bool("overturns", false, "这条要推翻 --from 那条决策的结论")
-	var opts, optImgs stringList
+	var opts, optImgs, optImgSets stringList
 	fs.Var(&opts, "option", "选项，可重复")
 	fs.Var(&optImgs, "option-image", "选项的效果图路径，按 --option 的顺序一一对应，可重复")
+	fs.Var(&optImgSets, "option-images", "选项的多张效果图：每个选项写一次，值是这个选项的图片路径、用逗号隔开（如 a.png,b.png），按 --option 的顺序一一对应，没有图的选项写空字符串；用户在决策卡上点开可左右切换。与 --option-image 可混用")
 	var protos, optProtos stringList
 	fs.Var(&protos, "prototype", protoFlagHelp)
 	fs.Var(&optProtos, "option-prototype", "选项的可交互原型，按 --option 的顺序一一对应（没有的写空字符串），写法同 --prototype")
@@ -697,6 +698,23 @@ func runDecision(args []string) error {
 			return err
 		}
 		body["option_images"] = tmp["files"]
+	}
+	if len(optImgSets) > 0 {
+		sets := make([][]string, len(optImgSets))
+		for i, v := range optImgSets {
+			sets[i] = []string{}
+			for _, p := range strings.Split(v, ",") {
+				if p = strings.TrimSpace(p); p == "" {
+					continue
+				}
+				tmp := map[string]any{}
+				if err := attachFiles(tmp, []string{p}); err != nil {
+					return err
+				}
+				sets[i] = append(sets[i], tmp["files"].([]string)[0])
+			}
+		}
+		body["option_image_sets"] = sets
 	}
 	if _, err := attachBlocks(body, *blocksArg); err != nil {
 		return err
