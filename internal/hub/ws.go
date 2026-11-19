@@ -59,7 +59,7 @@ func (h *Hub) serveDeviceWS(w http.ResponseWriter, r *http.Request) {
 	h.log.Info("设备已连接", "device", dev.Name)
 
 	go func() {
-		ping := time.NewTicker(20 * time.Second)
+		ping := time.NewTicker(devicePingEvery)
 		defer ping.Stop()
 		for {
 			select {
@@ -78,7 +78,7 @@ func (h *Hub) serveDeviceWS(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			case <-ping.C:
-				pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+				pctx, pcancel := context.WithTimeout(ctx, devicePongWait)
 				err := ws.Ping(pctx)
 				pcancel()
 				if err != nil {
@@ -89,24 +89,65 @@ func (h *Hub) serveDeviceWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	if s, err := h.Settings(ctx); err == nil {
-		cfg := h.deviceConfig(s)
-		c.send(protocol.Envelope{Type: protocol.MsgConfig, Config: &cfg})
-	}
-	h.pushDecisions(ctx, dev.ID)
-	h.pushRoles(ctx, dev.ID)
-	h.pushInstances(ctx, dev.ID)
-	h.pushRolePrompts(ctx, c)
+	// 读循环只管收消息，处理交给下面的处理协程（R-374）：处理要读写数据库，数据库慢时会卡住；
+	// 读循环一停，daemon 回的 Pong 就没人收，写协程的 Ping 10 秒等不到回应就断开连接，事件处理到一半被取消，重连后又重来。
+	// 处理用不随连接取消的 context：连接断了，正在处理的那条照样做完，不留半截状态；还没轮到的丢掉，daemon 会重发没回执的。
+	inbox := make(chan protocol.Envelope, deviceInbox)
+	worked := make(chan struct{})
+	go func() {
+		defer close(worked)
+		pctx := context.WithoutCancel(ctx)
+		h.deviceHello(pctx, c)
+		for e := range inbox {
+			if ctx.Err() != nil {
+				continue
+			}
+			mctx, mcancel := context.WithTimeout(pctx, deviceMsgTimeout)
+			h.handleDeviceMsg(mctx, c, e)
+			mcancel()
+		}
+	}()
 
 	for {
 		var e protocol.Envelope
 		if err := wsjson.Read(ctx, ws, &e); err != nil {
 			break
 		}
-		h.handleDeviceMsg(ctx, c, e)
+		select {
+		case inbox <- e:
+		default: // 积压太多：丢掉这条，daemon 没收到回执会重发
+			h.log.Warn("设备消息积压，丢弃一条待重发", "device", dev.Name, "type", e.Type)
+		}
 	}
+	cancel()
+	close(inbox)
 	ws.Close(websocket.StatusNormalClosure, "")
 	h.deviceGone(c)
+	<-worked
+}
+
+// deviceInbox 是每条设备连接待处理消息的上限；deviceMsgTimeout 是单条消息最长处理时间（R-374）。
+const (
+	deviceInbox      = 256
+	deviceMsgTimeout = 2 * time.Minute
+)
+
+// 每 devicePingEvery 发一次 Ping，devicePongWait 内收不到 Pong 就断开（测试里调短）。
+var (
+	devicePingEvery = 20 * time.Second
+	devicePongWait  = 10 * time.Second
+)
+
+// deviceHello：设备刚连上时下发配置、待注入决策、身份、终端实例和身份提示词。
+func (h *Hub) deviceHello(ctx context.Context, c *deviceConn) {
+	if s, err := h.Settings(ctx); err == nil {
+		cfg := h.deviceConfig(s)
+		c.send(protocol.Envelope{Type: protocol.MsgConfig, Config: &cfg})
+	}
+	h.pushDecisions(ctx, c.dev.ID)
+	h.pushRoles(ctx, c.dev.ID)
+	h.pushInstances(ctx, c.dev.ID)
+	h.pushRolePrompts(ctx, c)
 }
 
 func (h *Hub) handleDeviceMsg(ctx context.Context, c *deviceConn, e protocol.Envelope) {

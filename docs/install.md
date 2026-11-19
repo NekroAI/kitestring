@@ -35,6 +35,8 @@ ks install --hub --claude=false --codex=false --daemon=false \
 
 You can also run `ks hub serve --files-dir <dir>` directly, or set `KS_FILES_DIR` (`--files-dir` wins). When you re-run `ks install --hub` later without `--hub-files-dir`, it keeps the directory configured in the installed service instead of going back to the default; to go back to the default, pass `--hub-files-dir default` (write `./default` for a directory literally named default).
 
+Slow log: the Hub writes requests and database operations slower than a threshold (500ms by default) to hub.log (`请求慢` with path, duration and connection-pool waits; `数据库操作慢` with the statement and call site). Change it with `ks hub serve --slow 1s` or `KS_SLOW`; `0` turns it off.
+
 - The directory must already exist; the Hub never creates it, because creating it under an unmounted drive's mount point would silently write to the system disk.
 - If the directory is missing, not writable, blocked by macOS privacy protection, or the check gets no answer within 5 seconds (usually macOS waiting on a permission prompt), the Hub still starts but rejects uploads, logs the reason, and **Settings → Account → Attachment storage** shows "storage unavailable" with the reason and how to grant access. While unavailable it re-checks every 30 seconds and before every upload, so remounting the drive or granting access needs no restart.
 - Attachments uploaded before the change can stay in `~/.kitestring/files` and remain viewable (read-only; new files go only to the new directory). To move them, see "Moving attachments and deployment backups to another disk" below.

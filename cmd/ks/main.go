@@ -234,6 +234,7 @@ func runHub(args []string) error {
 	addr := fs.String("addr", "0.0.0.0:7310", "监听地址")
 	data := fs.String("data", "", "数据库路径（默认 ~/.kitestring/hub.db）")
 	filesDir := fs.String("files-dir", "", "附件目录（附件、原型包、缩略图；默认数据库旁的 files，也可用环境变量 KS_FILES_DIR）。指定的目录必须已存在，不可用时拒收上传")
+	slow := fs.Duration("slow", hubSlowDefault(os.Getenv("KS_SLOW")), "慢请求日志阈值：请求或数据库操作超过它就写进日志（如 500ms、2s；0 关闭；也可用环境变量 KS_SLOW）")
 	svc := fs.Bool("service", false, "由常驻服务启动：日志写进 ~/.kitestring/logs/hub.log（ks install 注册 Windows 服务时使用）")
 	// 参数可写在位置参数之后（如 device-add <名称> --data x）：否则会静默落到默认数据库
 	if err := parseAnywhere(fs, args); err != nil {
@@ -260,6 +261,7 @@ func runHub(args []string) error {
 	}
 	defer st.Close()
 	h := hub.New(st, logger())
+	h.SetSlowLog(*slow) // R-374
 	dbPath := *data
 	if dbPath == "" {
 		dbPath = filepath.Join(daemon.Home(), "hub.db")
@@ -415,6 +417,14 @@ func mcpClient(args []string) string {
 		return ""
 	}
 	return *client
+}
+
+// hubSlowDefault 是 --slow 的默认值：KS_SLOW 能解析就用它，否则 hub.DefaultSlow（R-374）。
+func hubSlowDefault(env string) time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(env)); err == nil && d >= 0 {
+		return d
+	}
+	return hub.DefaultSlow
 }
 
 // hubFilesDir 定附件目录（R-353）：--files-dir 优先，其次 KS_FILES_DIR；都没写返回空（用默认目录）。

@@ -20,7 +20,8 @@ var ErrNotFound = errors.New("记录不存在")
 
 // Store 封装数据库连接。
 type Store struct {
-	db *sql.DB
+	db   *dbx     // 写走单连接、读走只读连接池（R-374）
+	slow *slowLog // 慢操作日志（R-374）
 	// OnRequestVoided：改状态申请因需求状态被改动而自动作废后调用（R-188），hub 用它把结果送回申请方。
 	OnRequestVoided func(ids []string)
 	// OnWaitSettled：需求变为已完成、或决策被答复后调用（R-269），参数是它的编号（R-x / D-x）；hub 用它解除在等它的受阻需求。
@@ -29,12 +30,17 @@ type Store struct {
 
 // Open 打开（必要时创建）数据库并应用结构。
 func Open(path string) (*Store, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)", path)
-	db, err := sql.Open("sqlite", dsn)
+	// cache_size：每个连接 8MB 页缓存（默认 2MB 装不下常用表，查询反复从文件读页，R-374）
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-8000)", path)
+	probe, err := sql.Open("sqlite", "")
 	if err != nil {
 		return nil, err
 	}
-	// SQLite 单写者：一个连接即可避免锁竞争。
+	drv := probe.Driver()
+	probe.Close()
+	slow := &slowLog{}
+	db := sql.OpenDB(&timedConnector{dsn: dsn, drv: drv, slow: slow})
+	// SQLite 单写者：写只用一个连接，避免写锁竞争；读另开只读连接（见 dbx.go，R-374）。
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -59,7 +65,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("补录泳道时间线失败：%w", err)
 	}
-	return &Store{db: db}, nil
+	rd := sql.OpenDB(&timedConnector{dsn: dsn + "&_pragma=query_only(1)", drv: drv, slow: slow})
+	rd.SetMaxOpenConns(readConns)
+	rd.SetMaxIdleConns(readConns)
+	return &Store{db: &dbx{w: db, r: rd}, slow: slow}, nil
 }
 
 // addedColumns 是建表之后新增的列：旧数据库按需补齐（CREATE TABLE IF NOT EXISTS 不会改已有表）。
@@ -279,8 +288,8 @@ func migrate(db *sql.DB) error {
 // Close 关闭数据库。
 func (s *Store) Close() error { return s.db.Close() }
 
-// DB 暴露底层连接，供测试与维护命令使用。
-func (s *Store) DB() *sql.DB { return s.db }
+// DB 暴露底层的写连接，供测试与维护命令使用。
+func (s *Store) DB() *sql.DB { return s.db.w }
 
 func now() string { return ts(time.Now()) }
 

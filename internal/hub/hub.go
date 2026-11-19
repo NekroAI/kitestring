@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/notify"
@@ -115,6 +116,7 @@ type Hub struct {
 	watchMerges map[string]*watchMerge              // 需求|会话 → 60 秒内可并入的只告知订阅提醒（R-249 P4，只在内存里）
 	shareKey    []byte                              // 访客输对密码后的 cookie 签名密钥（R-281），首次用到时生成并存进设置
 	vault       *vault                              // 凭据主密钥与已知值脱敏器（R-295）
+	slowReq     atomic.Int64                        // 慢请求阈值（纳秒，R-374）；0 = 不记
 }
 
 // New 创建 Hub。
@@ -217,7 +219,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	go h.noticeWatch(ctx)  // 只告知的记录目标会话结束时直接关掉，不进待转交（R-265）
 	go h.awayLoop(ctx)     // 暂时离开：每分钟判断一次能处理的是否都处理完（R-210）
 	go h.filesWatch(ctx)   // 附件目录：后台检查、不阻塞监听，不可用时定期重查（R-367）
-	srv := &http.Server{Addr: addr, Handler: h.Handler(web), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: h.slowRequests(h.Handler(web)), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
 	h.log.Info("Hub 已启动", "addr", addr)
