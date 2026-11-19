@@ -618,7 +618,10 @@ CREATE TABLE IF NOT EXISTS share_comments (
 	asset_version  INTEGER NOT NULL DEFAULT 0,
 	file_id        TEXT NOT NULL DEFAULT '',
 	placed_as      TEXT NOT NULL DEFAULT '',
-	result_ref     TEXT NOT NULL DEFAULT ''
+	result_ref     TEXT NOT NULL DEFAULT '',
+	-- 挂在模型动作某一帧的留言（R-392）：frame 是 {anim, t, v} 的 JSON，shot_id 是当前画面的截图
+	frame          TEXT NOT NULL DEFAULT '',
+	shot_id        TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS share_comments_status ON share_comments(status, created_at);
 CREATE INDEX IF NOT EXISTS share_comments_link ON share_comments(link_id, created_at);
@@ -787,7 +790,8 @@ CREATE TABLE IF NOT EXISTS asset_reviews (
 	sent_name   TEXT NOT NULL DEFAULT '',
 	via         TEXT NOT NULL DEFAULT '', -- 访客的意见（R-365）：经由的分享名称
 	addend      TEXT NOT NULL DEFAULT '', -- 访客的意见：你放入时写的附言
-	created_at  TEXT NOT NULL
+	created_at  TEXT NOT NULL,
+	frame       TEXT NOT NULL DEFAULT '' -- 意见挂在模型动作的哪一帧（R-392）：{anim, t, v} 的 JSON
 );
 CREATE INDEX IF NOT EXISTS asset_reviews_asset ON asset_reviews(asset_id, created_at);
 CREATE INDEX IF NOT EXISTS asset_reviews_decision ON asset_reviews(decision_id);

@@ -1,3 +1,4 @@
+import { FrameChip } from './animBar'
 import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Decision } from '../api/client'
@@ -380,7 +381,14 @@ function GuestAssetBody({ c, top }: { c: ShareComment; top: ReactNode }) {
                 {inbox.to}
                 <span className="font-mono text-fg-2">{label}</span>
               </div>
+              {c.frame && (
+                <div className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-fg-3" data-guest-frame="">
+                  {t.asset.anim.at}
+                  <FrameChip frame={c.frame} />
+                </div>
+              )}
               <div className="rounded-xl bg-surface-2 px-3.5 py-3 text-[14px] leading-relaxed break-words whitespace-pre-wrap">{c.text}</div>
+              {c.shot && <Thumbs files={[c.shot]} size="sm" />}
             </section>
             <section className="grid gap-1.5">
               <span className="text-[13px] font-medium text-fg-2">{inbox.asLabel}</span>

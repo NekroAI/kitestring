@@ -73,6 +73,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/assets-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 资源库统计：总数、各状态和各类别的数量、批次（R-391） */
+        get: operations["agent-assets-summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/assets/have": {
         parameters: {
             query?: never;
@@ -873,7 +890,7 @@ export interface paths {
         put?: never;
         /**
          * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
-         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。
          */
         post: operations["agent-tell-pm"];
         delete?: never;
@@ -3133,6 +3150,8 @@ export interface components {
             agent_id?: string;
             /** @description 只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、指派、回复，立刻唤醒）。部署 / 重启、进展通报这类用 true */
             fyi?: boolean;
+            /** @description 发给其他项目的会话（R-379）：项目名或项目 ID；只有主调度、主助理能填，to / to_session 按对方项目的身份或会话键寻址。回复时不填 */
+            project?: string;
             /** @description 回复收到的团队消息：填它的编号（D-x） */
             reply_to?: string;
             /** @description 相关需求编号（如 R-12），可省略 */
@@ -3470,6 +3489,10 @@ export interface components {
         AssetFacets: {
             batches: string[] | null;
             categories: string[] | null;
+            /** @description 各类别的素材数（R-391） */
+            category_counts?: {
+                [key: string]: number;
+            };
             /** @description 各状态的素材数 */
             counts: {
                 [key: string]: number;
@@ -3491,6 +3514,20 @@ export interface components {
             size?: number;
             /** @description 预览图的机位（R-376：文件名「<名字>__<机位>.png」里的机位），网页按它分组 */
             view?: string;
+        };
+        AssetFrame: {
+            /** @description 动作名（GLB 里的动画名） */
+            anim: string;
+            /**
+             * Format: double
+             * @description 第几秒
+             */
+            t: number;
+            /**
+             * Format: int64
+             * @description 挂意见时看的模型版本
+             */
+            v: number;
         };
         AssetHaveInBody: {
             /** @description 要查的文件 sha256 */
@@ -3549,6 +3586,11 @@ export interface components {
             facets: components["schemas"]["AssetFacets"];
             /** @description 素材状态全集，按展示顺序 */
             statuses: string[] | null;
+            /**
+             * Format: int64
+             * @description 符合筛选的素材总数（R-391；Assets 可能只是其中一页）
+             */
+            total: number;
         };
         AssetPreview: {
             /** @description 改动框：按图片原始尺寸的比例坐标（0～1） */
@@ -3635,6 +3677,8 @@ export interface components {
              */
             delivery?: "answered" | "delivered" | "closed" | "";
             files: components["schemas"]["FileRef"][] | null;
+            /** @description 意见挂在模型动作的哪一帧（R-392）；没挂时为空 */
+            frame?: components["schemas"]["AssetFrame"];
             id: string;
             /**
              * @description submitter 提交素材的会话 / pm 提交的会话已结束，转给同项目主调度
@@ -3663,6 +3707,8 @@ export interface components {
             comment?: string;
             /** @description 附图（附件 ID） */
             files?: string[] | null;
+            /** @description 意见挂在模型动作的哪一帧（R-392）：动作名、秒数、模型版本 */
+            frame?: components["schemas"]["AssetFrame"];
             /**
              * @description 审核时看到的状态；不为空时要求仍是它，否则 409
              * @enum {string}
@@ -3693,6 +3739,22 @@ export interface components {
             name?: string;
             /** @description session：会话键；guest：访客链接 ID；user：空 */
             ref?: string;
+        };
+        AssetSummary: {
+            /** @description 全部批次 */
+            batches: string[] | null;
+            /** @description 各类别的素材数 */
+            categories: {
+                [key: string]: number;
+            };
+            /** @description 项目名；没确定项目时为空（统计全部项目） */
+            project: string;
+            /** @description 各状态的素材数 */
+            statuses: {
+                [key: string]: number;
+            };
+            /** Format: int64 */
+            total: number;
         };
         AssetVersion: {
             /** @description 自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它 */
@@ -4940,6 +5002,8 @@ export interface components {
             created_at: string;
             /** @description 上传的文件名；没有时是一条留言 */
             file_name?: string;
+            /** @description 素材：留言挂在模型动作的哪一帧（R-392） */
+            frame?: components["schemas"]["AssetFrame"];
             id: string;
             /**
              * @description 素材：放入成了什么——review 意见 / version 新版本 / attachment 附件
@@ -4948,6 +5012,8 @@ export interface components {
             placed_as?: "review" | "version" | "attachment" | "";
             /** @description 所属需求编号 */
             req?: string;
+            /** @description 素材：留言附的当前画面截图 */
+            shot?: components["schemas"]["FileRef"];
             /**
              * @description pending 待分享者处理 / placed 已放入需求（素材：已放入 / 已收下）/ ignored 分享者已看过、没有放入
              * @enum {string}
@@ -4969,6 +5035,10 @@ export interface components {
             version?: number;
         };
         GuestCommentInBody: {
+            /** @description 素材：留言挂在模型动作的哪一帧（动作名、秒数、模型版本） */
+            frame?: components["schemas"]["AssetFrame"];
+            /** @description 素材：当前画面的截图，data URL（PNG 或 JPEG，最大 5 MB） */
+            shot?: string;
             /**
              * @description 留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段 / asset 素材（R-365）
              * @enum {string}
@@ -6828,6 +6898,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             fyi: boolean;
+            /** @description 跨项目发的（R-379）：收件会话所在的项目名；本项目内的为空 */
+            project?: string;
             recipients: components["schemas"]["Delivery"][] | null;
             requirement?: string;
             text: string;
@@ -7092,6 +7164,8 @@ export interface components {
             decision_code?: string;
             /** @description 访客上传的文件；没有时是一条留言 */
             file?: components["schemas"]["FileRef"];
+            /** @description 留言挂在模型动作的哪一帧 */
+            frame?: components["schemas"]["AssetFrame"];
             /** @description 访客名字（访客链接的名字） */
             guest_name: string;
             /** Format: date-time */
@@ -7113,6 +7187,8 @@ export interface components {
             result_ref?: string;
             share_id: string;
             share_name: string;
+            /** @description 留言附的当前画面截图 */
+            shot?: components["schemas"]["FileRef"];
             /**
              * @description pending 待收 / placed 已放入 / ignored 已忽略
              * @enum {string}
@@ -7160,6 +7236,8 @@ export interface components {
             decision_code?: string;
             /** @description 访客上传的文件；没有时是一条留言 */
             file?: components["schemas"]["FileRef"];
+            /** @description 留言挂在模型动作的哪一帧 */
+            frame?: components["schemas"]["AssetFrame"];
             /** @description 访客名字（访客链接的名字） */
             guest_name: string;
             /** Format: date-time */
@@ -7181,6 +7259,8 @@ export interface components {
             result_ref?: string;
             share_id: string;
             share_name: string;
+            /** @description 留言附的当前画面截图 */
+            shot?: components["schemas"]["FileRef"];
             /**
              * @description pending 待收 / placed 已放入 / ignored 已忽略
              * @enum {string}
@@ -8056,6 +8136,12 @@ export interface operations {
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
                 session_key?: string;
+                /** @description Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391） */
+                cwd_remote?: string;
+                /** @description R-391：最多返回几条，0 或不写不限 */
+                limit?: number;
+                /** @description R-391：跳过前几条（分页） */
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -8070,6 +8156,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetListView"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-assets-summary": {
+        parameters: {
+            query?: {
+                /** @description 项目 ID；不写列出全部项目 */
+                project?: string;
+                batch?: string;
+                category?: string;
+                status?: "wip" | "pending" | "approved" | "rework" | "";
+                kind?: "part" | "image" | "";
+                /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
+                id?: string;
+                /** @description Agent 用：不写 project 时列会话所在项目 */
+                session_key?: string;
+                /** @description Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391） */
+                cwd_remote?: string;
+                /** @description R-391：最多返回几条，0 或不写不限 */
+                limit?: number;
+                /** @description R-391：跳过前几条（分页） */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetSummary"];
                 };
             };
             /** @description Error */
@@ -8152,10 +8284,12 @@ export interface operations {
     "agent-get-asset": {
         parameters: {
             query?: {
-                /** @description 项目 ID：按素材 id 找时限定项目 */
+                /** @description 项目名或 ID：按素材 id 找时限定项目 */
                 project?: string;
                 /** @description 不写 project 时按会话所在项目找 */
                 session_key?: string;
+                /** @description 当前目录的 git remote（R-391） */
+                cwd_remote?: string;
             };
             header?: never;
             path: {
@@ -9937,6 +10071,12 @@ export interface operations {
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
                 session_key?: string;
+                /** @description Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391） */
+                cwd_remote?: string;
+                /** @description R-391：最多返回几条，0 或不写不限 */
+                limit?: number;
+                /** @description R-391：跳过前几条（分页） */
+                offset?: number;
             };
             header?: never;
             path?: never;

@@ -1,4 +1,4 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Box as BoxIcon, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
@@ -13,6 +13,8 @@ import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach
 import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
 import { KeyCaps } from './command'
 import { useFillHeight } from './pool'
+import { AnimBar, FrameCtx, type FrameCtxValue, type FrameMark } from './animBar'
+import { createAnimSync, type AnimSync, type Frame } from '../lib/anim'
 import { useAdvance, usePending, usePendingMap } from './verdict'
 
 // 资源库页（R-351 第 3 步，D-1713 方案 B 的图片墙部分）：按项目浏览会话推送的素材。
@@ -421,7 +423,7 @@ export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { 
 
 // ---------- 素材抽屉 ----------
 
-type View = 'image' | 'model' | 'compare'
+type View = 'image' | 'model' | 'compare' | 'compare3d'
 
 const inField = (el: HTMLElement) => !!el.closest?.('input, textarea, [contenteditable=true], [role=menu]')
 // 有别的弹层（看大图、别的抽屉）盖在上面时不拦截按键
@@ -635,7 +637,9 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
   const v = versions.find((x) => x.version === shownN) ?? versions[0]
   const pair = comparePair(versions.filter((x) => coverOf(a.kind, x)), shownN)
   const glb = glbOf(a.kind, v)
-  const views: View[] = ['image', ...(glb ? (['model'] as View[]) : []), ...(pair ? (['compare'] as View[]) : [])]
+  // 3D 对比（R-392）：两版都有 GLB 时并排看，动作同步播放
+  const pair3d = comparePair(versions.filter((x) => glbOf(a.kind, x)), shownN)
+  const views: View[] = ['image', ...(glb ? (['model'] as View[]) : []), ...(pair ? (['compare'] as View[]) : []), ...(pair3d ? (['compare3d'] as View[]) : [])]
   // 没有预览图的零件（例如访客交的新版本，R-365）打开时直接看 3D
   const [view, setView] = useState<View>(() => (glb && !coverOf(a.kind, v) ? 'model' : 'image'))
   const cur = views.includes(view) ? view : 'image'
@@ -670,6 +674,22 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
   const rows = meta.filter(([, val]) => val !== undefined && val !== '' && val !== null)
   const onStage = layout === 'stage'
 
+  // 动作动画（R-392）：一件素材一个时钟，切版本、切 3D / 3D 对比时动作和进度不丢；动作名、循环标记以这一版的 asset.json 为准
+  const sync = useMemo<AnimSync>(() => createAnimSync(), [])
+  useEffect(() => sync.setMeta(v?.meta), [sync, v?.meta])
+  const [sink, setSinkState] = useState<((m: FrameMark) => void) | null>(null)
+  const setSink = useCallback((f: ((m: FrameMark) => void) | null) => setSinkState(() => f), [])
+  const jump = useCallback(
+    (f: Frame) => {
+      if (f.v && f.v !== shownN && versions.some((x) => x.version === f.v)) setShownN(f.v) // 旧版本上的意见：先切到那一版
+      setView('model')
+      sync.select(f.anim, f.t, false)
+    },
+    [sync, shownN, versions],
+  )
+  const frameCtx = useMemo<FrameCtxValue>(() => ({ sync, version: v?.version ?? a.version, jump, sink, setSink }), [sync, v?.version, a.version, jump, sink, setSink])
+  const animated = (cur === 'model' && !!glb) || (cur === 'compare3d' && !!pair3d)
+
   const viewSwitch = views.length > 1 && (
     <div className={onStage ? '' : 'mb-3'}>
       <Segmented
@@ -680,8 +700,8 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
           value: x,
           label: (
             <span className="flex items-center gap-1.5">
-              {x === 'image' ? <ImageIcon className="size-3.5" /> : x === 'model' ? <BoxIcon className="size-3.5" /> : <SplitSquareHorizontal className="size-3.5" />}
-              {x === 'compare' && pair ? `${t.asset.view.compare} ${t.asset.ver(pair.before.version)}` : t.asset.view[x]}
+              {x === 'image' ? <ImageIcon className="size-3.5" /> : x === 'model' ? <BoxIcon className="size-3.5" /> : x === 'compare3d' ? <Columns2 className="size-3.5" /> : <SplitSquareHorizontal className="size-3.5" />}
+              {x === 'compare' && pair ? `${t.asset.view.compare} ${t.asset.ver(pair.before.version)}` : x === 'compare3d' && pair3d ? `${t.asset.view.compare3d} ${t.asset.ver(pair3d.before.version)}` : t.asset.view[x]}
             </span>
           ),
         }))}
@@ -693,7 +713,15 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     <div className={cx('relative w-full overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]', onStage ? 'min-h-0 flex-1' : 'aspect-[4/3]')} data-stage={cur}>
       {cur === 'model' && glb ? (
         <Suspense fallback={null}>
-          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0" />
+          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0" sync={sync} main />
+        </Suspense>
+      ) : cur === 'compare3d' && pair3d ? (
+        <Suspense fallback={null}>
+          <div className="absolute inset-0 grid grid-cols-2 divide-x divide-line" data-compare3d="">
+            {[pair3d.before, pair3d.after].map((x) => (
+              <Viewer3D key={x.id} url={fileUrl(glbOf(a.kind, x)!.id)} className="relative min-w-0" sync={sync} label={t.asset.ver(x.version)} main={x === pair3d.after} />
+            ))}
+          </div>
         </Suspense>
       ) : cur === 'compare' && pair ? (
         <CompareSlider kind={a.kind} before={pair.before} after={pair.after} />
@@ -712,6 +740,8 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
       )}
     </div>
   )
+
+  const animBar = animated && <AnimBar sync={sync} className={onStage ? 'shrink-0' : 'mt-2'} />
 
   const strip = cur === 'image' && previews.length > 1 && (
     <div className={cx('flex gap-3 overflow-x-auto', onStage ? 'shrink-0' : 'mt-2')} aria-label={t.asset.previews} data-views={groups.length}>
@@ -793,10 +823,11 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
 
   if (onStage)
     return (
-      <>
+      <FrameCtx.Provider value={frameCtx}>
         <div className="flex min-w-0 flex-1 flex-col gap-3 p-5" data-review-main="">
           {viewSwitch}
           {stageBox}
+          {animBar}
           {strip}
         </div>
         <aside className="flex w-[360px] shrink-0 flex-col border-l border-line bg-surface xl:w-[380px]" data-review-side="">
@@ -804,20 +835,23 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">{info}</div>
           {footer}
         </aside>
-      </>
+      </FrameCtx.Provider>
     )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {head}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
-        {viewSwitch}
-        {stageBox}
-        {strip}
-        {info}
+    <FrameCtx.Provider value={frameCtx}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {head}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          {viewSwitch}
+          {stageBox}
+          {animBar}
+          {strip}
+          {info}
+        </div>
+        {footer}
       </div>
-      {footer}
-    </div>
+    </FrameCtx.Provider>
   )
 }
 
@@ -901,9 +935,50 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
   const members = gkey ? groupMembers(all, gkey) : []
   const shots: ViewShot[] = members.map((m) => coverOf(m.kind, m.latest)).filter((f): f is FileLite => !!f)
   const first = members[0]
+  // 候选都有 GLB 时可切到 3D 并排（R-392）：共用一个动画时钟，同步播放同一动作
+  const glbs = members.filter((m) => glbOf(m.kind, m.latest))
+  const [by, setBy] = useState<'image' | 'model'>('image')
+  const sync = useMemo<AnimSync>(() => createAnimSync(), [gkey])
+  const in3d = by === 'model' && glbs.length >= 2
   return (
     <Panel open={!!gkey} onClose={onClose} wide="approval" title={first ? `${t.asset.compareTitle}${t.common.sep}${first.group}` : t.asset.compareTitle} subtitle={first ? t.asset.compareSub(first.batch, members.length) : undefined}>
-      {!members.length ? (
+      {glbs.length >= 2 && (
+        <div className="mb-3">
+          <Segmented
+            size="sm"
+            value={by}
+            onChange={setBy}
+            options={[
+              { value: 'image', label: <span className="flex items-center gap-1.5"><ImageIcon className="size-3.5" />{t.asset.compareBy.image}</span> },
+              { value: 'model', label: <span className="flex items-center gap-1.5"><BoxIcon className="size-3.5" />{t.asset.compareBy.model}</span> },
+            ]}
+          />
+        </div>
+      )}
+      {in3d ? (
+        <div data-compare-3d="">
+          <div className={cx('grid gap-4', glbs.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
+            {glbs.map((m, i) => (
+              <div key={m.id} className="min-w-0" data-candidate={candidateLabel(m)}>
+                <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]">
+                  <Suspense fallback={null}>
+                    <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0" sync={sync} label={candidateLabel(m)} main={i === 0} />
+                  </Suspense>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <b className="text-sm text-fg">{candidateLabel(m)}</b>
+                  <AssetBadge status={m.status} code={m.code} />
+                  <span className="min-w-0 flex-1 truncate text-xs text-fg-3">{metaLine(m.code, t.asset.ver(m.version))}</span>
+                  <Button size="sm" variant="ghost" onClick={() => onOpen(m.code)}>
+                    {t.asset.openOne}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <AnimBar sync={sync} className="mt-3" />
+        </div>
+      ) : !members.length ? (
         <Empty icon={<Images />} title={t.asset.notFound} />
       ) : (
         <div className={cx('grid gap-4', members.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>

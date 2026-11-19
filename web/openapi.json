@@ -964,6 +964,10 @@
             "description": "只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、指派、回复，立刻唤醒）。部署 / 重启、进展通报这类用 true",
             "type": "boolean"
           },
+          "project": {
+            "description": "发给其他项目的会话（R-379）：项目名或项目 ID；只有主调度、主助理能填，to / to_session 按对方项目的身份或会话键寻址。回复时不填",
+            "type": "string"
+          },
           "reply_to": {
             "description": "回复收到的团队消息：填它的编号（D-x）",
             "type": "string"
@@ -1957,6 +1961,14 @@
               "null"
             ]
           },
+          "category_counts": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "各类别的素材数（R-391）",
+            "type": "object"
+          },
           "counts": {
             "additionalProperties": {
               "format": "int64",
@@ -2004,6 +2016,31 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "AssetFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "anim": {
+            "description": "动作名（GLB 里的动画名）",
+            "type": "string"
+          },
+          "t": {
+            "description": "第几秒",
+            "format": "double",
+            "type": "number"
+          },
+          "v": {
+            "description": "挂意见时看的模型版本",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "anim",
+          "t",
+          "v"
         ],
         "type": "object"
       },
@@ -2168,12 +2205,18 @@
               "array",
               "null"
             ]
+          },
+          "total": {
+            "description": "符合筛选的素材总数（R-391；Assets 可能只是其中一页）",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
           "assets",
           "facets",
-          "statuses"
+          "statuses",
+          "total"
         ],
         "type": "object"
       },
@@ -2402,6 +2445,10 @@
               "null"
             ]
           },
+          "frame": {
+            "$ref": "#/components/schemas/AssetFrame",
+            "description": "意见挂在模型动作的哪一帧（R-392）；没挂时为空"
+          },
           "id": {
             "type": "string"
           },
@@ -2471,6 +2518,10 @@
               "array",
               "null"
             ]
+          },
+          "frame": {
+            "$ref": "#/components/schemas/AssetFrame",
+            "description": "意见挂在模型动作的哪一帧（R-392）：动作名、秒数、模型版本"
           },
           "from": {
             "description": "审核时看到的状态；不为空时要求仍是它，否则 409",
@@ -2542,6 +2593,53 @@
         },
         "required": [
           "kind"
+        ],
+        "type": "object"
+      },
+      "AssetSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "batches": {
+            "description": "全部批次",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "categories": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "各类别的素材数",
+            "type": "object"
+          },
+          "project": {
+            "description": "项目名；没确定项目时为空（统计全部项目）",
+            "type": "string"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "各状态的素材数",
+            "type": "object"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project",
+          "total",
+          "statuses",
+          "categories",
+          "batches"
         ],
         "type": "object"
       },
@@ -6212,6 +6310,10 @@
             "description": "上传的文件名；没有时是一条留言",
             "type": "string"
           },
+          "frame": {
+            "$ref": "#/components/schemas/AssetFrame",
+            "description": "素材：留言挂在模型动作的哪一帧（R-392）"
+          },
           "id": {
             "type": "string"
           },
@@ -6228,6 +6330,10 @@
           "req": {
             "description": "所属需求编号",
             "type": "string"
+          },
+          "shot": {
+            "$ref": "#/components/schemas/FileRef",
+            "description": "素材：留言附的当前画面截图"
           },
           "status": {
             "description": "pending 待分享者处理 / placed 已放入需求（素材：已放入 / 已收下）/ ignored 分享者已看过、没有放入",
@@ -6284,6 +6390,15 @@
       "GuestCommentInBody": {
         "additionalProperties": false,
         "properties": {
+          "frame": {
+            "$ref": "#/components/schemas/AssetFrame",
+            "description": "素材：留言挂在模型动作的哪一帧（动作名、秒数、模型版本）"
+          },
+          "shot": {
+            "description": "素材：当前画面的截图，data URL（PNG 或 JPEG，最大 5 MB）",
+            "maxLength": 7200000,
+            "type": "string"
+          },
           "target_kind": {
             "description": "留言针对的对象：req 需求 / dec 决策 / evidence 证据 / stage 阶段 / asset 素材（R-365）",
             "enum": [
@@ -11941,6 +12056,10 @@
           "fyi": {
             "type": "boolean"
           },
+          "project": {
+            "description": "跨项目发的（R-379）：收件会话所在的项目名；本项目内的为空",
+            "type": "string"
+          },
           "recipients": {
             "items": {
               "$ref": "#/components/schemas/Delivery"
@@ -12680,6 +12799,10 @@
             "$ref": "#/components/schemas/FileRef",
             "description": "访客上传的文件；没有时是一条留言"
           },
+          "frame": {
+            "$ref": "#/components/schemas/AssetFrame",
+            "description": "留言挂在模型动作的哪一帧"
+          },
           "guest_name": {
             "description": "访客名字（访客链接的名字）",
             "type": "string"
@@ -12731,6 +12854,10 @@
           },
           "share_name": {
             "type": "string"
+          },
+          "shot": {
+            "$ref": "#/components/schemas/FileRef",
+            "description": "留言附的当前画面截图"
           },
           "status": {
             "description": "pending 待收 / placed 已放入 / ignored 已忽略",
@@ -12837,6 +12964,10 @@
             "$ref": "#/components/schemas/FileRef",
             "description": "访客上传的文件；没有时是一条留言"
           },
+          "frame": {
+            "$ref": "#/components/schemas/AssetFrame",
+            "description": "留言挂在模型动作的哪一帧"
+          },
           "guest_name": {
             "description": "访客名字（访客链接的名字）",
             "type": "string"
@@ -12888,6 +13019,10 @@
           },
           "share_name": {
             "type": "string"
+          },
+          "shot": {
+            "$ref": "#/components/schemas/FileRef",
+            "description": "留言附的当前画面截图"
           },
           "status": {
             "description": "pending 待收 / placed 已放入 / ignored 已忽略",
@@ -15349,6 +15484,40 @@
               "description": "Agent 用：不写 project 时列会话所在项目",
               "type": "string"
             }
+          },
+          {
+            "description": "Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）",
+            "explode": false,
+            "in": "query",
+            "name": "cwd_remote",
+            "schema": {
+              "description": "Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "R-391：最多返回几条，0 或不写不限",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "R-391：最多返回几条，0 或不写不限",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "R-391：跳过前几条（分页）",
+            "explode": false,
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "description": "R-391：跳过前几条（分页）",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -15374,6 +15543,147 @@
           }
         },
         "summary": "资源库素材列表（默认会话所在项目）",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/assets-summary": {
+      "get": {
+        "operationId": "agent-assets-summary",
+        "parameters": [
+          {
+            "description": "项目 ID；不写列出全部项目",
+            "explode": false,
+            "in": "query",
+            "name": "project",
+            "schema": {
+              "description": "项目 ID；不写列出全部项目",
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "batch",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "category",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "enum": [
+                "wip",
+                "pending",
+                "approved",
+                "rework",
+                ""
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "enum": [
+                "part",
+                "image",
+                ""
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）",
+            "explode": false,
+            "in": "query",
+            "name": "id",
+            "schema": {
+              "description": "R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent 用：不写 project 时列会话所在项目",
+            "explode": false,
+            "in": "query",
+            "name": "session_key",
+            "schema": {
+              "description": "Agent 用：不写 project 时列会话所在项目",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）",
+            "explode": false,
+            "in": "query",
+            "name": "cwd_remote",
+            "schema": {
+              "description": "Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "R-391：最多返回几条，0 或不写不限",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "R-391：最多返回几条，0 或不写不限",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "R-391：跳过前几条（分页）",
+            "explode": false,
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "description": "R-391：跳过前几条（分页）",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetSummary"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "资源库统计：总数、各状态和各类别的数量、批次（R-391）",
         "tags": [
           "agent"
         ]
@@ -15476,12 +15786,12 @@
             }
           },
           {
-            "description": "项目 ID：按素材 id 找时限定项目",
+            "description": "项目名或 ID：按素材 id 找时限定项目",
             "explode": false,
             "in": "query",
             "name": "project",
             "schema": {
-              "description": "项目 ID：按素材 id 找时限定项目",
+              "description": "项目名或 ID：按素材 id 找时限定项目",
               "type": "string"
             }
           },
@@ -15492,6 +15802,16 @@
             "name": "session_key",
             "schema": {
               "description": "不写 project 时按会话所在项目找",
+              "type": "string"
+            }
+          },
+          {
+            "description": "当前目录的 git remote（R-391）",
+            "explode": false,
+            "in": "query",
+            "name": "cwd_remote",
+            "schema": {
+              "description": "当前目录的 git remote（R-391）",
               "type": "string"
             }
           }
@@ -17667,7 +17987,7 @@
     },
     "/api/agent/team/tell": {
       "post": {
-        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。",
+        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。",
         "operationId": "agent-tell-pm",
         "requestBody": {
           "content": {
@@ -18020,6 +18340,40 @@
             "schema": {
               "description": "Agent 用：不写 project 时列会话所在项目",
               "type": "string"
+            }
+          },
+          {
+            "description": "Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）",
+            "explode": false,
+            "in": "query",
+            "name": "cwd_remote",
+            "schema": {
+              "description": "Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）",
+              "type": "string"
+            }
+          },
+          {
+            "description": "R-391：最多返回几条，0 或不写不限",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "R-391：最多返回几条，0 或不写不限",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "R-391：跳过前几条（分页）",
+            "explode": false,
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "description": "R-391：跳过前几条（分页）",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
             }
           }
         ],

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -47,6 +48,7 @@ type AssetReview struct {
 	SentTo   string      `json:"sent_to,omitempty" doc:"意见送给的会话键；空 = 没有可送达的会话"`
 	SentAs   string      `json:"sent_as,omitempty" enum:"submitter,pm," doc:"submitter 提交素材的会话 / pm 提交的会话已结束，转给同项目主调度"`
 	SentName string      `json:"sent_name,omitempty" doc:"收件会话当时的标题"`
+	Frame    *AssetFrame `json:"frame,omitempty" doc:"意见挂在模型动作的哪一帧（R-392）；没挂时为空"`
 	// 送达情况取自那条送达记录
 	DecisionCode string     `json:"decision_code,omitempty"`
 	Delivery     string     `json:"delivery,omitempty" enum:"answered,delivered,closed," doc:"answered 待送达 / delivered 已送达 / closed 已关闭；没有送达记录时为空"`
@@ -66,7 +68,66 @@ type NewAssetReview struct {
 	// 访客的意见（R-365）：由你放入；Verdict 可以是 rework（改返工；本来就是返工时只追加意见）或 note（只送意见、不改状态）
 	Via      string
 	Addend   string
-	Version0 int // 访客看的那一版，记在审核记录上
+	Version0 int         // 访客看的那一版，记在审核记录上
+	Frame    *AssetFrame // 意见挂在哪一帧（R-392）
+}
+
+// AssetFrame 是意见挂在模型动作的哪一帧（R-392）：动作名、第几秒、模型是第几版。
+type AssetFrame struct {
+	Anim string  `json:"anim" doc:"动作名（GLB 里的动画名）"`
+	T    float64 `json:"t" doc:"第几秒"`
+	V    int     `json:"v" doc:"挂意见时看的模型版本"`
+}
+
+// Text 是送给会话、显示在意见里的写法：「动作 run · 0.80 秒（v3）」。
+func (f *AssetFrame) Text() string {
+	if f == nil {
+		return ""
+	}
+	return fmt.Sprintf("动作 %s · %.2f 秒（v%d）", f.Anim, f.T, f.V)
+}
+
+// CleanFrame 规整一帧：动作名去空白、最长 200 字，秒数取非负、保留到毫秒；动作名为空时返回 nil。
+func CleanFrame(f *AssetFrame) *AssetFrame {
+	if f == nil {
+		return nil
+	}
+	name := strings.TrimSpace(f.Anim)
+	if name == "" {
+		return nil
+	}
+	if r := []rune(name); len(r) > 200 {
+		name = string(r[:200])
+	}
+	t := f.T
+	if t < 0 || t != t || t > 1e6 {
+		t = 0
+	}
+	t = float64(int64(t*1000+0.5)) / 1000
+	v := f.V
+	if v < 0 {
+		v = 0
+	}
+	return &AssetFrame{Anim: name, T: t, V: v}
+}
+
+func frameJSON(f *AssetFrame) string {
+	if f == nil {
+		return ""
+	}
+	b, _ := json.Marshal(f)
+	return string(b)
+}
+
+func parseFrame(s string) *AssetFrame {
+	if s == "" {
+		return nil
+	}
+	var f AssetFrame
+	if json.Unmarshal([]byte(s), &f) != nil || f.Anim == "" {
+		return nil
+	}
+	return &f
 }
 
 // ErrAssetStale 是审核时素材已有新版本或状态已变。
@@ -118,12 +179,12 @@ func (s *Store) ReviewAsset(ctx context.Context, n NewAssetReview) (AssetReview,
 		if guest && n.Version0 > 0 {
 			v = n.Version0
 		}
-		r = AssetReview{ID: protocol.NewID(), AssetID: d.ID, Version: v, Verdict: n.Verdict, Comment: n.Comment, Files: n.Files, Author: n.Author, Via: n.Via, Addend: n.Addend}
+		r = AssetReview{ID: protocol.NewID(), AssetID: d.ID, Version: v, Verdict: n.Verdict, Comment: n.Comment, Files: n.Files, Author: n.Author, Via: n.Via, Addend: n.Addend, Frame: CleanFrame(n.Frame)}
 		if r.Files == nil {
 			r.Files = []FileRef{}
 		}
-		_, err := t.ExecContext(ctx, `INSERT INTO asset_reviews(id, asset_id, version, verdict, comment, files, author_kind, author_ref, author_name, via, addend, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			r.ID, d.ID, v, n.Verdict, n.Comment, filesJSON(r.Files), n.Author.Kind, n.Author.Ref, n.Author.Name, n.Via, n.Addend, at)
+		_, err := t.ExecContext(ctx, `INSERT INTO asset_reviews(id, asset_id, version, verdict, comment, files, author_kind, author_ref, author_name, via, addend, created_at, frame) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			r.ID, d.ID, v, n.Verdict, n.Comment, filesJSON(r.Files), n.Author.Kind, n.Author.Ref, n.Author.Name, n.Via, n.Addend, at, frameJSON(r.Frame))
 		return err
 	})
 	if err != nil {
@@ -139,20 +200,21 @@ func (s *Store) LinkAssetReview(ctx context.Context, id, decisionID, sentTo, sen
 	return err
 }
 
-const reviewCols = `r.id, r.asset_id, r.version, r.verdict, r.comment, r.files, r.author_kind, r.author_ref, r.author_name, r.sent_to, r.sent_as, r.sent_name, r.via, r.addend,
+const reviewCols = `r.id, r.asset_id, r.version, r.verdict, r.comment, r.files, r.author_kind, r.author_ref, r.author_name, r.sent_to, r.sent_as, r.sent_name, r.via, r.addend, r.frame,
 	COALESCE(x.seq, 0), COALESCE(x.status, ''), x.delivered_at, r.created_at`
 
 func scanReview(row interface{ Scan(...any) error }) (AssetReview, string, error) {
 	var r AssetReview
-	var files, created string
+	var files, created, frame string
 	var seq int
 	var delivered sql.NullString
-	err := row.Scan(&r.ID, &r.AssetID, &r.Version, &r.Verdict, &r.Comment, &files, &r.Author.Kind, &r.Author.Ref, &r.Author.Name, &r.SentTo, &r.SentAs, &r.SentName, &r.Via, &r.Addend,
+	err := row.Scan(&r.ID, &r.AssetID, &r.Version, &r.Verdict, &r.Comment, &files, &r.Author.Kind, &r.Author.Ref, &r.Author.Name, &r.SentTo, &r.SentAs, &r.SentName, &r.Via, &r.Addend, &frame,
 		&seq, &r.Delivery, &delivered, &created)
 	if err != nil {
 		return r, "", err
 	}
 	r.Files = parseFiles(files)
+	r.Frame = parseFrame(frame)
 	if seq > 0 {
 		r.DecisionCode = decCode(seq)
 	}

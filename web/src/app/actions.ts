@@ -67,7 +67,7 @@ export function useActions() {
     review: (items: { ref: string; verdict: 'accept' | 'revise'; comment?: string; files?: string[] }[]) =>
       send(() => unwrap(api.POST('/api/reviews', { body: { items } })), ['requirements', 'decisions', 'sessions', 'morning'], fail.review(items)),
     // 资源库的审核（R-351）：version / from 是审核时看到的最新版本和状态，变了 Hub 返回 409
-    reviewAsset: (code: string, body: { verdict: 'approved' | 'rework'; comment?: string; files?: string[]; version?: number; from?: 'wip' | 'pending' | 'approved' | 'rework' }) =>
+    reviewAsset: (code: string, body: { verdict: 'approved' | 'rework'; comment?: string; files?: string[]; version?: number; from?: 'wip' | 'pending' | 'approved' | 'rework'; frame?: { anim: string; t: number; v: number } }) =>
       send(() => unwrap(api.POST('/api/assets/{ref}/review', { params: { path: { ref: code } }, body })), ['assets', 'decisions', 'sessions'], fail.reviewAsset(body.verdict === 'approved' ? t.verdict.pass('asset') : t.verdict.back('asset'), code)),
     note: (ref: string, comment: string, files: string[]) =>
       send(() => unwrap(api.POST('/api/requirements/{ref}/notes', { params: { path: { ref } }, body: { comment, files } })), ['requirements', 'decisions', 'sessions'], fail.note(ref)),

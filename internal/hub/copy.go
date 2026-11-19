@@ -255,6 +255,8 @@ const (
 	shareNoDownload        = "这个分享不提供原文件下载"
 	shareUploadPickAs      = "选择收下为新版本还是附件"
 	shareAssetPickAs       = "选择作为返工意见还是只送意见"
+	// 挂在某一帧的留言（R-392）
+	shareCommentShot = "截图只能是 PNG 或 JPEG，最大 5 MB"
 )
 
 // shareUploadTooBig 是访客上传的文件超出上限时的提示。
@@ -346,6 +348,7 @@ func copyTexts() map[string]string {
 		"secretDenyPending": secretDenyPending, "secretDenyRevoked": secretDenyRevoked, "secretDenyExpired": secretDenyExpired, "secretDenyProject": secretDenyProject,
 		"secretDenyCommand": secretDenyCommand, "secretDenyDisk": secretDenyDisk, "secretDenyUnreadable": secretDenyUnreadable,
 		"shareCommentEmpty": shareCommentEmpty, "shareCommentTarget": shareCommentTarget, "shareCommentTooMany": shareCommentTooMany, "shareCommentPickReq": shareCommentPickReq, "shareCommentTooLong": shareCommentTooLong(2000),
+		"shareCommentShot": shareCommentShot,
 	} {
 		out[k] = v
 	}

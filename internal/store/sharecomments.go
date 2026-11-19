@@ -93,6 +93,9 @@ type ShareComment struct {
 	File         *FileRef `json:"file,omitempty" doc:"访客上传的文件；没有时是一条留言"`
 	PlacedAs     string   `json:"placed_as,omitempty" enum:"review,version,attachment," doc:"放入成了什么：review 意见 / version 新版本 / attachment 附件"`
 	ResultRef    string   `json:"result_ref,omitempty" doc:"收下后的版本号（v3）或附件 ID、审核记录 ID"`
+	// 挂在模型动作某一帧的留言（R-392）：帧和当时画面的截图，放入为意见时一并带上
+	Frame *AssetFrame `json:"frame,omitempty" doc:"留言挂在模型动作的哪一帧"`
+	Shot  *FileRef    `json:"shot,omitempty" doc:"留言附的当前画面截图"`
 }
 
 const shareCommentSelect = `SELECT c.id, c.share_id, COALESCE(sh.name, ''), c.link_id, c.guest_name, COALESCE(NULLIF(r.project_id, ''), NULLIF(pl.project_id, ''), sh.project_id, ''),
@@ -100,7 +103,8 @@ const shareCommentSelect = `SELECT c.id, c.share_id, COALESCE(sh.name, ''), c.li
 	c.text, c.status, COALESCE(d.seq, 0), c.created_at, c.handled_at,
 	COALESCE(dx.seq, 0), COALESCE(dx.question, ''), COALESCE(ev.payload, ''), COALESCE(ev.summary, ''), COALESCE(ps.title, ''),
 	COALESCE(a.seq, 0), COALESCE(a.key, ''), COALESCE(a.kind, ''), COALESCE(a.batch, ''), COALESCE(a.version, 0), COALESCE(a.project_id, ''),
-	c.asset_version, c.file_id, COALESCE(fl.name, ''), COALESCE(fl.mime, ''), COALESCE(fl.size, 0), c.placed_as, c.result_ref
+	c.asset_version, c.file_id, COALESCE(fl.name, ''), COALESCE(fl.mime, ''), COALESCE(fl.size, 0), c.placed_as, c.result_ref,
+	c.frame, c.shot_id, COALESCE(fs.name, ''), COALESCE(fs.mime, ''), COALESCE(fs.size, 0)
 	FROM share_comments c
 	LEFT JOIN shares sh ON sh.id = c.share_id
 	LEFT JOIN requirements r ON r.id = c.requirement_id
@@ -110,20 +114,27 @@ const shareCommentSelect = `SELECT c.id, c.share_id, COALESCE(sh.name, ''), c.li
 	LEFT JOIN evidence ev ON c.target_kind = 'evidence' AND ev.id = c.target_ref
 	LEFT JOIN plan_stages ps ON c.target_kind = 'stage' AND ps.id = c.target_ref
 	LEFT JOIN assets a ON c.target_kind = 'asset' AND a.id = c.target_ref
-	LEFT JOIN files fl ON c.file_id <> '' AND fl.id = c.file_id`
+	LEFT JOIN files fl ON c.file_id <> '' AND fl.id = c.file_id
+	LEFT JOIN files fs ON c.shot_id <> '' AND fs.id = c.shot_id`
 
 func scanShareComment(row interface{ Scan(...any) error }) (ShareComment, error) {
 	var c ShareComment
 	var rseq, pseq, dseq, xseq, aseq int
-	var created, handled, xq, evVerdict, evSummary, stTitle, aproj, fileID string
-	var f FileRef
+	var created, handled, xq, evVerdict, evSummary, stTitle, aproj, fileID, frame, shotID string
+	var f, shot FileRef
 	err := row.Scan(&c.ID, &c.ShareID, &c.ShareName, &c.LinkID, &c.GuestName, &c.ProjectID,
 		&c.TargetKind, &c.TargetRef, &c.RequirementID, &rseq, &c.RequirementTitle, &c.PlanID, &pseq, &c.PlanTitle, &c.TargetSeq,
 		&c.Text, &c.Status, &dseq, &created, &handled, &xseq, &xq, &evVerdict, &evSummary, &stTitle,
 		&aseq, &c.AssetKey, &c.AssetKind, &c.AssetBatch, &c.AssetLatest, &aproj,
-		&c.AssetVersion, &fileID, &f.Name, &f.Mime, &f.Size, &c.PlacedAs, &c.ResultRef)
+		&c.AssetVersion, &fileID, &f.Name, &f.Mime, &f.Size, &c.PlacedAs, &c.ResultRef,
+		&frame, &shotID, &shot.Name, &shot.Mime, &shot.Size)
 	if err != nil {
 		return c, err
+	}
+	c.Frame = parseFrame(frame)
+	if shotID != "" {
+		shot.ID = shotID
+		c.Shot = &shot
 	}
 	if fileID != "" {
 		f.ID = fileID
@@ -184,8 +195,10 @@ type GuestCommentIn struct {
 	PlanID                     string
 	StageSeq                   int
 	Text                       string
-	AssetVersion               int    // 素材的第几版（R-365）
-	FileID                     string // 访客上传的文件（R-365）；带文件时正文可以为空
+	AssetVersion               int         // 素材的第几版（R-365）
+	FileID                     string      // 访客上传的文件（R-365）；带文件时正文可以为空
+	Frame                      *AssetFrame // 挂在模型动作的哪一帧（R-392）
+	ShotID                     string      // 当前画面的截图（R-392）
 }
 
 // CreateShareComment 记一条待收的访客留言。
@@ -195,8 +208,8 @@ func (s *Store) CreateShareComment(ctx context.Context, in GuestCommentIn) (Shar
 		return ShareComment{}, errors.New("留言不能为空")
 	}
 	id := protocol.NewID()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO share_comments(id, share_id, link_id, guest_name, target_kind, target_ref, requirement_id, plan_id, stage_seq, text, status, created_at, asset_version, file_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, in.ShareID, in.LinkID, in.GuestName, in.TargetKind, in.TargetRef, in.RequirementID, in.PlanID, in.StageSeq, in.Text, GuestPending, now(), in.AssetVersion, in.FileID)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO share_comments(id, share_id, link_id, guest_name, target_kind, target_ref, requirement_id, plan_id, stage_seq, text, status, created_at, asset_version, file_id, frame, shot_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, in.ShareID, in.LinkID, in.GuestName, in.TargetKind, in.TargetRef, in.RequirementID, in.PlanID, in.StageSeq, in.Text, GuestPending, now(), in.AssetVersion, in.FileID, frameJSON(CleanFrame(in.Frame)), in.ShotID)
 	if err != nil {
 		return ShareComment{}, err
 	}

@@ -10,6 +10,8 @@ import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Input, Segmented, Skeleton, Textarea, Tip } from '../ui/base'
 import { downloadUrl, NoDownloadContext } from '../ui/attach'
 import { DraftField, useDraft } from '../app/draft'
+import { FrameChip, useFrameSink } from '../app/animBar'
+import type { Frame } from '../lib/anim'
 import { AssetDrawer, AssetExtrasContext, AssetWall, CompareDrawer, FacetMenu, WallGrid, type AssetExtras, type Detail } from '../app/assets'
 import { gk, guestAssetDetail, postComment, postUpload, useGuestAssets, useMyComments } from './data'
 import { mineText } from './slots'
@@ -106,6 +108,19 @@ function GuestFooter({ token, a, shown, perm, allow }: { token: string; a: Detai
   const draft = useDraft(canComment ? `guestc:${token}:asset:${a.code}:v${shown}` : undefined, { text: '' })
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
+  // 3D 查看里「标记此帧」（R-392）：留言挂在这一帧，附当前画面
+  const [mark, setMark] = useState<{ frame: Frame; shot: string } | null>(null)
+  const box = useRef<HTMLTextAreaElement>(null)
+  useFrameSink(
+    canComment
+      ? (m) => {
+          const r = new FileReader()
+          r.onload = () => setMark({ frame: m.frame, shot: String(r.result) })
+          r.readAsDataURL(m.shot)
+          box.current?.focus()
+        }
+      : null,
+  )
   const [up, setUp] = useState(false)
   const file = useRef<HTMLInputElement>(null)
   const label = t.guest.onAsset(a.code, shown)
@@ -117,8 +132,9 @@ function GuestFooter({ token, a, shown, perm, allow }: { token: string; a: Detai
     if (!text || busy) return
     setBusy(true)
     try {
-      await postComment(token, { target_kind: 'asset', target_ref: a.code, version: shown, text })
+      await postComment(token, { target_kind: 'asset', target_ref: a.code, version: shown, text, ...(mark ? { frame: mark.frame, shot: mark.shot } : {}) })
       draft.drop()
+      setMark(null)
       toast.success(t.guest.sent)
       refresh()
     } catch (e) {
@@ -151,6 +167,7 @@ function GuestFooter({ token, a, shown, perm, allow }: { token: string; a: Detai
             {mineHere.map((x) => (
               <div key={x.id} className="flex min-w-0 items-center gap-2 text-xs text-fg-3">
                 <span className="shrink-0 font-mono">{t.asset.ver(x.version ?? 0)}</span>
+                {x.frame && <FrameChip frame={x.frame} className="shrink-0 max-sm:max-w-[45%]" />}
                 <span className="min-w-0 flex-1 truncate text-fg-2">{x.file_name || x.text}</span>
                 <Tip content={absTime(x.created_at)}>
                   <span className="shrink-0 tabular">{relTime(x.created_at, now)}</span>
@@ -168,13 +185,23 @@ function GuestFooter({ token, a, shown, perm, allow }: { token: string; a: Detai
             }}
             className="grid gap-1.5"
           >
-            <span className="text-[12.5px] text-fg-3">
-              {t.guest.leaveTo} <b className="font-mono font-medium text-fg-2">{label}</b>
+            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-fg-3">
+              <span>
+                {t.guest.leaveTo} <b className="font-mono font-medium text-fg-2">{label}</b>
+              </span>
+              {mark && (
+                <>
+                  <span>{t.asset.anim.at}</span>
+                  <FrameChip frame={mark.frame} onRemove={() => setMark(null)} />
+                  <img src={mark.shot} alt="" className="h-6 rounded border border-line" />
+                </>
+              )}
             </span>
             <div className="flex items-end gap-2">
               <DraftField h={draft} className="min-w-0 flex-1">
                 {(pad) => (
                   <Textarea
+                    ref={box}
                     minRows={2}
                     maxLength={2000}
                     placeholder={t.guest.assetPlaceholder}

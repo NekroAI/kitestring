@@ -5,7 +5,10 @@ import { useSessions, type Asset } from '../api/queries'
 import { t } from '../i18n'
 import { canReview, recipientOf, reviewKey, type AssetStatus } from '../lib/assets'
 import { cx, relTime, useNow } from '../lib/util'
-import { Thumbs, type FileRef } from '../ui/attach'
+import { Thumbs, uploadFile, type FileRef } from '../ui/attach'
+import { toast } from 'sonner'
+import type { Frame } from '../lib/anim'
+import { FrameChip, useFrameSink, type FrameMark } from './animBar'
 import { useActions } from './actions'
 import { KeyCaps } from './command'
 import { DraftHint, useDraft } from './draft'
@@ -32,11 +35,13 @@ export function ReviewBar({ a, shown, keys, barRef }: { a: Asset; shown: number;
   const sessions = useSessions()
   const k = reviewKey(a.code)
   const pend = usePending(k)
-  const dr = useDraft<{ text: string; files: FileRef[] }>(`asset:${a.code}`, {
+  const dr = useDraft<{ text: string; files: FileRef[]; frame?: Frame | null }>(`asset:${a.code}`, {
     text: '',
     files: [],
+    frame: null,
   })
   const { text, files } = dr.value
+  const frame = dr.value.frame ?? null
   const box = useRef<HTMLTextAreaElement>(null)
   const status = a.status as AssetStatus
   const R = t.asset.review
@@ -48,6 +53,7 @@ export function ReviewBar({ a, shown, keys, barRef }: { a: Asset; shown: number;
       files: files.length ? files.map((f) => f.id) : undefined,
       version: a.version,
       from: status,
+      frame: frame ?? undefined,
     }
     schedule(k, {
       act: verdict === 'approved' ? 'pass' : 'back',
@@ -91,6 +97,22 @@ export function ReviewBar({ a, shown, keys, barRef }: { a: Asset; shown: number;
     return () => window.removeEventListener('keydown', onKey)
   }, [keys, barRef])
 
+  // 3D 查看里「标记此帧」（R-392）：帧记进草稿，当前画面上传后作为附图，光标落到意见框
+  const latest = useRef(dr.value)
+  latest.current = dr.value
+  const formOpen = !(status === 'wip' && !pend) && !(pend && pend.phase !== 'wait')
+  useFrameSink(
+    formOpen
+      ? (m: FrameMark) => {
+          dr.set({ frame: m.frame })
+          box.current?.focus()
+          uploadFile(new File([m.shot], `frame-${m.frame.anim}-${m.frame.t.toFixed(2)}.jpg`, { type: m.shot.type }))
+            .then((f) => dr.set({ files: [...latest.current.files, f] }))
+            .catch((e) => toast.error(e instanceof Error && e.message ? e.message : t.asset.anim.markFail))
+        }
+      : null,
+  )
+
   if (status === 'wip' && !pend) return <div className="shrink-0 border-t border-line px-5 py-3 text-[13px] text-fg-3">{R.wip}</div>
   const to = recipientOf(a.submitter, sessions.data?.sessions ?? [])
   const where = to.kind === 'submitter' ? (to.name ? R.sendTo(to.name) : R.sendToSession) : to.kind === 'pm' ? R.sendToPM : R.sendToSession
@@ -116,11 +138,18 @@ export function ReviewBar({ a, shown, keys, barRef }: { a: Asset; shown: number;
           canPass={canReview(status, 'approved')}
           size="md"
           extra={
+            <>
+            {frame && (
+              <div className="mb-1">
+                <FrameChip frame={frame} onRemove={() => dr.set({ frame: null })} />
+              </div>
+            )}
             <DraftHint h={dr}>
               <span className="block truncate text-xs text-fg-3" title={old ? `${old}${t.common.sep}${where}` : where}>
                 {old ? `${old}${t.common.sep}${where}` : where}
               </span>
             </DraftHint>
+            </>
           }
         />
       )}
@@ -151,6 +180,7 @@ export function ReviewHistory({ reviews }: { reviews: Review[] }) {
                 <span className="shrink-0 text-xs text-fg-3">{relTime(r.created_at, now)}</span>
               </div>
               {guest && r.via && <div className="mt-0.5 truncate text-xs text-fg-3">{R.via(r.via)}</div>}
+              {r.frame && <FrameChip frame={r.frame} className="mt-1.5" />}
               {r.comment && <p className="mt-1.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fg-2">{r.comment}</p>}
               {r.addend && (
                 <p className="mt-1.5 border-t border-dashed border-line pt-1.5 text-[13px] whitespace-pre-wrap text-fg-2">

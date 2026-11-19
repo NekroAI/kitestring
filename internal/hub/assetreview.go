@@ -20,11 +20,12 @@ import (
 type assetReviewIn struct {
 	Ref  string `path:"ref"`
 	Body struct {
-		Verdict string   `json:"verdict" enum:"approved,rework" doc:"approved 通过 / rework 返工"`
-		Comment string   `json:"comment,omitempty" maxLength:"20000" doc:"意见；返工时必填（或附图）"`
-		Files   []string `json:"files,omitempty" maxItems:"20" doc:"附图（附件 ID）"`
-		Version int      `json:"version,omitempty" doc:"审核时看到的最新版本；不为 0 时要求仍是最新，否则 409"`
-		From    string   `json:"from,omitempty" enum:"wip,pending,approved,rework," doc:"审核时看到的状态；不为空时要求仍是它，否则 409"`
+		Verdict string            `json:"verdict" enum:"approved,rework" doc:"approved 通过 / rework 返工"`
+		Comment string            `json:"comment,omitempty" maxLength:"20000" doc:"意见；返工时必填（或附图）"`
+		Files   []string          `json:"files,omitempty" maxItems:"20" doc:"附图（附件 ID）"`
+		Version int               `json:"version,omitempty" doc:"审核时看到的最新版本；不为 0 时要求仍是最新，否则 409"`
+		From    string            `json:"from,omitempty" enum:"wip,pending,approved,rework," doc:"审核时看到的状态；不为空时要求仍是它，否则 409"`
+		Frame   *store.AssetFrame `json:"frame,omitempty" doc:"意见挂在模型动作的哪一帧（R-392）：动作名、秒数、模型版本"`
 	}
 }
 
@@ -51,7 +52,7 @@ func (h *Hub) registerAssetReviewWeb(api huma.API) {
 				return nil, apiErr(err)
 			}
 			d, r, err := h.reviewAsset(ctx, store.NewAssetReview{Asset: in.Ref, Verdict: in.Body.Verdict, From: in.Body.From, Version: in.Body.Version,
-				Comment: in.Body.Comment, Files: files, Author: store.AssetAuthor{Kind: store.SubmitterUser}})
+				Comment: in.Body.Comment, Files: files, Author: store.AssetAuthor{Kind: store.SubmitterUser}, Frame: in.Body.Frame})
 			if err != nil {
 				if errors.Is(err, store.ErrAssetStale) || errors.Is(err, store.ErrAssetMove) {
 					return nil, huma.Error409Conflict(err.Error())
@@ -125,6 +126,14 @@ func (h *Hub) assetReviewTarget(ctx context.Context, a store.Asset) (key, as, na
 	return "", "", ""
 }
 
+// frameLead：意见挂在某一帧时放在正文前（R-392），会话不用查库就知道是哪个动作的哪一秒、哪一版模型。
+func frameLead(f *store.AssetFrame) string {
+	if f == nil {
+		return ""
+	}
+	return "【" + f.Text() + "】"
+}
+
 func assetTitle(a store.Asset) string { return fmt.Sprintf("%s「%s」", a.Code, a.Key) }
 
 // assetReviewText 是送给会话的一段（1.3 节：第一句是不含工具名的事实，会话时间线上也显示它）。
@@ -138,7 +147,7 @@ func assetReviewText(a store.Asset, r store.AssetReview, as string) string {
 		if r.Verdict == store.AssetNote {
 			verdict = "收到意见（状态不变）"
 		}
-		fmt.Fprintf(&b, "%s（批次 %s，v%d）%s。%s：%s", assetTitle(a), a.Batch, r.Version, verdict, guestAssetSource(r), r.Comment)
+		fmt.Fprintf(&b, "%s（批次 %s，v%d）%s。%s：%s", assetTitle(a), a.Batch, r.Version, verdict, guestAssetSource(r), frameLead(r.Frame)+r.Comment)
 		if r.Addend != "" {
 			b.WriteString("\n  用户附言：" + r.Addend)
 		}
@@ -150,10 +159,10 @@ func assetReviewText(a store.Asset, r store.AssetReview, as string) string {
 	}
 	fmt.Fprintf(&b, "%s（批次 %s，v%d）%s", assetTitle(a), a.Batch, r.Version, verdict)
 	switch {
-	case r.Comment != "" && r.Verdict == store.AssetRework:
-		b.WriteString("：" + r.Comment)
-	case r.Comment != "":
-		b.WriteString("。附言：" + r.Comment)
+	case (r.Comment != "" || r.Frame != nil) && r.Verdict == store.AssetRework:
+		b.WriteString("：" + frameLead(r.Frame) + r.Comment)
+	case r.Comment != "" || r.Frame != nil:
+		b.WriteString("。附言：" + frameLead(r.Frame) + r.Comment)
 	default:
 		b.WriteString("。")
 	}

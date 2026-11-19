@@ -89,7 +89,7 @@ export function useMyComments(token: string) {
   })
 }
 
-export async function postComment(token: string, body: { target_kind: string; target_ref: string; text: string; version?: number }) {
+export async function postComment(token: string, body: { target_kind: string; target_ref: string; text: string; version?: number; frame?: { anim: string; t: number; v: number }; shot?: string }) {
   return call<GuestComment>(`${base(token)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 }
 

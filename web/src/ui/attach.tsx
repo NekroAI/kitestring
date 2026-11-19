@@ -124,6 +124,16 @@ function uploadOne(file: File, onProgress: (p: number) => void, onXhr: (x: XMLHt
 }
 
 
+// uploadFile：直接上传一个文件（如 3D 查看里截的当前画面，R-392），不显示进度。
+export async function uploadFile(file: File): Promise<FileRef> {
+  setUploading(1)
+  try {
+    return await uploadOne(file, () => {}, () => {})
+  } finally {
+    setUploading(-1)
+  }
+}
+
 // useAttach：管理一组附图的上传状态。
 export function useAttach(value: FileRef[], onChange: (v: FileRef[]) => void) {
   const limits = useSettings().data // 上限在设置里调（R-72）；没拿到时交给 Hub 检查

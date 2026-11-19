@@ -2,8 +2,12 @@ package hub
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -39,6 +43,9 @@ type guestCommentIn struct {
 		TargetRef  string `json:"target_ref" doc:"需求编号 R-x、决策编号 D-x、证据 ID、阶段 ID、素材编号 A-x"`
 		Version    int    `json:"version,omitempty" doc:"素材：针对第几版；不写为分享里能看的最新一版"`
 		Text       string `json:"text" doc:"留言正文，最多 2000 字"`
+		// 挂在模型动作某一帧（R-392）：只用于素材
+		Frame *store.AssetFrame `json:"frame,omitempty" doc:"素材：留言挂在模型动作的哪一帧（动作名、秒数、模型版本）"`
+		Shot  string            `json:"shot,omitempty" maxLength:"7200000" doc:"素材：当前画面的截图，data URL（PNG 或 JPEG，最大 5 MB）"`
 	}
 }
 
@@ -55,14 +62,16 @@ type GuestComment struct {
 	Status      string    `json:"status" enum:"pending,placed,ignored" doc:"pending 待分享者处理 / placed 已放入需求（素材：已放入 / 已收下）/ ignored 分享者已看过、没有放入"`
 	CreatedAt   time.Time `json:"created_at"`
 	// 资源库（R-365）
-	Version  int    `json:"version,omitempty" doc:"素材：针对第几版"`
-	FileName string `json:"file_name,omitempty" doc:"上传的文件名；没有时是一条留言"`
-	PlacedAs string `json:"placed_as,omitempty" enum:"review,version,attachment," doc:"素材：放入成了什么——review 意见 / version 新版本 / attachment 附件"`
+	Version  int               `json:"version,omitempty" doc:"素材：针对第几版"`
+	FileName string            `json:"file_name,omitempty" doc:"上传的文件名；没有时是一条留言"`
+	PlacedAs string            `json:"placed_as,omitempty" enum:"review,version,attachment," doc:"素材：放入成了什么——review 意见 / version 新版本 / attachment 附件"`
+	Frame    *store.AssetFrame `json:"frame,omitempty" doc:"素材：留言挂在模型动作的哪一帧（R-392）"`
+	Shot     *store.FileRef    `json:"shot,omitempty" doc:"素材：留言附的当前画面截图"`
 }
 
 func guestComment(c store.ShareComment) GuestComment {
 	g := GuestComment{ID: c.ID, TargetKind: c.TargetKind, TargetRef: c.TargetRef, TargetCode: c.TargetCode, TargetSeq: c.TargetSeq, TargetTitle: c.TargetTitle,
-		Req: c.RequirementCode, Text: c.Text, Status: c.Status, CreatedAt: c.CreatedAt, Version: c.AssetVersion, PlacedAs: c.PlacedAs}
+		Req: c.RequirementCode, Text: c.Text, Status: c.Status, CreatedAt: c.CreatedAt, Version: c.AssetVersion, PlacedAs: c.PlacedAs, Frame: c.Frame, Shot: c.Shot}
 	if c.TargetKind == store.GuestOnAsset {
 		g.TargetRef = c.TargetCode // 素材 ID 不给访客，用编号
 	}
@@ -165,6 +174,16 @@ func (h *Hub) registerShareGuestComments(api huma.API) {
 				return nil, err
 			} else if n >= guestRateMax {
 				return nil, huma.Error429TooManyRequests(shareCommentTooMany)
+			}
+			if ci.TargetKind == store.GuestOnAsset { // 挂在某一帧、附当前画面（R-392）
+				ci.Frame = store.CleanFrame(in.Body.Frame)
+				if in.Body.Shot != "" {
+					f, err := h.saveGuestShot(ctx, g, in.Body.Shot)
+					if err != nil {
+						return nil, err
+					}
+					ci.ShotID = f.ID
+				}
 			}
 			ci.ShareID, ci.LinkID, ci.GuestName, ci.Text = g.share.ID, g.link.ID, g.link.Name, text
 			c, err := h.store.CreateShareComment(ctx, ci)
@@ -382,4 +401,38 @@ func guestNoteText(d store.Decision) string {
 		s += "\n  用户附言：" + g.Addend
 	}
 	return s
+}
+
+// saveGuestShot 存访客留言附的当前画面截图（R-392）：data URL，只收 PNG、JPEG，最大 5 MB。
+func (h *Hub) saveGuestShot(ctx context.Context, g *guestCtx, dataURL string) (store.FileRef, error) {
+	const maxShot = 5 << 20
+	_, b64, ok := strings.Cut(dataURL, ";base64,")
+	if !ok {
+		return store.FileRef{}, huma.Error400BadRequest(shareCommentShot)
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(raw) == 0 || len(raw) > maxShot {
+		return store.FileRef{}, huma.Error400BadRequest(shareCommentShot)
+	}
+	typ := http.DetectContentType(raw)
+	ext := ".png"
+	switch typ {
+	case "image/png":
+	case "image/jpeg":
+		ext = ".jpg"
+	default:
+		return store.FileRef{}, huma.Error400BadRequest(shareCommentShot)
+	}
+	if err := h.storageGate(); err != nil {
+		return store.FileRef{}, err
+	}
+	sum := sha256.Sum256(raw)
+	ref, err := h.store.CreateFile(ctx, "frame"+ext, typ, hex.EncodeToString(sum[:]), int64(len(raw)), "guest:"+g.link.ID)
+	if err != nil {
+		return ref, err
+	}
+	if err := os.WriteFile(h.filePath(ref.ID), raw, 0o644); err != nil {
+		return ref, err
+	}
+	return ref, nil
 }

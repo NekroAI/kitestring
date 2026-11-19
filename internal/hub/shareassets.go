@@ -92,9 +92,26 @@ func (g *guestCtx) guestAsset(d store.AssetDetail) (store.AssetDetail, bool) {
 }
 
 func guestVersion(v store.AssetVersion) store.AssetVersion {
-	v.Branch, v.Commit, v.Meta = "", "", nil
+	v.Branch, v.Commit, v.Meta = "", "", guestMeta(v.Meta)
 	v.Submitter = guestSubmitter(v.Submitter)
 	return v
+}
+
+// guestMeta：项目字段不给访客，只留 3D 查看要用的 display.animations（R-392：动作名、循环标记以 asset.json 为准，分享页与站内一致）。
+func guestMeta(raw json.RawMessage) json.RawMessage {
+	var m struct {
+		Display struct {
+			Animations json.RawMessage `json:"animations"`
+		} `json:"display"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &m) != nil || len(m.Display.Animations) == 0 || string(m.Display.Animations) == "null" {
+		return nil
+	}
+	out, err := json.Marshal(map[string]any{"display": map[string]json.RawMessage{"animations": m.Display.Animations}})
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 // guestSubmitter：会话键、访客链接 ID 不给访客；会话只写「会话」，访客写名字。
@@ -414,7 +431,11 @@ func (h *Hub) placeAssetComment(ctx context.Context, c store.ShareComment, as, t
 	placedAs, result := as, ""
 	switch {
 	case !upload:
-		_, r, err := h.reviewAsset(ctx, store.NewAssetReview{Asset: d.ID, Verdict: as, Comment: text, Author: guest, Via: c.ShareName, Addend: addend, Version0: c.AssetVersion})
+		var files []store.FileRef
+		if c.Shot != nil { // 挂在某一帧的留言（R-392）：截图作为意见的附图，帧一并带上
+			files = []store.FileRef{*c.Shot}
+		}
+		_, r, err := h.reviewAsset(ctx, store.NewAssetReview{Asset: d.ID, Verdict: as, Comment: text, Files: files, Author: guest, Via: c.ShareName, Addend: addend, Version0: c.AssetVersion, Frame: c.Frame})
 		if err != nil {
 			h.store.ReleaseShareComment(ctx, c.ID)
 			return c, apiErr(err)
