@@ -45,9 +45,15 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("数据库迁移失败：%w", err)
 	}
 	// 补列之后才能建的索引（老库的列由 migrate 补上）
-	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS secrets_seq ON secrets(seq)`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("建凭据编号索引失败：%w", err)
+	for _, ix := range []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS secrets_seq ON secrets(seq)`,
+		// 需求列表每条需求都按 requirement_id 查决策（待答数、最近一次放行），没有索引时整表扫描（R-374）
+		`CREATE INDEX IF NOT EXISTS decisions_req ON decisions(requirement_id, kind)`,
+	} {
+		if _, err := db.Exec(ix); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("建索引失败：%w", err)
+		}
 	}
 	if err := backfillLanes(db); err != nil { // 泳道时间线（R-205）：旧库从事件记录补出历史分钟
 		db.Close()
