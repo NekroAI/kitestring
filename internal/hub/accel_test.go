@@ -264,10 +264,9 @@ func TestAccelPage(t *testing.T) {
 	}
 }
 
-// 缩略图 WebP（R-369）：浏览器认 WebP 且 WebP 更小时给 WebP，否则照旧；回应带 Vary: Accept。
-func TestThumbWebP(t *testing.T) {
+// 缩略图不输出 WebP（R-369）：即使浏览器 Accept 带 image/webp，也照旧给 JPEG / PNG。
+func TestThumbNeverWebP(t *testing.T) {
 	e := newShareEnv(t)
-	// 大块纯色的图（像界面截图）：无损 WebP 明显比 JPEG 小
 	img := testFlatPNG(1600, 1000)
 	f, err := e.st.CreateFile(e.ctx, "shot.png", "image/png", "x", int64(len(img)), "user")
 	if err != nil {
@@ -277,20 +276,11 @@ func TestThumbWebP(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp, body := get(t, e.owner, e.srv.URL+"/api/files/"+f.ID+"?w=960", "Accept", "image/avif,image/webp,*/*")
-	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/webp" || !strings.HasPrefix(body, "RIFF") || !strings.Contains(resp.Header.Get("Vary"), "Accept") {
-		t.Fatalf("应给 WebP：%d %v", resp.StatusCode, resp.Header)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") == "image/webp" || strings.HasPrefix(body, "RIFF") {
+		t.Fatalf("缩略图不应是 WebP：%d %v", resp.StatusCode, resp.Header)
 	}
-	webpLen := len(body)
-	resp, body = get(t, e.owner, e.srv.URL+"/api/files/"+f.ID+"?w=960", "Accept", "image/png,*/*")
-	if resp.Header.Get("Content-Type") == "image/webp" || len(body) <= webpLen {
-		t.Fatalf("不认 WebP 的浏览器照旧给 JPEG / PNG，且应比 WebP 大：%v %d vs %d", resp.Header, len(body), webpLen)
-	}
-	// 原图（不带 w）不转 WebP
-	if resp, _ := get(t, e.owner, e.srv.URL+"/api/files/"+f.ID, "Accept", "image/webp"); resp.Header.Get("Content-Type") != "image/png" {
-		t.Fatalf("原图不应转换：%v", resp.Header)
-	}
-	if out := makeWebP(testPNG(1200, 800, 255), 960); out == nil {
-		t.Fatal("应能编出 WebP")
+	if ct := resp.Header.Get("Content-Type"); ct != "image/jpeg" && ct != "image/png" {
+		t.Fatalf("缩略图应是 JPEG / PNG：%v", ct)
 	}
 }
 
