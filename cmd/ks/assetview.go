@@ -133,6 +133,18 @@ func shortLine(a store.Asset) string {
 	if a.Category != "" {
 		s += " " + a.Category
 	}
+	return s + linkNote(a)
+}
+
+// linkNote：变体、取代关系（R-380），接在一行素材后面。
+func linkNote(a store.Asset) string {
+	s := ""
+	if a.Parent != nil {
+		s += " · " + a.Parent.Code + " 的变体 " + a.Variant
+	}
+	if r := a.SupersededBy; r != nil {
+		s += " · 已被 " + refName(r, "") + " 取代"
+	}
 	return s
 }
 
@@ -171,6 +183,10 @@ type compactAsset struct {
 	Version  int      `json:"version"`
 	Batches  []string `json:"batches,omitempty"`
 	Previews int      `json:"previews"`
+	Variant  string   `json:"variant,omitempty" doc:"变体名（R-380）"`
+	Parent   string   `json:"parent,omitempty" doc:"变体所属素材的编号"`
+	// SupersededBy：取代它的素材（素材 id，旧条目写编号）
+	SupersededBy string `json:"superseded_by,omitempty"`
 }
 
 // compactList 是 --json 默认输出：精简字段 + 统计，--full 才给完整内容。
@@ -185,6 +201,16 @@ func compactList(total, offset int, assets []store.Asset, f store.AssetFacets) m
 		}
 		if a.Latest != nil {
 			c.Previews = len(a.Latest.Previews)
+		}
+		c.Variant = a.Variant
+		if a.Parent != nil {
+			c.Parent = a.Parent.Code
+		}
+		if r := a.SupersededBy; r != nil {
+			c.SupersededBy = r.UID
+			if c.SupersededBy == "" {
+				c.SupersededBy = r.Code
+			}
 		}
 		items = append(items, c)
 	}

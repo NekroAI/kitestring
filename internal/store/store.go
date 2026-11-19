@@ -63,6 +63,8 @@ func Open(path string) (*Store, error) {
 		// 只收 PreToolUse；表达式要和 PreToolStart 里的一字不差，查询才用得上
 		`CREATE INDEX IF NOT EXISTS events_tooluse ON events(session_key, json_extract(payload, '$.tool_use_id'), time) WHERE name = 'PreToolUse'`,
 		`CREATE INDEX IF NOT EXISTS assets_uid ON assets(project_id, uid)`,
+		`CREATE INDEX IF NOT EXISTS assets_parent ON assets(parent_id) WHERE parent_id != ''`,
+		`CREATE INDEX IF NOT EXISTS assets_superseded ON assets(superseded_by) WHERE superseded_by != ''`,
 	} {
 		if _, err := db.Exec(ix); err != nil {
 			db.Close()
@@ -268,6 +270,11 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"assets", "baseline_id", "TEXT NOT NULL DEFAULT ''"},
 	{"asset_reviews", "batch_id", "TEXT NOT NULL DEFAULT ''"},
 	{"asset_reviews", "prev_status", "TEXT NOT NULL DEFAULT ''"},
+	// 变体与取代（R-380）：变体是自己的一条素材（各有版本和审核），parent_id 指向素材本身；superseded_by 是取代它的素材 ID
+	{"assets", "variant", "TEXT NOT NULL DEFAULT ''"},
+	{"assets", "parent_id", "TEXT NOT NULL DEFAULT ''"},
+	{"assets", "superseded_by", "TEXT NOT NULL DEFAULT ''"},
+	{"assets", "superseded_at", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。

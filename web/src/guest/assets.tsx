@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { Download, Images, Upload } from 'lucide-react'
 import { errMsg } from '../api/client'
 import { t } from '../i18n'
-import { assetName, facetsOf, type AssetDir, type AssetLite } from '../lib/assets'
+import { assetName, facetsOf, variantLabel, type AssetDir, type AssetLite } from '../lib/assets'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Input, Segmented, Skeleton, Textarea, Tip } from '../ui/base'
 import { downloadUrl, NoDownloadContext } from '../ui/attach'
@@ -87,7 +87,7 @@ export function GuestAssets({ token }: { token: string }) {
           {t.guest.noAssets}
         </div>
       ) : (
-        <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined} detail={split && <AssetSplit code={params.get('asset')} onClose={() => set({ asset: null })} />}>
+        <DirBrowser b={b} go={go} openName={open ? (b.dir.asset ? variantLabel(open) : assetName(open)) : undefined} detail={split && <AssetSplit code={params.get('asset')} onClose={() => set({ asset: null })} />}>
           {!tiles.length ? (
             <div className="flex flex-col items-center gap-2 py-16 text-sm text-fg-3">
               <Images className="size-8" strokeWidth={1.4} />

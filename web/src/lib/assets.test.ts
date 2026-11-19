@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetName, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -310,4 +310,36 @@ test('宽屏分栏（R-396）：1920px 起分栏，详情栏宽度 560～720px',
   assert.equal(splitWidth(3440), 720)
   assert.equal(splitWidth(5120), 720)
   assert.equal(splitWidthCss, 'clamp(560px, 26vw, 720px)')
+})
+
+// ---------- 变体与取代（R-380） ----------
+test('变体：收进素材本身那一格（审片队列照样逐个过），变体层列出素材本身和全部变体，件数只数素材本身', () => {
+  const main = { ...idAsset('core:weapon.carbine', 'rifle', 'approved'), variant: 'default' }
+  const ref = { id: main.id, code: main.code, uid: main.uid, key: main.key, status: main.status }
+  const v = (name: string, status: AssetLite['status']) => ({ ...idAsset(`core:weapon.carbine@${name}`, 'rifle', status), variant: name, parent: ref })
+  const snow = v('snow', 'pending')
+  const desert = v('desert', 'rework')
+  const other = idAsset('core:weapon.pistol', 'rifle', 'pending')
+  const list = [main, snow, desert, other]
+  assert.equal(assetName(snow), 'carbine · snow')
+  assert.equal(variantLabel(snow), 'snow')
+  assert.equal(variantLabel(main), 'default')
+  assert.equal(familyId(snow), 'core:weapon.carbine')
+  assert.deepEqual(variantsOf(list, main).map((a) => a.variant), ['desert', 'snow'])
+  assert.equal(variantCount(main, list), 3)
+  const tiles = wallTiles(list)
+  assert.deepEqual(tiles.map((x) => (x.type === 'one' ? [x.asset.key, (x.variants ?? []).length] : [])), [['core:weapon.carbine', 2], ['core:weapon.pistol', 0]])
+  assert.deepEqual(reviewQueue(tiles), [snow.code, other.code])
+  // 按状态筛掉了素材本身：变体单独一格
+  assert.deepEqual(wallTiles([snow, other]).map((x) => x.type === 'one' && x.asset.key), ['core:weapon.carbine@snow', 'core:weapon.pistol'])
+  // 目录件数只数素材本身，待审 / 返工连变体一起算
+  assert.deepEqual(dirTree(list).all, { total: 2, pending: 2, rework: 1 })
+  // 变体层
+  const d = { ...ROOT_DIR, cat: 'weapon', sub: 'rifle', asset: 'core:weapon.carbine' }
+  const here = list.filter((a) => inDir(a, d))
+  assert.deepEqual(here.map((a) => a.key), [main.key, snow.key, desert.key])
+  assert.deepEqual(wallSections(here, d).map((s) => [s.kind, s.assets.map(variantLabel)]), [['variant', ['default', 'desert', 'snow']]])
+  assert.deepEqual(wallTiles(here, false).length, 3)
+  assert.deepEqual(dirCount(dirTree(list), d, here), { total: 3, pending: 1, rework: 1 })
+  assert.deepEqual(variantFamily(list, 'core:weapon.carbine').map(variantLabel), ['default', 'desert', 'snow'])
 })

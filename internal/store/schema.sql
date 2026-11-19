@@ -725,6 +725,12 @@ CREATE TABLE IF NOT EXISTS assets (
 	updated_at     TEXT NOT NULL,
 	uid            TEXT NOT NULL DEFAULT '',   -- R-376：按 asset.json 推送的素材的稳定 id（带命名空间，如 core:weapon.carbine）；此时 batch 为空、key = uid。旧的按批次推送的条目为空
 	batches        TEXT NOT NULL DEFAULT '[]', -- R-376：素材带过的批次（JSON 数组，多值元数据，推送时并入）；旧条目为空数组，批次看 batch
+	-- R-380：asset.json 里的具名变体各是一条素材（key = uid = 「素材 id@变体名」，各有版本和审核），parent_id 指向素材本身，variant 是变体名
+	-- （素材本身的 variant 是默认变体名）；superseded_by 是取代它的素材 ID（ks asset supersede），superseded_at 是标记时间
+	variant        TEXT NOT NULL DEFAULT '',
+	parent_id      TEXT NOT NULL DEFAULT '',
+	superseded_by  TEXT NOT NULL DEFAULT '',
+	superseded_at  TEXT NOT NULL DEFAULT '',
 	UNIQUE(project_id, batch, key)
 );
 CREATE INDEX IF NOT EXISTS assets_project ON assets(project_id, batch, updated_at);

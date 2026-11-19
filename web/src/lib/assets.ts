@@ -24,6 +24,8 @@ export type VersionLite = {
   variants?: unknown
   created_at: string
 }
+// AssetRefLite（R-380）：对另一件素材的引用——变体的上级、取代关系。
+export type AssetRefLite = { id: string; code: string; uid?: string; key: string; batch?: string; variant?: string; status: AssetStatus }
 export type AssetLite = {
   id: string
   code: string
@@ -40,6 +42,10 @@ export type AssetLite = {
   updated_at: string
   latest?: VersionLite | null
   baseline?: string // R-393：推送时申请标为已在用、等你批准的决策 D-x
+  // 变体与取代（R-380）：变体是单独一条素材，parent 指向素材本身；素材本身的 variant 是默认变体名
+  variant?: string
+  parent?: AssetRefLite | null
+  superseded_by?: AssetRefLite | null
 }
 
 export type AssetFilter = { project: string; batch: string; category: string; status: string; ftype?: string }
@@ -130,22 +136,46 @@ export function filterAssets(list: AssetLite[], f: AssetFilter): AssetLite[] {
 // 按素材 id 推送的素材按「类别 → 细类 → 素材」分层（变体先不单独成层，等 R-380 把变体拆开存文件，D-2114）；
 // 旧的按批次推送的条目（没有素材 id）单独一栏「按批次（旧）」，按批次分。
 
-// AssetDir：图片墙现在在目录的哪一层。old = 「按批次（旧）」一栏（batch 是其中的批次）；否则 cat / sub 是类别、细类，都空是全部素材。
-export type AssetDir = { old: boolean; cat: string; sub: string; batch: string }
+// AssetDir：图片墙现在在目录的哪一层。old = 「按批次（旧）」一栏（batch 是其中的批次）；否则 cat / sub 是类别、细类，都空是全部素材；
+// asset（R-380）是变体层：这件素材（素材 id）和它的变体，cat / sub 是它所在的类别、细类（面包屑用）。
+export type AssetDir = { old: boolean; cat: string; sub: string; batch: string; asset?: string }
 export const ROOT_DIR: AssetDir = { old: false, cat: '', sub: '', batch: '' }
 
 export const isLegacy = (a: Pick<AssetLite, 'uid'>) => !a.uid
 export const subtypeOf = (a: Pick<AssetLite, 'latest'>) => a.latest?.subtype ?? ''
 // assetName：素材在目录里的名字——素材 id 去掉命名空间和类别（core:weapon.carbine → carbine）；旧条目用 key。
-export function assetName(a: Pick<AssetLite, 'uid' | 'key'>): string {
+// 变体（R-380，素材 id 是 core:weapon.carbine@desert）写成「carbine · desert」。
+export function assetName(a: Pick<AssetLite, 'uid' | 'key'> & { variant?: string; parent?: AssetRefLite | null }): string {
   if (!a.uid) return a.key
-  const rest = a.uid.slice(a.uid.indexOf(':') + 1)
-  return rest.slice(rest.indexOf('.') + 1) || a.uid
+  const [id, v] = a.parent ? [a.uid.slice(0, a.uid.lastIndexOf('@')), a.variant] : [a.uid, '']
+  const rest = id.slice(id.indexOf(':') + 1)
+  const name = rest.slice(rest.indexOf('.') + 1) || id
+  return v ? `${name} · ${v}` : name
 }
-// variantCount：素材的具名变体个数（asset.json 的 variants）。
-export const variantCount = (a: Pick<AssetLite, 'latest'>) => variantNames(a.latest?.variants).length
+// familyId（R-380）：素材本身的素材 id——变体取上级的，素材本身取自己的；旧条目为空。
+export const familyId = (a: Pick<AssetLite, 'uid'> & { parent?: AssetRefLite | null }) => (a.parent ? (a.parent.uid ?? '') : (a.uid ?? ''))
+// variantsOf（R-380）：素材的变体条目，按变体名排。
+export function variantsOf(all: AssetLite[], a: Pick<AssetLite, 'id'>): AssetLite[] {
+  return all.filter((x) => x.parent?.id === a.id).sort((x, y) => natural.compare(x.variant ?? '', y.variant ?? ''))
+}
+// variantFamily（R-380）：一件素材和它的变体（素材本身在前），变体层和变体对比用。
+export function variantFamily(all: AssetLite[], uid: string): AssetLite[] {
+  const main = all.find((a) => !a.parent && a.uid === uid)
+  const kids = all.filter((a) => a.parent?.uid === uid).sort((x, y) => natural.compare(x.variant ?? '', y.variant ?? ''))
+  return main ? [main, ...kids] : kids
+}
+// variantLabel：变体在变体层、变体对比里的叫法——变体名；素材本身写默认变体名，没写时用素材名。
+export const variantLabel = (a: AssetLite) => a.variant || assetName(a)
+// variantCount：素材的具名变体个数。拆开存了（R-380）就数变体条目（加上素材本身）；还没拆开的旧数据按 asset.json 的 variants 数。
+export function variantCount(a: AssetLite, all?: AssetLite[]): number {
+  const kids = all ? all.filter((x) => x.parent?.id === a.id).length : 0
+  return kids ? kids + 1 : variantNames(a.latest?.variants).length
+}
+// VARIANT_CMP（R-380）：并排比较一件素材的变体时 ?cmp= 的前缀，后面是素材 id。
+export const VARIANT_CMP = 'v:'
 
 export function inDir(a: AssetLite, d: AssetDir): boolean {
+  if (d.asset) return familyId(a) === d.asset
   if (d.old) return isLegacy(a) && (!d.batch || a.batch === d.batch)
   if (!d.cat) return true
   return !isLegacy(a) && a.category === d.cat && (!d.sub || subtypeOf(a) === d.sub)
@@ -154,8 +184,9 @@ export function inDir(a: AssetLite, d: AssetDir): boolean {
 // DirCount：一层的件数和待审、返工数。
 export type DirCount = { total: number; pending: number; rework: number }
 export type DirNode = DirCount & { key: string; children: DirNode[] }
-const tally = (c: DirCount, a: Pick<AssetLite, 'status'>) => {
-  c.total++
+// 件数只数素材本身，变体（R-380）不另算一件；待审、返工数连变体一起算（变体各自审核）。
+const tally = (c: DirCount, a: Pick<AssetLite, 'status' | 'parent'>) => {
+  if (!a.parent) c.total++
   if (a.status === 'pending') c.pending++
   if (a.status === 'rework') c.rework++
 }
@@ -192,7 +223,18 @@ export function dirTree(list: AssetLite[]): { all: DirCount; cats: DirNode[]; ol
 }
 
 // dirCount：目录里某一层的统计（面包屑、标签用）；找不到时全是 0。
-export function dirCount(tree: ReturnType<typeof dirTree>, d: AssetDir): DirCount {
+export function dirCount(tree: ReturnType<typeof dirTree>, d: AssetDir, list?: AssetLite[]): DirCount {
+  if (d.asset) {
+    // 变体层：件数是素材本身加变体
+    const c = zero()
+    for (const a of list ?? []) {
+      if (familyId(a) !== d.asset) continue
+      c.total++
+      if (a.status === 'pending') c.pending++
+      if (a.status === 'rework') c.rework++
+    }
+    return c
+  }
   if (d.old) return d.batch ? (tree.old.children.find((x) => x.key === d.batch) ?? zero()) : tree.old
   if (!d.cat) return tree.all
   const c = tree.cats.find((x) => x.key === d.cat)
@@ -201,7 +243,7 @@ export function dirCount(tree: ReturnType<typeof dirTree>, d: AssetDir): DirCoun
 }
 
 // WallSection：图片墙按下一层分的一组。kind 说明 key 是什么：cat 类别 / sub 细类（空 = 未分细类）/ batch 旧条目的批次 / '' 不分组。
-export type WallSection = { kind: 'cat' | 'sub' | 'batch' | ''; key: string; assets: AssetLite[] }
+export type WallSection = { kind: 'cat' | 'sub' | 'batch' | 'variant' | ''; key: string; assets: AssetLite[] }
 
 // wallSections：图片墙按目录的下一层分组——全部素材按类别（旧条目在后面按批次）、类别按细类、「按批次（旧）」按批次；
 // 到了细类或某个旧批次就不再分组。只有一组且没有名字时不写组名。
@@ -213,6 +255,12 @@ export function wallSections(list: AssetLite[], d: AssetDir): WallSection[] {
       .sort(([x], [y]) => (emptyLast && !x ? 1 : emptyLast && !y ? -1 : natural.compare(x, y)))
       .map(([key, assets]) => ({ kind, key, assets }))
   }
+  if (d.asset) {
+    // 变体层（R-380）：素材本身在前，变体按名字排
+    const main = list.filter((a) => !a.parent)
+    const kids = list.filter((a) => a.parent).sort((x, y) => natural.compare(x.variant ?? '', y.variant ?? ''))
+    return [{ kind: 'variant', key: d.asset, assets: [...main, ...kids] }]
+  }
   if (d.old) return d.batch ? [{ kind: '', key: '', assets: list }] : by(list, 'batch', (a) => a.batch)
   if (d.sub) return [{ kind: '', key: '', assets: list }]
   if (d.cat) {
@@ -223,13 +271,19 @@ export function wallSections(list: AssetLite[], d: AssetDir): WallSection[] {
 }
 
 // 图片墙上的一格：单个素材，或同一用途的一组候选（概念图 A / B 版）。
-export type WallTile = { type: 'one'; asset: AssetLite } | { type: 'group'; key: string; group: string; batch: string; assets: AssetLite[] }
+// variants（R-380）：变体层以外，变体收进素材本身这一格（卡片上标「N 个变体」），审片队列照样逐个过。
+export type WallTile = { type: 'one'; asset: AssetLite; variants?: AssetLite[] } | { type: 'group'; key: string; group: string; batch: string; assets: AssetLite[] }
 
 // groupKey：候选分组只在同一项目、同一批次里成立。
 export const groupKey = (a: Pick<AssetLite, 'project_id' | 'batch' | 'group'>) => `${a.batch}/${a.group ?? ''}`
 
 // wallTiles：按列表顺序排，同组候选（两张及以上）收成一格，放在组里第一张的位置；只剩一张的照常单独一格。
-export function wallTiles(list: AssetLite[]): WallTile[] {
+export function wallTiles(all: AssetLite[], fold = true): WallTile[] {
+  // 变体收进素材本身（R-380）：素材本身也在这一组里时才收，否则（比如按状态筛掉了素材本身）变体单独一格
+  const here = new Set(all.map((a) => a.id))
+  const kids = new Map<string, AssetLite[]>()
+  if (fold) for (const a of all) if (a.parent && here.has(a.parent.id)) kids.set(a.parent.id, [...(kids.get(a.parent.id) ?? []), a])
+  const list = fold ? all.filter((a) => !(a.parent && here.has(a.parent.id))) : all
   const groups = new Map<string, AssetLite[]>()
   for (const a of list) {
     if (!a.group) continue
@@ -242,7 +296,8 @@ export function wallTiles(list: AssetLite[]): WallTile[] {
     const k = a.group ? groupKey(a) : ''
     const g = k ? groups.get(k) : undefined
     if (!g || g.length < 2) {
-      out.push({ type: 'one', asset: a })
+      const vs = kids.get(a.id)
+      out.push(vs ? { type: 'one', asset: a, variants: vs } : { type: 'one', asset: a })
       continue
     }
     if (done.has(k)) continue
@@ -380,7 +435,7 @@ export const fmtPixels = (p?: number[] | null) => (p && p.length >= 2 ? `${p[0]}
 // 申请标为已在用的（R-393）等你批准那条决策，不逐个审，不进队列。
 export function reviewQueue(tiles: WallTile[]): string[] {
   const out: string[] = []
-  for (const t of tiles) for (const a of t.type === 'one' ? [t.asset] : t.assets) if (a.status === 'pending' && !a.baseline) out.push(a.code)
+  for (const t of tiles) for (const a of t.type === 'one' ? [t.asset, ...(t.variants ?? [])] : t.assets) if (a.status === 'pending' && !a.baseline) out.push(a.code)
   return out
 }
 

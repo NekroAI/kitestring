@@ -158,6 +158,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/assets/supersede": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批量标记旧条目被某件素材取代（ks asset supersede，R-380）；有一条出错时一条都不改 */
+        post: operations["agent-asset-supersede"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/assets/{ref}": {
         parameters: {
             query?: never;
@@ -1115,7 +1132,8 @@ export interface paths {
         get: operations["get-asset"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** 真删除推错的素材（R-380）：连同变体、版本、审核记录、附件；只在网页上确认后调用 */
+        delete: operations["delete-asset"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1132,6 +1150,23 @@ export interface paths {
         put?: never;
         /** 记下网页把模型渲染成的缩略图（R-383）：只给有 GLB、没有预览图的零件；已有时不覆盖 */
         post: operations["set-asset-auto-thumb"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/{ref}/delete-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 删除素材前的检查（R-380）：版本、审核记录、一起删的变体、被它取代的条目、引用着它的分享 */
+        get: operations["asset-delete-check"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3523,6 +3558,8 @@ export interface components {
             kind: "part" | "image";
             /** @description 最新版本 */
             latest?: components["schemas"]["AssetVersion"];
+            /** @description 这是哪件素材的变体（变体条目才有） */
+            parent?: components["schemas"]["AssetRef"];
             project_id: string;
             requirement_id?: string;
             /** @enum {string} */
@@ -3534,10 +3571,19 @@ export interface components {
             status_at?: string;
             /** @description 最近一次提交素材的人（返工意见送它） */
             submitter: components["schemas"]["AssetSubmitter"];
+            /**
+             * Format: date-time
+             * @description 标记取代的时间
+             */
+            superseded_at?: string;
+            /** @description 已被哪件素材取代（ks asset supersede 标记） */
+            superseded_by?: components["schemas"]["AssetRef"];
             /** @description R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空 */
             uid?: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description 具名变体的名字：变体条目写自己的名字，素材本身写默认变体名；没有变体时为空 */
+            variant?: string;
             /**
              * Format: int64
              * @description 最新版本号
@@ -3645,6 +3691,29 @@ export interface components {
                 [key: string]: number;
             };
         };
+        AssetDeleteInfo: {
+            asset: components["schemas"]["AssetRef"];
+            /**
+             * Format: int64
+             * @description 审核记录条数（含变体的）
+             */
+            reviews: number;
+            /** @description 引用着它的分享（没撤回的）：删后访客看不到它 */
+            shares: components["schemas"]["AssetShareUse"][] | null;
+            /** @description 被它取代的旧条目：删后取消它们的取代标记 */
+            supersedes: components["schemas"]["AssetRef"][] | null;
+            /** @description 一起删掉的变体 */
+            variants: components["schemas"]["AssetRef"][] | null;
+            /**
+             * Format: int64
+             * @description 版本数（含变体的）
+             */
+            versions: number;
+        };
+        AssetDeleteOutBody: {
+            /** @description 删掉的素材（含变体） */
+            deleted: components["schemas"]["AssetRef"][] | null;
+        };
         AssetDetail: {
             /** @description 附件（R-365：访客上传、你收下为附件的文件），新的在前 */
             attachments: components["schemas"]["AssetAttachment"][] | null;
@@ -3671,6 +3740,8 @@ export interface components {
             kind: "part" | "image";
             /** @description 最新版本 */
             latest?: components["schemas"]["AssetVersion"];
+            /** @description 这是哪件素材的变体（变体条目才有） */
+            parent?: components["schemas"]["AssetRef"];
             project_id: string;
             requirement_id?: string;
             /** @description 审核记录（R-351 第 4 步），新的在前 */
@@ -3684,10 +3755,23 @@ export interface components {
             status_at?: string;
             /** @description 最近一次提交素材的人（返工意见送它） */
             submitter: components["schemas"]["AssetSubmitter"];
+            /**
+             * Format: date-time
+             * @description 标记取代的时间
+             */
+            superseded_at?: string;
+            /** @description 已被哪件素材取代（ks asset supersede 标记） */
+            superseded_by?: components["schemas"]["AssetRef"];
+            /** @description R-380：被这件素材取代的旧条目 */
+            supersedes: components["schemas"]["AssetRef"][] | null;
             /** @description R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空 */
             uid?: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description 具名变体的名字：变体条目写自己的名字，素材本身写默认变体名；没有变体时为空 */
+            variant?: string;
+            /** @description R-380：这件素材的具名变体（各自有版本和审核），按名字排序 */
+            variants: components["schemas"]["AssetRef"][] | null;
             /**
              * Format: int64
              * @description 最新版本号
@@ -3773,6 +3857,8 @@ export interface components {
             license?: string;
             /** @description 旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样） */
             meta?: unknown;
+            /** @description asset.json：这条是哪个素材 id 的变体；素材本身不写 */
+            parent?: string;
             /** @description 图的像素尺寸（宽 / 高） */
             pixels?: number[] | null;
             /** @description 零件的预览图 */
@@ -3786,7 +3872,9 @@ export interface components {
              * @description 面数（三角形）
              */
             triangles?: number;
-            /** @description asset.json：具名变体的原文（先原样存下，变体的版本与审核见 R-380） */
+            /** @description asset.json：变体名（素材本身写默认变体名） */
+            variant?: string;
+            /** @description asset.json：具名变体的原文（各变体另作一条推送，见 Parent） */
             variants?: unknown;
         };
         AssetListView: {
@@ -3872,6 +3960,19 @@ export interface components {
              */
             reused: number;
         };
+        AssetRef: {
+            /** @description 旧条目的批次 */
+            batch?: string;
+            /** @description 素材编号 A-x */
+            code: string;
+            id: string;
+            key: string;
+            /** @enum {string} */
+            status: "wip" | "pending" | "approved" | "rework";
+            /** @description 素材 id；旧的按批次推送的条目为空 */
+            uid?: string;
+            variant?: string;
+        };
         AssetReview: {
             /** @description 访客的意见：你放入时写的附言 */
             addend?: string;
@@ -3945,6 +4046,17 @@ export interface components {
         AssetReviewersOutBody: {
             /** @description 授权了批量审素材的会话键 */
             sessions: string[] | null;
+        };
+        AssetShareUse: {
+            id: string;
+            name: string;
+            /** @description 批次名或类别名；单独挂着时是素材编号 */
+            ref: string;
+            /**
+             * @description asset 单独挂着这件素材 / asset_batch 挂着它所在的批次 / asset_cat 挂着它的类别
+             * @enum {string}
+             */
+            via: "asset" | "asset_batch" | "asset_cat";
         };
         AssetSkip: {
             code: string;
@@ -7900,6 +8012,43 @@ export interface components {
             /** @description 模型生成的一句话摘要 */
             summary: string;
         };
+        SupersedeInBody: {
+            cwd_remote?: string;
+            /** @description 只校验，不改 */
+            dry_run?: boolean;
+            /** @description 取代关系：旧条目 → 取代它的素材；new 不写表示取消取代 */
+            pairs: components["schemas"]["SupersedePair"][] | null;
+            /** @description 项目名、ID 或 git remote；不写按当前目录、会话所在项目 */
+            project?: string;
+            session_key?: string;
+        };
+        SupersedeOutBody: {
+            /** @description 已改；有一条出错时一条都不改 */
+            applied: boolean;
+            /** @description 项目名 */
+            project: string;
+            results: components["schemas"]["SupersedeResult"][] | null;
+        };
+        SupersedePair: {
+            /** @description 取代它的素材：编号 A-x、素材 ID 或素材 id；取消取代时不写 */
+            new?: string;
+            /** @description 旧条目：编号 A-x、素材 ID 或素材 id */
+            old: string;
+        };
+        SupersedeResult: {
+            error?: string;
+            new?: string;
+            new_ref?: components["schemas"]["AssetRef"];
+            old: string;
+            old_ref?: components["schemas"]["AssetRef"];
+            /** @description 原来标记的取代者（这次改成了别的） */
+            replaced?: components["schemas"]["AssetRef"];
+            /**
+             * @description set 标记了取代 / unchanged 已经是这样 / cleared 取消了取代 / error 有错（见 error）
+             * @enum {string}
+             */
+            result: "set" | "unchanged" | "cleared" | "error";
+        };
         Task: {
             id: string;
             label: string;
@@ -8566,6 +8715,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetPushResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-asset-supersede": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupersedeInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupersedeOutBody"];
                 };
             };
             /** @description Error */
@@ -10563,6 +10745,37 @@ export interface operations {
             };
         };
     };
+    "delete-asset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDeleteOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "set-asset-auto-thumb": {
         parameters: {
             query?: never;
@@ -10586,6 +10799,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoThumbOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "asset-delete-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetDeleteInfo"];
                 };
             };
             /** @description Error */

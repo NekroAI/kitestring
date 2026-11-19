@@ -680,6 +680,16 @@ func (s *Store) ResolveShare(ctx context.Context, items []ShareItem) (ShareScope
 		}
 		rs.Close()
 	}
+	// R-380：批次 / 类别里被取代的素材，取代它的那件（和它的变体）也算——迁移成新 id 后不带这个批次也照常能看
+	if len(assetIn) > 0 {
+		add, err := s.replacementsOf(ctx, assetIn)
+		if err != nil {
+			return sc, err
+		}
+		for _, id := range add {
+			assetIn[id] = true
+		}
+	}
 	for _, it := range items {
 		if it.Kind == ShareKindAsset {
 			if _, ok := assetIn[it.Ref]; !ok {

@@ -421,7 +421,12 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 		}
 		seen[it.Key] = true
 		if p.ByID {
-			if msg := protocol.CheckAssetID(it.Key); msg != "" {
+			if err := checkVariantItem(it); err != nil {
+				return res, err
+			}
+			if it.Parent != "" {
+				// 变体（R-380）：key 是「素材 id@变体名」，按素材 id 校验
+			} else if msg := protocol.CheckAssetID(it.Key); msg != "" {
 				return res, fmt.Errorf("素材 id %s %s", it.Key, msg)
 			}
 			if strings.TrimSpace(it.Category) == "" {
@@ -430,7 +435,7 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 			if len(it.Variants) > 0 && !json.Valid(it.Variants) {
 				it.Variants = nil
 			}
-		} else if len(it.Batches) > 0 || it.Source != "" || it.License != "" || len(it.Variants) > 0 {
+		} else if len(it.Batches) > 0 || it.Source != "" || it.License != "" || len(it.Variants) > 0 || it.Variant != "" || it.Parent != "" {
 			return res, fmt.Errorf("素材 %s：batches / source / license / variants 只用于按 asset.json 推送", it.Key)
 		}
 		if it.File == nil || it.File.ID == "" {

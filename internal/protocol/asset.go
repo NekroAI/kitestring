@@ -44,7 +44,11 @@ type AssetItem struct {
 	Batches  []string        `json:"batches,omitempty" doc:"asset.json：这次带上的批次（可多个，并入素材已有的批次，不删旧的）"`
 	Source   string          `json:"source,omitempty" doc:"asset.json：来源（自制、外包、网址……）"`
 	License  string          `json:"license,omitempty" doc:"asset.json：许可（CC0、自有……）"`
-	Variants json.RawMessage `json:"variants,omitempty" doc:"asset.json：具名变体的原文（先原样存下，变体的版本与审核见 R-380）"`
+	Variants json.RawMessage `json:"variants,omitempty" doc:"asset.json：具名变体的原文（各变体另作一条推送，见 Parent）"`
+	// R-380：具名变体各自有版本和审核。变体是单独的一条：Key = 「素材 id@变体名」，Parent 是素材 id，Variant 是变体名；
+	// 素材本身（默认变体）Parent 为空、Variant 是默认变体名
+	Variant string `json:"variant,omitempty" doc:"asset.json：变体名（素材本身写默认变体名）"`
+	Parent  string `json:"parent,omitempty" doc:"asset.json：这条是哪个素材 id 的变体；素材本身不写"`
 }
 
 // AssetPush 是一次推送（一批素材）。
@@ -129,6 +133,27 @@ func CheckAssetID(id string) string {
 		return "的命名空间只能用小写字母、数字和 _ . -，且以字母或数字开头"
 	case !assetPathRe.MatchString(path) || strings.Contains(path, "//") || strings.HasSuffix(path, "/") || strings.HasSuffix(path, "."):
 		return "冒号后只能用字母、数字和 _ . - /，不能以 / 或 . 结尾"
+	}
+	return ""
+}
+
+// VariantSep 连接素材 id 和变体名：core:weapon.carbine@desert（R-380）。素材 id 里不会有 @。
+const VariantSep = "@"
+
+var assetVariantRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
+
+// VariantKey 是变体的 key（也是它的素材 id）。
+func VariantKey(id, name string) string { return id + VariantSep + name }
+
+// CheckVariantName 校验变体名，合格返回空，不合格返回一句原因（接在变体名后面）。
+func CheckVariantName(name string) string {
+	switch {
+	case name == "":
+		return "不能为空"
+	case len(name) > 64:
+		return "太长（最多 64 个字符）"
+	case !assetVariantRe.MatchString(name) || strings.HasSuffix(name, "."):
+		return "只能用字母、数字和 _ . -，不能以 . 结尾"
 	}
 	return ""
 }

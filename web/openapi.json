@@ -1784,6 +1784,10 @@
             "$ref": "#/components/schemas/AssetVersion",
             "description": "最新版本"
           },
+          "parent": {
+            "$ref": "#/components/schemas/AssetRef",
+            "description": "这是哪件素材的变体（变体条目才有）"
+          },
           "project_id": {
             "type": "string"
           },
@@ -1808,12 +1812,25 @@
             "$ref": "#/components/schemas/AssetSubmitter",
             "description": "最近一次提交素材的人（返工意见送它）"
           },
+          "superseded_at": {
+            "description": "标记取代的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "superseded_by": {
+            "$ref": "#/components/schemas/AssetRef",
+            "description": "已被哪件素材取代（ks asset supersede 标记）"
+          },
           "uid": {
             "description": "R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空",
             "type": "string"
           },
           "updated_at": {
             "format": "date-time",
+            "type": "string"
+          },
+          "variant": {
+            "description": "具名变体的名字：变体条目写自己的名字，素材本身写默认变体名；没有变体时为空",
             "type": "string"
           },
           "version": {
@@ -2130,6 +2147,82 @@
         ],
         "type": "object"
       },
+      "AssetDeleteInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/AssetRef"
+          },
+          "reviews": {
+            "description": "审核记录条数（含变体的）",
+            "format": "int64",
+            "type": "integer"
+          },
+          "shares": {
+            "description": "引用着它的分享（没撤回的）：删后访客看不到它",
+            "items": {
+              "$ref": "#/components/schemas/AssetShareUse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "supersedes": {
+            "description": "被它取代的旧条目：删后取消它们的取代标记",
+            "items": {
+              "$ref": "#/components/schemas/AssetRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "variants": {
+            "description": "一起删掉的变体",
+            "items": {
+              "$ref": "#/components/schemas/AssetRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "versions": {
+            "description": "版本数（含变体的）",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset",
+          "versions",
+          "reviews",
+          "variants",
+          "supersedes",
+          "shares"
+        ],
+        "type": "object"
+      },
+      "AssetDeleteOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "description": "删掉的素材（含变体）",
+            "items": {
+              "$ref": "#/components/schemas/AssetRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "type": "object"
+      },
       "AssetDetail": {
         "additionalProperties": false,
         "properties": {
@@ -2195,6 +2288,10 @@
             "$ref": "#/components/schemas/AssetVersion",
             "description": "最新版本"
           },
+          "parent": {
+            "$ref": "#/components/schemas/AssetRef",
+            "description": "这是哪件素材的变体（变体条目才有）"
+          },
           "project_id": {
             "type": "string"
           },
@@ -2229,6 +2326,25 @@
             "$ref": "#/components/schemas/AssetSubmitter",
             "description": "最近一次提交素材的人（返工意见送它）"
           },
+          "superseded_at": {
+            "description": "标记取代的时间",
+            "format": "date-time",
+            "type": "string"
+          },
+          "superseded_by": {
+            "$ref": "#/components/schemas/AssetRef",
+            "description": "已被哪件素材取代（ks asset supersede 标记）"
+          },
+          "supersedes": {
+            "description": "R-380：被这件素材取代的旧条目",
+            "items": {
+              "$ref": "#/components/schemas/AssetRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "uid": {
             "description": "R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空",
             "type": "string"
@@ -2236,6 +2352,20 @@
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "variant": {
+            "description": "具名变体的名字：变体条目写自己的名字，素材本身写默认变体名；没有变体时为空",
+            "type": "string"
+          },
+          "variants": {
+            "description": "R-380：这件素材的具名变体（各自有版本和审核），按名字排序",
+            "items": {
+              "$ref": "#/components/schemas/AssetRef"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "version": {
             "description": "最新版本号",
@@ -2256,6 +2386,8 @@
           "versions",
           "reviews",
           "attachments",
+          "variants",
+          "supersedes",
           "id",
           "code",
           "project_id",
@@ -2461,6 +2593,10 @@
           "meta": {
             "description": "旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样）"
           },
+          "parent": {
+            "description": "asset.json：这条是哪个素材 id 的变体；素材本身不写",
+            "type": "string"
+          },
           "pixels": {
             "description": "图的像素尺寸（宽 / 高）",
             "items": {
@@ -2502,8 +2638,12 @@
             "format": "int64",
             "type": "integer"
           },
+          "variant": {
+            "description": "asset.json：变体名（素材本身写默认变体名）",
+            "type": "string"
+          },
           "variants": {
-            "description": "asset.json：具名变体的原文（先原样存下，变体的版本与审核见 R-380）"
+            "description": "asset.json：具名变体的原文（各变体另作一条推送，见 Parent）"
           }
         },
         "required": [
@@ -2738,6 +2878,48 @@
         ],
         "type": "object"
       },
+      "AssetRef": {
+        "additionalProperties": false,
+        "properties": {
+          "batch": {
+            "description": "旧条目的批次",
+            "type": "string"
+          },
+          "code": {
+            "description": "素材编号 A-x",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "wip",
+              "pending",
+              "approved",
+              "rework"
+            ],
+            "type": "string"
+          },
+          "uid": {
+            "description": "素材 id；旧的按批次推送的条目为空",
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "key",
+          "status"
+        ],
+        "type": "object"
+      },
       "AssetReview": {
         "additionalProperties": false,
         "properties": {
@@ -2925,6 +3107,37 @@
         },
         "required": [
           "sessions"
+        ],
+        "type": "object"
+      },
+      "AssetShareUse": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ref": {
+            "description": "批次名或类别名；单独挂着时是素材编号",
+            "type": "string"
+          },
+          "via": {
+            "description": "asset 单独挂着这件素材 / asset_batch 挂着它所在的批次 / asset_cat 挂着它的类别",
+            "enum": [
+              "asset",
+              "asset_batch",
+              "asset_cat"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "via",
+          "ref"
         ],
         "type": "object"
       },
@@ -14609,6 +14822,125 @@
         ],
         "type": "object"
       },
+      "SupersedeInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd_remote": {
+            "type": "string"
+          },
+          "dry_run": {
+            "description": "只校验，不改",
+            "type": "boolean"
+          },
+          "pairs": {
+            "description": "取代关系：旧条目 → 取代它的素材；new 不写表示取消取代",
+            "items": {
+              "$ref": "#/components/schemas/SupersedePair"
+            },
+            "maxItems": 2000,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "project": {
+            "description": "项目名、ID 或 git remote；不写按当前目录、会话所在项目",
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pairs"
+        ],
+        "type": "object"
+      },
+      "SupersedeOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "applied": {
+            "description": "已改；有一条出错时一条都不改",
+            "type": "boolean"
+          },
+          "project": {
+            "description": "项目名",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SupersedeResult"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project",
+          "applied",
+          "results"
+        ],
+        "type": "object"
+      },
+      "SupersedePair": {
+        "additionalProperties": false,
+        "properties": {
+          "new": {
+            "description": "取代它的素材：编号 A-x、素材 ID 或素材 id；取消取代时不写",
+            "type": "string"
+          },
+          "old": {
+            "description": "旧条目：编号 A-x、素材 ID 或素材 id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old"
+        ],
+        "type": "object"
+      },
+      "SupersedeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "new": {
+            "type": "string"
+          },
+          "new_ref": {
+            "$ref": "#/components/schemas/AssetRef"
+          },
+          "old": {
+            "type": "string"
+          },
+          "old_ref": {
+            "$ref": "#/components/schemas/AssetRef"
+          },
+          "replaced": {
+            "$ref": "#/components/schemas/AssetRef",
+            "description": "原来标记的取代者（这次改成了别的）"
+          },
+          "result": {
+            "description": "set 标记了取代 / unchanged 已经是这样 / cleared 取消了取代 / error 有错（见 error）",
+            "enum": [
+              "set",
+              "unchanged",
+              "cleared",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "old",
+          "result"
+        ],
+        "type": "object"
+      },
       "Task": {
         "additionalProperties": false,
         "properties": {
@@ -16257,6 +16589,47 @@
           }
         },
         "summary": "提交一批素材（文件先传好）；同一 push_id 重复提交返回第一次的结果",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/assets/supersede": {
+      "post": {
+        "operationId": "agent-asset-supersede",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupersedeInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupersedeOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "批量标记旧条目被某件素材取代（ks asset supersede，R-380）；有一条出错时一条都不改",
         "tags": [
           "agent"
         ]
@@ -19061,6 +19434,45 @@
       }
     },
     "/api/assets/{ref}": {
+      "delete": {
+        "operationId": "delete-asset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDeleteOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "真删除推错的素材（R-380）：连同变体、版本、审核记录、附件；只在网页上确认后调用",
+        "tags": [
+          "assets"
+        ]
+      },
       "get": {
         "operationId": "get-asset",
         "parameters": [
@@ -19149,6 +19561,47 @@
           }
         },
         "summary": "记下网页把模型渲染成的缩略图（R-383）：只给有 GLB、没有预览图的零件；已有时不覆盖",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/assets/{ref}/delete-check": {
+      "get": {
+        "operationId": "asset-delete-check",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ref",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDeleteInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "删除素材前的检查（R-380）：版本、审核记录、一起删的变体、被它取代的条目、引用着它的分享",
         "tags": [
           "assets"
         ]

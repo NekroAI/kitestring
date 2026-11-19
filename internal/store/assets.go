@@ -66,6 +66,11 @@ type Asset struct {
 	UpdatedAt     time.Time      `json:"updated_at"`
 	Latest        *AssetVersion  `json:"latest,omitempty" doc:"最新版本"`
 	Baseline      string         `json:"baseline,omitempty" doc:"R-393：申请标为已在用、等用户批准的决策 D-x；没有挂着的申请时为空"`
+	// R-380：变体与取代（见 assetlinks.go）
+	Variant      string     `json:"variant,omitempty" doc:"具名变体的名字：变体条目写自己的名字，素材本身写默认变体名；没有变体时为空"`
+	Parent       *AssetRef  `json:"parent,omitempty" doc:"这是哪件素材的变体（变体条目才有）"`
+	SupersededBy *AssetRef  `json:"superseded_by,omitempty" doc:"已被哪件素材取代（ks asset supersede 标记）"`
+	SupersededAt *time.Time `json:"superseded_at,omitempty" doc:"标记取代的时间"`
 }
 
 // AssetVersion 是素材的一个版本。
@@ -104,6 +109,8 @@ type AssetDetail struct {
 	Versions    []AssetVersion    `json:"versions"`
 	Reviews     []AssetReview     `json:"reviews" doc:"审核记录（R-351 第 4 步），新的在前"`
 	Attachments []AssetAttachment `json:"attachments" doc:"附件（R-365：访客上传、你收下为附件的文件），新的在前"`
+	Variants    []AssetRef        `json:"variants" doc:"R-380：这件素材的具名变体（各自有版本和审核），按名字排序"`
+	Supersedes  []AssetRef        `json:"supersedes" doc:"R-380：被这件素材取代的旧条目"`
 }
 
 // 提交者的三种（R-351；guest 给 R-365 资源库分享预留，访客在分享页上传素材）。
@@ -191,6 +198,9 @@ func (s *Store) PushAssets(ctx context.Context, n NewAssetPush) (protocol.AssetP
 		for _, it := range n.Items {
 			r, err := pushAsset(ctx, t, n, it, status, at)
 			if err != nil {
+				return fmt.Errorf("%s：%w", it.Key, err)
+			}
+			if err := linkVariant(ctx, t, n, it); err != nil {
 				return fmt.Errorf("%s：%w", it.Key, err)
 			}
 			res.Items = append(res.Items, r)
@@ -574,7 +584,7 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) 
 		p.a.Latest = &v
 		out = append(out, p.a)
 	}
-	return out, nil
+	return out, s.fillAssetLinks(ctx, out)
 }
 
 // assetInBatch：素材带过这个批次（旧条目看 batch 列，按 id 推送的看 batches）。参数：批次 ×2。
@@ -640,8 +650,10 @@ func (s *Store) FindAsset(ctx context.Context, projectID, ref string) (AssetDeta
 	if d.Reviews, err = s.ListAssetReviews(ctx, a.ID); err != nil {
 		return d, err
 	}
-	d.Attachments, err = s.ListAssetAttachments(ctx, a.ID)
-	return d, err
+	if d.Attachments, err = s.ListAssetAttachments(ctx, a.ID); err != nil {
+		return d, err
+	}
+	return d, s.fillAssetDetail(ctx, &d)
 }
 
 func (s *Store) findAssetRow(ctx context.Context, projectID, ref string) (Asset, error) {

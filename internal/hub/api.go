@@ -89,6 +89,8 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	h.registerAssetsAgent(agentAPI)
 	h.registerAssetBatchWeb(webAPI) // 资源库批量审核（R-393）
 	h.registerAssetBatchAgent(agentAPI)
+	h.registerAssetLinksWeb(webAPI) // 变体、取代与删除（R-380）
+	h.registerAssetLinksAgent(agentAPI)
 
 	root := http.NewServeMux()
 	root.Handle("/api/auth/", publicMux)
@@ -200,6 +202,8 @@ func (h *Hub) OpenAPI() *huma.OpenAPI {
 	h.registerAssetsAgent(api)
 	h.registerAssetBatchWeb(api)
 	h.registerAssetBatchAgent(api)
+	h.registerAssetLinksWeb(api)
+	h.registerAssetLinksAgent(api)
 	return api.OpenAPI()
 }
 

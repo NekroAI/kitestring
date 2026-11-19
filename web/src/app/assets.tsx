@@ -6,11 +6,12 @@ import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useDesktop, useMedia, useNow } from '../lib/util'
-import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
 import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
+import { AssetLinks, DeleteAsset } from './assetLinks'
 import { DirBrowser, dirParams, sectionDir, sectionLabel, useBrowse, type Browse } from './assetDir'
 import { KeyCaps } from './command'
 import { useFillHeight } from './pool'
@@ -161,7 +162,7 @@ export function AssetsPage() {
       ) : (
         <WallArea>
           {(h) => (
-            <DirBrowser b={b} go={go} openName={open ? assetName(open) : undefined} height={h} detail={split && <AssetSplit code={stage ? null : params.get('asset')} onClose={() => set({ asset: null })} height />}>
+            <DirBrowser b={b} go={go} openName={open ? (b.dir.asset ? variantLabel(open) : assetName(open)) : undefined} height={h} detail={split && <AssetSplit code={stage ? null : params.get('asset')} onClose={() => set({ asset: null })} height />}>
               {!tiles.length ? (
                 <Card>
                   <Empty
@@ -211,6 +212,8 @@ type WallProps = { active: string | null; activeGroup: string | null; onOpen: (c
 
 // SectionWall（R-394）：图片墙按目录的下一层分组，组名可点进那一层；不分组时直接是一面墙。所有者页和分享页共用。
 export function SectionWall({ b, go, ...p }: WallProps & { b: Browse; go: (d: AssetDir) => void }) {
+  // 变体层（R-380）：卡片上的「N 个变体」点进去，列出这件素材和它的变体；变体层里卡片写变体名
+  const onFamily = (a: AssetLite) => a.uid && go({ ...ROOT_DIR, cat: a.category, sub: subtypeOf(a), asset: a.uid })
   return (
     <div className="grid gap-5">
       {b.sections.map((s) => {
@@ -229,9 +232,14 @@ export function SectionWall({ b, go, ...p }: WallProps & { b: Browse; go: (d: As
                 )}
                 <span className="text-xs text-fg-3 tabular">{s.assets.length}</span>
                 <span className="h-px flex-1 bg-line" />
+                {s.kind === 'variant' && s.assets.length > 1 && (
+                  <Button size="sm" variant="ghost" icon={<Columns2 className="size-4" />} onClick={() => p.onGroup(VARIANT_CMP + s.key)} data-compare-variants="">
+                    {t.asset.compareVariants}
+                  </Button>
+                )}
               </h2>
             )}
-            <AssetWall tiles={s.tiles} {...p} />
+            <AssetWall tiles={s.tiles} {...p} onFamily={b.dir.asset ? undefined : onFamily} variantLayer={!!b.dir.asset} />
           </section>
         )
       })}
@@ -240,12 +248,20 @@ export function SectionWall({ b, go, ...p }: WallProps & { b: Browse; go: (d: As
 }
 
 // AssetWall：图片墙（所有者页和访客页共用，R-365）。
-export function AssetWall({ tiles, active, activeGroup, onOpen, onGroup }: WallProps & { tiles: WallTile[] }) {
+export function AssetWall({ tiles, active, activeGroup, onOpen, onGroup, onFamily, variantLayer }: WallProps & { tiles: WallTile[]; onFamily?: (a: AssetLite) => void; variantLayer?: boolean }) {
   return (
     <WallGrid>
       {tiles.map((tile) =>
         tile.type === 'one' ? (
-          <AssetCard key={tile.asset.id} a={tile.asset} active={active === tile.asset.code} onOpen={() => onOpen(tile.asset.code)} />
+          <AssetCard
+            key={tile.asset.id}
+            a={tile.asset}
+            active={active === tile.asset.code}
+            onOpen={() => onOpen(tile.asset.code)}
+            variants={variantLayer ? 0 : tile.variants ? tile.variants.length + 1 : variantCount(tile.asset)}
+            onFamily={tile.variants && onFamily ? () => onFamily(tile.asset) : undefined}
+            label={variantLayer ? variantLabel(tile.asset) : undefined}
+          />
         ) : (
           <GroupCard key={tile.key} tile={tile} active={activeGroup === tile.key} onOpen={() => onGroup(tile.key)} />
         ),
@@ -445,10 +461,14 @@ export function FileTypeTags({ tags, className }: { tags: FileTag[]; className?:
   )
 }
 
-// AssetCard：一件素材。外层留给多选（R-393）的勾选框，不嵌进按钮里；有几个变体在右上角标出（变体在抽屉里列出，D-2114）。
-export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean; onOpen: () => void }) {
-  const nv = variantCount(a)
+// AssetCard：一件素材。外层留给多选（R-393）的勾选框，不嵌进按钮里，右上角归勾选框。
+// 封面左下角：「N 个变体」（变体拆开存了时点它进到变体层，R-380；多选时不接点击，点格子仍是选中）和「已被取代」。
+// label：变体层里写变体名。
+export function AssetCard({ a, active, onOpen, variants = 0, onFamily, label }: { a: AssetLite; active: boolean; onOpen: () => void; variants?: number; onFamily?: () => void; label?: string }) {
+  const nv = variants
   const tap = useTileClick([a.code], onOpen)
+  const selecting = !!useContext(SelectCtx)?.on
+  const chipCls = 'flex items-center gap-1 rounded-md bg-black/55 px-1.5 text-[11px] leading-[20px] text-white'
   return (
     <div className="group/tile relative min-w-0" data-asset-tile={a.code}>
       <button onClick={tap.onClick} className={cx(cardCls(active || tap.picked), 'w-full')} data-asset={a.code}>
@@ -457,21 +477,37 @@ export function AssetCard({ a, active, onOpen }: { a: AssetLite; active: boolean
           <AssetBadge status={a.status} code={a.code} className="shadow-xs" />
           <BaselineChip code={a.baseline} />
         </span>
-        {nv > 1 && (
-          <span className={cx('absolute top-2 flex items-center gap-1 rounded-md bg-black/50 px-1.5 text-[11px] leading-[20px] text-white', tap.pickable ? 'right-10' : 'right-2')} data-variants={nv}>
-            <Layers className="size-3" />
-            {t.asset.dir.variants(nv)}
+        {(nv > 1 || a.superseded_by) && (
+          <span className="pointer-events-none absolute top-[136px] left-2 flex gap-1">
+            {nv > 1 && (
+              // 能点进变体层时，下面的按钮盖在同一位置上；这里只占位显示
+              <span className={cx(chipCls, onFamily && !selecting && 'invisible')} data-variants={nv}>
+                <Layers className="size-3" />
+                {t.asset.dir.variants(nv)}
+              </span>
+            )}
+            {a.superseded_by && (
+              <span className={chipCls} title={t.asset.supersededBy(a.superseded_by.uid || a.superseded_by.code)} data-superseded={a.superseded_by.code}>
+                {t.asset.superseded}
+              </span>
+            )}
           </span>
         )}
         <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
           <div className="truncate text-sm font-medium text-fg" title={a.key}>
-            {assetName(a)}
+            {label ?? assetName(a)}
           </div>
           <div className="mt-0.5 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.uid ? subtypeOf(a) || a.category : a.category, t.asset.ver(a.version))}</div>
           <FileTypeTags tags={fileTagsOf(a)} className="mt-1" />
         </div>
       </button>
       <PickBox codes={[a.code]} name={assetName(a)} />
+      {nv > 1 && onFamily && !selecting && (
+        <button className={cx(chipCls, 'absolute top-[136px] left-2 transition hover:bg-black/75')} onClick={onFamily} title={t.asset.openVariants} data-variants={nv} data-open-variants="">
+          <Layers className="size-3" />
+          {t.asset.dir.variants(nv)}
+        </button>
+      )}
     </div>
   )
 }
@@ -804,7 +840,8 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     [t.asset.meta.pixels, fmtPixels(v?.pixels)],
     [t.asset.meta.source, v?.source],
     [t.asset.meta.license, v?.license],
-    [t.asset.meta.variants, variants.join(t.asset.listSep)],
+    // 变体拆开存了（R-380）时在下面的「变体」里逐个列出、可点开；还没拆开的旧数据照旧列 asset.json 里的名字
+    [t.asset.meta.variants, a.variants?.length || a.parent ? '' : variants.join(t.asset.listSep)],
     [t.asset.meta.submitter, v ? submitterName(v.submitter) : ''],
   ]
   // 项目特有字段（R-376）：asset.json 里纸鸢不认识的字段，原样展示
@@ -908,6 +945,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
           </div>
         ))}
       </dl>
+      <AssetLinks a={a} />
 
       {fields.length > 0 && (
         <section className="mt-4" data-fields>
@@ -938,6 +976,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
       <Attachments list={a.attachments} now={now} />
       {!ex && <ReviewHistory reviews={a.reviews} />}
       {pos && <p className="mt-4 text-xs text-fg-3 tabular">{pos}</p>}
+      {!pos && <DeleteAsset a={a} />}
     </>
   )
 
@@ -1068,10 +1107,13 @@ function CompareSlider({ kind, before, after }: { kind: 'part' | 'image'; before
   )
 }
 
-// ---------- 并排比较（同一用途的候选） ----------
+// ---------- 并排比较（同一用途的候选；一件素材的变体，R-380） ----------
 
 export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | null; all: AssetLite[]; onClose: () => void; onOpen: (code: string) => void }) {
-  const members = gkey ? groupMembers(all, gkey) : []
+  // ?cmp=v:<素材 id> 比的是这件素材的变体（各自的最新版），其余是同一用途的候选
+  const fam = !!gkey?.startsWith(VARIANT_CMP)
+  const members = !gkey ? [] : fam ? variantFamily(all, gkey.slice(VARIANT_CMP.length)) : groupMembers(all, gkey)
+  const labelOf = (m: AssetLite) => (fam ? variantLabel(m) : candidateLabel(m))
   const shots: ViewShot[] = members.map((m) => coverOf(m.kind, m.latest)).filter((f): f is FileLite => !!f)
   const first = members[0]
   // 候选都有 GLB 时可切到 3D 并排（R-392）：共用一个动画时钟，同步播放同一动作
@@ -1080,7 +1122,13 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
   const sync = useMemo<AnimSync>(() => createAnimSync(), [gkey])
   const in3d = by === 'model' && glbs.length >= 2
   return (
-    <Panel open={!!gkey} onClose={onClose} wide="approval" title={first ? `${t.asset.compareTitle}${t.common.sep}${first.group}` : t.asset.compareTitle} subtitle={first ? t.asset.compareSub(first.batch, members.length) : undefined}>
+    <Panel
+      open={!!gkey}
+      onClose={onClose}
+      wide="approval"
+      title={first ? `${t.asset.compareTitle}${t.common.sep}${fam ? assetName(first) : first.group}` : t.asset.compareTitle}
+      subtitle={first ? (fam ? t.asset.compareVariantsSub(members.length) : t.asset.compareSub(first.batch, members.length)) : undefined}
+    >
       {glbs.length >= 2 && (
         <div className="mb-3">
           <Segmented
@@ -1098,14 +1146,14 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
         <div data-compare-3d="">
           <div className={cx('grid gap-4', glbs.length === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3')}>
             {glbs.map((m, i) => (
-              <div key={m.id} className="min-w-0" data-candidate={candidateLabel(m)}>
+              <div key={m.id} className="min-w-0" data-candidate={labelOf(m)}>
                 <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]">
                   <Suspense fallback={null}>
-                    <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0" sync={sync} label={candidateLabel(m)} main={i === 0} />
+                    <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0" sync={sync} label={labelOf(m)} main={i === 0} />
                   </Suspense>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
-                  <b className="text-sm text-fg">{candidateLabel(m)}</b>
+                  <b className="text-sm text-fg">{labelOf(m)}</b>
                   <AssetBadge status={m.status} code={m.code} />
                   <span className="min-w-0 flex-1 truncate text-xs text-fg-3">{metaLine(m.code, t.asset.ver(m.version))}</span>
                   <Button size="sm" variant="ghost" onClick={() => onOpen(m.code)}>
@@ -1124,7 +1172,7 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
           {members.map((m) => {
             const f = coverOf(m.kind, m.latest)
             return (
-              <div key={m.id} className="min-w-0" data-candidate={candidateLabel(m)}>
+              <div key={m.id} className="min-w-0" data-candidate={labelOf(m)}>
                 <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-sunken">
                   {f ? (
                     <Lightbox f={f} group={shots}>
@@ -1137,7 +1185,7 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
                   )}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
-                  <b className="text-sm text-fg">{candidateLabel(m)}</b>
+                  <b className="text-sm text-fg">{labelOf(m)}</b>
                   <AssetBadge status={m.status} code={m.code} />
                   <span className="min-w-0 flex-1 truncate text-xs text-fg-3">{metaLine(m.code, t.asset.ver(m.version))}</span>
                   <Button size="sm" variant="ghost" onClick={() => onOpen(m.code)}>

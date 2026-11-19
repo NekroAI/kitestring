@@ -2,15 +2,18 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Archive, Boxes, ChevronRight } from 'lucide-react'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { dirCount, dirTree, filterAssets, inDir, ROOT_DIR, wallSections, wallTiles, type AssetDir, type AssetLite, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
+import { assetName, dirCount, dirTree, filterAssets, inDir, ROOT_DIR, variantFamily, wallSections, wallTiles, type AssetDir, type AssetLite, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
 
 // 资源库的目录层级（R-394，D-2093 方案 C）：桌面左侧窄目录只到「类别 → 细类」两层，顶部面包屑写到素材；
 // 手机上不放目录，面包屑下面一行可横滑的标签列出下一层。所有者页和分享页（只有分享范围内的素材）共用。
 // URL：?c=类别、?sub=细类、?old=1 是「按批次（旧）」一栏、?ob=其中的批次；和状态、批次、文件类型筛选一起生效。
+// 变体层（R-380）：?va=素材 id，图片墙列出这件素材和它的变体，各自的封面和状态；面包屑写到素材。
 
 export function dirFromParams(p: URLSearchParams): AssetDir {
   if (p.get('old') === '1') return { ...ROOT_DIR, old: true, batch: p.get('ob') ?? '' }
-  return { ...ROOT_DIR, cat: p.get('c') ?? '', sub: p.get('c') ? (p.get('sub') ?? '') : '' }
+  const d = { ...ROOT_DIR, cat: p.get('c') ?? '', sub: p.get('c') ? (p.get('sub') ?? '') : '' }
+  const va = p.get('va')
+  return va ? { ...d, asset: va } : d
 }
 
 // dirParams：进到某一层要改的 URL 参数（关掉抽屉和并排比较）。
@@ -19,6 +22,7 @@ export const dirParams = (d: AssetDir): Record<string, string | null> => ({
   sub: !d.old && d.cat && d.sub ? d.sub : null,
   old: d.old ? '1' : null,
   ob: d.old && d.batch ? d.batch : null,
+  va: !d.old && d.asset ? d.asset : null,
   asset: null,
   cmp: null,
 })
@@ -40,14 +44,17 @@ export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams)
     const counts: Record<string, number> = {}
     for (const a of here) counts[a.status] = (counts[a.status] ?? 0) + 1
     const shown = status ? here.filter((a) => a.status === status) : here
-    const sections: Section[] = wallSections(shown, dir).map((s) => ({ ...s, tiles: wallTiles(s.assets) }))
-    return { dir, tree, counts, sections, tiles: sections.flatMap((s) => s.tiles), filtered: !!(batch || status || ftype || dir.old || dir.cat) }
+    const sections: Section[] = wallSections(shown, dir).map((s) => ({ ...s, tiles: wallTiles(s.assets, !dir.asset) }))
+    // 变体层的素材本身（面包屑写它的名字）
+    const family = dir.asset ? variantFamily(scoped, dir.asset)[0] : undefined
+    return { dir, tree, counts, sections, here, family, tiles: sections.flatMap((s) => s.tiles), filtered: !!(batch || status || ftype || dir.old || dir.cat || dir.asset) }
   }, [all, project, batch, status, ftype, key]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 export type Browse = ReturnType<typeof useBrowse>
 
 // sectionLabel：图片墙分组的组名；全部素材里的旧批次写明「按批次（旧）」。
 export function sectionLabel(s: WallSection, d: AssetDir): string {
+  if (s.kind === 'variant') return t.asset.dir.variantsOf
   if (s.kind === 'sub') return s.key || t.asset.dir.noSub
   if (s.kind === 'batch' && !d.old) return `${t.asset.dir.old}${t.common.sep}${s.key}`
   return s.key
@@ -79,7 +86,7 @@ export function CountPills({ c, className }: { c: DirCount; className?: string }
   )
 }
 
-const same = (a: AssetDir, b: AssetDir) => a.old === b.old && a.cat === b.cat && a.sub === b.sub && a.batch === b.batch
+const same = (a: AssetDir, b: AssetDir) => a.old === b.old && a.cat === b.cat && a.sub === b.sub && a.batch === b.batch && (a.asset ?? '') === (b.asset ?? '')
 const onlyBlank = (n: DirNode) => n.children.length === 1 && !n.children[0].key
 
 // DirTree：桌面左侧的窄目录——全部素材、类别（选中或展开时列出细类）、「按批次（旧）」和它的批次。
@@ -158,8 +165,10 @@ function Crumbs({ b, go, openName }: { b: Browse; go: (d: AssetDir) => void; ope
     if (dir.batch) parts.push({ label: dir.batch, to: dir })
   } else if (dir.cat) {
     parts.push({ label: dir.cat, to: { ...ROOT_DIR, cat: dir.cat } })
-    if (dir.sub) parts.push({ label: dir.sub, to: dir })
+    if (dir.sub) parts.push({ label: dir.sub, to: { ...ROOT_DIR, cat: dir.cat, sub: dir.sub } })
   }
+  // 变体层（R-380）：面包屑写到素材，再打开某个变体时接着写变体名
+  if (dir.asset) parts.push({ label: b.family ? assetName(b.family) : dir.asset, to: dir })
   return (
     <div className="mb-3 flex min-w-0 items-center gap-3" data-dir-crumbs="">
       <ol className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[14px]">
@@ -189,7 +198,7 @@ function Crumbs({ b, go, openName }: { b: Browse; go: (d: AssetDir) => void; ope
           </li>
         )}
       </ol>
-      <CountPills c={dirCount(tree, dir)} />
+      <CountPills c={dirCount(tree, dir, b.here)} />
     </div>
   )
 }

@@ -27,7 +27,11 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
   "id": "core:weapon.carbine",          必填：命名空间:名字。命名空间用小写字母、数字和 _ . -；名字用字母、数字和 _ . - /
   "category": "weapon",                 必填：类别
   "file": "carbine.glb",                主文件（GLB 或图片），相对 asset.json；不写时取 variants 里默认变体的文件
-  "variants": {"default": {"files": {"model": "carbine.glb"}}},   可选：具名变体（先原样存下）
+  "variants": {"default": {"files": {"model": "carbine.glb"}}, "desert": {"file": "carbine_desert.glb", "previews": ["previews/carbine@desert__front.png"]}},
+                                        可选：具名变体。默认变体（default_variant，没写时是 default）就是素材本身；
+                                        其余变体各是一条素材「core:weapon.carbine@desert」，有自己的版本和审核，网页上可并排比较。
+                                        变体可写 file / files、previews、triangles、source、license，没写的沿用素材本身的；
+                                        预览图也可按文件名「<名字>@<变体名>__<机位>.png」归属。asset.json 里删掉的变体不会自动删除
   "default_variant": "default",
   "previews": [{"path": "previews/carbine__front.png", "view": "front"}],   可选：预览图（文件或目录，也可只写路径）
   "batches": ["G3", "G15"],             可选：批次，可多个
@@ -49,6 +53,8 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
   只差大小写的重名；不合命名、挂不上素材的预览图逐个列出，不推送。有错时整批不推，--skip-invalid 只推合格的，--dry-run 只校验；
   --category、--id（可带 * 按前缀）只推其中一部分。
 同一 id 内容有变的重推记为新版本（旧版本保留、回到待审）；内容没变不新增版本，只并入新的批次。
+旧条目换成新 id 后：ks asset supersede --map 对照表 把旧条目标为「已被某 id 取代」（旧条目保留，网页和 list / get 显示取代关系，
+  挂在批次 / 类别上的分享照常能看，并带上取代它的素材）。推错的条目只能在网页上删除。
 `
 
 // ConfigFile 是项目级的素材配置（类别表、预览图起点），从 asset.json 所在目录往上找到仓库根为止。
@@ -810,13 +816,22 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 				}
 			}
 		}
+		// 具名变体（R-380）：默认变体就是素材本身，其余变体各推一条（排在素材后面）
+		if len(it.Variants) > 0 && id != "" && protocol.CheckAssetID(id) == "" {
+			def, vs, errs := variantItems(it, x.src, e.Variants, e.DefaultVariant, []string{x.dir, base, root}, root)
+			it.Variant = def
+			c.Errors = append(c.Errors, errs...)
+			for _, v := range vs {
+				all = append(all, &built{it: v.it, check: v.check, one: x})
+			}
+		}
 		b.it = it
 	}
 
 	// 按文件名「<名字>__<机位>」或以名字命名的子目录归属的预览图（多件写法的 previews_dir、--previews）
 	byName := map[string][]*built{}
 	for _, b := range all {
-		if b.it.Key != "" && protocol.CheckAssetID(b.it.Key) == "" {
+		if b.it.Key != "" && (protocol.CheckAssetID(b.it.Key) == "" || b.it.Parent != "") { // 变体的名字是「<名字>@<变体名>」
 			for _, n := range assetNames(b.it.Key, b.it.Category) {
 				byName[n] = append(byName[n], b)
 			}
@@ -899,8 +914,12 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 		}
 	}
 
+	badMain := map[string]bool{}
 	for _, b := range all {
 		c, it := &b.check, &b.it
+		if it.Parent != "" && badMain[it.Parent] {
+			c.Errors = append(c.Errors, "所属的素材 "+it.Parent+" 有错，变体不能单独推送")
+		}
 		if it.Kind == protocol.AssetImage && len(it.Previews) > 0 {
 			c.Errors = append(c.Errors, "图片素材不挂预览图（预览图只给 GLB）")
 		}
@@ -913,6 +932,9 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 				c.Warnings = append(c.Warnings, "机位「"+pv.View+"」有不止一张图")
 			}
 			seen[strings.ToLower(pv.View)] = true
+		}
+		if len(c.Errors) > 0 && it.Parent == "" {
+			badMain[it.Key] = true
 		}
 		rep.Items = append(rep.Items, *c)
 		if len(c.Errors) == 0 {

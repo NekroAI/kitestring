@@ -38,7 +38,10 @@ const assetUsage = `用法：
   ks asset queue                 本机排队等补传、或被 Hub 拒收的推送
   ks asset review <A-x|素材 id>... | [--id 前缀*] [--batch 批次] [--category 类别] [--status 状态] [--kind part|image]  --approve | --rework --comment 意见  [--dry-run]
       批量通过 / 返工本项目的素材（只限用户在网页上授权了的会话，默认不开）：给素材或筛选条件，--dry-run 只预检件数。
-      意见按收件会话合并成一条送达。ks asset review --undo 撤销本会话最近一次批量审核。`
+      意见按收件会话合并成一条送达。ks asset review --undo 撤销本会话最近一次批量审核。
+  ks asset supersede <旧条目> <新素材> | --map <对照表|-> | --clear <旧条目>... [--dry-run] [--project 项目] [--json]
+      把旧条目标为「已被某件素材取代」（旧的按批次推送的条目迁到素材 id 后用）：旧条目保留、能看能审，网页和 list / get 显示取代关系；
+      挂在批次 / 类别上的分享照常能看，并带上取代它的素材。有一条出错时一条都不改。对照表写法见 ks asset help。推错的条目只能在网页上删除。`
 
 var assetStatusLabel = map[string]string{store.AssetWIP: "制作中", store.AssetPending: "待审", store.AssetApproved: "通过", store.AssetRework: "返工"}
 
@@ -48,7 +51,7 @@ func runAsset(args []string) error {
 	}
 	sub, args := args[0], args[1:]
 	if sub == "help" || sub == "-h" || sub == "--help" {
-		fmt.Print(assetUsage + "\n\n" + assetpush.FormatHelp)
+		fmt.Print(assetUsage + "\n\n" + assetpush.FormatHelp + "\n" + assetpush.SupersedeMapHelp + "\n")
 		return nil
 	}
 	var previews stringList
@@ -67,7 +70,7 @@ func runAsset(args []string) error {
 	branch := fs.String("branch", "", "push：分支（不写从 git 读）")
 	commit := fs.String("commit", "", "push：提交（不写从 git 读）")
 	asJSON := fs.Bool("json", false, "输出原始 JSON")
-	dryRun := fs.Bool("dry-run", false, "push：只在本地校验、报告，不推送")
+	dryRun := fs.Bool("dry-run", false, "push：只在本地校验、报告，不推送；supersede：只校验，不改")
 	skipInvalid := fs.Bool("skip-invalid", false, "push（asset.json）：有错的素材跳过，只推合格的")
 	categories := fs.String("categories", "", "push（asset.json）：类别允许表（JSON 数组或 {\"categories\": [...]}）；不写时用仓库里 "+assetpush.ConfigFile+" 的 categories")
 	id := fs.String("id", "", "list：素材 id（如 core:weapon.carbine）或编号 A-x，末尾带 * 按前缀查；push（asset.json）：只推这些")
@@ -78,16 +81,19 @@ func runAsset(args []string) error {
 	comment := fs.String("comment", "", "review：共用的意见")
 	kind := fs.String("kind", "", "review：只审这个类型（part / image）")
 	undo := fs.Bool("undo", false, "review：撤销本会话最近一次批量审核")
+	mapFile := fs.String("map", "", "supersede：取代对照表（文件路径，- 读标准输入）")
+	clear := fs.Bool("clear", false, "supersede：取消这些旧条目的取代标记")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	allowed := map[string][]string{
-		"push":    {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories", "baseline"},
-		"review":  {"id", "batch", "category", "status", "kind", "approve", "rework", "comment", "dry-run", "undo", "json"},
-		"list":    {"id", "batch", "category", "status", "project", "json", "limit", "offset", "all", "full"},
-		"summary": {"project", "json"},
-		"get":     {"project", "json", "history"},
-		"queue":   {"json"},
+		"push":      {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories", "baseline"},
+		"review":    {"id", "batch", "category", "status", "kind", "approve", "rework", "comment", "dry-run", "undo", "json"},
+		"list":      {"id", "batch", "category", "status", "project", "json", "limit", "offset", "all", "full"},
+		"summary":   {"project", "json"},
+		"get":       {"project", "json", "history"},
+		"queue":     {"json"},
+		"supersede": {"map", "clear", "project", "json", "dry-run"},
 	}
 	ok, known := allowed[sub]
 	if !known {
@@ -98,6 +104,8 @@ func runAsset(args []string) error {
 	}
 	ctx := context.Background()
 	switch sub {
+	case "supersede":
+		return runSupersede(ctx, fs.Args(), *mapFile, *clear, *dryRun, *asJSON, *project, *session)
 	case "push":
 		if *baseline && *status == store.AssetWIP {
 			return errors.New("--baseline（申请标为已在用）不能和 --status wip 一起用")
@@ -192,6 +200,9 @@ func runAsset(args []string) error {
 			return printJSON(d)
 		}
 		fmt.Println(assetLine(d.Asset))
+		for _, s := range detailLinks(d) {
+			fmt.Println("  " + s)
+		}
 		if v := d.Latest; v != nil {
 			for _, s := range assetFacts(*v) {
 				fmt.Println("  " + s)
@@ -391,5 +402,5 @@ func assetLine(a store.Asset) string {
 	if v := a.Latest; v != nil && v.Triangles > 0 {
 		s += fmt.Sprintf(" · %d 面", v.Triangles)
 	}
-	return s
+	return s + linkNote(a)
 }

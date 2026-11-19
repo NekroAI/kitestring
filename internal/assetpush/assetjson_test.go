@@ -186,8 +186,9 @@ func TestBuildByIDPerAssetDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Items) != 3 || rep.Bad() != 1 || len(p.Items) != 2 || !strings.HasSuffix(rep.Config, ConfigFile) {
-		t.Fatalf("三件里音效不支持：\n%s", ReportText(rep))
+	// R-380：carbine 的变体 v2 单独一条（默认变体 g3 就是素材本身）
+	if len(rep.Items) != 4 || rep.Bad() != 1 || len(p.Items) != 3 || !strings.HasSuffix(rep.Config, ConfigFile) {
+		t.Fatalf("三件里音效不支持，carbine 另有变体 v2：\n%s", ReportText(rep))
 	}
 	by := map[string]protocol.AssetItem{}
 	for _, it := range p.Items {
@@ -204,7 +205,10 @@ func TestBuildByIDPerAssetDir(t *testing.T) {
 	if !strings.Contains(string(a.Meta), `"title":"弹药箱"`) || !strings.Contains(string(a.Meta), `"max_surfaces":2`) || strings.Contains(string(a.Meta), "variants") {
 		t.Fatalf("meta：%s", a.Meta)
 	}
-	if c := by["core:weapon.carbine"]; c.File.Name != "carbine.glb" || len(c.Previews) != 1 || c.Previews[0].View != "side" || len(c.Variants) == 0 {
+	if v := by["core:weapon.carbine@v2"]; v.File == nil || v.File.Name != "carbine_v2.glb" || v.Parent != "core:weapon.carbine" {
+		t.Fatalf("变体 v2：%+v", v)
+	}
+	if c := by["core:weapon.carbine"]; c.File.Name != "carbine.glb" || len(c.Previews) != 1 || c.Previews[0].View != "side" || len(c.Variants) == 0 || c.Variant != "g3" {
 		t.Fatalf("默认变体 g3 的文件、按所在目录挂上的预览图：%+v", c)
 	}
 	text := ReportText(rep)
@@ -217,7 +221,7 @@ func TestBuildByIDPerAssetDir(t *testing.T) {
 	if _, rep, _ := BuildByID(IDOptions{Paths: []string{dir}, OnlyCat: "prop"}); len(rep.Items) != 1 || rep.Filtered != 2 || rep.Bad() != 0 {
 		t.Fatalf("--category：%+v", rep)
 	}
-	if p, rep, _ := BuildByID(IDOptions{Paths: []string{dir}, OnlyID: "core:weapon.*"}); len(p.Items) != 1 || rep.Filtered != 2 {
+	if p, rep, _ := BuildByID(IDOptions{Paths: []string{dir}, OnlyID: "core:weapon.*"}); len(p.Items) != 2 || rep.Filtered != 2 {
 		t.Fatalf("--id 前缀：%+v", rep)
 	}
 }
