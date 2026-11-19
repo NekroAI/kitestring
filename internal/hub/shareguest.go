@@ -99,6 +99,11 @@ func (h *Hub) guestLink(ctx context.Context, token string) (store.Share, store.S
 	if err != nil {
 		return store.Share{}, l, err
 	}
+	return h.linkShare(ctx, l)
+}
+
+// linkShare 取链接所属的分享并检查链接、分享都还可用（撤回、到期时返回给访客看的错误）。
+func (h *Hub) linkShare(ctx context.Context, l store.ShareLink) (store.Share, store.ShareLink, error) {
 	x, err := h.store.GetShare(ctx, l.ShareID)
 	if err != nil {
 		return x, l, huma.Error404NotFound(shareLinkInvalid)
@@ -741,6 +746,11 @@ func (h *Hub) handleGuestFile(w http.ResponseWriter, r *http.Request) {
 	if g == nil {
 		return
 	}
+	h.guestServeFile(w, r, g)
+}
+
+// guestServeFile 按访客的分享范围返回附件 r.PathValue("id")；范围外的一律 404（加速地址的签名链接也走这里，R-369）。
+func (h *Hub) guestServeFile(w http.ResponseWriter, r *http.Request, g *guestCtx) {
 	owners, err := h.store.FileOwners(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

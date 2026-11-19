@@ -113,11 +113,16 @@ func (h *Hub) Handler(web http.Handler) http.Handler {
 	root.Handle("POST /api/agent/prototypes", h.requireDevice(http.HandlerFunc(h.handleProtoUpload)))
 	// 资源库（R-351）：素材文件（GLB、图片），按 sha256 去重
 	root.Handle("POST /api/agent/assets/files", h.requireDevice(http.HandlerFunc(h.handleAssetFile)))
+	// 加速地址（R-369）：探测、签名链接不认登录（签名就是凭据）；派生密钥要登录或通过访客校验
+	root.Handle("GET /api/accel/ping", http.HandlerFunc(h.handleAccelPing))
+	root.Handle("GET /api/accel/f/{id}", http.HandlerFunc(h.handleAccelFile))
+	root.Handle("GET /api/accel/key", h.requireWeb(http.HandlerFunc(h.handleAccelKey)))
+	root.Handle("GET /api/share/{token}/accel", http.HandlerFunc(h.handleGuestAccelKey))
 	root.Handle("/p/{token}/{path...}", http.HandlerFunc(h.handleProto))
 	root.Handle("/p/g/{link}/{proto}/{sig}/{path...}", http.HandlerFunc(h.handleGuestProto))
 	root.Handle("/api/", h.requireWeb(webMux))
 	if web != nil {
-		root.Handle("/", h.shareMeta(web))
+		root.Handle("/", h.accelPage(h.shareMeta(web)))
 	}
 	return withGzip(withClient(withToldHandler(h.withRedact(root)))) // 已知凭据值在 /api/ 响应出口统一隐去（R-295）
 }
@@ -508,6 +513,7 @@ func (h *Hub) toReq(ctx context.Context, f ReqFields) (store.Requirement, error)
 // SettingsView 是返回给 Web 的配置，隐藏 API key。
 type SettingsView struct {
 	PublicURL     string             `json:"public_url"`
+	AccelURL      string             `json:"accel_url" doc:"加速地址（R-369）：同一个 Hub 的另一条入口，空表示不用"`
 	AI            AIFeatures         `json:"ai"`
 	SummaryBase   string             `json:"summary_base_url"`
 	SummaryModel  string             `json:"summary_model"`
@@ -526,6 +532,7 @@ type SettingsView struct {
 type settingsIn struct {
 	Body struct {
 		PublicURL     string             `json:"public_url"`
+		AccelURL      *string            `json:"accel_url,omitempty" doc:"加速地址（R-369），空字符串表示不用；不传表示不修改"`
 		AI            AIFeatures         `json:"ai"`
 		SummaryBase   string             `json:"summary_base_url"`
 		SummaryModel  string             `json:"summary_model"`
@@ -552,7 +559,7 @@ func (h *Hub) settingsView(ctx context.Context) (*settingsOut, error) {
 	}
 	img, vid, file := s.Upload.bytes()
 	return &settingsOut{Body: SettingsView{
-		PublicURL: s.PublicURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
+		PublicURL: s.PublicURL, AccelURL: s.AccelURL, AI: s.AI, SummaryBase: s.Summary.BaseURL, SummaryModel: s.Summary.Model,
 		SummaryKeySet: s.Summary.APIKey != "", NotifyDefault: s.NotifyDefault, NotifyEvents: notify.AllEvents,
 		ImageMB: int(img >> 20), VideoMB: int(vid >> 20), FileMB: int(file >> 20), PrototypeMB: int(s.Upload.protoBytes() >> 20), GLBMB: int(s.Upload.glbBytes() >> 20), DevRequestMin: h.devRequestMinutes(ctx, 0), CompactTokens: s.compactTokens(),
 	}}, nil
@@ -1167,6 +1174,13 @@ func (h *Hub) registerWeb(api huma.API) {
 			}
 			b := in.Body
 			cur.PublicURL = strings.TrimSuffix(strings.TrimSpace(b.PublicURL), "/")
+			if b.AccelURL != nil {
+				a, err := normalizeAccelURL(*b.AccelURL)
+				if err != nil {
+					return nil, huma.Error422UnprocessableEntity(err.Error())
+				}
+				cur.AccelURL = a
+			}
 			cur.AI = b.AI
 			cur.Summary.BaseURL = strings.TrimSpace(b.SummaryBase)
 			cur.Summary.Model = strings.TrimSpace(b.SummaryModel)

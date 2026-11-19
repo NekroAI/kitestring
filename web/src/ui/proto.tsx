@@ -7,6 +7,7 @@ import { fmtSize } from '../lib/files'
 import { defaultWidth, frameLayout, pct, PROTO_WIDTHS, type ProtoWidth } from '../lib/proto'
 import { absTime, cx } from '../lib/util'
 import { ThumbImg } from './attach'
+import { accel } from '../lib/accel'
 
 // 可交互原型（R-197）：证据、决策里的原型卡片，点开全屏查看。
 // 原型在无来源的沙箱框里运行（iframe sandbox 不给 allow-same-origin，服务端另带 CSP sandbox），读不到纸鸢的接口和登录态。
@@ -211,7 +212,7 @@ function ViewerBody({ p, onClose }: { p: Prototype; onClose: () => void }) {
           <ExternalLink className="size-3.5" />
           {t.proto.newTab}
         </a>
-        <a href={cur.download_url} download className={btn}>
+        <a href={accel.asset(cur.download_url)} download className={btn}>
           <Download className="size-3.5" />
           <span className="max-sm:hidden">{t.proto.download}</span>
         </a>
@@ -233,7 +234,7 @@ function ViewerBody({ p, onClose }: { p: Prototype; onClose: () => void }) {
           >
             <iframe
               key={cur.id}
-              src={cur.url}
+              src={accel.asset(cur.url)}
               title={p.title}
               sandbox="allow-scripts allow-forms"
               referrerPolicy="no-referrer"

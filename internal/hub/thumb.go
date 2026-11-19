@@ -10,12 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
+
+	"github.com/HugoSmits86/nativewebp"
 )
 
 // 缩略图（R-246）：GET /api/files/{id}?w=480 返回宽 480 / 960 / 1920 的缩小版，首次请求时生成并落盘到附件目录的 thumbs/ 下，
 // 原图不动、历史图片自然能用上。宽度只认固定档位（取不小于请求值的最近一档），避免被随意刷出一堆缓存。
-// 纯 Go 没有 WebP 编码器（golang.org/x/image 只能解码），也不引入 cgo：不透明的图出 JPEG，带透明的出 PNG。
+// 不透明的图出 JPEG，带透明的出 PNG；浏览器认 WebP 时（Accept 带 image/webp）另编一份无损 WebP（纯 Go 的 nativewebp，不引入 cgo），
+// 比 JPEG / PNG 那份（或原图）小才用它，否则记下「不用 WebP」（R-369）。
 // 只处理 PNG / JPEG；GIF（可能是动图）、WebP（标准库解不了）、解码失败、转码后不比原图小，一律回落原图（原图不宽于档位时不放大，按原宽度转码）。
 
 var thumbWidths = []int{480, 960, 1920}
@@ -165,4 +169,82 @@ func downscale(src image.Image, w int) *image.NRGBA {
 		}
 	}
 	return dst
+}
+
+// acceptsWebP 判断浏览器是否接受 WebP。
+func acceptsWebP(accept string) bool { return strings.Contains(accept, "image/webp") }
+
+// thumbWebP 返回 WebP 版缩略图；比 fallback（JPEG / PNG 缩略图或原图，大小 fallbackSize）不小时 ok 为 false。
+func (h *Hub) thumbWebP(id, mime string, w int, fallbackSize int64) (path string, ok bool) {
+	if mime != "image/png" && mime != "image/jpeg" {
+		return "", false
+	}
+	base := filepath.Join(h.thumbDir(), fmt.Sprintf("%s-%d", id, w))
+	if _, err := os.Stat(base + ".webp"); err == nil {
+		return base + ".webp", true
+	}
+	if _, err := os.Stat(base + ".nowebp"); err == nil {
+		return "", false
+	}
+	thumbMu.Lock()
+	mu := thumbBusy[base+".webp"]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		thumbBusy[base+".webp"] = mu
+	}
+	thumbMu.Unlock()
+	mu.Lock()
+	defer func() {
+		mu.Unlock()
+		thumbMu.Lock()
+		delete(thumbBusy, base+".webp")
+		thumbMu.Unlock()
+	}()
+	if _, err := os.Stat(base + ".webp"); err == nil {
+		return base + ".webp", true
+	}
+	thumbSem <- struct{}{}
+	defer func() { <-thumbSem }()
+	data, err := os.ReadFile(h.readPath(id))
+	if err != nil {
+		return "", false
+	}
+	out := makeWebP(data, w)
+	_ = os.Mkdir(h.thumbDir(), 0o700)
+	if out == nil || int64(len(out)) >= fallbackSize {
+		_ = os.WriteFile(base+".nowebp", nil, 0o600)
+		return "", false
+	}
+	tmp, err := os.CreateTemp(h.thumbDir(), "tmp-*")
+	if err != nil {
+		return "", false
+	}
+	_, werr := tmp.Write(out)
+	tmp.Close()
+	if werr != nil || os.Rename(tmp.Name(), base+".webp") != nil {
+		os.Remove(tmp.Name())
+		return "", false
+	}
+	return base + ".webp", true
+}
+
+// makeWebP 把 PNG / JPEG 缩到宽 w（不放大）并编成无损 WebP；失败返回 nil。
+func makeWebP(data []byte, w int) []byte {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width < 1 || cfg.Width*cfg.Height > 100<<20 {
+		return nil
+	}
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+	var img image.Image = src
+	if w < cfg.Width {
+		img = downscale(src, w)
+	}
+	var buf bytes.Buffer
+	if nativewebp.Encode(&buf, img, nil) != nil {
+		return nil
+	}
+	return buf.Bytes()
 }

@@ -10,6 +10,7 @@ import { setSettle, UndoDock } from './app/verdict'
 import { waitIdle } from './lib/settle'
 import { initTheme } from './lib/theme'
 import { registerSW } from './lib/push'
+import { accelReady, installAccel } from './lib/accel'
 import { ConfirmProvider } from './ui/overlay'
 import { TipProvider } from './ui/base'
 import { installGestureLog, installWheelGuard } from './ui/gesture'
@@ -18,6 +19,8 @@ import './index.css'
 
 initTheme()
 registerSW()
+// 加速地址（R-369）：加载失败逐个回主地址
+installAccel()
 // 妙控板双指横滑归纸鸢，不触发浏览器前进 / 后退（R-73）
 installWheelGuard()
 // 地址带 ?gesturelog 时记录手势事件序列，供排查真机手感（不带参数时什么都不做）
@@ -93,8 +96,8 @@ setUnauthorizedHandler(() => {
   if (cur?.logged_in !== false) queryClient.setQueryData(qk.auth, { initialized: true, version: cur?.version ?? '', logged_in: false })
 })
 
-if (guestMode) renderGuest()
-else createRoot(document.getElementById('root')!).render(
+function renderOwner() {
+  createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
@@ -111,4 +114,8 @@ else createRoot(document.getElementById('root')!).render(
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,
-)
+  )
+}
+
+// 经加速地址加载时先等签名密钥（最多 2 秒），首屏的图直接从加速地址取
+void accelReady().then(() => (guestMode ? renderGuest() : renderOwner()))

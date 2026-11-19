@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-
 // 开发时把 /api（含 SSE）代理到本机 Hub。
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -11,6 +10,13 @@ export default defineConfig({
         target: 'http://127.0.0.1:17310',
         changeOrigin: false,
       },
+    },
+  },
+  // 加速地址（R-369）：脚本、样式里引用的其它文件（按需加载的块、字体、图片）用相对地址，跟着入口脚本从同一个地址加载；
+  // index.html 里的仍是 /assets/ 绝对地址，由 Hub 改写。
+  experimental: {
+    renderBuiltUrl(_file, { hostType }) {
+      return hostType === 'html' ? undefined : { relative: true }
     },
   },
   build: {

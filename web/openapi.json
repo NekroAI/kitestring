@@ -12233,6 +12233,10 @@
       "SettingsInBody": {
         "additionalProperties": false,
         "properties": {
+          "accel_url": {
+            "description": "加速地址（R-369），空字符串表示不用；不传表示不修改",
+            "type": "string"
+          },
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
@@ -12314,6 +12318,10 @@
       "SettingsView": {
         "additionalProperties": false,
         "properties": {
+          "accel_url": {
+            "description": "加速地址（R-369）：同一个 Hub 的另一条入口，空表示不用",
+            "type": "string"
+          },
           "ai": {
             "$ref": "#/components/schemas/AIFeatures"
           },
@@ -12379,6 +12387,7 @@
         },
         "required": [
           "public_url",
+          "accel_url",
           "ai",
           "summary_base_url",
           "summary_model",

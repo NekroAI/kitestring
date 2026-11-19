@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AmbientLight, Box3, DirectionalLight, HemisphereLight, Mesh, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer, type Material, type Object3D } from 'three'
+import { accel } from '../lib/accel'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Loader2 } from 'lucide-react'
@@ -81,8 +82,9 @@ export default function Viewer3D({ url, className }: Props) {
 
     let model: Object3D | null = null
     let alive = true
-    new GLTFLoader().load(
-      url,
+    // 加速地址上取不到时（R-369）换回主地址再取一次
+    const load = (u: string, retry: boolean) => new GLTFLoader().load(
+      u,
       (g) => {
         if (!alive) {
           disposeTree(g.scene)
@@ -125,8 +127,13 @@ export default function Viewer3D({ url, className }: Props) {
         setState('ok')
       },
       undefined,
-      () => alive && setState('fail'),
+      () => {
+        const main = retry ? accel.failed(u) : null
+        if (alive && main) load(main, false)
+        else if (alive) setState('fail')
+      },
     )
+    load(url, true)
 
     return () => {
       alive = false

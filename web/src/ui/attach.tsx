@@ -13,6 +13,7 @@ import { pickTier, tierRank, type ThumbTier } from '../lib/thumb'
 import { Button, Tip } from './base'
 import { G, tracker, useStrip } from './gesture'
 import { useSettings } from '../api/queries'
+import { accelFetch, accelFileUrl, setAccelScope } from '../lib/accel'
 import { fmtSize, isImage, isMedia, isText, isVideo, kindOf, limitFor, previewText, PREVIEW_BYTES, typeLabel, viewable, type FileKind } from '../lib/files'
 
 // 附件：任何可以写字的地方都可以附任意文件（粘贴、拖拽、选择文件，R-221）。
@@ -21,14 +22,16 @@ import { fmtSize, isImage, isMedia, isText, isVideo, kindOf, limitFor, previewTe
 // title / boxes：证据截图的一句话标题与改动框（R-183），只有证据的附图有
 export type FileRef = { id: string; name: string; mime: string; size: number; title?: string | null; boxes?: Box[] | null }
 
-// 附件地址的前缀：访客页（R-281）换成 /api/share/<token>/files/，只取分享里的附件。
-let fileBase = '/api/files/'
-export const setFileBase = (base: string) => {
-  fileBase = base
+// 附件地址的前缀：访客页（R-281）换成 /api/share/<token>/files/，只取分享里的附件（guestToken 用来向访客接口取加速地址的签名密钥）。
+// 设了加速地址且可用时（R-369），地址换成加速地址上的签名链接；加载失败时由 lib/accel 逐个换回这里的主地址。
+export const setFileBase = (base: string, guestToken?: string) => {
+  setAccelScope(base, guestToken)
 }
-export const fileUrl = (id: string) => `${fileBase}${encodeURIComponent(id)}`
-// 缩小版（R-246）：w 取 480 / 960 / 1920，Hub 首次请求时生成；生成不了会回落原图。点开大图时仍用 fileUrl 加载原图。
-export const thumbUrl = (id: string, w: ThumbTier = 480) => `${fileUrl(id)}?w=${w}`
+export const fileUrl = (id: string) => accelFileUrl(id)
+// 缩小版（R-246）：w 取 480 / 960 / 1920，Hub 首次请求时生成；生成不了会回落原图。
+export const thumbUrl = (id: string, w: ThumbTier = 480) => accelFileUrl(id, { w })
+// 看大图默认用 1920 档（R-369 省流量），放大查看时再换原图
+export const viewUrl = (id: string, full = false) => (full ? fileUrl(id) : thumbUrl(id, 1920))
 
 // ThumbImg：按图实际显示宽度（× 设备像素比）自动选档的图，别处一律用它显示附件图片，不要写死档位。
 // 先量好宽度再给 src，只升不降（窗口变宽会换更清楚的档，变窄不换）。
@@ -49,7 +52,7 @@ export function ThumbImg({ id, ...rest }: { id: string } & Omit<React.ImgHTMLAtt
   }, [id])
   return <img ref={ref} src={tier === null ? undefined : thumbUrl(id, tier)} {...rest} />
 }
-export const downloadUrl = (id: string) => `${fileUrl(id)}?download=1`
+export const downloadUrl = (id: string) => accelFileUrl(id, { download: true })
 // NoDownloadContext：为真时不显示下载按钮（R-365：资源库分享关了下载时的访客页），看图、播放照常。
 export const NoDownloadContext = createContext(false)
 export { isVideo }
@@ -319,7 +322,7 @@ function TextPane({ f, room }: { f: FileRef; room: { w: number; h: number } }) {
     const ctl = new AbortController()
     ;(async () => {
       try {
-        const res = await fetch(fileUrl(f.id), { credentials: 'same-origin', signal: ctl.signal })
+        const res = await accelFetch(fileUrl(f.id), { credentials: 'same-origin', signal: ctl.signal })
         if (!res.ok || !res.body) throw new Error(String(res.status))
         // 只读前一段：大日志不整个下载
         const reader = res.body.getReader()
@@ -461,7 +464,7 @@ export function Lightbox({ f, group, focus: focusAt, children }: { f: ViewShot; 
   // 预取前后两张，切换时不闪白
   useEffect(() => {
     if (!open || n < 2) return
-    for (const x of [at(k + 1), at(k - 1), at(k + 2), at(k - 2)]) if (isImage(x.mime)) new Image().src = fileUrl(x.id)
+    for (const x of [at(k + 1), at(k - 1), at(k + 2), at(k - 2)]) if (isImage(x.mime)) new Image().src = viewUrl(x.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, k])
 
@@ -692,6 +695,9 @@ function Viewer({
   const [live, setLive] = useState(false) // 手势 / 动画进行中：用 transform 跟手；停下后换成真实宽高
   const liveTimer = useRef(0)
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
+  // 默认看 1920 档，放大过一次就换原图（R-369）
+  const [full, setFull] = useState(false)
+  if (v.s > 1 && !full) setFull(true)
   const [room, setRoom] = useState<{ w: number; h: number }>({ w: 0, h: 0 }) // 放图的地方（去掉边距和右栏）
   const cur = useRef(v)
   cur.current = v
@@ -906,7 +912,7 @@ function Viewer({
               <div className="pointer-events-auto relative shrink-0 rounded-lg shadow-pop" style={style}>
                 <img
                   key={src.id}
-                  src={fileUrl(src.id)}
+                  src={viewUrl(src.id, full)}
                   alt={shotTitle(f)}
                   draggable={false}
                   onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}

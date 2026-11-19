@@ -163,6 +163,17 @@ func (h *Hub) handleDownload(w http.ResponseWriter, r *http.Request) {
 		if tp, tt, ok := h.thumbFile(ref.ID, ref.Mime, tw); ok {
 			path, ctype = tp, tt
 		}
+		// 浏览器认 WebP 时换更小的 WebP 版（R-369）；同一地址按 Accept 给不同内容，缓存要按 Accept 区分
+		if ref.Mime == "image/png" || ref.Mime == "image/jpeg" {
+			w.Header().Add("Vary", "Accept")
+			if acceptsWebP(r.Header.Get("Accept")) {
+				if st, err := os.Stat(path); err == nil {
+					if wp, ok := h.thumbWebP(ref.ID, ref.Mime, tw, st.Size()); ok {
+						path, ctype = wp, "image/webp"
+					}
+				}
+			}
+		}
 	}
 	f, err := os.Open(path)
 	if err != nil {

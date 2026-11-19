@@ -2,11 +2,14 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 )
 
 //go:embed all:dist
@@ -27,6 +30,12 @@ func Handler() http.Handler {
 				if st != nil && !st.IsDir() {
 					if strings.HasPrefix(p, "assets/") {
 						w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+						// 加速地址（R-369）：页面从别的域名加载这些文件（模块脚本、字体都按 CORS 取），静态文件本来公开
+						w.Header().Set("Access-Control-Allow-Origin", "*")
+						w.Header().Set("Timing-Allow-Origin", "*")
+						if serveBrotli(w, r, sub, p) {
+							return
+						}
 					}
 					files.ServeHTTP(w, r)
 					return
@@ -42,4 +51,37 @@ func Handler() http.Handler {
 		}
 		_, _ = w.Write(index)
 	})
+}
+
+// serveBrotli：构建时给 assets/ 下的文本文件预压缩了 .br（vite.config.ts），浏览器接受 br 时直接返回它（R-369）。
+// 预压缩省掉运行时开销，也不用给 Go 引入 brotli 依赖；Range 请求、找不到 .br 时交回原处理。
+func serveBrotli(w http.ResponseWriter, r *http.Request, sub fs.FS, p string) bool {
+	if r.Header.Get("Range") != "" || !acceptsBrotli(r.Header.Get("Accept-Encoding")) {
+		return false
+	}
+	b, err := fs.ReadFile(sub, p+".br")
+	if err != nil {
+		return false
+	}
+	ct := mime.TypeByExtension(path.Ext(p))
+	if ct == "" {
+		return false
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Content-Encoding", "br")
+	w.Header().Add("Vary", "Accept-Encoding")
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(b))
+	return true
+}
+
+func acceptsBrotli(ae string) bool {
+	for _, part := range strings.Split(ae, ",") {
+		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(strings.TrimSpace(name), "br") {
+			continue
+		}
+		q := strings.TrimPrefix(strings.ReplaceAll(strings.ToLower(params), " ", ""), "q=")
+		return q == "" || strings.Trim(q, "0.") != ""
+	}
+	return false
 }

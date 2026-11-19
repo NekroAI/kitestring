@@ -6872,6 +6872,8 @@ export interface components {
             body: string;
         };
         SettingsInBody: {
+            /** @description 加速地址（R-369），空字符串表示不用；不传表示不修改 */
+            accel_url?: string;
             ai: components["schemas"]["AIFeatures"];
             /**
              * Format: int64
@@ -6916,6 +6918,8 @@ export interface components {
             upload_video_mb?: number;
         };
         SettingsView: {
+            /** @description 加速地址（R-369）：同一个 Hub 的另一条入口，空表示不用 */
+            accel_url: string;
             ai: components["schemas"]["AIFeatures"];
             /**
              * Format: int64

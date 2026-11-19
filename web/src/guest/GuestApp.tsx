@@ -42,7 +42,7 @@ function Guest() {
   const token = useParams().token ?? ''
   const meta = useGuestMeta(token)
   useEffect(() => {
-    setFileBase(`/api/share/${encodeURIComponent(token)}/files/`)
+    setFileBase(`/api/share/${encodeURIComponent(token)}/files/`, token)
     // 访客页不给搜索引擎收录
     const m = document.createElement('meta')
     m.name = 'robots'

@@ -1,4 +1,5 @@
 import { api, unwrap } from '../api/client'
+import { accelConfiguredBase } from './accel'
 
 // 系统推送（R-49）：在这台设备上订阅 / 退订浏览器推送。iPhone / iPad 上必须先“添加到主屏幕”。
 
@@ -7,8 +8,12 @@ export type PushState = 'unsupported' | 'needs-install' | 'denied' | 'off' | 'on
 const standalone = () => matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true
 const ios = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
+// 设了加速地址时（R-369）把它写进 Service Worker 的地址：Service Worker 据此缓存两边的静态文件、给加速地址上的请求加超时和回退。
+// 没设时注册地址与改动前相同，Service Worker 不拦截任何请求。
 export function registerSW() {
-  if ('serviceWorker' in navigator && window.isSecureContext) void navigator.serviceWorker.register('/sw.js').catch(() => {})
+  const accel = accelConfiguredBase()
+  const url = accel ? `/sw.js?accel=${encodeURIComponent(accel)}` : '/sw.js'
+  if ('serviceWorker' in navigator && window.isSecureContext) void navigator.serviceWorker.register(url).catch(() => {})
 }
 
 async function reg() {

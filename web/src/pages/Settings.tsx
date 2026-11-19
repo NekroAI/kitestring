@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { api, errMsg, unwrap, type Schemas, type Device, type NotifyConfig, type SettingsView, type Workspace } from '../api/client'
 import { qk, useDevices, useProjects, useCacheHolds, usePush, useSettings, useTokenPrices, useShareComments } from '../api/queries'
 import { disablePush, enablePush, pushState, type PushState } from '../lib/push'
+import { accelConfiguredBase, useAccel } from '../lib/accel'
 import { passkeySupported, registerPasskey } from '../lib/passkey'
 import { t } from '../i18n'
 import { absTime, cx, relTime, useNow } from '../lib/util'
@@ -78,6 +79,7 @@ function useSaveSettings() {
         api.PUT('/api/settings', {
           body: {
             public_url: patch.public_url ?? s.public_url,
+            accel_url: patch.accel_url,
             ai: patch.ai ?? s.ai,
             summary_base_url: patch.summary_base_url ?? s.summary_base_url,
             summary_model: patch.summary_model ?? s.summary_model,
@@ -1215,6 +1217,35 @@ function CompactLimit() {
   )
 }
 
+// 加速地址（R-369）：同一个 Hub 的另一条入口，可用时大文件从它加载；下面一行显示本机这次是否经它加载
+function AccelUrl() {
+  const q = useSettings()
+  const save = useSaveSettings()
+  const [url, setUrl] = useState('')
+  const [busy, wrap] = useBusy()
+  const state = useAccel()
+  const saved = q.data?.accel_url ?? ''
+  useEffect(() => {
+    if (q.data) setUrl(q.data.accel_url)
+  }, [q.data])
+  const T = t.settings.account.accel
+  // 本机状态只在这次页面加载时的地址与已保存的一致时显示；改过地址要刷新后才生效
+  const changed = saved !== accelConfiguredBase()
+  return (
+    <Field className="mt-4" label={<Label hint={T.tip}>{T.label}</Label>}>
+      <div className="flex gap-2">
+        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://accel.example.com:8443" className="font-mono" />
+        <Button loading={busy} disabled={url.trim() === saved} onClick={() => wrap(() => save({ accel_url: url.trim() }, T.saved))}>
+          {t.common.save}
+        </Button>
+      </div>
+      {saved && (
+        <p className="mt-1.5 text-xs text-fg-3">{changed ? T.reload : state === 'on' ? T.on : T.down}</p>
+      )}
+    </Field>
+  )
+}
+
 function Account({ version }: { version: string }) {
   const q = useSettings()
   const save = useSaveSettings()
@@ -1247,6 +1278,7 @@ function Account({ version }: { version: string }) {
             </Button>
           </div>
         </Field>
+        <AccelUrl />
       </Card>
       <Storage />
       <UploadLimits />

@@ -32,7 +32,9 @@ const (
 
 // Settings 是保存在数据库里的 Hub 运行配置。
 type Settings struct {
-	PublicURL     string             `json:"public_url"`
+	PublicURL string `json:"public_url"`
+	// AccelURL：加速地址（R-369），同一个 Hub 的另一条入口；空表示不用
+	AccelURL      string             `json:"accel_url,omitempty"`
 	SummaryMode   string             `json:"summary_mode,omitempty"` // 旧版字段，仅用于迁移
 	Summary       summary.Config     `json:"summary"`                // Hub 侧模型（OpenAI 兼容接口）
 	AI            AIFeatures         `json:"ai"`
@@ -114,6 +116,7 @@ type Hub struct {
 	deploy      string                              // 正在运行的 ks 的构建提交（version.Commit；测试可改）
 	lanes       *laneState                          // 泳道时间线（R-205）
 	watchMerges map[string]*watchMerge              // 需求|会话 → 60 秒内可并入的只告知订阅提醒（R-249 P4，只在内存里）
+	accelKey    []byte                              // 加速地址签名链接的主密钥（R-369），首次用到时生成并存进设置
 	shareKey    []byte                              // 访客输对密码后的 cookie 签名密钥（R-281），首次用到时生成并存进设置
 	vault       *vault                              // 凭据主密钥与已知值脱敏器（R-295）
 	slowReq     atomic.Int64                        // 慢请求阈值（纳秒，R-374）；0 = 不记
