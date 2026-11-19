@@ -12,6 +12,7 @@ import { cx } from '../lib/util'
 import { pickTier, tierRank, type ThumbTier } from '../lib/thumb'
 import { Button, Tip } from './base'
 import { G, tracker, useStrip } from './gesture'
+import { wheelImage, WheelKind } from '../lib/wheelKind'
 import { useSettings } from '../api/queries'
 import { accelFetch, accelFileUrl, setAccelScope } from '../lib/accel'
 import { fmtSize, isImage, isMedia, isText, isVideo, kindOf, limitFor, previewText, PREVIEW_BYTES, typeLabel, viewable, type FileKind } from '../lib/files'
@@ -788,15 +789,22 @@ function Viewer({
   useEffect(() => {
     const el = box.current
     if (!el || still) return
-    // 触控板：捏合是带 ctrlKey 的滚轮事件；普通滚轮（鼠标滚轮、触控板双指）上下是缩放，左右交给胶片带跟手翻页（R-69、R-121）。
+    // 捏合（带 ctrlKey 的滚轮事件）缩放。鼠标滚轮照旧：上下缩放，左右交给胶片带跟手翻页（R-69、R-121）。
+    // 触控板双指滑动（R-378）：放大后跟手平移；没放大时左右翻页，上下不再缩放。鼠标和触控板的判别见 lib/wheelKind.ts。
+    const kinds = new WheelKind()
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const p = rel(e.clientX, e.clientY)
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1 // 按行 / 按页滚动的换成像素
+      const mode = e.deltaMode // 先读 deltaMode（Firefox 只在这样时才按行报鼠标滚轮）
+      const unit = mode === 1 ? 16 : mode === 2 ? 400 : 1 // 按行 / 按页滚动的换成像素
       const dx = e.deltaX * unit
       const dy = e.deltaY * unit
-      if (e.ctrlKey) return track(zoomAt(cur.current.s * Math.exp(-dy * 0.01), p.x, p.y))
+      const kind = kinds.feed({ dx, dy, mode, ctrl: e.ctrlKey, shift: e.shiftKey, wdy: (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY, t: e.timeStamp })
+      const act = wheelImage(kind, { zoomed: cur.current.s > 1 })
+      if (act === 'zoom') return track(zoomAt(cur.current.s * Math.exp(-dy * 0.01), p.x, p.y))
+      if (act === 'pan') return track({ ...cur.current, x: cur.current.x - dx, y: cur.current.y - dy })
       if (navRef.current?.wheel(dx, dy, e.timeStamp)) return
+      if (act === 'nav') return
       if (Math.abs(dy) >= Math.abs(dx)) track(zoomAt(cur.current.s * Math.exp(-dy * 0.0025), p.x, p.y))
       else if (cur.current.s > 1) track({ ...cur.current, x: cur.current.x - dx }) // 单张图没法翻页：放大后左右滑平移
     }

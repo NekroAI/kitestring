@@ -1003,14 +1003,14 @@ function VersionRow({ a, x, latest, active, now, onPick }: { a: Pick<AssetLite, 
   )
 }
 
-// 版本对比：左边旧版、右边新版，拖动分隔线（或方向键）调整；点图进看图，空格切改前 / 改后。
+// 版本对比：左边旧版、右边新版，拖动分隔线（或方向键）调整；点图进看图，空格切改前 / 改后。触屏上竖着滑照常滚动页面（R-378）。
 function CompareSlider({ kind, before, after }: { kind: 'part' | 'image'; before: Ver; after: Ver }) {
   const [pos, setPos] = useState(50)
   const b = coverOf(kind, before)!
   const a = coverOf(kind, after)!
   const shot: ViewShot = { ...a, before: b }
   return (
-    <div className="absolute inset-0 touch-none select-none" data-no-drag="">
+    <div className="absolute inset-0 touch-pan-y select-none" data-no-drag="">
       <img src={fileUrl(b.id)} alt="" className="absolute inset-0 h-full w-full object-contain" draggable={false} />
       <img src={fileUrl(a.id)} alt="" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 0 0 ${pos}%)` }} draggable={false} />
       <div className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-white shadow-[0_0_0_1px_rgb(0_0_0/0.25)]" style={{ left: `${pos}%` }}>

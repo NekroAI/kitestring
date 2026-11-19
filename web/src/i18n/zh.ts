@@ -302,8 +302,9 @@ export const zh = {
     autoThumbTip: '没有预览图，按模型自动生成的缩略图',
     loading3d: '模型加载中',
     fail3d: '模型加载失败',
-    hint3d: '拖动旋转，滚轮缩放',
-    hint3dTouch: '拖动旋转，双指缩放',
+    hint3d: '拖动或双指滑动旋转，捏合或滚轮缩放',
+    hint3dNudge: '点一下模型后，双指滑动可旋转',
+    hint3dTouch: '单指旋转，双指缩放或平移，双击复位',
     // 动作动画（R-392）：GLB 自带的动作，播放控件在 3D 查看下方；对比时两边同步播放同一动作
     anim: {
       label: '动作',
