@@ -50,9 +50,9 @@ func TestShelvedReopenNeedsUser(t *testing.T) {
 	}
 
 	r1 := shelved("搁置的需求一")
-	// 会话改成除草稿以外的状态都被拒，报错写明申请方式，状态不变
+	// 会话改成任何别的状态（含草稿）都被拒，报错写明申请方式，状态不变
 	for _, sess := range []string{"claude:dev", "claude:pm"} {
-		for _, to := range []string{"in_progress", "ready", "blocked", "review"} {
+		for _, to := range []string{"in_progress", "ready", "blocked", "review", "draft"} {
 			err := setStatus(r1.Code, to, sess)
 			if err == nil || !strings.Contains(err.Error(), "ks req request "+r1.Code+" ready --reason") {
 				t.Fatalf("%s 把已搁置改成 %s 应被拒并提示申请：%v", sess, to, err)
