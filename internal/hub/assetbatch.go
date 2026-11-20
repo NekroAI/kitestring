@@ -158,7 +158,7 @@ type AssetBatchFilter struct {
 	Batch    string `json:"batch,omitempty"`
 	Category string `json:"category,omitempty"`
 	Status   string `json:"status,omitempty" enum:"wip,pending,approved,rework,"`
-	Kind     string `json:"kind,omitempty" enum:"part,image,audio,"`
+	Kind     string `json:"kind,omitempty" enum:"part,image,audio,font,"`
 	ID       string `json:"id,omitempty" doc:"素材 id 或编号 A-x；末尾带 * 按前缀查"`
 }
 

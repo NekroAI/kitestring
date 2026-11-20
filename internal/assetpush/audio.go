@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/NekroAI/kitestring/internal/assetfmt"
 	"github.com/NekroAI/kitestring/internal/audiometa"
 	"github.com/NekroAI/kitestring/internal/protocol"
 )
@@ -30,15 +31,17 @@ func fileKind(file string) string {
 	switch {
 	case ext == ".glb":
 		return protocol.AssetPart
-	case imageExt[ext]:
+	case imageExt[ext], assetfmt.SVGExts[ext]:
 		return protocol.AssetImage
 	case audiometa.Exts[ext]:
 		return protocol.AssetAudio
+	case assetfmt.FontExts[ext]:
+		return protocol.AssetFont
 	}
 	return ""
 }
 
-const unsupportedType = "（现在只收 GLB、图片和音效 OGG / WAV）"
+const unsupportedType = "（现在只收 GLB、图片（含 SVG）、音效 OGG / WAV 和字体 TTF / OTF / WOFF2）"
 
 // audioInfo 读音效文件并合并 asset.json 的 audio 声明，返回音频信息、错误和提示。
 func audioInfo(file string, raw json.RawMessage, ffmpeg bool) (*protocol.AssetAudioInfo, []string, []string) {

@@ -268,7 +268,7 @@ export const zh = {
     allFileTypes: '全部文件类型',
     fileType: '文件类型',
     // 类型标签的种类（R-397）：标签写成「种类 · 文件类型」，如「模型 · GLB」
-    media: { model: '模型', image: '图片', audio: '音频', video: '视频', other: '其他' } as Record<string, string>,
+    media: { model: '模型', image: '图片', audio: '音频', video: '视频', font: '字体', other: '其他' } as Record<string, string>,
     // 宽屏分栏（R-396）：右侧详情栏没选素材时
     detail: '素材详情',
     splitEmpty: '点选素材查看详情',
@@ -295,7 +295,7 @@ export const zh = {
       variants: (n: number) => `${n} 个变体`,
       variantsOf: '变体',
     },
-    view: { image: '大图', model: '3D', audio: '试听', compare: '对比', compare3d: '3D 对比' } as Record<string, string>,
+    view: { image: '大图', model: '3D', audio: '试听', font: '字形', compare: '对比', compare3d: '3D 对比' } as Record<string, string>,
     compareBy: { image: '图片', model: '3D' },
     noPreview: '暂无预览图',
     // 只有 GLB、没有预览图的零件（R-383）：页面按模型自动生成缩略图，标明是自动生成的
@@ -361,6 +361,21 @@ export const zh = {
       failed: '无法播放这个文件',
       variants: '变体试听',
     },
+    // 字体素材（R-387）：图片墙和详情用这个字体本身显示示例文字；示例文字可改，按几档字号排开
+    font: {
+      cover: 'Aa 永',
+      sample: '示例文字',
+      sampleText: '纸鸢 Kitestring 天地玄黄 宇宙洪荒 0123456789',
+      sampleHint: '输入要预览的文字',
+      reset: '恢复默认',
+      glyphs: '字符',
+      glyphSet: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ,.;:?()[]{}+-*/=@#%&',
+      px: (n: number) => `${n} px`,
+      loading: '字体加载中',
+      failed: '字体加载失败',
+    },
+    // SVG（R-387）：当图片显示，铺在棋盘格上看得出透明处；底色可切换，白色图标在深色底上看得清
+    svg: { bg: '底色', checker: '棋盘格', light: '浅色', dark: '深色' },
     // 按素材 id 推送（R-376）：批次可多个；asset.json 里纸鸢不认识的字段原样列在「项目字段」
     previewCount: (n: number) => `${n} 张`,
     listSep: '、',

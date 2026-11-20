@@ -269,7 +269,7 @@ function GuestAssetBody({ c, top }: { c: ShareComment; top: ReactNode }) {
   const draft = useDraft(`guest:${c.id}`, init, (x) => x.as !== '' || x.mode !== init.mode || x.text !== init.text || x.addend.trim() !== '')
   const v = draft.value
   const rewritten = !upload && v.mode === 'rewrite' && v.text.trim() !== '' && v.text.trim() !== c.text.trim()
-  const fits = upload && (c.asset_kind === 'part' ? c.file?.mime === 'model/gltf-binary' : (c.file?.mime ?? '').startsWith('image/'))
+  const fits = upload && uploadFits(c.asset_kind, c.file?.mime ?? '')
   const [err, setErr] = useState('')
   const label = inbox.onAsset(c.target_code ?? '', c.asset_key ?? '', c.asset_version ?? 0)
 
@@ -463,4 +463,17 @@ function GuestAssetBody({ c, top }: { c: ShareComment; top: ReactNode }) {
       </footer>
     </div>
   )
+}
+
+// uploadFits：访客上传的文件能不能收下为这条素材的新版本——类型要和素材一致（零件 GLB、图片含 SVG、音效 OGG / WAV、字体 TTF / OTF / WOFF2，R-381、R-387）。
+function uploadFits(kind: string | undefined, mime: string) {
+  switch (kind) {
+    case 'part':
+      return mime === 'model/gltf-binary'
+    case 'audio':
+      return mime === 'audio/ogg' || mime === 'audio/wav'
+    case 'font':
+      return mime === 'font/ttf' || mime === 'font/otf' || mime === 'font/woff2'
+  }
+  return /^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(mime)
 }

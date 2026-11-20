@@ -54,7 +54,7 @@ type Asset struct {
 	Key           string         `json:"key" doc:"manifest 的 id；独立的图是文件名去扩展名；按素材 id 推送的等于 uid"`
 	UID           string         `json:"uid,omitempty" doc:"R-376：素材 id（带命名空间，如 core:weapon.carbine）；旧的按批次推送的条目为空"`
 	Batches       []string       `json:"batches" doc:"素材带过的全部批次（多值）；旧条目是 [batch]"`
-	Kind          string         `json:"kind" enum:"part,image,audio" doc:"part GLB 零件 / image 独立的图 / audio 音效（R-381）"`
+	Kind          string         `json:"kind" enum:"part,image,audio,font" doc:"part GLB 零件 / image 独立的图（含 SVG） / audio 音效（R-381） / font 字体（R-387）"`
 	Category      string         `json:"category"`
 	Group         string         `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版），并排比较用"`
 	Status        string         `json:"status" enum:"wip,pending,approved,rework"`

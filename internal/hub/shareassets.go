@@ -20,6 +20,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/assetfmt"
 	"github.com/NekroAI/kitestring/internal/audiometa"
 	"github.com/NekroAI/kitestring/internal/notify"
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -44,7 +45,7 @@ const (
 	guestPushTextRune = 60
 )
 
-// guestUploadMime 认访客能上传的文件：GLB、图片、音效（OGG / WAV）、录屏（MP4 / WebM / MOV）、FBX 动画；别的返回空。
+// guestUploadMime 认访客能上传的文件：GLB、图片（含 SVG）、音效（OGG / WAV）、字体（TTF / OTF / WOFF2）、录屏（MP4 / WebM / MOV）、FBX 动画；别的返回空。
 func guestUploadMime(head []byte) string {
 	if m := assetFileMime(head); m != "" {
 		return m
@@ -320,7 +321,7 @@ func (h *Hub) handleGuestUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := maxGLB
 	switch {
-	case protocol.IsImage(typ):
+	case isAssetImage(typ):
 		limit = maxImage
 	case protocol.IsVideo(typ):
 		limit = maxVideo
@@ -340,6 +341,10 @@ func (h *Hub) handleGuestUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if size > limit {
 		writeErr(w, http.StatusRequestEntityTooLarge, shareUploadTooBig(maxGLB>>20, maxImage>>20, maxVideo>>20))
+		return
+	}
+	if err := checkAssetFile(tmp.Name(), typ); err != nil { // 字体、SVG 存下后完整校验（R-387）
+		writeErr(w, http.StatusBadRequest, shareUploadType)
 		return
 	}
 	name := filepath.Base(hdr.Filename)
@@ -414,8 +419,8 @@ func (h *Hub) placeAssetComment(ctx context.Context, c store.ShareComment, as, t
 		return c, apiErr(err)
 	}
 	if upload && as == store.PlacedVersion {
-		ok := (d.Kind == protocol.AssetPart && c.File.Mime == glbMime) || (d.Kind == protocol.AssetImage && protocol.IsImage(c.File.Mime)) ||
-			(d.Kind == protocol.AssetAudio && audiometa.IsAudioMime(c.File.Mime))
+		ok := (d.Kind == protocol.AssetPart && c.File.Mime == glbMime) || (d.Kind == protocol.AssetImage && isAssetImage(c.File.Mime)) ||
+			(d.Kind == protocol.AssetAudio && audiometa.IsAudioMime(c.File.Mime)) || (d.Kind == protocol.AssetFont && assetfmt.IsFontMime(c.File.Mime))
 		if !ok {
 			return c, huma.Error400BadRequest(shareUploadKindMismatch(d.Kind))
 		}

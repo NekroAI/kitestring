@@ -86,7 +86,7 @@ type ShareComment struct {
 	HandledAt        *time.Time `json:"handled_at,omitempty"`
 	// 资源库（R-365）：target_kind = asset 时
 	AssetKey     string   `json:"asset_key,omitempty" doc:"素材的 key"`
-	AssetKind    string   `json:"asset_kind,omitempty" enum:"part,image,audio," doc:"part 零件 / image 独立的图 / audio 音效"`
+	AssetKind    string   `json:"asset_kind,omitempty" enum:"part,image,audio,font," doc:"part 零件 / image 独立的图 / audio 音效 / font 字体"`
 	AssetBatch   string   `json:"asset_batch,omitempty"`
 	AssetVersion int      `json:"asset_version,omitempty" doc:"访客看的是第几版"`
 	AssetLatest  int      `json:"asset_latest,omitempty" doc:"素材现在的最新版本"`

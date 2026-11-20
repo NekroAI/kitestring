@@ -1773,11 +1773,12 @@
             "type": "string"
           },
           "kind": {
-            "description": "part GLB 零件 / image 独立的图 / audio 音效（R-381）",
+            "description": "part GLB 零件 / image 独立的图（含 SVG） / audio 音效（R-381） / font 字体（R-387）",
             "enum": [
               "part",
               "image",
-              "audio"
+              "audio",
+              "font"
             ],
             "type": "string"
           },
@@ -2031,6 +2032,7 @@
               "part",
               "image",
               "audio",
+              "font",
               ""
             ],
             "type": "string"
@@ -2335,11 +2337,12 @@
             "type": "string"
           },
           "kind": {
-            "description": "part GLB 零件 / image 独立的图 / audio 音效（R-381）",
+            "description": "part GLB 零件 / image 独立的图（含 SVG） / audio 音效（R-381） / font 字体（R-387）",
             "enum": [
               "part",
               "image",
-              "audio"
+              "audio",
+              "font"
             ],
             "type": "string"
           },
@@ -2642,11 +2645,12 @@
             "type": "string"
           },
           "kind": {
-            "description": "part = GLB 零件，image = 独立的图，audio = 音效（R-381）",
+            "description": "part = GLB 零件，image = 独立的图（含 SVG，R-387），audio = 音效（R-381），font = 字体（TTF / OTF / WOFF2，R-387）",
             "enum": [
               "part",
               "image",
-              "audio"
+              "audio",
+              "font"
             ],
             "type": "string"
           },
@@ -13449,11 +13453,12 @@
             "type": "string"
           },
           "asset_kind": {
-            "description": "part 零件 / image 独立的图 / audio 音效",
+            "description": "part 零件 / image 独立的图 / audio 音效 / font 字体",
             "enum": [
               "part",
               "image",
               "audio",
+              "font",
               ""
             ],
             "type": "string"
@@ -13605,11 +13610,12 @@
             "type": "string"
           },
           "asset_kind": {
-            "description": "part 零件 / image 独立的图 / audio 音效",
+            "description": "part 零件 / image 独立的图 / audio 音效 / font 字体",
             "enum": [
               "part",
               "image",
               "audio",
+              "font",
               ""
             ],
             "type": "string"
@@ -16354,6 +16360,7 @@
                 "part",
                 "image",
                 "audio",
+                "font",
                 ""
               ],
               "type": "string"
@@ -16496,6 +16503,7 @@
                 "part",
                 "image",
                 "audio",
+                "font",
                 ""
               ],
               "type": "string"
@@ -19418,6 +19426,7 @@
                 "part",
                 "image",
                 "audio",
+                "font",
                 ""
               ],
               "type": "string"

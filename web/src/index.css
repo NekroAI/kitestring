@@ -45,7 +45,7 @@
   --idle: #6f6a5c;
   --idle-soft: #ece6d9;
   --lit: rgb(47 93 140 / 0.16);
-  /* 素材的文件类型种类（R-397）：模型 / 图片 / 音频 / 视频，和状态色（石绿、藤黄、朱砂）错开；标签上照写文字，颜色只帮着扫读 */
+  /* 素材的文件类型种类（R-397）：模型 / 图片 / 音频 / 视频 / 字体，和状态色（石绿、藤黄、朱砂）错开；标签上照写文字，颜色只帮着扫读 */
   --kind-model: #5a3f9e;
   --kind-model-soft: #ebe4f5;
   --kind-image: #1f6a80;
@@ -54,6 +54,8 @@
   --kind-audio-soft: #f5e2ec;
   --kind-video: #9c4a14;
   --kind-video-soft: #f6e5d8;
+  --kind-font: #2b4c8c;
+  --kind-font-soft: #e1e8f5;
   color-scheme: light;
 }
 
@@ -100,6 +102,8 @@
   --kind-audio-soft: #40293c;
   --kind-video: #f0a36c;
   --kind-video-soft: #42302a;
+  --kind-font: #a3bdf2;
+  --kind-font-soft: #262f47;
   color-scheme: dark;
 }
 
@@ -139,6 +143,8 @@
   --color-kind-audio-soft: var(--kind-audio-soft);
   --color-kind-video: var(--kind-video);
   --color-kind-video-soft: var(--kind-video-soft);
+  --color-kind-font: var(--kind-font);
+  --color-kind-font-soft: var(--kind-font-soft);
   --shadow-xs: var(--shadow-sm);
   --shadow-card: var(--shadow);
   --shadow-pop: var(--shadow-lg);

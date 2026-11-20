@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, fontOf, isSvg, FONT_SIZES, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -279,7 +279,8 @@ test('类型标签（R-397）：按文件类型分种类，写成「种类 · �
   assert.equal(mediaKindOf('OGG'), 'audio')
   assert.equal(mediaKindOf('MP4'), 'video')
   assert.equal(mediaKindOf('XYZ', 'image/x-foo'), 'image')
-  assert.equal(mediaKindOf('TTF', 'font/ttf'), 'other')
+  assert.equal(mediaKindOf('TTF', 'font/ttf'), 'font') // R-387 起字体单列一类
+  assert.equal(mediaKindOf('ZIP', 'application/zip'), 'other')
   assert.equal(mediaKindOf(''), 'other')
   const f = (name: string, mime: string) => ({ id: name, name, mime, size: 1 })
   const lat = (file: ReturnType<typeof f> | null, previews: ReturnType<typeof f>[] = []) => ({ latest: { id: 'v', version: 1, batch: '', branch: '', commit: '', file, previews, created_at: '' } })
@@ -364,4 +365,27 @@ test('音效：试听视图、封面、波形', () => {
   assert.equal(isDeclared({}, 'loudness_lufs'), false)
   assert.equal(fileTagsOf({ latest: v() })[0].kind, 'audio')
   assert.deepEqual(metaRows({ audio: { loudness_lufs: -18 }, lod: 2 }), [['lod', '2']])
+})
+
+test('字体与 SVG（R-387）：字体先看字形、标签「字体 · TTF」；SVG 是图，当封面用 <img> 显示', () => {
+  const f = (name: string, mime: string) => ({ id: name, name, mime, size: 1 })
+  const v = (file: ReturnType<typeof f> | null, previews: ReturnType<typeof f>[] = []) => ({ id: 'v', version: 1, batch: '', branch: '', commit: '', file, previews, created_at: '' })
+  const ttf = v(f('mono.ttf', 'font/ttf'))
+  assert.equal(defaultView('font', ttf), 'font')
+  assert.equal(fontOf('font', ttf)?.name, 'mono.ttf')
+  assert.equal(fontOf('image', ttf), null)
+  assert.equal(coverOf('font', ttf), null)
+  assert.deepEqual(detailViews({ glb: false, pair: false, pair3d: false, font: true }), ['font'])
+  assert.deepEqual(detailViews({ glb: false, pair: false, pair3d: false, font: true, image: true }), ['font', 'image'])
+  assert.deepEqual(fileTagsOf({ latest: ttf }), [{ kind: 'font', type: 'TTF' }])
+  assert.equal(mediaKindOf('WOFF2'), 'font')
+  assert.equal(mediaKindOf('', 'font/otf'), 'font')
+  const svg = v(f('icon.svg', 'image/svg+xml'))
+  assert.equal(isSvg(svg.file), true)
+  assert.equal(isSvg(f('a.png', 'image/png')), false)
+  assert.equal(coverOf('image', svg)?.name, 'icon.svg')
+  assert.equal(wallCover('image', svg)?.auto, false)
+  assert.equal(defaultView('image', svg), 'image')
+  assert.deepEqual(fileTagsOf({ latest: svg }), [{ kind: 'image', type: 'SVG' }])
+  assert.ok(FONT_SIZES.length >= 3 && FONT_SIZES[0] < FONT_SIZES[FONT_SIZES.length - 1])
 })

@@ -27,25 +27,12 @@ type variantSpec struct {
 	Audio     json.RawMessage   `json:"audio"`
 }
 
-// mainFile 是变体的主文件：file，或 files 里按 model、image、texture、audio、sound 的顺序取，再没有取第一个。
+// mainFile 是变体的主文件：file，或 files 里按 pickMainFile 的顺序取。
 func (v variantSpec) mainFile() string {
 	if f := strings.TrimSpace(v.File); f != "" {
 		return f
 	}
-	for _, role := range []string{"model", "image", "texture", "audio", "sound"} {
-		if f := v.Files[role]; f != "" {
-			return f
-		}
-	}
-	keys := make([]string, 0, len(v.Files))
-	for k := range v.Files {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	if len(keys) > 0 {
-		return v.Files[keys[0]]
-	}
-	return ""
+	return pickMainFile(v.Files)
 }
 
 // parseVariants 读 variants：对象写法 {"名字": {...}}（按名字排序）或数组写法 [{"name": ...}]（保持顺序）。
@@ -168,7 +155,13 @@ func variantItems(main protocol.AssetItem, src string, raw json.RawMessage, def 
 			it.File = &protocol.AssetFile{Path: file, Name: filepath.Base(file)}
 			switch it.Kind = fileKind(file); it.Kind {
 			case protocol.AssetImage:
-				it.Pixels = imageSize(file)
+				if px, svg := checkFontSVG(file, c); svg {
+					it.Pixels = px
+				} else {
+					it.Pixels = imageSize(file)
+				}
+			case protocol.AssetFont:
+				checkFontSVG(file, c)
 			case protocol.AssetAudio:
 				var errs, warns []string
 				it.Audio, errs, warns = audioInfo(file, v.Audio, ffmpeg)

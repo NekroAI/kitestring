@@ -17,6 +17,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/NekroAI/kitestring/internal/assetfmt"
 	"github.com/NekroAI/kitestring/internal/audiometa"
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/store"
@@ -34,6 +35,12 @@ import (
 
 const glbMime = "model/gltf-binary"
 
+// svgMime / svgCSP：SVG 素材（R-387）的类型和返回它时带的内容安全策略（sandbox 不含 allow-scripts，script-src 落到 default-src 'none'）。
+const (
+	svgMime = assetfmt.MimeSVG
+	svgCSP  = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+)
+
 func (u UploadLimits) glbBytes() int64 {
 	v := u.GLBMB
 	if v <= 0 {
@@ -42,7 +49,8 @@ func (u UploadLimits) glbBytes() int64 {
 	return int64(min(v, maxUploadMB)) << 20
 }
 
-// assetFileMime 认资源库收的文件：GLB（文件头 glTF）、图片或音效（OGG / WAV，R-381）；别的返回空。
+// assetFileMime 认资源库收的文件：GLB（文件头 glTF）、图片、音效（OGG / WAV，R-381）、字体（TTF / OTF / WOFF2）或 SVG（R-387）；别的返回空。
+// 字体和 SVG 这里只按开头认，存下后再用 checkAssetFile 完整校验。
 func assetFileMime(head []byte) string {
 	if len(head) >= 4 && bytes.Equal(head[:4], []byte("glTF")) {
 		return glbMime
@@ -50,11 +58,33 @@ func assetFileMime(head []byte) string {
 	if m := audiometa.Mime(head); m != "" {
 		return m
 	}
+	if m := assetfmt.FontMime(head); m != "" {
+		return m
+	}
+	if assetfmt.LooksSVG(head) {
+		return assetfmt.MimeSVG
+	}
 	if m := sniff(head); protocol.IsImage(m) {
 		return m
 	}
 	return ""
 }
+
+// checkAssetFile 完整校验存下的字体 / SVG（R-387）：字体查表目录，SVG 查是根元素为 <svg> 的 XML；别的类型不查。
+func checkAssetFile(path, mime string) error {
+	switch {
+	case assetfmt.IsFontMime(mime):
+		_, err := assetfmt.Font(path)
+		return err
+	case mime == assetfmt.MimeSVG:
+		_, err := assetfmt.SVGFile(path)
+		return err
+	}
+	return nil
+}
+
+// isAssetImage：独立的图的主文件——能直接显示的图片，或 SVG（R-387，网页上只用 <img> 加载）。
+func isAssetImage(mime string) bool { return protocol.IsImage(mime) || mime == assetfmt.MimeSVG }
 
 // storageGate 检查附件目录（R-353），不可用时返回 503 和原因。
 func (h *Hub) storageGate() error {
@@ -88,6 +118,8 @@ func (h *Hub) handleAssetFile(w http.ResponseWriter, r *http.Request) {
 			return fmt.Sprintf("GLB 模型不能超过 %d MB（可在设置里调整）", maxGLB>>20)
 		case audiometa.IsAudioMime(mime):
 			return fmt.Sprintf("音效不能超过 %d MB（按设置里的其他文件上限）", maxFile>>20)
+		case assetfmt.IsFontMime(mime):
+			return fmt.Sprintf("字体不能超过 %d MB（按设置里的其他文件上限）", maxFile>>20)
 		}
 		return fmt.Sprintf("图片不能超过 %d MB（可在设置里调整）", maxImage>>20)
 	}
@@ -108,14 +140,14 @@ func (h *Hub) handleAssetFile(w http.ResponseWriter, r *http.Request) {
 	head = head[:n]
 	typ := assetFileMime(head)
 	if typ == "" {
-		writeErr(w, http.StatusBadRequest, "资源库只收 GLB 模型、图片（PNG、JPEG、WebP、GIF）和音效（OGG、WAV）："+filepath.Base(hdr.Filename))
+		writeErr(w, http.StatusBadRequest, "资源库只收 GLB 模型、图片（PNG、JPEG、WebP、GIF、SVG）、音效（OGG、WAV）和字体（TTF、OTF、WOFF2）："+filepath.Base(hdr.Filename))
 		return
 	}
 	limit := maxImage
 	switch {
 	case typ == glbMime:
 		limit = maxGLB
-	case audiometa.IsAudioMime(typ):
+	case audiometa.IsAudioMime(typ), assetfmt.IsFontMime(typ):
 		limit = maxFile
 	}
 	tmp, err := os.CreateTemp(h.filesDir, "upload-*")
@@ -133,6 +165,10 @@ func (h *Hub) handleAssetFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if size > limit {
 		writeErr(w, http.StatusRequestEntityTooLarge, filepath.Base(hdr.Filename)+"："+tooBig(typ))
+		return
+	}
+	if err := checkAssetFile(tmp.Name(), typ); err != nil {
+		writeErr(w, http.StatusBadRequest, filepath.Base(hdr.Filename)+" 校验不过："+err.Error())
 		return
 	}
 	sha := hex.EncodeToString(sum.Sum(nil))
@@ -191,7 +227,7 @@ type assetListIn struct {
 	Batch      string `query:"batch"`
 	Category   string `query:"category"`
 	Status     string `query:"status" enum:"wip,pending,approved,rework,"`
-	Kind       string `query:"kind" enum:"part,image,audio,"`
+	Kind       string `query:"kind" enum:"part,image,audio,font,"`
 	ID         string `query:"id" doc:"R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）"`
 	SessionKey string `query:"session_key" doc:"Agent 用：不写 project 时列会话所在项目"`
 	CwdRemote  string `query:"cwd_remote" doc:"Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）"`
@@ -462,7 +498,7 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 				return res, fmt.Errorf("零件 %s 的主文件要是 GLB：%s", it.Key, f.Name)
 			}
 		case protocol.AssetImage:
-			if !protocol.IsImage(f.Mime) {
+			if !isAssetImage(f.Mime) {
 				return res, fmt.Errorf("图 %s 的主文件要是图片：%s", it.Key, f.Name)
 			}
 			if len(it.Previews) > 0 {
@@ -473,8 +509,12 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 				return res, fmt.Errorf("音效 %s 的主文件要是 OGG 或 WAV：%s", it.Key, f.Name)
 			}
 			it.Audio = h.assetAudio(it.Audio, f.ID)
+		case protocol.AssetFont:
+			if !assetfmt.IsFontMime(f.Mime) {
+				return res, fmt.Errorf("字体 %s 的主文件要是 TTF、OTF 或 WOFF2：%s", it.Key, f.Name)
+			}
 		default:
-			return res, fmt.Errorf("素材 %s 的类型只能是 part（GLB 零件）、image（独立的图）或 audio（音效）", it.Key)
+			return res, fmt.Errorf("素材 %s 的类型只能是 part（GLB 零件）、image（独立的图）、audio（音效）或 font（字体）", it.Key)
 		}
 		if it.Kind != protocol.AssetAudio {
 			it.Audio = nil

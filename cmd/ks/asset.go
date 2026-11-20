@@ -36,7 +36,7 @@ const assetUsage = `用法：
       --json 默认只给精简字段（id、类别、状态、版本、批次、预览图个数），--full 才给完整内容；不要整表拉 --json，先用 summary 和筛选。
   ks asset get <素材 id|A-x> [--history] [--json]   素材的最新版本和最近 3 条审核意见；--history 才给历史版本和全部审核记录
   ks asset queue                 本机排队等补传、或被 Hub 拒收的推送
-  ks asset review <A-x|素材 id>... | [--id 前缀*] [--batch 批次] [--category 类别] [--status 状态] [--kind part|image|audio]  --approve | --rework --comment 意见  [--dry-run]
+  ks asset review <A-x|素材 id>... | [--id 前缀*] [--batch 批次] [--category 类别] [--status 状态] [--kind part|image|audio|font]  --approve | --rework --comment 意见  [--dry-run]
       批量通过 / 返工本项目的素材（只限用户在网页上授权了的会话，默认不开）：给素材或筛选条件，--dry-run 只预检件数。
       意见按收件会话合并成一条送达。ks asset review --undo 撤销本会话最近一次批量审核。
   ks asset supersede <旧条目> <新素材> | --map <对照表|-> | --clear <旧条目>... [--dry-run] [--project 项目] [--json]
@@ -79,7 +79,7 @@ func runAsset(args []string) error {
 	approve := fs.Bool("approve", false, "review：批量通过")
 	rework := fs.Bool("rework", false, "review：批量返工（要写 --comment）")
 	comment := fs.String("comment", "", "review：共用的意见")
-	kind := fs.String("kind", "", "review：只审这个类型（part / image / audio）")
+	kind := fs.String("kind", "", "review：只审这个类型（part / image / audio / font）")
 	undo := fs.Bool("undo", false, "review：撤销本会话最近一次批量审核")
 	mapFile := fs.String("map", "", "supersede：取代对照表（文件路径，- 读标准输入）")
 	clear := fs.Bool("clear", false, "supersede：取消这些旧条目的取代标记")

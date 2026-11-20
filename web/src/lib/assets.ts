@@ -5,8 +5,8 @@ export type AssetStatus = 'wip' | 'pending' | 'approved' | 'rework'
 export const ASSET_STATUSES: AssetStatus[] = ['wip', 'pending', 'approved', 'rework']
 
 export type FileLite = { id: string; name: string; mime: string; size: number }
-// AssetKind：part GLB 零件 / image 独立的图 / audio 音效（R-381）
-export type AssetKind = 'part' | 'image' | 'audio'
+// AssetKind：part GLB 零件 / image 独立的图（含 SVG，R-387）/ audio 音效（R-381）/ font 字体（TTF / OTF / WOFF2，R-387）
+export type AssetKind = 'part' | 'image' | 'audio' | 'font'
 // AudioLite（R-381）：音效的时长、声道、响度等；wave 是均分若干段的峰值（0–100）；declared 是取自 asset.json 声明的字段
 export type AudioLite = {
   codec?: string
@@ -80,20 +80,21 @@ export function fileTypesOf(a: Pick<AssetLite, 'latest'>): string[] {
 }
 
 // MediaKind（R-397）：文件类型的种类，标签写成「种类 · 文件类型」（模型 · GLB、图片 · PNG），按种类分色。
-export type MediaKind = 'model' | 'image' | 'audio' | 'video' | 'other'
+export type MediaKind = 'model' | 'image' | 'audio' | 'video' | 'font' | 'other'
 const MEDIA_EXT: Record<Exclude<MediaKind, 'other'>, string[]> = {
   model: ['GLB', 'GLTF', 'FBX', 'OBJ', 'BLEND', 'USD', 'USDZ', 'USDA', 'USDC', 'STL', 'DAE', 'PLY', '3DS', 'VOX'],
   image: ['PNG', 'JPG', 'WEBP', 'GIF', 'SVG', 'BMP', 'TGA', 'PSD', 'EXR', 'HDR', 'KTX2', 'DDS', 'TIF', 'TIFF', 'AVIF'],
   audio: ['OGG', 'WAV', 'MP3', 'FLAC', 'M4A', 'AAC', 'OPUS'],
   video: ['MP4', 'WEBM', 'MOV', 'MKV', 'AVI', 'M4V'],
+  font: ['TTF', 'OTF', 'WOFF2', 'WOFF', 'TTC'],
 }
 
 // mediaKindOf：按文件类型（扩展名）定种类；扩展名不认识时看 mime 的大类（model/ image/ audio/ video/），都不是归「其他」。
 export function mediaKindOf(type: string, mime = ''): MediaKind {
   const x = type.toUpperCase()
-  for (const k of ['model', 'image', 'audio', 'video'] as const) if (MEDIA_EXT[k].includes(x)) return k
+  for (const k of ['model', 'image', 'audio', 'video', 'font'] as const) if (MEDIA_EXT[k].includes(x)) return k
   const m = mime.split('/')[0].toLowerCase()
-  return m === 'model' || m === 'image' || m === 'audio' || m === 'video' ? m : 'other'
+  return m === 'model' || m === 'image' || m === 'audio' || m === 'video' || m === 'font' ? m : 'other'
 }
 
 export type FileTag = { kind: MediaKind; type: string }
@@ -342,7 +343,11 @@ export function groupStatus(assets: Pick<AssetLite, 'status'>[]): AssetStatus {
   return 'pending'
 }
 
-const isImg = (f?: FileLite | null) => !!f && /^image\/(png|jpeg|gif|webp)/i.test(f.mime)
+// 封面能用的图：PNG / JPEG / GIF / WebP，和 SVG（R-387，只用 <img> 加载，里面的脚本不执行）。
+const isImg = (f?: FileLite | null) => !!f && /^image\/(png|jpeg|gif|webp|svg\+xml)/i.test(f.mime)
+
+// isSvg（R-387）：SVG 文件。界面上一律用 <img> 加载（图片模式不执行脚本），不内联进页面；铺在棋盘格上看得出透明处。
+export const isSvg = (f?: Pick<FileLite, 'mime'> | null) => f?.mime === 'image/svg+xml'
 
 // coverOf：图片墙和大图用哪张图。独立的图就是它自己；零件、音效优先用特写（文件名带 closeup），否则第一张预览图；都没有返回 null（音效画波形）。
 export function coverOf(kind: AssetKind, v?: VersionLite | null): FileLite | null {
@@ -401,19 +406,28 @@ export const glbOf = (kind: AssetKind, v?: VersionLite | null) => (kind === 'par
 
 // defaultView（R-395）：详情打开时先看什么——有 GLB 的零件先看 3D，其余看大图。
 // 音效（R-381）先听：详情打开时是试听。
-export const defaultView = (kind: AssetKind, v?: VersionLite | null): 'model' | 'image' | 'audio' => (audioOf(kind, v) ? 'audio' : glbOf(kind, v) ? 'model' : 'image')
+// 字体（R-387）先看字形。
+export const defaultView = (kind: AssetKind, v?: VersionLite | null): 'model' | 'image' | 'audio' | 'font' => (fontOf(kind, v) ? 'font' : audioOf(kind, v) ? 'audio' : glbOf(kind, v) ? 'model' : 'image')
 
 // detailViews（R-395）：详情的视图切换，有 GLB 时 3D 排在最前（默认看它），其后大图、对比、3D 对比。
 // 音效（R-381）：试听排最前；有封面图时才有大图、对比。
-export function detailViews(o: { glb: boolean; pair: boolean; pair3d: boolean; audio?: boolean; image?: boolean }): ('image' | 'model' | 'audio' | 'compare' | 'compare3d')[] {
+// 字体（R-387）：字形排最前；有封面图时才有大图。
+export function detailViews(o: { glb: boolean; pair: boolean; pair3d: boolean; audio?: boolean; font?: boolean; image?: boolean }): ('image' | 'model' | 'audio' | 'font' | 'compare' | 'compare3d')[] {
   return [
+    ...(o.font ? (['font'] as const) : []),
     ...(o.audio ? (['audio'] as const) : []),
     ...(o.glb ? (['model'] as const) : []),
-    ...(!o.audio || o.image ? (['image'] as const) : []),
+    ...(!(o.audio || o.font) || o.image ? (['image'] as const) : []),
     ...(o.pair ? (['compare'] as const) : []),
     ...(o.pair3d ? (['compare3d'] as const) : []),
   ]
 }
+
+// fontOf（R-387）：字体的主文件；别的素材没有。
+export const fontOf = (kind: AssetKind, v?: VersionLite | null) => (kind === 'font' && v?.file ? v.file : null)
+
+// FONT_SIZES（R-387）：字形预览的几档字号（px），从正文到标题。
+export const FONT_SIZES = [12, 16, 24, 36, 56]
 
 // audioOf（R-381）：音效的主文件；别的素材没有。
 export const audioOf = (kind: AssetKind, v?: VersionLite | null) => (kind === 'audio' && v?.file ? v.file : null)

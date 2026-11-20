@@ -184,6 +184,11 @@ func (h *Hub) handleDownload(w http.ResponseWriter, r *http.Request) {
 		disp = "attachment"
 		// 万一浏览器还是在本站打开了它（例如 HTML、SVG），也不许执行脚本、不许读本站的数据
 		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+		if ref.Mime == svgMime {
+			// SVG（资源库的图，R-387）：网页只用 <img> 加载，图片模式本身不执行脚本；这条策略再兜一层——
+			// 不论直接打开还是被嵌进来，脚本、外链一律禁止，只放行 SVG 自带的内联样式和 data: 图片 / 字体，免得图被画坏。
+			w.Header().Set("Content-Security-Policy", svgCSP)
+		}
 	}
 	if cd := mime.FormatMediaType(disp, map[string]string{"filename": ref.Name}); cd != "" {
 		w.Header().Set("Content-Disposition", cd)

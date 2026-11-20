@@ -1,12 +1,12 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { AudioLines, Box as BoxIcon, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, Layers, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
+import { AudioLines, Box as BoxIcon, Type, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, Layers, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
 import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useDesktop, useMedia, useNow } from '../lib/util'
-import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, audioOf, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetKind, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, audioOf, fontOf, isSvg, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetKind, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
@@ -21,6 +21,8 @@ import { useAdvance, usePending, usePendingMap } from './verdict'
 import { BaselineChip, BaselineLink, BatchBar, PickBox, ReviewerMenu, SelectButton, SelectCtx, UndoLastBatch, useTileClick, useWallSelect } from './assetBatch'
 import { tileCodes } from '../lib/assetBatch'
 import { AudioCover, AudioStage, audioRows, PlayChip, VariantPlays } from './assetAudio'
+import { FontCover, FontStage } from './assetFont'
+import { SvgImg, SvgStage } from './assetSvg'
 
 // 资源库页（R-351 第 3 步，D-1713 方案 B 的图片墙部分）：按项目浏览会话推送的素材。
 // 图片墙按批次 / 类别 / 状态筛选；点一格在右侧抽屉里看大图、3D（three.js 按需加载）、版本对比；
@@ -420,10 +422,15 @@ function useCover(a: Pick<AssetLite, 'code' | 'kind'>, v: VersionLite | null | u
 export function AssetCover({ a, v, className, tag = true }: { a: Pick<AssetLite, 'code' | 'kind'>; v?: VersionLite | null; className?: string; tag?: boolean }) {
   const [el, setEl] = useState<HTMLDivElement | null>(null)
   const c = useCover(a, v, el)
+  const svg = !!c?.id && isSvg(coverOf(a.kind, v)) // SVG（R-387）：用 <img> 原样加载，铺棋盘格，不取缩略图
   return (
     <div ref={setEl} className={cx('relative overflow-hidden', c?.auto ? 'bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]' : 'bg-sunken', className)} title={c?.auto ? t.asset.autoThumbTip : undefined} data-auto-thumb={c?.auto ? (c.id ? 'saved' : 'local') : undefined}>
       {!c && a.kind === 'audio' ? (
         <AudioCover v={v} />
+      ) : !c && a.kind === 'font' ? (
+        <FontCover file={v?.file} />
+      ) : svg && c?.id ? (
+        <SvgImg id={c.id} className="h-full w-full" pad="p-[12%]" />
       ) : !c ? (
         <div className="flex h-full w-full items-center justify-center text-fg-3">
           <BoxIcon className="size-8" strokeWidth={1.4} />
@@ -444,6 +451,7 @@ const kindTone: Record<MediaKind, string> = {
   image: 'bg-kind-image-soft text-kind-image',
   audio: 'bg-kind-audio-soft text-kind-audio',
   video: 'bg-kind-video-soft text-kind-video',
+  font: 'bg-kind-font-soft text-kind-font',
   other: 'bg-sunken text-fg-2',
 }
 
@@ -557,7 +565,7 @@ export function GroupCard({ tile, active, onOpen }: { tile: Extract<WallTile, { 
 
 // ---------- 素材抽屉 ----------
 
-type View = 'image' | 'model' | 'audio' | 'compare' | 'compare3d'
+type View = 'image' | 'model' | 'audio' | 'font' | 'compare' | 'compare3d'
 
 const inField = (el: HTMLElement) => !!el.closest?.('input, textarea, [contenteditable=true], [role=menu]')
 // 有别的弹层（看大图、别的抽屉）盖在上面时不拦截按键
@@ -825,7 +833,9 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
   const pair3d = comparePair(versions.filter((x) => glbOf(a.kind, x)), shownN)
   // 音效（R-381）：先试听；有封面图时才有大图
   const sound = audioOf(a.kind, v)
-  const views: View[] = detailViews({ glb: !!glb, pair: !!pair, pair3d: !!pair3d, audio: !!sound, image: !!coverOf(a.kind, v) })
+  // 字体（R-387）：先看字形；有封面图时才有大图
+  const font = fontOf(a.kind, v)
+  const views: View[] = detailViews({ glb: !!glb, pair: !!pair, pair3d: !!pair3d, audio: !!sound, font: !!font, image: !!coverOf(a.kind, v) })
   // 有 GLB 的零件打开时直接看 3D（R-395），可切回大图；只有图片的照旧看大图
   const [view, setView] = useState<View>(() => defaultView(a.kind, v))
   const cur = views.includes(view) ? view : views[0]
@@ -889,7 +899,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
           value: x,
           label: (
             <span className="flex items-center gap-1.5">
-              {x === 'image' ? <ImageIcon className="size-3.5" /> : x === 'audio' ? <AudioLines className="size-3.5" /> : x === 'model' ? <BoxIcon className="size-3.5" /> : x === 'compare3d' ? <Columns2 className="size-3.5" /> : <SplitSquareHorizontal className="size-3.5" />}
+              {x === 'image' ? <ImageIcon className="size-3.5" /> : x === 'audio' ? <AudioLines className="size-3.5" /> : x === 'font' ? <Type className="size-3.5" /> : x === 'model' ? <BoxIcon className="size-3.5" /> : x === 'compare3d' ? <Columns2 className="size-3.5" /> : <SplitSquareHorizontal className="size-3.5" />}
               {x === 'compare' && pair ? `${t.asset.view.compare} ${t.asset.ver(pair.before.version)}` : x === 'compare3d' && pair3d ? `${t.asset.view.compare3d} ${t.asset.ver(pair3d.before.version)}` : t.asset.view[x]}
             </span>
           ),
@@ -902,6 +912,10 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     <div className={cx('relative w-full overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]', onStage ? 'min-h-0 flex-1' : 'aspect-[4/3]')} data-stage={cur}>
       {cur === 'audio' && sound ? (
         <AudioStage key={sound.id} file={sound} audio={v?.audio} />
+      ) : cur === 'font' && font ? (
+        <FontStage key={font.id} file={font} />
+      ) : cur === 'image' && main && isSvg(main) ? (
+        <SvgStage key={main.id} id={main.id} />
       ) : cur === 'model' && glb ? (
         <Suspense fallback={null}>
           <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0 rounded-[11px]" sync={sync} main />
@@ -1134,7 +1148,7 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
   const fam = !!gkey?.startsWith(VARIANT_CMP)
   const members = !gkey ? [] : fam ? variantFamily(all, gkey.slice(VARIANT_CMP.length)) : groupMembers(all, gkey)
   const labelOf = (m: AssetLite) => (fam ? variantLabel(m) : candidateLabel(m))
-  const shots: ViewShot[] = members.map((m) => coverOf(m.kind, m.latest)).filter((f): f is FileLite => !!f)
+  const shots: ViewShot[] = members.map((m) => coverOf(m.kind, m.latest)).filter((f): f is FileLite => !!f && !isSvg(f)) // SVG 不进看图（看图会把它当文本），在格子里直接显示
   const first = members[0]
   // 候选都有 GLB 时可切到 3D 并排（R-392）：共用一个动画时钟，同步播放同一动作
   const glbs = members.filter((m) => glbOf(m.kind, m.latest))
@@ -1194,12 +1208,17 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
             return (
               <div key={m.id} className="min-w-0" data-candidate={labelOf(m)}>
                 <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-sunken">
-                  {f ? (
+                  {f && isSvg(f) ? (
+                    <SvgImg id={f.id} className="absolute inset-0" />
+                  ) : f ? (
                     <Lightbox f={f} group={shots}>
                       <button className="absolute inset-0 cursor-zoom-in">
                         <img src={fileUrl(f.id)} alt="" className="h-full w-full object-contain" draggable={false} />
                       </button>
                     </Lightbox>
+                  ) : m.kind === 'font' ? (
+                    // 字体（R-387）：并排比较时各自写「Aa 永」
+                    <FontCover file={m.latest?.file} className="absolute inset-0" />
                   ) : m.kind === 'audio' ? (
                     // 音效（R-381）：并排比较时逐个试听
                     <>

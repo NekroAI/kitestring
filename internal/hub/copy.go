@@ -252,7 +252,7 @@ const (
 	shareUploadUnavailable = "暂时不能上传，稍后再试"
 	shareUploadTooMany     = "上传过于频繁，10 分钟后再试"
 	shareUploadNoFile      = "没有收到文件"
-	shareUploadType        = "只能上传 GLB 模型、FBX 动画、图片（PNG、JPEG、WebP、GIF）、音效（OGG、WAV）和录屏（MP4、WebM、MOV）"
+	shareUploadType        = "只能上传 GLB 模型、FBX 动画、图片（PNG、JPEG、WebP、GIF、SVG）、音效（OGG、WAV）、字体（TTF、OTF、WOFF2）和录屏（MP4、WebM、MOV）"
 	shareNoDownload        = "这个分享不提供原文件下载"
 	shareUploadPickAs      = "选择收下为新版本还是附件"
 	shareAssetPickAs       = "选择作为返工意见还是只送意见"
@@ -272,6 +272,8 @@ func shareUploadKindMismatch(kind string) string {
 		return "零件的新版本只能是 GLB 模型，可以收下为附件"
 	case protocol.AssetAudio:
 		return "音效的新版本只能是 OGG 或 WAV，可以收下为附件"
+	case protocol.AssetFont:
+		return "字体的新版本只能是 TTF、OTF 或 WOFF2，可以收下为附件"
 	}
 	return "独立的图的新版本只能是图片，可以收下为附件"
 }
@@ -332,7 +334,7 @@ func copyTexts() map[string]string {
 		"pushDeviceLostTitle": pushDeviceLostTitle("甲"), "pushDeviceLostBody": pushDeviceLostBody,
 		"pushNeedDevsTitle": pushNeedDevsTitle(2, "甲"), "pushNeedDevsBody": pushNeedDevsBody("甲"),
 		"pushGuestCommentTitle": pushGuestCommentTitle("小王"), "pushGuestUploadTitle": pushGuestUploadTitle("小王"), "pushGuestBody": pushGuestBody("A-3「wheel」v2", "颜色再亮一点"),
-		"shareUploadTooBig": shareUploadTooBig(50, 10, 50), "shareUploadKindMismatch": shareUploadKindMismatch(protocol.AssetPart), "shareUploadKindMismatch2": shareUploadKindMismatch(protocol.AssetImage), "shareUploadKindMismatch3": shareUploadKindMismatch(protocol.AssetAudio),
+		"shareUploadTooBig": shareUploadTooBig(50, 10, 50), "shareUploadKindMismatch": shareUploadKindMismatch(protocol.AssetPart), "shareUploadKindMismatch2": shareUploadKindMismatch(protocol.AssetImage), "shareUploadKindMismatch3": shareUploadKindMismatch(protocol.AssetAudio), "shareUploadKindMismatch4": shareUploadKindMismatch(protocol.AssetFont),
 		"pushTestTitle": pushTestTitle, "pushTestBody": pushTestBody, "notifyTestTitle": notifyTestTitle, "notifyTestBody": notifyTestBody,
 		"awaySettledTitle": awaySettledTitle, "awaySettledPushTitle": awaySettledPushTitle, "awaySettledReason": awaySettledReason,
 		"awayProxyQuiet": awayProxyQuiet, "awayNoGrant": awayNoGrant, "awayPlanUserOnly": awayPlanUserOnly, "awayNoAdvice": awayNoAdvice,

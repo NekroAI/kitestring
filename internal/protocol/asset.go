@@ -16,6 +16,7 @@ const (
 	AssetPart  = "part"  // GLB 零件：主文件是 GLB，挂它的预览图
 	AssetImage = "image" // 独立的图：目录图、概念图、动作对比图，主文件就是图
 	AssetAudio = "audio" // 音效（R-381）：主文件是 OGG（Vorbis / Opus）或 WAV，可挂预览图当封面
+	AssetFont  = "font"  // 字体（R-387）：主文件是 TTF / OTF / WOFF2，网页上显示字形预览；SVG 归独立的图
 )
 
 // AssetAudioInfo 是音效素材的音频信息（R-381）。能从文件读的由推送端读（WAV 全部；OGG 读文件头，响度、峰值、波形要本机有 ffmpeg 解码），
@@ -44,7 +45,7 @@ type AssetFile struct {
 // AssetItem 是一条素材（manifest 里的一项，或预览目录里一张独立的图）。
 type AssetItem struct {
 	Key       string          `json:"key" doc:"素材 ID：manifest 的 id；独立的图用文件名（去扩展名）"`
-	Kind      string          `json:"kind" enum:"part,image,audio" doc:"part = GLB 零件，image = 独立的图，audio = 音效（R-381）"`
+	Kind      string          `json:"kind" enum:"part,image,audio,font" doc:"part = GLB 零件，image = 独立的图（含 SVG，R-387），audio = 音效（R-381），font = 字体（TTF / OTF / WOFF2，R-387）"`
 	Category  string          `json:"category,omitempty" doc:"类别（manifest 的 category，或目录图 / 概念图 / 对比图）"`
 	Group     string          `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版去掉末尾的 _A / _B）"`
 	File      *AssetFile      `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`

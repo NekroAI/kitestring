@@ -26,7 +26,7 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
 {
   "id": "core:weapon.carbine",          必填：命名空间:名字。命名空间用小写字母、数字和 _ . -；名字用字母、数字和 _ . - /
   "category": "weapon",                 必填：类别
-  "file": "carbine.glb",                主文件（GLB、图片或音效 OGG / WAV），相对 asset.json；不写时取 variants 里默认变体的文件
+  "file": "carbine.glb",                主文件（GLB、图片、SVG、音效 OGG / WAV 或字体 TTF / OTF / WOFF2），相对 asset.json；不写时取 variants 里默认变体的文件
   "variants": {"default": {"files": {"model": "carbine.glb"}}, "desert": {"file": "carbine_desert.glb", "previews": ["previews/carbine@desert__front.png"]}},
                                         可选：具名变体。默认变体（default_variant，没写时是 default）就是素材本身；
                                         其余变体各是一条素材「core:weapon.carbine@desert」，有自己的版本和审核，网页上可并排比较。
@@ -43,6 +43,8 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
   OGG 要本机有 ffmpeg 解码。读不出的可声明："audio": {"loudness_lufs": -18, "peak_dbfs": -1, "duration_s": 1.2, "channels": 2, "sample_rate": 48000}；
   文件里读出的优先，声明只补读不出的（网页上标「声明」），不一致时提示。多个版本的音效写成 variants（如 {"default": {"file": "hit_01.ogg"},
   "b": {"file": "hit_02.ogg"}}），网页上可逐个试听；previews 可放封面图，不放时图片墙画波形。
+字体（file 是 .ttf / .otf / .woff2）：网页上显示字形预览；files 里有多个字重（font_regular、font_bold……）时取 regular 当主文件。
+SVG（file 是 .svg）：归独立的图，当图片显示，里面的脚本不会执行。字体和 SVG 都按内容校验（文件头、表目录 / XML 结构），不只看扩展名。
 多件写法：{"namespace": "core", "batches": ["G12"], "previews_dir": "previews", "assets": [{...}, {...}]}，
   namespace 给没写命名空间的 id 补上，batches 每件都带，previews_dir 是按文件名归属预览图的目录。
 
@@ -475,7 +477,7 @@ func textOf(raw json.RawMessage) string {
 	return string(raw)
 }
 
-// variantFile 在 variants 里找默认变体的主文件：先 default_variant，再 default，再第一个；文件按 model、image、texture、audio、sound 的顺序取。
+// variantFile 在 variants 里找默认变体的主文件：先 default_variant，再 default，再第一个；文件按 pickMainFile 的顺序取。
 func variantFile(raw json.RawMessage, def string) string {
 	if len(raw) == 0 {
 		return ""
@@ -489,20 +491,7 @@ func variantFile(raw json.RawMessage, def string) string {
 		if v.File != "" {
 			return v.File
 		}
-		for _, role := range []string{"model", "image", "texture", "audio", "sound"} {
-			if f := v.Files[role]; f != "" {
-				return f
-			}
-		}
-		keys := make([]string, 0, len(v.Files))
-		for k := range v.Files {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		if len(keys) > 0 {
-			return v.Files[keys[0]]
-		}
-		return ""
+		return pickMainFile(v.Files)
 	}
 	var byName map[string]variant
 	if json.Unmarshal(raw, &byName) == nil && len(byName) > 0 {
@@ -720,9 +709,14 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 				if len(it.Pixels) != 2 {
 					it.Pixels = e.PixelsOld
 				}
+				if px, svg := checkFontSVG(file, c); svg && len(it.Pixels) != 2 {
+					it.Pixels = px
+				}
 				if len(it.Pixels) != 2 {
 					it.Pixels = imageSize(file)
 				}
+			case protocol.AssetFont:
+				checkFontSVG(file, c)
 			case protocol.AssetAudio:
 				var errs, warns []string
 				it.Audio, errs, warns = audioInfo(file, e.Audio, !o.NoFFmpeg)
@@ -1059,16 +1053,11 @@ func ReportText(rep Report) string {
 		if c.Category != "" {
 			parts = append(parts, c.Category)
 		}
-		switch c.Kind {
-		case protocol.AssetPart:
-			parts = append(parts, "GLB")
-		case protocol.AssetImage:
-			parts = append(parts, "图片")
-		case protocol.AssetAudio:
-			parts = append(parts, "音效")
-			if c.Audio != "" {
-				parts = append(parts, c.Audio)
-			}
+		if k := kindLabel(c.Kind, c.File); k != "" {
+			parts = append(parts, k)
+		}
+		if c.Kind == protocol.AssetAudio && c.Audio != "" {
+			parts = append(parts, c.Audio)
 		}
 		if len(c.Views) > 0 {
 			parts = append(parts, fmt.Sprintf("预览图 %d 个机位（%s）", len(c.Views), strings.Join(c.Views, "、")))
