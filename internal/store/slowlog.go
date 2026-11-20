@@ -27,7 +27,7 @@ func (l *slowLog) done(kind, query string, start time.Time, pcs []uintptr) {
 	if !l.on() {
 		return
 	}
-	d := time.Since(start)
+	d := slowSince(start)
 	if d < time.Duration(l.threshold.Load()) {
 		return
 	}
@@ -37,6 +37,10 @@ func (l *slowLog) done(kind, query string, start time.Time, pcs []uintptr) {
 	}
 	lg.Warn("数据库操作慢", "kind", kind, "ms", d.Milliseconds(), "sql", shortSQL(query), "caller", callerOf(pcs))
 }
+
+// slowSince 量耗时，测试替换：Windows 的单调时钟按系统时钟中断走（约 0.5～15.6 毫秒一格），
+// 很快的查询量出来是 0，测试用 1 纳秒阈值时记不下来（R-404）。
+var slowSince = time.Since
 
 // SetSlowLog 设置慢操作阈值（0 关闭）和写日志的 logger。
 func (s *Store) SetSlowLog(threshold time.Duration, log *slog.Logger) {

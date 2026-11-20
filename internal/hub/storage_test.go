@@ -150,7 +150,7 @@ func TestStorageMissingDirRejectsUpload(t *testing.T) {
 	ext := filepath.Join(mount, "kitestring-files")
 	e := newStorageEnv(t, ext)
 	code, body := e.upload("a.txt", []byte("hello"))
-	if code != http.StatusServiceUnavailable || !strings.Contains(body, "不存在，外置硬盘可能未挂载") || !strings.Contains(body, ext) {
+	if code != http.StatusServiceUnavailable || !strings.Contains(body, "不存在，外置硬盘可能未挂载") || !strings.Contains(body, jsonStr(ext)) {
 		t.Fatalf("目录不存在时应拒收并说明原因，实际 %d：%s", code, body)
 	}
 	if _, err := os.Stat(mount); err == nil {
@@ -276,4 +276,10 @@ func TestStorageDefaultDirAutoCreate(t *testing.T) {
 	if v := e.storage(); !v.OK || v.Configured || v.Dir != e.defDir || v.Files != 1 || v.UsedBytes != 5 {
 		t.Fatalf("%+v", v)
 	}
+}
+
+// jsonStr 是 s 写进 JSON 字符串后的样子（不含引号）：Windows 路径的反斜杠在响应里是转义过的（R-404）。
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1])
 }

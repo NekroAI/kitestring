@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,6 +37,12 @@ func TestHubArgvWithLauncher(t *testing.T) {
 
 func launcherEnv(t *testing.T) (home, ksDir string, out *bytes.Buffer) {
 	t.Helper()
+	// 启动器只在 macOS 用（install.go 只在 darwin 调 ensureLauncher，为的是 macOS 隐私授权按文件认），
+	// Windows 上 ks install --hub 本来就直接运行 ks、不经启动器；而判断「可执行」靠 Unix 权限位，
+	// Windows 的文件没有可执行位（Perm 只有 0666 / 0444），这几项检查在 Windows 上没有意义（R-404）。
+	if runtime.GOOS == "windows" {
+		t.Skip("启动器只用于 macOS 的 hub 服务；Windows 文件没有可执行位")
+	}
 	home = t.TempDir()
 	t.Setenv("KS_HOME", filepath.Join(home, ".kitestring"))
 	ksDir = filepath.Join(home, "bin")

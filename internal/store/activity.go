@@ -89,12 +89,23 @@ func (s *Store) ListActivity(ctx context.Context, q ActivityQuery) ([]Activity, 
 		}
 		out = append(out, xs...)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
+	sortActivity(out)
 	out = mergeSubmit(out)
 	if len(out) > n {
 		out = out[:n]
 	}
 	return out, nil
+}
+
+// sortActivity 按时间倒序排。时间相同时提交验收排在交证据前面（倒序里算更晚）：
+// Windows 的系统时钟按时钟中断走，交证据和提交验收常记成同一时刻，原来按来源顺序排成交证据在前，合并不上（R-404）。
+func sortActivity(xs []Activity) {
+	sort.SliceStable(xs, func(i, j int) bool {
+		if !xs[i].At.Equal(xs[j].At) {
+			return xs[i].At.After(xs[j].At)
+		}
+		return xs[i].Kind == FeedSubmit && xs[j].Kind == FeedEvidence
+	})
 }
 
 // mergeSubmit：同一个会话为同一条需求交证据后 2 分钟内提交验收，合成一条「提交了证据并提交验收」（Evidence 为真）。

@@ -187,7 +187,7 @@ func TestBuildByIDPerAssetDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	// R-380：carbine 的变体 v2 单独一条（默认变体 g3 就是素材本身）
-	if len(rep.Items) != 4 || rep.Bad() != 1 || len(p.Items) != 3 || !strings.HasSuffix(rep.Config, ConfigFile) {
+	if len(rep.Items) != 4 || rep.Bad() != 1 || len(p.Items) != 3 || !strings.HasSuffix(rep.Config, filepath.FromSlash(ConfigFile)) {
 		t.Fatalf("三件里音效不支持，carbine 另有变体 v2：\n%s", ReportText(rep))
 	}
 	by := map[string]protocol.AssetItem{}

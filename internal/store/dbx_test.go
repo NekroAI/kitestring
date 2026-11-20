@@ -142,6 +142,10 @@ func TestWriteSQL(t *testing.T) {
 // 慢操作日志：超过阈值的查询记下语句和调用点。
 func TestSlowLog(t *testing.T) {
 	s := openTest(t)
+	// 耗时固定为 1 毫秒：Windows 的单调时钟粗，很快的查询量出来是 0，到不了 1 纳秒的阈值（R-404）
+	since := slowSince
+	slowSince = func(time.Time) time.Duration { return time.Millisecond }
+	t.Cleanup(func() { slowSince = since })
 	var buf syncBuf
 	lg := slog.New(slog.NewTextHandler(&buf, nil))
 	s.SetSlowLog(time.Nanosecond, lg)

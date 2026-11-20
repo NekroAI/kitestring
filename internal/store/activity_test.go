@@ -207,3 +207,18 @@ func TestListActivity(t *testing.T) {
 		t.Fatalf("条数限制不对：%+v", few)
 	}
 }
+
+// R-404：交证据和提交验收记成同一时刻（Windows 时钟粗）时照样合成一条。
+func TestMergeSubmitSameInstant(t *testing.T) {
+	at := time.Date(2026, 11, 20, 1, 21, 24, 0, time.UTC)
+	xs := []Activity{ // 来源顺序：先取证据，再取状态变化
+		{At: at, Kind: FeedEvidence, Session: "claude:dev", Code: "R-1"},
+		{At: at.Add(-time.Second), Kind: FeedBlocked, Session: "claude:dev", Code: "R-1"},
+		{At: at, Kind: FeedSubmit, Session: "claude:dev", Code: "R-1"},
+	}
+	sortActivity(xs)
+	got := mergeSubmit(xs)
+	if len(got) != 2 || got[0].Kind != FeedSubmit || !got[0].Evidence || got[1].Kind != FeedBlocked {
+		t.Fatalf("同一时刻的交证据应并进提交验收：%+v", got)
+	}
+}
