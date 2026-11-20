@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   attachShown,
   composeNotes,
+  hiddenAttach,
   hiddenNodes,
   refPosition,
   socketRows,
@@ -29,7 +30,11 @@ const box: ComposeItem = {
 };
 
 test("挂点列表：默认列挂件引用的、空节点、带通用词的；全部节点列出骨骼", () => {
-  const typo: ComposeItem = { kind: "attach", socket: "crate_typo", asset: "core:p.x" };
+  const typo: ComposeItem = {
+    kind: "attach",
+    socket: "crate_typo",
+    asset: "core:p.x",
+  };
   const rows = socketRows(nodes, [box, typo], false);
   assert.deepEqual(
     rows.map((r) => r.name),
@@ -39,7 +44,14 @@ test("挂点列表：默认列挂件引用的、空节点、带通用词的；�
   assert.equal(rows[1].missing, true);
   assert.equal(rows[2].bone, true);
   const all = socketRows(nodes, [box], true).map((r) => r.name);
-  assert.deepEqual(all, ["crate", "root", "chassis", "arm_main", "hand_r", "Dog_Rig"]);
+  assert.deepEqual(all, [
+    "crate",
+    "root",
+    "chassis",
+    "arm_main",
+    "hand_r",
+    "Dog_Rig",
+  ]);
   assert.equal(hiddenNodes(nodes, [box]), 4);
   // 没有挂件时默认只有空节点和带通用词的
   assert.deepEqual(
@@ -56,6 +68,32 @@ test("挂件按动作显示：写了 clips 的只在这些动作里，静止姿�
   const always: ComposeItem = { ...box, clips: null };
   assert.equal(attachShown(always, null, true), true);
   assert.equal(attachShown({ ...box, clips: [] }, "idle", true), true);
+});
+
+test("当前动作里按 clips 隐藏的挂件：列出名字和显示它的动作（R-414）", () => {
+  // A-155 机械狗的写法：箱子只在驮箱的两个动作里显示，默认的 idle 里隐藏
+  assert.deepEqual(hiddenAttach([box], "idle", true), [
+    { name: "cargo", clips: ["carry_idle", "carry_walk"] },
+  ]);
+  assert.deepEqual(hiddenAttach([box], null, true), [
+    { name: "cargo", clips: ["carry_idle", "carry_walk"] },
+  ]);
+  assert.deepEqual(hiddenAttach([box], "carry_idle", true), []);
+  // 挂件开关关着时不提示（是自己摘下的）
+  assert.deepEqual(hiddenAttach([box], "idle", false), []);
+  // 没写 clips 的一直显示；素材找不到的另有提示
+  assert.deepEqual(hiddenAttach([{ ...box, clips: null }], "idle", true), []);
+  assert.deepEqual(
+    hiddenAttach([{ ...box, file: null, missing: "asset" }], "idle", true),
+    [],
+  );
+  // 这个动作的事件挂上 / 摘下它时由事件决定，不提示
+  assert.deepEqual(hiddenAttach([box], "load", true, new Set(["cargo"])), []);
+  // 参照不算挂件
+  assert.deepEqual(
+    hiddenAttach([{ ...box, kind: "ref", clips: ["x"] }], "idle", true),
+    [],
+  );
 });
 
 test("比例参照：写了 offset 用它，没写时放在右侧、底面对齐、前后居中", () => {

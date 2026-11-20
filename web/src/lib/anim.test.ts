@@ -153,3 +153,11 @@ test("选过动作后加载完不再换成默认动作", () => {
   assert.equal(s.get().dur, 0.8);
   assert.equal(s.timeAt(), 0.4);
 });
+
+test("组合预览开关：挂件默认挂上，比例参照默认不显示（R-414）", () => {
+  const s = createAnimSync(() => 0);
+  assert.equal(s.get().attach, true);
+  assert.equal(s.get().refs, false);
+  s.setCompose({ refs: true });
+  assert.equal(s.get().refs, true);
+});

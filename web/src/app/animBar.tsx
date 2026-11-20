@@ -24,7 +24,7 @@ import {
 import { t } from "../i18n";
 import { cx } from "../lib/util";
 import { SPEEDS, type AnimSync, type Frame } from "../lib/anim";
-import { hiddenNodes, socketRows } from "../lib/compose";
+import { hiddenAttach, hiddenNodes, socketRows } from "../lib/compose";
 import { crossed, eventPoints, hasSound, type AnimEvent } from "../lib/events";
 import { fileUrl } from "../ui/attach";
 import { Button, Tip } from "../ui/base";
@@ -191,6 +191,17 @@ export function AnimBar({
         ? A.warn[r.warn]
         : undefined;
   const has = !!cur && cur.inGlb;
+  // R-414：挂件开着、但当前动作不在它的 clips 里而隐藏时，提示它在哪些动作里显示（点动作名切过去），免得以为没挂上
+  const hidden = hiddenAttach(
+    items,
+    s.clip,
+    s.attach,
+    new Set(
+      (evs ?? [])
+        .filter((e) => e.do === "attach" || e.do === "detach")
+        .map((e) => e.name ?? ""),
+    ),
+  );
 
   const mark = async () => {
     const f = sync.frame(ctx?.version ?? 0);
@@ -600,6 +611,37 @@ export function AnimBar({
               </Button>
             </Tip>
           )}
+        </div>
+      )}
+      {hidden.length > 0 && (
+        <div
+          className="mt-1.5 flex flex-col gap-0.5 text-[12px] leading-[18px] text-fg-3"
+          data-attach-hint=""
+        >
+          {hidden.map((h) => (
+            <p key={h.name}>
+              {C.onlyIn(h.name)}
+              {h.clips.map((c, i) => (
+                <span key={c}>
+                  {i > 0 && t.asset.listSep}
+                  {rows.some((r) => r.name === c && r.inGlb) ? (
+                    <button
+                      type="button"
+                      onClick={() => sync.select(c)}
+                      className="text-accent underline-offset-2 hover:underline"
+                      aria-label={C.switchTo(c)}
+                      data-attach-clip={c}
+                    >
+                      {c}
+                    </button>
+                  ) : (
+                    c
+                  )}
+                </span>
+              ))}
+            </p>
+          ))}
+          <p>{C.onlyInHow}</p>
         </div>
       )}
       {warns > 0 && (

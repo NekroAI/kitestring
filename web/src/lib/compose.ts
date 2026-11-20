@@ -83,6 +83,30 @@ export function attachShown(
   return !!clip && clips.includes(clip);
 }
 
+/** 当前动作里按 clips 隐藏的一个挂件：名字和它在哪些动作里显示。 */
+export type HiddenAttach = { name: string; clips: string[] };
+
+// hiddenAttach（R-414）：挂件开关开着、但因为当前动作（或静止姿势）不在 clips 里而隐藏的挂件，播放控件据此提示「只在哪些动作里显示」，
+// 免得以为没挂上。素材找不到的不算（另有提示）；这个动作的事件里挂上 / 摘下它时由事件决定显示，也不算。
+// evNames：当前动作的动作事件里挂上 / 摘下引用到的挂件名。
+export function hiddenAttach(
+  items: ComposeItem[],
+  clip: string | null,
+  on: boolean,
+  evNames: ReadonlySet<string> = new Set(),
+): HiddenAttach[] {
+  if (!on) return [];
+  const out: HiddenAttach[] = [];
+  for (const x of items) {
+    if (x.kind !== "attach" || !x.file || x.missing) continue;
+    const name = x.name || x.socket || "";
+    if (clip && evNames.has(name)) continue;
+    if (attachShown(x, clip, true)) continue;
+    out.push({ name, clips: x.clips ?? [] });
+  }
+  return out;
+}
+
 /** 轴对齐包围盒（米）。 */
 export type Box = {
   min: [number, number, number];

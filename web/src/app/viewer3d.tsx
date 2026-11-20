@@ -422,7 +422,7 @@ export default function Viewer3D({ url, className, sync, label, main, compose, e
       renderer.render(scene, cam)
     })
 
-    // 组合预览（R-407）：挂件挂在挂点节点下面，跟着动作走；参照和主模型放在同一个 stage 里一起居中取景
+    // 组合预览（R-407）：挂件挂在挂点节点下面，跟着动作走；参照和主模型放在同一个 stage 里，取景只按主模型（R-414）
     const stage = new Group()
     const refsGroup = new Group()
     const attached: { item: ComposeItem; obj: Object3D; node: Object3D }[] = []
@@ -626,12 +626,13 @@ export default function Viewer3D({ url, className, sync, label, main, compose, e
       if (anim) notes.push(...eventNotes(evs, anim.infos, new Set(items.filter((x) => x.kind === 'attach').map((x) => x.name || x.socket || '')), new Set(sockets.keys())))
       setNotes(notes)
       composeTick()
-      // 取景：主模型连同参照（和此刻显示的挂件）一起居中
+      // 取景（R-414）：只按主模型本身居中、定距离，不算参照和挂件——参照默认不显示，打开后摆在旁边，视角中心不动；
+      // 最远能拉到把参照也装进画面
       stage.updateMatrixWorld(true)
-      const box = new Box3().setFromObject(stage)
-      const c = box.getCenter(new Vector3())
-      const s = box.getSize(new Vector3())
-      const m = Math.max(s.x, s.y, s.z) || 1
+      const c = mainBox.getCenter(new Vector3())
+      const m = Math.max(msize.x, msize.y, msize.z) || 1
+      const all = new Box3().setFromObject(stage)
+      const reach = Math.max(all.max.clone().sub(c).length(), all.min.clone().sub(c).length()) * 2
       stage.position.sub(c)
       scene.add(stage)
       scene.add(axes)
@@ -642,7 +643,7 @@ export default function Viewer3D({ url, className, sync, label, main, compose, e
       cam.updateProjectionMatrix()
       ctl.target.set(0, 0, 0)
       ctl.minDistance = dist * 0.2
-      ctl.maxDistance = dist * 5
+      ctl.maxDistance = Math.max(dist * 5, (reach / m) * dist * 1.2)
       ctl.update()
       home = { pos: cam.position.clone(), target: ctl.target.clone() }
       if (sy && anim && (anim.clips.length || anim.helper || info.nodes.length || items.length || Object.keys(evs).length))

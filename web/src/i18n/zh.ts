@@ -379,6 +379,9 @@ export const zh = {
       refs: '参照',
       refsOff: '隐藏参照',
       refsOn: '显示参照',
+      onlyIn: (name: string) => `挂件「${name}」只在这些动作里显示：`,
+      switchTo: (clip: string) => `切到动作 ${clip}`,
+      onlyInHow: '其他动作没有配置这个挂件；要显示，在 asset.json 里把动作名加进挂件的 clips，或用动作事件挂上。',
       note: (
         n:
           | { kind: 'socket'; name: string; socket: string }

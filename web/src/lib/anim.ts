@@ -244,7 +244,7 @@ export function createAnimSync(clock: () => number = () => performance.now()) {
     fps: 30,
     picked: false,
     attach: true,
-    refs: true,
+    refs: false, // R-414：比例参照默认不显示，点「参照」才放出来
     socket: null,
     allNodes: false,
     sound: readSound(),
