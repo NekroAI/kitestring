@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { displayNameOf, titleOf, subIdOf, matchesQuery, assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, fontOf, isSvg, FONT_SIZES, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite, metaView } from './assets.ts'
+import { sortAssets, parseSort, displayNameOf, titleOf, subIdOf, matchesQuery, assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, fontOf, isSvg, FONT_SIZES, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite, metaView } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -415,4 +415,34 @@ test('metaView（R-401）：对象数组成表格、对象成两列表、短列�
   assert.equal(wide.tables[0].columns.length, 8)
   assert.equal(wide.tables[0].cut, true)
   assert.deepEqual(metaView(null), { scalars: [], tables: [], raw: '' })
+})
+
+// R-410：排序。最近更新看最新版本的推送时间（latest.created_at），变体的新版本算到素材本身，只改状态（updated_at）不算。
+const pushed = (uid: string, at: string, over: Partial<AssetLite> = {}) => {
+  const a = idAsset(uid, '')
+  return { ...a, latest: { ...a.latest!, created_at: at }, ...over }
+}
+
+test('排序：最近更新在前，变体新版本算素材本身，改状态不算；名称自然排序；推送先后按编号', () => {
+  const a10 = pushed('core:w.a10', '2026-11-20T01:00:00Z')
+  const a2 = pushed('core:w.a2', '2026-11-20T00:10:00Z', { updated_at: '2026-11-30T00:00:00Z' })
+  const b = pushed('core:w.b', '2026-11-20T00:30:00Z')
+  b.latest!.name = '卡宾枪'
+  const bv = pushed('core:w.b', '2026-11-20T02:00:00Z', { parent: { id: b.id, code: b.code, key: b.key, status: 'approved' }, variant: 'desert' })
+  const list = [a10, a2, b, bv]
+  const ids = (xs: AssetLite[]) => xs.map((x) => x.code)
+  assert.deepEqual(ids(sortAssets(list, 'recent')), [bv.code, b.code, a10.code, a2.code])
+  assert.deepEqual(ids(sortAssets(list, 'seq')), [a10.code, a2.code, b.code, bv.code])
+  const byName = ids(sortAssets(list, 'name'))
+  assert.ok(byName.indexOf(a2.code) < byName.indexOf(a10.code)) // a2 在 a10 前（自然排序）
+  assert.equal(parseSort('x'), 'recent')
+  assert.equal(parseSort('seq'), 'seq')
+})
+
+test('排序：最近更新时组之间按组里最新一件排，其他排序下组按名字排', () => {
+  const list = [pushed('core:audio.c', '2026-11-20T01:00:00Z'), pushed('core:concept.a', '2026-11-20T03:00:00Z'), pushed('core:concept.b', '2026-11-20T00:00:00Z')]
+  assert.deepEqual(wallSections(list, ROOT_DIR, 'recent').map((s) => s.key), ['concept', 'audio'])
+  assert.deepEqual(wallSections(list, ROOT_DIR, 'recent')[0].assets.map((x) => x.key), ['core:concept.a', 'core:concept.b'])
+  assert.deepEqual(wallSections(list, ROOT_DIR, 'name').map((s) => s.key), ['audio', 'concept'])
+  assert.deepEqual(wallSections(list, ROOT_DIR, 'seq')[1].assets.map((x) => x.key), ['core:concept.a', 'core:concept.b'])
 })

@@ -399,6 +399,7 @@ type AssetFilter struct {
 	ID        string // R-376：素材 id（uid）或编号 A-x；末尾带 * 时按 id 前缀查（如 core:weapon.*）
 	Limit     int    // R-391：最多返回几条，0 不限
 	Offset    int    // R-391：跳过前几条（分页）
+	Sort      string // R-410：recent 最近更新在前 / name 名称自然排序 / seq 编号（推送先后）；空 = 原来的顺序（批次、编号）
 }
 
 const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches,
@@ -599,7 +600,12 @@ func (s *Store) CountAssets(ctx context.Context, f AssetFilter) (int, error) {
 func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) {
 	w, args := assetWhere(f)
 	q := `SELECT ` + assetCols + `, ` + versionCols + ` FROM assets a JOIN asset_versions v ON v.id = a.latest_id` + w + ` ORDER BY a.batch, a.seq`
-	if f.Limit > 0 {
+	// R-410：排序在 Go 里做（最近更新要把变体算进素材本身、名称要自然排序），所以要先取全再切页
+	inGo := f.Sort == SortRecent || f.Sort == SortName
+	if f.Sort == SortSeq {
+		q = strings.Replace(q, `ORDER BY a.batch, a.seq`, `ORDER BY a.seq`, 1)
+	}
+	if f.Limit > 0 && !inGo {
 		q += ` LIMIT ? OFFSET ?`
 		args = append(args, f.Limit, max(f.Offset, 0))
 	}
@@ -632,7 +638,19 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, error) 
 		p.a.Latest = &v
 		out = append(out, p.a)
 	}
-	return out, s.fillAssetLinks(ctx, out)
+	if err := s.fillAssetLinks(ctx, out); err != nil {
+		return nil, err
+	}
+	if inGo {
+		SortAssets(out, f.Sort)
+		if f.Offset > 0 {
+			out = out[min(f.Offset, len(out)):]
+		}
+		if f.Limit > 0 && len(out) > f.Limit {
+			out = out[:f.Limit]
+		}
+	}
+	return out, nil
 }
 
 // assetInBatch：素材带过这个批次（旧条目看 batch 列，按 id 推送的看 batches）。参数：批次 ×2。

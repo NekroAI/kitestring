@@ -13,7 +13,7 @@ import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
 import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
 import { AssetLinks, DeleteAsset } from './assetLinks'
-import { DirBrowser, dirParams, sectionDir, sectionLabel, useBrowse, type Browse } from './assetDir'
+import { DirBrowser, SortMenu, useAssetSort, dirParams, sectionDir, sectionLabel, useBrowse, type Browse } from './assetDir'
 import { KeyCaps } from './command'
 import { useFillHeight } from './pool'
 import { AnimBar, FrameCtx, type FrameCtxValue, type FrameMark } from './animBar'
@@ -84,7 +84,8 @@ export function AssetsPage() {
   const status = params.get('st') ?? ''
   const ftype = params.get('ft') ?? ''
   const facets = useMemo(() => facetsOf(all, project), [all, project])
-  const b = useBrowse(all, project, params)
+  const [sort, setSort] = useAssetSort()
+  const b = useBrowse(all, project, params, sort)
   const tiles = b.tiles
   const nameOf = (id: string) => (projects.data?.projects ?? []).find((p) => p.id === id)?.name ?? id
   const review = useReviewMode(all, tiles, params.get('rv') === '1', params.get('asset'), set)
@@ -128,6 +129,7 @@ export function AssetsPage() {
             <FacetMenu label={t.asset.batch} allLabel={t.asset.allBatches} value={batch} options={facets.batches} onChange={(v) => set({ b: v || null })} />
             <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
             <AssetSearch value={params.get('q') ?? ''} onChange={(v) => set({ q: v.trim() || null })} />
+            <SortMenu value={sort} onChange={setSort} />
           </div>
         )}
         <span className="flex-1" />

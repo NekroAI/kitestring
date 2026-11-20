@@ -272,18 +272,51 @@ export function dirCount(tree: ReturnType<typeof dirTree>, d: AssetDir, list?: A
   return d.sub ? (c.children.find((x) => x.key === d.sub) ?? zero()) : c
 }
 
+// AssetSort（R-410）：资源库排序。recent 最近更新在前（默认）/ name 名称自然排序 / seq 推送先后（素材编号）。
+export type AssetSort = 'recent' | 'name' | 'seq'
+export const ASSET_SORTS: AssetSort[] = ['recent', 'name', 'seq']
+export const parseSort = (v: string | null | undefined): AssetSort => (v === 'name' || v === 'seq' ? v : 'recent')
+
+// pushedAt：素材最新一版的推送时间。不看 updated_at：它在审核改状态时也会动，而改状态不算更新。
+const pushedAt = (a: Pick<AssetLite, 'latest' | 'updated_at'>): number => Date.parse(a.latest?.created_at ?? a.updated_at) || 0
+
+// recentStamps：每件素材的「最近更新」时间；变体有新版本也算素材本身更新（取素材和它全部变体里最新的）。
+export function recentStamps(list: AssetLite[]): (a: AssetLite) => number {
+  const fam = new Map<string, number>()
+  const key = (a: AssetLite) => (a.parent ? a.parent.id : a.id)
+  for (const a of list) fam.set(key(a), Math.max(fam.get(key(a)) ?? 0, pushedAt(a)))
+  return (a) => Math.max(pushedAt(a), fam.get(key(a)) ?? 0)
+}
+
+const seqOf = (a: Pick<AssetLite, 'code'>) => Number(a.code.replace(/^A-/, '')) || 0
+
+// sortAssets：组内排序。recent 新的在前；name 有中文名用中文名、否则素材 id（旧条目用 key），自然排序；seq 按素材编号。
+export function sortAssets(list: AssetLite[], sort: AssetSort, stamp: (a: AssetLite) => number = recentStamps(list)): AssetLite[] {
+  const nm = (a: AssetLite) => a.latest?.name || a.uid || a.key
+  const by = {
+    recent: (x: AssetLite, y: AssetLite) => stamp(y) - stamp(x) || seqOf(y) - seqOf(x),
+    name: (x: AssetLite, y: AssetLite) => natural.compare(nm(x), nm(y)) || seqOf(x) - seqOf(y),
+    seq: (x: AssetLite, y: AssetLite) => seqOf(x) - seqOf(y),
+  }[sort]
+  return [...list].sort(by)
+}
+
 // WallSection：图片墙按下一层分的一组。kind 说明 key 是什么：cat 类别 / sub 细类（空 = 未分细类）/ batch 旧条目的批次 / '' 不分组。
 export type WallSection = { kind: 'cat' | 'sub' | 'batch' | 'variant' | ''; key: string; assets: AssetLite[] }
 
 // wallSections：图片墙按目录的下一层分组——全部素材按类别（旧条目在后面按批次）、类别按细类、「按批次（旧）」按批次；
 // 到了细类或某个旧批次就不再分组。只有一组且没有名字时不写组名。
-export function wallSections(list: AssetLite[], d: AssetDir): WallSection[] {
+// sort（R-410，不传 = 保持传入顺序）：排序作用在组内；选 recent 时组之间也按组里最新一件的时间排，其他排序下组按名字排。
+export function wallSections(list: AssetLite[], d: AssetDir, sort?: AssetSort): WallSection[] {
+  const stamp = recentStamps(list)
+  const ordered = (xs: AssetLite[]) => (d.asset || !sort ? xs : sortAssets(xs, sort, stamp))
   const by = (xs: AssetLite[], kind: WallSection['kind'], keyOf: (a: AssetLite) => string, emptyLast = false) => {
     const m = new Map<string, AssetLite[]>()
     for (const a of xs) m.set(keyOf(a), [...(m.get(keyOf(a)) ?? []), a])
+    const top = (as: AssetLite[]) => Math.max(...as.map(stamp))
     return [...m.entries()]
-      .sort(([x], [y]) => (emptyLast && !x ? 1 : emptyLast && !y ? -1 : natural.compare(x, y)))
-      .map(([key, assets]) => ({ kind, key, assets }))
+      .sort(([x, xa], [y, ya]) => (emptyLast && !x ? 1 : emptyLast && !y ? -1 : sort === 'recent' ? top(ya) - top(xa) || natural.compare(x, y) : natural.compare(x, y)))
+      .map(([key, assets]) => ({ kind, key, assets: ordered(assets) }))
   }
   if (d.asset) {
     // 变体层（R-380）：素材本身在前，变体按名字排
@@ -291,11 +324,11 @@ export function wallSections(list: AssetLite[], d: AssetDir): WallSection[] {
     const kids = list.filter((a) => a.parent).sort((x, y) => natural.compare(x.variant ?? '', y.variant ?? ''))
     return [{ kind: 'variant', key: d.asset, assets: [...main, ...kids] }]
   }
-  if (d.old) return d.batch ? [{ kind: '', key: '', assets: list }] : by(list, 'batch', (a) => a.batch)
-  if (d.sub) return [{ kind: '', key: '', assets: list }]
+  if (d.old) return d.batch ? [{ kind: '', key: '', assets: ordered(list) }] : by(list, 'batch', (a) => a.batch)
+  if (d.sub) return [{ kind: '', key: '', assets: ordered(list) }]
   if (d.cat) {
     const s = by(list, 'sub', subtypeOf, true)
-    return s.length === 1 && !s[0].key ? [{ kind: '', key: '', assets: list }] : s
+    return s.length === 1 && !s[0].key ? [{ kind: '', key: '', assets: ordered(list) }] : s
   }
   return [...by(list.filter((a) => !isLegacy(a)), 'cat', (a) => a.category), ...by(list.filter(isLegacy), 'batch', (a) => a.batch)]
 }

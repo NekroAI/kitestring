@@ -234,6 +234,7 @@ type assetListIn struct {
 	CwdRemote  string `query:"cwd_remote" doc:"Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）"`
 	Limit      int    `query:"limit" minimum:"0" doc:"R-391：最多返回几条，0 或不写不限"`
 	Offset     int    `query:"offset" minimum:"0" doc:"R-391：跳过前几条（分页）"`
+	Sort       string `query:"sort" enum:"recent,name,seq," doc:"R-410：recent 最近更新在前（最新版本的推送时间，变体算进素材本身）/ name 名称自然排序 / seq 编号（推送先后）；不写按批次、编号"`
 }
 
 type assetListOut struct{ Body AssetListView }
@@ -278,7 +279,7 @@ type assetSummaryOut struct {
 func (h *Hub) listAssets(ctx context.Context, in *assetListIn, project string) (*assetListOut, error) {
 	out := &assetListOut{}
 	var err error
-	f := store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind, ID: in.ID, Q: in.Q}
+	f := store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind, ID: in.ID, Q: in.Q, Sort: in.Sort}
 	if out.Body.Total, err = h.store.CountAssets(ctx, f); err != nil {
 		return nil, err
 	}

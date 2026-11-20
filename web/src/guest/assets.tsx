@@ -13,7 +13,7 @@ import { DraftField, useDraft } from '../app/draft'
 import { FrameChip, useFrameSink } from '../app/animBar'
 import type { Frame } from '../lib/anim'
 import { AssetDrawer, AssetExtrasContext, AssetSplit, AssetSearch, CompareDrawer, FacetMenu, SectionWall, useSplit, WallGrid, type AssetExtras, type Detail } from '../app/assets'
-import { DirBrowser, dirParams, useBrowse } from '../app/assetDir'
+import { DirBrowser, SortMenu, useAssetSort, dirParams, useBrowse } from '../app/assetDir'
 import { gk, guestAssetDetail, postComment, postUpload, useGuestAssets, useMyComments } from './data'
 import { mineText } from './slots'
 import { Failed } from './views'
@@ -40,7 +40,8 @@ export function GuestAssets({ token }: { token: string }) {
   const ftype = params.get('ft') ?? ''
   const facets = useMemo(() => facetsOf(all, ''), [all])
   // 目录层级（R-394）：和所有者页一样分层，只有分享范围内的素材
-  const b = useBrowse(all, '', params)
+  const [sort, setSort] = useAssetSort()
+  const b = useBrowse(all, '', params, sort)
   const tiles = b.tiles
   const go = (d: AssetDir) => set(dirParams(d))
   const open = all.find((a) => a.code === params.get('asset'))
@@ -74,6 +75,7 @@ export function GuestAssets({ token }: { token: string }) {
           <FacetMenu label={t.asset.batch} allLabel={t.asset.allBatches} value={batch} options={facets.batches} onChange={(v) => set({ b: v || null })} />
           <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
           <AssetSearch value={params.get('q') ?? ''} onChange={(v) => set({ q: v.trim() || null })} />
+          <SortMenu value={sort} onChange={setSort} />
         </div>
       )}
       {q.isPending ? (

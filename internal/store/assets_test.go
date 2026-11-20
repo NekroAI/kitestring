@@ -72,6 +72,19 @@ func TestPushAssetsVersions(t *testing.T) {
 	if l, _ := s.ListAssets(ctx, AssetFilter{ProjectID: "p1", Kind: protocol.AssetImage}); len(l) != 1 || l[0].Key != "g11e1_catalog" {
 		t.Fatalf("按类型筛选：%+v", l)
 	}
+	// R-410：排序；A-1 的第 2 版是在 A-2 之后推的，A-3 最后建
+	for _, c := range []struct {
+		sort string
+		want []string
+	}{{SortRecent, []string{"A-3", "A-1", "A-2"}}, {SortSeq, []string{"A-1", "A-2", "A-3"}}, {SortName, []string{"A-2", "A-1", "A-3"}}} {
+		l, err := s.ListAssets(ctx, AssetFilter{ProjectID: "p1", Sort: c.sort})
+		if err != nil || len(l) != 3 || l[0].Code != c.want[0] || l[1].Code != c.want[1] || l[2].Code != c.want[2] {
+			t.Fatalf("排序 %s：%+v %v", c.sort, l, err)
+		}
+	}
+	if l, _ := s.ListAssets(ctx, AssetFilter{ProjectID: "p1", Sort: SortRecent, Limit: 1, Offset: 1}); len(l) != 1 || l[0].Code != "A-1" {
+		t.Fatalf("排序后再分页：%+v", l)
+	}
 	f, err := s.ListAssetFacets(ctx, "p1")
 	if err != nil || len(f.Batches) != 2 || len(f.Categories) != 2 || f.Counts[AssetPending] != 3 {
 		t.Fatalf("筛选项：%+v %v", f, err)

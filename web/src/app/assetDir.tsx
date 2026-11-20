@@ -1,8 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { Archive, Boxes, ChevronRight } from 'lucide-react'
+import { useCallback, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Archive, ArrowDownUp, Boxes, ChevronRight } from 'lucide-react'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { titleOf, dirCount, dirTree, filterAssets, inDir, ROOT_DIR, variantFamily, wallSections, wallTiles, type AssetDir, type AssetLite, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
+import { Button } from '../ui/base'
+import { Menu } from '../ui/overlay'
+import { ASSET_SORTS, parseSort, titleOf, dirCount, dirTree, filterAssets, inDir, ROOT_DIR, variantFamily, wallSections, wallTiles, type AssetDir, type AssetLite, type AssetSort, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
 
 // 资源库的目录层级（R-394，D-2093 方案 C）：桌面左侧窄目录只到「类别 → 细类」两层，顶部面包屑写到素材；
 // 手机上不放目录，面包屑下面一行可横滑的标签列出下一层。所有者页和分享页（只有分享范围内的素材）共用。
@@ -27,11 +29,60 @@ export const dirParams = (d: AssetDir): Record<string, string | null> => ({
   cmp: null,
 })
 
+// 排序（R-410）：选择记在本机（localStorage），所有者页和分享页共用一份；读写都包在 try 里，拿不到时只在本页内存里记。
+const SORT_KEY = 'ks.assets.sort'
+let sortMem: AssetSort | null = null
+const sortSubs = new Set<() => void>()
+const readSort = (): AssetSort => {
+  if (sortMem) return sortMem
+  try {
+    return parseSort(localStorage.getItem(SORT_KEY))
+  } catch {
+    return 'recent'
+  }
+}
+export function useAssetSort(): [AssetSort, (s: AssetSort) => void] {
+  const sort = useSyncExternalStore(
+    (cb) => {
+      sortSubs.add(cb)
+      return () => sortSubs.delete(cb)
+    },
+    readSort,
+    () => 'recent' as AssetSort,
+  )
+  const set = useCallback((s: AssetSort) => {
+    sortMem = s
+    try {
+      localStorage.setItem(SORT_KEY, s)
+    } catch {
+      /* 拿不到本机存储：只在本页记 */
+    }
+    sortSubs.forEach((f) => f())
+  }, [])
+  return [sort, set]
+}
+
+// SortMenu：资源库工具栏的排序选项。
+export function SortMenu({ value, onChange }: { value: AssetSort; onChange: (s: AssetSort) => void }) {
+  return (
+    <Menu
+      align="start"
+      trigger={
+        <Button size="sm" data-asset-sort={value} icon={<ArrowDownUp className="size-4" />}>
+          <span className="text-fg-3">{t.asset.sort.label}</span>
+          {t.asset.sort[value]}
+        </Button>
+      }
+      items={ASSET_SORTS.map((s) => ({ label: t.asset.sort[s], checked: s === value, onSelect: () => onChange(s) }))}
+    />
+  )
+}
+
 export type Section = WallSection & { tiles: WallTile[] }
 
 // useBrowse：按目录和筛选算出图片墙。目录的件数不受状态筛选影响（待审 / 返工数照样看得到），受批次、文件类型筛选影响；
 // 状态分段的数字是当前这一层里的。
-export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams) {
+export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams, sort: AssetSort = 'recent') {
   const batch = p.get('b') ?? ''
   const status = p.get('st') ?? ''
   const ftype = p.get('ft') ?? ''
@@ -45,11 +96,11 @@ export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams)
     const counts: Record<string, number> = {}
     for (const a of here) counts[a.status] = (counts[a.status] ?? 0) + 1
     const shown = status ? here.filter((a) => a.status === status) : here
-    const sections: Section[] = wallSections(shown, dir).map((s) => ({ ...s, tiles: wallTiles(s.assets, !dir.asset) }))
+    const sections: Section[] = wallSections(shown, dir, sort).map((s) => ({ ...s, tiles: wallTiles(s.assets, !dir.asset) }))
     // 变体层的素材本身（面包屑写它的名字）
     const family = dir.asset ? variantFamily(scoped, dir.asset)[0] : undefined
     return { dir, tree, counts, sections, here, family, tiles: sections.flatMap((s) => s.tiles), filtered: !!(batch || status || ftype || q.trim() || dir.old || dir.cat || dir.asset) }
-  }, [all, project, batch, status, ftype, q, key]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [all, project, batch, status, ftype, q, key, sort]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 export type Browse = ReturnType<typeof useBrowse>
 

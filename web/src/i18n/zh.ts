@@ -268,6 +268,8 @@ export const zh = {
     allFileTypes: '全部文件类型',
     search: '搜索素材',
     searchHint: '搜素材 id 或中文名',
+    // 排序（R-410）
+    sort: { label: '排序', recent: '最近更新', name: '名称', seq: '推送先后' },
     fileType: '文件类型',
     // 类型标签的种类（R-397）：标签写成「种类 · 文件类型」，如「模型 · GLB」
     media: { model: '模型', image: '图片', audio: '音频', video: '视频', font: '字体', other: '其他' } as Record<string, string>,

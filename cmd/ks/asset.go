@@ -30,7 +30,7 @@ const assetUsage = `用法：
       旧的按批次推送（仍可用）：manifest 里的 GLB 是零件，预览目录里文件名以零件 id 开头的图挂到零件上，其余是独立的图（目录图、概念图……，文件名去扩展名当 id）。
       同一批次里同一 id 内容有变的重推记为新版本（旧版本保留），内容相同的不新增；Hub 已有的文件不重传；未连接 Hub 时排队，连上后自动补传。
   ks asset summary [--project 项目] [--json]   只出统计：总数、各状态和各类别的数量、批次（几百字，先看它）
-  ks asset list [--id 素材 id|前缀*] [--q 关键字] [--batch 批次] [--status wip|pending|approved|rework] [--category 类别] [--project 项目] [--limit N] [--offset N] [--all] [--json] [--full]
+  ks asset list [--id 素材 id|前缀*] [--q 关键字] [--batch 批次] [--status wip|pending|approved|rework] [--category 类别] [--project 项目] [--sort recent|name|seq] [--limit N] [--offset N] [--all] [--json] [--full]
       默认查当前目录所在的项目（--project 填项目名、项目 ID 或 git remote 可改）；默认最多列 50 条，开头给总数和统计。
       筛选（--status / --category / --batch / --id 前缀*）比翻页更省；--offset 翻页，--all 取全部。
       --json 默认只给精简字段（id、类别、状态、版本、批次、预览图个数），--full 才给完整内容；不要整表拉 --json，先用 summary 和筛选。
@@ -75,6 +75,7 @@ func runAsset(args []string) error {
 	categories := fs.String("categories", "", "push（asset.json）：类别允许表（JSON 数组或 {\"categories\": [...]}）；不写时用仓库里 "+assetpush.ConfigFile+" 的 categories")
 	id := fs.String("id", "", "list：素材 id（如 core:weapon.carbine）或编号 A-x，末尾带 * 按前缀查；push（asset.json）：只推这些")
 	query := fs.String("q", "", "list：关键字，按素材 id 或中文名找（不分大小写）")
+	sortBy := fs.String("sort", "", "list：排序 recent 最近更新在前 / name 名称自然排序 / seq 编号（推送先后）；不写按批次、编号")
 	session := fs.String("session", "", "会话键（tool:session_id），Claude 下可省略")
 	baseline := fs.Bool("baseline", false, "push：申请标为已在用（历史素材），自动提决策给用户批准")
 	approve := fs.Bool("approve", false, "review：批量通过")
@@ -90,7 +91,7 @@ func runAsset(args []string) error {
 	allowed := map[string][]string{
 		"push":      {"previews", "batch", "category", "id", "status", "req", "project", "branch", "commit", "json", "dry-run", "skip-invalid", "categories", "baseline"},
 		"review":    {"id", "batch", "category", "status", "kind", "approve", "rework", "comment", "dry-run", "undo", "json"},
-		"list":      {"id", "q", "batch", "category", "status", "project", "json", "limit", "offset", "all", "full"},
+		"list":      {"id", "q", "sort", "batch", "category", "status", "project", "json", "limit", "offset", "all", "full"},
 		"summary":   {"project", "json"},
 		"get":       {"project", "json", "history"},
 		"queue":     {"json"},
@@ -164,7 +165,7 @@ func runAsset(args []string) error {
 		if lim < 0 || *offset < 0 {
 			return errors.New("--limit、--offset 不能是负数")
 		}
-		q := assetQuery(map[string]string{"id": *id, "batch": *batch, "category": *category, "status": *status, "project": *project, "q": *query}, *session)
+		q := assetQuery(map[string]string{"id": *id, "batch": *batch, "category": *category, "status": *status, "project": *project, "q": *query, "sort": *sortBy}, *session)
 		q.Set("limit", strconv.Itoa(lim))
 		q.Set("offset", strconv.Itoa(*offset))
 		var out struct {

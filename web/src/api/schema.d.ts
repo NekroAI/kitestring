@@ -8632,6 +8632,8 @@ export interface operations {
                 limit?: number;
                 /** @description R-391：跳过前几条（分页） */
                 offset?: number;
+                /** @description R-410：recent 最近更新在前（最新版本的推送时间，变体算进素材本身）/ name 名称自然排序 / seq 编号（推送先后）；不写按批次、编号 */
+                sort?: "recent" | "name" | "seq" | "";
             };
             header?: never;
             path?: never;
@@ -8680,6 +8682,8 @@ export interface operations {
                 limit?: number;
                 /** @description R-391：跳过前几条（分页） */
                 offset?: number;
+                /** @description R-410：recent 最近更新在前（最新版本的推送时间，变体算进素材本身）/ name 名称自然排序 / seq 编号（推送先后）；不写按批次、编号 */
+                sort?: "recent" | "name" | "seq" | "";
             };
             header?: never;
             path?: never;
@@ -10734,6 +10738,8 @@ export interface operations {
                 limit?: number;
                 /** @description R-391：跳过前几条（分页） */
                 offset?: number;
+                /** @description R-410：recent 最近更新在前（最新版本的推送时间，变体算进素材本身）/ name 名称自然排序 / seq 编号（推送先后）；不写按批次、编号 */
+                sort?: "recent" | "name" | "seq" | "";
             };
             header?: never;
             path?: never;
