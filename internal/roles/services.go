@@ -32,13 +32,13 @@ var Services = []Service{
 - 取用：ks secret run S-x -- <命令>，值只作为这条命令的环境变量出现；命令里写编号 S-x，ks secret list 看能用的。
 - 被拒（命令不在范围、到期、没授权写盘）或要换 Token：ks secret amend S-x --reason 理由（--add-allow、--replace 等）。
 - 不要打印、回显值，不要让用户在终端里输入或粘贴凭据。完整用法：ks secret help。`},
-	{Name: "asset", Aliases: []string{"资源库", "素材", "assets"}, Title: "把素材、音效、字体推进资源库给用户审核", Text: `资源库（ks asset push，MCP 工具 asset_push）：用户在网页上审核。
-- ks asset push asset.json [--dry-run]：id 带命名空间，写法见 ks asset help；有错整批不推（--skip-invalid 跳过）。
-- 重推同一 id 记新版本；未连 Hub 时排队。已在用的旧素材加 --baseline（批准后整批通过）。
-- 具名变体各是一条（id@变体名）；旧条目迁新 id 用 ks asset supersede --map。
-- display 可选：name 中文名（有才填，别编）；attach 挂件、refs 比例参照见 ks help asset compose。
-- 查询：先 ks asset summary，再 list --status / --category / --id 'core:weapon.*' / --q 关键字；单件 get <id|A-x>，不整表拉 --json。
-- 网页授权本会话后可用 ks asset review 批量审（--dry-run 预检，--undo 撤销）。`},
+	{Name: "asset", Aliases: []string{"资源库", "素材", "assets"}, Title: "把素材、音效、字体推进资源库给用户审核", Text: `资源库（ks asset push，MCP 工具 asset_push）：用户网页审核。
+- ks asset push asset.json [--dry-run]：id 带命名空间，写法见 ks asset help；有错整批不推（--skip-invalid）。
+- 重推同一 id 记新版本；没连 Hub 先排队。已在用的旧素材加 --baseline（批准后整批过）。
+- 具名变体各是一条（id@变体名）；旧条目迁新 id：ks asset supersede --map。
+- display 可选：name 中文名、animations 动作表；网页能看什么见 ks asset help，挂件 / 参照见 ks help asset compose。
+- 查询：先 summary，再 list --status / --category / --id 'core:weapon.*' / --q；单件 get <id|A-x>，别整表拉 --json。
+- 网页授权本会话后可 ks asset review 批量审（--dry-run 预检、--undo 撤销）。`},
 	{Name: "ask", Aliases: []string{"求助", "aide", "主助理"}, Title: "设计取舍问主助理", Text: `求助主助理：设计取舍、拿不准的判断，用 ks team tell --to aide <问题，写清选项和倾向>（MCP 工具 team_tell），问完不等，先做不受影响的部分；答复送回本会话，挂着 ks wait 时立刻唤醒。
 - 消息只放一两句（120 字以内）；细节多时先写进需求留言（ks req comment R-x）。
 - 本项目没有主助理时退回给主调度；都没有时用 ks decision raise 问用户。

@@ -37,10 +37,17 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
   "batches": ["G3", "G15"],             可选：批次，可多个
   "sources": ["art/_shared/carbine.blend"], "license": {"name": "CC0", "notes": "..."},   可选：来源、许可
   "budget": {"triangles": 1200, "max_triangles": 1500}, "size": {"dimensions_m": [0.7, 0.2, 0.1]},
-  "display": {"name": "卡宾枪"},        可选：中文名（给人看的名字，不想填就别填，别为了填而编）；有时网页以它作主标题、素材 id 作副标题，也能按它搜；变体沿用素材的
+  "display": {"name": "卡宾枪", "animations": [{"name": "run", "loop": true, "label": "跑"}]},
+                                        可选。display.name 中文名（给人看的名字，不想填就别填，别为了填而编）；有时网页以它作主标题、素材 id 作副标题，也能按它搜；变体沿用素材的
+                                        display.animations 动作表（GLB 有动作时可选）：每项 name 动作名、loop 是否循环、label 显示名，也可只写名字 ["idle", "run"]；
+                                        不写时网页照样列出 GLB 里的全部动作，写了才以它为准（顺序、循环、显示名）
                                         display.attach（挂件）、display.refs（比例参照）可选，3D 查看器里组合预览，写法见 ks help asset compose
   "title": "卡宾枪"                     其它字段是项目特有的，原样存进 meta，网页上展示
 }
+网页上能看到什么（不必另做拆分、不必只发本机路径）：
+  GLB：3D 查看器，一个 GLB 里的多个动作列在播放条里，可分别播放、循环、调速，分享页和版本对比同样；可挂挂件、放参照（见 ks help asset compose）。
+  图片：PNG / JPG / WebP / GIF（动图也能推）直接当图片显示；预览图按机位分组。
+  音效：可逐个试听、看波形和响度；字体：字形预览；SVG：当图显示，脚本不执行。
 音效（file 是 .ogg / .opus / .wav）：时长、声道、采样率由推送端从文件读；响度（LUFS）、峰值（dBFS）和波形 WAV 直接算，
   OGG 要本机有 ffmpeg 解码。读不出的可声明："audio": {"loudness_lufs": -18, "peak_dbfs": -1, "duration_s": 1.2, "channels": 2, "sample_rate": 48000}；
   文件里读出的优先，声明只补读不出的（网页上标「声明」），不一致时提示。多个版本的音效写成 variants（如 {"default": {"file": "hit_01.ogg"},
@@ -106,6 +113,9 @@ type Check struct {
 	Batches  []string `json:"batches,omitempty"`
 	Errors   []string `json:"errors,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
+
+	clips     []string // GLB 里的动作名（hints 用）
+	animsText bool     // asset.json 的 display 里写了 animations（hints 用）
 }
 
 // Stray 是挂不上素材的预览图。

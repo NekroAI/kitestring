@@ -17,6 +17,10 @@ import (
 	"strings"
 )
 
+// DisplayFields 是 asset.json 的 display 下 Hub / 网页会读的全部字段。新增字段先加在这里，
+// 一致性测试（assetpush 的 helpcover_test）会要求 ks asset help（含 compose 子页）里写明它，并扫描代码里有没有没登记的 display.<字段>。
+var DisplayFields = []string{"name", "animations", "attach", "refs"}
+
 // ComposeAttach 是一个挂件：挂到 GLB 里名为 Socket 的节点（骨骼或空节点）上。
 type ComposeAttach struct {
 	Name    string   `json:"name,omitempty" doc:"挂件名（不写时取 socket）；动作事件按它引用"`

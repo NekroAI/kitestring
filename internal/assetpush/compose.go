@@ -6,6 +6,7 @@ package assetpush
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"errors"
 	"io"
 	"os"
@@ -133,6 +134,12 @@ func checkCompose(c *Check, display json.RawMessage, kind, file string) protocol
 		return comp
 	}
 	g, err := readGLB(file)
+	c.clips = g.Clips
+	var d struct {
+		Animations json.RawMessage `json:"animations"`
+	}
+	_ = json.Unmarshal(display, &d)
+	c.animsText = len(d.Animations) > 0 && string(d.Animations) != "null"
 	if err != nil {
 		if !comp.Empty() {
 			c.Warnings = append(c.Warnings, "读不出 GLB 的节点，挂点名没有核对："+err.Error())
@@ -166,6 +173,13 @@ var hints = []hint{
 			return ""
 		}
 		return "GLB 里的挂点：" + strings.Join(c.Sockets, "、") + "（挂件写法见 ks help asset compose）"
+	},
+	// R-409：GLB 里有动作但 asset.json 没写 display.animations（写了、或没有动作都不提示）
+	func(c Check) string {
+		if len(c.clips) == 0 || c.animsText {
+			return ""
+		}
+		return fmt.Sprintf("网页会列出并分别播放这 %d 个动作；循环标记、显示名可写 display.animations（见 ks asset help）", len(c.clips))
 	},
 }
 
