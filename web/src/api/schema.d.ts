@@ -3892,6 +3892,8 @@ export interface components {
             license?: string;
             /** @description 旧 manifest：这一项的原文；asset.json：纸鸢不认识的项目特有字段（原样） */
             meta?: unknown;
+            /** @description R-400：素材的中文名（asset.json 的 display.name，可选，推送方按需传）；有时网页以它作主标题、素材 id 作副标题，可按它搜索 */
+            name?: string;
             /** @description asset.json：这条是哪个素材 id 的变体；素材本身不写 */
             parent?: string;
             /** @description 图的像素尺寸（宽 / 高） */
@@ -4150,6 +4152,8 @@ export interface components {
             license?: string;
             /** @description 旧 manifest：这一项的原文；asset.json：项目特有字段（原样） */
             meta?: unknown;
+            /** @description 中文名（R-400）：asset.json 的 display.name，推送方按需传；没有时为空，网页只显示素材 id */
+            name?: string;
             /** @description 像素尺寸（宽 / 高） */
             pixels?: number[] | null;
             /** @description 零件的预览图 */
@@ -8616,6 +8620,8 @@ export interface operations {
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
                 kind?: "part" | "image" | "audio" | "font" | "";
+                /** @description R-400：关键字，按素材 id 和中文名找（不分大小写） */
+                q?: string;
                 /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
@@ -8662,6 +8668,8 @@ export interface operations {
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
                 kind?: "part" | "image" | "audio" | "font" | "";
+                /** @description R-400：关键字，按素材 id 和中文名找（不分大小写） */
+                q?: string;
                 /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */
@@ -10714,6 +10722,8 @@ export interface operations {
                 category?: string;
                 status?: "wip" | "pending" | "approved" | "rework" | "";
                 kind?: "part" | "image" | "audio" | "font" | "";
+                /** @description R-400：关键字，按素材 id 和中文名找（不分大小写） */
+                q?: string;
                 /** @description R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*） */
                 id?: string;
                 /** @description Agent 用：不写 project 时列会话所在项目 */

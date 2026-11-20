@@ -37,6 +37,7 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
   "batches": ["G3", "G15"],             可选：批次，可多个
   "sources": ["art/_shared/carbine.blend"], "license": {"name": "CC0", "notes": "..."},   可选：来源、许可
   "budget": {"triangles": 1200, "max_triangles": 1500}, "size": {"dimensions_m": [0.7, 0.2, 0.1]},
+  "display": {"name": "卡宾枪"},        可选：中文名（给人看的名字，不想填就别填，别为了填而编）；有时网页以它作主标题、素材 id 作副标题，也能按它搜；变体沿用素材的
   "title": "卡宾枪"                     其它字段是项目特有的，原样存进 meta，网页上展示
 }
 音效（file 是 .ogg / .opus / .wav）：时长、声道、采样率由推送端从文件读；响度（LUFS）、峰值（dBFS）和波形 WAV 直接算，
@@ -69,7 +70,7 @@ const ConfigFile = ".kitestring/assets.json"
 // genericKeys 是纸鸢认识并单独存下的通用字段，不再进 meta。budget、size 写成对象时整个留在 meta（里面常有项目自己的检查项）。
 var genericKeys = map[string]bool{"format": true, "id": true, "category": true, "file": true, "previews": true, "batch": true, "batches": true,
 	"variants": true, "default_variant": true, "source": true, "sources": true, "license": true, "group": true, "triangles": true,
-	"budget_max": true, "pixels": true, "dimensions_px": true, "audio": true}
+	"budget_max": true, "pixels": true, "dimensions_px": true, "audio": true, "display": true}
 
 // IDOptions 是按 asset.json 推送的输入。
 type IDOptions struct {
@@ -98,6 +99,7 @@ type Check struct {
 	File     string   `json:"file,omitempty"`
 	Views    []string `json:"views,omitempty" doc:"预览图的机位"`
 	Audio    string   `json:"audio,omitempty" doc:"音效（R-381）：时长、声道、采样率、响度、峰值，一句话"`
+	Name     string   `json:"name,omitempty" doc:"中文名（R-400，asset.json 的 display.name）"`
 	Batches  []string `json:"batches,omitempty"`
 	Errors   []string `json:"errors,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -230,6 +232,7 @@ type idEntry struct {
 	Pixels         []int           `json:"pixels"`
 	PixelsOld      []int           `json:"dimensions_px"`
 	Audio          json.RawMessage `json:"audio"`
+	Display        json.RawMessage `json:"display"`
 }
 
 // winBad 是 Windows 文件名不允许的字符。
@@ -680,6 +683,11 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 		if it.Source == "" {
 			it.Source = textOf(e.Sources)
 		}
+		var nameErr string
+		if it.Name, nameErr = displayName(e.Display); nameErr != "" {
+			c.Errors = append(c.Errors, nameErr)
+		}
+		c.Name = it.Name
 		c.Batches = cleanList(append(append(append(append([]string{}, x.batches...), e.Batch...), e.Batches...), extra...))
 		it.Batches = c.Batches
 		if len(e.Variants) > 0 && string(e.Variants) != "null" {
@@ -996,6 +1004,37 @@ func cleanList(xs []string) []string {
 	return out
 }
 
+// MaxDisplayName 是中文名的最长字数。
+const MaxDisplayName = 64
+
+// displayName 取 asset.json 的 display.name（R-400）：可选；写了要是不含换行的字符串，最多 64 个字。返回名字和不合格的原因。
+func displayName(raw json.RawMessage) (string, string) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", ""
+	}
+	var d struct {
+		Name json.RawMessage `json:"name"`
+	}
+	if json.Unmarshal(raw, &d) != nil {
+		return "", "display 要写成对象，如 {\"name\": \"卡宾枪\"}"
+	}
+	if len(d.Name) == 0 || string(d.Name) == "null" {
+		return "", ""
+	}
+	var name string
+	if json.Unmarshal(d.Name, &name) != nil {
+		return "", "display.name 要是字符串"
+	}
+	name = strings.TrimSpace(name)
+	switch {
+	case strings.ContainsAny(name, "\r\n"):
+		return "", "display.name 不能换行"
+	case len([]rune(name)) > MaxDisplayName:
+		return "", fmt.Sprintf("display.name 太长（最多 %d 个字）", MaxDisplayName)
+	}
+	return name, ""
+}
+
 // projectMeta 取出项目特有字段（纸鸢不认识的），原样存进 meta；没有时返回空。
 func projectMeta(r json.RawMessage) json.RawMessage {
 	var m map[string]json.RawMessage
@@ -1050,6 +1089,9 @@ func ReportText(rep Report) string {
 	}
 	for _, c := range rep.Items {
 		var parts []string
+		if c.Name != "" {
+			parts = append(parts, "「"+c.Name+"」")
+		}
 		if c.Category != "" {
 			parts = append(parts, c.Category)
 		}

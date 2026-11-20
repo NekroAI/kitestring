@@ -1,13 +1,13 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { AudioLines, Box as BoxIcon, Type, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, Layers, ListChecks, Maximize2, SplitSquareHorizontal, X } from 'lucide-react'
+import { AudioLines, Box as BoxIcon, Type, Check, ChevronDown, ChevronLeft, Columns2, Image as ImageIcon, Images, Layers, ListChecks, Maximize2, Search, SplitSquareHorizontal, X } from 'lucide-react'
 import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
 import { cx, relTime, useDesktop, useMedia, useNow } from '../lib/util'
-import { assetName, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, audioOf, fontOf, isSvg, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetKind, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
-import { Badge, Button, Card, Empty, ErrorState, Segmented, Skeleton, Tip } from '../ui/base'
+import { titleOf, subIdOf, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, audioOf, fontOf, isSvg, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetKind, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { Badge, Button, Card, Empty, ErrorState, Input, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
 import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
@@ -94,7 +94,7 @@ export function AssetsPage() {
   const split = useSplit()
   const go = (d: AssetDir) => set(dirParams(d))
   const open = all.find((a) => a.code === params.get('asset'))
-  const reset = { b: null, c: null, sub: null, old: null, ob: null, ft: null, st: null, asset: null, cmp: null }
+  const reset = { q: null, b: null, c: null, sub: null, old: null, ob: null, ft: null, st: null, asset: null, cmp: null }
   // 多选（R-393）：墙上的顺序用于 Shift 连选和「全选」；换项目时退出多选
   const order = useMemo(() => b.sections.flatMap((s) => tileCodes(s.tiles)), [b.sections])
   const ws = useWallSelect(order)
@@ -126,6 +126,7 @@ export function AssetsPage() {
             />
             <FacetMenu label={t.asset.batch} allLabel={t.asset.allBatches} value={batch} options={facets.batches} onChange={(v) => set({ b: v || null })} />
             <FacetMenu label={t.asset.fileType} allLabel={t.asset.allFileTypes} value={ftype} options={facets.fileTypes} onChange={(v) => set({ ft: v || null })} />
+            <AssetSearch value={params.get('q') ?? ''} onChange={(v) => set({ q: v.trim() || null })} />
           </div>
         )}
         <span className="flex-1" />
@@ -165,7 +166,7 @@ export function AssetsPage() {
       ) : (
         <WallArea>
           {(h) => (
-            <DirBrowser b={b} go={go} openName={open ? (b.dir.asset ? variantLabel(open) : assetName(open)) : undefined} height={h} detail={split && <AssetSplit code={stage ? null : params.get('asset')} onClose={() => set({ asset: null })} height />}>
+            <DirBrowser b={b} go={go} openName={open ? (b.dir.asset ? variantLabel(open) : titleOf(open)) : undefined} height={h} detail={split && <AssetSplit code={stage ? null : params.get('asset')} onClose={() => set({ asset: null })} height />}>
               {!tiles.length ? (
                 <Card>
                   <Empty
@@ -318,6 +319,23 @@ function useReviewMode(all: AssetLite[], tiles: WallTile[], on: boolean, code: s
       set(toWall ? { rv: null, asset: null } : { rv: null })
     },
   }
+}
+
+// AssetSearch（R-400）：按素材 id 或中文名找，写进地址栏的 q；输入时稍等一下再筛，不每个字都记一条历史。
+export function AssetSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [text, setText] = useState(value)
+  useEffect(() => setText(value), [value])
+  useEffect(() => {
+    if (text === value) return
+    const h = setTimeout(() => onChange(text), 250)
+    return () => clearTimeout(h)
+  }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="relative w-full min-w-0 sm:w-56">
+      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-3" />
+      <Input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder={t.asset.searchHint} aria-label={t.asset.search} className="h-8 pl-8 sm:h-8" data-asset-search="" />
+    </div>
+  )
 }
 
 export function FacetMenu({ label, allLabel, value, options, onChange }: { label: string; allLabel: string; value: string; options: string[]; onChange: (v: string) => void }) {
@@ -506,18 +524,23 @@ export function AssetCard({ a, active, onOpen, variants = 0, onFamily, label }: 
         )}
         <div className="flex min-h-0 flex-1 flex-col justify-center px-3">
           <div className="truncate text-sm font-medium text-fg" title={a.key}>
-            {label ?? assetName(a)}
+            {label ?? titleOf(a)}
           </div>
+          {!label && subIdOf(a) && (
+            <div className="truncate font-mono text-[11px] text-fg-3" data-asset-id="">
+              {a.key}
+            </div>
+          )}
           <div className="mt-0.5 flex items-center gap-2">
             <div className="min-w-0 flex-1 truncate text-xs text-fg-3">{metaLine(batchesOf(a).join(t.asset.listSep), a.uid ? subtypeOf(a) || a.category : a.category, t.asset.ver(a.version))}</div>
             <FileTypeTags tags={fileTagsOf(a)} className="shrink-0" />
           </div>
         </div>
       </button>
-      <PickBox codes={[a.code]} name={assetName(a)} />
+      <PickBox codes={[a.code]} name={titleOf(a)} />
       {a.kind === 'audio' && a.latest?.file && (
         // 音效（R-381）：封面右下角试听，写着时长；和卡片的点击分开，不打开详情
-        <PlayChip file={a.latest.file} audio={a.latest.audio} name={label ?? assetName(a)} className="absolute top-[135px] right-2" />
+        <PlayChip file={a.latest.file} audio={a.latest.audio} name={label ?? titleOf(a)} className="absolute top-[135px] right-2" />
       )}
       {nv > 1 && onFamily && !selecting && (
         <button className={cx(chipCls, 'absolute top-[136px] left-2 transition hover:bg-black/75')} onClick={onFamily} title={t.asset.openVariants} data-variants={nv} data-open-variants="">
@@ -639,7 +662,7 @@ export function AssetDrawer({ code, review, onClose }: { code: string | null; re
   const q = (ex?.useDetail ?? useAsset)(code)
   const shell = useRef<HTMLDivElement>(null)
   return (
-    <Panel open={!!code} onClose={onClose} wide bare title={q.data?.key ?? t.asset.title}>
+    <Panel open={!!code} onClose={onClose} wide bare title={q.data ? titleOf(q.data) : t.asset.title}>
       <div ref={shell} className="flex min-h-0 flex-1 flex-col">
         <DetailInner q={q} review={review} onClose={onClose} shell={shell} code={code} />
       </div>
@@ -1016,8 +1039,13 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     <div className="flex items-start gap-3 border-b border-line px-5 py-4 max-lg:pt-1">
       <div className="min-w-0 flex-1">
         <div className="truncate font-display text-[17px] font-semibold text-fg" title={a.key}>
-          {a.key}
+          {a.latest?.name ? titleOf(a) : a.key}
         </div>
+        {subIdOf(a) && (
+          <div className="truncate font-mono text-[12px] text-fg-3" data-asset-id="">
+            {a.key}
+          </div>
+        )}
         <div className="mt-1 text-[13px] text-fg-3">{metaLine(a.code, t.asset.ver(a.version), relTime(a.updated_at, now))}</div>
       </div>
       <BaselineLink code={a.baseline} />
@@ -1160,7 +1188,7 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
       open={!!gkey}
       onClose={onClose}
       wide="approval"
-      title={first ? `${t.asset.compareTitle}${t.common.sep}${fam ? assetName(first) : first.group}` : t.asset.compareTitle}
+      title={first ? `${t.asset.compareTitle}${t.common.sep}${fam ? titleOf(first) : first.group}` : t.asset.compareTitle}
       subtitle={first ? (fam ? t.asset.compareVariantsSub(members.length) : t.asset.compareSub(first.batch, members.length)) : undefined}
     >
       {glbs.length >= 2 && (

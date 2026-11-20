@@ -33,11 +33,11 @@ var Services = []Service{
 - 被拒（命令不在范围、到期、没授权写盘）或要换 Token：ks secret amend S-x --reason 理由（--add-allow、--replace 等）。
 - 不要打印、回显值，不要让用户在终端里输入或粘贴凭据。完整用法：ks secret help。`},
 	{Name: "asset", Aliases: []string{"资源库", "素材", "assets"}, Title: "把素材、音效、字体推进资源库给用户审核", Text: `资源库（ks asset push，MCP 工具 asset_push）：用户在网页上审核。
-- ks asset push asset.json [--dry-run]：以带命名空间的 id 为主键，写法见 ks asset help。逐件校验，有错整批不推（--skip-invalid 只推合格的）。
-- 重推同一 id 记新版本；未连 Hub 时排队。已在用的旧素材加 --baseline（用户批准一次整批通过）。
-- 具名变体各是一条（id@变体名）；旧条目迁到新 id 用 ks asset supersede --map 对照表。
-- 音效、字体（TTF / OTF / WOFF2）、SVG 同样推。
-- 查询：先 ks asset summary，再 list --status / --category / --id 'core:weapon.*' 筛选（--offset 翻页）；单件 get <id|A-x>，不整表拉 --json。
+- ks asset push asset.json [--dry-run]：以带命名空间的 id 为主键，写法见 ks asset help；有错整批不推（--skip-invalid 跳过）。
+- 重推同一 id 记新版本；未连 Hub 时排队。已在用的旧素材加 --baseline（用户批准整批通过）。
+- 具名变体各是一条（id@变体名）；旧条目迁新 id 用 ks asset supersede --map。音效、字体、SVG 同样推。
+- 中文名可选：asset.json 的 display.name，本来有才填，别编。
+- 查询：先 ks asset summary，再 list --status / --category / --id 'core:weapon.*' / --q 关键字（id 或中文名）；单件 get <id|A-x>，不整表拉 --json。
 - 网页授权本会话后可用 ks asset review 批量审（--dry-run 预检，--undo 撤销）。`},
 	{Name: "ask", Aliases: []string{"求助", "aide", "主助理"}, Title: "设计取舍问主助理", Text: `求助主助理：设计取舍、拿不准的判断，用 ks team tell --to aide <问题，写清选项和倾向>（MCP 工具 team_tell），问完不等，先做不受影响的部分；答复送回本会话，挂着 ks wait 时立刻唤醒。
 - 消息只放一两句（120 字以内）；细节多时先写进需求留言（ks req comment R-x）。

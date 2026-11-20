@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, fontOf, isSvg, FONT_SIZES, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { displayNameOf, titleOf, subIdOf, matchesQuery, assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, fontOf, isSvg, FONT_SIZES, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -388,4 +388,18 @@ test('字体与 SVG（R-387）：字体先看字形、标签「字体 · TTF」�
   assert.equal(defaultView('image', svg), 'image')
   assert.deepEqual(fileTagsOf({ latest: svg }), [{ kind: 'image', type: 'SVG' }])
   assert.ok(FONT_SIZES.length >= 3 && FONT_SIZES[0] < FONT_SIZES[FONT_SIZES.length - 1])
+})
+
+test('中文名（R-400）：有时作主标题、id 作副标题，变体沿用，没有时照旧；搜索按 id 或中文名', () => {
+  const named = mk({ key: 'core:weapon.carbine', uid: 'core:weapon.carbine', latest: { id: 'v', version: 1, batch: '', branch: '', commit: '', created_at: '', name: '卡宾枪' } })
+  const plain = mk({ key: 'core:weapon.pistol', uid: 'core:weapon.pistol' })
+  assert.equal(titleOf(named), '卡宾枪')
+  assert.equal(subIdOf(named), 'core:weapon.carbine')
+  assert.equal(titleOf(plain), 'pistol')
+  assert.equal(subIdOf(plain), '')
+  assert.equal(displayNameOf(plain), '')
+  const v = { ...named, uid: 'core:weapon.carbine@desert', key: 'core:weapon.carbine@desert', variant: 'desert', parent: { id: 'x', code: 'A-1', uid: 'core:weapon.carbine', key: 'core:weapon.carbine', status: 'pending' as const } }
+  assert.equal(titleOf(v), '卡宾枪 · desert')
+  assert.ok(matchesQuery(named, '卡宾') && matchesQuery(named, 'CARBINE') && !matchesQuery(plain, '卡宾') && matchesQuery(plain, ''))
+  assert.deepEqual(filterAssets([named, plain], { project: named.project_id, batch: '', category: '', status: '', q: ' 卡宾枪 ' }), [named])
 })

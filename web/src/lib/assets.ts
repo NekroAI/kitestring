@@ -35,6 +35,7 @@ export type VersionLite = {
   auto_thumb?: FileLite | null
   audio?: AudioLite | null
   subtype?: string
+  name?: string
   variants?: unknown
   created_at: string
 }
@@ -62,7 +63,7 @@ export type AssetLite = {
   superseded_by?: AssetRefLite | null
 }
 
-export type AssetFilter = { project: string; batch: string; category: string; status: string; ftype?: string }
+export type AssetFilter = { project: string; batch: string; category: string; status: string; ftype?: string; q?: string }
 
 // fileTypeOf（R-388）：一个文件的文件类型，取扩展名大写（glb → GLB，jpeg → JPG）；没有扩展名时取 mime 的子类型。
 export function fileTypeOf(f: Pick<FileLite, 'name' | 'mime'>): string {
@@ -144,7 +145,13 @@ export function facetsOf(list: AssetLite[], project: string) {
 }
 
 export function filterAssets(list: AssetLite[], f: AssetFilter): AssetLite[] {
-  return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status) && (!f.ftype || fileTypesOf(a).includes(f.ftype)))
+  return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status) && (!f.ftype || fileTypesOf(a).includes(f.ftype)) && matchesQuery(a, f.q))
+}
+
+// matchesQuery（R-400）：关键字按素材 id、key 和中文名找，不分大小写；空关键字都算。
+export function matchesQuery(a: Pick<AssetLite, 'uid' | 'key' | 'latest'>, q?: string): boolean {
+  const w = (q ?? '').trim().toLowerCase()
+  return !w || `${a.uid ?? ''} ${a.key} ${a.latest?.name ?? ''}`.toLowerCase().includes(w)
 }
 
 // ---------- 目录层级（R-394，D-2093 方案 C） ----------
@@ -167,6 +174,14 @@ export function assetName(a: Pick<AssetLite, 'uid' | 'key'> & { variant?: string
   const name = rest.slice(rest.indexOf('.') + 1) || id
   return v ? `${name} · ${v}` : name
 }
+// displayNameOf（R-400）：推送方给的中文名；变体沿用素材的，写成「卡宾枪 · desert」；没有写 ''。
+export function displayNameOf(a: Pick<AssetLite, 'latest'> & { variant?: string; parent?: AssetRefLite | null }): string {
+  const n = a.latest?.name ?? ''
+  return n && a.parent && a.variant ? `${n} · ${a.variant}` : n
+}
+// titleOf（R-400）：素材的主标题——有中文名用中文名，没有照旧用 assetName；有中文名时素材 id 作副标题（subIdOf）。
+export const titleOf = (a: Pick<AssetLite, 'uid' | 'key' | 'latest'> & { variant?: string; parent?: AssetRefLite | null }) => displayNameOf(a) || assetName(a)
+export const subIdOf = (a: Pick<AssetLite, 'key' | 'latest'>) => (a.latest?.name ? a.key : '')
 // familyId（R-380）：素材本身的素材 id——变体取上级的，素材本身取自己的；旧条目为空。
 export const familyId = (a: Pick<AssetLite, 'uid'> & { parent?: AssetRefLite | null }) => (a.parent ? (a.parent.uid ?? '') : (a.uid ?? ''))
 // variantsOf（R-380）：素材的变体条目，按变体名排。
@@ -180,7 +195,7 @@ export function variantFamily(all: AssetLite[], uid: string): AssetLite[] {
   return main ? [main, ...kids] : kids
 }
 // variantLabel：变体在变体层、变体对比里的叫法——变体名；素材本身写默认变体名，没写时用素材名。
-export const variantLabel = (a: AssetLite) => a.variant || assetName(a)
+export const variantLabel = (a: AssetLite) => a.variant || titleOf(a)
 // variantCount：素材的具名变体个数。拆开存了（R-380）就数变体条目（加上素材本身）；还没拆开的旧数据按 asset.json 的 variants 数。
 export function variantCount(a: AssetLite, all?: AssetLite[]): number {
   const kids = all ? all.filter((x) => x.parent?.id === a.id).length : 0
@@ -382,7 +397,7 @@ export function viewGroups<P extends { view?: string }>(previews: P[]): { view: 
 
 // 纸鸢认识的通用字段（asset.json 与旧 manifest），项目字段里不再重复列出。
 // budget、size 等写成对象时（里面常有项目自己的检查项）照样列出，只有数字 / 数组的已在面数、尺寸里显示。
-const GENERIC = new Set(['format', 'id', 'file', 'category', 'subtype', 'previews', 'batch', 'batches', 'variants', 'default_variant', 'source', 'sources', 'license', 'group', 'triangles', 'budget_max', 'pixels', 'dimensions_px', 'audio'])
+const GENERIC = new Set(['format', 'id', 'file', 'category', 'subtype', 'previews', 'batch', 'batches', 'variants', 'default_variant', 'source', 'sources', 'license', 'group', 'triangles', 'budget_max', 'pixels', 'dimensions_px', 'audio', 'display'])
 const SHOWN_UNLESS_OBJECT = new Set(['budget', 'size', 'bounds_m', 'bounds_local_m', 'dimensions_m'])
 const isObj = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v)
 

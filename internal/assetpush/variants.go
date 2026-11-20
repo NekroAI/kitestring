@@ -125,7 +125,7 @@ func variantItems(main protocol.AssetItem, src string, raw json.RawMessage, def 
 		}
 		seen[strings.ToLower(name)] = true
 		it := protocol.AssetItem{Key: c.ID, Parent: main.Key, Variant: name, Category: main.Category, Batches: main.Batches,
-			Source: main.Source, License: main.License, Meta: main.Meta, Triangles: v.Triangles}
+			Source: main.Source, License: main.License, Name: main.Name, Meta: main.Meta, Triangles: v.Triangles}
 		if s := textOf(v.Source); s != "" {
 			it.Source = s
 		}

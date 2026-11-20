@@ -90,6 +90,7 @@ type AssetVersion struct {
 	Audio     *protocol.AssetAudioInfo `json:"audio,omitempty" doc:"音效的时长、声道、采样率、响度、峰值、波形（R-381）"`
 	Meta      json.RawMessage          `json:"meta,omitempty" doc:"旧 manifest：这一项的原文；asset.json：项目特有字段（原样）"`
 	Subtype   string                   `json:"subtype,omitempty" doc:"细类（R-394）：asset.json 的 subtype 字段（在项目字段里），资源库按类别 → 细类 → 素材 → 变体分层浏览"`
+	Name      string                   `json:"name,omitempty" doc:"中文名（R-400）：asset.json 的 display.name，推送方按需传；没有时为空，网页只显示素材 id"`
 	Source    string                   `json:"source,omitempty" doc:"来源（R-376）"`
 	License   string                   `json:"license,omitempty" doc:"许可（R-376）"`
 	Variants  json.RawMessage          `json:"variants,omitempty" doc:"asset.json 里具名变体的原文（R-376 先存下，R-380 拆成各自的版本与审核）"`
@@ -255,7 +256,7 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 		parts = append(parts, "p:"+p)
 	}
 	if n.ByID { // asset.json：来源许可、变体原文变了也记新版本；批次只是元数据，不算
-		parts = append(parts, "s:"+it.Source, "l:"+it.License, "v:"+string(it.Variants))
+		parts = append(parts, "s:"+it.Source, "l:"+it.License, "v:"+string(it.Variants), "n:"+it.Name)
 	}
 	if d := declaredAudio(it.Audio); d != "" { // 音效（R-381）：从文件读出的随文件内容走；asset.json 声明的值变了也记新版本
 		parts = append(parts, "a:"+d)
@@ -320,11 +321,11 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 	if n.Batch == "" {
 		vbatches = batchesJSON(batches)
 	}
-	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, submitter_kind, submitter_ref, submitter_name, created_at, batches, source, license, variants, audio)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	if _, err := t.ExecContext(ctx, `INSERT INTO asset_versions(id, asset_id, version, push_id, batch, branch, commit_sha, file_id, previews, triangles, budget, size, pixels, meta, digest, submitter_kind, submitter_ref, submitter_name, created_at, batches, source, license, variants, audio, name)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		vid, id, version, n.PushID, n.Batch, n.Branch, n.Commit, fileID, previewsJSON(previews), it.Triangles, it.Budget,
 		jsonOrEmpty(it.Size), jsonOrEmpty(it.Pixels), string(it.Meta), digest, n.Submitter.Kind, n.Submitter.Ref, n.Submitter.Name, at,
-		vbatches, it.Source, it.License, string(it.Variants), audioJSON(it.Audio)); err != nil {
+		vbatches, it.Source, it.License, string(it.Variants), audioJSON(it.Audio), it.Name); err != nil {
 		return r, err
 	}
 	reqSet := ""
@@ -394,6 +395,7 @@ type AssetFilter struct {
 	Category  string
 	Status    string
 	Kind      string
+	Q         string // R-400：关键字，按素材 id、key、中文名找（不分大小写）
 	ID        string // R-376：素材 id（uid）或编号 A-x；末尾带 * 时按 id 前缀查（如 core:weapon.*）
 	Limit     int    // R-391：最多返回几条，0 不限
 	Offset    int    // R-391：跳过前几条（分页）
@@ -402,7 +404,7 @@ type AssetFilter struct {
 const assetCols = `a.id, a.seq, a.project_id, a.batch, a.key, a.kind, a.category, a.grp, a.status, a.version, a.submitter_kind, a.submitter_ref, a.submitter_name, a.requirement_id, a.status_at, a.created_at, a.updated_at, a.uid, a.batches,
 	COALESCE((SELECT 'D-' || d.seq FROM asset_baselines b JOIN decisions d ON d.id = b.decision_id WHERE b.id = a.baseline_id AND b.status = 'pending'), '')`
 
-const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants, v.auto_thumb, v.audio`
+const versionCols = `v.id, v.version, v.batch, v.branch, v.commit_sha, v.file_id, v.previews, v.triangles, v.budget, v.size, v.pixels, v.meta, v.submitter_kind, v.submitter_ref, v.submitter_name, v.created_at, v.batches, v.source, v.license, v.variants, v.auto_thumb, v.audio, v.name`
 
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (Asset, error) {
 	var a Asset
@@ -432,7 +434,7 @@ type versionRow struct {
 
 func (r *versionRow) dst() []any {
 	return []any{&r.v.ID, &r.v.Version, &r.v.Batch, &r.v.Branch, &r.v.Commit, &r.fileID, &r.previews, &r.v.Triangles, &r.v.Budget, &r.size, &r.pixels, &r.meta, &r.v.Submitter.Kind, &r.v.Submitter.Ref, &r.v.Submitter.Name, &r.crtd,
-		&r.batches, &r.v.Source, &r.v.License, &r.variants, &r.autoThumb, &r.audio}
+		&r.batches, &r.v.Source, &r.v.License, &r.variants, &r.autoThumb, &r.audio, &r.v.Name}
 }
 
 func (s *Store) finishVersion(ctx context.Context, r versionRow) AssetVersion {
@@ -556,6 +558,10 @@ func assetWhere(f AssetFilter) (string, []any) {
 			where = append(where, c.col+" = ?")
 			args = append(args, c.v)
 		}
+	}
+	if q := strings.TrimSpace(f.Q); q != "" {
+		where = append(where, "instr(lower(a.uid || ' ' || a.key || ' ' || COALESCE((SELECT name FROM asset_versions n WHERE n.id = a.latest_id), '')), lower(?)) > 0")
+		args = append(args, q)
 	}
 	if b := strings.TrimSpace(f.Batch); b != "" {
 		where = append(where, assetInBatch)

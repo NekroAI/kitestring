@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Archive, Boxes, ChevronRight } from 'lucide-react'
 import { t } from '../i18n'
 import { cx } from '../lib/util'
-import { assetName, dirCount, dirTree, filterAssets, inDir, ROOT_DIR, variantFamily, wallSections, wallTiles, type AssetDir, type AssetLite, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
+import { titleOf, dirCount, dirTree, filterAssets, inDir, ROOT_DIR, variantFamily, wallSections, wallTiles, type AssetDir, type AssetLite, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
 
 // 资源库的目录层级（R-394，D-2093 方案 C）：桌面左侧窄目录只到「类别 → 细类」两层，顶部面包屑写到素材；
 // 手机上不放目录，面包屑下面一行可横滑的标签列出下一层。所有者页和分享页（只有分享范围内的素材）共用。
@@ -35,10 +35,11 @@ export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams)
   const batch = p.get('b') ?? ''
   const status = p.get('st') ?? ''
   const ftype = p.get('ft') ?? ''
+  const q = p.get('q') ?? ''
   const dir = dirFromParams(p)
   const key = JSON.stringify(dir)
   return useMemo(() => {
-    const scoped = filterAssets(all, { project, batch, category: '', status: '', ftype })
+    const scoped = filterAssets(all, { project, batch, category: '', status: '', ftype, q })
     const tree = dirTree(scoped)
     const here = scoped.filter((a) => inDir(a, dir))
     const counts: Record<string, number> = {}
@@ -47,8 +48,8 @@ export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams)
     const sections: Section[] = wallSections(shown, dir).map((s) => ({ ...s, tiles: wallTiles(s.assets, !dir.asset) }))
     // 变体层的素材本身（面包屑写它的名字）
     const family = dir.asset ? variantFamily(scoped, dir.asset)[0] : undefined
-    return { dir, tree, counts, sections, here, family, tiles: sections.flatMap((s) => s.tiles), filtered: !!(batch || status || ftype || dir.old || dir.cat || dir.asset) }
-  }, [all, project, batch, status, ftype, key]) // eslint-disable-line react-hooks/exhaustive-deps
+    return { dir, tree, counts, sections, here, family, tiles: sections.flatMap((s) => s.tiles), filtered: !!(batch || status || ftype || q.trim() || dir.old || dir.cat || dir.asset) }
+  }, [all, project, batch, status, ftype, q, key]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 export type Browse = ReturnType<typeof useBrowse>
 
@@ -168,7 +169,7 @@ function Crumbs({ b, go, openName }: { b: Browse; go: (d: AssetDir) => void; ope
     if (dir.sub) parts.push({ label: dir.sub, to: { ...ROOT_DIR, cat: dir.cat, sub: dir.sub } })
   }
   // 变体层（R-380）：面包屑写到素材，再打开某个变体时接着写变体名
-  if (dir.asset) parts.push({ label: b.family ? assetName(b.family) : dir.asset, to: dir })
+  if (dir.asset) parts.push({ label: b.family ? titleOf(b.family) : dir.asset, to: dir })
   return (
     <div className="mb-3 flex min-w-0 items-center gap-3" data-dir-crumbs="">
       <ol className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[14px]">

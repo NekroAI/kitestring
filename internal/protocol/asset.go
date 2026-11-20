@@ -48,6 +48,7 @@ type AssetItem struct {
 	Kind      string          `json:"kind" enum:"part,image,audio,font" doc:"part = GLB 零件，image = 独立的图（含 SVG，R-387），audio = 音效（R-381），font = 字体（TTF / OTF / WOFF2，R-387）"`
 	Category  string          `json:"category,omitempty" doc:"类别（manifest 的 category，或目录图 / 概念图 / 对比图）"`
 	Group     string          `json:"group,omitempty" doc:"同一用途的候选分组（概念图 A / B 版去掉末尾的 _A / _B）"`
+	Name      string          `json:"name,omitempty" doc:"R-400：素材的中文名（asset.json 的 display.name，可选，推送方按需传）；有时网页以它作主标题、素材 id 作副标题，可按它搜索"`
 	File      *AssetFile      `json:"file,omitempty" doc:"主文件：零件的 GLB，独立的图本身"`
 	Previews  []AssetFile     `json:"previews,omitempty" doc:"零件的预览图"`
 	Triangles int             `json:"triangles,omitempty" doc:"面数（三角形）"`

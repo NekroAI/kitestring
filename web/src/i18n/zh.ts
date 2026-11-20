@@ -266,6 +266,8 @@ export const zh = {
     allBatches: '全部批次',
     allCategories: '全部类别',
     allFileTypes: '全部文件类型',
+    search: '搜索素材',
+    searchHint: '搜素材 id 或中文名',
     fileType: '文件类型',
     // 类型标签的种类（R-397）：标签写成「种类 · 文件类型」，如「模型 · GLB」
     media: { model: '模型', image: '图片', audio: '音频', video: '视频', font: '字体', other: '其他' } as Record<string, string>,

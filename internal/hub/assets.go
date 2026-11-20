@@ -228,6 +228,7 @@ type assetListIn struct {
 	Category   string `query:"category"`
 	Status     string `query:"status" enum:"wip,pending,approved,rework,"`
 	Kind       string `query:"kind" enum:"part,image,audio,font,"`
+	Q          string `query:"q" doc:"R-400：关键字，按素材 id 和中文名找（不分大小写）"`
 	ID         string `query:"id" doc:"R-376：素材 id（如 core:weapon.carbine）或编号 A-x；末尾带 * 按前缀查（如 core:weapon.*）"`
 	SessionKey string `query:"session_key" doc:"Agent 用：不写 project 时列会话所在项目"`
 	CwdRemote  string `query:"cwd_remote" doc:"Agent 用：当前目录的 git remote；不写 project 时先按它找项目，找不到再按会话所在项目（R-391）"`
@@ -277,7 +278,7 @@ type assetSummaryOut struct {
 func (h *Hub) listAssets(ctx context.Context, in *assetListIn, project string) (*assetListOut, error) {
 	out := &assetListOut{}
 	var err error
-	f := store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind, ID: in.ID}
+	f := store.AssetFilter{ProjectID: project, Batch: in.Batch, Category: in.Category, Status: in.Status, Kind: in.Kind, ID: in.ID, Q: in.Q}
 	if out.Body.Total, err = h.store.CountAssets(ctx, f); err != nil {
 		return nil, err
 	}
@@ -482,8 +483,12 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 			if len(it.Variants) > 0 && !json.Valid(it.Variants) {
 				it.Variants = nil
 			}
-		} else if len(it.Batches) > 0 || it.Source != "" || it.License != "" || len(it.Variants) > 0 || it.Variant != "" || it.Parent != "" {
-			return res, fmt.Errorf("素材 %s：batches / source / license / variants 只用于按 asset.json 推送", it.Key)
+			it.Name = strings.TrimSpace(it.Name)
+			if strings.ContainsAny(it.Name, "\r\n") || len([]rune(it.Name)) > 64 {
+				return res, fmt.Errorf("素材 %s 的中文名（display.name）不能换行，最多 64 个字", it.Key)
+			}
+		} else if it.Name != "" || len(it.Batches) > 0 || it.Source != "" || it.License != "" || len(it.Variants) > 0 || it.Variant != "" || it.Parent != "" {
+			return res, fmt.Errorf("素材 %s：batches / source / license / variants / 中文名只用于按 asset.json 推送", it.Key)
 		}
 		if it.File == nil || it.File.ID == "" {
 			return res, fmt.Errorf("素材 %s 没有主文件", it.Key)

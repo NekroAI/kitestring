@@ -119,7 +119,7 @@ func summaryText(s protocol.AssetSummary) string {
 		}
 		fmt.Fprintf(&b, "批次（%d 个）：%s%s\n", len(s.Batches), strings.Join(shown, "、"), more)
 	}
-	b.WriteString("要看具体素材：ks asset list --status / --category / --batch / --id 前缀* 筛选；单件 ks asset get <素材 id>\n")
+	b.WriteString("要看具体素材：ks asset list --status / --category / --batch / --id 前缀* / --q 关键字（素材 id 或中文名）筛选；单件 ks asset get <素材 id>\n")
 	return b.String()
 }
 
@@ -130,6 +130,9 @@ func shortLine(a store.Asset) string {
 		name = a.UID
 	}
 	s := fmt.Sprintf("%s %s v%d %s", a.Code, name, a.Version, assetStatusLabel[a.Status])
+	if a.Latest != nil && a.Latest.Name != "" {
+		s = fmt.Sprintf("%s %s「%s」v%d %s", a.Code, name, a.Latest.Name, a.Version, assetStatusLabel[a.Status])
+	}
 	if a.Category != "" {
 		s += " " + a.Category
 	}
@@ -178,6 +181,7 @@ func listText(total, offset int, assets []store.Asset, f store.AssetFacets, limi
 type compactAsset struct {
 	Code     string   `json:"code"`
 	ID       string   `json:"id"`
+	Name     string   `json:"name,omitempty" doc:"中文名（R-400）"`
 	Category string   `json:"category,omitempty"`
 	Status   string   `json:"status"`
 	Version  int      `json:"version"`
@@ -201,6 +205,7 @@ func compactList(total, offset int, assets []store.Asset, f store.AssetFacets) m
 		}
 		if a.Latest != nil {
 			c.Previews = len(a.Latest.Previews)
+			c.Name = a.Latest.Name
 		}
 		c.Variant = a.Variant
 		if a.Parent != nil {
