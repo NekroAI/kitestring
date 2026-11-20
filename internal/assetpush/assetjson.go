@@ -118,8 +118,9 @@ type Check struct {
 	Errors   []string `json:"errors,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
 
-	clips     []string // GLB 里的动作名（hints 用）
-	animsText bool     // asset.json 的 display 里写了 animations（hints 用）
+	clips     []string         // GLB 里的动作名（hints 用）
+	animsText bool             // asset.json 的 display 里写了 animations（hints 用）
+	compose   protocol.Compose // 组合预览配置（hints 用，R-415）
 }
 
 // Stray 是挂不上素材的预览图。

@@ -156,6 +156,7 @@ func checkCompose(c *Check, display json.RawMessage, kind, file string) protocol
 	}
 	g, err := readGLB(file)
 	c.clips = g.Clips
+	c.compose = comp
 	var d struct {
 		Animations json.RawMessage `json:"animations"`
 	}
@@ -246,6 +247,57 @@ var hints = []hint{
 		}
 		return fmt.Sprintf("网页会列出并分别播放这 %d 个动作；循环标记、显示名可写 display.animations（见 ks asset help）", len(c.clips))
 	},
+	// R-415：挂件在哪些动作里显示、哪些没覆盖（clips 没写即全部显示；动作里有这个挂件的 attach / detach 事件也算覆盖）。只陈述事实
+	func(c Check) string {
+		if len(c.clips) < 2 {
+			return ""
+		}
+		var parts []string
+		for _, a := range c.compose.Attach {
+			if len(a.Clips) == 0 {
+				continue
+			}
+			var shown, miss []string
+			for _, cl := range c.clips {
+				switch {
+				case contains(a.Clips, cl):
+					shown = append(shown, cl)
+				case !hasAttachEvent(c.compose.Events[cl], a.Key()):
+					miss = append(miss, cl)
+				}
+			}
+			if len(miss) == 0 {
+				continue
+			}
+			s := "挂件 " + a.Key() + " 在 " + clipList(shown) + " 里显示；" + clipList(miss) + " 里没有，也没有动作事件"
+			if len(shown) == 0 {
+				s = "挂件 " + a.Key() + " 在 " + clipList(miss) + " 里没有显示，也没有动作事件"
+			}
+			parts = append(parts, s)
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		return strings.Join(parts, "。") + "。若要中途挂上 / 摘下，在 display.events 里写 attach / detach"
+	},
+}
+
+// hasAttachEvent 报告一个动作的事件里有没有针对这个挂件的 attach / detach。
+func hasAttachEvent(evs []protocol.ComposeEvent, name string) bool {
+	for _, e := range evs {
+		if (e.Do == protocol.EventAttach || e.Do == protocol.EventDetach) && e.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// clipList 把动作名用顿号连起来，最多列 6 个，多的写「等 N 个」。
+func clipList(cs []string) string {
+	if len(cs) <= 6 {
+		return strings.Join(cs, "、")
+	}
+	return strings.Join(cs[:6], "、") + fmt.Sprintf(" 等 %d 个", len(cs))
 }
 
 // hintsOf 是一件素材的全部说明。
@@ -270,7 +322,7 @@ display.attach：把别的素材挂到本素材 GLB 的挂点上（箱子、枪�
   variant  可选：变体名，不写用素材本身
   clips    可选：只在这些动作里显示（如驮箱动作），切到别的动作或静止姿势时隐藏；不写时一直显示
   name     可选：挂件名，不写时取 socket；同一挂点挂多件时必须写，动作事件按它引用
-display.refs：放在旁边作比例参照的素材（人物、标准箱……），默认显示。每项：
+display.refs：放在旁边作比例参照的素材（人物、标准箱……），默认关闭，在查看器里打开「参照」。每项：
   asset    必填：素材 id（也可写「素材 id@变体名」）
   variant  可选：变体名
   offset   可选：[x, y, z]（米），相对本素材原点；不写时并排放在右侧、底面对齐
@@ -297,7 +349,7 @@ display.refs：放在旁边作比例参照的素材（人物、标准箱……�
 网页上：查看器的「挂点」列出挂点并画坐标轴；「挂件」「参照」开关可临时全部摘掉再挂上。
 格式不对（不是数组、缺 socket / asset、素材 id 不合格、挂件名重复、写了不认识的字段）算错误，整批不推；
 挂点名、clips 里的动作在 GLB 里找不到只提示、照常推送，查看器里也会标出来；被挂的素材还没推送时查看器里提示找不到。
-改了 attach / refs 重推记为新的一版。自动缩略图不带挂件。
+改了 attach / refs 重推记为新的一版。自动缩略图不带挂件。推送报告会列出挂件没覆盖的动作。
 
 display.events（动作事件，可选）：按动作名列出某一时刻要做的事，查看器播放、逐帧、拖进度时照着做，进度条上标出事件点。例子（装箱动作 load）：
   "events": {"load": [{"t": 1.8, "do": "attach", "name": "cargo"}, {"t": 2.6, "do": "sound", "asset": "core:sfx.latch"},
