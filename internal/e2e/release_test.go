@@ -128,7 +128,7 @@ func TestRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = status(r3.Code, "claude:pm", "ready", "重新打开")
-	mustFail(err, "只能放行草稿", "放行已搁置的")
+	mustFail(err, "重新打开要经你确认", "放行已搁置的") // 会话重开已搁置的先被 R-403 的闸门拦下
 	_, err = status(r1.Code, "claude:pm", "ready", "再放一次")
 	mustFail(err, "只能放行草稿", "放行已经待开始的")
 

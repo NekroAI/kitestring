@@ -1421,6 +1421,10 @@ func (h *Hub) registerAgent(api huma.API) {
 			if h.isReviewer(ctx, in.Body.SessionKey) {
 				return nil, huma.Error403Forbidden("评审只审查和验证，不改需求状态；验证结果用 review_submit（命令行 ks req review）交到需求上，状态由开发 / 主调度 / 用户改")
 			}
+			// 重开已搁置的需求要经用户（R-403）：会话不能直接把它改成进行中、待开始等，只能申请，用户批准后纸鸢来改；改回草稿照常
+			if before.Status == store.ReqShelved && in.Body.Status != store.ReqShelved && in.Body.Status != store.ReqDraft {
+				return nil, huma.Error403Forbidden(fmt.Sprintf("%s 已搁置，重新打开要经你确认，会话不能直接改状态；用 ks req request %s ready --reason 一句理由 申请，用户批准后由纸鸢改", before.Code, before.Code))
+			}
 			ctx = store.WithActor(ctx, store.Actor{Session: in.Body.SessionKey})
 			if in.Body.Status == store.ReqShelved {
 				ctx = store.WithActor(ctx, store.Actor{ReasonKind: in.Body.ReasonKind, Reason: in.Body.Reason})
