@@ -19,6 +19,7 @@ import { useFillHeight } from './pool'
 import { AnimBar, FrameCtx, type FrameCtxValue, type FrameMark } from './animBar'
 import { createAnimSync, type AnimSync, type Frame } from '../lib/anim'
 import { composeOf } from '../lib/compose'
+import { eventsOf } from '../lib/events'
 import { useAdvance, usePending, usePendingMap } from './verdict'
 import { BaselineChip, BaselineLink, BatchBar, PickBox, ReviewerMenu, SelectButton, SelectCtx, UndoLastBatch, useTileClick, useWallSelect } from './assetBatch'
 import { tileCodes } from '../lib/assetBatch'
@@ -946,13 +947,13 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
         <SvgStage key={main.id} id={main.id} />
       ) : cur === 'model' && glb ? (
         <Suspense fallback={null}>
-          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0 rounded-[11px]" sync={sync} main compose={composeOf(v)} />
+          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0 rounded-[11px]" sync={sync} main compose={composeOf(v)} events={eventsOf(v)} />
         </Suspense>
       ) : cur === 'compare3d' && pair3d ? (
         <Suspense fallback={null}>
           <div className="absolute inset-0 grid grid-cols-2 divide-x divide-line" data-compare3d="">
             {[pair3d.before, pair3d.after].map((x) => (
-              <Viewer3D key={x.id} url={fileUrl(glbOf(a.kind, x)!.id)} className={cx('relative min-w-0', x === pair3d.before ? 'rounded-l-[11px]' : 'rounded-r-[11px]')} sync={sync} label={t.asset.ver(x.version)} main={x === pair3d.after} compose={composeOf(x)} />
+              <Viewer3D key={x.id} url={fileUrl(glbOf(a.kind, x)!.id)} className={cx('relative min-w-0', x === pair3d.before ? 'rounded-l-[11px]' : 'rounded-r-[11px]')} sync={sync} label={t.asset.ver(x.version)} main={x === pair3d.after} compose={composeOf(x)} events={eventsOf(x)} />
             ))}
           </div>
         </Suspense>
@@ -1188,7 +1189,7 @@ function MemberViewer({ m, sync, label, main }: { m: AssetLite; sync: AnimSync; 
   const d = useDetail(m.code)
   if (d.isPending) return null
   const v = d.data?.versions.find((x) => x.version === m.version) ?? d.data?.latest
-  return <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0 rounded-[11px]" sync={sync} label={label} main={main} compose={composeOf(v)} />
+  return <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0 rounded-[11px]" sync={sync} label={label} main={main} compose={composeOf(v)} events={eventsOf(v)} />
 }
 
 export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | null; all: AssetLite[]; onClose: () => void; onOpen: (code: string) => void }) {

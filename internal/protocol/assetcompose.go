@@ -8,18 +8,26 @@ package protocol
 //	  "refs":   [{"asset": "core:char.soldier", "offset": [1.2, 0, 0]}]
 //	}
 //
-// 挂件的 name 是它在这件素材里的名字（不写时取 socket），之后的动作事件（R-408）按它引用挂件，所以同一件素材里不能重名。
+// 挂件的 name 是它在这件素材里的名字（不写时取 socket），动作事件（R-408）按它引用挂件，所以同一件素材里不能重名。
+//
+// 动作事件（R-408）：display.events 按动作名列出这个动作里某一时刻发生的事——挂上 / 摘下挂件、播音效素材、在挂点闪一个特效标记：
+//
+//	"events": {"load": [{"t": 1.8, "do": "attach", "name": "cargo"}, {"t": 2.6, "do": "sound", "asset": "core:sfx.latch"},
+//	                    {"t": 2.6, "do": "mark", "socket": "crate", "label": "卡扣"}]}
 
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
+	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // DisplayFields 是 asset.json 的 display 下 Hub / 网页会读的全部字段。新增字段先加在这里，
 // 一致性测试（assetpush 的 helpcover_test）会要求 ks asset help（含 compose 子页）里写明它，并扫描代码里有没有没登记的 display.<字段>。
-var DisplayFields = []string{"name", "animations", "attach", "refs"}
+var DisplayFields = []string{"name", "animations", "attach", "refs", "events"}
 
 // ComposeAttach 是一个挂件：挂到 GLB 里名为 Socket 的节点（骨骼或空节点）上。
 type ComposeAttach struct {
@@ -37,14 +45,61 @@ type ComposeRef struct {
 	Offset  []float64 `json:"offset,omitempty" doc:"相对本素材原点的位置（米，x / y / z）；不写时并排放在右侧、底面对齐"`
 }
 
-// Compose 是一件素材的组合预览配置。
-type Compose struct {
-	Attach []ComposeAttach `json:"attach,omitempty"`
-	Refs   []ComposeRef    `json:"refs,omitempty"`
+// 动作事件的种类（R-408）：只做这四种，不支持自定义。
+const (
+	EventAttach = "attach" // 挂上挂件
+	EventDetach = "detach" // 摘下挂件（放到挂点正下方的地面上）
+	EventSound  = "sound"  // 播音效素材
+	EventMark   = "mark"   // 在挂点闪一个特效标记
+)
+
+// ComposeEvent 是动作里某一时刻的一个事件。
+type ComposeEvent struct {
+	T      float64 `json:"t" doc:"第几秒（从动作开头算）"`
+	Do     string  `json:"do" enum:"attach,detach,sound,mark" doc:"attach 挂上挂件 / detach 摘下挂件 / sound 播音效 / mark 特效位置"`
+	Name   string  `json:"name,omitempty" doc:"attach / detach：挂件名（display.attach 的 name，不写 name 的挂件用 socket）"`
+	Asset  string  `json:"asset,omitempty" doc:"sound：音效素材 id"`
+	Socket string  `json:"socket,omitempty" doc:"mark：在哪个挂点闪标记"`
+	Label  string  `json:"label,omitempty" doc:"mark：标签，一句话（如 枪口火光）"`
 }
 
-// Empty：没有挂件也没有参照。
-func (c Compose) Empty() bool { return len(c.Attach) == 0 && len(c.Refs) == 0 }
+// MaxEventLabel 是特效标记标签的字数上限。
+const MaxEventLabel = 24
+
+// Compose 是一件素材的组合预览配置。
+type Compose struct {
+	Attach []ComposeAttach           `json:"attach,omitempty"`
+	Refs   []ComposeRef              `json:"refs,omitempty"`
+	Events map[string][]ComposeEvent `json:"events,omitempty"` // 动作名 → 事件（按时间排好）
+}
+
+// Empty：没有挂件、参照，也没有动作事件。
+func (c Compose) Empty() bool { return len(c.Attach) == 0 && len(c.Refs) == 0 && len(c.Events) == 0 }
+
+// Sounds 是事件里引用到的音效素材（「素材 id」或「素材 id@变体名」，去重，按出现顺序）。
+func (c Compose) Sounds() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, clip := range c.EventClips() {
+		for _, e := range c.Events[clip] {
+			if e.Do == EventSound && !seen[e.Asset] {
+				seen[e.Asset] = true
+				out = append(out, e.Asset)
+			}
+		}
+	}
+	return out
+}
+
+// EventClips 是写了事件的动作名（排好序，输出稳定）。
+func (c Compose) EventClips() []string {
+	out := make([]string, 0, len(c.Events))
+	for k := range c.Events {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // Key 是挂件名：写了 name 用 name，否则用 socket。
 func (a ComposeAttach) Key() string {
@@ -80,6 +135,7 @@ func ParseCompose(display json.RawMessage) (Compose, []string) {
 	var d struct {
 		Attach json.RawMessage `json:"attach"`
 		Refs   json.RawMessage `json:"refs"`
+		Events json.RawMessage `json:"events"`
 	}
 	if json.Unmarshal(display, &d) != nil {
 		return c, nil // display 本身不是对象由 display.name 的校验报
@@ -148,7 +204,92 @@ func ParseCompose(display json.RawMessage) (Compose, []string) {
 			c.Refs = append(c.Refs, x)
 		}
 	}
+	if len(d.Events) > 0 && string(d.Events) != "null" {
+		c.Events, errs = parseEvents(d.Events, errs)
+	}
 	return c, errs
+}
+
+// parseEvents 读 display.events：对象，键是动作名，值是事件数组。格式不对的项记错误并跳过；
+// 挂件名、挂点、音效素材在不在由调用方核对（只提示）。
+func parseEvents(raw json.RawMessage, errs []string) (map[string][]ComposeEvent, []string) {
+	const eg = `display.events 要写成对象：键是动作名，值是事件数组，如 {"load": [{"t": 1.8, "do": "attach", "name": "cargo"}]}`
+	var byClip map[string]json.RawMessage
+	if json.Unmarshal(raw, &byClip) != nil {
+		return nil, append(errs, eg)
+	}
+	out := map[string][]ComposeEvent{}
+	clips := make([]string, 0, len(byClip))
+	for k := range byClip {
+		clips = append(clips, k)
+	}
+	sort.Strings(clips)
+	for _, clip := range clips {
+		name := strings.TrimSpace(clip)
+		if name == "" {
+			errs = append(errs, "display.events 里有一个动作名是空的")
+			continue
+		}
+		var list []json.RawMessage
+		if json.Unmarshal(byClip[clip], &list) != nil {
+			errs = append(errs, "display.events 的「"+name+"」要写成事件数组")
+			continue
+		}
+		for i, r := range list {
+			at := fmt.Sprintf("display.events 的「%s」第 %d 项", name, i+1)
+			var e ComposeEvent
+			if err := strictObj(r, &e, "t", "do", "name", "asset", "socket", "label"); err != "" {
+				errs = append(errs, at+err)
+				continue
+			}
+			var has struct {
+				T *float64 `json:"t"`
+			}
+			_ = json.Unmarshal(r, &has)
+			e.Do, e.Name, e.Socket, e.Label = strings.TrimSpace(e.Do), strings.TrimSpace(e.Name), strings.TrimSpace(e.Socket), strings.TrimSpace(e.Label)
+			var msg string
+			switch {
+			case has.T == nil:
+				msg = "没写 t（第几秒）"
+			case e.T < 0 || math.IsNaN(e.T) || math.IsInf(e.T, 0):
+				msg = "的 t 不能是负数"
+			}
+			if msg == "" {
+				switch e.Do {
+				case EventAttach, EventDetach:
+					if e.Name == "" {
+						msg = "没写 name（挂件名）"
+					}
+				case EventSound:
+					id, v := splitVariant(strings.TrimSpace(e.Asset), "")
+					if m := checkTarget(id, v); m != "" {
+						msg = m
+					}
+					e.Asset = ComposeTarget(id, v)
+				case EventMark:
+					if e.Socket == "" {
+						msg = "没写 socket（在哪个挂点闪标记）"
+					} else if strings.ContainsAny(e.Label, "\r\n") || utf8.RuneCountInString(e.Label) > MaxEventLabel {
+						msg = fmt.Sprintf("的 label 要写成一行、最多 %d 字", MaxEventLabel)
+					}
+				case "":
+					msg = "没写 do（attach / detach / sound / mark）"
+				default:
+					msg = "的 do「" + e.Do + "」不认识（可写 attach / detach / sound / mark）"
+				}
+			}
+			if msg != "" {
+				errs = append(errs, at+msg)
+				continue
+			}
+			out[name] = append(out[name], e)
+		}
+		sort.SliceStable(out[name], func(i, j int) bool { return out[name][i].T < out[name][j].T })
+	}
+	if len(out) == 0 {
+		return nil, errs
+	}
+	return out, errs
 }
 
 // MetaCompose 从版本的 meta（项目字段，含 display）里读组合预览配置，格式不对的项跳过。

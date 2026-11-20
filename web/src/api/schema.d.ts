@@ -3733,18 +3733,18 @@ export interface components {
             clips?: string[] | null;
             /** @description 找到的素材编号 A-x */
             code?: string;
-            /** @description 找到的素材最新一版的 GLB */
+            /** @description 找到的素材最新一版的 GLB（sound 时是音频文件） */
             file?: components["schemas"]["FileRef"];
             /**
-             * @description attach 挂件 / ref 比例参照
+             * @description attach 挂件 / ref 比例参照 / sound 动作事件引用的音效（R-408）
              * @enum {string}
              */
-            kind: "attach" | "ref";
+            kind: "attach" | "ref" | "sound";
             /**
-             * @description asset 素材找不到 / glb 素材不是 GLB；空 = 找到了
+             * @description asset 素材找不到 / glb 素材不是 GLB / audio 素材不是音效；空 = 找到了
              * @enum {string}
              */
-            missing?: "asset" | "glb" | "";
+            missing?: "asset" | "glb" | "audio" | "";
             /** @description 挂件名（不写时取 socket）；动作事件按它引用 */
             name?: string;
             /** @description 参照相对本素材原点的位置（米）；空 = 并排放在右侧 */
@@ -4043,6 +4043,8 @@ export interface components {
              * @description Hub 已有、没有重传的文件数（按 sha256 去重）
              */
             reused: number;
+            /** @description Hub 核对后的提醒（如动作事件引用的音效素材找不到），素材已照常入库 */
+            warnings?: string[] | null;
         };
         AssetRef: {
             /** @description 旧条目的批次 */

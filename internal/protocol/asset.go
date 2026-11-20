@@ -110,6 +110,8 @@ type AssetPushResult struct {
 	Reused  int                   `json:"reused" doc:"Hub 已有、没有重传的文件数（按 sha256 去重）"`
 	// R-393：--baseline 推送时的申请
 	Baseline *AssetBaselineInfo `json:"baseline,omitempty" doc:"申请标为已在用（--baseline）的结果"`
+	// R-408：Hub 核对后的提醒（如动作事件引用的音效素材在资源库里找不到），不影响入库
+	Warnings []string `json:"warnings,omitempty" doc:"Hub 核对后的提醒（如动作事件引用的音效素材找不到），素材已照常入库"`
 }
 
 // AssetBaselineInfo 是一次「申请标为已在用」：哪条决策在等用户批准、申请了几件。

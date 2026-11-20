@@ -42,7 +42,7 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
                                         可选。display.name 中文名（给人看的名字，不想填就别填，别为了填而编）；有时网页以它作主标题、素材 id 作副标题，也能按它搜；变体沿用素材的
                                         display.animations 动作表（GLB 有动作时可选）：每项 name 动作名、loop 是否循环、label 显示名，也可只写名字 ["idle", "run"]；
                                         不写时网页照样列出 GLB 里的全部动作，写了才以它为准（顺序、循环、显示名）
-                                        display.attach（挂件）、display.refs（比例参照）可选，3D 查看器里组合预览，写法见 ks help asset compose
+                                        display.attach（挂件）、display.refs（比例参照）、display.events（动作事件）可选，3D 查看器里组合预览，写法见 ks help asset compose
   "title": "卡宾枪"                     其它字段是项目特有的，原样存进 meta，网页上展示
 }
 网页上能看到什么（不必另做拆分、不必只发本机路径）：

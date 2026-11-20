@@ -2230,21 +2230,23 @@
           },
           "file": {
             "$ref": "#/components/schemas/FileRef",
-            "description": "找到的素材最新一版的 GLB"
+            "description": "找到的素材最新一版的 GLB（sound 时是音频文件）"
           },
           "kind": {
-            "description": "attach 挂件 / ref 比例参照",
+            "description": "attach 挂件 / ref 比例参照 / sound 动作事件引用的音效（R-408）",
             "enum": [
               "attach",
-              "ref"
+              "ref",
+              "sound"
             ],
             "type": "string"
           },
           "missing": {
-            "description": "asset 素材找不到 / glb 素材不是 GLB；空 = 找到了",
+            "description": "asset 素材找不到 / glb 素材不是 GLB / audio 素材不是音效；空 = 找到了",
             "enum": [
               "asset",
               "glb",
+              "audio",
               ""
             ],
             "type": "string"
@@ -3049,6 +3051,16 @@
             "description": "Hub 已有、没有重传的文件数（按 sha256 去重）",
             "format": "int64",
             "type": "integer"
+          },
+          "warnings": {
+            "description": "Hub 核对后的提醒（如动作事件引用的音效素材找不到），素材已照常入库",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [

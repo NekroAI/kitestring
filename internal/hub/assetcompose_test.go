@@ -2,6 +2,7 @@ package hub
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -62,4 +63,54 @@ func TestAssetCompose(t *testing.T) {
 	e.do(g, "GET", base+"/files/"+boxGLB.ID, nil, nil, 200, "Sec-Fetch-Dest", "empty")
 	e.do(g, "GET", base+"/files/"+boxGLB.ID+"?download=1", nil, nil, 404)
 	e.do(g, "GET", base+"/files/"+x.glb1.ID, nil, nil, 404, "Sec-Fetch-Dest", "empty")
+}
+
+// R-408：动作事件引用的音效素材解析成 kind=sound（带音频文件）；找不到、不是音效时标 missing；
+// 推送时同样核对并提醒；分享页里音效文件能给查看器取、不能下载。
+func TestAssetEventSounds(t *testing.T) {
+	e := newShareEnv(t)
+	e.pushFixture()
+	dogGLB := e.assetFile("dog.glb", glbMime, append(append([]byte{}, glbHead...), 'g'))
+	boxGLB := e.assetFile("box.glb", glbMime, append(append([]byte{}, glbHead...), 'h'))
+	ogg := e.assetFile("latch.ogg", "audio/ogg", []byte("OggS\x00\x02latch"))
+	sub := store.AssetSubmitter{Kind: store.SubmitterSession, Ref: e.dev1}
+	meta := json.RawMessage(`{"display":{"attach":[{"socket":"crate","asset":"core:prop.box","name":"cargo"}],"events":{"load":[
+	  {"t":1.8,"do":"attach","name":"cargo"},{"t":2.6,"do":"sound","asset":"core:sfx.latch"},{"t":2.7,"do":"sound","asset":"core:prop.box"},
+	  {"t":2.8,"do":"sound","asset":"core:sfx.nothing"},{"t":2.9,"do":"sound","asset":"core:sfx.latch"}]}}}`)
+	items := []protocol.AssetItem{
+		{Key: "core:prop.box", Kind: protocol.AssetPart, Category: "prop", File: &boxGLB},
+		{Key: "core:sfx.latch", Kind: protocol.AssetAudio, Category: "sfx", File: &ogg, Name: "卡扣"},
+		{Key: "core:vehicle.dog", Kind: protocol.AssetPart, Category: "vehicle", File: &dogGLB, Meta: meta},
+	}
+	if _, err := e.st.PushAssets(e.ctx, store.NewAssetPush{ProjectID: "p1", Submitter: sub, ByID: true, Items: items}); err != nil {
+		t.Fatal(err)
+	}
+	warns := e.h.eventSoundWarnings(e.ctx, "p1", items)
+	if len(warns) != 2 || !strings.Contains(warns[0], "core:prop.box 不是音效素材") || !strings.Contains(warns[1], "core:sfx.nothing 在资源库里找不到") {
+		t.Fatalf("推送提醒：%v", warns)
+	}
+	dog, _ := e.st.GetAsset(e.ctx, "core:vehicle.dog")
+	var d store.AssetDetail
+	e.do(e.owner, "GET", "/api/assets/"+dog.Code, nil, &d, 200)
+	var sounds []store.AssetCompose
+	for _, c := range d.Latest.Compose {
+		if c.Kind == "sound" {
+			sounds = append(sounds, c)
+		}
+	}
+	if len(sounds) != 3 || sounds[0].Asset != "core:sfx.latch" || sounds[0].File == nil || sounds[0].File.ID != ogg.ID || sounds[0].Title != "卡扣" ||
+		sounds[1].Missing != "audio" || sounds[2].Missing != "asset" {
+		t.Fatalf("音效解析：%+v", sounds)
+	}
+
+	v := e.createShare(map[string]any{"name": "看机械狗", "links": []string{"小李"}, "items": []map[string]any{{"kind": "asset", "ref": dog.Code, "auto": true}}})
+	g := e.guest()
+	base := "/api/share/" + linkByName(v, "小李").Token
+	var gd store.AssetDetail
+	e.do(g, "GET", base+"/assets/"+dog.Code, nil, &gd, 200)
+	if !strings.Contains(string(gd.Latest.Meta), `"events"`) || strings.Contains(string(gd.Latest.Meta), `"attach":[`) {
+		t.Fatalf("访客的 meta 只多留 display.events：%s", gd.Latest.Meta)
+	}
+	e.do(g, "GET", base+"/files/"+ogg.ID, nil, nil, 200, "Sec-Fetch-Dest", "empty")
+	e.do(g, "GET", base+"/files/"+ogg.ID+"?download=1", nil, nil, 404)
 }

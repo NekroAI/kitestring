@@ -6,10 +6,11 @@ package assetpush
 import (
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/NekroAI/kitestring/internal/protocol"
@@ -19,6 +20,7 @@ import (
 type glbInfo struct {
 	Nodes []protocol.GLBNode
 	Clips []string
+	Durs  map[string]float64 // 动作时长（秒，取各采样器输入访问器的 max）；读不出时没有这一项
 }
 
 func (g glbInfo) has(name string) bool {
@@ -74,8 +76,14 @@ func readGLB(path string) (glbInfo, error) {
 			Joints []int `json:"joints"`
 		} `json:"skins"`
 		Animations []struct {
-			Name string `json:"name"`
+			Name     string `json:"name"`
+			Samplers []struct {
+				Input int `json:"input"`
+			} `json:"samplers"`
 		} `json:"animations"`
+		Accessors []struct {
+			Max []float64 `json:"max"`
+		} `json:"accessors"`
 	}
 	if err := json.Unmarshal(buf, &doc); err != nil {
 		return g, err
@@ -116,8 +124,18 @@ func readGLB(path string) (glbInfo, error) {
 		}
 		g.Nodes = append(g.Nodes, protocol.GLBNode{Name: nd.Name, Bone: joint[i], Empty: !joint[i] && !meshy(i)})
 	}
+	g.Durs = map[string]float64{}
 	for _, a := range doc.Animations {
 		g.Clips = append(g.Clips, a.Name)
+		d, ok := 0.0, false
+		for _, sm := range a.Samplers {
+			if sm.Input >= 0 && sm.Input < len(doc.Accessors) && len(doc.Accessors[sm.Input].Max) > 0 {
+				d, ok = max(d, doc.Accessors[sm.Input].Max[0]), true
+			}
+		}
+		if ok {
+			g.Durs[a.Name] = d
+		}
 	}
 	return g, nil
 }
@@ -130,6 +148,9 @@ func checkCompose(c *Check, display json.RawMessage, kind, file string) protocol
 	if kind != protocol.AssetPart {
 		if len(comp.Attach) > 0 {
 			c.Warnings = append(c.Warnings, "display.attach 只对 GLB 零件生效，这件素材不是 GLB，挂件不会显示")
+		}
+		if len(comp.Events) > 0 {
+			c.Warnings = append(c.Warnings, "display.events 只对 GLB 零件生效，这件素材不是 GLB，动作事件不会生效")
 		}
 		return comp
 	}
@@ -158,8 +179,52 @@ func checkCompose(c *Check, display json.RawMessage, kind, file string) protocol
 			}
 		}
 	}
+	for _, e := range eventWarnings(comp, g) {
+		c.Warnings = append(c.Warnings, e)
+	}
+	for _, evs := range comp.Events {
+		for _, e := range evs {
+			if e.Do == protocol.EventMark {
+				refs[e.Socket] = true
+			}
+		}
+	}
 	c.Sockets = g.sockets(refs)
 	return comp
+}
+
+// eventWarnings（R-408）：动作事件里对不上的地方只提示、照常推送——动作在 GLB 里没有、时间超出动作时长、
+// 挂件名在 display.attach 里没有、特效标记的挂点在 GLB 里没有。音效素材在不在资源库由 Hub 核对（推送返回里提示）。
+func eventWarnings(comp protocol.Compose, g glbInfo) []string {
+	var out []string
+	names := map[string]bool{}
+	for _, a := range comp.Attach {
+		names[a.Key()] = true
+	}
+	for _, clip := range comp.EventClips() {
+		if !contains(g.Clips, clip) {
+			out = append(out, "display.events 的动作「"+clip+"」在 GLB 里没有，这些事件不会触发")
+			continue
+		}
+		dur, known := g.Durs[clip]
+		for _, e := range comp.Events[clip] {
+			at := fmt.Sprintf("「%s」%s 秒的事件", clip, strconv.FormatFloat(e.T, 'f', -1, 64))
+			if known && e.T > dur+1e-3 {
+				out = append(out, fmt.Sprintf("%s超出动作时长（%.2f 秒），不会触发", at, dur))
+			}
+			switch e.Do {
+			case protocol.EventAttach, protocol.EventDetach:
+				if !names[e.Name] {
+					out = append(out, at+"引用的挂件「"+e.Name+"」在 display.attach 里没有")
+				}
+			case protocol.EventMark:
+				if !g.has(e.Socket) {
+					out = append(out, at+"的挂点「"+e.Socket+"」在 GLB 里找不到")
+				}
+			}
+		}
+	}
+	return out
 }
 
 // hint 是按素材情况追加的一句说明（校验报告里每件素材下面「说明：」一行）。
@@ -195,7 +260,7 @@ func hintsOf(c Check) []string {
 }
 
 // ComposeHelp 是 ks help asset compose（也是 ks asset help compose）：组合预览的写法（R-407）。
-// R-408 的动作事件会在这一页接着写，按挂件名（name，不写时是 socket）引用挂件。整页控制在约 60 行内。
+// R-408 的动作事件接在后面：一个例子加三种事件各一行，按挂件名（name，不写时是 socket）引用挂件。整页控制在约 60 行内。
 const ComposeHelp = `组合预览（3D 查看器）：asset.json 的 display 里可选写挂件和比例参照，用户打开素材就看到组合效果。
 可选：没有运行时挂件、也不需要比例参照就别写。纸鸢不做编辑，配置只来自 asset.json。
 
@@ -233,4 +298,12 @@ display.refs：放在旁边作比例参照的素材（人物、标准箱……�
 格式不对（不是数组、缺 socket / asset、素材 id 不合格、挂件名重复、写了不认识的字段）算错误，整批不推；
 挂点名、clips 里的动作在 GLB 里找不到只提示、照常推送，查看器里也会标出来；被挂的素材还没推送时查看器里提示找不到。
 改了 attach / refs 重推记为新的一版。自动缩略图不带挂件。
+
+display.events（动作事件，可选）：按动作名列出某一时刻要做的事，查看器播放、逐帧、拖进度时照着做，进度条上标出事件点。例子（装箱动作 load）：
+  "events": {"load": [{"t": 1.8, "do": "attach", "name": "cargo"}, {"t": 2.6, "do": "sound", "asset": "core:sfx.latch"},
+                      {"t": 2.6, "do": "mark", "socket": "crate", "label": "卡扣"}]}
+  attach / detach：挂上 / 摘下挂件（name 写挂件名）；摘下的放在那一刻挂点正下方的地面上，第一条是 attach 时挂上前也在那里；写了事件的动作里挂件不受 clips 限制
+  sound：播资源库里的音效素材（asset 写素材 id）；网页默认静音，打开声音才播
+  mark：在挂点（socket）闪一下，标出特效位置（火光、烟尘），label 可写一句标签；不渲染真实特效
+t 是从动作开头算的秒数。动作名、挂件名、挂点、音效素材对不上，或 t 超出动作时长，只提示、照常推送，查看器里也会标出来。
 `

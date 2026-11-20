@@ -17,12 +17,16 @@ import {
   Repeat,
   StepBack,
   StepForward,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { t } from "../i18n";
 import { cx } from "../lib/util";
 import { SPEEDS, type AnimSync, type Frame } from "../lib/anim";
 import { hiddenNodes, socketRows } from "../lib/compose";
+import { crossed, eventPoints, hasSound, type AnimEvent } from "../lib/events";
+import { fileUrl } from "../ui/attach";
 import { Button, Tip } from "../ui/base";
 import { Menu } from "../ui/overlay";
 
@@ -116,15 +120,54 @@ export function AnimBar({
   // 没有挂点、也没有骨骼的静态模型不给挂点菜单（只有装模型的容器节点，列出来没有意义）
   const showSockets = sockets.length > 0 || (more > 0 && skeleton);
   const composeUi = showSockets || hasAttach || hasRefs;
+  // 动作事件（R-408）：进度条上的事件点、音效都按正在看的那一版（版本对比时只有这一边出声）
+  const evAll = mainV?.events ?? {};
+  const evs = s.clip ? evAll[s.clip] : undefined;
+  const points = eventPoints(evs, s.dur);
+  const showSound = hasSound(evAll);
+  const soundOf = (asset?: string) =>
+    items.find((x) => x.kind === "sound" && x.asset === asset);
   const range = useRef<HTMLInputElement>(null);
   const time = useRef<HTMLSpanElement>(null);
   const resume = useRef(false);
+  const prev = useRef<{ clip: string | null; raw: number }>({
+    clip: null,
+    raw: 0,
+  });
+  const audios = useRef(new Map<string, HTMLAudioElement>());
+  const live = useRef({ evs, sound: s.sound, items });
+  live.current = { evs, sound: s.sound, items };
+
+  // 播到音效事件时出声（开了声音才放）；同一音效重叠时各放各的
+  const playSound = (e: AnimEvent) => {
+    const it = live.current.items.find(
+      (x) => x.kind === "sound" && x.asset === e.asset,
+    );
+    if (!it?.file) return;
+    let base = audios.current.get(it.file.id);
+    if (!base) {
+      base = new Audio(fileUrl(it.file.id));
+      base.preload = "auto";
+      audios.current.set(it.file.id, base);
+    }
+    const a = base.paused ? base : (base.cloneNode() as HTMLAudioElement);
+    a.currentTime = 0;
+    void a.play().catch(() => {});
+  };
 
   // 每帧刷新进度条和时间（直接改 DOM，不重渲染整条）；不循环播到末尾时停住
   useEffect(() => {
     let raf = 0;
     const draw = () => {
       sync.settle();
+      // 音效事件：只在播放中、同一动作里向前走的一小段里经过才放（拖进度、切动作不补放）
+      const st = sync.get();
+      const raw = sync.rawAt();
+      const p = prev.current;
+      if (st.playing && p.clip === st.clip && live.current.sound)
+        for (const e of crossed(live.current.evs, p.raw, raw, st.dur, st.loop))
+          if (e.do === "sound") playSound(e);
+      prev.current = { clip: st.clip, raw };
       const cur = sync.timeAt();
       if (range.current && document.activeElement !== range.current)
         range.current.value = String(cur);
@@ -292,6 +335,25 @@ export function AnimBar({
                   <Repeat className="size-4" />
                 </Button>
               </Tip>
+              {showSound && (
+                <Tip content={s.sound ? A.soundOff : A.soundOn}>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={A.sound}
+                    aria-pressed={s.sound}
+                    onClick={() => sync.setSound(!s.sound)}
+                    className={cx(ib, on(s.sound))}
+                    data-anim-sound={s.sound ? "on" : "off"}
+                  >
+                    {s.sound ? (
+                      <Volume2 className="size-4" />
+                    ) : (
+                      <VolumeX className="size-4" />
+                    )}
+                  </Button>
+                </Tip>
+              )}
               {ctx?.sink && (
                 <Tip content={A.markTip}>
                   <Button
@@ -349,33 +411,73 @@ export function AnimBar({
               <StepForward className="size-4" />
             </Button>
           </Tip>
-          <input
-            ref={range}
-            type="range"
-            min={0}
-            max={s.dur || 0}
-            step={0.001}
-            defaultValue={0}
-            aria-label={A.seek}
-            data-no-drag=""
-            className="mx-1.5 block min-w-0 flex-1 accent-[var(--color-accent)]"
-            onPointerDown={() => {
-              resume.current = sync.get().playing;
-              if (resume.current) sync.pause();
-            }}
-            onPointerUp={() => {
-              if (resume.current) sync.play();
-              resume.current = false;
-            }}
-            onChange={(e) => {
-              sync.seek(+e.target.value);
-              if (time.current)
-                time.current.textContent = A.time(
-                  +e.target.value,
-                  sync.get().dur,
-                );
-            }}
-          />
+          <div className="relative mx-1.5 flex min-w-0 flex-1 items-center">
+            <input
+              ref={range}
+              type="range"
+              min={0}
+              max={s.dur || 0}
+              step={0.001}
+              defaultValue={0}
+              aria-label={A.seek}
+              data-no-drag=""
+              className="block w-full min-w-0 accent-[var(--color-accent)]"
+              onPointerDown={() => {
+                resume.current = sync.get().playing;
+                if (resume.current) sync.pause();
+              }}
+              onPointerUp={() => {
+                if (resume.current) sync.play();
+                resume.current = false;
+              }}
+              onChange={(e) => {
+                sync.seek(+e.target.value);
+                if (time.current)
+                  time.current.textContent = A.time(
+                    +e.target.value,
+                    sync.get().dur,
+                  );
+              }}
+            />
+            {/* 事件点（R-408）：画在滑块下沿，位置按滑块的有效宽度（两头各留半个滑块）算；悬停看内容，点一下跳过去 */}
+            {s.dur > 0 &&
+              points.map((pt) => (
+                <Tip
+                  key={pt.t}
+                  content={
+                    <span className="flex flex-col gap-0.5">
+                      <b className="font-medium tabular">{A.eventAt(pt.t)}</b>
+                      {pt.evs.map((e, i) => (
+                        <span key={i}>
+                          {A.event(e, soundOf(e.asset)?.title || undefined)}
+                        </span>
+                      ))}
+                    </span>
+                  }
+                >
+                  <button
+                    type="button"
+                    className={cx(
+                      "absolute bottom-[-3px] size-2 -translate-x-1/2 rounded-full ring-2 ring-surface",
+                      pt.evs.some((e) => e.do === "attach" || e.do === "detach")
+                        ? "bg-accent"
+                        : pt.evs.some((e) => e.do === "sound")
+                          ? "bg-kind-audio"
+                          : "bg-amber-400",
+                    )}
+                    style={{
+                      left: `calc(8px + (100% - 16px) * ${Math.min(1, pt.t / s.dur)})`,
+                    }}
+                    aria-label={A.eventJump(pt.t)}
+                    onClick={() => {
+                      sync.pause();
+                      sync.seek(pt.t);
+                    }}
+                    data-anim-event={pt.evs.map((e) => e.do).join(" ")}
+                  />
+                </Tip>
+              ))}
+          </div>
           <span
             ref={time}
             className="shrink-0 pr-1 text-[12px] text-fg-3 tabular"

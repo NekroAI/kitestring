@@ -3,7 +3,7 @@
 
 /** Hub 给的组合预览一项（与后端 store.AssetCompose 一致）。 */
 export type ComposeItem = {
-  kind: "attach" | "ref";
+  kind: "attach" | "ref" | "sound"; // sound：动作事件引用的音效素材（R-408），file 是音频文件
   name?: string; // 挂件名（不写时取 socket）；动作事件（R-408）按它引用
   socket?: string;
   asset: string;
@@ -13,7 +13,7 @@ export type ComposeItem = {
   code?: string;
   title?: string;
   file?: { id: string; name: string } | null;
-  missing?: "asset" | "glb" | "";
+  missing?: "asset" | "glb" | "audio" | "";
 };
 
 /** GLB 里一个不带网格的节点。bone：蒙皮骨骼；empty：空节点（不是骨骼，自己和下面都没有网格）。 */
@@ -84,7 +84,10 @@ export function attachShown(
 }
 
 /** 轴对齐包围盒（米）。 */
-export type Box = { min: [number, number, number]; max: [number, number, number] };
+export type Box = {
+  min: [number, number, number];
+  max: [number, number, number];
+};
 
 // refPosition：参照素材的位置（参照模型原点放在哪，相对主模型原点）。写了 offset 就用它；
 // 没写时排在主模型（和前面已放的参照）右侧，留一点间隙，底面对齐，前后居中。
@@ -110,6 +113,7 @@ export type ComposeNote =
   | { kind: "socket"; name: string; socket: string }
   | { kind: "asset"; asset: string }
   | { kind: "glb"; asset: string }
+  | { kind: "audio"; asset: string }
   | { kind: "load"; asset: string };
 
 /** 配置里写的素材 id（带变体时「id@变体名」）。 */

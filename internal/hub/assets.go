@@ -566,6 +566,7 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 		if p.Baseline {
 			out.Baseline = h.startAssetBaseline(ctx, p, proj, sub, out)
 		}
+		out.Warnings = h.eventSoundWarnings(ctx, proj.ID, p.Items)
 	}
 	return out, err
 }

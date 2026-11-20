@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AmbientLight, AnimationMixer, AxesHelper, Bone, Group, Quaternion, TOUCH, Box3, DirectionalLight, HemisphereLight, Mesh, PerspectiveCamera, Scene, SkeletonHelper, SkinnedMesh, SRGBColorSpace, Vector3, WebGLRenderer, type AnimationAction, type AnimationClip, type Material, type Object3D } from 'three'
+import { AmbientLight, AnimationMixer, AxesHelper, Bone, Euler, Group, Matrix4, Quaternion, TOUCH, Box3, DirectionalLight, HemisphereLight, Mesh, PerspectiveCamera, Scene, SkeletonHelper, SkinnedMesh, SRGBColorSpace, Vector3, WebGLRenderer, type AnimationAction, type AnimationClip, type Material, type Object3D } from 'three'
 import { accel } from '../lib/accel'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -11,6 +11,7 @@ import { scrollerOf } from '../ui/gesture'
 import { cx } from '../lib/util'
 import { fileUrl } from '../ui/attach'
 import { attachShown, composeNotes, refPosition, targetOf, type Box, type ComposeItem, type ComposeNote, type NodeInfo } from '../lib/compose'
+import { attachPhase, eventNotes, flashes, type ClipEvents, type EventNote } from '../lib/events'
 
 // 资源库的 3D 查看（R-351 第 3 步）：只在抽屉切到「3D」时按需加载（app/assets.tsx 里 lazy import），three.js 不进首屏包。
 // 顶点色：glTF 规定 COLOR_0 是线性值，GLTFLoader 原样读入、材质开 vertexColors，渲染输出转 sRGB；这里不再做任何颜色空间换算，
@@ -28,6 +29,7 @@ type Props = {
   label?: string // 并排时角上标的名字（如 v2）
   main?: boolean // 并排时正在看的那一版：动作列表、时长、截图顺序以它为准
   compose?: ComposeItem[] // R-407：这一版的挂件和比例参照（Hub 解析好的）；自动缩略图不走这里，不带挂件
+  events?: ClipEvents // R-408：这一版的动作事件（挂上 / 摘下挂件、特效标记；音效由播放控件放，只有正在看的那一版出声）
 }
 
 // ---------- 手势 ----------
@@ -240,6 +242,17 @@ class Anim {
     a.time = Math.min(wrapTime(sync.rawAt(), dur, s.loop), Math.max(0, dur - 1e-4))
     this.mixer.update(0)
   }
+  // sampleAt：临时把当前动作摆到 t 秒的姿势做点事（算摘下的挂件放哪），做完摆回来
+  sampleAt(t: number, fn: () => void) {
+    const a = this.cur.action
+    if (!a) return
+    const old = a.time
+    a.time = Math.min(Math.max(0, t), Math.max(0, a.getClip().duration - 1e-4))
+    this.mixer.update(0)
+    fn()
+    a.time = old
+    this.mixer.update(0)
+  }
   rest() {
     this.model.traverse((o) => {
       if (o instanceof SkinnedMesh) o.skeleton.pose()
@@ -310,19 +323,27 @@ function glbNodes(g: GLTF) {
 
 const boxOf = (b: Box3): Box => ({ min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] })
 
-export default function Viewer3D({ url, className, sync, label, main, compose }: Props) {
+// 特效标记（R-408）：挂点处闪一个圆环，带标签时旁边写标签。元素在每帧里直接改（不重渲染），类名写在这里让样式生成得到
+const MARK_RING = 'absolute -top-3.5 -left-3.5 size-7 rounded-full border-2 border-amber-400 bg-amber-300/30 shadow-[0_0_12px_rgba(251,191,36,0.9)]'
+const MARK_LABEL = 'absolute top-[-9px] left-4 rounded bg-black/65 px-1.5 py-px text-[11px] leading-[18px] whitespace-nowrap text-white'
+
+export default function Viewer3D({ url, className, sync, label, main, compose, events }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'fail'>('loading')
   const [vc, setVc] = useState('')
   const [missing, setMissing] = useState('') // 并排时这一边的 GLB 里没有当前动作
   const [engaged, setEngaged] = useState(false) // 嵌入时点开接管了触控板双指滑动
   const [nudge, setNudge] = useState(false) // 没接管时双指滑动放给了页面：提示点一下
-  const [notes, setNotes] = useState<ComposeNote[]>([]) // R-407：找不到挂点、素材时的提示
+  const [notes, setNotes] = useState<(ComposeNote | EventNote)[]>([]) // R-407：找不到挂点、素材时的提示；R-408：动作事件对不上时的提示
+  const marksHost = useRef<HTMLDivElement>(null)
   const syncRef = useRef(sync)
   syncRef.current = sync
   const composeKey = JSON.stringify(compose ?? [])
   const composeRef = useRef<ComposeItem[]>([])
   composeRef.current = compose ?? []
+  const eventsKey = JSON.stringify(events ?? {})
+  const eventsRef = useRef<ClipEvents>({})
+  eventsRef.current = events ?? {}
 
   useEffect(() => {
     const el = host.current
@@ -397,13 +418,14 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
         if (k === 1) fly = null
       }
       ctl.update()
+      markTick()
       renderer.render(scene, cam)
     })
 
     // 组合预览（R-407）：挂件挂在挂点节点下面，跟着动作走；参照和主模型放在同一个 stage 里一起居中取景
     const stage = new Group()
     const refsGroup = new Group()
-    const attached: { item: ComposeItem; obj: Object3D }[] = []
+    const attached: { item: ComposeItem; obj: Object3D; node: Object3D }[] = []
     let sockets = new Map<string, Object3D>()
     const axes = new AxesHelper(1)
     axes.visible = false
@@ -413,11 +435,60 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
     const wp = new Vector3()
     const wq = new Quaternion()
     const ws = new Vector3()
+    // 动作事件（R-408）：写了 attach / detach 的动作里，挂件按时间挂在挂点上或放在地面上（位置取决定它摘下的那个事件那一刻挂点正下方）
+    let floorY = 0
+    const ground = new Map<string, { p: Vector3; q: Quaternion; s: Vector3 }>()
+    const inv = new Matrix4()
+    const lm = new Matrix4()
+    const groundAt = (clip: string, item: ComposeItem, node: Object3D, at: number) => {
+      const key = `${clip}|${item.name}|${at}`
+      let g = ground.get(key)
+      if (g || !anim) return g
+      anim.sampleAt(at, () => {
+        stage.updateMatrixWorld(true)
+        inv.copy(stage.matrixWorld).invert()
+        lm.multiplyMatrices(inv, node.matrixWorld)
+        const p = new Vector3()
+        const q = new Quaternion()
+        const sc = new Vector3()
+        lm.decompose(p, q, sc)
+        const yaw = new Euler().setFromQuaternion(q, 'YXZ').y
+        g = { p: new Vector3(p.x, floorY, p.z), q: new Quaternion().setFromEuler(new Euler(0, yaw, 0)), s: sc }
+      })
+      if (g) ground.set(key, g)
+      return g
+    }
+    const place = (a: { item: ComposeItem; obj: Object3D; node: Object3D }, g: { p: Vector3; q: Quaternion; s: Vector3 } | undefined) => {
+      if (!g) {
+        if (a.obj.parent !== a.node) {
+          a.node.add(a.obj)
+          a.obj.position.set(0, 0, 0)
+          a.obj.quaternion.identity()
+          a.obj.scale.set(1, 1, 1)
+        }
+        return
+      }
+      if (a.obj.parent !== stage) stage.add(a.obj)
+      a.obj.position.copy(g.p)
+      a.obj.quaternion.copy(g.q)
+      a.obj.scale.copy(g.s)
+    }
     const composeTick = () => {
       const sy = syncRef.current
       const s = sy?.get()
       const clip = anim && s && !anim.missing(s.clip) ? s.clip : null
-      for (const a of attached) a.obj.visible = attachShown(a.item, clip, s ? s.attach : true)
+      const evs = clip ? eventsRef.current[clip] : undefined
+      const now = anim?.cur.action?.time ?? 0
+      for (const a of attached) {
+        const ph = evs ? attachPhase(evs, a.item.name || a.item.socket || '', now) : null
+        if (!ph || !clip) {
+          place(a, undefined)
+          a.obj.visible = attachShown(a.item, clip, s ? s.attach : true)
+          continue
+        }
+        a.obj.visible = s ? s.attach : true
+        place(a, ph.on ? undefined : groundAt(clip, a.item, a.node, ph.at))
+      }
       refsGroup.visible = s ? s.refs : true
       const node = s?.socket ? sockets.get(s.socket) : undefined
       axes.visible = !!node
@@ -428,6 +499,56 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
         axes.quaternion.copy(wq)
         axes.scale.setScalar(axesLen)
       }
+    }
+
+    // 特效标记（R-408）：按动作时间算，事件后闪 0.5 秒；投影到画面上，用 HTML 画圆环和标签
+    const markEls = new Map<string, HTMLDivElement>()
+    const mp = new Vector3()
+    const markTick = () => {
+      const hostEl = marksHost.current
+      if (!hostEl) return
+      const s = syncRef.current?.get()
+      const clip = anim && s && !anim.missing(s.clip) ? s.clip : null
+      const live = new Set<string>()
+      if (clip && anim?.cur.action) {
+        const w = hostEl.clientWidth
+        const h = hostEl.clientHeight
+        for (const { e, i, k } of flashes(eventsRef.current[clip], anim.cur.action.time)) {
+          const node = e.socket ? sockets.get(e.socket) : undefined
+          if (!node) continue
+          node.updateWorldMatrix(true, false)
+          mp.setFromMatrixPosition(node.matrixWorld).project(cam)
+          if (mp.z > 1) continue
+          const key = `${clip}:${i}`
+          live.add(key)
+          let el = markEls.get(key)
+          if (!el) {
+            el = document.createElement('div')
+            el.className = 'absolute'
+            el.dataset.mark = e.socket
+            const ring = document.createElement('div')
+            ring.className = MARK_RING
+            el.appendChild(ring)
+            if (e.label) {
+              const tag = document.createElement('span')
+              tag.className = MARK_LABEL
+              tag.textContent = e.label
+              el.appendChild(tag)
+            }
+            hostEl.appendChild(el)
+            markEls.set(key, el)
+          }
+          el.style.left = `${((mp.x + 1) / 2) * w}px`
+          el.style.top = `${((1 - mp.y) / 2) * h}px`
+          el.style.opacity = String(1 - k * 0.7)
+          ;(el.firstChild as HTMLElement).style.transform = `scale(${0.6 + k * 0.9})`
+        }
+      }
+      for (const [key, el] of markEls)
+        if (!live.has(key)) {
+          el.remove()
+          markEls.delete(key)
+        }
     }
 
     let alive = true
@@ -445,7 +566,7 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
 
     const items = composeRef.current
     void (async () => {
-      const [g, ...parts] = await Promise.all([fetchGlb(url), ...items.map((x) => (x.file ? fetchGlb(fileUrl(x.file.id)) : Promise.resolve(null)))])
+      const [g, ...parts] = await Promise.all([fetchGlb(url), ...items.map((x) => (x.file && x.kind !== 'sound' ? fetchGlb(fileUrl(x.file.id)) : Promise.resolve(null)))])
       if (!alive) {
         for (const x of [g, ...parts]) if (x) disposeTree(x.scene)
         return
@@ -469,7 +590,7 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
       // 挂点：模型里的骨骼和空节点，按 GLB 里的原名（GLTFLoader 会把名字里的 . : / 等去掉）
       const info = glbNodes(g)
       sockets = info.byName
-      const notes: ComposeNote[] = composeNotes(items)
+      const notes: (ComposeNote | EventNote)[] = composeNotes(items)
       model.updateMatrixWorld(true)
       const mainBox = new Box3().setFromObject(model)
       const msize = mainBox.getSize(new Vector3())
@@ -477,6 +598,7 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
       const placed = mainBox.clone()
       items.forEach((x, i) => {
         const part = parts[i]
+        if (x.kind === 'sound') return // 音效由播放控件放
         if (x.file && !part) notes.push({ kind: 'load', asset: targetOf(x) })
         if (!part) return
         prepColors(part.scene)
@@ -488,7 +610,7 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
             return
           }
           node.add(part.scene)
-          attached.push({ item: x, obj: part.scene })
+          attached.push({ item: x, obj: part.scene, node })
           return
         }
         // 参照：原点放在 refPosition 算出的位置（相对主模型原点），自动摆放时依次往右排
@@ -499,6 +621,9 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
         if (!x.offset) placed.union(rb.translate(new Vector3(at[0], at[1], at[2])))
       })
       stage.add(refsGroup)
+      floorY = mainBox.min.y
+      const evs = eventsRef.current
+      if (anim) notes.push(...eventNotes(evs, anim.infos, new Set(items.filter((x) => x.kind === 'attach').map((x) => x.name || x.socket || '')), new Set(sockets.keys())))
       setNotes(notes)
       composeTick()
       // 取景：主模型连同参照（和此刻显示的挂件）一起居中
@@ -520,8 +645,8 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
       ctl.maxDistance = dist * 5
       ctl.update()
       home = { pos: cam.position.clone(), target: ctl.target.clone() }
-      if (sy && anim && (anim.clips.length || anim.helper || info.nodes.length || items.length))
-        unregister = sy.register({ id: url, main, label, clips: anim.infos, skeleton: !!anim.helper, canvas: () => renderer.domElement, nodes: info.nodes, compose: items })
+      if (sy && anim && (anim.clips.length || anim.helper || info.nodes.length || items.length || Object.keys(evs).length))
+        unregister = sy.register({ id: url, main, label, clips: anim.infos, skeleton: !!anim.helper, canvas: () => renderer.domElement, nodes: info.nodes, compose: items, events: evs })
       setState('ok')
     })()
 
@@ -534,11 +659,12 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
       io.disconnect()
       window.clearTimeout(nudgeTimer)
       disposeControls()
+      for (const el of markEls.values()) el.remove()
       disposeTree(stage)
       renderer.dispose()
       renderer.domElement.remove()
     }
-  }, [url, label, main, composeKey])
+  }, [url, label, main, composeKey, eventsKey])
 
   return (
     <div className={className} data-no-drag="" data-vertex-colors={vc || undefined} data-engaged={engaged || undefined}>
@@ -549,6 +675,7 @@ export default function Viewer3D({ url, className, sync, label, main, compose }:
           {state === 'loading' ? t.asset.loading3d : t.asset.fail3d}
         </div>
       )}
+      <div ref={marksHost} className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" data-marks="" />
       {engaged && <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-2 ring-accent/70 ring-inset" />}
       {state === 'ok' && (
         <div className={cx('pointer-events-none absolute right-3 bottom-2.5 text-[11px]', nudge && !engaged ? 'text-fg-2' : 'text-fg-3')} data-hint3d="">

@@ -99,17 +99,25 @@ func guestVersion(v store.AssetVersion) store.AssetVersion {
 	return v
 }
 
-// guestMeta：项目字段不给访客，只留 3D 查看要用的 display.animations（R-392：动作名、循环标记以 asset.json 为准，分享页与站内一致）。
+// guestMeta：项目字段不给访客，只留 3D 查看要用的 display.animations（R-392：动作名、循环标记以 asset.json 为准，分享页与站内一致）
+// 和 display.events（R-408：动作事件，分享页同样挂上 / 摘下挂件、放音效、闪特效标记）。
 func guestMeta(raw json.RawMessage) json.RawMessage {
 	var m struct {
-		Display struct {
-			Animations json.RawMessage `json:"animations"`
-		} `json:"display"`
+		Display map[string]json.RawMessage `json:"display"`
 	}
-	if len(raw) == 0 || json.Unmarshal(raw, &m) != nil || len(m.Display.Animations) == 0 || string(m.Display.Animations) == "null" {
+	if len(raw) == 0 || json.Unmarshal(raw, &m) != nil {
 		return nil
 	}
-	out, err := json.Marshal(map[string]any{"display": map[string]json.RawMessage{"animations": m.Display.Animations}})
+	keep := map[string]json.RawMessage{}
+	for _, k := range []string{"animations", "events"} {
+		if v := m.Display[k]; len(v) > 0 && string(v) != "null" {
+			keep[k] = v
+		}
+	}
+	if len(keep) == 0 {
+		return nil
+	}
+	out, err := json.Marshal(map[string]any{"display": keep})
 	if err != nil {
 		return nil
 	}

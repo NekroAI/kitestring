@@ -5,6 +5,23 @@
 // 暂停时 t = base。几个查看器（版本对比、候选并排）每帧都按同一个 t 取姿势，不会越播越错开。
 
 import type { ComposeItem, NodeInfo } from "./compose.ts";
+import { parseSound, SOUND_KEY, type ClipEvents } from "./events.ts";
+
+// 声音开关（R-408）：默认静音，选择记在本机；拿不到本机存储时只在本页记
+const readSound = () => {
+  try {
+    return parseSound(globalThis.localStorage?.getItem(SOUND_KEY));
+  } catch {
+    return false;
+  }
+};
+const saveSound = (on: boolean) => {
+  try {
+    globalThis.localStorage?.setItem(SOUND_KEY, on ? "on" : "off");
+  } catch {
+    /* 拿不到本机存储：只在本页记 */
+  }
+};
 
 /** GLB 里的一个动作（查看器加载后报给同步时钟）。 */
 export type ClipInfo = {
@@ -196,6 +213,7 @@ export type AnimState = {
   refs: boolean;
   socket: string | null;
   allNodes: boolean;
+  sound: boolean; // R-408：声音开关，默认关（静音）；只有正在看的那一版出声
 };
 
 /** 一个查看器报给时钟的东西：它的动作、有没有骨骼、截当前画面。 */
@@ -207,7 +225,8 @@ export type ViewerEntry = {
   skeleton: boolean;
   canvas: () => HTMLCanvasElement | null;
   nodes?: NodeInfo[]; // R-407：模型里的骨骼和空节点（挂点列表）
-  compose?: ComposeItem[]; // R-407：这一版的挂件和参照
+  compose?: ComposeItem[]; // R-407：这一版的挂件和参照（R-408 起也有音效）
+  events?: ClipEvents; // R-408：这一版的动作事件
 };
 
 export type AnimSync = ReturnType<typeof createAnimSync>;
@@ -228,6 +247,7 @@ export function createAnimSync(clock: () => number = () => performance.now()) {
     refs: true,
     socket: null,
     allNodes: false,
+    sound: readSound(),
   };
   let viewers: ViewerEntry[] = [];
   let rows: AnimRow[] = [];
@@ -341,8 +361,18 @@ export function createAnimSync(clock: () => number = () => performance.now()) {
       emit();
     },
     // 组合预览（R-407）：摘下 / 挂上挂件、参照，选挂点（再点一次取消），挂点列表切全部节点
-    setCompose(patch: Partial<Pick<AnimState, "attach" | "refs" | "socket" | "allNodes">>) {
+    setCompose(
+      patch: Partial<
+        Pick<AnimState, "attach" | "refs" | "socket" | "allNodes">
+      >,
+    ) {
       s = { ...s, ...patch };
+      emit();
+    },
+    // 声音开关（R-408）：记在本机，几个查看器共用
+    setSound(sound: boolean) {
+      saveSound(sound);
+      s = { ...s, sound };
       emit();
     },
     // settle：不循环时播到末尾就停（播放控件每帧调用）

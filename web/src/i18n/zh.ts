@@ -343,6 +343,23 @@ export const zh = {
       at: '挂在',
       jump: '跳到这一帧',
       unmark: '取消挂帧',
+      // 动作事件（R-408）：进度条上的事件点、声音开关（默认静音，记在本机）
+      sound: '声音',
+      soundOn: '打开声音，播放到音效事件时出声',
+      soundOff: '静音',
+      events: '动作事件',
+      event: (e: { do: 'attach' | 'detach' | 'sound' | 'mark'; name?: string; asset?: string; socket?: string; label?: string }, soundName?: string) =>
+        e.do === 'attach'
+          ? `挂上挂件「${e.name}」`
+          : e.do === 'detach'
+            ? `摘下挂件「${e.name}」`
+            : e.do === 'sound'
+              ? `音效「${soundName || e.asset}」`
+              : e.label
+                ? `特效位置「${e.label}」，挂点 ${e.socket}`
+                : `特效位置，挂点 ${e.socket}`,
+      eventAt: (t: number) => `${t.toFixed(2)} 秒`,
+      eventJump: (t: number) => `跳到 ${t.toFixed(2)} 秒的事件`,
     },
     // 组合预览（R-407）：挂点、挂件、比例参照；配置来自 asset.json，网页只看不改
     compose: {
@@ -362,14 +379,32 @@ export const zh = {
       refs: '参照',
       refsOff: '隐藏参照',
       refsOn: '显示参照',
-      note: (n: { kind: 'socket'; name: string; socket: string } | { kind: 'asset' | 'glb' | 'load'; asset: string }) =>
+      note: (
+        n:
+          | { kind: 'socket'; name: string; socket: string }
+          | { kind: 'asset' | 'glb' | 'audio' | 'load'; asset: string }
+          | { kind: 'evClip'; clip: string }
+          | { kind: 'evTime'; clip: string; t: number; dur: number }
+          | { kind: 'evAttach'; clip: string; name: string }
+          | { kind: 'evSocket'; clip: string; socket: string },
+      ) =>
         n.kind === 'socket'
           ? `挂件「${n.name}」的挂点「${n.socket}」在模型里找不到`
           : n.kind === 'asset'
             ? `找不到素材 ${n.asset}`
             : n.kind === 'glb'
               ? `${n.asset} 不是 GLB 模型，无法显示`
-              : `${n.asset} 的模型加载失败`,
+              : n.kind === 'audio'
+                ? `${n.asset} 不是音效素材，无法播放`
+                : n.kind === 'evClip'
+                    ? `动作事件里的动作「${n.clip}」在模型里找不到`
+                    : n.kind === 'evTime'
+                      ? `动作「${n.clip}」${n.t.toFixed(2)} 秒的事件超出动作时长 ${n.dur.toFixed(2)} 秒`
+                      : n.kind === 'evAttach'
+                        ? `动作「${n.clip}」的事件引用的挂件「${n.name}」不存在`
+                        : n.kind === 'evSocket'
+                          ? `动作「${n.clip}」的特效位置挂点「${n.socket}」在模型里找不到`
+                          : `${n.asset} 的模型加载失败`,
     },
     compareHint: '拖动分隔线对比',
     compareSlider: (a: number, b: number) => `对比 v${a} 和 v${b}`,

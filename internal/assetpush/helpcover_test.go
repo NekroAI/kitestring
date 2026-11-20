@@ -62,6 +62,7 @@ func TestDisplayFieldsInHelp(t *testing.T) {
 	sub := map[string][]string{
 		"attach":     jsonTags(protocol.ComposeAttach{}),
 		"refs":       jsonTags(protocol.ComposeRef{}),
+		"events":     jsonTags(protocol.ComposeEvent{}),
 		"animations": jsAnimFields(t),
 	}
 	for k, fields := range sub {

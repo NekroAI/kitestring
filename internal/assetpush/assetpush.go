@@ -370,6 +370,9 @@ func Text(p protocol.AssetPush, out protocol.AssetPushReply, notes []string) str
 				b.WriteString("标为已在用：" + x.Note + "\n")
 			}
 		}
+		for _, w := range r.Warnings {
+			b.WriteString("提示：" + w + "\n")
+		}
 	}
 	if out.Queued && p.Baseline {
 		b.WriteString("补传成功后会自动提「申请标为已在用」给用户批准。\n")

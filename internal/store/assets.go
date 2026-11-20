@@ -102,7 +102,7 @@ type AssetVersion struct {
 
 // AssetCompose 是组合预览的一项：挂件（attach）或比例参照（ref），已按素材 id 在同一项目里找过。
 type AssetCompose struct {
-	Kind    string    `json:"kind" enum:"attach,ref" doc:"attach 挂件 / ref 比例参照"`
+	Kind    string    `json:"kind" enum:"attach,ref,sound" doc:"attach 挂件 / ref 比例参照 / sound 动作事件引用的音效（R-408）"`
 	Name    string    `json:"name,omitempty" doc:"挂件名（不写时取 socket）；动作事件按它引用"`
 	Socket  string    `json:"socket,omitempty" doc:"挂件的挂点：GLB 里的骨骼或空节点名"`
 	Asset   string    `json:"asset" doc:"写的素材 id"`
@@ -111,8 +111,8 @@ type AssetCompose struct {
 	Offset  []float64 `json:"offset,omitempty" doc:"参照相对本素材原点的位置（米）；空 = 并排放在右侧"`
 	Code    string    `json:"code,omitempty" doc:"找到的素材编号 A-x"`
 	Title   string    `json:"title,omitempty" doc:"找到的素材的中文名"`
-	File    *FileRef  `json:"file,omitempty" doc:"找到的素材最新一版的 GLB"`
-	Missing string    `json:"missing,omitempty" enum:"asset,glb," doc:"asset 素材找不到 / glb 素材不是 GLB；空 = 找到了"`
+	File    *FileRef  `json:"file,omitempty" doc:"找到的素材最新一版的 GLB（sound 时是音频文件）"`
+	Missing string    `json:"missing,omitempty" enum:"asset,glb,audio," doc:"asset 素材找不到 / glb 素材不是 GLB / audio 素材不是音效；空 = 找到了"`
 }
 
 // AssetPreview 是零件的一张预览图；View 是机位（R-376：文件名「<名字>__<机位>.png」里的机位，网页按它分组；旧数据为空）。
