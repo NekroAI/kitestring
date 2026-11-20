@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { displayNameOf, titleOf, subIdOf, matchesQuery, assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, fontOf, isSvg, FONT_SIZES, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite } from './assets.ts'
+import { displayNameOf, titleOf, subIdOf, matchesQuery, assetName, familyId, variantFamily, variantLabel, variantsOf, dirCount, dirTree, inDir, ROOT_DIR, subtypeOf, variantCount, wallSections, batchesOf, metaRows, variantNames, viewGroups, canReview, candidateLabel, comparePair, pendingStatus, recipientOf, stepQueue, coverOf, wallCover, needsAutoThumb, reviewProgress, facetsOf, fileTypeOf, fileTypesOf, fileTagsOf, mediaKindOf, uniqTags, defaultView, detailViews, audioOf, fontOf, isSvg, FONT_SIZES, isDeclared, waveBars, splitWidth, splitWidthCss, SPLIT_MIN, filterAssets, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, naturalSort, nextInQueue, overBudget, projectsOf, reviewQueue, wallTiles, type AssetLite, type FileLite, metaView } from './assets.ts'
 
 const png = (name: string): FileLite => ({ id: name, name, mime: 'image/png', size: 1 })
 const glb = (name: string): FileLite => ({ id: name, name, mime: 'model/gltf-binary', size: 1 })
@@ -402,4 +402,17 @@ test('中文名（R-400）：有时作主标题、id 作副标题，变体沿用
   assert.equal(titleOf(v), '卡宾枪 · desert')
   assert.ok(matchesQuery(named, '卡宾') && matchesQuery(named, 'CARBINE') && !matchesQuery(plain, '卡宾') && matchesQuery(plain, ''))
   assert.deepEqual(filterAssets([named, plain], { project: named.project_id, batch: '', category: '', status: '', q: ' 卡宾枪 ' }), [named])
+})
+
+test('metaView（R-401）：对象数组成表格、对象成两列表、短列表一行、原始数据保留整份', () => {
+  const m = { lod: 2, materials: ['a', 'b'], id: 'x', nodes: [{ name: 'A', loc: [1, 2, 3] }, { name: 'B', role: 'r' }], budget: { triangles: 784 } }
+  const v = metaView(m)
+  assert.deepEqual(v.scalars, [['lod', '2'], ['materials', 'a、b']])
+  assert.deepEqual(v.tables[0], { key: 'nodes', columns: ['name', 'loc', 'role'], rows: [['A', '1, 2, 3', ''], ['B', '', 'r']], cut: false })
+  assert.deepEqual(v.tables[1], { key: 'budget', columns: [], rows: [['triangles', '784']], cut: false })
+  assert.equal(JSON.parse(v.raw).id, 'x')
+  const wide = metaView({ t: [Object.fromEntries(Array.from({ length: 10 }, (_, i) => ['c' + i, i]))] })
+  assert.equal(wide.tables[0].columns.length, 8)
+  assert.equal(wide.tables[0].cut, true)
+  assert.deepEqual(metaView(null), { scalars: [], tables: [], raw: '' })
 })

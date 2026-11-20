@@ -409,6 +409,34 @@ export function metaRows(meta: unknown): [string, string][] {
     .map(([k, v]) => [k, typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : JSON.stringify(v)])
 }
 
+// metaView（R-401）：项目字段分三类显示——单值和短列表一行一条；对象数组（部件、插槽、动作等）和对象写成小表格；
+// 原始数据保留整份 meta 的格式化 JSON。表格列取各项键的并集，最多 META_COLS 列，其余见原始数据。
+export const META_COLS = 8
+export type MetaTable = { key: string; columns: string[]; rows: string[][]; cut: boolean }
+export type MetaView = { scalars: [string, string][]; tables: MetaTable[]; raw: string }
+const isPrim = (v: unknown) => v === null || ['string', 'number', 'boolean'].includes(typeof v)
+const cell = (v: unknown): string => (v === null || v === undefined ? '' : isPrim(v) ? String(v) : Array.isArray(v) && v.every(isPrim) ? v.join(', ') : JSON.stringify(v))
+
+export function metaView(meta: unknown): MetaView {
+  const out: MetaView = { scalars: [], tables: [], raw: '' }
+  if (!isObj(meta)) return out
+  out.raw = JSON.stringify(meta, null, 2)
+  for (const [k, v] of Object.entries(meta as Record<string, unknown>)) {
+    if (GENERIC.has(k) || (SHOWN_UNLESS_OBJECT.has(k) && !isObj(v)) || v === null || v === undefined || v === '') continue
+    if (Array.isArray(v) && v.length > 0 && v.every(isObj)) {
+      const cols: string[] = []
+      for (const o of v as Record<string, unknown>[]) for (const c of Object.keys(o)) if (!cols.includes(c)) cols.push(c)
+      const columns = cols.slice(0, META_COLS)
+      out.tables.push({ key: k, columns, rows: (v as Record<string, unknown>[]).map((o) => columns.map((c) => cell(o[c]))), cut: cols.length > META_COLS })
+    } else if (isObj(v)) {
+      const ents = Object.entries(v as Record<string, unknown>)
+      out.tables.push({ key: k, columns: [], rows: ents.map(([a, b]) => [a, cell(b)]), cut: false })
+    } else if (Array.isArray(v) && v.every(isPrim)) out.scalars.push([k, v.map(cell).join('、')])
+    else out.scalars.push([k, typeof v === 'string' ? v : isPrim(v) ? String(v) : JSON.stringify(v)])
+  }
+  return out
+}
+
 // variantNames（R-376）：asset.json 里具名变体的名字——对象写法取键，数组写法取 name。
 export function variantNames(variants: unknown): string[] {
   if (Array.isArray(variants)) return variants.map((x) => (isObj(x) ? String((x as { name?: unknown }).name ?? '') : '')).filter(Boolean)

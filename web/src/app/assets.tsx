@@ -5,8 +5,9 @@ import { AudioLines, Box as BoxIcon, Type, Check, ChevronDown, ChevronLeft, Colu
 import { api, unwrap } from '../api/client'
 import { useAsset, useAssets, useProjects } from '../api/queries'
 import { t } from '../i18n'
-import { cx, relTime, useDesktop, useMedia, useNow } from '../lib/util'
-import { titleOf, subIdOf, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, metaRows, variantNames, viewGroups, coverOf, audioOf, fontOf, isSvg, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetKind, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile } from '../lib/assets'
+import { toast } from 'sonner'
+import { copyText, cx, relTime, useDesktop, useMedia, useNow } from '../lib/util'
+import { titleOf, subIdOf, batchesOf, candidateLabel, subtypeOf, variantCount, variantFamily, variantLabel, VARIANT_CMP, ROOT_DIR, type AssetDir, comparePair, variantNames, viewGroups, coverOf, audioOf, fontOf, isSvg, defaultView, detailViews, facetsOf, fileTagsOf, uniqTags, SPLIT_MIN, splitWidthCss, type FileTag, type MediaKind, fmtPixels, fmtSize, fmtTris, glbOf, groupMembers, groupStatus, needsAutoThumb, nextInQueue, overBudget, pendingStatus, projectsOf, reviewKey, reviewProgress, reviewQueue, stepQueue, wallCover, type AssetKind, type AssetLite, type AssetStatus, type FileLite, type VersionLite, type WallTile, metaView, META_COLS, type MetaTable } from '../lib/assets'
 import { Badge, Button, Card, Empty, ErrorState, Input, Segmented, Skeleton, Tip } from '../ui/base'
 import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
@@ -892,7 +893,7 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
     [t.asset.meta.submitter, v ? submitterName(v.submitter) : ''],
   ]
   // 项目特有字段（R-376）：asset.json 里纸鸢不认识的字段，原样展示
-  const fields = metaRows(v?.meta)
+  const fields = useMemo(() => metaView(v?.meta), [v?.meta])
   const rows = meta.filter(([, val]) => val !== undefined && val !== '' && val !== null)
   const onStage = layout === 'stage'
 
@@ -1002,19 +1003,25 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
       </dl>
       <AssetLinks a={a} />
 
-      {fields.length > 0 && (
+      {(fields.scalars.length > 0 || fields.tables.length > 0 || fields.raw) && (
         <section className="mt-4" data-fields>
           <h3 className="mb-2 text-[13px] font-medium text-fg-3">{t.asset.projectFields}</h3>
-          <dl className="overflow-hidden rounded-xl border border-line text-[13px]">
-            {fields.map(([k, val]) => (
-              <div key={k} className="flex min-w-0 gap-3 border-b border-line px-3 py-2 last:border-b-0">
-                <dt className="w-24 shrink-0 truncate font-mono text-[12px] text-fg-3" title={k}>
-                  {k}
-                </dt>
-                <dd className="min-w-0 break-all text-fg">{val}</dd>
-              </div>
-            ))}
-          </dl>
+          {fields.scalars.length > 0 && (
+            <dl className="overflow-hidden rounded-xl border border-line text-[13px]">
+              {fields.scalars.map(([k, val]) => (
+                <div key={k} className="flex min-w-0 gap-3 border-b border-line px-3 py-2 last:border-b-0">
+                  <dt className="w-24 shrink-0 truncate font-mono text-[12px] text-fg-3" title={k}>
+                    {k}
+                  </dt>
+                  <dd className="min-w-0 break-all text-fg">{val}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {fields.tables.map((tb) => (
+            <MetaTableView key={tb.key} tb={tb} />
+          ))}
+          {fields.raw && <MetaRaw raw={fields.raw} />}
         </section>
       )}
 
@@ -1271,5 +1278,69 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
         </div>
       )}
     </Panel>
+  )
+}
+
+// 项目字段里的对象数组 / 对象（R-401）：默认折叠，展开是小表格，行多时在框内滚动。
+function MetaTableView({ tb }: { tb: MetaTable }) {
+  return (
+    <details className="group mt-2 overflow-hidden rounded-xl border border-line text-[13px]" data-meta-table={tb.key}>
+      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-bg-2">
+        <ChevronDown className="size-3.5 -rotate-90 text-fg-3 transition-transform group-open:rotate-0" />
+        <span className="font-mono text-[12px] text-fg">{tb.key}</span>
+        <span className="text-fg-3">{t.asset.fieldCount(tb.rows.length)}</span>
+      </summary>
+      <div className="max-h-72 overflow-auto border-t border-line">
+        <table className="w-full border-collapse text-left text-[12px]">
+          {tb.columns.length > 0 && (
+            <thead className="sticky top-0 bg-bg-2 text-fg-3">
+              <tr>
+                {tb.columns.map((c) => (
+                  <th key={c} className="whitespace-nowrap px-3 py-1.5 font-mono font-normal">
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+          )}
+          <tbody>
+            {tb.rows.map((r, i) => (
+              <tr key={i} className="border-t border-line first:border-t-0">
+                {r.map((c, j) => (
+                  <td key={j} className={cx('max-w-[16rem] truncate px-3 py-1.5', tb.columns.length === 0 && j === 0 ? 'font-mono text-fg-3' : 'text-fg')} title={c}>
+                    {c}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {tb.cut && <p className="border-t border-line px-3 py-1.5 text-[12px] text-fg-3">{t.asset.fieldCut(META_COLS)}</p>}
+    </details>
+  )
+}
+
+// 原始数据：整份 meta 的格式化 JSON，默认折叠，可一键复制。
+function MetaRaw({ raw }: { raw: string }) {
+  return (
+    <details className="group mt-2 overflow-hidden rounded-xl border border-line text-[13px]" data-meta-raw>
+      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-bg-2">
+        <ChevronDown className="size-3.5 -rotate-90 text-fg-3 transition-transform group-open:rotate-0" />
+        <span className="text-fg">{t.asset.rawData}</span>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto"
+          onClick={async (e) => {
+            e.preventDefault()
+            if (await copyText(raw)) toast.success(t.common.copied)
+          }}
+        >
+          {t.common.copy}
+        </Button>
+      </summary>
+      <pre className="max-h-72 overflow-auto border-t border-line bg-bg-2 px-3 py-2 font-mono text-[12px] leading-relaxed">{raw}</pre>
+    </details>
   )
 }
