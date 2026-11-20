@@ -168,6 +168,16 @@ export function AnimBar({
     }
   };
 
+  // 排布（R-407 返工）：按用途分行，每行都不换行——
+  //   动作行：选动作；右侧速度、循环、标记此帧
+  //   进度行：上一帧、播放、下一帧、进度条、时间
+  //   显示行（细线隔开）：挂点、挂件、参照、骨骼，一律图标加文字
+  // 控件统一高 h-8（触屏 h-9），开关都用 ghost、打开时 accent-soft；窄屏只截断动作名和挂点名，不换行、不横向滚动
+  // （这两个下拉按钮用 style 覆盖 Button 自带的 shrink-0，才截断得了）。
+  const ib = "h-8 w-8 rounded-lg"; // 图标按钮和文字按钮一样高
+  const on = (v: boolean) => v && "bg-accent-soft text-accent";
+  const viewRow = showSockets || hasAttach || hasRefs || skeleton;
+
   return (
     <div
       className={cx(
@@ -178,22 +188,24 @@ export function AnimBar({
       data-clip={s.clip ?? ""}
       data-playing={s.playing || undefined}
     >
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5">
-        {rows.length > 0 && (
+      {rows.length > 0 && (
+        <div className="flex items-center gap-1" data-anim-row="clip">
           <Menu
             align="start"
             width="w-[min(340px,calc(100vw-32px))]"
             trigger={
               <Button
                 size="sm"
-                className="max-w-[min(260px,100%)] min-w-0"
+                className="max-w-[260px] min-w-0"
+                style={{ flexShrink: 1 }}
                 aria-label={A.label}
                 data-anim-pick=""
               >
                 <span className="min-w-0 truncate">
                   {cur ? cur.label || cur.name : A.none}
                 </span>
-                {cur && (
+                {/* 能播时进度行已写总时长，这里不再重复（同一信息只写一处） */}
+                {cur && !has && (
                   <span className="shrink-0 text-fg-3 tabular">
                     {A.sec(cur.duration)}
                   </span>
@@ -244,47 +256,142 @@ export function AnimBar({
               })),
             ]}
           />
-        )}
-        {has && (
-          <>
-            <Tip content={A.prev}>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={A.prev}
-                onClick={() => sync.step(-1)}
-              >
-                <StepBack className="size-4" />
-              </Button>
-            </Tip>
-            <Tip content={s.playing ? A.pause : A.play}>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={s.playing ? A.pause : A.play}
-                onClick={() => sync.toggle()}
-                data-anim-play=""
-              >
-                {s.playing ? (
-                  <Pause className="size-4" />
-                ) : (
-                  <Play className="size-4" />
-                )}
-              </Button>
-            </Tip>
-            <Tip content={A.next}>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={A.next}
-                onClick={() => sync.step(1)}
-              >
-                <StepForward className="size-4" />
-              </Button>
-            </Tip>
-          </>
-        )}
-        <div className="ml-auto flex flex-wrap items-center gap-1">
+          {has && (
+            <div className="ml-auto flex shrink-0 items-center gap-1 pl-2">
+              <Menu
+                trigger={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={A.speed}
+                    data-anim-speed=""
+                  >
+                    <span className="tabular">{A.speedX(s.speed)}</span>
+                    <ChevronDown className="size-3.5 text-fg-3" />
+                  </Button>
+                }
+                width="min-w-[120px]"
+                items={[
+                  { type: "label", label: A.speed },
+                  ...SPEEDS.map((x) => ({
+                    label: A.speedX(x),
+                    checked: x === s.speed,
+                    onSelect: () => sync.setSpeed(x),
+                  })),
+                ]}
+              />
+              <Tip content={A.loop}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={A.loop}
+                  aria-pressed={s.loop}
+                  onClick={() => sync.setLoop(!s.loop)}
+                  className={cx(ib, on(s.loop))}
+                >
+                  <Repeat className="size-4" />
+                </Button>
+              </Tip>
+              {ctx?.sink && (
+                <Tip content={A.markTip}>
+                  <Button
+                    size="sm"
+                    className="ml-1"
+                    icon={<MapPin className="size-4" />}
+                    onClick={() => void mark()}
+                    data-anim-mark=""
+                  >
+                    {A.mark}
+                  </Button>
+                </Tip>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {has && (
+        <div className="mt-1.5 flex items-center gap-1" data-anim-row="seek">
+          <Tip content={A.prev}>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={A.prev}
+              className={ib}
+              onClick={() => sync.step(-1)}
+            >
+              <StepBack className="size-4" />
+            </Button>
+          </Tip>
+          <Tip content={s.playing ? A.pause : A.play}>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={s.playing ? A.pause : A.play}
+              className={ib}
+              onClick={() => sync.toggle()}
+              data-anim-play=""
+            >
+              {s.playing ? (
+                <Pause className="size-4" />
+              ) : (
+                <Play className="size-4" />
+              )}
+            </Button>
+          </Tip>
+          <Tip content={A.next}>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={A.next}
+              className={ib}
+              onClick={() => sync.step(1)}
+            >
+              <StepForward className="size-4" />
+            </Button>
+          </Tip>
+          <input
+            ref={range}
+            type="range"
+            min={0}
+            max={s.dur || 0}
+            step={0.001}
+            defaultValue={0}
+            aria-label={A.seek}
+            data-no-drag=""
+            className="mx-1.5 block min-w-0 flex-1 accent-[var(--color-accent)]"
+            onPointerDown={() => {
+              resume.current = sync.get().playing;
+              if (resume.current) sync.pause();
+            }}
+            onPointerUp={() => {
+              if (resume.current) sync.play();
+              resume.current = false;
+            }}
+            onChange={(e) => {
+              sync.seek(+e.target.value);
+              if (time.current)
+                time.current.textContent = A.time(
+                  +e.target.value,
+                  sync.get().dur,
+                );
+            }}
+          />
+          <span
+            ref={time}
+            className="shrink-0 pr-1 text-[12px] text-fg-3 tabular"
+            data-anim-time=""
+          />
+        </div>
+      )}
+      {viewRow && (
+        <div
+          className={cx(
+            "flex items-center gap-1",
+            (rows.length > 0 || has) &&
+              "-mx-2.5 mt-2 border-t border-line px-2.5 pt-2",
+          )}
+          data-anim-row="view"
+        >
           {showSockets && (
             <Menu
               width="w-[min(320px,calc(100vw-32px))]"
@@ -293,10 +400,8 @@ export function AnimBar({
                   size="sm"
                   variant="ghost"
                   aria-label={C.sockets}
-                  className={cx(
-                    "max-w-[180px] min-w-0",
-                    s.socket && "bg-accent-soft text-accent",
-                  )}
+                  className={cx("max-w-[180px] min-w-0", on(!!s.socket))}
+                  style={{ flexShrink: 1 }}
                   data-sockets=""
                 >
                   <Crosshair className="size-4 shrink-0" />
@@ -355,7 +460,7 @@ export function AnimBar({
                 variant="ghost"
                 aria-pressed={s.attach}
                 onClick={() => sync.setCompose({ attach: !s.attach })}
-                className={cx(s.attach && "bg-accent-soft text-accent")}
+                className={cx(on(s.attach))}
                 data-compose-attach=""
               >
                 <BoxIcon className="size-4" />
@@ -370,7 +475,7 @@ export function AnimBar({
                 variant="ghost"
                 aria-pressed={s.refs}
                 onClick={() => sync.setCompose({ refs: !s.refs })}
-                className={cx(s.refs && "bg-accent-soft text-accent")}
+                className={cx(on(s.refs))}
                 data-compose-refs=""
               >
                 <Ruler className="size-4" />
@@ -378,112 +483,25 @@ export function AnimBar({
               </Button>
             </Tip>
           )}
-          {has && (
-            <>
-              <Menu
-                trigger={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={A.speed}
-                    data-anim-speed=""
-                  >
-                    <span className="font-mono tabular">
-                      {A.speedX(s.speed)}
-                    </span>
-                    <ChevronDown className="size-3.5 text-fg-3" />
-                  </Button>
-                }
-                width="min-w-[120px]"
-                items={[
-                  { type: "label", label: A.speed },
-                  ...SPEEDS.map((x) => ({
-                    label: A.speedX(x),
-                    checked: x === s.speed,
-                    onSelect: () => sync.setSpeed(x),
-                  })),
-                ]}
-              />
-              <Tip content={A.loop}>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={A.loop}
-                  aria-pressed={s.loop}
-                  onClick={() => sync.setLoop(!s.loop)}
-                  className={cx(s.loop && "bg-accent-soft text-accent")}
-                >
-                  <Repeat className="size-4" />
-                </Button>
-              </Tip>
-            </>
-          )}
           {skeleton && (
             <Tip content={A.skeleton}>
               <Button
-                size="icon-sm"
+                size="sm"
                 variant="ghost"
                 aria-label={A.skeleton}
                 aria-pressed={s.skeleton}
                 onClick={() => sync.setSkeleton(!s.skeleton)}
-                className={cx(s.skeleton && "bg-accent-soft text-accent")}
+                className={cx(on(s.skeleton))}
               >
                 <Bone className="size-4" />
+                {A.bones}
               </Button>
             </Tip>
           )}
-          {has && ctx?.sink && (
-            <Tip content={A.markTip}>
-              <Button
-                size="sm"
-                icon={<MapPin className="size-4" />}
-                onClick={() => void mark()}
-                data-anim-mark=""
-              >
-                {A.mark}
-              </Button>
-            </Tip>
-          )}
-        </div>
-      </div>
-      {has && (
-        <div className="mt-1.5 flex items-center gap-2.5">
-          <input
-            ref={range}
-            type="range"
-            min={0}
-            max={s.dur || 0}
-            step={0.001}
-            defaultValue={0}
-            aria-label={A.seek}
-            data-no-drag=""
-            className="block min-w-0 flex-1 accent-[var(--color-accent)]"
-            onPointerDown={() => {
-              resume.current = sync.get().playing;
-              if (resume.current) sync.pause();
-            }}
-            onPointerUp={() => {
-              if (resume.current) sync.play();
-              resume.current = false;
-            }}
-            onChange={(e) => {
-              sync.seek(+e.target.value);
-              if (time.current)
-                time.current.textContent = A.time(
-                  +e.target.value,
-                  sync.get().dur,
-                );
-            }}
-          />
-          <span
-            ref={time}
-            className="shrink-0 font-mono text-[12px] text-fg-3 tabular"
-            data-anim-time=""
-          />
         </div>
       )}
       {warns > 0 && (
-        <p className="mt-1 text-[12px] text-wait">{A.warnSum(warns)}</p>
+        <p className="mt-1.5 text-[12px] text-wait">{A.warnSum(warns)}</p>
       )}
     </div>
   );

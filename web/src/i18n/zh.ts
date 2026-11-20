@@ -324,6 +324,7 @@ export const zh = {
       speedX: (n: number) => `${n}×`,
       loop: '循环',
       skeleton: '显示骨骼',
+      bones: '骨骼',
       sec: (t: number) => `${(Number.isFinite(t) ? Math.max(0, t) : 0).toFixed(2)} 秒`,
       time: (a: number, b: number) => `${a.toFixed(2)} / ${b.toFixed(2)} 秒`,
       seek: '播放进度',
