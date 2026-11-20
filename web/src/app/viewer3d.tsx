@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { AmbientLight, AnimationMixer, TOUCH, Box3, DirectionalLight, HemisphereLight, Mesh, PerspectiveCamera, Scene, SkeletonHelper, SkinnedMesh, SRGBColorSpace, Vector3, WebGLRenderer, type AnimationAction, type AnimationClip, type Material, type Object3D } from 'three'
+import { AmbientLight, AnimationMixer, AxesHelper, Bone, Group, Quaternion, TOUCH, Box3, DirectionalLight, HemisphereLight, Mesh, PerspectiveCamera, Scene, SkeletonHelper, SkinnedMesh, SRGBColorSpace, Vector3, WebGLRenderer, type AnimationAction, type AnimationClip, type Material, type Object3D } from 'three'
 import { accel } from '../lib/accel'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Loader2 } from 'lucide-react'
 import { t } from '../i18n'
@@ -9,6 +9,8 @@ import { glbLoop, inferFps, wrapTime, type AnimSync, type ClipInfo } from '../li
 import { isDoubleTap, KIND_GAP, swipeAsDrag, tapOf, wheel3d, WheelKind, type Tap } from '../lib/wheelKind'
 import { scrollerOf } from '../ui/gesture'
 import { cx } from '../lib/util'
+import { fileUrl } from '../ui/attach'
+import { attachShown, composeNotes, refPosition, targetOf, type Box, type ComposeItem, type ComposeNote, type NodeInfo } from '../lib/compose'
 
 // 资源库的 3D 查看（R-351 第 3 步）：只在抽屉切到「3D」时按需加载（app/assets.tsx 里 lazy import），three.js 不进首屏包。
 // 顶点色：glTF 规定 COLOR_0 是线性值，GLTFLoader 原样读入、材质开 vertexColors，渲染输出转 sRGB；这里不再做任何颜色空间换算，
@@ -25,6 +27,7 @@ type Props = {
   sync?: AnimSync // 共用的动画时钟；不传时只显示静止模型
   label?: string // 并排时角上标的名字（如 v2）
   main?: boolean // 并排时正在看的那一版：动作列表、时长、截图顺序以它为准
+  compose?: ComposeItem[] // R-407：这一版的挂件和比例参照（Hub 解析好的）；自动缩略图不走这里，不带挂件
 }
 
 // ---------- 手势 ----------
@@ -263,15 +266,63 @@ function disposeTree(root: Object3D) {
   })
 }
 
-export default function Viewer3D({ url, className, sync, label, main }: Props) {
+// prepColors：顶点色材质补开 vertexColors（见文件头），返回带顶点色的网格数 / 网格总数
+function prepColors(root: Object3D) {
+  let meshes = 0
+  let colored = 0
+  root.traverse((o) => {
+    if (!(o instanceof Mesh)) return
+    meshes++
+    if (!o.geometry.getAttribute('color')) return
+    colored++
+    const ms: Material[] = Array.isArray(o.material) ? o.material : [o.material]
+    for (const m of ms) {
+      // GLTFLoader 遇到 COLOR_0 已经会打开；个别导出器把材质共享给无顶点色的网格时这里补上
+      if (!m.vertexColors) {
+        m.vertexColors = true
+        m.needsUpdate = true
+      }
+    }
+  })
+  return { meshes, colored }
+}
+
+// glbNodes（R-407）：模型里不带网格的节点（骨骼、空节点），按 GLB 里的原名；空节点 = 不是骨骼、自己和下面都没有网格
+function glbNodes(g: GLTF) {
+  const json = g.parser.json as { nodes?: { name?: string }[] }
+  const nodes: NodeInfo[] = []
+  const byName = new Map<string, Object3D>()
+  g.scene.traverse((o) => {
+    if (o === g.scene || o instanceof Mesh) return
+    const idx = g.parser.associations.get(o)?.nodes
+    const name = (idx !== undefined ? json.nodes?.[idx]?.name : undefined) ?? o.name
+    if (!name || byName.has(name)) return
+    let meshy = false
+    o.traverse((c) => {
+      if (c instanceof Mesh) meshy = true
+    })
+    const bone = o instanceof Bone
+    byName.set(name, o)
+    nodes.push({ name, bone, empty: !bone && !meshy })
+  })
+  return { nodes, byName }
+}
+
+const boxOf = (b: Box3): Box => ({ min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] })
+
+export default function Viewer3D({ url, className, sync, label, main, compose }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'fail'>('loading')
   const [vc, setVc] = useState('')
   const [missing, setMissing] = useState('') // 并排时这一边的 GLB 里没有当前动作
   const [engaged, setEngaged] = useState(false) // 嵌入时点开接管了触控板双指滑动
   const [nudge, setNudge] = useState(false) // 没接管时双指滑动放给了页面：提示点一下
+  const [notes, setNotes] = useState<ComposeNote[]>([]) // R-407：找不到挂点、素材时的提示
   const syncRef = useRef(sync)
   syncRef.current = sync
+  const composeKey = JSON.stringify(compose ?? [])
+  const composeRef = useRef<ComposeItem[]>([])
+  composeRef.current = compose ?? []
 
   useEffect(() => {
     const el = host.current
@@ -337,6 +388,7 @@ export default function Viewer3D({ url, className, sync, label, main }: Props) {
         const m = anim.missing(sy.get().clip) ? (sy.get().clip ?? '') : ''
         if (m !== miss) setMissing((miss = m))
       }
+      composeTick()
       if (fly) {
         const k = Math.min(1, (performance.now() - fly.t0) / FLY_MS)
         const e = 1 - (1 - k) ** 3
@@ -348,69 +400,130 @@ export default function Viewer3D({ url, className, sync, label, main }: Props) {
       renderer.render(scene, cam)
     })
 
-    let model: Object3D | null = null
+    // 组合预览（R-407）：挂件挂在挂点节点下面，跟着动作走；参照和主模型放在同一个 stage 里一起居中取景
+    const stage = new Group()
+    const refsGroup = new Group()
+    const attached: { item: ComposeItem; obj: Object3D }[] = []
+    let sockets = new Map<string, Object3D>()
+    const axes = new AxesHelper(1)
+    axes.visible = false
+    axes.renderOrder = 999
+    for (const m of [axes.material].flat()) m.depthTest = false
+    let axesLen = 1
+    const wp = new Vector3()
+    const wq = new Quaternion()
+    const ws = new Vector3()
+    const composeTick = () => {
+      const sy = syncRef.current
+      const s = sy?.get()
+      const clip = anim && s && !anim.missing(s.clip) ? s.clip : null
+      for (const a of attached) a.obj.visible = attachShown(a.item, clip, s ? s.attach : true)
+      refsGroup.visible = s ? s.refs : true
+      const node = s?.socket ? sockets.get(s.socket) : undefined
+      axes.visible = !!node
+      if (node) {
+        node.updateWorldMatrix(true, false)
+        node.matrixWorld.decompose(wp, wq, ws)
+        axes.position.copy(wp)
+        axes.quaternion.copy(wq)
+        axes.scale.setScalar(axesLen)
+      }
+    }
+
     let alive = true
-    // 加速地址上取不到时（R-369）换回主地址再取一次
-    const load = (u: string, retry: boolean) => new GLTFLoader().load(
-      u,
-      (g) => {
-        if (!alive) {
-          disposeTree(g.scene)
+    // 加速地址上取不到时（R-369）换回主地址再取一次；取不到时给 null
+    const fetchGlb = (u: string): Promise<GLTF | null> =>
+      new Promise((resolve) => {
+        const go = (x: string, retry: boolean) =>
+          new GLTFLoader().load(x, resolve, undefined, () => {
+            const back = retry ? accel.failed(x) : null
+            if (alive && back) go(back, false)
+            else resolve(null)
+          })
+        go(u, true)
+      })
+
+    const items = composeRef.current
+    void (async () => {
+      const [g, ...parts] = await Promise.all([fetchGlb(url), ...items.map((x) => (x.file ? fetchGlb(fileUrl(x.file.id)) : Promise.resolve(null)))])
+      if (!alive) {
+        for (const x of [g, ...parts]) if (x) disposeTree(x.scene)
+        return
+      }
+      if (!g) {
+        for (const x of parts) if (x) disposeTree(x.scene)
+        setState('fail')
+        return
+      }
+      const model = g.scene
+      const { colored, meshes } = prepColors(model)
+      setVc(`${colored}/${meshes}`)
+      stage.add(model)
+      // 动作动画（R-392）：GLB 里有动作、或有骨骼时报给时钟；循环标记读动画的 extras（GLTFLoader 不放进 clip）。挂件挂上之前建，骨骼显示只画本模型的
+      const sy = syncRef.current
+      if (sy) {
+        const extras = ((g.parser.json as { animations?: { extras?: unknown }[] }).animations ?? []).map((x) => x.extras)
+        anim = new Anim(model, g.animations, extras)
+        if (anim.helper) scene.add(anim.helper)
+      }
+      // 挂点：模型里的骨骼和空节点，按 GLB 里的原名（GLTFLoader 会把名字里的 . : / 等去掉）
+      const info = glbNodes(g)
+      sockets = info.byName
+      const notes: ComposeNote[] = composeNotes(items)
+      model.updateMatrixWorld(true)
+      const mainBox = new Box3().setFromObject(model)
+      const msize = mainBox.getSize(new Vector3())
+      axesLen = Math.max(msize.x, msize.y, msize.z) * 0.4 || 0.3
+      const placed = mainBox.clone()
+      items.forEach((x, i) => {
+        const part = parts[i]
+        if (x.file && !part) notes.push({ kind: 'load', asset: targetOf(x) })
+        if (!part) return
+        prepColors(part.scene)
+        if (x.kind === 'attach') {
+          const node = x.socket ? sockets.get(x.socket) : undefined
+          if (!node) {
+            notes.push({ kind: 'socket', name: x.name || x.socket || '', socket: x.socket ?? '' })
+            disposeTree(part.scene)
+            return
+          }
+          node.add(part.scene)
+          attached.push({ item: x, obj: part.scene })
           return
         }
-        model = g.scene
-        let meshes = 0
-        let colored = 0
-        model.traverse((o) => {
-          if (!(o instanceof Mesh)) return
-          meshes++
-          if (o.geometry.getAttribute('color')) {
-            colored++
-            const ms: Material[] = Array.isArray(o.material) ? o.material : [o.material]
-            for (const m of ms) {
-              // GLTFLoader 遇到 COLOR_0 已经会打开；个别导出器把材质共享给无顶点色的网格时这里补上
-              if (!m.vertexColors) {
-                m.vertexColors = true
-                m.needsUpdate = true
-              }
-            }
-          }
-        })
-        setVc(`${colored}/${meshes}`)
-        const box = new Box3().setFromObject(model)
-        const c = box.getCenter(new Vector3())
-        const s = box.getSize(new Vector3())
-        const m = Math.max(s.x, s.y, s.z) || 1
-        model.position.sub(c)
-        scene.add(model)
-        const dist = (m / (2 * Math.tan((cam.fov * Math.PI) / 360))) * 1.55
-        cam.position.set(dist * 0.75, dist * 0.45, dist * 0.9)
-        cam.near = dist / 100
-        cam.far = dist * 100
-        cam.updateProjectionMatrix()
-        ctl.target.set(0, 0, 0)
-        ctl.minDistance = dist * 0.2
-        ctl.maxDistance = dist * 5
-        ctl.update()
-        home = { pos: cam.position.clone(), target: ctl.target.clone() }
-        // 动作动画（R-392）：GLB 里有动作、或有骨骼时报给时钟；循环标记读动画的 extras（GLTFLoader 不放进 clip）
-        const sy = syncRef.current
-        if (sy) {
-          const extras = ((g.parser.json as { animations?: { extras?: unknown }[] }).animations ?? []).map((x) => x.extras)
-          anim = new Anim(model, g.animations, extras)
-          if (anim.helper) scene.add(anim.helper)
-          if (anim.clips.length || anim.helper) unregister = sy.register({ id: url, main, label, clips: anim.infos, skeleton: !!anim.helper, canvas: () => renderer.domElement })
-        }
-        setState('ok')
-      },
-      undefined,
-      () => {
-        const main = retry ? accel.failed(u) : null
-        if (alive && main) load(main, false)
-        else if (alive) setState('fail')
-      },
-    )
-    load(url, true)
+        // 参照：原点放在 refPosition 算出的位置（相对主模型原点），自动摆放时依次往右排
+        const rb = new Box3().setFromObject(part.scene)
+        const at = refPosition(boxOf(placed), boxOf(rb), x.offset)
+        part.scene.position.set(at[0], at[1], at[2])
+        refsGroup.add(part.scene)
+        if (!x.offset) placed.union(rb.translate(new Vector3(at[0], at[1], at[2])))
+      })
+      stage.add(refsGroup)
+      setNotes(notes)
+      composeTick()
+      // 取景：主模型连同参照（和此刻显示的挂件）一起居中
+      stage.updateMatrixWorld(true)
+      const box = new Box3().setFromObject(stage)
+      const c = box.getCenter(new Vector3())
+      const s = box.getSize(new Vector3())
+      const m = Math.max(s.x, s.y, s.z) || 1
+      stage.position.sub(c)
+      scene.add(stage)
+      scene.add(axes)
+      const dist = (m / (2 * Math.tan((cam.fov * Math.PI) / 360))) * 1.55
+      cam.position.set(dist * 0.75, dist * 0.45, dist * 0.9)
+      cam.near = dist / 100
+      cam.far = dist * 100
+      cam.updateProjectionMatrix()
+      ctl.target.set(0, 0, 0)
+      ctl.minDistance = dist * 0.2
+      ctl.maxDistance = dist * 5
+      ctl.update()
+      home = { pos: cam.position.clone(), target: ctl.target.clone() }
+      if (sy && anim && (anim.clips.length || anim.helper || info.nodes.length || items.length))
+        unregister = sy.register({ id: url, main, label, clips: anim.infos, skeleton: !!anim.helper, canvas: () => renderer.domElement, nodes: info.nodes, compose: items })
+      setState('ok')
+    })()
 
     return () => {
       alive = false
@@ -421,11 +534,11 @@ export default function Viewer3D({ url, className, sync, label, main }: Props) {
       io.disconnect()
       window.clearTimeout(nudgeTimer)
       disposeControls()
-      if (model) disposeTree(model)
+      disposeTree(stage)
       renderer.dispose()
       renderer.domElement.remove()
     }
-  }, [url, label, main])
+  }, [url, label, main, composeKey])
 
   return (
     <div className={className} data-no-drag="" data-vertex-colors={vc || undefined} data-engaged={engaged || undefined}>
@@ -441,6 +554,15 @@ export default function Viewer3D({ url, className, sync, label, main }: Props) {
         <div className={cx('pointer-events-none absolute right-3 bottom-2.5 text-[11px]', nudge && !engaged ? 'text-fg-2' : 'text-fg-3')} data-hint3d="">
           {coarse ? t.asset.hint3dTouch : nudge && !engaged ? t.asset.hint3dNudge : t.asset.hint3d}
         </div>
+      )}
+      {state === 'ok' && notes.length > 0 && (
+        <ul className="pointer-events-none absolute top-2 right-2 flex max-w-[min(72%,360px)] flex-col items-end gap-1" data-compose-notes="">
+          {notes.map((n, i) => (
+            <li key={i} className="rounded bg-surface/85 px-1.5 py-0.5 text-right text-[12px] leading-[18px] text-wait shadow-sm backdrop-blur">
+              {t.asset.compose.note(n)}
+            </li>
+          ))}
+        </ul>
       )}
       {label && <span className="pointer-events-none absolute top-2 left-2 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] text-white">{label}</span>}
       {state === 'ok' && missing && (

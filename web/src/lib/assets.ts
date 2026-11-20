@@ -1,3 +1,4 @@
+import type { ComposeItem } from './compose.ts'
 // 资源库（R-351 第 3 步）的纯函数：筛选、分面、图片墙分组（同一用途的候选成组）、封面图、版本对比、审片队列。
 // 界面在 app/assets.tsx；这里不碰 React，便于单测。
 
@@ -38,6 +39,7 @@ export type VersionLite = {
   name?: string
   variants?: unknown
   created_at: string
+  compose?: ComposeItem[] | null // R-407：挂件和比例参照（只在素材详情里有）
 }
 // AssetRefLite（R-380）：对另一件素材的引用——变体的上级、取代关系。
 export type AssetRefLite = { id: string; code: string; uid?: string; key: string; batch?: string; variant?: string; status: AssetStatus }

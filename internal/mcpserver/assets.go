@@ -34,6 +34,7 @@ type assetPushIn struct {
 
 const assetPushDesc = `把素材推进纸鸢的资源库，用户在网页上集中浏览和审核（与 shell 命令 ks asset push 相同，字段细节见 ks help asset）。
 推荐按 asset.json 推送：素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，批次是可多值的元数据。一件素材一个 asset.json（可传目录，逐个找 asset.json），或一个文件里 "assets": [...] 列多件。通用字段由纸鸢定义：id、category（允许的类别在项目的 .kitestring/assets.json 的 categories）、file（GLB、图片（含 SVG）、音效 OGG / WAV 或字体 TTF / OTF / WOFF2，不写时取 variants 里默认变体的文件）、previews（[{path, view}] 或路径）、batches、sources / source（来源）、license（许可）、variants（具名变体：默认变体就是素材本身，其余变体各是一条素材「id@变体名」，各有版本和审核，可写 file / files、previews）、display.name（可选的中文名，网页以它作主标题、id 作副标题并可按它搜；变体沿用素材的；本来有中文名才填，没有别为了填而编）；其它字段原样存进 meta，网页上展示。
+3D 查看器里把别的素材挂到挂点上（display.attach）或放在旁边作比例参照（display.refs），可选，写法见 ks help asset compose。
 音效的时长、声道、采样率、响度、峰值推送端从文件读（OGG 的响度要本机有 ffmpeg），读不出的写 audio：{"loudness_lufs": -18, "peak_dbfs": -1, "duration_s": 1.2}（文件读出的优先）；同一音效的多个版本写成 variants，网页上逐个试听。
 字体（.ttf / .otf / .woff2）网页上显示字形预览；SVG 归独立的图，当图片显示（脚本不会执行）。两类都按内容校验，files 里有 font_regular 等多个字重时取 regular 当主文件。
 预览图文件名写「<名字>__<机位>.png」，名字是 id 冒号后的部分或去掉类别前缀的部分（core:weapon.carbine → carbine），不写完整 id（冒号在 Windows 上不能用），如 carbine__front.png；项目配置的 previews_base（如 art/{category}/{name}）下 previews 目录里的图按所在目录归属；previews_base 空着时只按 previews 列表和 asset.json 所在目录找。不合命名、挂不上素材的图逐个列出，不推送。文件名含 Windows 不允许的字符（: * ? " < > | 等）或只差大小写的重名会提示。

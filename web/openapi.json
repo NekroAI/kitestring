@@ -2190,6 +2190,81 @@
         ],
         "type": "object"
       },
+      "AssetCompose": {
+        "additionalProperties": false,
+        "properties": {
+          "asset": {
+            "description": "写的素材 id",
+            "type": "string"
+          },
+          "clips": {
+            "description": "挂件只在这些动作里显示；空 = 一直显示",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "code": {
+            "description": "找到的素材编号 A-x",
+            "type": "string"
+          },
+          "file": {
+            "$ref": "#/components/schemas/FileRef",
+            "description": "找到的素材最新一版的 GLB"
+          },
+          "kind": {
+            "description": "attach 挂件 / ref 比例参照",
+            "enum": [
+              "attach",
+              "ref"
+            ],
+            "type": "string"
+          },
+          "missing": {
+            "description": "asset 素材找不到 / glb 素材不是 GLB；空 = 找到了",
+            "enum": [
+              "asset",
+              "glb",
+              ""
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "挂件名（不写时取 socket）；动作事件按它引用",
+            "type": "string"
+          },
+          "offset": {
+            "description": "参照相对本素材原点的位置（米）；空 = 并排放在右侧",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "socket": {
+            "description": "挂件的挂点：GLB 里的骨骼或空节点名",
+            "type": "string"
+          },
+          "title": {
+            "description": "找到的素材的中文名",
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "asset"
+        ],
+        "type": "object"
+      },
       "AssetCountsOutBody": {
         "additionalProperties": false,
         "properties": {
@@ -3345,6 +3420,16 @@
           },
           "commit": {
             "type": "string"
+          },
+          "compose": {
+            "description": "R-407：3D 查看器的组合预览——asset.json 的 display.attach（挂件）、display.refs（比例参照），找到的素材带上 GLB；只在素材详情里给",
+            "items": {
+              "$ref": "#/components/schemas/AssetCompose"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "created_at": {
             "format": "date-time",

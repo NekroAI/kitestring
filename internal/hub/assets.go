@@ -307,6 +307,9 @@ func (h *Hub) registerAssetsWeb(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "get-asset", Method: http.MethodGet, Path: "/api/assets/{ref}", Tags: tag, Summary: "一条素材和它的全部版本（新的在前）"},
 		func(ctx context.Context, in *refPath) (*assetGetOut, error) {
 			d, err := h.store.GetAsset(ctx, in.Ref)
+			if err == nil {
+				h.fillCompose(ctx, &d)
+			}
 			return &assetGetOut{Body: d}, apiErr(err)
 		})
 	huma.Register(api, huma.Operation{OperationID: "set-asset-auto-thumb", Method: http.MethodPost, Path: "/api/assets/{ref}/auto-thumb", Tags: tag,

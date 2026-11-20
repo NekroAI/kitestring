@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/NekroAI/kitestring/internal/assetpush"
 	"github.com/NekroAI/kitestring/internal/roles"
 )
 
@@ -15,10 +16,31 @@ func runHelp(args []string) error {
 		fmt.Print("\n按需取用的服务说明（轻接入用）：\n" + roles.ServiceIndex())
 		return nil
 	}
+	// 子页（R-407）：ks help asset compose
+	if len(args) == 2 {
+		if page, ok := helpPage(args[0], args[1]); ok {
+			fmt.Print(page)
+			return nil
+		}
+	}
 	s, ok := roles.FindService(strings.Join(args, " "))
 	if !ok {
 		return fmt.Errorf("没有服务 %q，可选：\n%s", strings.Join(args, " "), roles.ServiceIndex())
 	}
 	fmt.Println(s.Text)
 	return nil
+}
+
+// helpPages 是服务下的子页：细节放子页，服务主页只写一行指过去，控制常驻和按需取用的字数。
+var helpPages = map[string]map[string]string{
+	"asset": {"compose": assetpush.ComposeHelp},
+}
+
+func helpPage(service, page string) (string, bool) {
+	s, ok := roles.FindService(service)
+	if !ok {
+		return "", false
+	}
+	text, ok := helpPages[s.Name][strings.ToLower(strings.TrimSpace(page))]
+	return text, ok
 }

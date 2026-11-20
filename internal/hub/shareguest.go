@@ -786,6 +786,12 @@ func (h *Hub) guestServeFile(w http.ResponseWriter, r *http.Request, g *guestCtx
 		}
 		allowed = true
 	}
+	if !allowed && !wantsDownload(r) {
+		// R-407：分享里素材的挂件、比例参照用到的 GLB 只给查看器取，不给下载
+		if ok, err := h.guestComposeFile(r.Context(), g, r.PathValue("id")); err == nil && ok {
+			allowed = true
+		}
+	}
 	if !allowed {
 		writeErr(w, http.StatusNotFound, shareNotIncluded)
 		return

@@ -343,6 +343,33 @@ export const zh = {
       jump: '跳到这一帧',
       unmark: '取消挂帧',
     },
+    // 组合预览（R-407）：挂点、挂件、比例参照；配置来自 asset.json，网页只看不改
+    compose: {
+      sockets: '挂点',
+      socketsCount: (n: number) => `挂点 ${n}`,
+      noSocket: '不显示坐标轴',
+      noSocketHint: '选中挂点后在模型上画出坐标轴',
+      allNodes: '全部节点',
+      allNodesHint: (n: number) => `另有 ${n} 个骨骼和节点`,
+      bone: '骨骼',
+      empty: '空节点',
+      holds: (names: string) => `挂着 ${names}`,
+      notInModel: '模型里找不到',
+      attach: '挂件',
+      attachOff: '摘下挂件',
+      attachOn: '挂上挂件',
+      refs: '参照',
+      refsOff: '隐藏参照',
+      refsOn: '显示参照',
+      note: (n: { kind: 'socket'; name: string; socket: string } | { kind: 'asset' | 'glb' | 'load'; asset: string }) =>
+        n.kind === 'socket'
+          ? `挂件「${n.name}」的挂点「${n.socket}」在模型里找不到`
+          : n.kind === 'asset'
+            ? `找不到素材 ${n.asset}`
+            : n.kind === 'glb'
+              ? `${n.asset} 不是 GLB 模型，无法显示`
+              : `${n.asset} 的模型加载失败`,
+    },
     compareHint: '拖动分隔线对比',
     compareSlider: (a: number, b: number) => `对比 v${a} 和 v${b}`,
     ver: (n: number) => `v${n}`,

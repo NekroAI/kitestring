@@ -50,6 +50,12 @@ func runAsset(args []string) error {
 		return errors.New(assetUsage)
 	}
 	sub, args := args[0], args[1:]
+	if sub == "help" && len(args) == 1 {
+		if page, ok := helpPage("asset", args[0]); ok {
+			fmt.Print(page)
+			return nil
+		}
+	}
 	if sub == "help" || sub == "-h" || sub == "--help" {
 		fmt.Print(assetUsage + "\n\n" + assetpush.FormatHelp + "\n" + assetpush.SupersedeMapHelp + "\n")
 		return nil

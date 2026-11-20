@@ -7,7 +7,10 @@ import {
 } from "react";
 import {
   Bone,
+  Box as BoxIcon,
   ChevronDown,
+  Crosshair,
+  Ruler,
   MapPin,
   Pause,
   Play,
@@ -19,6 +22,7 @@ import {
 import { t } from "../i18n";
 import { cx } from "../lib/util";
 import { SPEEDS, type AnimSync, type Frame } from "../lib/anim";
+import { hiddenNodes, socketRows } from "../lib/compose";
 import { Button, Tip } from "../ui/base";
 import { Menu } from "../ui/overlay";
 
@@ -97,6 +101,21 @@ export function AnimBar({
   const ctx = useFrameCtx();
   const rows = sync.rows();
   const skeleton = sync.viewers().some((v) => v.skeleton);
+  // 组合预览（R-407）：挂点列表按正在看的那一版；挂件、参照开关几个并排的查看器共用
+  const mainV = sync.viewers()[0];
+  const nodes = mainV?.nodes ?? [];
+  const items = mainV?.compose ?? [];
+  const sockets = socketRows(nodes, items, s.allNodes);
+  const more = hiddenNodes(nodes, items);
+  const hasAttach = sync
+    .viewers()
+    .some((v) => v.compose?.some((x) => x.kind === "attach" && x.file));
+  const hasRefs = sync
+    .viewers()
+    .some((v) => v.compose?.some((x) => x.kind === "ref" && x.file));
+  // 没有挂点、也没有骨骼的静态模型不给挂点菜单（只有装模型的容器节点，列出来没有意义）
+  const showSockets = sockets.length > 0 || (more > 0 && skeleton);
+  const composeUi = showSockets || hasAttach || hasRefs;
   const range = useRef<HTMLInputElement>(null);
   const time = useRef<HTMLSpanElement>(null);
   const resume = useRef(false);
@@ -117,8 +136,9 @@ export function AnimBar({
     return () => cancelAnimationFrame(raf);
   }, [sync, s]);
 
-  if (!rows.length && !skeleton) return null;
+  if (!rows.length && !skeleton && !composeUi) return null;
   const A = t.asset.anim;
+  const C = t.asset.compose;
   const cur = rows.find((r) => r.name === s.clip);
   const warns = rows.filter((r) => r.warn).length;
   const warnText = (r: (typeof rows)[number]) =>
@@ -265,6 +285,99 @@ export function AnimBar({
           </>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-1">
+          {showSockets && (
+            <Menu
+              width="w-[min(320px,calc(100vw-32px))]"
+              trigger={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={C.sockets}
+                  className={cx(
+                    "max-w-[180px] min-w-0",
+                    s.socket && "bg-accent-soft text-accent",
+                  )}
+                  data-sockets=""
+                >
+                  <Crosshair className="size-4 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {s.socket ?? C.sockets}
+                  </span>
+                  <ChevronDown className="size-3.5 shrink-0 text-fg-3" />
+                </Button>
+              }
+              items={[
+                { type: "label", label: C.socketsCount(sockets.length) },
+                {
+                  label: C.noSocket,
+                  hint: C.noSocketHint,
+                  checked: !s.socket,
+                  onSelect: () => sync.setCompose({ socket: null }),
+                },
+                ...sockets.map((r) => ({
+                  label: r.name,
+                  hint: r.missing
+                    ? C.notInModel
+                    : [
+                        r.bone ? C.bone : C.empty,
+                        r.attached.length
+                          ? C.holds(r.attached.join(t.asset.listSep))
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(t.common.sep),
+                  disabled: r.missing,
+                  checked: r.name === s.socket,
+                  onSelect: () =>
+                    sync.setCompose({
+                      socket: r.name === s.socket ? null : r.name,
+                    }),
+                })),
+                ...(more > 0
+                  ? [
+                      { type: "separator" as const },
+                      {
+                        label: C.allNodes,
+                        hint: s.allNodes ? undefined : C.allNodesHint(more),
+                        checked: s.allNodes,
+                        onSelect: () =>
+                          sync.setCompose({ allNodes: !s.allNodes }),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          )}
+          {hasAttach && (
+            <Tip content={s.attach ? C.attachOff : C.attachOn}>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-pressed={s.attach}
+                onClick={() => sync.setCompose({ attach: !s.attach })}
+                className={cx(s.attach && "bg-accent-soft text-accent")}
+                data-compose-attach=""
+              >
+                <BoxIcon className="size-4" />
+                {C.attach}
+              </Button>
+            </Tip>
+          )}
+          {hasRefs && (
+            <Tip content={s.refs ? C.refsOff : C.refsOn}>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-pressed={s.refs}
+                onClick={() => sync.setCompose({ refs: !s.refs })}
+                className={cx(s.refs && "bg-accent-soft text-accent")}
+                data-compose-refs=""
+              >
+                <Ruler className="size-4" />
+                {C.refs}
+              </Button>
+            </Tip>
+          )}
           {has && (
             <>
               <Menu

@@ -97,6 +97,22 @@ type AssetVersion struct {
 	AutoThumb *FileRef                 `json:"auto_thumb,omitempty" doc:"自动生成的缩略图（R-383）：只有 GLB、没有预览图的零件，网页把模型渲染成图后回传，图片墙用它"`
 	Submitter AssetSubmitter           `json:"submitter" doc:"这一版的提交者"`
 	CreatedAt time.Time                `json:"created_at"`
+	Compose   []AssetCompose           `json:"compose,omitempty" doc:"R-407：3D 查看器的组合预览——asset.json 的 display.attach（挂件）、display.refs（比例参照），找到的素材带上 GLB；只在素材详情里给"`
+}
+
+// AssetCompose 是组合预览的一项：挂件（attach）或比例参照（ref），已按素材 id 在同一项目里找过。
+type AssetCompose struct {
+	Kind    string    `json:"kind" enum:"attach,ref" doc:"attach 挂件 / ref 比例参照"`
+	Name    string    `json:"name,omitempty" doc:"挂件名（不写时取 socket）；动作事件按它引用"`
+	Socket  string    `json:"socket,omitempty" doc:"挂件的挂点：GLB 里的骨骼或空节点名"`
+	Asset   string    `json:"asset" doc:"写的素材 id"`
+	Variant string    `json:"variant,omitempty"`
+	Clips   []string  `json:"clips,omitempty" doc:"挂件只在这些动作里显示；空 = 一直显示"`
+	Offset  []float64 `json:"offset,omitempty" doc:"参照相对本素材原点的位置（米）；空 = 并排放在右侧"`
+	Code    string    `json:"code,omitempty" doc:"找到的素材编号 A-x"`
+	Title   string    `json:"title,omitempty" doc:"找到的素材的中文名"`
+	File    *FileRef  `json:"file,omitempty" doc:"找到的素材最新一版的 GLB"`
+	Missing string    `json:"missing,omitempty" enum:"asset,glb," doc:"asset 素材找不到 / glb 素材不是 GLB；空 = 找到了"`
 }
 
 // AssetPreview 是零件的一张预览图；View 是机位（R-376：文件名「<名字>__<机位>.png」里的机位，网页按它分组；旧数据为空）。
@@ -257,6 +273,11 @@ func pushAsset(ctx context.Context, t *sql.Tx, n NewAssetPush, it protocol.Asset
 	}
 	if n.ByID { // asset.json：来源许可、变体原文变了也记新版本；批次只是元数据，不算
 		parts = append(parts, "s:"+it.Source, "l:"+it.License, "v:"+string(it.Variants), "n:"+it.Name)
+		// R-407：挂件、比例参照改了也记新版本（没写时不加，老素材的摘要不变）
+		if c := protocol.MetaCompose(it.Meta); !c.Empty() {
+			b, _ := json.Marshal(c)
+			parts = append(parts, "c:"+string(b))
+		}
 	}
 	if d := declaredAudio(it.Audio); d != "" { // 音效（R-381）：从文件读出的随文件内容走；asset.json 声明的值变了也记新版本
 		parts = append(parts, "a:"+d)
@@ -835,4 +856,35 @@ func (s *Store) SetAssetStatus(ctx context.Context, id, from, to string) error {
 func previewsJSON(ps []AssetPreview) string {
 	b, _ := json.Marshal(ps)
 	return string(b)
+}
+
+// AssetMention 是 meta 里提到某个素材 id 的一个版本（R-407：分享页按它判断组合预览要用的 GLB 能不能给访客）。
+type AssetMention struct {
+	AssetID string
+	Version int
+	Meta    json.RawMessage
+}
+
+// AssetVersionsMentioning 找项目里 meta 含 text 的版本（只是粗筛，调用方再解析 meta 核对）。
+func (s *Store) AssetVersionsMentioning(ctx context.Context, projectID, text string) ([]AssetMention, error) {
+	if text == "" {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT v.asset_id, v.version, v.meta FROM asset_versions v JOIN assets a ON a.id = v.asset_id
+		WHERE a.project_id = ? AND instr(v.meta, ?) > 0`, projectID, text)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AssetMention
+	for rows.Next() {
+		var m AssetMention
+		var meta string
+		if err := rows.Scan(&m.AssetID, &m.Version, &meta); err != nil {
+			return nil, err
+		}
+		m.Meta = json.RawMessage(meta)
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }

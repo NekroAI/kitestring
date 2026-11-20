@@ -3718,6 +3718,35 @@ export interface components {
             /** @description 还原了的素材编号 */
             restored: string[] | null;
         };
+        AssetCompose: {
+            /** @description 写的素材 id */
+            asset: string;
+            /** @description 挂件只在这些动作里显示；空 = 一直显示 */
+            clips?: string[] | null;
+            /** @description 找到的素材编号 A-x */
+            code?: string;
+            /** @description 找到的素材最新一版的 GLB */
+            file?: components["schemas"]["FileRef"];
+            /**
+             * @description attach 挂件 / ref 比例参照
+             * @enum {string}
+             */
+            kind: "attach" | "ref";
+            /**
+             * @description asset 素材找不到 / glb 素材不是 GLB；空 = 找到了
+             * @enum {string}
+             */
+            missing?: "asset" | "glb" | "";
+            /** @description 挂件名（不写时取 socket）；动作事件按它引用 */
+            name?: string;
+            /** @description 参照相对本素材原点的位置（米）；空 = 并排放在右侧 */
+            offset?: number[] | null;
+            /** @description 挂件的挂点：GLB 里的骨骼或空节点名 */
+            socket?: string;
+            /** @description 找到的素材的中文名 */
+            title?: string;
+            variant?: string;
+        };
         AssetCountsOutBody: {
             /** @description 全部项目各状态的素材数 */
             counts: {
@@ -4143,6 +4172,8 @@ export interface components {
              */
             budget?: number;
             commit: string;
+            /** @description R-407：3D 查看器的组合预览——asset.json 的 display.attach（挂件）、display.refs（比例参照），找到的素材带上 GLB；只在素材详情里给 */
+            compose?: components["schemas"]["AssetCompose"][] | null;
             /** Format: date-time */
             created_at: string;
             /** @description 主文件：零件的 GLB，独立的图本身 */

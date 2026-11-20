@@ -38,6 +38,7 @@ const FormatHelp = `asset.json 的写法（ks asset push <asset.json 或目录>�
   "sources": ["art/_shared/carbine.blend"], "license": {"name": "CC0", "notes": "..."},   可选：来源、许可
   "budget": {"triangles": 1200, "max_triangles": 1500}, "size": {"dimensions_m": [0.7, 0.2, 0.1]},
   "display": {"name": "卡宾枪"},        可选：中文名（给人看的名字，不想填就别填，别为了填而编）；有时网页以它作主标题、素材 id 作副标题，也能按它搜；变体沿用素材的
+                                        display.attach（挂件）、display.refs（比例参照）可选，3D 查看器里组合预览，写法见 ks help asset compose
   "title": "卡宾枪"                     其它字段是项目特有的，原样存进 meta，网页上展示
 }
 音效（file 是 .ogg / .opus / .wav）：时长、声道、采样率由推送端从文件读；响度（LUFS）、峰值（dBFS）和波形 WAV 直接算，
@@ -100,6 +101,8 @@ type Check struct {
 	Views    []string `json:"views,omitempty" doc:"预览图的机位"`
 	Audio    string   `json:"audio,omitempty" doc:"音效（R-381）：时长、声道、采样率、响度、峰值，一句话"`
 	Name     string   `json:"name,omitempty" doc:"中文名（R-400，asset.json 的 display.name）"`
+	Sockets  []string `json:"sockets,omitempty" doc:"R-407：GLB 里找到的挂点名（空节点、名字带 socket / mount 等通用词的节点、display.attach 引用到的）"`
+	Hints    []string `json:"hints,omitempty" doc:"按素材情况追加的说明（如 GLB 里的挂点），不是问题"`
 	Batches  []string `json:"batches,omitempty"`
 	Errors   []string `json:"errors,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -733,6 +736,7 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 				c.Errors = append(c.Errors, "文件类型不支持："+filepath.Base(file)+unsupportedType)
 			}
 			c.Kind = it.Kind
+			checkCompose(c, e.Display, it.Kind, file)
 		}
 		// 面数、预算、尺寸：数字 / 数组，或 rollcall 式的对象（budget.triangles / max_triangles，size.dimensions_m）
 		it.Triangles, it.Budget = e.Triangles, e.BudgetMax
@@ -945,6 +949,7 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 		if len(c.Errors) > 0 && it.Parent == "" {
 			badMain[it.Key] = true
 		}
+		c.Hints = hintsOf(*c)
 		rep.Items = append(rep.Items, *c)
 		if len(c.Errors) == 0 {
 			p.Items = append(p.Items, *it)
@@ -1042,6 +1047,21 @@ func projectMeta(r json.RawMessage) json.RawMessage {
 		return nil
 	}
 	for k, v := range m {
+		if k == "display" {
+			// display.name 单独存（R-400）；其余（animations、attach、refs……）留在 meta 给查看器用（R-392、R-407）
+			var d map[string]json.RawMessage
+			if json.Unmarshal(v, &d) != nil {
+				delete(m, k)
+				continue
+			}
+			delete(d, "name")
+			if len(d) == 0 {
+				delete(m, k)
+				continue
+			}
+			m[k], _ = json.Marshal(d)
+			continue
+		}
 		if genericKeys[k] {
 			delete(m, k)
 			continue
@@ -1113,6 +1133,9 @@ func ReportText(rep Report) string {
 		}
 		for _, w := range c.Warnings {
 			fmt.Fprintf(&b, "        提示：%s\n", w)
+		}
+		for _, h := range c.Hints {
+			fmt.Fprintf(&b, "        说明：%s\n", h)
 		}
 	}
 	if len(rep.Strays) > 0 {

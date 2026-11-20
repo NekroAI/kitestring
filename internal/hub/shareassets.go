@@ -216,6 +216,7 @@ func (h *Hub) registerShareGuestAssets(api huma.API) {
 			if err != nil {
 				return nil, notIncluded()
 			}
+			h.fillCompose(ctx, &d) // R-407：挂件、参照在访客页同样显示
 			v, ok := g.guestAsset(d)
 			if !ok {
 				return nil, notIncluded()

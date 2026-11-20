@@ -4,6 +4,8 @@
 // 同步的做法：时间不由某个查看器推进，而是从一个共同的时钟算出来——播放中 t = base + (now - at) × speed，
 // 暂停时 t = base。几个查看器（版本对比、候选并排）每帧都按同一个 t 取姿势，不会越播越错开。
 
+import type { ComposeItem, NodeInfo } from "./compose.ts";
+
 /** GLB 里的一个动作（查看器加载后报给同步时钟）。 */
 export type ClipInfo = {
   name: string;
@@ -189,6 +191,11 @@ export type AnimState = {
   dur: number; // 当前动作在主查看器里的时长（秒），0 = 还不知道
   fps: number;
   picked: boolean; // 用户（或点意见跳帧）选过动作后，不再自动选默认动作
+  // 组合预览（R-407）：几个并排的查看器共用——挂件、参照的开关，选中的挂点（画坐标轴），挂点列表是否列出全部节点
+  attach: boolean;
+  refs: boolean;
+  socket: string | null;
+  allNodes: boolean;
 };
 
 /** 一个查看器报给时钟的东西：它的动作、有没有骨骼、截当前画面。 */
@@ -199,6 +206,8 @@ export type ViewerEntry = {
   clips: ClipInfo[];
   skeleton: boolean;
   canvas: () => HTMLCanvasElement | null;
+  nodes?: NodeInfo[]; // R-407：模型里的骨骼和空节点（挂点列表）
+  compose?: ComposeItem[]; // R-407：这一版的挂件和参照
 };
 
 export type AnimSync = ReturnType<typeof createAnimSync>;
@@ -215,6 +224,10 @@ export function createAnimSync(clock: () => number = () => performance.now()) {
     dur: 0,
     fps: 30,
     picked: false,
+    attach: true,
+    refs: true,
+    socket: null,
+    allNodes: false,
   };
   let viewers: ViewerEntry[] = [];
   let rows: AnimRow[] = [];
@@ -325,6 +338,11 @@ export function createAnimSync(clock: () => number = () => performance.now()) {
     setLoop: (loop: boolean) => rebase({ loop }),
     setSkeleton(skeleton: boolean) {
       s = { ...s, skeleton };
+      emit();
+    },
+    // 组合预览（R-407）：摘下 / 挂上挂件、参照，选挂点（再点一次取消），挂点列表切全部节点
+    setCompose(patch: Partial<Pick<AnimState, "attach" | "refs" | "socket" | "allNodes">>) {
+      s = { ...s, ...patch };
       emit();
     },
     // settle：不循环时播到末尾就停（播放控件每帧调用）

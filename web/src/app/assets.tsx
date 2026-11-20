@@ -18,6 +18,7 @@ import { KeyCaps } from './command'
 import { useFillHeight } from './pool'
 import { AnimBar, FrameCtx, type FrameCtxValue, type FrameMark } from './animBar'
 import { createAnimSync, type AnimSync, type Frame } from '../lib/anim'
+import { composeOf } from '../lib/compose'
 import { useAdvance, usePending, usePendingMap } from './verdict'
 import { BaselineChip, BaselineLink, BatchBar, PickBox, ReviewerMenu, SelectButton, SelectCtx, UndoLastBatch, useTileClick, useWallSelect } from './assetBatch'
 import { tileCodes } from '../lib/assetBatch'
@@ -944,13 +945,13 @@ function AssetBody({ a, onClose, keys, shell, layout = 'drawer', pos }: { a: Det
         <SvgStage key={main.id} id={main.id} />
       ) : cur === 'model' && glb ? (
         <Suspense fallback={null}>
-          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0 rounded-[11px]" sync={sync} main />
+          <Viewer3D key={glb.id} url={fileUrl(glb.id)} className="absolute inset-0 rounded-[11px]" sync={sync} main compose={composeOf(v)} />
         </Suspense>
       ) : cur === 'compare3d' && pair3d ? (
         <Suspense fallback={null}>
           <div className="absolute inset-0 grid grid-cols-2 divide-x divide-line" data-compare3d="">
             {[pair3d.before, pair3d.after].map((x) => (
-              <Viewer3D key={x.id} url={fileUrl(glbOf(a.kind, x)!.id)} className={cx('relative min-w-0', x === pair3d.before ? 'rounded-l-[11px]' : 'rounded-r-[11px]')} sync={sync} label={t.asset.ver(x.version)} main={x === pair3d.after} />
+              <Viewer3D key={x.id} url={fileUrl(glbOf(a.kind, x)!.id)} className={cx('relative min-w-0', x === pair3d.before ? 'rounded-l-[11px]' : 'rounded-r-[11px]')} sync={sync} label={t.asset.ver(x.version)} main={x === pair3d.after} compose={composeOf(x)} />
             ))}
           </div>
         </Suspense>
@@ -1180,6 +1181,15 @@ function CompareSlider({ kind, before, after }: { kind: AssetKind; before: Ver; 
 
 // ---------- 并排比较（同一用途的候选；一件素材的变体，R-380） ----------
 
+// MemberViewer：并排比较里的一个 3D 查看器。图片墙的列表不带组合预览（R-407），先取这件素材的详情拿到挂件和参照再加载，免得加载两遍
+function MemberViewer({ m, sync, label, main }: { m: AssetLite; sync: AnimSync; label: string; main: boolean }) {
+  const useDetail = useContext(AssetExtrasContext)?.useDetail ?? useAsset
+  const d = useDetail(m.code)
+  if (d.isPending) return null
+  const v = d.data?.versions.find((x) => x.version === m.version) ?? d.data?.latest
+  return <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0 rounded-[11px]" sync={sync} label={label} main={main} compose={composeOf(v)} />
+}
+
 export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | null; all: AssetLite[]; onClose: () => void; onOpen: (code: string) => void }) {
   // ?cmp=v:<素材 id> 比的是这件素材的变体（各自的最新版），其余是同一用途的候选
   const fam = !!gkey?.startsWith(VARIANT_CMP)
@@ -1220,7 +1230,7 @@ export function CompareDrawer({ gkey, all, onClose, onOpen }: { gkey: string | n
               <div key={m.id} className="min-w-0" data-candidate={labelOf(m)}>
                 <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-line bg-[radial-gradient(ellipse_at_50%_40%,var(--color-surface-2),var(--color-sunken))]">
                   <Suspense fallback={null}>
-                    <Viewer3D url={fileUrl(glbOf(m.kind, m.latest)!.id)} className="absolute inset-0 rounded-[11px]" sync={sync} label={labelOf(m)} main={i === 0} />
+                    <MemberViewer m={m} sync={sync} label={labelOf(m)} main={i === 0} />
                   </Suspense>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
