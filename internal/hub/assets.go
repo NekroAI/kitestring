@@ -399,7 +399,7 @@ func (h *Hub) registerAssetsAgent(api huma.API) {
 				return nil, err
 			}
 			out := &assetSummaryOut{}
-			out.Body = protocol.AssetSummary{Statuses: f.Counts, Categories: f.CategoryCounts, Batches: f.Batches}
+			out.Body = protocol.AssetSummary{Statuses: f.Counts, Categories: f.CategoryCounts, CategoryNames: f.CategoryNames, Batches: f.Batches}
 			for _, n := range f.Counts {
 				out.Body.Total += n
 			}
@@ -461,6 +461,14 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 			return res, errors.New("关联需求不存在：" + ref)
 		}
 		reqID = r.ID
+	}
+	if p.HasCategoryNames {
+		if !p.ByID {
+			return res, errors.New("类别中文名只用于按 asset.json 推送")
+		}
+		if err := checkCategoryNames(p.CategoryNames); err != nil {
+			return res, err
+		}
 	}
 	seen := map[string]bool{}
 	for i, it := range p.Items {
@@ -549,6 +557,9 @@ func (h *Hub) pushAssets(ctx context.Context, p protocol.AssetPush) (protocol.As
 	}
 	out, err := h.store.PushAssets(ctx, store.NewAssetPush{PushID: p.PushID, ProjectID: proj.ID, ProjectName: proj.Name, Submitter: sub,
 		RequirementID: reqID, Batch: batch, Branch: p.Branch, Commit: p.Commit, Status: p.Status, Items: p.Items, ByID: p.ByID})
+	if err == nil && p.HasCategoryNames {
+		err = h.store.SetAssetCategoryNames(ctx, proj.ID, p.CategoryNames)
+	}
 	if err == nil {
 		h.broker.publish("assets") // 资源库页（R-351 第 3 步）收到后重新拉列表
 		h.refreshReviewTargets(ctx, out)
@@ -603,4 +614,20 @@ func (h *Hub) assetAudio(a *protocol.AssetAudioInfo, fileID string) *protocol.As
 		x.Declared = x.Declared[:8]
 	}
 	return &x
+}
+
+// checkCategoryNames 校验类别 / 细类中文名（R-411，规则同素材的 display.name：不换行、最多 64 个字）。
+func checkCategoryNames(m map[string]protocol.AssetCategoryName) error {
+	bad := func(s string) bool { return strings.ContainsAny(s, "\r\n") || len([]rune(s)) > 64 }
+	for k, v := range m {
+		if bad(v.Name) {
+			return fmt.Errorf("类别 %s 的中文名不能换行，最多 64 个字", k)
+		}
+		for sk, sv := range v.Subtypes {
+			if bad(sv) {
+				return fmt.Errorf("类别 %s 的细类 %s 的中文名不能换行，最多 64 个字", k, sk)
+			}
+		}
+	}
+	return nil
 }

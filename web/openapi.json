@@ -2190,6 +2190,23 @@
         ],
         "type": "object"
       },
+      "AssetCategoryName": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "类别的中文名；没写时照旧只显示类别 key",
+            "type": "string"
+          },
+          "subtypes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "细类（asset.json 的 subtype）的中文名，key 是细类",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
       "AssetCompose": {
         "additionalProperties": false,
         "properties": {
@@ -2570,6 +2587,13 @@
             "description": "各类别的素材数（R-391）",
             "type": "object"
           },
+          "category_names": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AssetCategoryName"
+            },
+            "description": "R-411：项目配置里写的类别 / 细类中文名（key 是类别）；没写的类别不在表里",
+            "type": "object"
+          },
           "counts": {
             "additionalProperties": {
               "format": "int64",
@@ -2901,9 +2925,20 @@
             "description": "R-376：按 asset.json 推送，素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，key 就是 id，批次只是元数据；不写是旧的按批次推送",
             "type": "boolean"
           },
+          "category_names": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AssetCategoryName"
+            },
+            "description": "R-411：类别中文名（key 是类别），Hub 按项目存最新一份",
+            "type": "object"
+          },
           "commit": {
             "description": "素材所在提交",
             "type": "string"
+          },
+          "has_category_names": {
+            "description": "R-411：为真时 category_names 是项目配置的完整内容（可为空，表示清掉已存的）；不写不改",
+            "type": "boolean"
           },
           "items": {
             "description": "素材",
@@ -3358,6 +3393,13 @@
               "type": "integer"
             },
             "description": "各类别的素材数",
+            "type": "object"
+          },
+          "category_names": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AssetCategoryName"
+            },
+            "description": "R-411：项目配置里写的类别 / 细类中文名",
             "type": "object"
           },
           "project": {

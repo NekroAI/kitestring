@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { Download, Images, Upload } from 'lucide-react'
 import { errMsg } from '../api/client'
 import { t } from '../i18n'
-import { titleOf, facetsOf, variantLabel, type AssetDir, type AssetLite } from '../lib/assets'
+import { titleOf, facetsOf, variantLabel, type AssetDir, type AssetLite, type CatNames } from '../lib/assets'
 import { absTime, cx, relTime, useNow } from '../lib/util'
 import { Badge, Button, Input, Segmented, Skeleton, Textarea, Tip } from '../ui/base'
 import { downloadUrl, NoDownloadContext } from '../ui/attach'
@@ -41,7 +41,7 @@ export function GuestAssets({ token }: { token: string }) {
   const facets = useMemo(() => facetsOf(all, ''), [all])
   // 目录层级（R-394）：和所有者页一样分层，只有分享范围内的素材
   const [sort, setSort] = useAssetSort()
-  const b = useBrowse(all, '', params, sort)
+  const b = useBrowse(all, '', params, sort, (q.data?.facets?.category_names ?? undefined) as CatNames | undefined)
   const tiles = b.tiles
   const go = (d: AssetDir) => set(dirParams(d))
   const open = all.find((a) => a.code === params.get('asset'))

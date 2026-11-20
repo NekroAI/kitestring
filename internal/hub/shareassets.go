@@ -204,7 +204,19 @@ func (h *Hub) registerShareGuestAssets(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			return &guestAssetsOut{Body: GuestAssetsView{Assets: list, Facets: guestFacets(list), Statuses: store.AssetStatuses, Perm: g.link.Perm, AllowDownload: g.share.AllowDownload}}, nil
+			facets := guestFacets(list)
+			var pids []string
+			for _, a := range list {
+				if !slices.Contains(pids, a.ProjectID) {
+					pids = append(pids, a.ProjectID)
+				}
+			}
+			if len(pids) > 0 {
+				if facets.CategoryNames, err = h.store.AssetCategoryNames(ctx, pids...); err != nil {
+					return nil, err
+				}
+			}
+			return &guestAssetsOut{Body: GuestAssetsView{Assets: list, Facets: facets, Statuses: store.AssetStatuses, Perm: g.link.Perm, AllowDownload: g.share.AllowDownload}}, nil
 		})
 	huma.Register(api, huma.Operation{OperationID: "guest-asset", Method: http.MethodGet, Path: "/api/share/{token}/assets/{ref}", Tags: tag, Summary: "访客：一条素材和分享里它的版本、附件"},
 		func(ctx context.Context, in *guestRefIn) (*guestAssetOut, error) {

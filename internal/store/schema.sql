@@ -773,6 +773,14 @@ CREATE TABLE IF NOT EXISTS asset_pushes (
 	created_at TEXT NOT NULL
 );
 
+-- 项目的素材配置（R-411）：从 .kitestring/assets.json 带来的类别 / 细类中文名，按项目存最新一份。
+-- categories 是 JSON（map：类别 key → {name, subtypes: {细类 key: 中文名}}），空表 = 没写中文名。
+CREATE TABLE IF NOT EXISTS asset_configs (
+	project_id TEXT PRIMARY KEY,
+	categories TEXT NOT NULL DEFAULT '{}',
+	updated_at TEXT NOT NULL
+);
+
 -- 附件按 sha256 去重（R-351）用
 CREATE INDEX IF NOT EXISTS files_sha ON files(sha256);
 

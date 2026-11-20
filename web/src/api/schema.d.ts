@@ -3718,6 +3718,14 @@ export interface components {
             /** @description 还原了的素材编号 */
             restored: string[] | null;
         };
+        AssetCategoryName: {
+            /** @description 类别的中文名；没写时照旧只显示类别 key */
+            name?: string;
+            /** @description 细类（asset.json 的 subtype）的中文名，key 是细类 */
+            subtypes?: {
+                [key: string]: string;
+            };
+        };
         AssetCompose: {
             /** @description 写的素材 id */
             asset: string;
@@ -3848,6 +3856,10 @@ export interface components {
             category_counts?: {
                 [key: string]: number;
             };
+            /** @description R-411：项目配置里写的类别 / 细类中文名（key 是类别）；没写的类别不在表里 */
+            category_names?: {
+                [key: string]: components["schemas"]["AssetCategoryName"];
+            };
             /** @description 各状态的素材数 */
             counts: {
                 [key: string]: number;
@@ -3977,8 +3989,14 @@ export interface components {
             branch?: string;
             /** @description R-376：按 asset.json 推送，素材以带命名空间的稳定 id（如 core:weapon.carbine）为主键，key 就是 id，批次只是元数据；不写是旧的按批次推送 */
             by_id?: boolean;
+            /** @description R-411：类别中文名（key 是类别），Hub 按项目存最新一份 */
+            category_names?: {
+                [key: string]: components["schemas"]["AssetCategoryName"];
+            };
             /** @description 素材所在提交 */
             commit?: string;
+            /** @description R-411：为真时 category_names 是项目配置的完整内容（可为空，表示清掉已存的）；不写不改 */
+            has_category_names?: boolean;
             /** @description 素材 */
             items: components["schemas"]["AssetItem"][] | null;
             /** @description 记进哪个项目（项目名、git remote 或项目 ID）；不写记进会话所在项目 */
@@ -4147,6 +4165,10 @@ export interface components {
             /** @description 各类别的素材数 */
             categories: {
                 [key: string]: number;
+            };
+            /** @description R-411：项目配置里写的类别 / 细类中文名 */
+            category_names?: {
+                [key: string]: components["schemas"]["AssetCategoryName"];
             };
             /** @description 项目名；没确定项目时为空（统计全部项目） */
             project: string;

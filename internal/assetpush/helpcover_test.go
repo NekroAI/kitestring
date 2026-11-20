@@ -71,6 +71,12 @@ func TestDisplayFieldsInHelp(t *testing.T) {
 			}
 		}
 	}
+	// R-411：项目配置里类别对象写法的字段（name、subtypes）也要写进 ks asset help
+	for _, f := range jsonTags(protocol.AssetCategoryName{}) {
+		if !strings.Contains(FormatHelp, `"`+f+`"`) {
+			t.Errorf("项目配置 categories 对象写法的字段 %s 在 ks asset help 里没有说明", f)
+		}
+	}
 	// 登记表要跟代码一致：代码里写到的 display.<字段> 都得登记
 	known := map[string]bool{}
 	for _, k := range protocol.DisplayFields {

@@ -1,5 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import type { CatNames } from '../lib/assets'
 import { api, unwrap, type Plan, type Requirement, type Schemas, type Session } from './client'
 
 const normSession = (x: Omit<Session, 'requirements' | 'activity'> & { requirements?: Session['requirements'] | null; activity?: number[] | null }): Session => ({ ...x, requirements: x.requirements ?? [], activity: x.activity ?? [], ticks: x.ticks ?? [] })
@@ -301,7 +302,7 @@ export function useAssets() {
   return useQuery({
     queryKey: ['assets', 'list'],
     queryFn: () => unwrap(api.GET('/api/assets')),
-    select: (d) => ({ assets: (d.assets ?? []).map((a) => ({ ...a, latest: a.latest ? normVersion(a.latest) : undefined })), statuses: d.statuses ?? [] }),
+    select: (d) => ({ assets: (d.assets ?? []).map((a) => ({ ...a, latest: a.latest ? normVersion(a.latest) : undefined })), statuses: d.statuses ?? [], categoryNames: (d.facets?.category_names ?? {}) as CatNames }),
   })
 }
 

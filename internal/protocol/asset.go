@@ -81,6 +81,15 @@ type AssetPush struct {
 	Status      string      `json:"status,omitempty" enum:"wip,pending," doc:"推送后的状态：pending 待审（默认）/ wip 制作中"`
 	Baseline    bool        `json:"baseline,omitempty" doc:"R-393：申请标为已在用（游戏里已经在用的历史素材）：推送后先挂在一条申请上，同时提一条批准类决策给用户，批准后整批记为通过，拒绝则是普通待审"`
 	Items       []AssetItem `json:"items" doc:"素材"`
+	// R-411：项目配置（.kitestring/assets.json）里的类别中文名；按 asset.json 推送且找到了项目配置时带上，Hub 按项目存最新一份（空表 = 清掉）；没找到配置不传
+	CategoryNames    map[string]AssetCategoryName `json:"category_names,omitempty" doc:"R-411：类别中文名（key 是类别），Hub 按项目存最新一份"`
+	HasCategoryNames bool                         `json:"has_category_names,omitempty" doc:"R-411：为真时 category_names 是项目配置的完整内容（可为空，表示清掉已存的）；不写不改"`
+}
+
+// AssetCategoryName 是一个类别的中文名和它下面各细类的中文名（R-411，项目配置 categories 的对象写法），都可选。
+type AssetCategoryName struct {
+	Name     string            `json:"name,omitempty" doc:"类别的中文名；没写时照旧只显示类别 key"`
+	Subtypes map[string]string `json:"subtypes,omitempty" doc:"细类（asset.json 的 subtype）的中文名，key 是细类"`
 }
 
 // AssetPushItemResult 是一条素材的推送结果。
@@ -189,9 +198,10 @@ func AssetName(id string) string {
 
 // AssetSummary 是一个项目资源库的统计（R-391）：Agent 查询先看它，再决定要不要筛选列表。
 type AssetSummary struct {
-	Project    string         `json:"project" doc:"项目名；没确定项目时为空（统计全部项目）"`
-	Total      int            `json:"total"`
-	Statuses   map[string]int `json:"statuses" doc:"各状态的素材数"`
-	Categories map[string]int `json:"categories" doc:"各类别的素材数"`
-	Batches    []string       `json:"batches" doc:"全部批次"`
+	Project       string                       `json:"project" doc:"项目名；没确定项目时为空（统计全部项目）"`
+	Total         int                          `json:"total"`
+	Statuses      map[string]int               `json:"statuses" doc:"各状态的素材数"`
+	Categories    map[string]int               `json:"categories" doc:"各类别的素材数"`
+	CategoryNames map[string]AssetCategoryName `json:"category_names,omitempty" doc:"R-411：项目配置里写的类别 / 细类中文名"`
+	Batches       []string                     `json:"batches" doc:"全部批次"`
 }

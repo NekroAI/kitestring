@@ -4,7 +4,7 @@ import { t } from '../i18n'
 import { cx } from '../lib/util'
 import { Button } from '../ui/base'
 import { Menu } from '../ui/overlay'
-import { ASSET_SORTS, parseSort, titleOf, dirCount, dirTree, filterAssets, inDir, ROOT_DIR, variantFamily, wallSections, wallTiles, type AssetDir, type AssetLite, type AssetSort, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
+import { ASSET_SORTS, parseSort, catNameOf, subNameOf, type CatNames, titleOf, dirCount, dirTree, filterAssets, inDir, ROOT_DIR, variantFamily, wallSections, wallTiles, type AssetDir, type AssetLite, type AssetSort, type DirCount, type DirNode, type WallSection, type WallTile } from '../lib/assets'
 
 // 资源库的目录层级（R-394，D-2093 方案 C）：桌面左侧窄目录只到「类别 → 细类」两层，顶部面包屑写到素材；
 // 手机上不放目录，面包屑下面一行可横滑的标签列出下一层。所有者页和分享页（只有分享范围内的素材）共用。
@@ -82,7 +82,7 @@ export type Section = WallSection & { tiles: WallTile[] }
 
 // useBrowse：按目录和筛选算出图片墙。目录的件数不受状态筛选影响（待审 / 返工数照样看得到），受批次、文件类型筛选影响；
 // 状态分段的数字是当前这一层里的。
-export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams, sort: AssetSort = 'recent') {
+export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams, sort: AssetSort = 'recent', names?: CatNames) {
   const batch = p.get('b') ?? ''
   const status = p.get('st') ?? ''
   const ftype = p.get('ft') ?? ''
@@ -90,26 +90,33 @@ export function useBrowse(all: AssetLite[], project: string, p: URLSearchParams,
   const dir = dirFromParams(p)
   const key = JSON.stringify(dir)
   return useMemo(() => {
-    const scoped = filterAssets(all, { project, batch, category: '', status: '', ftype, q })
-    const tree = dirTree(scoped)
+    const scoped = filterAssets(all, { project, batch, category: '', status: '', ftype, q }, names)
+    const tree = dirTree(scoped, names)
     const here = scoped.filter((a) => inDir(a, dir))
     const counts: Record<string, number> = {}
     for (const a of here) counts[a.status] = (counts[a.status] ?? 0) + 1
     const shown = status ? here.filter((a) => a.status === status) : here
-    const sections: Section[] = wallSections(shown, dir, sort).map((s) => ({ ...s, tiles: wallTiles(s.assets, !dir.asset) }))
+    const sections: Section[] = wallSections(shown, dir, sort, names).map((s) => ({ ...s, tiles: wallTiles(s.assets, !dir.asset) }))
     // 变体层的素材本身（面包屑写它的名字）
     const family = dir.asset ? variantFamily(scoped, dir.asset)[0] : undefined
-    return { dir, tree, counts, sections, here, family, tiles: sections.flatMap((s) => s.tiles), filtered: !!(batch || status || ftype || q.trim() || dir.old || dir.cat || dir.asset) }
-  }, [all, project, batch, status, ftype, q, key, sort]) // eslint-disable-line react-hooks/exhaustive-deps
+    return { dir, tree, names, counts, sections, here, family, tiles: sections.flatMap((s) => s.tiles), filtered: !!(batch || status || ftype || q.trim() || dir.old || dir.cat || dir.asset) }
+  }, [all, project, batch, status, ftype, q, key, sort, names]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 export type Browse = ReturnType<typeof useBrowse>
 
 // sectionLabel：图片墙分组的组名；全部素材里的旧批次写明「按批次（旧）」。
 export function sectionLabel(s: WallSection, d: AssetDir): string {
   if (s.kind === 'variant') return t.asset.dir.variantsOf
-  if (s.kind === 'sub') return s.key || t.asset.dir.noSub
+  if (s.kind === 'sub') return s.name || s.key || t.asset.dir.noSub
   if (s.kind === 'batch' && !d.old) return `${t.asset.dir.old}${t.common.sep}${s.key}`
-  return s.key
+  return s.name || s.key
+}
+// sectionHint（R-411）：组名用了中文名时，英文 key 作小字跟在后面；没写中文名的不显示。
+export const sectionHint = (s: WallSection) => (s.name ? s.key : '')
+
+// KeyHint（R-411）：有中文名时跟在名字后面的英文 key 小字。
+export function KeyHint({ k }: { k?: string }) {
+  return k ? <span className="ml-1.5 text-xs font-normal text-fg-3" data-key-hint="">{k}</span> : null
 }
 // sectionDir：点组名进到那一层。
 export function sectionDir(s: WallSection, d: AssetDir): AssetDir | null {
@@ -163,7 +170,10 @@ function DirTree({ b, go }: { b: Browse; go: (d: AssetDir) => void }) {
             <div className="relative">
               <button className={row(!dir.old && dir.cat === c.key && !dir.sub, 0)} onClick={() => go({ ...ROOT_DIR, cat: c.key })} data-dir={c.key}>
                 <span className="size-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{c.key}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {c.name || c.key}
+                  <KeyHint k={c.name ? c.key : ''} />
+                </span>
                 <CountPills c={c} />
               </button>
               {kids.length > 0 && (
@@ -180,7 +190,9 @@ function DirTree({ b, go }: { b: Browse; go: (d: AssetDir) => void }) {
             {expanded &&
               kids.map((s) => (
                 <button key={s.key} className={row(!dir.old && dir.cat === c.key && dir.sub === s.key && !!s.key, 1)} disabled={!s.key} onClick={() => s.key && go({ ...ROOT_DIR, cat: c.key, sub: s.key })} data-dir={`${c.key}/${s.key}`}>
-                  <span className={cx('min-w-0 flex-1 truncate', !s.key && 'text-fg-3')}>{s.key || t.asset.dir.noSub}</span>
+                  <span className={cx('min-w-0 flex-1 truncate', !s.key && 'text-fg-3')}>{s.name || s.key || t.asset.dir.noSub}
+                    <KeyHint k={s.name ? s.key : ''} />
+                  </span>
                   <CountPills c={s} />
                 </button>
               ))}
@@ -211,13 +223,15 @@ function DirTree({ b, go }: { b: Browse; go: (d: AssetDir) => void }) {
 // Crumbs：面包屑——全部素材 › 类别 › 细类（或 按批次（旧） › 批次），打开素材时再写上素材名；右边是这一层的件数。
 function Crumbs({ b, go, openName }: { b: Browse; go: (d: AssetDir) => void; openName?: string }) {
   const { dir, tree } = b
-  const parts: { label: string; to: AssetDir }[] = [{ label: t.asset.dir.all, to: ROOT_DIR }]
+  const parts: { label: string; hint?: string; to: AssetDir }[] = [{ label: t.asset.dir.all, to: ROOT_DIR }]
   if (dir.old) {
     parts.push({ label: t.asset.dir.old, to: { ...ROOT_DIR, old: true } })
     if (dir.batch) parts.push({ label: dir.batch, to: dir })
   } else if (dir.cat) {
-    parts.push({ label: dir.cat, to: { ...ROOT_DIR, cat: dir.cat } })
-    if (dir.sub) parts.push({ label: dir.sub, to: { ...ROOT_DIR, cat: dir.cat, sub: dir.sub } })
+    const cn = catNameOf(b.names, dir.cat)
+    parts.push({ label: cn || dir.cat, hint: cn ? dir.cat : '', to: { ...ROOT_DIR, cat: dir.cat } })
+    const sn = subNameOf(b.names, dir.cat, dir.sub)
+    if (dir.sub) parts.push({ label: sn || dir.sub, hint: sn ? dir.sub : '', to: { ...ROOT_DIR, cat: dir.cat, sub: dir.sub } })
   }
   // 变体层（R-380）：面包屑写到素材，再打开某个变体时接着写变体名
   if (dir.asset) parts.push({ label: b.family ? titleOf(b.family) : dir.asset, to: dir })
@@ -232,10 +246,12 @@ function Crumbs({ b, go, openName }: { b: Browse; go: (d: AssetDir) => void; ope
               {last ? (
                 <span className="truncate font-semibold text-fg" aria-current="page">
                   {p.label}
+                  <KeyHint k={p.hint} />
                 </span>
               ) : (
                 <button className="truncate text-fg-2 hover:text-accent" onClick={() => go(p.to)}>
                   {p.label}
+                  <KeyHint k={p.hint} />
                 </button>
               )}
             </li>
@@ -258,15 +274,15 @@ function Crumbs({ b, go, openName }: { b: Browse; go: (d: AssetDir) => void; ope
 // DirTags：手机上面包屑下面一行横滑的标签——这一层有下一层时列下一层，到底了列同级（当前的高亮）。
 function DirTags({ b, go }: { b: Browse; go: (d: AssetDir) => void }) {
   const { dir, tree } = b
-  let tags: { key: string; label: string; c: DirCount; to: AssetDir; icon?: ReactNode }[] = []
+  let tags: { key: string; label: string; hint?: string; c: DirCount; to: AssetDir; icon?: ReactNode }[] = []
   if (dir.old) {
     tags = tree.old.children.map((x) => ({ key: x.key, label: x.key, c: x, to: { ...ROOT_DIR, old: true, batch: x.key } }))
   } else if (!dir.cat) {
-    tags = tree.cats.map((x) => ({ key: x.key, label: x.key, c: x, to: { ...ROOT_DIR, cat: x.key } }))
+    tags = tree.cats.map((x) => ({ key: x.key, label: x.name || x.key, hint: x.name ? x.key : '', c: x, to: { ...ROOT_DIR, cat: x.key } }))
     if (tree.old.total) tags.push({ key: 'old', label: t.asset.dir.old, c: tree.old, to: { ...ROOT_DIR, old: true }, icon: <Archive className="size-3.5" /> })
   } else {
     const c = tree.cats.find((x) => x.key === dir.cat)
-    if (c && !onlyBlank(c)) tags = c.children.filter((x) => x.key).map((x) => ({ key: x.key, label: x.key, c: x, to: { ...ROOT_DIR, cat: dir.cat, sub: x.key } }))
+    if (c && !onlyBlank(c)) tags = c.children.filter((x) => x.key).map((x) => ({ key: x.key, label: x.name || x.key, hint: x.name ? x.key : '', c: x, to: { ...ROOT_DIR, cat: dir.cat, sub: x.key } }))
   }
   if (!tags.length) return null
   return (
@@ -282,6 +298,7 @@ function DirTags({ b, go }: { b: Browse; go: (d: AssetDir) => void }) {
           >
             {x.icon}
             {x.label}
+            <KeyHint k={x.hint} />
             <CountPills c={x.c} />
           </button>
         )

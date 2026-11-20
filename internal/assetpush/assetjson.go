@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -60,6 +61,9 @@ SVG（file 是 .svg）：归独立的图，当图片显示，里面的脚本不�
 项目配置：仓库里放一份 .kitestring/assets.json，推送时从 asset.json 所在目录往上找：
   {"categories": ["weapon", "prop"], "previews_base": "art/{category}/{name}"}
   categories 是允许的类别（没有时只校验非空和格式，--categories 可另给一份）；
+  类别、细类要显示中文名时写成对象（可选，本来有中文名才填，别为了填而编）：
+  {"categories": {"prop": {"name": "道具", "subtypes": {"crate": "箱子"}}, "vehicle": {}}}，name、subtypes 都可选，
+  不超过 64 字、不换行；网页目录树、分组标题、分享页里中文名作主文字、英文 key 作小字，搜索也能按它找；旧的字符串数组写法照常可用；
   previews_base 是预览图路径的起点（相对仓库根，可用 {category} {name} {path} {namespace}），asset.json 里的预览图路径先相对它找，
   它下面 previews 目录里没列出的图也按所在目录挂到这件素材上；previews_base 空着时只按 previews 列表和 asset.json 所在目录找。
 预览图文件名写「<名字>__<机位>.png」，名字是 id 冒号后的部分或去掉类别前缀的部分（core:weapon.carbine → weapon.carbine 或 carbine），
@@ -126,13 +130,14 @@ type Stray struct {
 
 // Report 是推送前的本地校验报告。
 type Report struct {
-	Paths      []string `json:"paths"`
-	Config     string   `json:"config,omitempty" doc:"用到的项目配置"`
-	Categories []string `json:"categories,omitempty" doc:"允许的类别；空 = 只校验非空和格式"`
-	CatSource  string   `json:"categories_file,omitempty"`
-	Items      []Check  `json:"items"`
-	Strays     []Stray  `json:"strays,omitempty"`
-	Filtered   int      `json:"filtered,omitempty" doc:"不在 --category / --id 范围、没有校验的素材数"`
+	Paths         []string                              `json:"paths"`
+	Config        string                                `json:"config,omitempty" doc:"用到的项目配置"`
+	Categories    []string                              `json:"categories,omitempty" doc:"允许的类别；空 = 只校验非空和格式"`
+	CatSource     string                                `json:"categories_file,omitempty"`
+	CategoryNames map[string]protocol.AssetCategoryName `json:"category_names,omitempty" doc:"R-411：项目配置里的类别 / 细类中文名"`
+	Items         []Check                               `json:"items"`
+	Strays        []Stray                               `json:"strays,omitempty"`
+	Filtered      int                                   `json:"filtered,omitempty" doc:"不在 --category / --id 范围、没有校验的素材数"`
 }
 
 // Bad 是有错的素材数。
@@ -311,10 +316,12 @@ func contains(xs []string, x string) bool {
 
 // projectConfig 是 ConfigFile 的内容。
 type projectConfig struct {
-	Categories   []string `json:"categories"`
-	PreviewsBase string   `json:"previews_base"`
-	root         string   // 配置所在的仓库目录（.kitestring 的上一级）
-	path         string
+	CategoriesRaw json.RawMessage                       `json:"categories"`
+	PreviewsBase  string                                `json:"previews_base"`
+	Categories    []string                              `json:"-"` // 类别 key（字符串数组写法或对象写法的键）
+	Names         map[string]protocol.AssetCategoryName `json:"-"` // R-411：对象写法里的中文名
+	root          string                                // 配置所在的仓库目录（.kitestring 的上一级）
+	path          string
 }
 
 // findConfig 从 dir 往上（到仓库根为止）找 ConfigFile。
@@ -331,7 +338,9 @@ func findConfig(dir, root string) (projectConfig, error) {
 				return c, fmt.Errorf("项目素材配置 %s 不是有效的 JSON：%w", p, err)
 			}
 			c.root, c.path = d, p
-			c.Categories = cleanList(c.Categories)
+			if c.Categories, c.Names, err = parseCategories(c.CategoriesRaw); err != nil {
+				return c, fmt.Errorf("项目素材配置 %s 的 categories 写错了：%w", p, err)
+			}
 			return c, nil
 		}
 		// 到仓库根为止；不在仓库里时一直往上，但不进家目录（~/.kitestring 是纸鸢自己的数据目录）
@@ -355,14 +364,102 @@ func loadCategories(path string) ([]string, error) {
 	var list []string
 	if json.Unmarshal(raw, &list) != nil {
 		var obj struct {
-			Categories []string `json:"categories"`
+			Categories json.RawMessage `json:"categories"`
 		}
 		if err := json.Unmarshal(raw, &obj); err != nil {
 			return nil, fmt.Errorf("类别表 %s 要写成字符串数组或 {\"categories\": [...]}：%w", path, err)
 		}
-		list = obj.Categories
+		keys, _, err := parseCategories(obj.Categories)
+		if err != nil {
+			return nil, fmt.Errorf("类别表 %s：%w", path, err)
+		}
+		return keys, nil
 	}
 	return cleanList(list), nil
+}
+
+// checkCNName 校验类别 / 细类的中文名（R-411，规则同 display.name）：字符串、不含换行、最多 64 个字。
+func checkCNName(what string, v any) (string, error) {
+	s, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("%s 的中文名要写成字符串", what)
+	}
+	s = strings.TrimSpace(s)
+	if strings.ContainsAny(s, "\r\n") || len([]rune(s)) > MaxDisplayName {
+		return "", fmt.Errorf("%s 的中文名不能换行，最多 %d 个字", what, MaxDisplayName)
+	}
+	return s, nil
+}
+
+// parseCategories 读项目配置的 categories（R-411）：字符串数组（旧写法），或对象 {"类别": {"name": "中文名", "subtypes": {"细类": "中文名"}}}，
+// name、subtypes 都可选。返回类别 key（按名字排序）和中文名表（没写任何中文名时为空）。
+func parseCategories(raw json.RawMessage) ([]string, map[string]protocol.AssetCategoryName, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil, nil
+	}
+	var list []string
+	if json.Unmarshal(raw, &list) == nil {
+		return cleanList(list), nil, nil
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, nil, errors.New("要写成字符串数组，或 {\"类别\": {\"name\": \"中文名\", \"subtypes\": {\"细类\": \"中文名\"}}}")
+	}
+	var keys []string
+	names := map[string]protocol.AssetCategoryName{}
+	for k, v := range obj {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			return nil, nil, errors.New("类别 key 不能为空")
+		}
+		keys = append(keys, key)
+		if len(v) == 0 || string(v) == "null" {
+			continue
+		}
+		var o map[string]any
+		if err := json.Unmarshal(v, &o); err != nil {
+			return nil, nil, fmt.Errorf("类别 %s 要写成对象 {\"name\": \"中文名\", \"subtypes\": {...}}", key)
+		}
+		var cn protocol.AssetCategoryName
+		for f, fv := range o {
+			switch f {
+			case "name":
+				n, err := checkCNName("类别 "+key, fv)
+				if err != nil {
+					return nil, nil, err
+				}
+				cn.Name = n
+			case "subtypes":
+				m, ok := fv.(map[string]any)
+				if !ok {
+					return nil, nil, fmt.Errorf("类别 %s 的 subtypes 要写成对象 {\"细类\": \"中文名\"}", key)
+				}
+				for sk, sv := range m {
+					n, err := checkCNName("类别 "+key+" 的细类 "+sk, sv)
+					if err != nil {
+						return nil, nil, err
+					}
+					if n == "" {
+						continue
+					}
+					if cn.Subtypes == nil {
+						cn.Subtypes = map[string]string{}
+					}
+					cn.Subtypes[strings.TrimSpace(sk)] = n
+				}
+			default:
+				return nil, nil, fmt.Errorf("类别 %s 里有不认识的字段 %s（只有 name、subtypes）", key, f)
+			}
+		}
+		if cn.Name != "" || len(cn.Subtypes) > 0 {
+			names[key] = cn
+		}
+	}
+	slices.Sort(keys)
+	if len(names) == 0 {
+		names = nil
+	}
+	return keys, names, nil
 }
 
 // splitView 把预览图文件名拆成名字和机位：「<名字>__<机位>.png」；没有 __ 时 ok = false。
@@ -631,6 +728,10 @@ func BuildByID(o IDOptions) (protocol.AssetPush, Report, error) {
 	}
 	rep.Config = cfg.path
 	rep.Categories, rep.CatSource = cfg.Categories, cfg.path
+	if cfg.path != "" {
+		p.HasCategoryNames, p.CategoryNames = true, cfg.Names
+		rep.CategoryNames = cfg.Names
+	}
 	if o.Categories != "" {
 		if rep.Categories, err = loadCategories(o.Categories); err != nil {
 			return p, rep, err
@@ -1110,6 +1211,9 @@ func ReportText(rep Report) string {
 	b.WriteString("\n")
 	if rep.CatSource != "" {
 		fmt.Fprintf(&b, "类别表：%s（%s）\n", rep.CatSource, strings.Join(rep.Categories, "、"))
+		if len(rep.CategoryNames) > 0 {
+			fmt.Fprintf(&b, "类别中文名：%d 个类别写了中文名，随这次推送带上\n", len(rep.CategoryNames))
+		}
 	} else {
 		fmt.Fprintf(&b, "类别表：没有找到 %s 里的 categories，类别只校验非空和格式\n", ConfigFile)
 	}

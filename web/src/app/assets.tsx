@@ -13,7 +13,7 @@ import { Menu, Panel } from '../ui/overlay'
 import { fileUrl, Lightbox, ThumbImg, Thumbs, type ViewShot } from '../ui/attach'
 import { ReviewBar, ReviewHistory, ReviewNav } from './assetReview'
 import { AssetLinks, DeleteAsset } from './assetLinks'
-import { DirBrowser, SortMenu, useAssetSort, dirParams, sectionDir, sectionLabel, useBrowse, type Browse } from './assetDir'
+import { DirBrowser, SortMenu, useAssetSort, dirParams, sectionDir, sectionLabel, sectionHint, KeyHint, useBrowse, type Browse } from './assetDir'
 import { KeyCaps } from './command'
 import { useFillHeight } from './pool'
 import { AnimBar, FrameCtx, type FrameCtxValue, type FrameMark } from './animBar'
@@ -86,7 +86,7 @@ export function AssetsPage() {
   const ftype = params.get('ft') ?? ''
   const facets = useMemo(() => facetsOf(all, project), [all, project])
   const [sort, setSort] = useAssetSort()
-  const b = useBrowse(all, project, params, sort)
+  const b = useBrowse(all, project, params, sort, list.data?.categoryNames)
   const tiles = b.tiles
   const nameOf = (id: string) => (projects.data?.projects ?? []).find((p) => p.id === id)?.name ?? id
   const review = useReviewMode(all, tiles, params.get('rv') === '1', params.get('asset'), set)
@@ -234,6 +234,7 @@ export function SectionWall({ b, go, ...p }: WallProps & { b: Browse; go: (d: As
                 {to ? (
                   <button className="font-medium text-fg-2 hover:text-accent" onClick={() => go(to)}>
                     {label}
+                    <KeyHint k={sectionHint(s)} />
                   </button>
                 ) : (
                   <span className="font-medium text-fg-3">{label}</span>

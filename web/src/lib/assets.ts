@@ -146,14 +146,21 @@ export function facetsOf(list: AssetLite[], project: string) {
   }
 }
 
-export function filterAssets(list: AssetLite[], f: AssetFilter): AssetLite[] {
-  return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status) && (!f.ftype || fileTypesOf(a).includes(f.ftype)) && matchesQuery(a, f.q))
+// CatNames（R-411）：项目配置 .kitestring/assets.json 里写的类别 / 细类中文名；没写的不在表里。
+export type CatNames = Record<string, { name?: string; subtypes?: Record<string, string> }>
+export const catNameOf = (n: CatNames | undefined, cat: string) => n?.[cat]?.name ?? ''
+export const subNameOf = (n: CatNames | undefined, cat: string, sub: string) => (sub ? (n?.[cat]?.subtypes?.[sub] ?? '') : '')
+
+export function filterAssets(list: AssetLite[], f: AssetFilter, names?: CatNames): AssetLite[] {
+  return list.filter((a) => a.project_id === f.project && (!f.batch || batchesOf(a).includes(f.batch)) && (!f.category || a.category === f.category) && (!f.status || a.status === f.status) && (!f.ftype || fileTypesOf(a).includes(f.ftype)) && matchesQuery(a, f.q, names))
 }
 
 // matchesQuery（R-400）：关键字按素材 id、key 和中文名找，不分大小写；空关键字都算。
-export function matchesQuery(a: Pick<AssetLite, 'uid' | 'key' | 'latest'>, q?: string): boolean {
+// R-411：传了 names 时，类别和细类的中文名也算（搜「道具」找到 prop 类下的全部素材）。
+export function matchesQuery(a: Pick<AssetLite, 'uid' | 'key' | 'latest'> & { category?: string }, q?: string, names?: CatNames): boolean {
   const w = (q ?? '').trim().toLowerCase()
-  return !w || `${a.uid ?? ''} ${a.key} ${a.latest?.name ?? ''}`.toLowerCase().includes(w)
+  const cat = a.category ?? ''
+  return !w || `${a.uid ?? ''} ${a.key} ${a.latest?.name ?? ''} ${catNameOf(names, cat)} ${subNameOf(names, cat, a.latest?.subtype ?? '')}`.toLowerCase().includes(w)
 }
 
 // ---------- 目录层级（R-394，D-2093 方案 C） ----------
@@ -215,7 +222,7 @@ export function inDir(a: AssetLite, d: AssetDir): boolean {
 
 // DirCount：一层的件数和待审、返工数。
 export type DirCount = { total: number; pending: number; rework: number }
-export type DirNode = DirCount & { key: string; children: DirNode[] }
+export type DirNode = DirCount & { key: string; name?: string; children: DirNode[] }
 // 件数只数素材本身，变体（R-380）不另算一件；待审、返工数连变体一起算（变体各自审核）。
 const tally = (c: DirCount, a: Pick<AssetLite, 'status' | 'parent'>) => {
   if (!a.parent) c.total++
@@ -226,7 +233,8 @@ const zero = (): DirCount => ({ total: 0, pending: 0, rework: 0 })
 
 // dirTree：目录树。list 传项目里按批次、文件类型筛过的素材（状态不筛，待审 / 返工数照样看得到）。
 // cats：按素材 id 推送的素材的类别，每个类别下是细类（没写细类的 key 为空，排在最后）；old：旧条目一栏，下面是批次。
-export function dirTree(list: AssetLite[]): { all: DirCount; cats: DirNode[]; old: DirNode } {
+// names（R-411）：有类别 / 细类中文名时记在节点的 name 上，同级按显示的名字排（中文名没写的用 key）。
+export function dirTree(list: AssetLite[], names?: CatNames): { all: DirCount; cats: DirNode[]; old: DirNode } {
   const all = zero()
   const cats = new Map<string, DirNode>()
   const old: DirNode = { key: '', ...zero(), children: [] }
@@ -247,8 +255,18 @@ export function dirTree(list: AssetLite[]): { all: DirCount; cats: DirNode[]; ol
     tally(c, a)
     tally(child(c, subtypeOf(a)), a)
   }
-  const sortKids = (n: DirNode) => n.children.sort((x, y) => (!x.key ? 1 : !y.key ? -1 : natural.compare(x.key, y.key)))
-  const out = [...cats.values()].sort((x, y) => natural.compare(x.key, y.key))
+  const out = [...cats.values()]
+  for (const c of out) {
+    const cn = catNameOf(names, c.key)
+    if (cn) c.name = cn
+    for (const s of c.children) {
+      const sn = subNameOf(names, c.key, s.key)
+      if (sn) s.name = sn
+    }
+  }
+  const shown = (n: DirNode) => n.name || n.key
+  const sortKids = (n: DirNode) => n.children.sort((x, y) => (!x.key ? 1 : !y.key ? -1 : natural.compare(shown(x), shown(y)) || natural.compare(x.key, y.key)))
+  out.sort((x, y) => natural.compare(shown(x), shown(y)) || natural.compare(x.key, y.key))
   out.forEach(sortKids)
   sortKids(old)
   return { all, cats: out, old }
@@ -304,21 +322,27 @@ export function sortAssets(list: AssetLite[], sort: AssetSort, stamp: (a: AssetL
 }
 
 // WallSection：图片墙按下一层分的一组。kind 说明 key 是什么：cat 类别 / sub 细类（空 = 未分细类）/ batch 旧条目的批次 / '' 不分组。
-export type WallSection = { kind: 'cat' | 'sub' | 'batch' | 'variant' | ''; key: string; assets: AssetLite[] }
+export type WallSection = { kind: 'cat' | 'sub' | 'batch' | 'variant' | ''; key: string; name?: string; assets: AssetLite[] }
 
 // wallSections：图片墙按目录的下一层分组——全部素材按类别（旧条目在后面按批次）、类别按细类、「按批次（旧）」按批次；
 // 到了细类或某个旧批次就不再分组。只有一组且没有名字时不写组名。
 // sort（R-410，不传 = 保持传入顺序）：排序作用在组内；选 recent 时组之间也按组里最新一件的时间排，其他排序下组按名字排。
-export function wallSections(list: AssetLite[], d: AssetDir, sort?: AssetSort): WallSection[] {
+export function wallSections(list: AssetLite[], d: AssetDir, sort?: AssetSort, names?: CatNames): WallSection[] {
   const stamp = recentStamps(list)
   const ordered = (xs: AssetLite[]) => (d.asset || !sort ? xs : sortAssets(xs, sort, stamp))
+  // R-411：类别 / 细类组按显示的名字排（有中文名用中文名）；name 带给组名显示
+  const nameFor = (kind: WallSection['kind'], key: string) => (kind === 'cat' ? catNameOf(names, key) : kind === 'sub' ? subNameOf(names, d.cat, key) : '')
   const by = (xs: AssetLite[], kind: WallSection['kind'], keyOf: (a: AssetLite) => string, emptyLast = false) => {
+    const shown = (k: string) => nameFor(kind, k) || k
     const m = new Map<string, AssetLite[]>()
     for (const a of xs) m.set(keyOf(a), [...(m.get(keyOf(a)) ?? []), a])
     const top = (as: AssetLite[]) => Math.max(...as.map(stamp))
     return [...m.entries()]
-      .sort(([x, xa], [y, ya]) => (emptyLast && !x ? 1 : emptyLast && !y ? -1 : sort === 'recent' ? top(ya) - top(xa) || natural.compare(x, y) : natural.compare(x, y)))
-      .map(([key, assets]) => ({ kind, key, assets: ordered(assets) }))
+      .sort(([x, xa], [y, ya]) => (emptyLast && !x ? 1 : emptyLast && !y ? -1 : sort === 'recent' ? top(ya) - top(xa) || natural.compare(shown(x), shown(y)) : natural.compare(shown(x), shown(y)) || natural.compare(x, y)))
+      .map(([key, assets]) => {
+        const name = nameFor(kind, key)
+        return name ? { kind, key, name, assets: ordered(assets) } : { kind, key, assets: ordered(assets) }
+      })
   }
   if (d.asset) {
     // 变体层（R-380）：素材本身在前，变体按名字排

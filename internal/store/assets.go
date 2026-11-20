@@ -572,6 +572,13 @@ func (s *Store) SetAssetAutoThumb(ctx context.Context, ref string, version int, 
 }
 
 // assetWhere 把筛选条件拼成 WHERE 子句（ListAssets 与 CountAssets 共用）。
+// assetCatNameMatch（R-411）：关键字命中项目配置里这件素材的类别中文名或细类中文名（细类取最新版项目字段里的 subtype）。
+const assetCatNameMatch = `(EXISTS (SELECT 1 FROM asset_configs c, json_each(c.categories) e
+		WHERE c.project_id = a.project_id AND e.key = a.category AND instr(lower(COALESCE(json_extract(e.value, '$.name'), '')), lower(?)) > 0)
+	OR EXISTS (SELECT 1 FROM asset_configs c, json_each(c.categories) e, json_each(e.value, '$.subtypes') st, asset_versions n
+		WHERE c.project_id = a.project_id AND e.key = a.category AND n.id = a.latest_id AND json_valid(n.meta)
+		AND st.key = COALESCE(json_extract(n.meta, '$.subtype'), '') AND instr(lower(st.value), lower(?)) > 0))`
+
 func assetWhere(f AssetFilter) (string, []any) {
 	var where []string
 	var args []any
@@ -582,8 +589,8 @@ func assetWhere(f AssetFilter) (string, []any) {
 		}
 	}
 	if q := strings.TrimSpace(f.Q); q != "" {
-		where = append(where, "instr(lower(a.uid || ' ' || a.key || ' ' || COALESCE((SELECT name FROM asset_versions n WHERE n.id = a.latest_id), '')), lower(?)) > 0")
-		args = append(args, q)
+		where = append(where, "(instr(lower(a.uid || ' ' || a.key || ' ' || COALESCE((SELECT name FROM asset_versions n WHERE n.id = a.latest_id), '')), lower(?)) > 0 OR "+assetCatNameMatch+")")
+		args = append(args, q, q, q)
 	}
 	if b := strings.TrimSpace(f.Batch); b != "" {
 		where = append(where, assetInBatch)
@@ -783,10 +790,62 @@ func (s *Store) findAssetRow(ctx context.Context, projectID, ref string) (Asset,
 
 // AssetFacets 是一个项目里素材的批次和类别（筛选项用），按名称排序。
 type AssetFacets struct {
-	Batches        []string       `json:"batches"`
-	Categories     []string       `json:"categories"`
-	Counts         map[string]int `json:"counts" doc:"各状态的素材数"`
-	CategoryCounts map[string]int `json:"category_counts,omitempty" doc:"各类别的素材数（R-391）"`
+	Batches        []string                              `json:"batches"`
+	Categories     []string                              `json:"categories"`
+	Counts         map[string]int                        `json:"counts" doc:"各状态的素材数"`
+	CategoryCounts map[string]int                        `json:"category_counts,omitempty" doc:"各类别的素材数（R-391）"`
+	CategoryNames  map[string]protocol.AssetCategoryName `json:"category_names,omitempty" doc:"R-411：项目配置里写的类别 / 细类中文名（key 是类别）；没写的类别不在表里"`
+}
+
+// SetAssetCategoryNames 存项目的类别 / 细类中文名（R-411）：整份替换，空表 = 清掉。
+func (s *Store) SetAssetCategoryNames(ctx context.Context, projectID string, names map[string]protocol.AssetCategoryName) error {
+	if names == nil {
+		names = map[string]protocol.AssetCategoryName{}
+	}
+	b, _ := json.Marshal(names)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO asset_configs(project_id, categories, updated_at) VALUES(?, ?, ?)
+		ON CONFLICT(project_id) DO UPDATE SET categories = excluded.categories, updated_at = excluded.updated_at`, projectID, string(b), time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+// AssetCategoryNames 取类别 / 细类中文名；projectID 为空时合并全部项目（先出现的优先）。
+func (s *Store) AssetCategoryNames(ctx context.Context, projectIDs ...string) (map[string]protocol.AssetCategoryName, error) {
+	q, args := `SELECT categories FROM asset_configs`, []any{}
+	if len(projectIDs) == 1 && projectIDs[0] == "" {
+		projectIDs = nil
+	}
+	if len(projectIDs) > 0 {
+		q += ` WHERE project_id IN (?` + strings.Repeat(",?", len(projectIDs)-1) + `)`
+		for _, id := range projectIDs {
+			args = append(args, id)
+		}
+	}
+	q += ` ORDER BY project_id`
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]protocol.AssetCategoryName{}
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var m map[string]protocol.AssetCategoryName
+		if json.Unmarshal([]byte(raw), &m) != nil {
+			continue
+		}
+		for k, v := range m {
+			if _, ok := out[k]; !ok {
+				out[k] = v
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil, rows.Err()
+	}
+	return out, rows.Err()
 }
 
 // ListAssetFacets 统计项目里素材的批次、类别和各状态数量；projectID 为空时统计全部。
@@ -825,7 +884,13 @@ func (s *Store) ListAssetFacets(ctx context.Context, projectID string) (AssetFac
 	}
 	slices.Sort(f.Batches)
 	slices.Sort(f.Categories)
-	return f, rows.Err()
+	if err := rows.Err(); err != nil {
+		return f, err
+	}
+	var ids []string
+	ids = append(ids, projectID)
+	f.CategoryNames, err = s.AssetCategoryNames(ctx, ids...)
+	return f, err
 }
 
 // ErrAssetMove 是审核不能做的状态变化。

@@ -75,7 +75,7 @@ func statusCounts(m map[string]int) string {
 }
 
 // topCounts 按数量从多到少列前 n 个，其余合并成「另 N 类」。
-func topCounts(m map[string]int, n int, unit string) string {
+func topCounts(m map[string]int, names map[string]protocol.AssetCategoryName, n int, unit string) string {
 	type kv struct {
 		k string
 		n int
@@ -96,7 +96,11 @@ func topCounts(m map[string]int, n int, unit string) string {
 			parts = append(parts, fmt.Sprintf("另 %d %s", len(all)-n, unit))
 			break
 		}
-		parts = append(parts, fmt.Sprintf("%s %d", e.k, e.n))
+		label := e.k
+		if cn := names[e.k].Name; cn != "" {
+			label = cn + "（" + e.k + "）" // R-411：有中文名时带上，key 仍是 --category 要填的
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", label, e.n))
 	}
 	return strings.Join(parts, "、")
 }
@@ -109,7 +113,7 @@ func summaryText(s protocol.AssetSummary) string {
 	}
 	fmt.Fprintf(&b, "%s资源库共 %d 件：%s\n", name, s.Total, statusCounts(s.Statuses))
 	if len(s.Categories) > 0 {
-		fmt.Fprintf(&b, "类别（%d 个）：%s\n", len(s.Categories), topCounts(s.Categories, assetTopN, "类"))
+		fmt.Fprintf(&b, "类别（%d 个）：%s\n", len(s.Categories), topCounts(s.Categories, s.CategoryNames, assetTopN, "类"))
 	}
 	if len(s.Batches) > 0 {
 		shown := s.Batches
@@ -159,7 +163,7 @@ func listText(total, offset int, assets []store.Asset, f store.AssetFacets, limi
 	var head strings.Builder
 	fmt.Fprintf(&head, "符合条件 %d 件；所在范围：%s\n", total, statusCounts(f.Counts))
 	if len(f.CategoryCounts) > 0 {
-		fmt.Fprintf(&head, "类别：%s\n", topCounts(f.CategoryCounts, assetTopN, "类"))
+		fmt.Fprintf(&head, "类别：%s\n", topCounts(f.CategoryCounts, f.CategoryNames, assetTopN, "类"))
 	}
 	var b strings.Builder
 	b.WriteString(head.String())
@@ -219,12 +223,16 @@ func compactList(total, offset int, assets []store.Asset, f store.AssetFacets) m
 		}
 		items = append(items, c)
 	}
-	return map[string]any{
+	out := map[string]any{
 		"total": total, "offset": offset, "shown": len(items),
 		"statuses": f.Counts, "categories": f.CategoryCounts,
 		"assets": items,
 		"note":   "精简字段；完整内容加 --full，单件详情用 ks asset get <id>",
 	}
+	if len(f.CategoryNames) > 0 {
+		out["category_names"] = f.CategoryNames
+	}
+	return out
 }
 
 // trimDetail：get 默认只留最新版本（Hub 返回时新的在前）和最近几条审核意见。

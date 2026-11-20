@@ -446,3 +446,23 @@ test('排序：最近更新时组之间按组里最新一件排，其他排序�
   assert.deepEqual(wallSections(list, ROOT_DIR, 'name').map((s) => s.key), ['audio', 'concept'])
   assert.deepEqual(wallSections(list, ROOT_DIR, 'seq')[1].assets.map((x) => x.key), ['core:concept.a', 'core:concept.b'])
 })
+
+// ---------- 类别中文名（R-411） ----------
+test('类别中文名：目录树带名字并按显示名排，没写的照旧；搜索、分组标题同样', () => {
+  const list = [idAsset('core:prop.a', 'crate'), idAsset('core:prop.b', 'box'), idAsset('core:vehicle.c', 'car'), idAsset('core:audio.d', '')]
+  const names = { prop: { name: '道具', subtypes: { crate: '箱子' } }, vehicle: {} }
+  const tr = dirTree(list, names)
+  const prop = tr.cats.find((c) => c.key === 'prop')!
+  assert.equal(prop.name, '道具')
+  assert.equal(tr.cats.find((c) => c.key === 'vehicle')!.name, undefined)
+  assert.deepEqual(prop.children.map((s) => [s.key, s.name]), [['crate', '箱子'], ['box', undefined]])
+  assert.deepEqual(dirTree(list).cats.map((c) => c.key), ['audio', 'prop', 'vehicle'])
+  const secs = wallSections(list, ROOT_DIR, undefined, names)
+  assert.deepEqual(secs.map((s) => s.key), tr.cats.map((c) => c.key))
+  assert.equal(secs.find((s) => s.key === 'prop')!.name, '道具')
+  const sub = wallSections(list.filter((a) => a.category === 'prop'), { ...ROOT_DIR, cat: 'prop' }, undefined, names)
+  assert.deepEqual(sub.map((s) => [s.key, s.name]), [['crate', '箱子'], ['box', undefined]])
+  const a = list[0]
+  assert.ok(matchesQuery(a, '道具', names) && matchesQuery(a, '箱子', names))
+  assert.ok(!matchesQuery(list[2], '道具', names) && !matchesQuery(a, '道具'))
+})
