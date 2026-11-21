@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -20,6 +21,7 @@ type deviceConn struct {
 	out    chan protocol.Envelope
 	done   <-chan struct{}
 	cancel context.CancelFunc
+	pushMu sync.Mutex // 决策全集「查库 → 下发」串行（R-413）
 }
 
 func (c *deviceConn) send(e protocol.Envelope) {
@@ -196,11 +198,12 @@ func (h *Hub) handleDeviceMsg(ctx context.Context, c *deviceConn, e protocol.Env
 			}
 			changed = changed || ok
 		}
-		c.send(protocol.Envelope{Type: protocol.MsgAck, Ack: deliveryIDs(e.Delivered)})
 		if changed {
 			h.broker.publish("decisions", "sessions")
 			h.pushDecisions(ctx, c.dev.ID)
 		}
+		// 回执放在新全集之后（R-413）：daemon 先收到「已送达」的全集再删本地回执，回执还在时收到的旧全集不会被当成重置
+		c.send(protocol.Envelope{Type: protocol.MsgAck, Ack: deliveryIDs(e.Delivered)})
 	}
 }
 

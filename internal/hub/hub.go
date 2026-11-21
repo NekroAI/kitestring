@@ -425,7 +425,8 @@ func (h *Hub) sessionChanged(key string) {
 
 var sessionPushDelay = 300 * time.Millisecond
 
-// pushDecisions 把设备上待注入的决策全集下发给 daemon。
+// pushDecisions 把设备上待注入的决策全集下发给 daemon。同一设备的「查库 → 下发」整体串行（R-413），
+// 否则几个 goroutine 各自查完再下发，旧全集会晚于新全集到达，daemon 会把已送达的消息当成被重置而重送。
 func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 	h.mu.Lock()
 	c := h.conns[deviceID]
@@ -433,6 +434,8 @@ func (h *Hub) pushDecisions(ctx context.Context, deviceID string) {
 	if c == nil {
 		return
 	}
+	c.pushMu.Lock()
+	defer c.pushMu.Unlock()
 	list, err := h.store.DecisionsForDevice(ctx, deviceID, time.Now().Add(-redeliverWindow))
 	if err != nil {
 		h.log.Warn("查询待注入决策失败", "err", err)
