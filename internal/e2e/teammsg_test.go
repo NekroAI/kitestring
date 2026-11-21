@@ -118,7 +118,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	if err != nil || !strings.Contains(out, "已送给顾问 claude:adv（Claude Code）") || !strings.Contains(out, "ks team sent D-") {
 		t.Fatalf("发给顾问：%v\n%s", err, out)
 	}
-	woke(t, advWait, "R-249 方案看一眼", "（claude:pm） 留言")
+	woke(t, advWait, "R-249 方案看一眼", "）claude:pm 留言")
 	var sent sentRes
 	e.waitFor("顾问已送达", func() bool {
 		sent = sentRes{}
@@ -262,7 +262,7 @@ func TestTeamP2PBroadcastDelivery(t *testing.T) {
 	}
 	// 收件人看到的发送方是真实的开发会话
 	rows, _ = e.store.SentTells(ctx, "claude:dev", 10)
-	if len(rows) == 0 || rows[0].FromRole != "dev" || !strings.Contains(rows[0].Answer, "Dev 「") || !strings.Contains(rows[0].Answer, "（claude:dev） 广播：") {
+	if len(rows) == 0 || rows[0].FromRole != "dev" || !strings.Contains(rows[0].Answer, "「") || !strings.Contains(rows[0].Answer, "（开发）claude:dev 广播：") {
 		t.Fatalf("广播署名应是开发自己：%+v", rows)
 	}
 }

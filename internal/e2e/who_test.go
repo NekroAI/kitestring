@@ -27,9 +27,10 @@ func TestRecordSessionSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// 快照记的是会话当时的称呼：名字优先（R-416），这里改名字
 	title := func(key, v string) {
 		t.Helper()
-		if _, err := e.store.DB().Exec(`UPDATE sessions SET title = ? WHERE key = ?`, v, key); err != nil {
+		if _, err := e.store.DB().Exec(`UPDATE sessions SET name = ? WHERE key = ?`, v, key); err != nil {
 			t.Fatal(err)
 		}
 	}

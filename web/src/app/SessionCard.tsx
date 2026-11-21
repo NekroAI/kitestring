@@ -63,8 +63,14 @@ export function sessionExtras(s: Session): string {
     .join(t.common.sep)
 }
 
+// sessionTitle：称呼会话的名字（R-416）：自报 / 默认的名字优先，没有时用模型生成的标题。
 export function sessionTitle(s: Session): string {
-  return s.title || s.project_name || shortPath(s.cwd, 28) || t.session.noProject
+  return s.name || s.title || s.project_name || shortPath(s.cwd, 28) || t.session.noProject
+}
+
+// sessionNow：此刻在做什么（模型生成的标题，R-416）；会话有名字时才单独显示，没有名字时标题已经作名字用。
+export function sessionNow(s: Session): string {
+  return s.name && s.title && s.title !== s.name ? s.title : ''
 }
 
 // 等你处理时的提示块：在问你 / 请你确认计划 / 请求执行 / 回复要点。

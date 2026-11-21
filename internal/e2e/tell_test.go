@@ -167,7 +167,7 @@ func TestTellPM(t *testing.T) {
 	if !tell.Delivered {
 		t.Fatalf("应送给 PM：%+v", tell)
 	}
-	woke(t, done, "团队消息", "Dev", "claude:dev", r.Code, "先按 50 条做了")
+	woke(t, done, "团队消息", "（开发）claude:dev", r.Code, "先按 50 条做了")
 	if n := pendingCount(e); n != before {
 		t.Fatalf("留言不应进用户收件箱：%d → %d", before, n)
 	}

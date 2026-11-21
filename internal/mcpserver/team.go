@@ -138,7 +138,7 @@ type sessionsIn struct {
 
 type tellIn struct {
 	Text        string `json:"text" jsonschema:"要说的话：编号加一句话（120 字以内，超出照常发送并提示），先结论（例如：R-12 卡在接口没定，先做了 R-13；问取舍时写清选项和你倾向哪个）；细节先用 req_comment 写进需求留言"`
-	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
+	To          string `json:"to,omitempty" jsonschema:"收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可填会话名（team_sessions 里「」中的名字）或会话键（tool:id），没有身份的会话也能收。设计取舍问 aide，进度和受阻告诉 pm。回复时不填"`
 	ToSession   string `json:"to_session,omitempty" jsonschema:"点名收件会话键（tool:id）：本项目有多个顾问 / 评审 / 开发时指定，没有身份的会话也行；不填发给该身份最近活跃的一个"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"回复收到的团队消息时填它的编号（D-x）：回复自动送回发消息的一方"`
 	Requirement string `json:"requirement,omitempty" jsonschema:"相关需求编号（如 R-12），可省略"`
@@ -159,7 +159,7 @@ type sentIn struct {
 }
 
 // tellDesc 是 team_tell（旧名 pm_notify）的说明。
-const tellDesc = "点对点给本项目的团队成员发消息（命令行 ks team tell；旧名 pm_notify，参数相同）：按身份或会话键送给本项目没结束的那个会话。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回；to = dev（开发）：发给最近活跃的开发；to 也可直接填会话键（team_sessions 里的 tool:id），没有身份的会话也能收，对方已结束或失联时报错退回。返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达，之后用 team_sent 查。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻唤醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被唤醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。消息只做通知：放编号加一句话（120 字以内，超出照常发送并提示），细节先用 req_comment 写进需求留言，再发消息请对方去看。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。跨项目（R-379）：主调度、主助理填 project（项目名）发给其他项目的会话，to 按对方项目的身份（也可填 lite 轻接入）或会话键寻址，对方没有该身份的在线会话时报错并列出可送达的会话键；对方看到来源项目和发送者，回复照常送回你，team_sent 查送达；其他身份跨项目发会被拒绝。字数和只告知 / 要动手两档照旧。"
+const tellDesc = "点对点给本项目的团队成员发消息（命令行 ks team tell；旧名 pm_notify，参数相同）：按身份或会话键送给本项目没结束的那个会话。to = pm（主调度，默认）：进展、受阻、发现的问题、做完一批；to = aide（主助理）：设计取舍、拿不准的判断，没有主助理时退回给主调度并注明；to = reviewer（评审）：发给最近活跃的评审，没有时报错；to = advisor（顾问）：发给最近活跃的顾问（多个时可用 to_session 点名），没有在线顾问时报错退回；to = dev（开发）：发给最近活跃的开发；to 也可填会话名（team_sessions 里「」中的名字，R-416）或会话键（tool:id），没有身份的会话也能收，对方已结束或失联时报错退回；轻接入的会话也能发、能回复，默认只发本项目。返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达，之后用 team_sent 查。发送方永远是当前会话，不能指定。收到的团队消息要回复时填 reply_to（D-x），回复自动送回发消息的一方（子任务发的送到它所属的会话，并注明转给哪个子任务）。只送给 Agent（默认立刻唤醒挂着 ks wait 的对方；只是告知、对方不必动手的——部署 / 重启、进展通报——填 fyi = true，不唤醒，等对方下次被唤醒或用户发消息时一并带上），不进用户的收件箱；要用户决策的事仍用 decision_raise。消息只做通知：放编号加一句话（120 字以内，超出照常发送并提示），细节先用 req_comment 写进需求留言，再发消息请对方去看。需求设为待验收时主调度会自动收到通知，不必再发。项目没有主调度时发给 pm 的消息不会送出，但不算出错：会返回「本项目当前没有主调度，消息未送达」，不必重试。跨项目（R-379）：主调度、主助理填 project（项目名）发给其他项目的会话，to 按对方项目的身份（也可填 lite 轻接入）或会话键寻址，对方没有该身份的在线会话时报错并列出可送达的会话键；对方看到来源项目和发送者，回复照常送回你，team_sent 查送达；其他身份跨项目发会被拒绝。字数和只告知 / 要动手两档照旧。"
 
 func (t *tools) registerTeam(s *mcp.Server) {
 	tell := func(ctx context.Context, req *mcp.CallToolRequest, in tellIn) (*mcp.CallToolResult, any, error) {
@@ -493,7 +493,7 @@ func (t *tools) registerTeam(s *mcp.Server) {
 			}
 			return text(b.String()), nil, nil
 		})
-	mcp.AddTool(s, &mcp.Tool{Name: "team_sessions", Description: "在线会话列表（命令行 ks team sessions，R-249）：本项目所有没结束的会话，每个带身份（没有写「无身份」）、工具（Claude Code / claude-x 等启动命令 / Codex 终端 / Codex App / DSH）、状态（待命 / 运行中 / 空闲 / 已结束）、手上的需求、现在发消息能否立即送达及原因。送达规则只看会话记录：Claude 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。role 只看某个身份（none 只看无身份的），all_projects 列所有项目，all 也列已结束的。不同于 team（PM 的工人池）。"},
+	mcp.AddTool(s, &mcp.Tool{Name: "team_sessions", Description: "在线会话列表（命令行 ks team sessions，R-249）：本项目所有没结束的会话，按「名字」（身份 · 说明）列出（R-416，名字可直接填进 team_tell 的 to），每个带此刻在做什么、身份（没有写「无身份」）、工具（Claude Code / claude-x 等启动命令 / Codex 终端 / Codex App / DSH）、状态（待命 / 运行中 / 空闲 / 已结束）、手上的需求、现在发消息能否立即送达及原因。送达规则只看会话记录：Claude 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。role 只看某个身份（none 只看无身份的），all_projects 列所有项目，all 也列已结束的。不同于 team（PM 的工人池）。"},
 		func(ctx context.Context, req *mcp.CallToolRequest, in sessionsIn) (*mcp.CallToolResult, any, error) {
 			key := t.sessionKey(ctx, req)
 			if key == "" && !in.AllProjects {

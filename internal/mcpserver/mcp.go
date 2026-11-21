@@ -41,7 +41,8 @@ func instructionsFor(client string) string {
 const instructionsTmpl = `Kitestring（纸鸢）是用户的多 agent 驾驶舱：用户在上面统一查看需求、回答决策、管理凭据。会话默认不担任身份，不用背纸鸢的流程。
 - 会话身份：用户让你担任某个身份时（如“接管 PM”“当参谋”“做主助理”“当顾问”“做开发”“当评审”），运行 shell 命令 ks role aide|advisor|reviewer|pm|dev（也认中文名和别称，如 ks role 参谋），按它输出的身份提示词工作；需求、验收证据、团队消息、ks wait 等流程规矩都在身份提示词里。各身份的职责与别称：
 {{ROLES}}
-- 轻接入：用户说「轻接入纸鸢」「轻接入」时运行 ks role lite，只用决策、凭据、求助主助理等服务，不担任身份。
+- 轻接入：用户说「轻接入纸鸢」「轻接入」时运行 ks role lite，只用决策、凭据、求助主助理、给本项目的会话发消息等服务，不担任身份。
+- 会话名（R-416）：ks role <身份> 时可加 --name <名字> --note <一句说明>（40 字以内）自报，别的会话按名字认你、team_tell 的 to 可填名字；不写用默认名「目录名-工具」，任务换了用 ks session name 改。
 - 不担任身份时也能直接用服务：要用户定的事用 decision_raise（或 ks decision raise），要第三方凭据用 secret_request（或 ks secret request）。各服务的用法用到时再看：ks help <服务>（ks help 列出全部）。`
 
 // Run 以 stdio 运行 MCP server。clientName 是调用方（目前只区分 dsh），影响呈现给模型的说明。

@@ -22,11 +22,13 @@ import (
 func runRole(args []string) error {
 	fs := flag.NewFlagSet("role", flag.ContinueOnError)
 	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	name := fs.String("name", "", "顺带给本会话起名（R-416，20 字以内）：别的会话按名字认你，ks team tell --to 也能填名字；不写时用默认名「目录名-工具」")
+	note := fs.String("note", "", "顺带写一句说明（R-416，40 字以内）：在做什么、负责哪块")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("用法：ks role <%s|lite|none>（也认中文名和别称，如 主助理、参谋、主调度；lite 是轻接入）", strings.Join(roles.All, "|"))
+		return fmt.Errorf("用法：ks role <%s|lite|none> [--name 名字] [--note 一句说明]（也认中文名和别称，如 主助理、参谋、主调度；lite 是轻接入）", strings.Join(roles.All, "|"))
 	}
 	role, ok := roles.Resolve(strings.Join(fs.Args(), " "))
 	if !ok {
@@ -50,7 +52,11 @@ func runRole(args []string) error {
 		Demoted []string `json:"demoted"`
 		Handoff bool     `json:"handoff"`
 	}
-	if err := c.Do(ctx, "POST", "/agent/sessions/role", map[string]any{"session_key": key, "role": role}, &out); err != nil {
+	body := map[string]any{"session_key": key, "role": role}
+	for k, v := range setFlags(fs, map[string]*string{"name": name, "note": note}) {
+		body[k] = v
+	}
+	if err := c.Do(ctx, "POST", "/agent/sessions/role", body, &out); err != nil {
 		return err
 	}
 	if role == "" {
@@ -67,6 +73,73 @@ func runRole(args []string) error {
 	if strings.HasPrefix(key, "dsh:") {
 		fmt.Print("\n[Kitestring] 你在 DeepSeek Harness（DSH）中：这一轮结束后纸鸢插件会自动保持待命，并在用户答复、验收或派工时于同一会话唤醒你。不要运行 ks wait，也不要为了等用户而让回合不结束；上面关于 ks wait 的说明按这条执行。\n")
 	}
+	return nil
+}
+
+// setFlags 取出命令行里明确写了的那几个字符串参数（写了空字符串也算：清除说明）。
+func setFlags(fs *flag.FlagSet, flags map[string]*string) map[string]string {
+	out := map[string]string{}
+	fs.Visit(func(f *flag.Flag) {
+		if p, ok := flags[f.Name]; ok {
+			out[f.Name] = *p
+		}
+	})
+	return out
+}
+
+// runSession：ks session name <名字> [--note 一句说明]——任务换了时改本会话的名字和说明（R-416）；
+// ks session 不带参数打印本会话现在的名字和说明。
+func runSession(args []string) error {
+	fs := flag.NewFlagSet("session", flag.ContinueOnError)
+	session := fs.String("session", "", "会话键（tool:session_id）；默认自动识别当前对话")
+	note := fs.String("note", "", "一句说明（40 字以内）；写空字符串清除")
+	if err := parseAnywhere(fs, args); err != nil {
+		return err
+	}
+	usage := fmt.Errorf("用法：ks session name <名字> [--note 一句说明]（名字 20 字以内、不含冒号、不和身份同名；本项目已有同名的会话时自动加后缀 -2）\n      ks session name --note <一句说明>（只改说明）\n      ks session（看本会话现在的名字和说明）")
+	if fs.NArg() > 0 && fs.Arg(0) != "name" {
+		return usage
+	}
+	key := currentSession(*session)
+	if key == "" {
+		return fmt.Errorf("认不出当前会话：请在 Claude Code / Codex 的对话里运行，或用 --session tool:id 指定")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	c := client.New(20 * time.Second)
+	if fs.NArg() == 0 {
+		var x struct {
+			Key  string `json:"session_key"`
+			Name string `json:"name"`
+			Note string `json:"note"`
+		}
+		if err := c.Do(ctx, "GET", "/agent/sessions/name?"+url.Values{"session_key": {key}}.Encode(), nil, &x); err != nil {
+			return err
+		}
+		line := "本会话 " + x.Key + " 名「" + x.Name + "」"
+		if x.Note != "" {
+			line += "，说明：" + x.Note
+		}
+		fmt.Println(line + "。改名用 ks session name <名字> [--note 一句说明]。")
+		return nil
+	}
+	body := map[string]any{"session_key": key}
+	if n := strings.TrimSpace(strings.Join(fs.Args()[1:], " ")); n != "" {
+		body["name"] = n
+	}
+	for k, v := range setFlags(fs, map[string]*string{"note": note}) {
+		body[k] = v
+	}
+	if len(body) == 1 {
+		return usage
+	}
+	var out struct {
+		Message string `json:"message"`
+	}
+	if err := c.Do(ctx, "POST", "/agent/sessions/name", body, &out); err != nil {
+		return err
+	}
+	fmt.Println(out.Message)
 	return nil
 }
 
@@ -204,7 +277,7 @@ func runTeam(args []string) error {
 	duration := fs.String("duration", "", "recommend：预计用多久")
 	minutes := fs.Int("minutes", 0, "recommend：批准时限（分钟），默认用设置里的（30）")
 	req := fs.String("req", "", "tell：相关需求编号（如 R-12）")
-	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）| advisor（顾问）| dev（开发），也认中文名和别称；也可直接填会话键 tool:id（没有身份的会话也行）")
+	to := fs.String("to", "", "tell：收件身份 aide（主助理）| pm（主调度，默认）| reviewer（评审）| advisor（顾问）| dev（开发）| lite（轻接入），也认中文名和别称；也可填会话名（ks team sessions 里「」中的名字，R-416）或会话键 tool:id（没有身份的会话也行）")
 	reply := fs.String("reply", "", "tell：回复收到的团队消息（填它的编号 D-x），回复会送回发消息的一方")
 	role := fs.String("role", "", "sessions：只看某个身份（aide / advisor / reviewer / pm / dev，也认中文名和别称）；none 只看无身份的会话。broadcast：只发给这些身份，逗号分隔（如 dev,reviewer）")
 	allProjects := fs.Bool("all-projects", false, "sessions：列所有项目的会话（不只本项目）")
@@ -319,7 +392,7 @@ func runTeam(args []string) error {
 		// 或回复收到的团队消息；主调度 / 主助理加 --project 发给其他项目的会话（R-379）；只送给 Agent、不进用户收件箱（R-135 / R-191）
 		text := strings.TrimSpace(strings.Join(fs.Args()[1:], " "))
 		if text == "" {
-			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer|advisor] [--req R-x]\n      ks team tell --project <项目名> --to <身份或会话键> <要说的话>（只有主调度、主助理能跨项目发）\n      ks team tell --reply D-x <回复>\n消息只做通知：编号加一句话（%d 字以内），细节先写进 ks req comment", writing.MessageMax)
+			return fmt.Errorf("用法：ks team tell <要说的话> [--to aide|pm|reviewer|advisor|会话名|会话键] [--req R-x]\n      ks team tell --project <项目名> --to <身份或会话键> <要说的话>（只有主调度、主助理能跨项目发）\n      ks team tell --reply D-x <回复>\n消息只做通知：编号加一句话（%d 字以内），细节先写进 ks req comment", writing.MessageMax)
 		}
 		body := map[string]any{"session_key": key, "text": text}
 		for k, v := range map[string]string{"requirement": *req, "to": *to, "to_session": *toSession, "reply_to": *reply, "project": *project, "agent_id": agent} {

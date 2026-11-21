@@ -54,9 +54,12 @@ type Session struct {
 	PermMode    string     `json:"permission_mode"`
 	Compactions int        `json:"compactions"`
 	Worktree    bool       `json:"worktree"`
-	Activity    []int      `json:"activity"`    // 最近 60 分钟每 5 分钟的事件数，旧 → 新
-	Title       string     `json:"title"`       // 模型生成的会话标题
-	DigestDone  string     `json:"digest_done"` // 等你回复时：这一轮做了什么（模型摘要）
+	Activity    []int      `json:"activity"` // 最近 60 分钟每 5 分钟的事件数，旧 → 新
+	Title       string     `json:"title"`    // 模型生成的会话标题：此刻在做什么，每轮可能变
+	// Name / Note：会话自报的名字和一句说明（R-416），和模型生成的 Title 分开存、不被覆盖；没自报时 Name 是接入项目时定下的默认名（目录名-工具）
+	Name       string `json:"name"`
+	Note       string `json:"note"`
+	DigestDone string `json:"digest_done"` // 等你回复时：这一轮做了什么（模型摘要）
 	// ReplyAsk：最后一条回复像在问你时它的最后一段（R-117）。只给 ks wait 提醒会话「请提决策」用，不给网页（R-239：待处理只认明确记录）
 	ReplyAsk         string           `json:"-"`
 	StartedAt        time.Time        `json:"started_at"`
@@ -89,6 +92,17 @@ type Session struct {
 	// 用户直接发给它的话照常送达，其他点名消息先排队。写完交接或结束本轮不再待命时记为已下线（OfflineAt），之后只排队，
 	// 新会话接任时转过去。和 OfflineAt 一起清除
 	StoppedAt *time.Time `json:"stopped_at,omitempty"`
+}
+
+// DisplayName 是称呼会话的名字（R-416）：自报的 / 默认的名字优先，没有时用模型生成的标题，都没有时用设备与工具。
+func (x Session) DisplayName() string {
+	if x.Name != "" {
+		return x.Name
+	}
+	if x.Title != "" {
+		return x.Title
+	}
+	return x.DeviceName + " 上的 " + x.Tool + " 会话"
 }
 
 // BgTask 是会话下一个在跑的后台任务（R-162）：只有类型、标签、开始时间与最近动作，不含命令输出与对话内容。
@@ -148,7 +162,7 @@ type RequirementRef struct {
 const sessionSelect = `SELECT s.key, s.tool, s.session_id, s.device_id, d.name, COALESCE(s.project_id, ''), COALESCE(p.name, ''),
 	s.client, s.profile, s.profile_dir, s.launcher, s.model, s.cwd, s.branch, s.dirty, s.state, s.state_detail, s.wait_kind, s.last_prompt, s.summary,
 	s.state_since, s.turns, s.turn_tools, s.last_tool, s.last_tool_at, s.subagents, s.perm_mode, s.compactions, s.worktree,
-	s.title, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at, s.idle_at, s.idle_wait_since, s.offline_at, s.stopped_at,
+	s.title, s.name, s.note, s.digest_done, s.reply_ask, s.instance, s.prev_instance, s.done_at, s.parked, s.parked_until, s.tools_stale, s.context_tokens, s.context_max, s.role, s.tasks, s.background, s.retired_at, s.idle_at, s.idle_wait_since, s.offline_at, s.stopped_at,
 	s.started_at, s.last_active_at, s.ended_at
 	FROM sessions s JOIN devices d ON d.id = s.device_id LEFT JOIN projects p ON p.id = s.project_id`
 
@@ -159,7 +173,7 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 	err := row.Scan(&x.Key, &x.Tool, &x.SessionID, &x.DeviceID, &x.DeviceName, &x.ProjectID, &x.ProjectName,
 		&x.Client, &x.Profile, &x.ProfileDir, &x.Launcher, &x.Model, &x.Cwd, &x.Branch, &x.Dirty, &x.State, &x.StateDetail, &x.WaitKind, &x.LastPrompt, &x.Summary,
 		&since, &x.Turns, &x.TurnTools, &x.LastTool, &toolAt, &x.Subagents, &x.PermMode, &x.Compactions, &x.Worktree,
-		&x.Title, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired, &idle, &idleWait, &offline, &stopped,
+		&x.Title, &x.Name, &x.Note, &x.DigestDone, &x.ReplyAsk, &x.Instance, &x.PrevInstance, &doneAt, &x.Parked, &parkedUntil, &x.ToolsStale, &x.ContextTokens, &x.ContextMax, &x.Role, &tasks, &x.Background, &retired, &idle, &idleWait, &offline, &stopped,
 		&started, &active, &ended)
 	x.Tasks = []BgTask{}
 	if tasks != "" && tasks != "[]" {
@@ -536,6 +550,46 @@ func (s *Store) SetSessionAI(ctx context.Context, key string, a SessionAI) error
 		WHERE key = ?`,
 		a.Summary, a.Summary, a.Title, a.Title, a.DigestDone, a.DigestDone, key)
 	return err
+}
+
+// SetSessionName 记下会话自报的名字和说明（R-416）；nil 表示不改。
+func (s *Store) SetSessionName(ctx context.Context, key string, name, note *string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET
+		name = CASE WHEN ? THEN ? ELSE name END,
+		note = CASE WHEN ? THEN ? ELSE note END
+		WHERE key = ?`, name != nil, deref(name), note != nil, deref(note), key)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// LiveSessions 列出项目里没结束、没失联、没归档的会话（不含后台任务），最近活跃的在前（R-416：名字查重、按名字寻址）。
+func (s *Store) LiveSessions(ctx context.Context, projectID string) ([]Session, error) {
+	rows, err := s.db.QueryContext(ctx, sessionSelect+` WHERE s.project_id = ? AND s.background = 0 AND s.done_at = '' AND s.state NOT IN (?, ?) ORDER BY s.last_active_at DESC`, projectID, StateEnded, StateLost)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Session{}
+	for rows.Next() {
+		x, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
 }
 
 // SetToolsStale 记下会话的 Kitestring 工具是否过期（v 为过期工具的版本，空表示已是最新）。

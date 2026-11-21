@@ -736,6 +736,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/sessions/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 会话现在的名字和说明（R-416） */
+        get: operations["agent-get-name"];
+        put?: never;
+        /**
+         * 会话自报名字和说明（R-416）：和模型生成的标题分开存，不被覆盖
+         * @description name 名字（20 字以内，不含冒号，不和身份同名；和本项目没结束的会话重名时自动加后缀 -2），note 一句说明（40 字以内，空字符串清除）；不填的字段不改。别的会话用 team_tell 的 to 填名字就能发给你；ks team sessions、团队消息的发送方、工作台泳道都按名字显示。
+         */
+        post: operations["agent-set-name"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/sessions/role": {
         parameters: {
             query?: never;
@@ -941,7 +962,7 @@ export interface paths {
         put?: never;
         /**
          * 给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）
-         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。
+         * @description to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可填会话名（R-416，ks team sessions 里「」中的名字，同项目没结束的会话里不重名）或会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）；轻接入的会话也能发、能回复。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。
          */
         post: operations["agent-tell-pm"];
         delete?: never;
@@ -3273,7 +3294,18 @@ export interface components {
             /** @description 总述：一段话，先结论，建议 200 字以内，超出照常保存并提示压缩；不传表示不改 */
             text?: string;
         };
+        "Agent-set-nameRequest": {
+            /** @description 名字；不填不改 */
+            name?: string;
+            /** @description 一句说明；不填不改，空字符串清除 */
+            note?: string;
+            session_key: string;
+        };
         "Agent-set-roleRequest": {
+            /** @description 顺带自报名字（R-416，20 字以内）：和模型生成的标题分开存；不填不改，没起过名时是默认名「目录名-工具」 */
+            name?: string;
+            /** @description 顺带写一句说明（R-416，40 字以内）；不填不改 */
+            note?: string;
             /** @description aide / advisor / reviewer / pm / dev，也认中文名、英文简写和别称（如 主调度、参谋、Aide）；空为清除身份 */
             role: string;
             session_key: string;
@@ -3317,7 +3349,7 @@ export interface components {
             session_key: string;
             /** @description 要说的话 */
             text: string;
-            /** @description 收件身份：pm（默认）、aide、reviewer、advisor、dev；也认中文名（主调度 / 主助理 / 评审 / 顾问 / 开发）；也可填会话键（tool:id），等同 to_session。回复时不填 */
+            /** @description 收件身份：pm（默认）、aide、reviewer、advisor、dev；也认中文名（主调度 / 主助理 / 评审 / 顾问 / 开发）；也可填会话名（R-416）或会话键（tool:id），等同 to_session。回复时不填 */
             to?: string;
             /** @description 指定收件会话键（tool:id）：本项目没结束的会话，没有身份的也行（R-249）；与 to（身份）同时填时身份要对得上。本项目有多个顾问 / 评审 / 开发时用它点名；不填则发给该身份最近活跃的一个（R-248） */
             to_session?: string;
@@ -4762,8 +4794,11 @@ export interface components {
             /** @description 会话已结束、失联或被标为已完成 */
             ended?: boolean;
             key: string;
+            /** @description 会话自报的一句说明（R-416） */
+            note?: string;
             /** @description 身份；空为无身份 */
             role: string;
+            /** @description 会话名（R-416）；没有时用标题 */
             title: string;
             /** @description 所用工具：Claude Code / claude-x / Codex 终端 / Codex App / DSH */
             tool?: string;
@@ -4802,6 +4837,10 @@ export interface components {
             last_active_at: string;
             /** @description 就是调用者自己 */
             me?: boolean;
+            /** @description 会话名（R-416）：自报的，没自报时是默认名「目录名-工具」；--to 可填它 */
+            name: string;
+            /** @description 会话自报的一句说明（R-416） */
+            note: string;
             /** @description 手上的需求：待开始、进行中、受阻 */
             open: components["schemas"]["RequirementRef"][] | null;
             /**
@@ -4820,6 +4859,7 @@ export interface components {
              */
             status: "standby" | "busy" | "online" | "offline";
             status_label: string;
+            /** @description 此刻在做什么：模型按最近一轮生成的标题，没有时用最近一条消息 */
             title: string;
             tool: string;
             /**
@@ -6199,6 +6239,15 @@ export interface components {
             /** @description 收消息的会话 */
             to: string;
         };
+        NameOutBody: {
+            message: string;
+            /** @description 最后记下的名字：本项目已有同名会话时自动加了后缀 -2、-3 */
+            name: string;
+            note: string;
+            session_key: string;
+            /** @description 名字和本项目没结束的会话重名，已自动加后缀 */
+            suffixed: boolean;
+        };
         "Note-requirementRequest": {
             comment?: string;
             files?: string[] | null;
@@ -7030,6 +7079,10 @@ export interface components {
             last_active_at: string;
             /** @description 就是调用者自己 */
             me?: boolean;
+            /** @description 会话名（R-416）：自报的，没自报时是默认名「目录名-工具」；--to 可填它 */
+            name: string;
+            /** @description 会话自报的一句说明（R-416） */
+            note: string;
             /** @description 手上的需求：待开始、进行中、受阻 */
             open: components["schemas"]["RequirementRef"][] | null;
             project: string;
@@ -7043,6 +7096,7 @@ export interface components {
              */
             status: "standby" | "busy" | "online" | "offline";
             status_label: string;
+            /** @description 此刻在做什么：模型按最近一轮生成的标题，没有时用最近一条消息 */
             title: string;
             tool: string;
             /** @description 现在发消息能否立即送达 */
@@ -7377,6 +7431,8 @@ export interface components {
             last_tool_at?: string;
             launcher?: string;
             model: string;
+            name: string;
+            note: string;
             /** Format: date-time */
             offline_at?: string;
             other_terminal: boolean;
@@ -10029,6 +10085,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkBodyBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-get-name": {
+        parameters: {
+            query?: {
+                session_key?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameOutBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "agent-set-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Agent-set-nameRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NameOutBody"];
                 };
             };
             /** @description Error */

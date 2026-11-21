@@ -64,13 +64,14 @@ agent 调用：
                                  重推有变记新版本、未连接 Hub 时排队补传；summary 先看统计、list / get 按 id、类别、批次、状态查（默认最多 50 条，别整表拉 --json；ks asset help 看用法和 asset.json 写法）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team sessions [--role 身份|none] [--all-projects] [--all] [--json]
-                                 在线会话列表（R-249）：本项目没结束的会话，带身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
+                                 在线会话列表（R-249）：本项目没结束的会话，按「名字」（身份 · 说明）列出（R-416），带此刻在做什么、身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
                                  待命 / 运行中 / 空闲 / 已结束、手上的需求、能否立即送达及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子任务）
-  team tell <文字> [--to aide|pm|reviewer|advisor|dev|会话键] [--to-session tool:id] [--req R-x] [--fyi]
+  team tell <文字> [--to aide|pm|reviewer|advisor|dev|lite|会话名|会话键] [--to-session tool:id] [--req R-x] [--fyi]
                                  点对点给本项目的团队成员发消息（默认主调度；不进用户收件箱）：设计取舍问主助理（--to aide），交接给顾问用 --to advisor（多个顾问时发给最近活跃的，或 --to-session 点名；没有在线顾问时报错退回）；
-                                 --to 也可直接填会话键（ks team sessions 里的 tool:id），没有身份的会话也能收；对方已结束或失联时报错退回；
+                                 --to 也可填会话名（ks team sessions 里「」中的名字，R-416）或会话键（tool:id），没有身份的会话也能收；对方已结束或失联时报错退回；
+                                 轻接入的会话也能发、能 --reply 回复，只发本项目；
                                  返回逐个收件人的送达状态：已送达 / 待送达（写明原因，如 Codex 要等用户下次发消息）/ 无法送达；
                                  发送方只认自动识别的当前对话，--session 与之不一致会被拒绝，仅识别不到（如部分 Codex 会话）时才按 --session 认定发送方；
                                  进度和受阻告诉主调度；没有主助理时退回给主调度；交验收时主调度会自动收到通知；
@@ -95,8 +96,10 @@ agent 调用：
   decision answer <D-x> --answer 答复 --reason 理由 --risk low   Aide 在用户的授权窗口内代答（R-163）
   写作规范：证据第一句是结论（40 字以内），再逐条写验收判定；证据超 600 字、决策说明超 400 字时照常保存并提示压缩
   表达块：req evidence / decision raise / plan submit 可加 --blocks 块.json（清单、对比、截图、流程、指标、改动范围、选项、表格），纸鸢统一渲染
-  role <aide|pm|dev|advisor|reviewer|lite|none>   声明本会话的身份（Aide / PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动交出身份；
+  role <aide|pm|dev|advisor|reviewer|lite|none> [--name 名字] [--note 一句说明]   声明本会话的身份（Aide / PM / Dev / Adv / Rev），打印身份提示词；有上一任写好的交接时一并附上，上一任自动交出身份；
                          lite 是轻接入（R-359）：不担任身份，只用决策、凭据等服务，打印几行短说明
+                         --name / --note 顺带自报名字（20 字内）和说明（40 字内，R-416），和模型标题分开存；不写用默认名「目录名-工具」
+  session name <名字> [--note 一句说明]   任务换了时改本会话的名字和说明（R-416；重名自动加 -2）；ks session 查看现在的名字
   help [服务]            不带参数打印本帮助；带服务名（decision / secret / ask / wait / role）只打印这项服务的用法（轻接入按需取用）
   takeover <身份> [--tool claude|codex] [--print]
                          交接（R-224）：在项目目录启动新会话并带接任提示，新会话声明身份时自动读到上一任的交接
@@ -167,6 +170,8 @@ func main() {
 		err = runMorning(args)
 	case "team":
 		err = runTeam(args)
+	case "session":
+		err = runSession(args)
 	case "commit":
 		err = runCommit(args)
 	case "secret":

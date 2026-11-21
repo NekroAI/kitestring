@@ -38,8 +38,10 @@ const short = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : 
 // 一方：身份胶囊（没身份时写会话标题），前面是会话现在的状态点；点它把右栏过滤到这个会话。
 function PeerChip({ k, role, title, tool, sessions, onPick }: { k: string; role?: string; title?: string; tool?: string; sessions: Map<string, Sess>; onPick: (k: string) => void }) {
   const s = sessions.get(k)
-  const label = roleName(role) || short(title || s?.title || t.comms.untitled(tool || s?.harness || ''), 10)
-  const tip = [roleName(role) || t.comms.noRole, title || s?.title, tool || s?.harness, s ? s.status_label : t.comms.gone].filter(Boolean).join(t.common.sep)
+  // 名字优先（R-416）：有名字时胶囊写名字，身份、说明进悬停
+  const name = s?.name || title
+  const label = (s?.name && short(s.name, 10)) || roleName(role) || short(title || s?.title || t.comms.untitled(tool || s?.harness || ''), 10)
+  const tip = [name, roleName(role) || t.comms.noRole, s?.note, tool || s?.harness, s ? s.status_label : t.comms.gone].filter(Boolean).join(t.common.sep)
   return (
     <Tip content={tip}>
       <button
@@ -166,10 +168,16 @@ function SessionItem({ s, now, active, onClick }: { s: Sess; now: number; active
     >
       <div className="flex min-w-0 items-center gap-2">
         <ToolMark tool={s.tool} size="sm" />
-        <Tip content={s.title} truncated>
-          <span className="min-w-0 truncate text-[14.5px] font-semibold text-fg">{s.title || t.comms.untitled(s.harness)}</span>
+        {/* 名字（R-416）、身份、说明；此刻在做什么进悬停 */}
+        <Tip content={[s.name || s.title, s.name && s.title && s.title !== s.name ? t.session.now(s.title) : ''].filter(Boolean).join('\n')}>
+          <span className="min-w-0 shrink-0 truncate text-[14.5px] font-semibold text-fg max-w-[60%]">{s.name || s.title || t.comms.untitled(s.harness)}</span>
         </Tip>
         <span className={cx('inline-flex shrink-0 items-center rounded-full border border-line-strong px-2 text-[11px] leading-[18px] whitespace-nowrap', s.role ? 'text-fg-2' : 'text-fg-3')}>{s.role_name}</span>
+        {s.note && (
+          <Tip content={s.note} truncated>
+            <span className="min-w-0 truncate text-[12px] text-fg-3">{s.note}</span>
+          </Tip>
+        )}
       </div>
       <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[12.5px] text-fg-2">
         <span className={cx('inline-flex shrink-0 items-center gap-1 rounded-full px-2 leading-[20px]', statusPill[s.status])}>
@@ -290,7 +298,7 @@ export default function CommsPage() {
   const live = (d?.sessions ?? []).filter((s) => s.status !== 'offline')
   const standby = live.filter((s) => s.status === 'standby').length
   const projName = projList.find((p) => p.id === project)?.name ?? d?.project_name ?? ''
-  const sessName = session ? sessions.get(session)?.title || session : ''
+  const sessName = session ? sessions.get(session)?.name || sessions.get(session)?.title || session : ''
 
   const projectMenu = (
     <Menu

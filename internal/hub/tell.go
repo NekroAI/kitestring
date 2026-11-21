@@ -167,13 +167,9 @@ func (h *Hub) onReview(ctx context.Context, ref, by string) string {
 	return to
 }
 
-// sessionName 是消息里称呼会话的方式：标题（没有就用设备与工具）加会话键。
+// sessionName 是消息里称呼会话的方式：名字（R-416；没有就用标题，再没有用设备与工具）加会话键。
 func sessionName(x store.Session) string {
-	name := x.Title
-	if name == "" {
-		name = x.DeviceName + " 上的 " + x.Tool + " 会话"
-	}
-	return fmt.Sprintf("「%s」（%s）", brief(name, 30), x.Key)
+	return fmt.Sprintf("「%s」（%s）", brief(x.DisplayName(), 30), x.Key)
 }
 
 // devUp：开发在本项目上线时告诉项目 PM「开发 X 已上线待命，可以 req_assign」（R-116）：
@@ -276,8 +272,8 @@ func (h *Hub) reachable(ctx context.Context, projectID string) string {
 			break
 		}
 		s := x.Key + "（" + roleOrNone(x.Role)
-		if x.Title != "" {
-			s += "「" + brief(x.Title, 20) + "」"
+		if t := shownTitle(x); t != "" {
+			s += "「" + brief(t, 20) + "」"
 		}
 		parts = append(parts, s+"）")
 	}
@@ -290,13 +286,9 @@ func (h *Hub) reachable(ctx context.Context, projectID string) string {
 // looksLikeSessionKey：--to 填的是会话键（tool:id）而不是身份（R-249）。
 func looksLikeSessionKey(s string) bool { return strings.Contains(s, ":") }
 
-// senderName 是团队消息里称呼发消息一方的方式：「身份 会话」，子任务再加「的子任务「名字」（agent_id）」。
+// senderName 是团队消息里称呼发消息一方的方式（R-416）：「名字」（身份 · 说明），子任务再加「的子任务「名字」（agent_id）」。
 func (h *Hub) senderName(ctx context.Context, me store.Session, agent string) string {
-	who := "会话"
-	if l := roles.Label(me.Role); l != "" {
-		who = l
-	}
-	name := who + " " + sessionName(me)
+	name := whoIs(me) + me.Key // 会话键跟在后面：名字可能被之后的会话重用，键不会
 	if agent != "" {
 		name += " 的子任务" + h.agentName(ctx, me.Key, agent)
 	}
@@ -330,13 +322,13 @@ func (h *Hub) registerAgentTell(api huma.API) {
 	h.registerAgentBroadcast(api)
 	huma.Register(api, huma.Operation{OperationID: "agent-tell-pm", Method: http.MethodPost, Path: "/api/agent/team/tell", Tags: []string{"agent"},
 		Summary:     "给本项目按身份发团队消息，或回复收到的团队消息（只送给 Agent，不进用户收件箱，R-135 / R-191）",
-		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。"},
+		Description: "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可填会话名（R-416，ks team sessions 里「」中的名字，同项目没结束的会话里不重名）或会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）；轻接入的会话也能发、能回复。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。"},
 		func(ctx context.Context, in *struct {
 			Body struct {
 				SessionKey     string `json:"session_key" minLength:"1" doc:"调用者"`
 				Text           string `json:"text" minLength:"1" doc:"要说的话"`
 				Requirement    string `json:"requirement,omitempty" doc:"相关需求编号（如 R-12），可省略"`
-				To             string `json:"to,omitempty" doc:"收件身份：pm（默认）、aide、reviewer、advisor、dev；也认中文名（主调度 / 主助理 / 评审 / 顾问 / 开发）；也可填会话键（tool:id），等同 to_session。回复时不填"`
+				To             string `json:"to,omitempty" doc:"收件身份：pm（默认）、aide、reviewer、advisor、dev；也认中文名（主调度 / 主助理 / 评审 / 顾问 / 开发）；也可填会话名（R-416）或会话键（tool:id），等同 to_session。回复时不填"`
 				ToSession      string `json:"to_session,omitempty" doc:"指定收件会话键（tool:id）：本项目没结束的会话，没有身份的也行（R-249）；与 to（身份）同时填时身份要对得上。本项目有多个顾问 / 评审 / 开发时用它点名；不填则发给该身份最近活跃的一个（R-248）"`
 				ReplyTo        string `json:"reply_to,omitempty" doc:"回复收到的团队消息：填它的编号（D-x）"`
 				FYI            bool   `json:"fyi,omitempty" doc:"只告知（R-227）：对方不必动手，不唤醒挂着的 ks wait，等它下次因别的事被唤醒或用户发消息时一并带上；默认 false（要对方动手的话：提问、求裁定、指派、回复，立刻唤醒）。部署 / 重启、进展通报这类用 true"`
@@ -448,9 +440,29 @@ func (h *Hub) registerAgentTell(api huma.API) {
 					ts, toText = toText, ""
 				}
 				if toText != "" {
-					r, ok := roles.Resolve(toText)
-					if !ok || !tellRoles[r] {
-						return nil, huma.Error400BadRequest("收件身份只能是 pm（主调度）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）或 lite（轻接入），也可以直接填会话键（tool:id）；收到的是「" + toText + "」")
+					if _, ok := roles.Resolve(toText); !ok {
+						// --to 填的是会话名（R-416）：在收件项目没结束的会话里按名字找
+						switch named := h.byName(ctx, pid, toText, ""); len(named) {
+						case 0:
+							return nil, huma.Error400BadRequest("没有叫「" + toText + "」的在线会话，也不是身份，消息没有送出；--to 可填身份 pm（主调度）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）、lite（轻接入），会话名或会话键（tool:id），用 ks team sessions 看本项目的会话")
+						case 1:
+							if ts != "" && ts != named[0].Key {
+								return nil, huma.Error400BadRequest("to 填的「" + toText + "」是会话 " + named[0].Key + "，和 to_session " + ts + " 不一致，只填一个")
+							}
+							ts, toText = named[0].Key, ""
+						default:
+							var keys []string
+							for _, x := range named {
+								keys = append(keys, x.Key)
+							}
+							return nil, huma.Error409Conflict("本项目有 " + fmt.Sprint(len(named)) + " 个会话叫「" + toText + "」（" + strings.Join(keys, "、") + "），消息没有送出；改用 --to <会话键> 发")
+						}
+					}
+				}
+				if toText != "" {
+					r, _ := roles.Resolve(toText)
+					if !tellRoles[r] {
+						return nil, huma.Error400BadRequest("收件身份只能是 pm（主调度）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）或 lite（轻接入），也可以填会话名或会话键（tool:id）；收到的是「" + toText + "」")
 					}
 					role = r
 				}

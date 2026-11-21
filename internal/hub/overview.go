@@ -208,10 +208,10 @@ func sortQueue(list []store.Requirement) {
 	})
 }
 
-// sessionName：会话的称呼（标题，没有时用会话键）。
+// sessionName：会话的称呼（名字，没有时用标题，再没有用会话键，R-416）。
 func (h *Hub) sessionName(ctx context.Context, key string) string {
-	if x, err := h.store.GetSession(ctx, key); err == nil && strings.TrimSpace(x.Title) != "" {
-		return "「" + oneLineClip(x.Title, 30) + "」"
+	if x, err := h.store.GetSession(ctx, key); err == nil && strings.TrimSpace(x.Name+x.Title) != "" {
+		return "「" + oneLineClip(x.DisplayName(), 30) + "」"
 	}
 	return key
 }

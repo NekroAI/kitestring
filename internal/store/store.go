@@ -279,6 +279,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"asset_versions", "audio", "TEXT NOT NULL DEFAULT ''"},
 	// 素材中文名（R-400）：asset.json 的 display.name，可选；没有为空
 	{"asset_versions", "name", "TEXT NOT NULL DEFAULT ''"},
+	// 会话自报的名字和说明（R-416）：和模型生成的标题分开存；没自报时 name 是接入项目时定下的默认名
+	{"sessions", "name", "TEXT NOT NULL DEFAULT ''"},
+	{"sessions", "note", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // columnFills：列刚补上时执行一次的回填（R-239），之后不再跑——老数据从文字里推一次，新数据由写入方明确给出。
@@ -290,14 +293,14 @@ var columnFills = map[string]func(*sql.DB) error{
 	"secrets.seq":          fillSecretSeq,
 }
 
-// sessionSnap 读会话现在的标题与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。
+// sessionSnap 读会话现在的名字（没有时用标题，R-416）与身份，写记录时作为快照存下（R-195）。会话不存在时都为空。
 func sessionSnap(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, key string) (title, role string) {
 	if key == "" {
 		return "", ""
 	}
-	_ = q.QueryRowContext(ctx, `SELECT title, role FROM sessions WHERE key = ?`, key).Scan(&title, &role)
+	_ = q.QueryRowContext(ctx, `SELECT CASE WHEN name <> '' THEN name ELSE title END, role FROM sessions WHERE key = ?`, key).Scan(&title, &role)
 	return title, role
 }
 

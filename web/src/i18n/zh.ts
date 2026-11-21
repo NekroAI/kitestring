@@ -1395,6 +1395,8 @@ export const zh = {
   },
 
   session: {
+    // 会话名之外的两项（R-416）：自报的一句说明、模型按最近一轮生成的标题
+    now: (x: string) => `此刻：${x}`,
     you: '最近一条消息',
     action: '最近动作',
     asking: '等待回答',

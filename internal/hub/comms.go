@@ -26,7 +26,8 @@ const commsLimit = 2000
 type CommsPeer struct {
 	Key       string `json:"key"`
 	Role      string `json:"role" doc:"身份；空为无身份"`
-	Title     string `json:"title"`
+	Title     string `json:"title" doc:"会话名（R-416）；没有时用标题"`
+	Note      string `json:"note,omitempty" doc:"会话自报的一句说明（R-416）"`
 	Tool      string `json:"tool,omitempty" doc:"所用工具：Claude Code / claude-x / Codex 终端 / Codex App / DSH"`
 	Agent     string `json:"agent,omitempty" doc:"发消息的子任务 agent_id；会话主线程发的为空"`
 	AgentName string `json:"agent_name,omitempty" doc:"子任务的名字"`
@@ -320,10 +321,7 @@ func (b *commsBuilder) msg(ctx context.Context, d store.Decision) CommsMsg {
 	} else {
 		p := &CommsPeer{Key: d.AssignedBy, Role: d.FromRole, Agent: d.FromAgent}
 		if x := b.session(ctx, d.AssignedBy); x != nil {
-			p.Title, p.Tool, p.Ended = x.Title, x.Harness(), sessionOffline(*x)
-			if p.Title == "" {
-				p.Title = x.LastPrompt
-			}
+			p.Title, p.Note, p.Tool, p.Ended = shownTitle(*x), x.Note, x.Harness(), sessionOffline(*x)
 			if p.Role == "" {
 				p.Role = x.Role
 			}

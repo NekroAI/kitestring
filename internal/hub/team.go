@@ -39,7 +39,7 @@ type teamOut struct {
 }
 
 func toWorker(x store.Session) Worker {
-	w := Worker{Key: x.Key, Role: x.Role, Title: x.Title, Tool: x.Tool, Device: x.DeviceName, Presence: x.Presence(),
+	w := Worker{Key: x.Key, Role: x.Role, Title: shownTitle(x), Tool: x.Tool, Device: x.DeviceName, Presence: x.Presence(),
 		ContextTokens: x.ContextTokens, ContextMax: x.ContextMax, Open: []store.RequirementRef{}, LastActiveAt: x.LastActiveAt.UTC().Format("2006-01-02T15:04:05Z")}
 	if w.Title == "" {
 		w.Title = x.LastPrompt

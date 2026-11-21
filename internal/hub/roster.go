@@ -93,7 +93,9 @@ func wakeAbilityAt(x store.Session, at time.Time) (now bool, why string) {
 // RosterEntry 是在线会话列表里的一个会话。
 type RosterEntry struct {
 	Key          string                 `json:"key"`
-	Title        string                 `json:"title"`
+	Name         string                 `json:"name" doc:"会话名（R-416）：自报的，没自报时是默认名「目录名-工具」；--to 可填它"`
+	Note         string                 `json:"note" doc:"会话自报的一句说明（R-416）"`
+	Title        string                 `json:"title" doc:"此刻在做什么：模型按最近一轮生成的标题，没有时用最近一条消息"`
 	Role         string                 `json:"role" doc:"身份；空为无身份"`
 	RoleName     string                 `json:"role_name" doc:"身份中文名；无身份写「无身份」"`
 	Harness      string                 `json:"harness" doc:"所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH"`
@@ -122,7 +124,7 @@ type rosterOut struct {
 }
 
 func toRosterEntry(x store.Session, me string, at time.Time) RosterEntry {
-	e := RosterEntry{Key: x.Key, Title: x.Title, Role: x.Role, RoleName: roles.Name(x.Role), Harness: x.Harness(), Tool: x.Tool, Client: x.Client,
+	e := RosterEntry{Key: x.Key, Name: x.Name, Note: x.Note, Title: x.Title, Role: x.Role, RoleName: roles.Name(x.Role), Harness: x.Harness(), Tool: x.Tool, Client: x.Client,
 		Device: x.DeviceName, Project: x.ProjectName, Status: x.AvailabilityAt(at), Open: []store.RequirementRef{}, Me: x.Key == me,
 		LastActiveAt: x.LastActiveAt.UTC().Format("2006-01-02T15:04:05Z")}
 	if e.RoleName == "" {
@@ -228,14 +230,24 @@ func rosterText(out *rosterOut, role string, withEnded bool) string {
 	}
 	fmt.Fprintf(&sb, "%s：%d 个%s（%s）\n", scope, len(b.Sessions), kind, strings.Join(parts, " · "))
 	for _, e := range b.Sessions {
-		sb.WriteString("- " + e.Key)
+		// 名字、身份、说明在前（R-416）：「名字」（身份 · 说明）会话键；此刻在做什么放在后面
+		name := e.Name
+		if name == "" {
+			name = summary.Truncate(strings.Join(strings.Fields(e.Title), " "), 30)
+		}
+		if name != "" {
+			sb.WriteString("- 「" + name + "」（" + e.RoleName)
+		} else {
+			sb.WriteString("- （" + e.RoleName)
+		}
+		if e.Note != "" {
+			sb.WriteString(" · " + e.Note)
+		}
+		sb.WriteString("）" + e.Key)
 		if e.Me {
 			sb.WriteString("（你）")
 		}
-		if t := summary.Truncate(strings.Join(strings.Fields(e.Title), " "), 30); t != "" {
-			sb.WriteString("「" + t + "」")
-		}
-		sb.WriteString(" " + e.RoleName + " · " + e.Harness)
+		sb.WriteString(" · " + e.Harness)
 		if e.Device != "" {
 			sb.WriteString("@" + e.Device)
 		}
@@ -247,6 +259,11 @@ func rosterText(out *rosterOut, role string, withEnded bool) string {
 			sb.WriteString("能立即送达：" + e.WakeWhy)
 		} else {
 			sb.WriteString("不能立即送达：" + e.WakeWhy)
+		}
+		if e.Name != "" {
+			if t := summary.Truncate(strings.Join(strings.Fields(e.Title), " "), 30); t != "" {
+				sb.WriteString(" · 此刻：" + t)
+			}
 		}
 		if len(e.Open) == 0 {
 			sb.WriteString(" · 手上没有需求")

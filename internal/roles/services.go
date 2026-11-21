@@ -6,7 +6,7 @@ import "strings"
 
 const (
 	// LiteMax：轻接入常驻文字的上限（字）。
-	LiteMax = 600
+	LiteMax = 700
 	// ServiceMax：每项服务详细说明的上限（字）。
 	ServiceMax = 500
 )
@@ -39,10 +39,11 @@ var Services = []Service{
 - display 可选：name 中文名、animations 动作表；网页能看什么见 ks asset help，挂件 / 参照见 ks help asset compose。
 - 查询：先 summary，再 list --status / --category / --id 'core:weapon.*' / --q；单件 get <id|A-x>，别整表拉 --json。
 - 网页授权本会话后可 ks asset review 批量审（--dry-run 预检、--undo 撤销）。`},
-	{Name: "ask", Aliases: []string{"求助", "aide", "主助理"}, Title: "设计取舍问主助理", Text: `求助主助理：设计取舍、拿不准的判断，用 ks team tell --to aide <问题，写清选项和倾向>（MCP 工具 team_tell），问完不等，先做不受影响的部分；答复送回本会话，挂着 ks wait 时立刻唤醒。
-- 消息只放一两句（120 字以内）；细节多时先写进需求留言（ks req comment R-x）。
+	{Name: "ask", Aliases: []string{"求助", "aide", "主助理", "team", "消息", "团队消息"}, Title: "设计取舍问主助理、给本项目的会话发消息", Text: `求助主助理：设计取舍、拿不准的判断，用 ks team tell --to aide <问题，写清选项和倾向>（MCP 工具 team_tell），问完不等，先做不受影响的部分；答复送回本会话，挂着 ks wait 时立刻唤醒。
 - 本项目没有主助理时退回给主调度；都没有时用 ks decision raise 问用户。
-- ks team sessions 看本项目有哪些会话在线。`},
+- 给别的会话发消息：ks team sessions 看本项目在线的会话（「名字」（身份 · 说明）），ks team tell --to <名字|身份|会话键> <话>；收到的消息用 ks team tell --reply D-x <回复>。只发本项目；对方下一轮收到，不用一直挂 ks wait 等回复。
+- 消息只放一两句（120 字以内）；细节多时先写进需求留言（ks req comment R-x）。
+- 起名：ks role lite --name <名字> --note <一句说明>（名字 20 字内、说明 40 字内），之后 ks session name <名字> [--note] 改。`},
 	{Name: "wait", Aliases: []string{"等待", "ks wait"}, Title: "每轮结束挂一轮 ks wait", Text: `等待（轻接入）：每轮结束前挂一轮 ks wait，只被发给你的事唤醒：你提的决策被答复、发给你的团队消息、用户在工作台上直接发给你的话。
 - Claude Code：用 Bash 工具在后台运行 ks wait（run_in_background，工具超时设得比 55 分钟长），然后结束本轮；它结束时你会被唤醒。
 - Codex：在前台运行 ks wait（最多等 30 分钟，shell 工具超时设成 35 分钟以上），运行期间一直等它结束，不要中断、不要重复运行。

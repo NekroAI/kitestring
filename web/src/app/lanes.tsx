@@ -17,7 +17,7 @@ import { laneStore, money, onLaneData, useLaneSnap, useWarmFlag } from './laneFe
 import { useToolFeed } from './liveFeed'
 import { useSessionMenu } from './menus'
 import { useOpenSession } from './nav'
-import { sessionTitle, splitTool } from './SessionCard'
+import { sessionNow, sessionTitle, splitTool } from './SessionCard'
 import { liveTasks, taskName, type BgTask } from './tasks'
 import { CtxBadge, IdleTag, OfflineTag } from './compact'
 import { reducedMotion } from './verdict'
@@ -1021,24 +1021,32 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still, you }:
   // 高度按内容给：子任务增减、状态变化时用同一套弹簧长高 / 收矮（R-216），首次出现不播
   const height = phone ? undefined : laneHeight(tone, tasks.length, mode, !!tokLabel)
   const words = quiet ? lastWords(s) : ''
+  // 此刻在做什么（R-416）：会话有名字时，模型标题退到第二行；手上有需求、在跑时那里已有更具体的内容
+  const nowLine = sessionNow(s) ? t.session.now(sessionNow(s)) : ''
 
   // 左：标题 + 身份；状态标 + 手上的需求；窄处再加一行（当前动作 / 在问什么 / 最后一句话）
   const id = (
     <div className={cx('@container flex min-w-0 flex-col justify-center gap-1 px-3.5', quiet ? 'py-2' : 'py-2.5')}>
       <div className="flex min-w-0 items-center gap-2">
         <ToolMark tool={s.tool} size="sm" />
-        <span className={cx('truncate font-semibold', quiet ? 'text-[14px] text-fg-2' : 'text-[15px] text-fg')}>{sessionTitle(s)}</span>
+        <span className={cx('max-w-[70%] shrink-0 truncate font-semibold', quiet ? 'text-[14px] text-fg-2' : 'text-[15px] text-fg')}>{sessionTitle(s)}</span>
         <FailDot k={s.key} zoom={zoom} now={now} />
         <RoleBadge s={s} />
         <ProfileBadge s={s} />
         <CtxBadge s={s} />
+        {/* 自报的说明（R-416）：名字、身份之后，放不下时截断 */}
+        {s.note && (
+          <Tip truncated content={s.note}>
+            <span className="min-w-0 truncate text-[12px] text-fg-3">{s.note}</span>
+          </Tip>
+        )}
       </div>
       <div className="flex min-w-0 items-center gap-2">
         <StateTag s={s} tone={tone} now={now} />
         <IdleTag s={s} />
         <OfflineTag s={s} />
         {!live && <WarmChip k={s.key} now={now} />}
-        <Tip truncated content={req ? `${req.code} ${req.title}` : live ? s.summary || s.last_prompt : ''}>
+        <Tip truncated content={req ? `${req.code} ${req.title}` : live ? s.summary || s.last_prompt : nowLine}>
           <span className="min-w-0 truncate text-[12px] text-fg-2">
             {req ? (
               <>
@@ -1046,7 +1054,7 @@ export const Lane = memo(function Lane({ s, tone, now, mode, zoom, still, you }:
                 {req.title}
               </>
             ) : (
-              <span className="text-fg-3">{live ? s.summary || s.last_prompt : ''}</span>
+              <span className="text-fg-3">{live ? s.summary || s.last_prompt : nowLine}</span>
             )}
           </span>
         </Tip>

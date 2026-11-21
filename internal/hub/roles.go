@@ -28,11 +28,14 @@ type roleOut struct {
 }
 
 func (h *Hub) registerAgentRoles(api huma.API) {
+	h.registerAgentName(api)
 	huma.Register(api, huma.Operation{OperationID: "agent-set-role", Method: http.MethodPost, Path: "/api/agent/sessions/role", Tags: []string{"agent"}},
 		func(ctx context.Context, in *struct {
 			Body struct {
-				SessionKey string `json:"session_key" minLength:"1"`
-				Role       string `json:"role" doc:"aide / advisor / reviewer / pm / dev，也认中文名、英文简写和别称（如 主调度、参谋、Aide）；空为清除身份"`
+				SessionKey string  `json:"session_key" minLength:"1"`
+				Role       string  `json:"role" doc:"aide / advisor / reviewer / pm / dev，也认中文名、英文简写和别称（如 主调度、参谋、Aide）；空为清除身份"`
+				Name       *string `json:"name,omitempty" doc:"顺带自报名字（R-416，20 字以内）：和模型生成的标题分开存；不填不改，没起过名时是默认名「目录名-工具」"`
+				Note       *string `json:"note,omitempty" doc:"顺带写一句说明（R-416，40 字以内）；不填不改"`
 			}
 		}) (*roleOut, error) {
 			out := &roleOut{}
@@ -41,9 +44,32 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 				return nil, huma.Error400BadRequest(roleUsage)
 			}
 			out.Body.SessionKey, out.Body.Role = in.Body.SessionKey, role
+			suffixed := false
+			if in.Body.Name != nil || in.Body.Note != nil {
+				// 先校验名字和说明：写错了身份也不改，免得改了一半
+				if in.Body.Name != nil {
+					if _, err := cleanName(*in.Body.Name); err != nil {
+						return nil, err
+					}
+				}
+				if in.Body.Note != nil {
+					if _, err := cleanNote(*in.Body.Note); err != nil {
+						return nil, err
+					}
+				}
+			}
 			demoted, handoff, backlog, err := h.setRole(ctx, in.Body.SessionKey, role)
 			if err != nil {
 				return nil, apiErr(err)
+			}
+			if in.Body.Name != nil || in.Body.Note != nil {
+				if _, suffixed, err = h.setName(ctx, in.Body.SessionKey, in.Body.Name, in.Body.Note); err != nil {
+					return nil, apiErr(err)
+				}
+			}
+			named := ""
+			if x, err := h.store.GetSession(ctx, in.Body.SessionKey); err == nil && role != "" {
+				named = nameNote(x, suffixed)
 			}
 			ov, notes := "", ""
 			if roles.Member(role) {
@@ -53,7 +79,7 @@ func (h *Hub) registerAgentRoles(api huma.API) {
 				notes = h.roleNotes(ctx, in.Body.SessionKey)
 			}
 			// 轻接入（R-359）只拿几行短说明：没有接手概览、子任务模型策略、验证说明这些流程内容
-			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+notes+ov+handoff+offlineBacklogNote(backlog), demoted
+			out.Body.Label, out.Body.Name, out.Body.Prompt, out.Body.Demoted = roles.Label(role), roles.Name(role), h.rolePromptFor(ctx, role)+notes+ov+handoff+offlineBacklogNote(backlog)+named, demoted
 			out.Body.Handoff = handoff != ""
 			if out.Body.Demoted == nil {
 				out.Body.Demoted = []string{}
@@ -106,10 +132,7 @@ func (h *Hub) setRole(ctx context.Context, key, role string) ([]string, string, 
 		}
 	}
 	devices := map[string]bool{x.DeviceID: true}
-	name := x.Title
-	if name == "" {
-		name = x.DeviceName + " 上的 " + x.Tool + " 会话"
-	}
+	name := x.DisplayName()
 	var olds []store.Session
 	for _, k := range demoted {
 		old, err := h.store.GetSession(ctx, k)

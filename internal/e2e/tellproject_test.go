@@ -90,7 +90,7 @@ func TestTellCrossProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.ProjectID != pRoll || d.AssignedBy != "claude:xa-aide" || !strings.Contains(d.Answer, "项目「alpha」的Aide") || !strings.Contains(d.Answer, "claude:xa-aide") {
+	if d.ProjectID != pRoll || d.AssignedBy != "claude:xa-aide" || !strings.Contains(d.Answer, "项目「alpha」的「") || !strings.Contains(d.Answer, "（主助理）claude:xa-aide") || !strings.Contains(d.Answer, "claude:xa-aide") {
 		t.Fatalf("消息应记在对方项目、写明来源项目和发送者：%+v", d)
 	}
 	woke(t, done, "项目「alpha」", "claude:xa-aide", "请对齐", "ks team tell --reply "+out.Code)
@@ -132,7 +132,7 @@ func TestTellCrossProject(t *testing.T) {
 	if err != nil || out.To != "claude:xr-none" || !strings.Contains(out.Message, "只告知") || !strings.Contains(out.Message, "字数提示") {
 		t.Fatalf("主调度应能按会话键跨项目发只告知的消息，并提示字数：%+v %v", out, err)
 	}
-	if d, _ = e.store.GetDecision(ctx, out.Code); !d.FYI || d.ProjectID != pRoll || !strings.Contains(d.Answer, "项目「alpha」的PM") {
+	if d, _ = e.store.GetDecision(ctx, out.Code); !d.FYI || d.ProjectID != pRoll || !strings.Contains(d.Answer, "项目「alpha」的「") || !strings.Contains(d.Answer, "（主调度）claude:xa-pm") {
 		t.Fatalf("只告知的跨项目消息：%+v", d)
 	}
 	// project 填的就是本项目：同不填

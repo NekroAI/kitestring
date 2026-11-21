@@ -929,9 +929,38 @@
         ],
         "type": "object"
       },
+      "Agent-set-nameRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "名字；不填不改",
+            "type": "string"
+          },
+          "note": {
+            "description": "一句说明；不填不改，空字符串清除",
+            "type": "string"
+          },
+          "session_key": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_key"
+        ],
+        "type": "object"
+      },
       "Agent-set-roleRequest": {
         "additionalProperties": false,
         "properties": {
+          "name": {
+            "description": "顺带自报名字（R-416，20 字以内）：和模型生成的标题分开存；不填不改，没起过名时是默认名「目录名-工具」",
+            "type": "string"
+          },
+          "note": {
+            "description": "顺带写一句说明（R-416，40 字以内）；不填不改",
+            "type": "string"
+          },
           "role": {
             "description": "aide / advisor / reviewer / pm / dev，也认中文名、英文简写和别称（如 主调度、参谋、Aide）；空为清除身份",
             "type": "string"
@@ -1048,7 +1077,7 @@
             "type": "string"
           },
           "to": {
-            "description": "收件身份：pm（默认）、aide、reviewer、advisor、dev；也认中文名（主调度 / 主助理 / 评审 / 顾问 / 开发）；也可填会话键（tool:id），等同 to_session。回复时不填",
+            "description": "收件身份：pm（默认）、aide、reviewer、advisor、dev；也认中文名（主调度 / 主助理 / 评审 / 顾问 / 开发）；也可填会话名（R-416）或会话键（tool:id），等同 to_session。回复时不填",
             "type": "string"
           },
           "to_session": {
@@ -5015,11 +5044,16 @@
           "key": {
             "type": "string"
           },
+          "note": {
+            "description": "会话自报的一句说明（R-416）",
+            "type": "string"
+          },
           "role": {
             "description": "身份；空为无身份",
             "type": "string"
           },
           "title": {
+            "description": "会话名（R-416）；没有时用标题",
             "type": "string"
           },
           "tool": {
@@ -5113,6 +5147,14 @@
             "description": "就是调用者自己",
             "type": "boolean"
           },
+          "name": {
+            "description": "会话名（R-416）：自报的，没自报时是默认名「目录名-工具」；--to 可填它",
+            "type": "string"
+          },
+          "note": {
+            "description": "会话自报的一句说明（R-416）",
+            "type": "string"
+          },
           "open": {
             "description": "手上的需求：待开始、进行中、受阻",
             "items": {
@@ -5153,6 +5195,7 @@
             "type": "string"
           },
           "title": {
+            "description": "此刻在做什么：模型按最近一轮生成的标题，没有时用最近一条消息",
             "type": "string"
           },
           "tool": {
@@ -5183,6 +5226,8 @@
           "waiting",
           "held",
           "key",
+          "name",
+          "note",
           "title",
           "role",
           "role_name",
@@ -9378,6 +9423,36 @@
         ],
         "type": "object"
       },
+      "NameOutBody": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "name": {
+            "description": "最后记下的名字：本项目已有同名会话时自动加了后缀 -2、-3",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "session_key": {
+            "type": "string"
+          },
+          "suffixed": {
+            "description": "名字和本项目没结束的会话重名，已自动加后缀",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "session_key",
+          "name",
+          "note",
+          "suffixed",
+          "message"
+        ],
+        "type": "object"
+      },
       "Note-requirementRequest": {
         "additionalProperties": false,
         "properties": {
@@ -11994,6 +12069,14 @@
             "description": "就是调用者自己",
             "type": "boolean"
           },
+          "name": {
+            "description": "会话名（R-416）：自报的，没自报时是默认名「目录名-工具」；--to 可填它",
+            "type": "string"
+          },
+          "note": {
+            "description": "会话自报的一句说明（R-416）",
+            "type": "string"
+          },
           "open": {
             "description": "手上的需求：待开始、进行中、受阻",
             "items": {
@@ -12029,6 +12112,7 @@
             "type": "string"
           },
           "title": {
+            "description": "此刻在做什么：模型按最近一轮生成的标题，没有时用最近一条消息",
             "type": "string"
           },
           "tool": {
@@ -12045,6 +12129,8 @@
         },
         "required": [
           "key",
+          "name",
+          "note",
           "title",
           "role",
           "role_name",
@@ -13018,6 +13104,12 @@
           "model": {
             "type": "string"
           },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
           "offline_at": {
             "format": "date-time",
             "type": "string"
@@ -13186,6 +13278,8 @@
           "worktree",
           "activity",
           "title",
+          "name",
+          "note",
           "digest_done",
           "started_at",
           "last_active_at",
@@ -18548,6 +18642,88 @@
         ]
       }
     },
+    "/api/agent/sessions/name": {
+      "get": {
+        "operationId": "agent-get-name",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "session_key",
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话现在的名字和说明（R-416）",
+        "tags": [
+          "agent"
+        ]
+      },
+      "post": {
+        "description": "name 名字（20 字以内，不含冒号，不和身份同名；和本项目没结束的会话重名时自动加后缀 -2），note 一句说明（40 字以内，空字符串清除）；不填的字段不改。别的会话用 team_tell 的 to 填名字就能发给你；ks team sessions、团队消息的发送方、工作台泳道都按名字显示。",
+        "operationId": "agent-set-name",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Agent-set-nameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NameOutBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "会话自报名字和说明（R-416）：和模型生成的标题分开存，不被覆盖",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/agent/sessions/role": {
       "post": {
         "operationId": "agent-set-role",
@@ -19130,7 +19306,7 @@
     },
     "/api/agent/team/tell": {
       "post": {
-        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可直接填会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。",
+        "description": "to 选收件身份：pm（主调度，默认）、aide（主助理）、reviewer（评审）、advisor（顾问）、dev（开发）；也可填会话名（R-416，ks team sessions 里「」中的名字，同项目没结束的会话里不重名）或会话键（tool:id），点名本项目任何没结束的会话，没有身份的也行（R-249）；轻接入的会话也能发、能回复。按身份发给本项目现在没结束的那个会话；评审、顾问、开发有多个时发给最近活跃的那个（不含你自己），也可用 to_session 点名某个会话（R-248）；没有在线顾问时报错退回给你；点名的会话已结束或失联时报错退回。返回的 recipients 是送达状态：delivered 已送达、pending_wake 待送达（写明原因，如 Codex 要等用户下次发消息）、offline 无法送达；之后用 /api/agent/team/sent 查。没有主助理时退回给主调度，并注明原本要发给主助理；没有在线评审时报错；没有主调度时不送出、不报错，返回「本项目当前没有主调度，消息未送达」（delivered = false）。fyi = true 时是「只告知」（R-227）：不唤醒对方挂着的 ks wait，下次它因别的事被唤醒或用户发消息时一并带上；默认要对方动手，立刻唤醒。reply_to 填收到的团队消息编号（D-x）时是回复：送回发那条消息的会话；那条是子任务发的，就送到它所属的会话，并注明转给哪个子任务。消息只做通知（R-249）：放编号加一句话，超过 120 字照常送出、message 里提示把细节写进需求留言（/api/agent/requirements/{ref}/comments）。跨项目（R-379）：主调度、主助理填 project（项目名或项目 ID）发给其他项目的会话，to / to_session 按对方项目的身份（也可填 lite 轻接入）或会话键寻址；对方没有该身份的在线会话时报错，并列出那个项目可送达的会话键；消息记在对方项目名下，正文开头写明来源项目和发送者；回复送回发送方所在项目；/api/agent/team/sent 照常查送达。其他身份填 project 会被拒绝（403）。",
         "operationId": "agent-tell-pm",
         "requestBody": {
           "content": {

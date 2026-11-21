@@ -84,10 +84,10 @@ func TestTeamSessions(t *testing.T) {
 	}
 	for _, want := range []string{
 		"4 个没结束的会话（待命 2 · 运行中 1 · 空闲 1）",
-		"claude:ts-pm（你）「", "主调度 · Claude Code@test-device · 待命 · 能立即送达：后台待命 · 手上没有需求",
-		"开发 · Claude Code@test-device · 运行中 · 不能立即送达：运行中，本轮结束后送达 · 手上：" + r.Code + "「会话通信」",
-		"codex:ts-cx「", "· 待命 · 能立即送达：终端前台待命（至 ",
-		"codex:ts-cx2「", "· 空闲 · 不能立即送达：Codex 无法在后台接收，等用户下次发消息",
+		"（主调度）claude:ts-pm（你） · Claude Code@test-device · 待命 · 能立即送达：后台待命 · 此刻：", "· 手上没有需求",
+		"（开发）claude:ts-dev · Claude Code@test-device · 运行中 · 不能立即送达：运行中，本轮结束后送达 · 此刻：", "· 手上：" + r.Code + "「会话通信」",
+		"）codex:ts-cx · ", "· 待命 · 能立即送达：终端前台待命（至 ",
+		"）codex:ts-cx2 · ", "· 空闲 · 不能立即送达：Codex 无法在后台接收，等用户下次发消息",
 		"无身份",
 	} {
 		if !strings.Contains(out, want) {

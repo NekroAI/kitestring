@@ -58,10 +58,7 @@ func offlineWhy(x store.Session) string {
 func deliveryOf(d store.Decision, x store.Session, ok bool, at time.Time) Delivery {
 	out := Delivery{Code: d.Code, To: d.SessionKey}
 	if ok {
-		out.Title, out.Role, out.Tool = x.Title, x.Role, x.Harness()
-		if out.Title == "" {
-			out.Title = x.LastPrompt
-		}
+		out.Title, out.Role, out.Tool = shownTitle(x), x.Role, x.Harness()
 	}
 	switch {
 	case d.Status == store.DecDelivered:
@@ -248,7 +245,7 @@ func (h *Hub) registerAgentBroadcast(api huma.API) {
 				}
 				if sessionOffline(x) {
 					out.Body.Skipped++
-					out.Body.Recipients = append(out.Body.Recipients, Delivery{To: x.Key, Title: x.Title, Role: x.Role, Tool: x.Harness(),
+					out.Body.Recipients = append(out.Body.Recipients, Delivery{To: x.Key, Title: shownTitle(x), Role: x.Role, Tool: x.Harness(),
 						Status: OfflineSt, StatusLabel: deliveryLabel[OfflineSt], Reason: offlineWhy(x) + "，已跳过"})
 					continue
 				}

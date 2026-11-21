@@ -49,7 +49,7 @@ func TestLiteSession(t *testing.T) {
 
 	// 1. 一句话进入：别称也认；输出就是那几行短说明，不带流程规矩、接手概览
 	p := setRole("claude:lite-1", "轻接入")
-	if p != roles.LitePrompt() || strings.Contains(p, "evidence_attach") || strings.Contains(p, "req_create") {
+	if !strings.HasPrefix(p, roles.LitePrompt()) || strings.Contains(p, "evidence_attach") || strings.Contains(p, "req_create") {
 		t.Fatalf("轻接入应只输出短说明：%s", p)
 	}
 	if e.session("claude:lite-1").Role != roles.Lite {

@@ -69,7 +69,7 @@ func TestTellByRole(t *testing.T) {
 		t.Fatalf("没有评审时应报清楚的错：%v", err)
 	}
 	// 不认识的身份：报错（R-249 起开发也能收，见 TestTellP2P）
-	if _, err := tell(map[string]any{"session_key": "claude:dev", "text": "在吗", "to": "老板"}); err == nil || !strings.Contains(err.Error(), "收件身份只能是") {
+	if _, err := tell(map[string]any{"session_key": "claude:dev", "text": "在吗", "to": "老板"}); err == nil || !strings.Contains(err.Error(), "也不是身份") {
 		t.Fatalf("收件身份不对应报错：%v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestTellByRole(t *testing.T) {
 	if out.To != "claude:aide1" || d.AssignedBy != "claude:dev" || d.FromAgent != "" {
 		t.Fatalf("应送给主助理：%+v / %+v", out, d)
 	}
-	woke(t, done, "团队消息", "Dev", "claude:dev", "倾向表格", "ks team tell --reply "+out.Code)
+	woke(t, done, "团队消息", "（开发）claude:dev", "倾向表格", "ks team tell --reply "+out.Code)
 
 	// 主助理回复：回到提问的开发会话
 	rep, rd := mustTell(map[string]any{"session_key": "claude:aide1", "text": "用表格，数据列多", "reply_to": out.Code})

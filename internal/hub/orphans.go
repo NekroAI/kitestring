@@ -128,10 +128,7 @@ func (h *Hub) enrichOrphan(ctx context.Context, x *Orphan) {
 	if x.SessionKey != "" {
 		if s, err := h.store.GetSession(ctx, x.SessionKey); err == nil {
 			x.ProjectID, x.ProjectName = s.ProjectID, s.ProjectName
-			x.SessionTitle = s.Title
-			if x.SessionTitle == "" {
-				x.SessionTitle = s.LastPrompt
-			}
+			x.SessionTitle = shownTitle(s)
 			x.SessionEnded = s.EndedAt != nil
 		}
 	}

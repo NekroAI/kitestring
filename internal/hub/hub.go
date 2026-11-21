@@ -214,6 +214,7 @@ func (h *Hub) Start(ctx context.Context, addr string, web http.Handler) error {
 	h.mu.Unlock()
 	h.migrateAide(ctx) // 身份调整（R-190）：先清掉绑在非主助理上的窗口，再排到期通知
 	h.resumeGrantExpiry(ctx)
+	h.backfillNames(ctx) // 没结束的会话补上默认名（R-416）
 	h.resumeRequestExpiry(ctx)
 	go h.laneMaintenance(ctx)
 	go h.reviewWatch(ctx)  // 提交评审 30 分钟没动静的，照常弹给用户（R-237）
@@ -314,6 +315,7 @@ func (h *Hub) ingest(ctx context.Context, dev store.Device, ev protocol.Event) e
 			return err
 		}
 	}
+	h.ensureName(ctx, next)              // 会话第一次归到项目时定下默认名（R-416），之后不再变
 	defer h.sessionChanged(key)          // 存完工具版本、上下文占用等再推
 	h.trackIdleWait(ctx, prev, next, ev) // 常驻会话的连续空等起点（R-272）
 	h.trackStopped(ctx, next, ev)        // 停下中的会话结束本轮、不再待命时记为已下线（R-291）

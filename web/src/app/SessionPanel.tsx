@@ -18,7 +18,7 @@ import { canHandoff, canStop, compactCommand, HandoffCard, HandoffIcon, offlineO
 import { canMessage, MessageBox } from './messageBox'
 import { PeekScope, RefPeek, usePeek } from './peek'
 import { NewReqModal } from './requirements'
-import { sessionTitle, splitTool } from './SessionCard'
+import { sessionNow, sessionTitle, splitTool } from './SessionCard'
 import { hm, PendingWeb, TurnList, type Hit } from './sessionTurns'
 
 // 会话详情页（R-273，D-1145 选 B）：顶部一处状态 + 对象索引 + 按轮的对话时间线 + 底部输入框。
@@ -191,6 +191,9 @@ function Head({ s, hs, running, now, menu, onClose }: { s: Session; hs: Handoff[
               {st.detail && <span>{st.detail}</span>}
             </>,
           )}
+          {/* 自报的说明、此刻在做什么（R-416）：名字在标题里，这两项作小字 */}
+          {s.note && seg('note', <span className="min-w-0 truncate">{s.note}</span>, 'min-w-0')}
+          {sessionNow(s) && seg('now', <span className="min-w-0 truncate">{t.session.now(sessionNow(s))}</span>, 'min-w-0')}
           {working.length > 0 && (
             <>
               {seg('working', <span>{t.turns.working}</span>)}
