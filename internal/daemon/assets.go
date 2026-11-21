@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -72,6 +73,7 @@ func spoolFile(path string) (string, int64, error) {
 	sha := hex.EncodeToString(sum.Sum(nil))
 	dst := filepath.Join(dir, sha)
 	if _, err := os.Stat(dst); err == nil {
+		_ = os.Chtimes(dst, time.Now(), time.Now()) // 又被用到：刷新时间，sweepSpool 不会在记进队列前清掉它
 		return sha, size, nil
 	}
 	return sha, size, os.Rename(tmp.Name(), dst)
@@ -127,20 +129,68 @@ func (q *queue) assetJobNote(id, state, msg string) {
 	_, _ = q.db.Exec(`UPDATE asset_jobs SET state = ?, error = ?, tries = tries + 1 WHERE id = ?`, state, msg, id)
 }
 
-// assetJobDone 删掉一批，并清掉不再被别的批次用到的暂存文件。
-func (q *queue) assetJobDone(id string) {
+// assetJobDone 清掉这一批里不再被别的批次用到的暂存文件，再从队列删掉这一批。
+// 先删文件后删记录（R-418）：队列里看不到这一批时，它的暂存文件已经清完，不会有「队列空了、文件还在删」的中间态。
+// 删不掉的文件（Windows 上可能还被杀毒扫描等短暂占着）重试几次；仍删不掉的返回错误由调用方记日志，留给 sweepSpool 下一轮再清。
+func (q *queue) assetJobDone(id string) error {
 	p, err := q.assetJob(id)
-	_, _ = q.db.Exec(`DELETE FROM asset_jobs WHERE id = ?`, id)
-	if err != nil {
-		return
-	}
-	for _, f := range jobFiles(&p) {
-		var n int
-		_ = q.db.QueryRow(`SELECT COUNT(*) FROM asset_jobs WHERE instr(payload, ?) > 0`, f.SHA256).Scan(&n)
-		if n == 0 && f.SHA256 != "" {
-			_ = os.Remove(filepath.Join(spoolDir(), f.SHA256))
+	var errs []error
+	if err == nil {
+		for _, f := range jobFiles(&p) {
+			if f.SHA256 == "" {
+				continue
+			}
+			var n int
+			_ = q.db.QueryRow(`SELECT COUNT(*) FROM asset_jobs WHERE id != ? AND instr(payload, ?) > 0`, id, f.SHA256).Scan(&n)
+			if n == 0 {
+				if err := removeSpool(filepath.Join(spoolDir(), f.SHA256)); err != nil {
+					errs = append(errs, err)
+				}
+			}
 		}
 	}
+	_, _ = q.db.Exec(`DELETE FROM asset_jobs WHERE id = ?`, id)
+	return errors.Join(errs...)
+}
+
+// removeSpool 删一个暂存文件，已经不在算成功；删不掉时稍等重试几次。
+func removeSpool(path string) error {
+	var err error
+	for i := range 5 {
+		if err = os.Remove(path); err == nil || errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		time.Sleep(time.Duration(i+1) * 50 * time.Millisecond)
+	}
+	return fmt.Errorf("暂存文件删不掉：%w", err)
+}
+
+// spoolOrphanAge 内没被批次引用的暂存文件不清：推送正在复制文件、还没记进队列。
+const spoolOrphanAge = 10 * time.Minute
+
+// sweepSpool 清掉暂存区里没有批次引用的文件（之前删失败留下的、复制到一半的 in-*），返回删不掉的。
+func (q *queue) sweepSpool(now time.Time) error {
+	entries, err := os.ReadDir(spoolDir())
+	if err != nil {
+		return nil
+	}
+	var errs []error
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil || e.IsDir() || now.Sub(info.ModTime()) < spoolOrphanAge {
+			continue
+		}
+		if !strings.HasPrefix(e.Name(), "in-") {
+			var n int
+			if q.db.QueryRow(`SELECT COUNT(*) FROM asset_jobs WHERE instr(payload, ?) > 0`, e.Name()).Scan(&n) != nil || n > 0 {
+				continue
+			}
+		}
+		if err := removeSpool(filepath.Join(spoolDir(), e.Name())); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (q *queue) assetJobsList() []protocol.AssetJob {
@@ -164,10 +214,10 @@ func (q *queue) assetJobsList() []protocol.AssetJob {
 	return out
 }
 
-func (q *queue) assetJobsExpire(now time.Time) {
+func (q *queue) assetJobsExpire(now time.Time) error {
 	rows, err := q.db.Query(`SELECT id FROM asset_jobs WHERE state = ? AND created_at < ?`, assetFailed, now.Add(-7*24*time.Hour).UTC().Format(time.RFC3339))
 	if err != nil {
-		return
+		return nil
 	}
 	var ids []string
 	for rows.Next() {
@@ -177,9 +227,11 @@ func (q *queue) assetJobsExpire(now time.Time) {
 		}
 	}
 	rows.Close()
+	var errs []error
 	for _, id := range ids {
-		q.assetJobDone(id)
+		errs = append(errs, q.assetJobDone(id))
 	}
+	return errors.Join(errs...)
 }
 
 func writeProblem(w http.ResponseWriter, code int, msg string) {
@@ -238,7 +290,7 @@ func (d *Daemon) handleAssetPush(w http.ResponseWriter, r *http.Request) {
 		case errors.As(err, &ae) && ae.transient && ae.status != http.StatusServiceUnavailable:
 			reply.Queued, reply.Reason = true, ae.msg
 		default:
-			d.q.assetJobDone(p.PushID)
+			d.assetDone(p.PushID)
 			code := http.StatusBadGateway
 			if errors.As(err, &ae) && ae.status != 0 {
 				code = ae.status
@@ -275,7 +327,12 @@ func (d *Daemon) watchAssets(ctx context.Context) {
 		case <-t.C:
 		case <-d.assetKick:
 		}
-		d.q.assetJobsExpire(time.Now())
+		if err := d.q.assetJobsExpire(time.Now()); err != nil {
+			d.log.Warn("过期素材批次的暂存文件没清干净，下一轮再清", "err", err)
+		}
+		if err := d.q.sweepSpool(time.Now()); err != nil {
+			d.log.Warn("暂存区残留文件没清干净，下一轮再清", "err", err)
+		}
 		for _, id := range d.q.assetJobsQueued() {
 			d.mu.Lock()
 			connected := d.connected
@@ -353,8 +410,15 @@ func (d *Daemon) sendAssetJob(ctx context.Context, id string) (*protocol.AssetPu
 		return nil, err
 	}
 	res.Reused = reused
-	d.q.assetJobDone(id)
+	d.assetDone(id)
 	return &res, nil
+}
+
+// assetDone 从队列删掉一批；暂存文件删不掉的记日志，sweepSpool 之后再清。
+func (d *Daemon) assetDone(id string) {
+	if err := d.q.assetJobDone(id); err != nil {
+		d.log.Warn("素材批次的暂存文件没清干净，稍后再清", "job", id, "err", err)
+	}
 }
 
 func (d *Daemon) hubURL(path string) string { return strings.TrimSuffix(d.cfg.HubURL, "/") + path }
