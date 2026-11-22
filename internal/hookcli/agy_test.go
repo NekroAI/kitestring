@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,6 +38,7 @@ func TestCollectEnv_AgyWhitelistAndNoSecrets(t *testing.T) {
 func TestRun_AgyFallbacksWhenDaemonUnavailable(t *testing.T) {
 	tmp := shortTempDir(t)
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	t.Setenv("KS_HOME", filepath.Join(tmp, ".kitestring"))
 
 	cases := []struct {
@@ -103,6 +105,7 @@ func TestRun_AgyFallbacksWhenDaemonUnavailable(t *testing.T) {
 func TestRun_AgyDaemonResponses(t *testing.T) {
 	tmp := shortTempDir(t)
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	ksHome := filepath.Join(tmp, "ks")
 	t.Setenv("KS_HOME", ksHome)
 
@@ -188,7 +191,11 @@ func TestRun_AgyDaemonResponses(t *testing.T) {
 
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "ks-hook-*")
+	base := "/tmp"
+	if runtime.GOOS == "windows" {
+		base = ""
+	}
+	dir, err := os.MkdirTemp(base, "ks-hook-*")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,7 @@ import (
 func TestAgyInstallUninstallAndIdempotence(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 
 	// 预先在 settings.json 放入一条用户自定义权限，确认不会丢且不会被重复添加。
 	settingsPath := agySettingsPath(home)
@@ -119,6 +120,7 @@ func TestAgyInstallUninstallAndIdempotence(t *testing.T) {
 func TestAgyDryRunTouchesNoFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	var out bytes.Buffer
 	err := Run(Options{KS: "/usr/local/bin/ks", Agy: true, AgySet: true, DryRun: true, Out: &out}, false)
 	if err != nil {

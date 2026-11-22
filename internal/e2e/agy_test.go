@@ -46,6 +46,7 @@ func TestAgyCrossAgentCollaborationLifecycle(t *testing.T) {
 	home := t.TempDir()
 	appDir := filepath.Join(home, "agy-data")
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("ANTIGRAVITY_AGENT", "1")
 	t.Setenv("ANTIGRAVITY_APP_DATA_DIR", appDir)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")

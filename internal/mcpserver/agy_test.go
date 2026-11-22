@@ -93,12 +93,13 @@ func TestResolveCaller_AgyMetaAndEnvFallback(t *testing.T) {
 }
 
 func TestResolveCaller_AgyArgsHashLookup(t *testing.T) {
-	tmp, err := os.MkdirTemp("/tmp", "ks-mcp-*")
+	tmp, err := os.MkdirTemp(sockTmp(), "ks-mcp-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
 	t.Setenv("HOME", tmp)
+	t.Setenv("USERPROFILE", tmp)
 	t.Setenv("KS_HOME", filepath.Join(tmp, "ks"))
 
 	sock := daemon.SocketPath()
