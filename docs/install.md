@@ -100,6 +100,7 @@ ks login --hub http://<hub address>:7310 --token kst_xxx
 
 ```sh
 ks install                    # Claude Code and Codex
+ks install --agy              # Claude Code, Codex and Antigravity (agy)
 ks install --codex=false      # Claude Code only
 ks install --claude=false     # Codex only
 ```

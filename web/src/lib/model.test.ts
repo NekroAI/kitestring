@@ -11,6 +11,8 @@ test('模型短名', () => {
   assert.equal(modelShort('claude-3-5-sonnet-20241022'), 'Sonnet 3.5')
   assert.equal(modelShort('gpt-6.1-sol'), 'GPT-6.1 Sol')
   assert.equal(modelShort('gpt-6-astra'), 'GPT-6 Astra')
+  assert.equal(modelShort('gemini-2.5-pro'), 'Gemini 2.5 Pro')
+  assert.equal(modelShort('gemini-4-carbon-high'), 'Gemini 4 Carbon High')
   assert.equal(modelShort('deepseek-flash'), 'deepseek-flash')
   assert.equal(modelShort('whatever-x'), 'whatever-x')
   assert.equal(modelShort(''), '')

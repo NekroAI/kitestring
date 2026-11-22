@@ -968,6 +968,7 @@ export const zh = {
   tool: {
     claude: 'Claude Code',
     codex: 'Codex',
+    agy: 'Antigravity',
     dsh: 'DSH',
   } as Record<string, string>,
   state: {
@@ -2618,7 +2619,7 @@ export const zh = {
         serviceLinux: '写入所选工具的 hook 和 MCP，并把 daemon 设为自动启动（systemd 用户服务）。',
         serviceWin: '写入所选工具的 hook 和 MCP，并把 daemon 设为登录后自动启动（任务计划程序）。不想随登录启动时加 --autostart=false。',
         needClaude: '先安装 Claude Code，确保终端中能运行 claude。',
-        noTools: '未勾选 Claude Code 和 Codex 时，只启动后台服务。',
+        noTools: '未勾选 Claude Code、Codex 和 Antigravity 时，只启动后台服务。',
         linger: '服务器上需要开机启动、退出登录后不停止时，再执行：',
         noSystemd: '没有 systemd（如 Docker 容器）时，ks install 会报找不到 systemctl。改用下面这行手动启动 daemon，不会开机自启：',
         codex: '在 Codex 里信任 hook',
@@ -2630,7 +2631,7 @@ export const zh = {
         verifyNote: '输出中有 "connected": true 即已连接。',
         waiting: '未连接，执行以上步骤后这里会自动更新',
         connected: '已连接',
-        afterConnect: '启动 Claude Code 或 Codex 会话，几秒内会显示在工作台。',
+        afterConnect: '启动 Claude Code、Codex 或 Antigravity 会话，几秒内会显示在工作台。',
         noSock: '报错连不上 daemon.sock：后台服务未启动，回到第 3 步。',
         notConnected: (log: string) => `"connected": false：Hub 地址或令牌有误，查看日志 ${log}`,
         docs: '完整说明',

@@ -73,6 +73,9 @@ type Daemon struct {
 	shells        *shellTracker // 后台命令（R-208）
 	assetMu       sync.Mutex    // 资源库推送（R-351）：同一时间只推一批
 	assetKick     chan struct{}
+	agyTurns      map[string]*agyTurnState
+	agySubs       map[string]*agySubInfo
+	agyMCP        map[string][]*agyPendingMCP
 }
 
 type toolUse struct {
@@ -105,7 +108,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1), assetKick: make(chan struct{}, 1)}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1), assetKick: make(chan struct{}, 1), agyTurns: map[string]*agyTurnState{}, agySubs: map[string]*agySubInfo{}, agyMCP: map[string][]*agyPendingMCP{}}
 	d.toolCond = sync.NewCond(&d.mu)
 	if d.usage, err = openUsage(q.db); err != nil {
 		q.close()
@@ -395,6 +398,11 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 	}
 	d.mergeHeldReply(&ev)
 	if ev.Name == "Stop" {
+		if ev.Tool == protocol.ToolAgy {
+			d.mu.Lock()
+			d.finishAgyStopLocked(protocol.SessionKey(ev.Tool, ev.SessionID))
+			d.mu.Unlock()
+		}
 		// 常驻会话的 Stop 可能在宽限期里等了一会儿 ks wait 登记；这期间上报的 KsWait 时间更晚，
 		// Stop 若仍用收到时的时间，到了 Hub 会被当成乱序的旧事件丢掉，状态停在“运行中”（R-108）。
 		// ID 也要重取：上送队列按 ID（ULID，按生成时刻）排序，沿用收到时的 ID 会排在 KsWait 前面先发，
@@ -446,8 +454,11 @@ func intField(p map[string]any, k string) int {
 // buildEvent 把 hook 原始输入裁剪为上报事件（D3：不含对话与代码正文）。
 func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	p := req.Payload
+	if req.Tool == protocol.ToolAgy {
+		req.Event = normalizeAgyPayload(req.Event, p, req.Env)
+	}
 	sid := str(p, "session_id")
-	if sid == "" || (req.Tool != protocol.ToolClaude && req.Tool != protocol.ToolCodex && req.Tool != protocol.ToolDSH) {
+	if sid == "" || (req.Tool != protocol.ToolClaude && req.Tool != protocol.ToolCodex && req.Tool != protocol.ToolDSH && req.Tool != protocol.ToolAgy) {
 		return protocol.Event{}, false
 	}
 	name := str(p, "hook_event_name")
@@ -461,6 +472,9 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ToolName: str(p, "tool_name"), ToolUseID: str(p, "tool_use_id"), NotifType: str(p, "notification_type"),
 		PermMode: str(p, "permission_mode"), AgentType: str(p, "agent_type"), AgentID: str(p, "agent_id"),
 	}
+	if req.Tool == protocol.ToolAgy && strings.EqualFold(ev.Model, "auto") {
+		ev.Model = ""
+	}
 	ev.TurnID = str(p, "turn_id")
 	if ev.TurnID == "" {
 		ev.TurnID = str(p, "prompt_id")
@@ -473,10 +487,28 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 			ev.Instance = inst
 		}
 	}
+	agyFoldedSkip := false
+	if req.Tool == protocol.ToolAgy && name == "PreInvocation" {
+		d.mu.Lock()
+		folded, src, prompt, skip := d.foldAgyPreInvocationLocked(key, ev.Instance, p, str(p, "transcript_path"))
+		d.mu.Unlock()
+		if skip {
+			agyFoldedSkip = true
+		} else {
+			name = folded
+			ev.Name = name
+			if src != "" && ev.Source == "" {
+				ev.Source = src
+			}
+			if prompt != "" && str(p, "prompt") == "" {
+				p["prompt"] = prompt
+			}
+		}
+	}
 	if ev.Instance != "" {
 		d.mu.Lock()
 		d.instances[ev.Instance] = key
-		if req.Tool == protocol.ToolDSH {
+		if req.Tool == protocol.ToolDSH || req.Tool == protocol.ToolAgy {
 			d.noteDSHInstanceLocked(ev.Instance, key, name == "SessionEnd")
 		}
 		d.mu.Unlock()
@@ -490,12 +522,66 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 			ev.Wake, ev.WakeNote = protocol.AutoKind(raw)
 		}
 	}
+	if req.Tool == protocol.ToolAgy {
+		switch name {
+		case "PreToolUse":
+			d.mu.Lock()
+			d.rememberAgyMCPLocked(key, sid, ev.ToolName, p["tool_input"])
+			d.mu.Unlock()
+		case "PostToolUse", "PostToolUseFailure":
+			d.mu.Lock()
+			d.releaseAgyMCPLocked(key, ev.ToolName, p["tool_input"])
+			if ev.ToolName == "invoke_subagent" {
+				if sub := d.noteAgySubagentToolLocked(key, sid, str(p, "transcript_path"), p, req.Env); sub != nil {
+					if ev.AgentID == "" {
+						ev.AgentID = sub.childCID
+					}
+					if ev.AgentType == "" {
+						if sub.role != "" {
+							ev.AgentType = sub.role
+						} else {
+							ev.AgentType = sub.typeName
+						}
+					}
+					if d.usage != nil && sub.transcript != "" {
+						d.usage.trackSubagent(key, sub.childCID, sub.transcript)
+					}
+				}
+			}
+			d.mu.Unlock()
+		case "SubagentStop":
+			d.mu.Lock()
+			sub := d.findAgySubagentStopLocked(key, p)
+			d.mu.Unlock()
+			if sub != nil {
+				if ev.AgentID == "" {
+					ev.AgentID = sub.childCID
+				}
+				if ev.AgentType == "" {
+					if sub.role != "" {
+						ev.AgentType = sub.role
+					} else {
+						ev.AgentType = sub.typeName
+					}
+				}
+				if ev.LastReply == "" {
+					ev.LastReply = summary.Truncate(agySubagentSummary(sub, p), 1500)
+				}
+				if d.usage != nil && sub.transcript != "" {
+					d.usage.trackSubagent(key, sub.childCID, sub.transcript)
+				}
+			}
+		}
+	}
 	if name == "PreToolUse" && ev.ToolUseID != "" && strings.HasPrefix(ev.ToolName, "mcp__") {
 		d.rememberToolUse(ev.ToolUseID, toolUse{session: key, agent: ev.AgentID})
 	}
 	if name == "PreToolUse" && ev.ToolUseID != "" && isShellTool(ev.ToolName) {
-		if in, ok := p["tool_input"].(map[string]any); ok && (strings.Contains(str(in, "command"), "team tell") || strings.Contains(str(in, "command"), "team broadcast")) {
-			d.rememberToolUse(ev.ToolUseID, toolUse{session: key, agent: ev.AgentID, tell: true})
+		if in, ok := p["tool_input"].(map[string]any); ok {
+			cmd := shellCommand(in)
+			if strings.Contains(cmd, "team tell") || strings.Contains(cmd, "team broadcast") {
+				d.rememberToolUse(ev.ToolUseID, toolUse{session: key, agent: ev.AgentID, tell: true})
+			}
 		}
 	}
 	if name == "PreToolUse" || name == "PermissionRequest" {
@@ -517,7 +603,11 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	}
 	cfg := d.devCfg
 	needClient := info.client == ""
-	needModel := ev.Model == "" && req.Tool == protocol.ToolClaude && (info.model == "" || name == "Stop")
+	needModel := ev.Model == "" && (req.Tool == protocol.ToolClaude || req.Tool == protocol.ToolAgy) && (info.model == "" || name == "Stop" || name == "PreInvocation")
+	tpHint := str(p, "transcript_path")
+	if tpHint == "" {
+		tpHint = info.transcript
+	}
 	d.mu.Unlock()
 
 	// 以下两项需要读进程或文件，放在锁外。
@@ -530,7 +620,11 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		client = str(p, "client")
 	}
 	if needModel {
-		model = claudeModel(str(p, "transcript_path"))
+		if req.Tool == protocol.ToolAgy {
+			_, _, model = agyTranscriptMeta(tpHint)
+		} else {
+			model = claudeModel(tpHint)
+		}
 	}
 
 	d.mu.Lock()
@@ -559,19 +653,33 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		ev.Model = info.model
 	}
 	d.mu.Unlock()
+	if agyFoldedSkip {
+		if d.usage != nil {
+			d.usage.track(key, transcript)
+		}
+		return protocol.Event{}, false
+	}
 	if name == "Stop" {
 		ev.BgTasks, ev.BgBrief = backgroundTasks(p)
 		if req.Tool == protocol.ToolDSH {
 			// DSH 没有 transcript：上下文数字由插件在 Stop 里直接给。
 			ev.Context, ev.ContextMax = intField(p, "context"), intField(p, "context_max")
 		} else {
-			ev.Context, ev.ContextMax = contextUsage(str(p, "transcript_path"))
+			ev.Context, ev.ContextMax = contextUsage(transcript)
 		}
 		// 这一轮的最后回复同步到 Hub，在会话详情里显示（R-109）；Claude Code 与 Codex 的 Stop 都带 last_assistant_message
-		ev.Reply = summary.Truncate(strings.TrimSpace(str(p, "last_assistant_message")), protocol.ReplyMax)
+		reply := strings.TrimSpace(str(p, "last_assistant_message"))
+		if reply == "" && req.Tool == protocol.ToolAgy {
+			reply = latestReply(transcript)
+		}
+		ev.Reply = summary.Truncate(reply, protocol.ReplyMax)
 	}
 	if name == "Stop" && cfg.SendLastReply {
-		ev.LastReply = summary.Truncate(str(p, "last_assistant_message"), 1500)
+		last := str(p, "last_assistant_message")
+		if last == "" && req.Tool == protocol.ToolAgy {
+			last = ev.Reply
+		}
+		ev.LastReply = summary.Truncate(last, 1500)
 	}
 	d.noteTaskEvent(key, p, &ev)
 	d.shells.onHook(key, p, &ev)
@@ -598,25 +706,34 @@ func (d *Daemon) agentInstance(ppid int) string {
 	return ""
 }
 
-// isAgentCommand 判断命令行是否是 Claude Code / Codex 本体（原生二进制或 node 启动的脚本）。
+// isAgentCommand 判断命令行是否是 Claude Code / Codex / Antigravity 本体（原生二进制或 node 启动的脚本）。
 func isAgentCommand(args []string) bool {
 	for i, a := range args {
 		if i > 1 {
 			break
 		}
 		switch progName(a) {
-		case "claude", "codex":
+		case "claude", "codex", "agy":
 			return true
 		}
-		if strings.Contains(a, "claude-code") || strings.Contains(a, "@openai/codex") {
+		if strings.Contains(a, "claude-code") || strings.Contains(a, "@openai/codex") || strings.Contains(a, "antigravity") {
 			return true
 		}
 	}
 	return false
 }
 
-// detectClient 推断客户端：Claude 看入口环境变量，Codex 看父进程是否为 app-server。
+// detectClient 推断客户端：Claude 看入口环境变量，Codex 看父进程是否为 app-server，Antigravity 区分 cli/ide/app。
 func detectClient(req protocol.HookRequest) string {
+	if req.Tool == protocol.ToolAgy {
+		var cmds []string
+		if req.PPID > 1 {
+			if _, _, cmd, ok := procQuery(req.PPID); ok && cmd != "" {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return detectAgyClient(req.Payload, req.Env, cmds)
+	}
 	if req.Tool == protocol.ToolClaude {
 		c := req.Env["CLAUDE_CODE_ENTRYPOINT"]
 		if t := req.Env["TERM_PROGRAM"]; t != "" && (c == "" || c == "cli") {
@@ -667,7 +784,7 @@ func claudeModel(path string) string {
 	}
 	m := modelRe.FindAllSubmatch(buf, -1)
 	for i := len(m) - 1; i >= 0; i-- {
-		if s := string(m[i][1]); s != "" && s != "<synthetic>" {
+		if s := string(m[i][1]); s != "" && s != "<synthetic>" && !strings.EqualFold(s, "auto") {
 			return s
 		}
 	}
@@ -676,7 +793,7 @@ func claudeModel(path string) string {
 
 // injection 按 D15 计算本次 hook 需要注入的决策文本，并记录送达。
 func (d *Daemon) injection(ev protocol.Event) string {
-	redeliver := ev.Name == "SessionStart" && (ev.Source == "resume" || ev.Source == "compact")
+	redeliver := (ev.Name == "SessionStart" || (ev.Tool == protocol.ToolAgy && ev.Name == "UserPromptSubmit")) && (ev.Source == "resume" || ev.Source == "compact")
 	if ev.Tool == protocol.ToolDSH && ev.Name == "PostCompact" {
 		redeliver = true // DSH 的压缩不走 SessionStart：压缩后同样重发仍然有效的答复（R-251）
 	}
@@ -838,7 +955,7 @@ func (d *Daemon) injection(ev protocol.Event) string {
 // rolePrompt：有身份的会话恢复或压缩上下文后，补发身份提示词（R-82）。
 // DSH 的压缩由插件在 compaction/end 时报 PostCompact，不用 SessionStart（那会把状态改成空闲）。
 func (d *Daemon) rolePrompt(ev protocol.Event) string {
-	compact := ev.Name == "SessionStart" && (ev.Source == "resume" || ev.Source == "compact")
+	compact := (ev.Name == "SessionStart" || (ev.Tool == protocol.ToolAgy && ev.Name == "UserPromptSubmit")) && (ev.Source == "resume" || ev.Source == "compact")
 	if ev.Tool == protocol.ToolDSH && ev.Name == "PostCompact" {
 		compact = true
 	}
@@ -857,6 +974,8 @@ func (d *Daemon) rolePrompt(ev protocol.Event) string {
 	if p != "" {
 		if ev.Tool == protocol.ToolDSH {
 			p = dshRoleNote + p
+		} else if ev.Tool == protocol.ToolAgy {
+			p = agyRoleNote + "\n" + p
 		}
 		// 压缩后另附会话在纸鸢里的关键状态（R-224）：关联的需求、待答决策、在跑的子任务，补摘要漏掉的；
 		// 恢复和压缩都附项目的子任务模型策略（R-228），改了策略后新开的、恢复的会话拿到的是最新的
@@ -1091,19 +1210,37 @@ func (d *Daemon) lookupToolUse(id string, wait time.Duration) toolUse {
 func (d *Daemon) handleSessionLookup(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var key, agent string
-	if ppid, _ := strconv.Atoi(q.Get("ppid")); ppid > 0 {
-		if inst := d.agentInstance(ppid); inst != "" {
-			d.mu.Lock()
-			key = d.instances[inst]
-			if q.Get("tell") != "" && key != "" {
-				agent = d.claimTell(key)
-			}
-			d.mu.Unlock()
+	if cid := q.Get("agy_cid"); cid != "" {
+		d.mu.Lock()
+		key = d.agySessionByCIDLocked(cid)
+		if q.Get("tell") != "" && key != "" {
+			agent = d.claimTell(key)
 		}
-	} else {
-		u := d.lookupToolUse(q.Get("tool_use_id"), time.Second)
-		key, agent = u.session, u.agent
-		d.noteTools(key, r.Header.Get(versionHeader)) // Claude 的 MCP 每次调用都先来这里查会话
+		d.mu.Unlock()
+	}
+	if key == "" {
+		if ppid, _ := strconv.Atoi(q.Get("ppid")); ppid > 0 {
+			if inst := d.agentInstance(ppid); inst != "" {
+				d.mu.Lock()
+				key = d.instances[inst]
+				if q.Get("tell") != "" && key != "" {
+					agent = d.claimTell(key)
+				}
+				d.mu.Unlock()
+			}
+		} else if mcpTool := q.Get("mcp_tool"); mcpTool != "" {
+			argsHash := q.Get("args_hash")
+			d.mu.Lock()
+			key = d.claimAgyMCPLocked(mcpTool, argsHash)
+			d.mu.Unlock()
+			if key != "" {
+				d.noteTools(key, r.Header.Get(versionHeader))
+			}
+		} else {
+			u := d.lookupToolUse(q.Get("tool_use_id"), time.Second)
+			key, agent = u.session, u.agent
+			d.noteTools(key, r.Header.Get(versionHeader)) // Claude 的 MCP 每次调用都先来这里查会话
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	out := map[string]string{"session_key": key}
@@ -1140,8 +1277,11 @@ func toolBrief(tool string, in map[string]any) string {
 		return filepath.Base(p)
 	}
 	switch tool {
-	case "Bash", "shell", "exec_command", "local_shell", "bash", "pwsh":
+	case "Bash", "shell", "exec_command", "local_shell", "bash", "pwsh", "run_command":
 		if c := str(in, "command"); c != "" {
+			return clean(c, 200)
+		}
+		if c := str(in, "CommandLine"); c != "" {
 			return clean(c, 200)
 		}
 		if arr, ok := in["command"].([]any); ok {
@@ -1153,11 +1293,13 @@ func toolBrief(tool string, in map[string]any) string {
 			}
 			return clean(strings.Join(parts, " "), 200)
 		}
-	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit":
-		if f := str(in, "file_path"); f != "" {
-			return base(f)
+	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit", "read_file", "write_file", "edit_file":
+		for _, k := range []string{"file_path", "Path", "TargetFile", "notebook_path"} {
+			if f := str(in, k); f != "" {
+				return base(f)
+			}
 		}
-		return base(str(in, "notebook_path"))
+		return ""
 	case "apply_patch":
 		patch := str(in, "input")
 		if patch == "" {
@@ -1177,19 +1319,28 @@ func toolBrief(tool string, in map[string]any) string {
 		if u, err := url.Parse(str(in, "url")); err == nil {
 			return u.Host
 		}
-	case "WebSearch":
+	case "WebSearch", "search_web":
 		return clean(str(in, "query"), 60)
-	case "AskUserQuestion":
+	case "AskUserQuestion", "ask_question":
 		if qs, ok := in["questions"].([]any); ok && len(qs) > 0 {
 			if q, ok := qs[0].(map[string]any); ok {
 				return clean(str(q, "question"), 80)
 			}
 		}
 		return clean(str(in, "question"), 80)
-	case "ExitPlanMode":
-		return ""
+	case "ExitPlanMode", "exit_plan_mode":
+		return clean(str(in, "reason"), 60)
 	case "Task", "Agent":
 		return clean(str(in, "description"), 60)
+	case "invoke_subagent":
+		role := str(in, "Role")
+		if role == "" {
+			role = str(in, "TypeName")
+		}
+		if role != "" {
+			return clean(role, 60)
+		}
+		return clean(str(in, "Prompt"), 60)
 	}
 	if d := str(in, "description"); d != "" {
 		return clean(d, 60)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NekroAI/kitestring/internal/client"
+	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/roles"
 	"github.com/NekroAI/kitestring/internal/writing"
 )
@@ -72,6 +73,8 @@ func runRole(args []string) error {
 	// DSH 的等待由 Host 插件负责，身份提示词里关于 ks wait 的说法要当场盖掉，避免模型照着挂起来。
 	if strings.HasPrefix(key, "dsh:") {
 		fmt.Print("\n[Kitestring] 你在 DeepSeek Harness（DSH）中：这一轮结束后纸鸢插件会自动保持待命，并在用户答复、验收或派工时于同一会话唤醒你。不要运行 ks wait，也不要为了等用户而让回合不结束；上面关于 ks wait 的说明按这条执行。\n")
+	} else if strings.HasPrefix(key, "agy:") {
+		fmt.Print("\n[Kitestring] 你在 Google Antigravity（agy）中：如终端开启沙箱，运行 ks role / ks wait / ks secret run / ks team 等需连本机 daemon 的 CLI 命令请带 BypassSandbox=true；挂起待命请用 run_command（WaitMsBeforeAsync=500, BypassSandbox=true）运行 ks wait，然后结束本轮。\n")
 	}
 	return nil
 }
@@ -143,8 +146,24 @@ func runSession(args []string) error {
 	return nil
 }
 
-// currentSession 识别 ks 命令所在的对话：--session 优先；其次按父进程找到 Agent 进程、取它最近一次 hook 的会话
-// （恢复过的 Claude 会话里环境变量可能已过期；Codex 没有会话环境变量）；最后用 Claude 的环境变量兜底。
+func agySession() string {
+	cid := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CONVERSATION_ID"))
+	if cid == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	var res struct {
+		SessionKey string `json:"session_key"`
+	}
+	if err := client.New(500*time.Millisecond).Do(ctx, "GET", "/session?"+url.Values{"agy_cid": {cid}}.Encode(), nil, &res); err == nil && res.SessionKey != "" {
+		return res.SessionKey
+	}
+	return protocol.SessionKey(protocol.ToolAgy, cid)
+}
+
+// currentSession 识别 ks 命令所在的对话：--session 优先；其次按 Antigravity 对话 ID 或父进程向 daemon 查询；
+// 最后用各自注入的环境变量兜底。
 func currentSession(flagVal string) string {
 	if flagVal != "" {
 		return flagVal
@@ -155,10 +174,14 @@ func currentSession(flagVal string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	q := url.Values{"ppid": {strconv.Itoa(os.Getppid())}}
+	if cid := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CONVERSATION_ID")); cid != "" && os.Getenv("CLAUDE_CODE_SESSION_ID") == "" {
+		q.Set("agy_cid", cid)
+	}
 	var res struct {
 		SessionKey string `json:"session_key"`
 	}
-	if err := client.New(5*time.Second).Do(ctx, "GET", "/session?"+url.Values{"ppid": {strconv.Itoa(os.Getppid())}}.Encode(), nil, &res); err == nil && res.SessionKey != "" {
+	if err := client.New(5*time.Second).Do(ctx, "GET", "/session?"+q.Encode(), nil, &res); err == nil && res.SessionKey != "" {
 		return res.SessionKey
 	}
 	return cliSession("")
@@ -186,11 +209,15 @@ func currentTeller() (key, agent string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	q := url.Values{"ppid": {strconv.Itoa(os.Getppid())}, "tell": {"1"}}
+	if cid := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CONVERSATION_ID")); cid != "" && os.Getenv("CLAUDE_CODE_SESSION_ID") == "" {
+		q.Set("agy_cid", cid)
+	}
 	var res struct {
 		SessionKey string `json:"session_key"`
 		AgentID    string `json:"agent_id"`
 	}
-	if err := client.New(5*time.Second).Do(ctx, "GET", "/session?"+url.Values{"ppid": {strconv.Itoa(os.Getppid())}, "tell": {"1"}}.Encode(), nil, &res); err == nil && res.SessionKey != "" {
+	if err := client.New(5*time.Second).Do(ctx, "GET", "/session?"+q.Encode(), nil, &res); err == nil && res.SessionKey != "" {
 		return res.SessionKey, res.AgentID
 	}
 	return cliSession(""), ""

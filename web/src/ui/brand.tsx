@@ -27,3 +27,12 @@ export function DshGlyph({ className }: { className?: string }) {
     </svg>
   )
 }
+
+// Antigravity（agy）单色升空 A 字标，随主题 currentColor 变色。
+export function AgyGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <path d="M12 2.25c.46 0 .88.26 1.08.68l7.35 15.65c.36.77-.42 1.56-1.18 1.2l-5.73-2.7a1.2 1.2 0 00-.52-.12V9.8a1 1 0 10-2 0v7.16c-.18.01-.36.05-.52.12l-5.73 2.7c-.76.36-1.54-.43-1.18-1.2L10.92 2.93c.2-.42.62-.68 1.08-.68z" />
+    </svg>
+  )
+}

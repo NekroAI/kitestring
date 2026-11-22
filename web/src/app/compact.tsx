@@ -11,9 +11,9 @@ import { schedule } from './verdict'
 // 上下文过长时以压缩为主（R-224）：超过设置里的阈值标「建议压缩」，点一下复制按身份写好的 /compact 命令。
 // /compact 是终端里的用户命令，纸鸢不替你执行，只提示和给出命令。
 
-// compactCommand：按身份生成的压缩命令（Claude Code 的 /compact 可带「保留什么」；Codex 的不带）。
+// compactCommand：按身份生成的压缩命令（Claude Code 的 /compact 可带「保留什么」；Codex / Antigravity 的不带）。
 export function compactCommand(s: Session): string {
-  if (s.tool === 'codex') return '/compact'
+  if (s.tool === 'codex' || s.tool === 'agy') return '/compact'
   return t.compactCmd(s.role, s.project_name || t.session.noProject)
 }
 
@@ -26,7 +26,7 @@ function CompactTip({ s }: { s: Session }) {
   return (
     <div className="space-y-1">
       <div>{ctxTip(c)}</div>
-      {c.level === 'high' && <div className="opacity-80">{s.tool === 'codex' ? t.session.compactCopyTipCodex : t.session.compactCopyTip}</div>}
+      {c.level === 'high' && <div className="opacity-80">{s.tool === 'codex' || s.tool === 'agy' ? t.session.compactCopyTipCodex : t.session.compactCopyTip}</div>}
     </div>
   )
 }

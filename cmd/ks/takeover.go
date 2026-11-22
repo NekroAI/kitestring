@@ -14,13 +14,13 @@ import (
 // 新会话按提示运行 ks role <身份>，纸鸢在输出里附上上一任写好的交接，上一任自动交出身份。
 func runTakeover(args []string) error {
 	fs := flag.NewFlagSet("takeover", flag.ContinueOnError)
-	tool := fs.String("tool", "claude", "用哪个工具开新会话：claude | codex")
+	tool := fs.String("tool", "claude", "用哪个工具开新会话：claude | codex | agy")
 	dry := fs.Bool("print", false, "只打印要运行的命令，不启动")
 	if err := parseAnywhere(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return fmt.Errorf("用法：ks takeover <身份> [--tool claude|codex] [--print]（身份如 pm、aide、主调度、主助理）")
+		return fmt.Errorf("用法：ks takeover <身份> [--tool claude|codex|agy] [--print]（身份如 pm、aide、主调度、主助理）")
 	}
 	role, ok := roles.Resolve(strings.Join(fs.Args(), " "))
 	if !ok || role == "" {
@@ -47,8 +47,10 @@ func takeoverArgv(tool, role string) ([]string, error) {
 	switch tool {
 	case "claude", "codex":
 		return []string{tool, roles.TakeoverPrompt(role)}, nil
+	case "agy":
+		return []string{"agy", "-i", roles.TakeoverPrompt(role)}, nil
 	}
-	return nil, fmt.Errorf("--tool 只能是 claude 或 codex")
+	return nil, fmt.Errorf("--tool 只能是 claude、codex 或 agy")
 }
 
 func roleUsageCLI() string {

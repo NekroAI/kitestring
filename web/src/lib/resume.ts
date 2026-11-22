@@ -9,6 +9,7 @@ export function resumeCommand(s: ResumeSession): string {
   // DSH 的会话在 Host 里，从 Web / 桌面端的会话列表打开，没有按 session id 恢复的稳定 CLI；返回空串让菜单隐藏这一项。
   if (s.tool === 'dsh') return ''
   if (s.tool === 'codex') return `codex resume ${s.session_id}`
+  if (s.tool === 'agy') return `agy --conversation ${s.session_id}`
   if (s.launcher) return `${s.launcher} --resume ${s.session_id}`
   // Windows 设备（目录是 C:\… 这样的）在 PowerShell 里恢复：先设环境变量再运行
   if (s.profile_dir && /^[A-Za-z]:[\\/]/.test(s.profile_dir)) return `$env:CLAUDE_CONFIG_DIR='${s.profile_dir.replace(/'/g, "''")}'; claude --resume ${s.session_id}`
@@ -17,4 +18,4 @@ export function resumeCommand(s: ResumeSession): string {
 }
 
 // 没有启动命令、靠 CLAUDE_CONFIG_DIR 恢复时，菜单上要提示：这个目录里得已有登录凭证。
-export const resumeNeedsLogin = (s: ResumeSession): boolean => s.tool !== 'codex' && s.tool !== 'dsh' && !s.launcher && !!s.profile_dir
+export const resumeNeedsLogin = (s: ResumeSession): boolean => s.tool !== 'codex' && s.tool !== 'dsh' && s.tool !== 'agy' && !s.launcher && !!s.profile_dir

@@ -2,7 +2,7 @@
 // 以 scripts/install.sh 与 internal/install 的实际行为为准，改那边时同步这里。
 
 export type Platform = 'mac' | 'linux' | 'windows'
-export type Tool = 'claude' | 'codex' | 'dsh'
+export type Tool = 'claude' | 'codex' | 'agy' | 'dsh'
 
 export const INSTALL_URL = 'https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.sh'
 export const INSTALL_PS_URL = 'https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.ps1'
@@ -25,11 +25,12 @@ export function loginCmd(hub: string, token: string | null): string {
 }
 
 // ks install 默认接入 Claude Code 和 Codex 并注册 daemon 服务；没勾的工具显式关掉，
-// 免得没装 claude 时 MCP 注册报错。DSH 不走 ks install。
+// 免得没装 claude 时 MCP 注册报错；Antigravity（agy）需显式传 --agy。DSH 不走 ks install。
 export function toolsCmd(tools: readonly Tool[]): string {
   const flags: string[] = []
   if (!tools.includes('claude')) flags.push('--claude=false')
   if (!tools.includes('codex')) flags.push('--codex=false')
+  if (tools.includes('agy')) flags.push('--agy')
   return ['ks install', ...flags].join(' ')
 }
 

@@ -47,6 +47,7 @@ var Services = []Service{
 	{Name: "wait", Aliases: []string{"等待", "ks wait"}, Title: "每轮结束挂一轮 ks wait", Text: `等待（轻接入）：每轮结束前挂一轮 ks wait，只被发给你的事唤醒：你提的决策被答复、发给你的团队消息、用户在工作台上直接发给你的话。
 - Claude Code：用 Bash 工具在后台运行 ks wait（run_in_background，工具超时设得比 55 分钟长），然后结束本轮；它结束时你会被唤醒。
 - Codex：在前台运行 ks wait（最多等 30 分钟，shell 工具超时设成 35 分钟以上），运行期间一直等它结束，不要中断、不要重复运行。
+- Antigravity（agy）：run_command 设 WaitMsBeforeAsync=500 且 BypassSandbox=true 后台运行 ks wait，然后结束本轮。
 - 醒来后按输出继续做；超时就用一两句话说明做到哪，然后结束本轮，不再挂 ks wait。
 - 不订阅别的会话的事件，不用常驻，也不用写交接。`},
 	{Name: "role", Aliases: []string{"身份", "roles", "lite", "轻接入"}, Title: "轻接入与完整身份之间切换", Text: `身份：ks role <身份> 切换，输出提示词，照它工作。

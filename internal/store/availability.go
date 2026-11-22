@@ -70,6 +70,16 @@ func (x Session) Harness() string {
 		return "Codex"
 	case protocol.ToolDSH:
 		return "DSH"
+	case protocol.ToolAgy:
+		switch x.Client {
+		case "ide":
+			return "Antigravity IDE"
+		case "app":
+			return "Antigravity App"
+		case "cli":
+			return "Antigravity 终端"
+		}
+		return "Antigravity"
 	}
 	return x.Tool
 }

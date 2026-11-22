@@ -105,6 +105,9 @@ func cliSession(flagVal string) string {
 	if sid := os.Getenv("CLAUDE_CODE_SESSION_ID"); sid != "" {
 		return protocol.SessionKey(protocol.ToolClaude, sid)
 	}
+	if key := agySession(); key != "" {
+		return key
+	}
 	return ""
 }
 

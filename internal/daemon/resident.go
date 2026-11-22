@@ -114,8 +114,11 @@ func (d *Daemon) liteEndWait(key, reason string) {
 
 func liteReason(tool string) string {
 	how := "在后台运行 ks wait（Bash 工具设 run_in_background，工具超时设得比 55 分钟长）"
-	if tool == protocol.ToolCodex {
+	switch tool {
+	case protocol.ToolCodex:
 		how = "在前台运行 ks wait（最多等 30 分钟）"
+	case protocol.ToolAgy:
+		how = "在后台运行 ks wait（run_command 设 WaitMsBeforeAsync=500 且 BypassSandbox=true）"
 	}
 	return "[Kitestring] 轻接入：结束本轮前" + how + "，挂一轮等发给你的答复和消息（你提的决策被答复、发给你的团队消息），然后结束本轮。到了会唤醒你继续；超时就结束本轮，不再续挂。"
 }
@@ -152,8 +155,11 @@ func (d *Daemon) mergeHeldReply(ev *protocol.Event) {
 
 func residentReason(tool, role string) string {
 	how := "在后台运行 ks wait（Bash 工具设 run_in_background，工具超时设得比等待时间长）"
-	if tool == protocol.ToolCodex {
+	switch tool {
+	case protocol.ToolCodex:
 		how = "运行 ks wait（前台运行，最多等 30 分钟）"
+	case protocol.ToolAgy:
+		how = "在后台运行 ks wait（run_command 设 WaitMsBeforeAsync=500 且 BypassSandbox=true）"
 	}
 	return "[Kitestring] 你是本项目的" + roles.Display(role) + "会话，需要常驻在线：先" + how + "挂起待命，再结束本轮。用户的需求、答复、留言会在你待命时送达。"
 }

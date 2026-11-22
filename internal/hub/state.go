@@ -287,12 +287,17 @@ func bgDetail(n int, brief string) string {
 
 // asksUser 判断工具是否是在向用户提问或请求确认，而不是请求执行权限。
 func asksUser(tool string) bool {
-	return tool == "AskUserQuestion" || tool == "ExitPlanMode" || tool == "request_user_input"
+	return tool == "AskUserQuestion" || tool == "ExitPlanMode" || tool == "request_user_input" || tool == "ask_question" || tool == "exit_plan_mode"
 }
 
 // toolLabel 生成“工具 · 简述”形式的动作描述。
 func toolLabel(tool, brief string) string {
-	name := strings.TrimPrefix(tool, "mcp__")
+	name := tool
+	if bare, ok := protocol.NormalizeMCPToolName(tool); ok {
+		name = "kitestring__" + bare
+	} else {
+		name = strings.TrimPrefix(tool, "mcp__")
+	}
 	if brief == "" {
 		return name
 	}

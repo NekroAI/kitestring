@@ -15,8 +15,10 @@ const WINDOW = 10 * 60 * 1000 // 时间线：近 10 分钟，右边是现在
 
 export const liveTasks = (s: Session): BgTask[] => (s.state === 'ended' ? [] : (s.tasks ?? []))
 
-// Codex 经 app-server / 桌面 App 跑时一个进程承载多个会话，分不清后台 shell 归属
-export const tasksUnknown = (s: Session) => s.tool === 'codex' && (s.client === 'app-server' || s.client === 'desktop')
+// Codex 经 app-server / 桌面 App、Antigravity 经 App / IDE 跑时一个进程承载多个会话，分不清后台 shell 归属
+export const tasksUnknown = (s: Session) =>
+  (s.tool === 'codex' && (s.client === 'app-server' || s.client === 'desktop')) ||
+  (s.tool === 'agy' && (s.client === 'app' || s.client === 'ide'))
 
 // bgCount：状态胶囊里“后台 n 个任务”的 n
 export const bgCount = (s: Session) => liveTasks(s).length || s.subagents

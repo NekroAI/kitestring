@@ -60,6 +60,26 @@ func status(o Options, home string) error {
 			}
 		}
 	}
+	if agyInstalled(home) || agyDetected(home) {
+		ast := agyStatus(o.KS, home)
+		totalEvents := len(agyFlatEvents) + len(agyMatchedEvents)
+		totalAllow := len(agyRequiredAllowEntries())
+		mark := func(ok bool) string {
+			if ok {
+				return "✓"
+			}
+			return "✗"
+		}
+		fmt.Fprintf(o.Out, "\n[Antigravity（%s）]\n", agyPluginDir(home))
+		fmt.Fprintf(o.Out, "  %s 插件清单与规则：%s\n", mark(ast.Plugin && ast.Rules), agyPluginDir(home))
+		fmt.Fprintf(o.Out, "  %s hook：%d/%d 个事件\n", mark(ast.Hooks == totalEvents), ast.Hooks, totalEvents)
+		fmt.Fprintf(o.Out, "  %s MCP：mcp_config.json\n", mark(ast.MCP))
+		fmt.Fprintf(o.Out, "  %s 权限：%d/%d 条 permissions.allow 规则", mark(ast.Allow == totalAllow), ast.Allow, totalAllow)
+		if ast.Stale {
+			fmt.Fprint(o.Out, "（指向的 ks 路径与当前不一致，重跑 ks install --agy 更新）")
+		}
+		fmt.Fprintln(o.Out)
+	}
 	return nil
 }
 

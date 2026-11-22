@@ -98,7 +98,7 @@ type RosterEntry struct {
 	Title        string                 `json:"title" doc:"此刻在做什么：模型按最近一轮生成的标题，没有时用最近一条消息"`
 	Role         string                 `json:"role" doc:"身份；空为无身份"`
 	RoleName     string                 `json:"role_name" doc:"身份中文名；无身份写「无身份」"`
-	Harness      string                 `json:"harness" doc:"所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH"`
+	Harness      string                 `json:"harness" doc:"所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH / Antigravity"`
 	Tool         string                 `json:"tool"`
 	Client       string                 `json:"client"`
 	Device       string                 `json:"device"`
@@ -292,7 +292,7 @@ type rosterIn struct {
 func (h *Hub) registerAgentRoster(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "agent-team-sessions", Method: http.MethodGet, Path: "/api/agent/team/sessions", Tags: []string{"agent"},
 		Summary:     "在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立即送达",
-		Description: "状态与能否立即送达只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。"},
+		Description: "状态与能否立即送达只从会话记录推：Claude / claude-x / Antigravity 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。"},
 		func(ctx context.Context, in *rosterIn) (*rosterOut, error) {
 			return h.roster(ctx, in.SessionKey, in.Role, in.AllProjects, in.All)
 		})

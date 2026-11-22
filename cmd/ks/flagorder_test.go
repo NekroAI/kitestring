@@ -31,6 +31,8 @@ func startFakeDaemon(t *testing.T) *fakeDaemon {
 	t.Setenv("KS_HOME", dir)
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "")
 	t.Setenv("DSH_SESSION_ID", "")
+	t.Setenv("DSH_KITESTRING_SESSION", "")
+	t.Setenv("ANTIGRAVITY_CONVERSATION_ID", "")
 	ln, err := net.Listen("unix", filepath.Join(dir, "daemon.sock"))
 	if err != nil {
 		t.Fatal(err)

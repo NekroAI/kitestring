@@ -100,6 +100,7 @@ ks login --hub http://<hub 地址>:7310 --token kst_xxx
 
 ```sh
 ks install                    # 同时接入 Claude Code 和 Codex
+ks install --agy              # 同时接入 Claude Code、Codex 和 Antigravity（agy）
 ks install --codex=false      # 只用 Claude Code
 ks install --claude=false     # 只用 Codex
 ```

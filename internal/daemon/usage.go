@@ -47,6 +47,7 @@ const (
 const (
 	usageClaude = "claude"
 	usageCodex  = "codex"
+	usageAgy    = "agy"
 )
 
 // usageFileState 是每个文件除位置以外要记着的东西（推冷启动起因、去重）。
@@ -133,8 +134,11 @@ func (u *usageScanner) track(key, path string) {
 		return
 	}
 	kind := usageClaude
-	if strings.HasPrefix(key, protocol.ToolCodex+":") {
+	switch {
+	case strings.HasPrefix(key, protocol.ToolCodex+":"):
 		kind = usageCodex
+	case strings.HasPrefix(key, protocol.ToolAgy+":"):
+		kind = usageAgy
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -145,6 +149,18 @@ func (u *usageScanner) track(key, path string) {
 	if kind == usageClaude {
 		u.mains[path] = u.now()
 	}
+}
+
+func (u *usageScanner) trackSubagent(key, agent, path string) {
+	if path == "" || key == "" || agent == "" || !strings.HasSuffix(path, ".jsonl") {
+		return
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if _, ok := u.files[path]; ok {
+		return
+	}
+	u.addLocked(&usageFile{path: path, key: key, agent: agent, kind: usageAgy, size: -1})
 }
 
 func (u *usageScanner) addLocked(f *usageFile) {
@@ -274,9 +290,12 @@ func (u *usageScanner) scanFile(f *usageFile) (int, error) {
 			break // 没有换行的最后一段还在写，下一轮再读
 		}
 		off += int64(len(line))
-		if f.kind == usageCodex {
+		switch f.kind {
+		case usageCodex:
 			u.codexLine(f, line, cut, agg)
-		} else {
+		case usageAgy:
+			u.agyLine(f, line, cut, agg)
+		default:
 			u.claudeLine(f, line, cut, agg)
 			if u.onLine != nil {
 				u.onLine(f.key, f.agent, line, shellCut)
@@ -488,6 +507,25 @@ func (u *usageScanner) codexLine(f *usageFile, line []byte, cut time.Time, agg *
 		return
 	}
 	agg.add(f.key, f.agent, model, l.Timestamp, in, us.Write, 0, us.Cached, us.Output)
+}
+
+func (u *usageScanner) agyLine(f *usageFile, line []byte, cut time.Time, agg *usageAgg) {
+	s, ok := parseAgyUsageLine(line)
+	if !ok || f.seen(s.DedupID) {
+		return
+	}
+	model := s.Model
+	if model != "" {
+		f.state.Model = model
+	} else {
+		model = f.state.Model
+	}
+	in, cr, cw, out := int64(s.InputTokens), int64(s.CacheReadTokens), int64(s.CacheWriteTokens), int64(s.OutputTokens)
+	u.note(f, s.Timestamp, model, cw, cr, in+cw+cr, 300, cut, agg)
+	if s.Timestamp.Before(cut) {
+		return
+	}
+	agg.add(f.key, f.agent, model, s.Timestamp, in, cw, 0, cr, out)
 }
 
 // saveFile 把这一段的汇总和读到的位置写在同一个事务里（重启从这里续读，不重复计）。

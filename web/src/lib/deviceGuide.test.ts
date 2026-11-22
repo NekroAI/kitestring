@@ -19,6 +19,8 @@ test('ks install 按勾选的工具关掉没用的，DSH 不影响它', () => {
   assert.equal(toolsCmd(['claude']), 'ks install --codex=false')
   assert.equal(toolsCmd(['codex', 'dsh']), 'ks install --claude=false')
   assert.equal(toolsCmd(['dsh']), 'ks install --claude=false --codex=false')
+  assert.equal(toolsCmd(['claude', 'codex', 'agy']), 'ks install --agy')
+  assert.equal(toolsCmd(['agy']), 'ks install --claude=false --codex=false --agy')
 })
 
 test('DSH 插件取与本机 ks 同版本的源码', () => {

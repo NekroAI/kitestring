@@ -29,14 +29,14 @@ import { Linkify, RefChip, ReqGlyph } from '../ui/refmark'
 // 工具名 → 图标。
 export function toolIcon(label: string): LucideIcon {
   const name = label.split(' · ')[0]
-  if (/^(Bash|shell|exec_command|local_shell)$/.test(name)) return Terminal
-  if (/^(Edit|Write|MultiEdit|NotebookEdit|apply_patch)$/.test(name)) return FileCode2
-  if (name === 'Read') return FileText
-  if (/^(Grep|Glob)$/.test(name)) return Search
-  if (/^Web/.test(name)) return Globe
-  if (/^(Task|Agent)$/.test(name)) return Bot
-  if (name === 'AskUserQuestion') return HelpCircle
-  if (name === 'ExitPlanMode') return ListChecks
+  if (/^(Bash|shell|exec_command|local_shell|run_command)$/.test(name)) return Terminal
+  if (/^(Edit|Write|MultiEdit|NotebookEdit|apply_patch|write_file|edit_file)$/.test(name)) return FileCode2
+  if (/^(Read|read_file)$/.test(name)) return FileText
+  if (/^(Grep|Glob|grep_search|find_by_name)$/.test(name)) return Search
+  if (/^(Web|search_web|read_url_content)/.test(name)) return Globe
+  if (/^(Task|Agent|invoke_subagent)$/.test(name)) return Bot
+  if (/^(AskUserQuestion|ask_question)$/.test(name)) return HelpCircle
+  if (/^(ExitPlanMode|exit_plan_mode)$/.test(name)) return ListChecks
   if (name.includes('__')) return Plug
   return Wrench
 }
@@ -44,7 +44,7 @@ export function toolIcon(label: string): LucideIcon {
 // 拆分“工具 · 简述”。
 export function splitTool(label: string): [string, string] {
   const [name, ...rest] = label.split(' · ')
-  return [name.replace(/^mcp__/, ''), rest.join(' · ')]
+  return [name.replace(/^(?:mcp__|mcp_kitestring_|mcp:kitestring:|kitestring\/)/, ''), rest.join(' · ')]
 }
 
 // sessionExtras：不常看的会话细节（轮数、工具、子任务、权限、worktree、工具过时），放在设备的悬停里（R-147）。

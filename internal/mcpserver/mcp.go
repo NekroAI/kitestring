@@ -30,10 +30,20 @@ const dshInstructionsNote = `你在 DeepSeek Harness（DSH）中运行，纸鸢 
 
 `
 
+// agyInstructionsNote 放在 Antigravity（agy）会话的说明最前面：提醒沙箱参数与后台 wait 方式。
+const agyInstructionsNote = `你在 Antigravity（agy）中运行：
+- 终端命令默认在沙箱中执行，调用 ks role / ks wait / ks secret run / ks team 等需连本机 daemon 的 CLI 命令时，请带 BypassSandbox=true。
+- 结束前需要挂起等待时，用 run_command 设 WaitMsBeforeAsync=500 且 BypassSandbox=true 运行 ks wait，然后结束本轮。
+
+`
+
 // instructionsFor 按调用方返回 MCP 说明。client 为空表示 Claude / Codex 等自挂等待的客户端。
 func instructionsFor(client string) string {
-	if client == "dsh" {
+	switch client {
+	case "dsh":
 		return dshInstructionsNote + instructions
+	case "agy":
+		return agyInstructionsNote + instructions
 	}
 	return instructions
 }
@@ -45,10 +55,10 @@ const instructionsTmpl = `Kitestring（纸鸢）是用户的多 agent 驾驶舱�
 - 会话名（R-416）：ks role <身份> 时可加 --name <名字> --note <一句说明>（40 字以内）自报，别的会话按名字认你、team_tell 的 to 可填名字；不写用默认名「目录名-工具」，任务换了用 ks session name 改。
 - 不担任身份时也能直接用服务：要用户定的事用 decision_raise（或 ks decision raise），要第三方凭据用 secret_request（或 ks secret request）。各服务的用法用到时再看：ks help <服务>（ks help 列出全部）。`
 
-// Run 以 stdio 运行 MCP server。clientName 是调用方（目前只区分 dsh），影响呈现给模型的说明。
+// Run 以 stdio 运行 MCP server。clientName 是调用方（支持 dsh / agy），影响呈现给模型的说明与会话关联。
 func Run(ctx context.Context, clientName string) error {
 	s := mcp.NewServer(&mcp.Implementation{Name: "kitestring", Version: version.Version}, &mcp.ServerOptions{Instructions: instructionsFor(clientName)})
-	t := &tools{c: client.New(20 * time.Second)}
+	t := &tools{c: client.New(20 * time.Second), client: clientName}
 	t.register(s)
 	t.registerTeam(s)
 	t.registerReview(s)
@@ -58,47 +68,93 @@ func Run(ctx context.Context, clientName string) error {
 }
 
 type tools struct {
-	c *client.Client
+	c      *client.Client
+	client string
 }
 
 // sessionKey 识别调用来自哪个会话（D17）：
+//   - DSH：_meta["kitestring/session"]；
 //   - Codex：请求 _meta.sessionId；
 //   - Claude：用 _meta 里的 toolUseId 向 daemon 查询（与 PreToolUse hook 对齐）；
-//     进程环境里的 CLAUDE_CODE_SESSION_ID 只作兜底——同一进程内恢复或清空会话后它会过期。
+//     进程环境里的 CLAUDE_CODE_SESSION_ID 只作兜底——同一进程内恢复或清空会话后它会过期；
+//   - Antigravity：优先用 _meta，其次按 mcp_tool + 参数规范化哈希向 daemon 认领最近一次 PreToolUse，最后用 ANTIGRAVITY_CONVERSATION_ID 兜底。
 func (t *tools) sessionKey(ctx context.Context, req *mcp.CallToolRequest) string {
-	if key := metaSessionKey(req); key != "" {
-		return key
-	}
-	if req.Params != nil && req.Params.Meta != nil {
-		if id, ok := req.Params.Meta["claudecode/toolUseId"].(string); ok && id != "" {
-			var out struct {
-				SessionKey string `json:"session_key"`
-			}
-			if t.c.Do(ctx, "GET", "/session?tool_use_id="+url.QueryEscape(id), nil, &out) == nil && out.SessionKey != "" {
-				return out.SessionKey
-			}
-		}
-	}
-	return sessionKeyFromMeta(req)
+	key, _ := t.resolveCaller(ctx, req)
+	return key
 }
 
 // caller 和 sessionKey 一样识别会话，顺带返回发起调用的子任务 agent_id（主线程为空，R-191）。
 func (t *tools) caller(ctx context.Context, req *mcp.CallToolRequest) (key, agent string) {
+	return t.resolveCaller(ctx, req)
+}
+
+func (t *tools) resolveCaller(ctx context.Context, req *mcp.CallToolRequest) (key, agent string) {
 	if key := metaSessionKey(req); key != "" {
 		return key, metaAgentID(req)
 	}
-	if req.Params != nil && req.Params.Meta != nil {
-		if id, ok := req.Params.Meta["claudecode/toolUseId"].(string); ok && id != "" {
-			var out struct {
-				SessionKey string `json:"session_key"`
-				AgentID    string `json:"agent_id"`
+	if req != nil && req.Params != nil && req.Params.Meta != nil {
+		for _, metaKey := range []string{"claudecode/toolUseId", "toolCallId", "callId", "toolUseId"} {
+			if id, ok := req.Params.Meta[metaKey].(string); ok && id != "" {
+				var out struct {
+					SessionKey string `json:"session_key"`
+					AgentID    string `json:"agent_id"`
+				}
+				if t.c != nil && t.c.Do(ctx, "GET", "/session?tool_use_id="+url.QueryEscape(id), nil, &out) == nil && out.SessionKey != "" {
+					return out.SessionKey, out.AgentID
+				}
 			}
-			if t.c.Do(ctx, "GET", "/session?tool_use_id="+url.QueryEscape(id), nil, &out) == nil && out.SessionKey != "" {
-				return out.SessionKey, out.AgentID
+		}
+		for _, cidKey := range []string{"conversationId", "conversation_id"} {
+			if cid, ok := req.Params.Meta[cidKey].(string); ok && cid != "" {
+				return protocol.SessionKey(protocol.ToolAgy, cid), metaAgentID(req)
 			}
 		}
 	}
-	return sessionKeyFromMeta(req), ""
+	if key := sessionKeyFromMeta(req); key != "" {
+		return key, metaAgentID(req)
+	}
+	if t.isAgyRequest(req) && t.c != nil && req != nil && req.Params != nil {
+		argsHash := protocol.CanonicalArgsHash(req.Params.Arguments)
+		q := url.Values{"mcp_tool": {req.Params.Name}, "args_hash": {argsHash}}
+		var out struct {
+			SessionKey string `json:"session_key"`
+			AgentID    string `json:"agent_id"`
+		}
+		if t.c.Do(ctx, "GET", "/session?"+q.Encode(), nil, &out) == nil && out.SessionKey != "" {
+			return out.SessionKey, out.AgentID
+		}
+	}
+	if t.client == protocol.ToolAgy {
+		if cid := os.Getenv("ANTIGRAVITY_CONVERSATION_ID"); cid != "" {
+			return protocol.SessionKey(protocol.ToolAgy, cid), ""
+		}
+		if sid := os.Getenv("CLAUDE_CODE_SESSION_ID"); sid != "" {
+			return protocol.SessionKey(protocol.ToolClaude, sid), ""
+		}
+		return "", ""
+	}
+	if sid := os.Getenv("CLAUDE_CODE_SESSION_ID"); sid != "" {
+		return protocol.SessionKey(protocol.ToolClaude, sid), ""
+	}
+	if cid := os.Getenv("ANTIGRAVITY_CONVERSATION_ID"); cid != "" {
+		return protocol.SessionKey(protocol.ToolAgy, cid), ""
+	}
+	return "", ""
+}
+
+func (t *tools) isAgyRequest(req *mcp.CallToolRequest) bool {
+	if t.client == protocol.ToolAgy {
+		return true
+	}
+	if req != nil && req.Session != nil {
+		if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {
+			name := strings.ToLower(p.ClientInfo.Name)
+			if strings.Contains(name, "antigravity") || strings.Contains(name, "agy") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // metaSessionKey 读调用方插件直接注入的完整会话键（如 dsh:session-xxx）。
@@ -121,17 +177,24 @@ func metaAgentID(req *mcp.CallToolRequest) string {
 }
 
 func sessionKeyFromMeta(req *mcp.CallToolRequest) string {
+	if req == nil {
+		return ""
+	}
 	if key := metaSessionKey(req); key != "" {
 		return key
 	}
 	tool := ""
-	if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {
-		name := strings.ToLower(p.ClientInfo.Name)
-		switch {
-		case strings.Contains(name, "codex"):
-			tool = protocol.ToolCodex
-		case strings.Contains(name, "claude"):
-			tool = protocol.ToolClaude
+	if req.Session != nil {
+		if p := req.Session.InitializeParams(); p != nil && p.ClientInfo != nil {
+			name := strings.ToLower(p.ClientInfo.Name)
+			switch {
+			case strings.Contains(name, "codex"):
+				tool = protocol.ToolCodex
+			case strings.Contains(name, "claude"):
+				tool = protocol.ToolClaude
+			case strings.Contains(name, "antigravity"), strings.Contains(name, "agy"):
+				tool = protocol.ToolAgy
+			}
 		}
 	}
 	if req.Params != nil && req.Params.Meta != nil {
@@ -141,9 +204,6 @@ func sessionKeyFromMeta(req *mcp.CallToolRequest) string {
 			}
 			return protocol.SessionKey(tool, sid)
 		}
-	}
-	if sid := os.Getenv("CLAUDE_CODE_SESSION_ID"); sid != "" {
-		return protocol.SessionKey(protocol.ToolClaude, sid)
 	}
 	return ""
 }

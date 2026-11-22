@@ -52,7 +52,7 @@ function Step({ n, title, children }: { n: number; title: ReactNode; children: R
   )
 }
 
-const toolLabel: Record<Tool, string> = { claude: 'Claude Code', codex: 'Codex', dsh: 'DSH' }
+const toolLabel: Record<Tool, string> = { claude: 'Claude Code', codex: 'Codex', agy: 'Antigravity', dsh: 'DSH' }
 
 export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: boolean; deviceId: string; name: string; token: string | null; onClose: () => void }) {
   const G = t.settings.devices.g
@@ -100,7 +100,7 @@ export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: bo
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[13px] text-fg-3">{G.tools}</span>
-          {(['claude', 'codex', 'dsh'] as Tool[]).filter((x) => x !== 'dsh' || dshSupported(platform)).map((x) => {
+          {(['claude', 'codex', 'agy', 'dsh'] as Tool[]).filter((x) => x !== 'dsh' || dshSupported(platform)).map((x) => {
             const on = tools.includes(x)
             return (
               <button
@@ -136,7 +136,7 @@ export function DeviceGuide({ open, deviceId, name, token, onClose }: { open: bo
           <CommandBlock cmd={toolsCmd(tools)} />
           <Note>
             {platform === 'mac' ? G.serviceMac : platform === 'windows' ? G.serviceWin : G.serviceLinux}
-            {tools.includes('claude') ? G.needClaude : !tools.includes('codex') && G.noTools}
+            {tools.includes('claude') ? G.needClaude : !tools.includes('codex') && !tools.includes('agy') && G.noTools}
           </Note>
           {platform === 'linux' && (
             <>

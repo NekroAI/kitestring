@@ -41,10 +41,10 @@ const usage = `纸鸢 Kitestring —— 多设备、多 agent 的个人驾驶舱
   login --hub <地址> --token <token>   保存 Hub 地址与设备 token
   daemon                 启动设备常驻进程
   status                 查看本机 daemon 状态
-  install / uninstall    写入或移除 Claude Code / Codex 的 hook 与 MCP 配置（--dry-run 预览）
+  install / uninstall    写入或移除 Claude Code / Codex / Antigravity 的 hook 与 MCP 配置（--dry-run 预览）
 
 agent 调用：
-  hook <claude|codex> <event>   由 agent 的 hook 调用
+  hook <claude|codex|agy> <event>   由 agent 的 hook 调用
   mcp                    stdio MCP server
   req list|get|create|status|evidence ...   需求操作（与 MCP 同能力；evidence void <证据 id> --reason 作废交错的证据）
   proto check <目录|.html|.zip> [--entry 入口] [--max-mb 20]
@@ -64,7 +64,7 @@ agent 调用：
                                  重推有变记新版本、未连接 Hub 时排队补传；summary 先看统计、list / get 按 id、类别、批次、状态查（默认最多 50 条，别整表拉 --json；ks asset help 看用法和 asset.json 写法）
   team                   工人池：本项目的 PM 与 Dev 会话（在线状态、上下文、手上的需求）
   team sessions [--role 身份|none] [--all-projects] [--all] [--json]
-                                 在线会话列表（R-249）：本项目没结束的会话，按「名字」（身份 · 说明）列出（R-416），带此刻在做什么、身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH）、
+                                 在线会话列表（R-249）：本项目没结束的会话，按「名字」（身份 · 说明）列出（R-416），带此刻在做什么、身份（没有写「无身份」）、工具（Claude Code / claude-x / Codex 终端 / Codex App / DSH / Antigravity）、
                                  待命 / 运行中 / 空闲 / 已结束、手上的需求、能否立即送达及原因；--all 也列已结束的；与 MCP team_sessions 同一段输出
   team recommend <数量> --reason ... [--work ...] [--duration ...]
                                  PM 推荐开 Dev 会话（用户限时批准，超时视为拒绝；默认用一次性子任务）
@@ -101,14 +101,14 @@ agent 调用：
                          --name / --note 顺带自报名字（20 字内）和说明（40 字内，R-416），和模型标题分开存；不写用默认名「目录名-工具」
   session name <名字> [--note 一句说明]   任务换了时改本会话的名字和说明（R-416；重名自动加 -2）；ks session 查看现在的名字
   help [服务]            不带参数打印本帮助；带服务名（decision / secret / ask / wait / role）只打印这项服务的用法（轻接入按需取用）
-  takeover <身份> [--tool claude|codex] [--print]
+  takeover <身份> [--tool claude|codex|agy] [--print]
                          交接（R-224）：在项目目录启动新会话并带接任提示，新会话声明身份时自动读到上一任的交接
   handoff [--doing 做到一半的事] [--agreements 口头约定] [--caveats 注意事项] | --file 交接.json|.md
                          交接（R-224、R-245）：没有 handoff_write 工具（MCP 是旧版）时用它写交接，只写纸鸢里没有的三栏；接任时纸鸢自动列出要接手的事
   arrange add <安排> [--until 2h|日期] | list [--all] | revoke N-x
                          当前安排（R-245）：用户口头交代的临时安排（如「额度紧，做完这几条就停」「这次可以 push」）记在项目上，接任的会话自动读到
   wait [--timeout 1h] [--on decision,review,blocked,stage,settings,status]
-                         挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code 后台运行，默认 1h；Codex 前台运行，最多 30m）；
+                         挂起等待用户在 Kitestring 上的答复 / 验收 / 留言，收到后输出并退出（Claude Code / Antigravity 后台运行，默认 1h；Codex 前台运行，最多 30m）；
                          --on 另外订阅本项目别的会话的事件（提决策 / 交验收 / 受阻 / 阶段交小结 / 用户改项目设置 / 用户改需求状态），none 不订阅、default 按身份默认，不填沿用上次
 
   update [--check] [--force]   从 GitHub Release 更新到最新版：校验 SHA256SUMS、原子替换 ks，再重启用这个 ks 的 Hub 和后台服务；
@@ -415,10 +415,10 @@ func runStatus() error {
 	return nil
 }
 
-// mcpClient 读 `ks mcp --client <名称>`：DSH 的插件传 dsh，用来换掉说明里关于 ks wait 的部分。
+// mcpClient 读 `ks mcp --client <名称>`：dsh / agy 会覆盖或前置与待命/沙箱相关的说明。
 func mcpClient(args []string) string {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
-	client := fs.String("client", "", "调用方：dsh（可省略）")
+	client := fs.String("client", "", "调用方：dsh | agy（可省略）")
 	if err := fs.Parse(args); err != nil {
 		return ""
 	}

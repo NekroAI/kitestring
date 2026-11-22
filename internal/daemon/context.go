@@ -57,6 +57,10 @@ func contextUsage(path string) (used, window int) {
 		if w := codexWindowRe.FindAllSubmatch(buf, -1); len(w) > 0 {
 			window, _ = strconv.Atoi(string(w[len(w)-1][1]))
 		}
+		return used, window
 	}
-	return used, window
+	if u, w, ok := agyContextUsageFromTail(buf); ok {
+		return u, w
+	}
+	return 0, 0
 }

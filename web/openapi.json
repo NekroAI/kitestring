@@ -5124,7 +5124,7 @@
             "type": "string"
           },
           "harness": {
-            "description": "所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH",
+            "description": "所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH / Antigravity",
             "type": "string"
           },
           "held": {
@@ -12056,7 +12056,7 @@
             "type": "string"
           },
           "harness": {
-            "description": "所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH",
+            "description": "所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH / Antigravity",
             "type": "string"
           },
           "key": {
@@ -19232,7 +19232,7 @@
     },
     "/api/agent/team/sessions": {
       "get": {
-        "description": "状态与能否立即送达只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。",
+        "description": "状态与能否立即送达只从会话记录推：Claude / claude-x / Antigravity 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。",
         "operationId": "agent-team-sessions",
         "parameters": [
           {

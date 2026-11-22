@@ -15,6 +15,8 @@ const (
 	// ToolDSH 是 DeepSeek Harness（DSH）。它由 Host 插件直接上报事件，
 	// 不经过 hook 子进程；会话标识、待命和唤醒都由插件负责。
 	ToolDSH = "dsh"
+	// ToolAgy 是 Google Antigravity（CLI / IDE / 2.0 App）。
+	ToolAgy = "agy"
 )
 
 // NewID 生成按时间排序的 ULID，用于事件幂等与补传。

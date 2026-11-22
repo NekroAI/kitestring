@@ -55,17 +55,20 @@ func newTaskState() taskState {
 
 func isShellTool(name string) bool {
 	switch name {
-	case "Bash", "shell", "exec_command", "local_shell", "bash", "pwsh":
+	case "Bash", "shell", "exec_command", "local_shell", "bash", "pwsh", "run_command":
 		return true
 	}
 	return false
 }
 
-func isAgentTool(name string) bool { return name == "Agent" || name == "Task" }
+func isAgentTool(name string) bool { return name == "Agent" || name == "Task" || name == "invoke_subagent" }
 
 // shellCommand 取 shell 工具调用的命令原文（只在本机用来对进程，不上报）。
 func shellCommand(in map[string]any) string {
 	if c := str(in, "command"); c != "" {
+		return c
+	}
+	if c := str(in, "CommandLine"); c != "" {
 		return c
 	}
 	if arr, ok := in["command"].([]any); ok {
@@ -101,12 +104,31 @@ func (d *Daemon) noteTaskEvent(key string, p map[string]any, ev *protocol.Event)
 				return
 			}
 			bg, _ := in["run_in_background"].(bool)
+			if !bg {
+				if isDaemon, _ := in["IsDaemon"].(bool); isDaemon {
+					bg = true
+				} else if w, ok := firstInt(in, "WaitMsBeforeAsync"); ok && w > 0 && w <= 1000 {
+					bg = true
+				}
+			}
+			desc := str(in, "description")
+			if desc == "" {
+				desc = str(in, "toolSummary")
+			}
 			if t.calls[key] == nil {
 				t.calls[key] = map[string]*shellCall{}
 			}
-			t.calls[key][ev.ToolUseID] = &shellCall{cmd: cmd, desc: str(in, "description"), bg: bg, at: now}
+			t.calls[key][ev.ToolUseID] = &shellCall{cmd: cmd, desc: desc, bg: bg, at: now}
 		case isAgentTool(ev.ToolName):
-			c := agentCall{typ: str(in, "subagent_type"), desc: str(in, "description"), at: now}
+			typ := str(in, "subagent_type")
+			if typ == "" {
+				typ = str(in, "TypeName")
+			}
+			desc := str(in, "description")
+			if desc == "" {
+				desc = str(in, "Role")
+			}
+			c := agentCall{typ: typ, desc: desc, at: now}
 			if d.q != nil {
 				d.q.agentCallsAdd(key, c)
 			} else {
@@ -434,7 +456,7 @@ func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 			continue
 		}
 		// 一个 DSH Host 同时开着多个会话时同样分不清 shell 归谁（R-251）
-		if info := d.sessions[key]; info != nil && (info.client == "app-server" || info.client == "desktop") || len(d.dshInst[inst]) > 1 {
+		if info := d.sessions[key]; info != nil && (info.client == "app-server" || info.client == "desktop" || (strings.HasPrefix(key, protocol.ToolAgy+":") && (info.client == "app" || info.client == "ide"))) || len(d.dshInst[inst]) > 1 {
 			shared[pid] = true
 			continue
 		}

@@ -25,6 +25,11 @@ test('Codex 不受影响', () => {
   assert.equal(resumeCommand({ tool: 'codex', session_id: 'z', profile_dir: '/x' }), 'codex resume z')
 })
 
+test('Antigravity 用 --conversation 恢复', () => {
+  assert.equal(resumeCommand({ tool: 'agy', session_id: 'cid-1', profile_dir: '/x' }), 'agy --conversation cid-1')
+  assert.equal(resumeNeedsLogin({ tool: 'agy', session_id: 'cid-1', profile_dir: '/x' }), false)
+})
+
 test('Windows 设备的配置目录：PowerShell 写法', () => {
   const s = { tool: 'claude', session_id: 'abc', profile_dir: "C:\\Users\\me\\.claude-x'" }
   assert.equal(resumeCommand(s), "$env:CLAUDE_CONFIG_DIR='C:\\Users\\me\\.claude-x'''; claude --resume abc")

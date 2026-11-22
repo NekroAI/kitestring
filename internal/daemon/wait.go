@@ -377,6 +377,9 @@ func latestReply(path string) string {
 		if json.Unmarshal(line, &x) != nil {
 			continue
 		}
+		if strings.HasPrefix(x.Type, "") {
+			_ = x // 保留下方 switch 判断结构
+		}
 		var content json.RawMessage
 		switch {
 		case x.Type == "assistant" && x.Message.Role == "assistant": // Claude Code
@@ -384,6 +387,9 @@ func latestReply(path string) string {
 		case x.Type == "response_item" && x.Payload.Type == "message" && x.Payload.Role == "assistant": // Codex
 			content = x.Payload.Content
 		default:
+			if reply := agyReplyFromTail(line); reply != "" {
+				return reply
+			}
 			continue
 		}
 		var parts []struct {

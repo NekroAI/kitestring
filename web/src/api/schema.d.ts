@@ -940,7 +940,7 @@ export interface paths {
         };
         /**
          * 在线会话列表（R-249）：本项目会话的身份、工具、状态、手上的需求、能否立即送达
-         * @description 状态与能否立即送达只从会话记录推：Claude / claude-x 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。
+         * @description 状态与能否立即送达只从会话记录推：Claude / claude-x / Antigravity 挂着后台 ks wait、Codex 前台 ks wait 未到期、DSH 插件待命能立即送达；运行中的会话本轮结束后送达；Codex 没挂 wait 无法在后台送达，等用户下次发消息；已结束或失联为离线。
          */
         get: operations["agent-team-sessions"];
         put?: never;
@@ -4821,7 +4821,7 @@ export interface components {
         CommsSession: {
             client: string;
             device: string;
-            /** @description 所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH */
+            /** @description 所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH / Antigravity */
             harness: string;
             /**
              * Format: int64
@@ -7073,7 +7073,7 @@ export interface components {
         RosterEntry: {
             client: string;
             device: string;
-            /** @description 所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH */
+            /** @description 所用工具：Claude Code / 启动命令名（如 claude-x）/ Codex 终端 / Codex App / DSH / Antigravity */
             harness: string;
             key: string;
             last_active_at: string;

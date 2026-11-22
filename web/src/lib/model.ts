@@ -14,6 +14,9 @@ export function modelShort(id: string): string {
   // gpt-6.1-sol / gpt-6-astra
   r = /^gpt-(\d+(?:\.\d+)?)(?:-([a-z][a-z0-9]*))?$/.exec(s)
   if (r) return `GPT-${r[1]}${r[2] ? ' ' + cap(r[2]) : ''}`
+  // gemini-2.5-pro / gemini-4-carbon-high
+  r = /^gemini-(\d+(?:\.\d+)?)(?:-([a-z0-9-]+?))?(?:-\d{8})?$/.exec(s)
+  if (r) return `Gemini ${r[1]}${r[2] ? ' ' + r[2].split('-').map(cap).join(' ') : ''}`
   return m
 }
 
