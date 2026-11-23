@@ -14,13 +14,13 @@ test('登录命令带完整令牌；重开指引没有令牌时写占位', () =>
   assert.equal(loginCmd('https://ks.example.com', null), `ks login --hub https://ks.example.com --token ${TOKEN_PLACEHOLDER}`)
 })
 
-test('ks install 按勾选的工具关掉没用的，DSH 不影响它', () => {
-  assert.equal(toolsCmd(['claude', 'codex']), 'ks install')
-  assert.equal(toolsCmd(['claude']), 'ks install --codex=false')
-  assert.equal(toolsCmd(['codex', 'dsh']), 'ks install --claude=false')
-  assert.equal(toolsCmd(['dsh']), 'ks install --claude=false --codex=false')
-  assert.equal(toolsCmd(['claude', 'codex', 'agy']), 'ks install --agy')
-  assert.equal(toolsCmd(['agy']), 'ks install --claude=false --codex=false --agy')
+test('ks install 全选时用默认命令，部分勾选时只装对应目标加 daemon，DSH 不影响它', () => {
+  assert.equal(toolsCmd(['claude', 'codex', 'agy']), 'ks install')
+  assert.equal(toolsCmd(['claude', 'codex']), 'ks install claude codex daemon')
+  assert.equal(toolsCmd(['claude']), 'ks install claude daemon')
+  assert.equal(toolsCmd(['codex', 'dsh']), 'ks install codex daemon')
+  assert.equal(toolsCmd(['dsh']), 'ks install daemon')
+  assert.equal(toolsCmd(['agy']), 'ks install agy daemon')
 })
 
 test('DSH 插件取与本机 ks 同版本的源码', () => {

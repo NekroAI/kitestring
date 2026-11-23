@@ -24,14 +24,12 @@ export function loginCmd(hub: string, token: string | null): string {
   return `ks login --hub ${hub} --token ${token || TOKEN_PLACEHOLDER}`
 }
 
-// ks install 默认接入 Claude Code 和 Codex 并注册 daemon 服务；没勾的工具显式关掉，
-// 免得没装 claude 时 MCP 注册报错；Antigravity（agy）需显式传 --agy。DSH 不走 ks install。
+// ks install 不带目标时接入全部设备端工具（Claude Code / Codex / Antigravity）并注册 daemon 服务；
+// 指定工具名或开关时只处理所选目标，免得没装 claude 时 MCP 注册报错。DSH 不走 ks install。
 export function toolsCmd(tools: readonly Tool[]): string {
-  const flags: string[] = []
-  if (!tools.includes('claude')) flags.push('--claude=false')
-  if (!tools.includes('codex')) flags.push('--codex=false')
-  if (tools.includes('agy')) flags.push('--agy')
-  return ['ks install', ...flags].join(' ')
+  const wanted = (['claude', 'codex', 'agy'] as const).filter((t) => tools.includes(t))
+  if (wanted.length === 3) return 'ks install'
+  return ['ks install', ...wanted, 'daemon'].join(' ')
 }
 
 // systemd 用户服务默认随登录启停；服务器上要开机就启动、退出登录也不停，需要 linger。

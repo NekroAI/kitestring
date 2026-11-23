@@ -29,13 +29,15 @@ func TestAgyInstallUninstallAndIdempotence(t *testing.T) {
 
 	var out bytes.Buffer
 	opts := Options{
-		KS:     "/usr/local/bin/ks",
-		Agy:    true,
-		AgySet: true,
-		Out:    &out,
+		KS:  "/usr/local/bin/ks",
+		Agy: true,
+		Out: &out,
 	}
 	if err := Run(opts, false); err != nil {
 		t.Fatalf("install --agy failed: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "[Antigravity（agy）]") || !strings.Contains(out.String(), "已清理 1 条旧版规则") {
+		t.Fatalf("expected clear agy install feedback with migration count, got:\n%s", out.String())
 	}
 
 	pDir := agyPluginDir(home)
@@ -136,7 +138,7 @@ func TestAgyDryRunTouchesNoFiles(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	var out bytes.Buffer
-	err := Run(Options{KS: "/usr/local/bin/ks", Agy: true, AgySet: true, DryRun: true, Out: &out}, false)
+	err := Run(Options{KS: "/usr/local/bin/ks", Agy: true, DryRun: true, Out: &out}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

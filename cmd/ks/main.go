@@ -41,7 +41,8 @@ const usage = `纸鸢 Kitestring —— 多设备、多 agent 的个人驾驶舱
   login --hub <地址> --token <token>   保存 Hub 地址与设备 token
   daemon                 启动设备常驻进程
   status                 查看本机 daemon 状态
-  install / uninstall    写入或移除 Claude Code / Codex / Antigravity 的 hook 与 MCP 配置（--dry-run 预览）
+  install / uninstall [claude|codex|agy|daemon|hub]
+                         不带目标时接入或移除全部设备端组件（Claude Code / Codex / Antigravity / daemon）；指定目标名或 --<目标> 时只处理所选目标（--dry-run 预览）
 
 agent 调用：
   hook <claude|codex|agy> <event>   由 agent 的 hook 调用

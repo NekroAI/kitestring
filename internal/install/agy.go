@@ -138,6 +138,7 @@ func agyRequiredAllowEntries() []string {
 func agyInstall(o Options, home string, remove bool) error {
 	pDir := agyPluginDir(home)
 	settingsPath := agySettingsPath(home)
+	fmt.Fprintln(o.Out, "\n[Antigravity（agy）]")
 	if remove {
 		if o.DryRun {
 			if agyInstalled(home) {
@@ -146,11 +147,12 @@ func agyInstall(o Options, home string, remove bool) error {
 		} else if err := os.RemoveAll(pDir); err != nil {
 			return err
 		}
-		if err := agyUpdateSettings(o, settingsPath, true); err != nil {
+		if _, err := agyUpdateSettings(o, settingsPath, true); err != nil {
 			return err
 		}
 		if !o.DryRun {
-			fmt.Fprintf(o.Out, "✓ 已移除 Antigravity 插件（%s）\n", pDir)
+			fmt.Fprintf(o.Out, "✓ 已移除 Antigravity（agy）插件：%s\n", pDir)
+			fmt.Fprintf(o.Out, "✓ 已清理 Antigravity（agy）权限：%s\n", settingsPath)
 		}
 		return nil
 	}
@@ -171,35 +173,44 @@ func agyInstall(o Options, home string, remove bool) error {
 			return err
 		}
 	}
-	if err := agyUpdateSettings(o, settingsPath, false); err != nil {
+	migrated, err := agyUpdateSettings(o, settingsPath, false)
+	if err != nil {
 		return err
 	}
 	if !o.DryRun {
-		fmt.Fprintf(o.Out, "✓ 已写入 Antigravity 插件（%s）与权限配置（%s）\n", pDir, settingsPath)
+		totalEvents := len(agyFlatEvents) + len(agyMatchedEvents)
+		totalAllow := len(agyRequiredAllowEntries())
+		fmt.Fprintf(o.Out, "✓ Antigravity（agy）插件：%s（%d 个 hook 事件 + MCP + 协同规则）\n", pDir, totalEvents)
+		if migrated > 0 {
+			fmt.Fprintf(o.Out, "✓ Antigravity（agy）权限：%s（%d 条 allow 白名单，已清理 %d 条旧版规则）\n", settingsPath, totalAllow, migrated)
+		} else {
+			fmt.Fprintf(o.Out, "✓ Antigravity（agy）权限：%s（%d 条 allow 白名单）\n", settingsPath, totalAllow)
+		}
 	}
 	return nil
 }
 
-func agyUpdateSettings(o Options, settingsPath string, remove bool) error {
+func agyUpdateSettings(o Options, settingsPath string, remove bool) (int, error) {
 	if remove {
 		if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-			return nil
+			return 0, nil
 		}
 	}
 	root, err := readJSON(settingsPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	perms, _ := root["permissions"].(map[string]any)
 	if perms == nil {
 		if remove {
-			return nil
+			return 0, nil
 		}
 		perms = map[string]any{}
 	}
 	rawAllow, _ := perms["allow"].([]any)
 	kept := make([]any, 0, len(rawAllow))
 	seen := map[string]bool{}
+	migrated := 0
 	for _, item := range rawAllow {
 		s, ok := item.(string)
 		if !ok {
@@ -213,6 +224,7 @@ func agyUpdateSettings(o Options, settingsPath string, remove bool) error {
 		}
 		// 迁移/清理旧版未带插件命名空间的 mcp(kitestring/*) 条目
 		if strings.HasPrefix(s, "mcp(kitestring/") {
+			migrated++
 			continue
 		}
 		if !seen[s] {
@@ -239,9 +251,9 @@ func agyUpdateSettings(o Options, settingsPath string, remove bool) error {
 		root["permissions"] = perms
 	}
 	if err := backup(o, settingsPath); err != nil {
-		return err
+		return 0, err
 	}
-	return writeFile(o, settingsPath, marshal(root), 0o600)
+	return migrated, writeFile(o, settingsPath, marshal(root), 0o600)
 }
 
 type agyDirStatus struct {

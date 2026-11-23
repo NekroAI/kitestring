@@ -99,10 +99,10 @@ ks login --hub http://<hub address>:7310 --token kst_xxx
 **3. Hook up your tools and start the background service:**
 
 ```sh
-ks install                    # Claude Code and Codex
-ks install --agy              # Claude Code, Codex and Antigravity (agy)
-ks install --codex=false      # Claude Code only
-ks install --claude=false     # Codex only
+ks install                    # all device components (Claude Code, Codex, Antigravity, daemon)
+ks install agy                # Antigravity only (same as ks install --agy)
+ks install claude daemon      # Claude Code + daemon only
+ks install codex daemon       # Codex + daemon only
 ```
 
 `ks install` writes the hooks and MCP server (backing up every file first; `--dry-run` previews, `ks uninstall` undoes) and registers the daemon as a service: launchd on macOS (starts at login), a systemd user service on Linux. Hooking up Claude Code needs `claude` on your PATH.

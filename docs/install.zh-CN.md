@@ -99,10 +99,10 @@ ks login --hub http://<hub 地址>:7310 --token kst_xxx
 **3. 接入工具，启动后台服务**：
 
 ```sh
-ks install                    # 同时接入 Claude Code 和 Codex
-ks install --agy              # 同时接入 Claude Code、Codex 和 Antigravity（agy）
-ks install --codex=false      # 只用 Claude Code
-ks install --claude=false     # 只用 Codex
+ks install                    # 接入全部设备端组件（Claude Code / Codex / Antigravity / daemon）
+ks install agy                # 只接入 Antigravity（等同 ks install --agy）
+ks install claude daemon      # 只接入 Claude Code 并注册 daemon
+ks install codex daemon       # 只接入 Codex 并注册 daemon
 ```
 
 `ks install` 写入 hook 和 MCP（改动前自动备份，`--dry-run` 先预览，`ks uninstall` 撤销），并把 daemon 注册成常驻服务：macOS 用 launchd，登录后自动启动；Linux 用 systemd 用户服务。接入 Claude Code 需要终端里能运行 `claude`。

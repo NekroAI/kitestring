@@ -40,8 +40,7 @@ type Options struct {
 	KS     string // ks 可执行文件绝对路径
 	Claude bool
 	Codex  bool
-	Agy    bool // 显式接入 Antigravity（--agy）；未指定且 daemon=true 时若已装过或检测到目录则自动更新
-	AgySet bool // 命令行显式传了 --agy 或 --agy=false
+	Agy    bool // 接入 Google Antigravity（agy）
 	Daemon bool // 注册 daemon 常驻服务
 	Hub    bool // 注册 hub 常驻服务
 	// NoAutostart：Windows 上注册服务但不随登录启动（任务计划程序不加登录触发器）
@@ -95,16 +94,8 @@ func Run(o Options, uninstall bool) error {
 		step("Codex hooks", func() error { return codexHooks(o, home, uninstall) })
 		step("Codex MCP", func() error { return codexMCP(o, home, uninstall) })
 	}
-	runAgy := false
-	if o.AgySet {
-		runAgy = o.Agy
-	} else if uninstall {
-		runAgy = !o.Claude && !o.Codex && !o.Daemon && !o.Hub && o.Agy || (agyInstalled(home) && len(o.ClaudeDirs) == 0)
-	} else {
-		runAgy = o.Daemon && (agyInstalled(home) || agyDetected(home))
-	}
-	if runAgy {
-		step("Antigravity 插件", func() error { return agyInstall(o, home, uninstall) })
+	if o.Agy {
+		step("Antigravity（agy）", func() error { return agyInstall(o, home, uninstall) })
 	}
 	if o.Daemon {
 		step("daemon 服务", func() error { return service(o, home, "daemon", []string{o.KS, "daemon"}, uninstall) })
