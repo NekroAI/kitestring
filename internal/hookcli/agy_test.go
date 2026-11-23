@@ -187,6 +187,54 @@ func TestRun_AgyDaemonResponses(t *testing.T) {
 	if preOut["decision"] != "allow" {
 		t.Fatalf("expected PreToolUse decision=allow, got %#v", preOut)
 	}
+
+	// 4. SessionStart accepts injectSteps when daemon returns Context
+	nextResp = protocol.HookResponse{Context: "欢迎回来"}
+	out.Reset()
+	code = Run([]string{protocol.ToolAgy, "SessionStart"}, strings.NewReader(`{"conversationId":"c1"}`), &out)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	injectOut.InjectSteps = nil
+	if err := json.Unmarshal(out.Bytes(), &injectOut); err != nil {
+		t.Fatal(err)
+	}
+	if len(injectOut.InjectSteps) != 1 || injectOut.InjectSteps[0].SystemMessage.SystemMessage != "欢迎回来" {
+		t.Fatalf("SessionStart should output injectSteps, got: %s", out.String())
+	}
+
+	// 5. PreToolUse / PostToolUse / Stop must NEVER emit injectSteps (AGY protojson rejects it)
+	for _, tc := range []struct {
+		event        string
+		resp         protocol.HookResponse
+		wantDecision string
+	}{
+		{"PreToolUse", protocol.HookResponse{Context: "旧终端提醒"}, "allow"},
+		{"PreToolUse", protocol.HookResponse{Block: "ignored-non-stop"}, "allow"},
+		{"PostToolUse", protocol.HookResponse{Context: "旧终端提醒"}, ""},
+		{"Stop", protocol.HookResponse{Context: "旧终端提醒"}, "allow"},
+	} {
+		nextResp = tc.resp
+		out.Reset()
+		code = Run([]string{protocol.ToolAgy, tc.event}, strings.NewReader(`{"conversationId":"c1"}`), &out)
+		if code != 0 {
+			t.Fatalf("%s expected exit 0, got %d", tc.event, code)
+		}
+		if strings.Contains(out.String(), "injectSteps") {
+			t.Fatalf("%s must not emit injectSteps, got: %s", tc.event, out.String())
+		}
+		var m map[string]any
+		if err := json.Unmarshal(out.Bytes(), &m); err != nil {
+			t.Fatalf("%s output not valid JSON: %q: %v", tc.event, out.String(), err)
+		}
+		if tc.wantDecision == "" {
+			if len(m) != 0 {
+				t.Fatalf("%s expected empty JSON {}, got %#v", tc.event, m)
+			}
+		} else if m["decision"] != tc.wantDecision {
+			t.Fatalf("%s expected decision=%q, got %#v", tc.event, tc.wantDecision, m)
+		}
+	}
 }
 
 func shortTempDir(t *testing.T) string {

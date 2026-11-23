@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +16,14 @@ import (
 	"github.com/NekroAI/kitestring/internal/protocol"
 	"github.com/NekroAI/kitestring/internal/summary"
 )
+
+func agyHookAcceptsContext(event string) bool {
+	switch event {
+	case "SessionStart", "PreInvocation", "PostInvocation":
+		return true
+	}
+	return false
+}
 
 const agyRoleNote = `【Antigravity（agy）环境提示】
 - 你正在 Google Antigravity 环境中运行；如终端开启了沙箱导致 ks CLI 报错 operation not permitted，请带 BypassSandbox=true 执行 ks role / ks wait / ks secret run 等 CLI 命令。
@@ -28,6 +38,7 @@ type agyTurnState struct {
 	lastUserInput      string
 	inTurn             bool
 	firstUserSeen      bool
+	hasExplicitUser    bool
 	seeded             bool
 }
 
@@ -40,15 +51,27 @@ type agyFoldResult struct {
 	skip         bool
 }
 
+type agyDeferredSession struct {
+	instance   string
+	cwd        string
+	transcript string
+	seenAt     time.Time
+}
+
 type agySubInfo struct {
 	parentKey   string
 	parentSID   string
+	parentInst  string
+	toolUseID   string
 	childCID    string
 	role        string
 	typeName    string
 	prompt      string
 	transcript  string
 	startedAt   time.Time
+	postSeen    bool
+	postAt      time.Time
+	tentative   bool
 	startedSent bool
 	stopped     bool
 }
@@ -153,6 +176,9 @@ func (d *Daemon) ensureAgyMapsLocked() {
 	}
 	if d.agyPendingSubs == nil {
 		d.agyPendingSubs = make(map[string][]*agySubInfo)
+	}
+	if d.agyDeferred == nil {
+		d.agyDeferred = make(map[string]*agyDeferredSession)
 	}
 	if d.agyMCP == nil {
 		d.agyMCP = make(map[string][]*agyPendingMCP)
@@ -365,9 +391,11 @@ func resolveAgyTranscript(sid string, payload map[string]any, env map[string]str
 		)
 	}
 	for _, dir := range dirs {
-		cand := filepath.Join(dir, "brain", sid, ".system_generated", "logs", "transcript.jsonl")
-		if info, err := os.Stat(cand); err == nil && !info.IsDir() {
-			return cand
+		for _, fname := range []string{"transcript_full.jsonl", "transcript.jsonl"} {
+			cand := filepath.Join(dir, "brain", sid, ".system_generated", "logs", fname)
+			if info, err := os.Stat(cand); err == nil && !info.IsDir() {
+				return cand
+			}
 		}
 	}
 	return ""
@@ -668,16 +696,21 @@ func (d *Daemon) foldAgyPreInvocationLocked(key, instance string, payload map[st
 	if checkSlash == "" {
 		checkSlash = meta.userPrompt
 	}
+	// 跨终端切换（resume）时不同进程实例的 initialNumSteps 可能有微小偏差，不可据此误判压缩。
+	stepDropped := src != "resume" && hasNumSteps && st.lastNumSteps > 0 && numSteps > 0 && numSteps < st.lastNumSteps
 	isCompact := srcHint == "compact" ||
 		strings.HasPrefix(strings.TrimSpace(checkSlash), "/compact") ||
 		newCheckpoint ||
-		(hasNumSteps && st.lastNumSteps > 0 && numSteps > 0 && numSteps < st.lastNumSteps)
+		stepDropped
 	if hasNumSteps && numSteps > 0 {
 		st.lastNumSteps = numSteps
 	}
 
 	newExplicitStep := meta.userStep >= 0 && meta.userStep > st.lastUserStep
 	newLastUI := lastUI != "" && lastUI != st.lastUserInput
+	if explicitPrompt != "" || lastUI != "" || meta.userStep >= 0 {
+		st.hasExplicitUser = true
+	}
 
 	chooseUserPrompt := func() string {
 		if explicitPrompt != "" {
@@ -923,25 +956,97 @@ func (d *Daemon) pruneAgyPendingSubsLocked(parentSID string, now time.Time) []*a
 	return kept
 }
 
-func (d *Daemon) noteAgySubagentPreLocked(parentKey, parentSID string, payload map[string]any) {
+func (d *Daemon) rootAgyParentLocked(parentSID string) string {
+	cur := parentSID
+	for i := 0; i < 8 && cur != ""; i++ {
+		sub := d.agySubs[cur]
+		if sub == nil || sub.parentSID == "" || sub.parentSID == cur {
+			break
+		}
+		cur = sub.parentSID
+	}
+	return cur
+}
+
+func (d *Daemon) pruneAgyDeferredLocked(now time.Time) {
+	for sid, item := range d.agyDeferred {
+		if now.Sub(item.seenAt) > 5*time.Minute {
+			delete(d.agyDeferred, sid)
+		}
+	}
+}
+
+func (d *Daemon) noteAgySubagentPreLocked(parentKey, parentSID, parentInst string, payload map[string]any) {
 	if parentSID == "" {
 		return
 	}
 	d.ensureAgyMapsLocked()
+	parentSID = d.rootAgyParentLocked(parentSID)
+	parentKey = protocol.SessionKey(protocol.ToolAgy, parentSID)
 	now := time.Now()
 	q := d.pruneAgyPendingSubsLocked(parentSID, now)
 	role, typeName, prompt := extractAgySubInput(payload)
+	toolUseID := firstNonEmptyString(payload, "tool_use_id")
 	d.agyPendingSubs[parentSID] = append(q, &agySubInfo{
-		parentKey: parentKey,
-		parentSID: parentSID,
-		role:      role,
-		typeName:  typeName,
-		prompt:    prompt,
-		startedAt: now,
+		parentKey:  parentKey,
+		parentSID:  parentSID,
+		parentInst: parentInst,
+		toolUseID:  toolUseID,
+		role:       role,
+		typeName:   typeName,
+		prompt:     prompt,
+		startedAt:  now,
 	})
 }
 
-func (d *Daemon) popPendingAgySubLocked(parentSID, roleHint, typeHint, promptHint string) *agySubInfo {
+func (d *Daemon) markAgyPendingSubPostLocked(parentSID, toolUseID, roleHint, typeHint, promptHint string, now time.Time) {
+	if d.agyPendingSubs == nil || parentSID == "" {
+		return
+	}
+	q := d.pruneAgyPendingSubsLocked(parentSID, now)
+	if len(q) == 0 {
+		return
+	}
+	idx := -1
+	if toolUseID != "" {
+		for i, item := range q {
+			if item.toolUseID == toolUseID {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 && promptHint != "" {
+		for i, item := range q {
+			if !item.postSeen && sameNormText(item.prompt, promptHint) {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 && (typeHint != "" || roleHint != "") {
+		for i, item := range q {
+			if !item.postSeen && (typeHint == "" || item.typeName == typeHint) && (roleHint == "" || item.role == roleHint) {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 {
+		for i, item := range q {
+			if !item.postSeen {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx >= 0 {
+		q[idx].postSeen = true
+		q[idx].postAt = now
+	}
+}
+
+func (d *Daemon) popPendingAgySubByIDLocked(parentSID, toolUseID, roleHint, typeHint, promptHint string) *agySubInfo {
 	if d.agyPendingSubs == nil {
 		return nil
 	}
@@ -950,10 +1055,20 @@ func (d *Daemon) popPendingAgySubLocked(parentSID, roleHint, typeHint, promptHin
 		return nil
 	}
 	idx := -1
-	for i, item := range q {
-		if promptHint != "" && sameNormText(item.prompt, promptHint) {
-			idx = i
-			break
+	if toolUseID != "" {
+		for i, item := range q {
+			if item.toolUseID == toolUseID {
+				idx = i
+				break
+			}
+		}
+	}
+	if idx < 0 {
+		for i, item := range q {
+			if promptHint != "" && sameNormText(item.prompt, promptHint) {
+				idx = i
+				break
+			}
 		}
 	}
 	if idx < 0 && (typeHint != "" || roleHint != "") {
@@ -983,27 +1098,47 @@ func (d *Daemon) popPendingAgySubLocked(parentSID, roleHint, typeHint, promptHin
 	return picked
 }
 
+func (d *Daemon) popPendingAgySubLocked(parentSID, roleHint, typeHint, promptHint string) *agySubInfo {
+	return d.popPendingAgySubByIDLocked(parentSID, "", roleHint, typeHint, promptHint)
+}
+
 func (d *Daemon) discardAgySubagentPreLocked(parentSID string, payload map[string]any) {
 	role, typeName, prompt := extractAgySubInput(payload)
-	_ = d.popPendingAgySubLocked(parentSID, role, typeName, prompt)
+	toolUseID := firstNonEmptyString(payload, "tool_use_id")
+	_ = d.popPendingAgySubByIDLocked(parentSID, toolUseID, role, typeName, prompt)
 }
 
 func detectAgyParentFromTranscript(childSID, path string) (parentSID, prompt string) {
 	if path == "" {
 		return "", ""
 	}
+	cands := []string{path}
+	base := filepath.Base(path)
+	if base == "transcript_full.jsonl" {
+		cands = append(cands, filepath.Join(filepath.Dir(path), "transcript.jsonl"))
+	} else if base == "transcript.jsonl" {
+		cands = append(cands, filepath.Join(filepath.Dir(path), "transcript_full.jsonl"))
+	}
+	for _, cand := range cands {
+		if pSID, initPrompt := detectAgyParentFromSingleFile(childSID, cand); pSID != "" {
+			return pSID, initPrompt
+		}
+	}
+	return "", ""
+}
+
+func detectAgyParentFromSingleFile(childSID, path string) (parentSID, prompt string) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", ""
 	}
 	defer f.Close()
-	var buf [16 << 10]byte
-	n, _ := f.Read(buf[:])
-	if n == 0 {
+	r := bufio.NewReaderSize(io.LimitReader(f, 1<<20), 64<<10)
+	lineBytes, err := r.ReadBytes('\n')
+	if len(lineBytes) == 0 && err != nil {
 		return "", ""
 	}
-	firstLine, _, _ := strings.Cut(string(buf[:n]), "\n")
-	firstLine = strings.TrimSpace(firstLine)
+	firstLine := strings.TrimSpace(string(lineBytes))
 	if firstLine == "" {
 		return "", ""
 	}
@@ -1025,7 +1160,163 @@ func detectAgyParentFromTranscript(childSID, path string) (parentSID, prompt str
 	return sender, strings.TrimSpace(strings.TrimSuffix(m[2], "</SYSTEM_MESSAGE>"))
 }
 
-func (d *Daemon) resolveAgySubagentLocked(sid string, payload map[string]any, env map[string]string) *agySubInfo {
+func (d *Daemon) findAgyParentByChildCIDInTranscriptLocked(childCID string) string {
+	if childCID == "" || len(d.agyPendingSubs) == 0 {
+		return ""
+	}
+	now := time.Now()
+	needle := []byte(childCID)
+	for pSID := range d.agyPendingSubs {
+		if pSID == childCID {
+			continue
+		}
+		if len(d.pruneAgyPendingSubsLocked(pSID, now)) == 0 {
+			continue
+		}
+		info := d.sessions[protocol.SessionKey(protocol.ToolAgy, pSID)]
+		if info == nil || info.transcript == "" {
+			continue
+		}
+		data := readTailBytes(info.transcript, 128<<10)
+		if !bytes.Contains(data, needle) {
+			continue
+		}
+		lines := bytes.Split(data, []byte("\n"))
+		for i := len(lines) - 1; i >= 0; i-- {
+			if !bytes.Contains(lines[i], needle) {
+				continue
+			}
+			var s agyStep
+			if json.Unmarshal(bytes.TrimSpace(lines[i]), &s) != nil {
+				continue
+			}
+			if s.Type == "GENERIC" && strings.Contains(s.Content, childCID) && (strings.Contains(s.Content, "subagent") || strings.Contains(s.Content, "conversationId")) {
+				return pSID
+			}
+		}
+	}
+	return ""
+}
+
+func (d *Daemon) hasRecentPendingAgySubLocked(instance, excludeSID string, now time.Time) bool {
+	if len(d.agyPendingSubs) == 0 {
+		return false
+	}
+	for pSID := range d.agyPendingSubs {
+		if pSID == excludeSID {
+			continue
+		}
+		for _, item := range d.pruneAgyPendingSubsLocked(pSID, now) {
+			if instance != "" && item.parentInst != "" && item.parentInst != instance {
+				continue
+			}
+			if (item.postSeen && now.Sub(item.postAt) <= 2*time.Minute) || now.Sub(item.startedAt) <= 60*time.Second {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (d *Daemon) hasOtherAgySessionOnInstanceLocked(instance, excludeSID string) bool {
+	if instance == "" {
+		return false
+	}
+	excludeKey := protocol.SessionKey(protocol.ToolAgy, excludeSID)
+	if set := d.dshInst[instance]; len(set) > 0 {
+		for k := range set {
+			if k != excludeKey && strings.HasPrefix(k, protocol.ToolAgy+":") {
+				return true
+			}
+		}
+	}
+	if cur := d.instances[instance]; cur != "" && cur != excludeKey && strings.HasPrefix(cur, protocol.ToolAgy+":") {
+		return true
+	}
+	return false
+}
+
+func (d *Daemon) claimPendingAgySubForChildLocked(childSID, instance, tp string, env map[string]string, now time.Time) *agySubInfo {
+	if childSID == "" || len(d.agyPendingSubs) == 0 {
+		return nil
+	}
+	type cand struct {
+		pSID string
+		idx  int
+		item *agySubInfo
+		tier int // 0: exact instance match; 1: wildcard instance
+	}
+	var best *cand
+	better := func(a, b cand) bool {
+		if a.tier != b.tier {
+			return a.tier < b.tier
+		}
+		if a.item.postSeen != b.item.postSeen {
+			return a.item.postSeen
+		}
+		if a.item.postSeen && b.item.postSeen && !a.item.postAt.Equal(b.item.postAt) {
+			return a.item.postAt.Before(b.item.postAt)
+		}
+		return a.item.startedAt.Before(b.item.startedAt)
+	}
+	for pSID := range d.agyPendingSubs {
+		if pSID == childSID {
+			continue
+		}
+		q := d.pruneAgyPendingSubsLocked(pSID, now)
+		for i, item := range q {
+			tier := -1
+			switch {
+			case instance != "" && item.parentInst == instance:
+				tier = 0
+			case instance == "" || item.parentInst == "":
+				tier = 1
+			default:
+				continue
+			}
+			if !(item.postSeen && now.Sub(item.postAt) <= 2*time.Minute) && now.Sub(item.startedAt) > 60*time.Second {
+				continue
+			}
+			c := cand{pSID: pSID, idx: i, item: item, tier: tier}
+			if best == nil || better(c, *best) {
+				cp := c
+				best = &cp
+			}
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	q := d.agyPendingSubs[best.pSID]
+	picked := q[best.idx]
+	rest := append(q[:best.idx:best.idx], q[best.idx+1:]...)
+	if len(rest) == 0 {
+		delete(d.agyPendingSubs, best.pSID)
+	} else {
+		d.agyPendingSubs[best.pSID] = rest
+	}
+	rootParent := d.rootAgyParentLocked(best.pSID)
+	if tp == "" {
+		tp = resolveAgyTranscript(childSID, nil, env)
+	}
+	info := &agySubInfo{
+		parentKey:  protocol.SessionKey(protocol.ToolAgy, rootParent),
+		parentSID:  rootParent,
+		parentInst: picked.parentInst,
+		childCID:   childSID,
+		role:       picked.role,
+		typeName:   picked.typeName,
+		prompt:     picked.prompt,
+		transcript: tp,
+		startedAt:  now,
+		tentative:  true,
+	}
+	d.agySubs[childSID] = info
+	delete(d.agyDeferred, childSID)
+	return info
+}
+
+func (d *Daemon) resolveAgySubagentLocked(sid, instance string, payload map[string]any, env map[string]string) *agySubInfo {
 	if sid == "" {
 		return nil
 	}
@@ -1035,12 +1326,28 @@ func (d *Daemon) resolveAgySubagentLocked(sid string, payload map[string]any, en
 		if sub.transcript == "" && tp != "" {
 			sub.transcript = tp
 		}
+		if sub.tentative && sub.transcript != "" {
+			if pSID, initPrompt := detectAgyParentFromTranscript(sid, sub.transcript); pSID != "" {
+				sub.tentative = false
+				if sub.prompt == "" && initPrompt != "" {
+					sub.prompt = initPrompt
+				}
+				if !sub.startedSent {
+					rootParent := d.rootAgyParentLocked(pSID)
+					sub.parentSID = rootParent
+					sub.parentKey = protocol.SessionKey(protocol.ToolAgy, rootParent)
+				}
+			}
+		}
 		return sub
 	}
-	if st := d.agyTurns[protocol.SessionKey(protocol.ToolAgy, sid)]; st != nil && st.firstUserSeen {
+	if st := d.agyTurns[protocol.SessionKey(protocol.ToolAgy, sid)]; st != nil && st.hasExplicitUser {
 		return nil
 	}
 	parentSID, initPrompt := detectAgyParentFromTranscript(sid, tp)
+	if parentSID == "" {
+		parentSID = d.findAgyParentByChildCIDInTranscriptLocked(sid)
+	}
 	if parentSID == "" {
 		if lastUI := firstNonEmptyString(payload, "last_user_input"); lastUI != "" {
 			now := time.Now()
@@ -1049,6 +1356,9 @@ func (d *Daemon) resolveAgySubagentLocked(sid string, payload map[string]any, en
 					continue
 				}
 				for _, item := range d.pruneAgyPendingSubsLocked(pSID, now) {
+					if instance != "" && item.parentInst != "" && item.parentInst != instance {
+						continue
+					}
 					if len(strings.TrimSpace(item.prompt)) >= 10 && sameNormText(item.prompt, lastUI) {
 						parentSID, initPrompt = pSID, item.prompt
 						break
@@ -1063,6 +1373,7 @@ func (d *Daemon) resolveAgySubagentLocked(sid string, payload map[string]any, en
 	if parentSID == "" {
 		return nil
 	}
+	parentSID = d.rootAgyParentLocked(parentSID)
 	pending := d.popPendingAgySubLocked(parentSID, "", "", initPrompt)
 	if tp == "" {
 		tp = resolveAgyTranscript(sid, nil, env)
@@ -1078,19 +1389,69 @@ func (d *Daemon) resolveAgySubagentLocked(sid string, payload map[string]any, en
 	if pending != nil {
 		info.role = pending.role
 		info.typeName = pending.typeName
+		info.parentInst = pending.parentInst
 		if info.prompt == "" {
 			info.prompt = pending.prompt
 		}
 	}
 	d.agySubs[sid] = info
+	delete(d.agyDeferred, sid)
 	return info
 }
 
-func (d *Daemon) routeAgyChildLocked(sid, name string, payload map[string]any, env map[string]string) (sub *agySubInfo, newName string, extra []protocol.Event, drop bool) {
-	sub = d.resolveAgySubagentLocked(sid, payload, env)
+func (d *Daemon) routeAgyChildLocked(sid, name, instance string, payload map[string]any, env map[string]string) (sub *agySubInfo, newName string, extra []protocol.Event, drop bool) {
+	d.ensureAgyMapsLocked()
+	now := time.Now()
+	d.pruneAgyDeferredLocked(now)
+	sub = d.resolveAgySubagentLocked(sid, instance, payload, env)
 	if sub == nil {
-		return nil, name, nil, false
+		key := protocol.SessionKey(protocol.ToolAgy, sid)
+		isFresh := d.sessions[key] == nil && (d.agyTurns[key] == nil || !d.agyTurns[key].hasExplicitUser)
+		tp := firstNonEmptyString(payload, "transcript_path")
+		if isFresh {
+			switch name {
+			case "SessionStart":
+				// 子代理的 SessionStart 常在父/子 transcript 落盘前到达：若同宿主进程刚发起过 invoke_subagent，
+				// 先暂缓上报，避免泄漏成独立的顶层会话（若实为用户新开对话，下一条带提示词的 PreInvocation 会正常建会话）。
+				if d.hasRecentPendingAgySubLocked(instance, sid, now) {
+					d.agyDeferred[sid] = &agyDeferredSession{instance: instance, cwd: firstNonEmptyString(payload, "cwd"), transcript: tp, seenAt: now}
+					return nil, name, nil, true
+				}
+			case "PreInvocation":
+				noUserInput := firstNonEmptyString(payload, "prompt") == "" &&
+					firstNonEmptyString(payload, "last_user_input") == "" &&
+					readAgyTranscriptMeta(tp).userStep < 0
+				if noUserInput {
+					if claimed := d.claimPendingAgySubForChildLocked(sid, instance, tp, env, now); claimed != nil {
+						sub = claimed
+					} else if d.agyDeferred[sid] != nil || d.hasOtherAgySessionOnInstanceLocked(instance, sid) {
+						d.agyDeferred[sid] = &agyDeferredSession{instance: instance, cwd: firstNonEmptyString(payload, "cwd"), transcript: tp, seenAt: now}
+						return nil, name, nil, true
+					}
+				}
+			case "PreToolUse", "PostToolUse", "PostToolUseFailure":
+				if d.agyDeferred[sid] != nil && readAgyTranscriptMeta(tp).userStep < 0 {
+					if claimed := d.claimPendingAgySubForChildLocked(sid, instance, tp, env, now); claimed != nil {
+						sub = claimed
+					}
+				}
+			case "Stop", "Interrupt":
+				if d.agyDeferred[sid] != nil {
+					if claimed := d.claimPendingAgySubForChildLocked(sid, instance, tp, env, now); claimed != nil {
+						sub = claimed
+					} else if readAgyTranscriptMeta(tp).userStep < 0 {
+						delete(d.agyDeferred, sid)
+						return nil, name, nil, true
+					}
+				}
+			}
+		}
+		if sub == nil {
+			delete(d.agyDeferred, sid)
+			return nil, name, nil, false
+		}
 	}
+	delete(d.agyDeferred, sid)
 	newName = name
 	startEv := func() protocol.Event {
 		return protocol.Event{
@@ -1106,14 +1467,16 @@ func (d *Daemon) routeAgyChildLocked(sid, name string, payload map[string]any, e
 	}
 	switch name {
 	case "SessionStart", "PreInvocation":
-		if !sub.startedSent {
+		if !sub.startedSent || sub.stopped {
 			sub.startedSent = true
+			sub.stopped = false
 			return sub, "SubagentStart", nil, false
 		}
 		return sub, name, nil, true
 	case "PreToolUse", "PostToolUse", "PostToolUseFailure":
-		if !sub.startedSent {
+		if !sub.startedSent || sub.stopped {
 			sub.startedSent = true
+			sub.stopped = false
 			extra = append(extra, startEv())
 		}
 		return sub, name, extra, false
@@ -1150,23 +1513,32 @@ func (d *Daemon) activeAgySubsLocked(parentKey string) (int, string) {
 
 func (d *Daemon) noteAgySubagentToolLocked(parentKey, parentSID, transcriptPath string, payload map[string]any, env map[string]string) *agySubInfo {
 	d.ensureAgyMapsLocked()
+	parentSID = d.rootAgyParentLocked(parentSID)
+	parentKey = protocol.SessionKey(protocol.ToolAgy, parentSID)
 	role, typeName, prompt := extractAgySubInput(payload)
+	toolUseID := firstNonEmptyString(payload, "tool_use_id")
+	now := time.Now()
+	d.markAgyPendingSubPostLocked(parentSID, toolUseID, role, typeName, prompt, now)
 
 	childCID := extractChildCID(parentSID, payload["tool_response"])
-	if childCID == "" && transcriptPath != "" {
-		childCID = extractChildCIDFromTranscript(parentSID, transcriptPath)
-	}
 	if childCID == "" {
 		childCID = firstNonEmptyString(payload, "agent_id")
 		if childCID == parentSID {
 			childCID = ""
 		}
 	}
+	// 仅在当前父会话没有多个并发待认领的 invoke_subagent 时才兜底扫父 transcript，
+	// 且跳过所有已认领过的 childCID，防止 PostToolUse 尚未刷盘时把前一个子代理错配给下一个角色。
+	if childCID == "" && transcriptPath != "" && len(d.agyPendingSubs[parentSID]) <= 1 {
+		childCID = extractChildCIDFromTranscript(parentSID, transcriptPath, func(c string) bool {
+			return d.agySubs[c] != nil || d.sessions[protocol.SessionKey(protocol.ToolAgy, c)] != nil
+		})
+	}
 	if childCID == "" {
 		return nil
 	}
 
-	pending := d.popPendingAgySubLocked(parentSID, role, typeName, prompt)
+	pending := d.popPendingAgySubByIDLocked(parentSID, toolUseID, role, typeName, prompt)
 	if pending != nil {
 		if role == "" {
 			role = pending.role
@@ -1186,6 +1558,7 @@ func (d *Daemon) noteAgySubagentToolLocked(parentKey, parentSID, transcriptPath 
 	if childTranscript == "" {
 		childTranscript = resolveAgyTranscript(childCID, nil, env)
 	}
+	delete(d.agyDeferred, childCID)
 	if prev := d.agySubs[childCID]; prev != nil {
 		if prev.role == "" {
 			prev.role = role
@@ -1209,7 +1582,10 @@ func (d *Daemon) noteAgySubagentToolLocked(parentKey, parentSID, transcriptPath 
 		typeName:   typeName,
 		prompt:     prompt,
 		transcript: childTranscript,
-		startedAt:  time.Now(),
+		startedAt:  now,
+	}
+	if pending != nil {
+		info.parentInst = pending.parentInst
 	}
 	d.agySubs[childCID] = info
 	return info
@@ -1279,7 +1655,7 @@ func extractChildCID(parentSID string, resp any) string {
 	}
 }
 
-func extractChildCIDFromTranscript(parentSID, path string) string {
+func extractChildCIDFromTranscript(parentSID, path string, skip func(string) bool) string {
 	data := readTailBytes(path, 128<<10)
 	if len(data) == 0 {
 		return ""
@@ -1295,7 +1671,13 @@ func extractChildCIDFromTranscript(parentSID, path string) string {
 			continue
 		}
 		if s.Type == "GENERIC" && s.Content != "" && (strings.Contains(s.Content, "subagent") || strings.Contains(s.Content, "conversationId")) {
-			if cid := findUUIDExcept(s.Content, parentSID); cid != "" {
+			for _, cid := range agyUUIDRe.FindAllString(s.Content, -1) {
+				if cid == parentSID {
+					continue
+				}
+				if skip != nil && skip(cid) {
+					continue
+				}
 				return cid
 			}
 		}

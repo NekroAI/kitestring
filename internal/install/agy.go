@@ -124,11 +124,13 @@ const agyPluginRulesMD = `# Kitestring（纸鸢）Antigravity 协同规则
 - 担任角色后结束本轮前若需要挂起待命，请使用 run_command（WaitMsBeforeAsync=500, BypassSandbox=true）在后台运行 ks wait，然后结束本轮；唤醒时系统会自动继续。
 `
 
+const agyMCPServerID = agyPluginName + "_" + agyPluginName
+
 func agyRequiredAllowEntries() []string {
 	entries := make([]string, 0, 1+len(protocol.KitestringMCPTools))
 	entries = append(entries, "command(ks)")
 	for _, tool := range protocol.KitestringMCPTools {
-		entries = append(entries, "mcp(kitestring/"+tool+")")
+		entries = append(entries, "mcp("+agyMCPServerID+"/"+tool+")")
 	}
 	return entries
 }
@@ -204,10 +206,14 @@ func agyUpdateSettings(o Options, settingsPath string, remove bool) error {
 			kept = append(kept, item)
 			continue
 		}
-		if s == "command(ks)" || strings.HasPrefix(s, "mcp(kitestring/") {
+		if s == "command(ks)" || strings.HasPrefix(s, "mcp("+agyMCPServerID+"/") {
 			if remove {
 				continue
 			}
+		}
+		// 迁移/清理旧版未带插件命名空间的 mcp(kitestring/*) 条目
+		if strings.HasPrefix(s, "mcp(kitestring/") {
+			continue
 		}
 		if !seen[s] {
 			seen[s] = true

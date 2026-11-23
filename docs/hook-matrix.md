@@ -100,7 +100,7 @@ Codex 经 app-server / 桌面 App 运行时一个进程承载多个会话，分�
 
 ## 9. Google Antigravity（`agy`）实测机制
 
-- **Plugin 发现与事件名**：通过 `~/.gemini/config/plugins/kitestring` 注册 `hooks/hooks.json`、`mcp.json`（或 `.mcp.json`）、`rules/AGENTS.md` 与 `skills/`；支持的 hook 事件为 `SessionStart`、`PreToolUse`、`PostToolUse`、`PreInvocation`、`PostInvocation`、`Stop`（其中 `Stop.terminationReason == "USER_CANCELED"` 归一为 `Interrupt`）。
+- **Plugin 发现与事件名**：通过 `~/.gemini/config/plugins/kitestring` 注册 `hooks.json`、`mcp_config.json`、`rules/AGENTS.md` 与 `skills/`；支持的 hook 事件为 `SessionStart`、`PreToolUse`、`PostToolUse`、`PreInvocation`、`PostInvocation`、`Stop`（其中 `Stop.terminationReason == "USER_CANCELED"` 归一为 `Interrupt`）。只有 `SessionStart`、`PreInvocation`、`PostInvocation` 支持输出 `injectSteps`（`PreToolUse`/`PostToolUse`/`Stop` 不支持该字段）。
 - **工具入参包与 MCP 懒加载展开**：`PreToolUse` / `PostToolUse` 真实入参位于 `toolCall: {id, name, args}`（失败信息位于 `PostToolUse.error`）；MCP 工具通过 `call_mcp_tool`（`{ServerName: "kitestring_kitestring", ToolName, Arguments}`）调用，`normalizeAgyPayload` 将其展开为 `mcp__kitestring__<tool>` 与真实参数后再计算规范化参数哈希并与 `ks mcp` 配对。
 - **轮次折叠、压缩与自动唤醒**：`PreInvocation` 同一轮内会随每一步反复触发，结合 `transcript.jsonl` 的 `USER_EXPLICIT`、`lastUserInput`、系统注入 `[Message]`（`SYSTEM_MESSAGE`）与系统检查点 `SYSTEM` / `CHECKPOINT` 折叠成单次 `UserPromptSubmit`，并在发生压缩时合成 `PreCompact`、重投身份与团队状态。
 - **子代理（Subagent）**：Antigravity 无原生 `SubagentStart` / `SubagentStop` hook，子代理以独立 `conversationId` 触发同一套全局 hook，且其 `transcript.jsonl` 首步（`SYSTEM_MESSAGE` `sender=<parentConversationId>`）与父会话 `invoke_subagent` 共同确定父子归属，路由到父会话子泳道并统计子代理 token 用量。

@@ -157,7 +157,11 @@ func (u *usageScanner) trackSubagent(key, agent, path string) {
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	if _, ok := u.files[path]; ok {
+	if prev, ok := u.files[path]; ok {
+		if prev.key != key || prev.agent != agent {
+			prev.key, prev.agent = key, agent
+			_, _ = u.db.Exec(`UPDATE usage_files SET session_key = ?, agent_id = ? WHERE path = ?`, key, agent, path)
+		}
 		return
 	}
 	u.addLocked(&usageFile{path: path, key: key, agent: agent, kind: usageAgy, size: -1})

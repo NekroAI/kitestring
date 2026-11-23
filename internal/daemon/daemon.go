@@ -76,6 +76,7 @@ type Daemon struct {
 	agyTurns       map[string]*agyTurnState
 	agySubs        map[string]*agySubInfo
 	agyPendingSubs map[string][]*agySubInfo
+	agyDeferred    map[string]*agyDeferredSession
 	agyMCP         map[string][]*agyPendingMCP
 }
 
@@ -109,7 +110,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1), assetKick: make(chan struct{}, 1), agyTurns: map[string]*agyTurnState{}, agySubs: map[string]*agySubInfo{}, agyPendingSubs: map[string][]*agySubInfo{}, agyMCP: map[string][]*agyPendingMCP{}}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1), assetKick: make(chan struct{}, 1), agyTurns: map[string]*agyTurnState{}, agySubs: map[string]*agySubInfo{}, agyPendingSubs: map[string][]*agySubInfo{}, agyDeferred: map[string]*agyDeferredSession{}, agyMCP: map[string][]*agyPendingMCP{}}
 	d.toolCond = sync.NewCond(&d.mu)
 	if d.usage, err = openUsage(q.db); err != nil {
 		q.close()
@@ -381,8 +382,20 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 			d.log.Warn("事件入队失败", "err", err)
 		}
 		d.wake()
+		ctxNote := ""
+		if ev.Tool != protocol.ToolAgy {
+			ctxNote = d.staleNote(ev.Instance)
+		} else {
+			rawAgyEvent := req.Event
+			if rawAgyEvent == "" {
+				rawAgyEvent = firstNonEmptyString(req.Payload, "hook_event_name", "hookEventName")
+			}
+			if agyHookAcceptsContext(rawAgyEvent) {
+				ctxNote = d.staleNote(ev.Instance)
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(protocol.HookResponse{Context: d.staleNote(ev.Instance)})
+		_ = json.NewEncoder(w).Encode(protocol.HookResponse{Context: ctxNote})
 		return
 	}
 	block := d.stopNotice(ev) // 用户让它停下（R-291）：运行中的会话在这一轮结束时收到停下提醒
@@ -503,12 +516,13 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		var routedName string
 		var routedExtra []protocol.Event
 		var routedDrop bool
-		agySub, routedName, routedExtra, routedDrop = d.routeAgyChildLocked(sid, name, p, req.Env)
+		agySub, routedName, routedExtra, routedDrop = d.routeAgyChildLocked(sid, name, ev.Instance, p, req.Env)
 		d.mu.Unlock()
 		if routedDrop {
 			return protocol.Event{}, false
 		}
 		if agySub != nil {
+			childInst := ev.Instance
 			sid = agySub.parentSID
 			key = agySub.parentKey
 			name = routedName
@@ -517,6 +531,11 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 			ev.AgentID = agySub.childCID
 			ev.AgentType = agySub.agentType()
 			ev.Instance = ""
+			if agySub.parentInst == "" && childInst != "" {
+				d.mu.Lock()
+				agySub.parentInst = childInst
+				d.mu.Unlock()
+			}
 			if name == "SubagentStart" {
 				ev.ToolBrief = agySub.label()
 				ev.Source = ""
@@ -610,14 +629,18 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		case "PreToolUse":
 			d.mu.Lock()
 			d.rememberAgyMCPLocked(key, ev.AgentID, sid, ev.ToolName, p["tool_input"])
-			if ev.AgentID == "" && ev.ToolName == "invoke_subagent" {
-				d.noteAgySubagentPreLocked(key, sid, p)
+			if ev.ToolName == "invoke_subagent" {
+				subInst := ev.Instance
+				if subInst == "" && agySub != nil {
+					subInst = agySub.parentInst
+				}
+				d.noteAgySubagentPreLocked(key, sid, subInst, p)
 			}
 			d.mu.Unlock()
 		case "PostToolUse", "PostToolUseFailure":
 			d.mu.Lock()
 			d.releaseAgyMCPLocked(key, ev.ToolName, p["tool_input"])
-			if ev.AgentID == "" && ev.ToolName == "invoke_subagent" {
+			if ev.ToolName == "invoke_subagent" {
 				if ev.Name == "PostToolUseFailure" || str(p, "error") != "" {
 					d.discardAgySubagentPreLocked(sid, p)
 				} else if sub := d.noteAgySubagentToolLocked(key, sid, str(p, "transcript_path"), p, req.Env); sub != nil {
@@ -641,21 +664,25 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 			}
 			d.mu.Unlock()
 		case "SubagentStop":
-			d.mu.Lock()
-			sub := d.findAgySubagentStopLocked(key, p)
-			d.mu.Unlock()
-			if sub != nil {
-				if ev.AgentID == "" {
-					ev.AgentID = sub.childCID
-				}
-				if ev.AgentType == "" {
-					ev.AgentType = sub.agentType()
-				}
-				if ev.LastReply == "" {
-					ev.LastReply = summary.Truncate(agySubagentSummary(sub, p), 1500)
-				}
-				if d.usage != nil && sub.transcript != "" {
-					d.usage.trackSubagent(key, sub.childCID, sub.transcript)
+			// 子代理自己的 Stop 已在 routeAgyChildLocked 中准确路由并标记 stopped，
+			// 不能再进 findAgySubagentStopLocked 兜底，否则会误把其他仍在跑的兄弟子代理标成已停止。
+			if agySub == nil {
+				d.mu.Lock()
+				sub := d.findAgySubagentStopLocked(key, p)
+				d.mu.Unlock()
+				if sub != nil {
+					if ev.AgentID == "" {
+						ev.AgentID = sub.childCID
+					}
+					if ev.AgentType == "" {
+						ev.AgentType = sub.agentType()
+					}
+					if ev.LastReply == "" {
+						ev.LastReply = summary.Truncate(agySubagentSummary(sub, p), 1500)
+					}
+					if d.usage != nil && sub.transcript != "" {
+						d.usage.trackSubagent(key, sub.childCID, sub.transcript)
+					}
 				}
 			}
 		}

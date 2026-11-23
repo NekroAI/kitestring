@@ -308,6 +308,72 @@ func TestAgyCrossAgentCollaborationLifecycle(t *testing.T) {
 		return s.Subagents == 0 && e.session(protocol.SessionKey(protocol.ToolAgy, childCID)).Key == ""
 	})
 
+	// 5b. 批量并发子代理在父/子 transcript 均未刷盘时启动与并发结束：不泄漏独立会话，且全部准确 SubagentStop
+	childCID2 := "22222222-2222-2222-2222-222222222223"
+	childCID3 := "22222222-2222-2222-2222-222222222224"
+	for i, spec := range []struct {
+		callID string
+		role   string
+	}{
+		{"call_sub_batch_1", "Delayed Worker A"},
+		{"call_sub_batch_2", "Delayed Worker B"},
+	} {
+		hookAgy(t, "PreToolUse", map[string]any{
+			"hookEventName":  "PreToolUse",
+			"conversationId": cidPM,
+			"workspacePath":  cwd,
+			"toolCall": map[string]any{
+				"id":   spec.callID,
+				"name": "invoke_subagent",
+				"args": map[string]any{"Role": spec.role, "TypeName": "self", "Prompt": fmt.Sprintf("batch task %d", i)},
+			},
+		})
+		hookAgy(t, "PostToolUse", map[string]any{
+			"hookEventName":  "PostToolUse",
+			"conversationId": cidPM,
+			"workspacePath":  cwd,
+			"toolCall": map[string]any{
+				"id":   spec.callID,
+				"name": "invoke_subagent",
+				"args": map[string]any{"Role": spec.role, "TypeName": "self", "Prompt": fmt.Sprintf("batch task %d", i)},
+			},
+		})
+	}
+	for _, cid := range []string{childCID2, childCID3} {
+		hookAgy(t, "SessionStart", map[string]any{
+			"hookEventName":  "SessionStart",
+			"conversationId": cid,
+			"workspacePath":  cwd,
+		})
+		hookAgy(t, "PreInvocation", map[string]any{
+			"hookEventName":   "PreInvocation",
+			"conversationId":  cid,
+			"workspacePath":   cwd,
+			"initialNumSteps": 1,
+		})
+	}
+	e.waitFor("未刷盘双子代理均归入父会话且零独立会话泄漏", func() bool {
+		s := e.session(agyKey)
+		if s.Subagents != 2 {
+			return false
+		}
+		return e.session(protocol.SessionKey(protocol.ToolAgy, childCID2)).Key == "" &&
+			e.session(protocol.SessionKey(protocol.ToolAgy, childCID3)).Key == ""
+	})
+	for _, cid := range []string{childCID2, childCID3} {
+		hookAgy(t, "Stop", map[string]any{
+			"hookEventName":  "Stop",
+			"conversationId": cid,
+			"workspacePath":  cwd,
+		})
+	}
+	e.waitFor("未刷盘双子代理并发结束后均归零且无残留会话", func() bool {
+		s := e.session(agyKey)
+		return s.Subagents == 0 &&
+			e.session(protocol.SessionKey(protocol.ToolAgy, childCID2)).Key == "" &&
+			e.session(protocol.SessionKey(protocol.ToolAgy, childCID3)).Key == ""
+	})
+
 	// 6. compact（CHECKPOINT 步骤与 initialNumSteps 回落）经 PreInvocation 触发 PreCompact + injectSteps 重投角色与 AGY 沙箱指引
 	writeAgyTranscriptFile(t, appDir, cidPM, []string{
 		`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-11-22T10:00:00Z","content":"<USER_REQUEST>\n协调 Claude Dev、Codex Rev 与 DSH Aide 完成登录改造\n</USER_REQUEST>"}`,

@@ -17,12 +17,13 @@ func TestAgyInstallUninstallAndIdempotence(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	// 预先在 settings.json 放入一条用户自定义权限，确认不会丢且不会被重复添加。
+	// 预先在 settings.json 放入一条用户自定义权限及一条旧版未带插件命名空间的 mcp(kitestring/*)，
+	// 确认用户自定义保留、旧版条目被自动迁移清理、新版写入 mcp(kitestring_kitestring/*)。
 	settingsPath := agySettingsPath(home)
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(settingsPath, []byte(`{"permissions":{"allow":["command(git status)"]},"theme":"dark"}`), 0o600); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(`{"permissions":{"allow":["command(git status)","mcp(kitestring/team_tell)"]},"theme":"dark"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -57,7 +58,7 @@ func TestAgyInstallUninstallAndIdempotence(t *testing.T) {
 		t.Fatalf("unexpected grouped PreToolUse hook: %#v", ksHooks["PreToolUse"])
 	}
 
-	// 验证 settings.json 写入 command(ks) + 全部 42 个 mcp(kitestring/*) 且保留用户字段
+	// 验证 settings.json 写入 command(ks) + 全部 42 个 mcp(kitestring_kitestring/*) 且清理旧版 mcp(kitestring/*)
 	settingsRoot, err := readJSON(settingsPath)
 	if err != nil {
 		t.Fatal(err)
@@ -69,6 +70,19 @@ func TestAgyInstallUninstallAndIdempotence(t *testing.T) {
 	wantCount := 1 + 1 + len(protocol.KitestringMCPTools)
 	if len(allow) != wantCount {
 		t.Fatalf("expected %d allow entries (1 custom + command(ks) + 42 mcp), got %d", wantCount, len(allow))
+	}
+	var hasNewMCP bool
+	for _, entry := range allow {
+		s, _ := entry.(string)
+		if strings.HasPrefix(s, "mcp(kitestring/") {
+			t.Fatalf("legacy mcp(kitestring/*) entry should have been migrated away: %q", s)
+		}
+		if s == "mcp(kitestring_kitestring/team_tell)" {
+			hasNewMCP = true
+		}
+	}
+	if !hasNewMCP {
+		t.Fatalf("expected mcp(kitestring_kitestring/team_tell) in allow list: %#v", allow)
 	}
 
 	// 再安装一次，确认幂等，allow 数量不变

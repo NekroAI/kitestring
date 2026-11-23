@@ -97,8 +97,16 @@ func writeAgyFallback(stdout io.Writer, tool, event string) {
 	_, _ = io.WriteString(stdout, "{}\n")
 }
 
+func agySupportsInjectSteps(event string) bool {
+	switch event {
+	case "SessionStart", "PreInvocation", "PostInvocation":
+		return true
+	}
+	return false
+}
+
 func writeAgyResponse(stdout io.Writer, event string, resp protocol.HookResponse) {
-	if resp.Block != "" {
+	if resp.Block != "" && event == "Stop" {
 		// Antigravity 的 Stop hook 使用 decision=continue + reason 拦下结束并继续执行。
 		_ = json.NewEncoder(stdout).Encode(map[string]any{
 			"decision": "continue",
@@ -106,14 +114,11 @@ func writeAgyResponse(stdout io.Writer, event string, resp protocol.HookResponse
 		})
 		return
 	}
-	if resp.Context != "" {
+	if resp.Context != "" && agySupportsInjectSteps(event) {
 		out := map[string]any{
 			"injectSteps": []map[string]any{
 				{"systemMessage": map[string]any{"systemMessage": resp.Context}},
 			},
-		}
-		if event == "PreToolUse" {
-			out["decision"] = "allow"
 		}
 		_ = json.NewEncoder(stdout).Encode(out)
 		return
