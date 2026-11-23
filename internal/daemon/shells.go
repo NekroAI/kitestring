@@ -410,9 +410,159 @@ func parseNotifications(text string) []notification {
 	return out
 }
 
+func isBgShellInput(in map[string]any) (bg bool, desc string) {
+	if in == nil {
+		return false, ""
+	}
+	desc = str(in, "description")
+	if desc == "" {
+		desc = str(in, "toolSummary")
+	}
+	if b, _ := in["run_in_background"].(bool); b {
+		return true, desc
+	}
+	if b, _ := in["IsDaemon"].(bool); b {
+		return true, desc
+	}
+	if w, ok := firstInt(in, "WaitMsBeforeAsync"); ok && w > 0 && w <= 1000 {
+		return true, desc
+	}
+	return false, desc
+}
+
+func shortAgyTaskID(fullID string) string {
+	if i := strings.LastIndex(fullID, "/"); i >= 0 && i+1 < len(fullID) {
+		return fullID[i+1:]
+	}
+	return fullID
+}
+
+func (s *shellTracker) runningInfo(key string) (int, string) {
+	if s == nil {
+		return 0, ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, brief := 0, ""
+	for _, r := range s.recs {
+		if r.c.Key == key && r.launched && r.c.Status == protocol.ShellRunning {
+			n++
+			if brief == "" {
+				brief = r.c.Label
+				if brief == "" {
+					brief = cmdSummary(r.c.Cmd)
+				}
+			}
+		}
+	}
+	return n, brief
+}
+
+func (s *shellTracker) launchAgyTask(key, agent, ref, fullID, cmdDesc, outFile string, at time.Time) {
+	if s == nil || key == "" || fullID == "" || isShellWait(cmdDesc) {
+		return
+	}
+	if ref == "" {
+		ref = shortAgyTaskID(fullID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var match *shellRec
+	for _, r := range s.recs {
+		if r.c.Key != key {
+			continue
+		}
+		if r.taskID == fullID {
+			match = r
+			break
+		}
+	}
+	if match == nil {
+		nc := norm(cmdDesc)
+		var fallback *shellRec
+		for _, r := range s.recs {
+			if r.c.Key != key || r.taskID != "" || r.c.Status != protocol.ShellRunning {
+				continue
+			}
+			rc := norm(r.c.Cmd)
+			if nc != "" && (rc == nc || strings.Contains(rc, nc) || strings.Contains(nc, rc)) {
+				match = r
+				break
+			}
+			if at.UnixMilli()-r.c.Start <= 60_000 && (fallback == nil || r.c.Start > fallback.c.Start) {
+				fallback = r
+			}
+		}
+		if match == nil {
+			match = fallback
+		}
+	}
+	if match == nil {
+		id := shellID(key, ref)
+		if match = s.recs[id]; match == nil {
+			cmd := strings.TrimSpace(cmdDesc)
+			if cmd == "" {
+				cmd = ref
+			}
+			match = &shellRec{
+				c: protocol.ShellCmd{
+					Key:    key,
+					Agent:  agent,
+					Ref:    ref,
+					Task:   ref,
+					Kind:   shellKind(cmd),
+					Label:  labelOf(cmd, ""),
+					Cmd:    summary.Truncate(cmd, shellCmdMax),
+					Start:  at.UnixMilli(),
+					Status: protocol.ShellRunning,
+				},
+				pendAt: s.now(),
+			}
+			s.recs[id] = match
+		}
+	}
+	changed := !match.launched || match.taskID != fullID
+	match.launched = true
+	match.taskID = fullID
+	if match.c.Task == "" {
+		match.c.Task = ref
+		changed = true
+	}
+	if outFile != "" && match.outFile != outFile {
+		match.outFile = outFile
+		changed = true
+	}
+	if match.c.Label == "" && cmdDesc != "" {
+		match.c.Label = labelOf(cmdDesc, "")
+		changed = true
+	}
+	if s.readLast(match, true) {
+		changed = true
+	}
+	if changed {
+		s.save(match, true)
+	}
+}
+
 func (s *shellTracker) notifyText(key, text string, at time.Time) {
 	for _, n := range parseNotifications(text) {
 		s.notify(key, n.toolUse, n.task, n.status, n.exit, at, n.out)
+	}
+	for _, m := range agyBgDoneRe.FindAllStringSubmatch(text, -1) {
+		code, err := strconv.Atoi(m[2])
+		if err != nil {
+			continue
+		}
+		status := "completed"
+		if code != 0 {
+			status = "failed"
+		}
+		fullID := strings.TrimSpace(m[1])
+		s.notify(key, shortAgyTaskID(fullID), fullID, status, &code, at, "")
+	}
+	for _, m := range agyBgKilledRe.FindAllStringSubmatch(text, -1) {
+		fullID := strings.TrimSpace(m[1])
+		s.notify(key, shortAgyTaskID(fullID), fullID, "killed", nil, at, "")
 	}
 }
 
@@ -460,18 +610,32 @@ func (s *shellTracker) onHook(key string, p map[string]any, ev *protocol.Event) 
 	switch ev.Name {
 	case "PreToolUse":
 		in, _ := p["tool_input"].(map[string]any)
-		if bg, _ := in["run_in_background"].(bool); bg && isShellTool(ev.ToolName) && ev.ToolUseID != "" {
-			s.begin(key, ev.AgentID, ev.ToolUseID, shellCommand(in), str(in, "description"), now)
+		if bg, desc := isBgShellInput(in); bg && isShellTool(ev.ToolName) && ev.ToolUseID != "" {
+			s.begin(key, ev.AgentID, ev.ToolUseID, shellCommand(in), desc, now)
 		}
 	case "PostToolUse":
-		if isShellTool(ev.ToolName) && ev.ToolUseID != "" {
-			s.launch(key, ev.ToolUseID, taskIDOf(p["tool_response"]), now)
+		if str(p, "error") != "" {
+			if ev.ToolUseID != "" {
+				s.drop(key, ev.ToolUseID)
+			}
+			return
+		}
+		if isShellTool(ev.ToolName) {
+			if ev.ToolUseID != "" {
+				s.launch(key, ev.ToolUseID, taskIDOf(p["tool_response"]), now)
+			}
+			if ev.Tool == protocol.ToolAgy {
+				s.scanAgyTail(key, ev.AgentID, str(p, "transcript_path"))
+			}
 		}
 	case "PostToolUseFailure":
 		if ev.ToolUseID != "" {
 			s.drop(key, ev.ToolUseID)
 		}
 	case "UserPromptSubmit":
+		if ev.Tool == protocol.ToolAgy {
+			s.scanAgyTail(key, ev.AgentID, str(p, "transcript_path"))
+		}
 		s.notifyText(key, str(p, "prompt"), now)
 	case "Stop":
 		s.stopTasks(key, p, now)
@@ -484,6 +648,13 @@ var (
 	markBgCall  = []byte(`"run_in_background":true`)
 	markBgID    = []byte(`"backgroundTaskId"`)
 	markBgNotif = []byte(`task-notification`)
+
+	markAgyBgStart  = []byte(`background task with task id:`)
+	markAgyBgDone   = []byte(`finished with result:`)
+	markAgyBgKilled = []byte(`was killed`)
+	agyBgStartRe    = regexp.MustCompile(`(?m)Tool is running as a background task with task id:\s*(\S+)\s*\nTask Description:\s*([^\n]+)(?:\s*\nTask logs are available at:\s*(file://[^\s\n]+))?`)
+	agyBgDoneRe     = regexp.MustCompile(`(?s)Task id "([^"]+)" finished with result:.*?Command exited with code (-?\d+)`)
+	agyBgKilledRe   = regexp.MustCompile(`(?s)Task id "([^"]+)" (?:was killed|terminated|canceled|cancelled)`)
 )
 
 type shellLine struct {
@@ -504,9 +675,13 @@ type contentBlock struct {
 	Content   json.RawMessage `json:"content"`
 }
 
-// transcriptLine 读 Claude Code 对话记录的一行：run_in_background 的调用、它的结果（后台任务编号）、结束通知。
+// transcriptLine 读 Claude Code / Antigravity 对话记录的一行：后台调用、它的结果（任务编号与日志文件）、结束通知。
 func (s *shellTracker) transcriptLine(key, agent string, line []byte, cut time.Time) {
 	if s == nil || key == "" {
+		return
+	}
+	if strings.HasPrefix(key, protocol.ToolAgy+":") {
+		s.agyTranscriptLine(key, agent, line, cut)
 		return
 	}
 	call, id, notif := bytes.Contains(line, markBgCall), bytes.Contains(line, markBgID), bytes.Contains(line, markBgNotif)
@@ -547,6 +722,53 @@ func (s *shellTracker) transcriptLine(key, agent string, line []byte, cut time.T
 	}
 	if notif {
 		s.notifyText(key, text, l.Timestamp)
+	}
+}
+
+func (s *shellTracker) agyTranscriptLine(key, agent string, line []byte, cut time.Time) {
+	hasStart := bytes.Contains(line, markAgyBgStart)
+	hasDone := bytes.Contains(line, markAgyBgDone)
+	hasKill := bytes.Contains(line, markAgyBgKilled)
+	if !hasStart && !hasDone && !hasKill {
+		return
+	}
+	var st agyStep
+	if json.Unmarshal(line, &st) != nil || st.Content == "" {
+		return
+	}
+	ts, err := time.Parse(time.RFC3339Nano, st.CreatedAt)
+	if err != nil || ts.IsZero() {
+		ts = s.now()
+	}
+	if ts.Before(cut) {
+		return
+	}
+	if hasStart {
+		for _, m := range agyBgStartRe.FindAllStringSubmatch(st.Content, -1) {
+			fullID := strings.TrimSpace(m[1])
+			cmdDesc := strings.TrimSpace(m[2])
+			outFile := fileURIToPath(m[3])
+			s.launchAgyTask(key, agent, shortAgyTaskID(fullID), fullID, cmdDesc, outFile, ts)
+		}
+	}
+	if hasDone || hasKill {
+		s.notifyText(key, st.Content, ts)
+	}
+}
+
+func (s *shellTracker) scanAgyTail(key, agent, path string) {
+	if s == nil || key == "" || path == "" {
+		return
+	}
+	data := readTailBytes(path, 32<<10)
+	if len(data) == 0 {
+		return
+	}
+	cut := s.now().Add(-shellKeep)
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) > 0 {
+			s.agyTranscriptLine(key, agent, line, cut)
+		}
 	}
 }
 
@@ -666,7 +888,9 @@ func (s *shellTracker) tick(now time.Time, ps []proc, seen map[string]shellSeen)
 		if st, err := os.Stat(r.outFile); r.outFile != "" && err == nil {
 			mt = st.ModTime()
 		}
-		if !scanned {
+		// Antigravity 的后台 shell（<cid>/task-xxx）由宿主管理，结束后必定在 transcript 写结束消息，
+		// 且可能不挂在 agy CLI 包装进程下面；未收到结束消息前不要按 9 秒失配误判为已结束。
+		if !scanned || (strings.HasPrefix(r.c.Key, protocol.ToolAgy+":") && r.taskID != "") {
 			// 开它的 Agent 这一轮没扫到（已经退出、或本机还不认得它）：输出文件半小时没动才算结束，没有输出文件的老命令不知道结束时间
 			switch {
 			case !mt.IsZero() && now.Sub(mt) > 30*time.Minute:

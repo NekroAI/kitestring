@@ -7,6 +7,7 @@ import {
   FileText,
   Globe,
   HelpCircle,
+  Image,
   ListChecks,
   Plug,
   Search,
@@ -29,15 +30,16 @@ import { Linkify, RefChip, ReqGlyph } from '../ui/refmark'
 // 工具名 → 图标。
 export function toolIcon(label: string): LucideIcon {
   const name = label.split(' · ')[0]
-  if (/^(Bash|shell|exec_command|local_shell|run_command)$/.test(name)) return Terminal
-  if (/^(Edit|Write|MultiEdit|NotebookEdit|apply_patch|write_file|edit_file)$/.test(name)) return FileCode2
-  if (/^(Read|read_file)$/.test(name)) return FileText
-  if (/^(Grep|Glob|grep_search|find_by_name)$/.test(name)) return Search
+  if (/^(Bash|shell|exec_command|local_shell|bash|pwsh|run_command|manage_task|schedule)$/.test(name)) return Terminal
+  if (/^(Edit|Write|MultiEdit|NotebookEdit|apply_patch|write_file|edit_file|replace_file_content|multi_replace_file_content)$/.test(name)) return FileCode2
+  if (/^(Read|read_file|view_file|view_file_outline|view_code_item)$/.test(name)) return FileText
+  if (/^(Grep|Glob|grep_search|find_by_name|list_dir)$/.test(name)) return Search
   if (/^(Web|search_web|read_url_content)/.test(name)) return Globe
-  if (/^(Task|Agent|invoke_subagent)$/.test(name)) return Bot
+  if (/^(Task|Agent|invoke_subagent|define_subagent|manage_subagents|send_message|run_workflow|swarm)$/.test(name)) return Bot
   if (/^(AskUserQuestion|ask_question)$/.test(name)) return HelpCircle
-  if (/^(ExitPlanMode|exit_plan_mode)$/.test(name)) return ListChecks
-  if (name.includes('__')) return Plug
+  if (/^(ExitPlanMode|exit_plan_mode|enter_plan_mode)$/.test(name)) return ListChecks
+  if (/^generate_image$/.test(name)) return Image
+  if (name.includes('__') || /^(list_resources|read_resource|call_mcp_tool)$/.test(name)) return Plug
   return Wrench
 }
 
@@ -107,7 +109,7 @@ export function Callout({ s }: { s: Session }) {
   }
   if (ds === 'waiting_answer') {
     const [name, brief] = splitTool(s.state_detail)
-    const plan = name === 'ExitPlanMode'
+    const plan = name === 'ExitPlanMode' || name === 'exit_plan_mode'
     const Icon = plan ? ListChecks : HelpCircle
     return (
       <div className="flex items-start gap-2.5 rounded-xl bg-reply-soft px-3 py-2.5">

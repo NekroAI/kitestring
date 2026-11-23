@@ -427,7 +427,12 @@ func (s *Store) fillRecentTools(ctx context.Context, x *Session) error {
 		if json.Unmarshal([]byte(p), &ev) != nil || ev.ToolName == "" || ev.AgentID != "" || len(acts) >= 3 {
 			continue // 子代理的工具调用记在子代理名下（R-162），不混进主会话的最近动作
 		}
-		label := strings.TrimPrefix(ev.ToolName, "mcp__")
+		label := ev.ToolName
+		if bare, ok := protocol.NormalizeMCPToolName(ev.ToolName); ok {
+			label = "kitestring__" + bare
+		} else {
+			label = strings.TrimPrefix(ev.ToolName, "mcp__")
+		}
 		if ev.ToolBrief != "" {
 			label += " · " + ev.ToolBrief
 		}

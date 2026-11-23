@@ -295,6 +295,9 @@ func (u *usageScanner) scanFile(f *usageFile) (int, error) {
 			u.codexLine(f, line, cut, agg)
 		case usageAgy:
 			u.agyLine(f, line, cut, agg)
+			if u.onLine != nil {
+				u.onLine(f.key, f.agent, line, shellCut)
+			}
 		default:
 			u.claudeLine(f, line, cut, agg)
 			if u.onLine != nil {
@@ -509,7 +512,16 @@ func (u *usageScanner) codexLine(f *usageFile, line []byte, cut time.Time, agg *
 	agg.add(f.key, f.agent, model, l.Timestamp, in, us.Write, 0, us.Cached, us.Output)
 }
 
+var markAgyCheckpoint = []byte(`"CHECKPOINT"`)
+
 func (u *usageScanner) agyLine(f *usageFile, line []byte, cut time.Time, agg *usageAgg) {
+	if bytes.Contains(line, markAgyCheckpoint) {
+		var step agyStep
+		if json.Unmarshal(line, &step) == nil && step.Source == "SYSTEM" && step.Type == "CHECKPOINT" {
+			f.state.Compacted = true
+			return
+		}
+	}
 	s, ok := parseAgyUsageLine(line)
 	if !ok || f.seen(s.DedupID) {
 		return

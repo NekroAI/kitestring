@@ -14,6 +14,9 @@ func TestCleanPrompt(t *testing.T) {
 		{"<command-name>clear</command-name>", "/clear", false},
 		{"<bash-input>git status</bash-input>", "! git status", false},
 		{"修一下登录页<system-reminder>内部提示</system-reminder>", "修一下登录页", false},
+		{"<CONTEXT_SUMMARY>old summary</CONTEXT_SUMMARY>\n<USER_REQUEST>\n  帮我汇总一下实现情况\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current time is 2026-11-23\n</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>\nsetting changed\n</USER_SETTINGS_CHANGE>", "帮我汇总一下实现情况", false},
+		{"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-22T17:42:04Z sender=3965713b-d88b-4f70-9a75-15f3a158ceb4/task-543 priority=MESSAGE_PRIORITY_HIGH content=Task id \"3965713b-d88b-4f70-9a75-15f3a158ceb4/task-543\" finished with result:\nexit 0\n</SYSTEM_MESSAGE>", "", true},
+		{"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-17T17:01:28Z sender=35ea7bc9-6062-4a2b-9a99-30f5ee8c6083 priority=MESSAGE_PRIORITY_HIGH content=Done\n</SYSTEM_MESSAGE>", "", true},
 		{"普通消息", "普通消息", false},
 	}
 	for _, c := range cases {
@@ -55,6 +58,8 @@ func TestAutoKind(t *testing.T) {
 		{"<agent-message from=\"a7d\">\n[Subagent hand-back] ...", WakeAgent, ""},
 		{"<local-command-stdout>ok</local-command-stdout>", WakeOutput, ""},
 		{"<bash-stdout>hi</bash-stdout>", WakeOutput, ""},
+		{"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-22T17:42:04Z sender=3965713b-d88b-4f70-9a75-15f3a158ceb4/task-543 priority=MESSAGE_PRIORITY_HIGH content=Task id \"3965713b-d88b-4f70-9a75-15f3a158ceb4/task-543\" finished with result:\nCommand exited with code 0.\n</SYSTEM_MESSAGE>", WakeBg, "task-543"},
+		{"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-17T17:01:28Z sender=35ea7bc9-6062-4a2b-9a99-30f5ee8c6083 priority=MESSAGE_PRIORITY_HIGH content=Finished audit\n</SYSTEM_MESSAGE>", WakeAgent, "35ea7bc9-6062-4a2b-9a99-30f5ee8c6083"},
 		{"帮我看看", "", ""},
 	}
 	for _, c := range cases {

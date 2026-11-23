@@ -97,3 +97,11 @@ hook 不会告诉我们后台 shell 什么时候结束，子代理也只有启�
 | 后台 shell | daemon 每 3 秒扫一次进程表，取 agent 进程（Claude Code / Codex）的 sh / bash / zsh / fish 子进程：命令对得上的前台调用（`PreToolUse` 到 `PostToolUse` 之间）不算，ks hook / ks wait（待命）/ ks mcp 与 MCP 服务不算，活过 2 秒的其余 shell 算后台任务；Claude 的 `run_in_background` 用其 `description` 做标签，否则取命令（截断 80 字）。进程消失即结束，有变化时上报 `KsTasks`（全集） |
 
 Codex 经 app-server / 桌面 App 运行时一个进程承载多个会话，分不清后台 shell 归属，不显示；会话面板注明“这类会话无法识别后台任务”。
+
+## 9. Google Antigravity（`agy`）实测机制
+
+- **Plugin 发现与事件名**：通过 `~/.gemini/config/plugins/kitestring` 注册 `hooks/hooks.json`、`mcp.json`（或 `.mcp.json`）、`rules/AGENTS.md` 与 `skills/`；支持的 hook 事件为 `SessionStart`、`PreToolUse`、`PostToolUse`、`PreInvocation`、`PostInvocation`、`Stop`（其中 `Stop.terminationReason == "USER_CANCELED"` 归一为 `Interrupt`）。
+- **工具入参包与 MCP 懒加载展开**：`PreToolUse` / `PostToolUse` 真实入参位于 `toolCall: {id, name, args}`（失败信息位于 `PostToolUse.error`）；MCP 工具通过 `call_mcp_tool`（`{ServerName: "kitestring_kitestring", ToolName, Arguments}`）调用，`normalizeAgyPayload` 将其展开为 `mcp__kitestring__<tool>` 与真实参数后再计算规范化参数哈希并与 `ks mcp` 配对。
+- **轮次折叠、压缩与自动唤醒**：`PreInvocation` 同一轮内会随每一步反复触发，结合 `transcript.jsonl` 的 `USER_EXPLICIT`、`lastUserInput`、系统注入 `[Message]`（`SYSTEM_MESSAGE`）与系统检查点 `SYSTEM` / `CHECKPOINT` 折叠成单次 `UserPromptSubmit`，并在发生压缩时合成 `PreCompact`、重投身份与团队状态。
+- **子代理（Subagent）**：Antigravity 无原生 `SubagentStart` / `SubagentStop` hook，子代理以独立 `conversationId` 触发同一套全局 hook，且其 `transcript.jsonl` 首步（`SYSTEM_MESSAGE` `sender=<parentConversationId>`）与父会话 `invoke_subagent` 共同确定父子归属，路由到父会话子泳道并统计子代理 token 用量。
+- **后台命令（`task-xxx`）**：同步命令超时或异步 `run_command` 转入后台后在 `transcript.jsonl` 记录 `task id: <cid>/task-N` 与 `file://.../task-N.log`，完成后注入 `Command exited with code N`，daemon 据此更新 `lane_shells` 的实时最后一行输出与退出码。

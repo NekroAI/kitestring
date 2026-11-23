@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -183,13 +184,21 @@ func TestAgyCrossAgentCollaborationLifecycle(t *testing.T) {
 		return err == nil && lr != nil && lr.Text == "已派工给 Claude Dev，并同步 Codex Rev 与 DSH Aide。"
 	})
 
-	// 4. 无 _meta 时经 PreToolUse + 参数规范化哈希识别 MCP 调用来源，完成跨 Agent 指派与团队唤醒
+	// 4. 真实 toolCall + call_mcp_tool 展开，无 _meta 时经 PreToolUse + 参数规范化哈希识别 MCP 调用来源，完成跨 Agent 指派与团队唤醒
 	preAssignOut := hookAgy(t, "PreToolUse", map[string]any{
 		"hookEventName":  "PreToolUse",
 		"conversationId": cidPM,
-		"workspacePath":  cwd,
-		"toolName":       "mcp:kitestring:req_assign",
-		"toolInput":      map[string]any{"to": "claude:s-dev", "requirement": req.Code},
+		"workspacePaths": []any{cwd},
+		"stepIdx":        5,
+		"toolCall": map[string]any{
+			"id":   "call_mcp_assign",
+			"name": "call_mcp_tool",
+			"args": map[string]any{
+				"ServerName": "kitestring_kitestring",
+				"ToolName":   "req_assign",
+				"Arguments":  map[string]any{"to": "claude:s-dev", "requirement": req.Code},
+			},
+		},
 	})
 	var preAllow struct {
 		Decision string `json:"decision"`
@@ -197,6 +206,10 @@ func TestAgyCrossAgentCollaborationLifecycle(t *testing.T) {
 	if json.Unmarshal([]byte(preAssignOut), &preAllow) != nil || preAllow.Decision != "allow" {
 		t.Fatalf("PreToolUse 应返回 decision=allow，得到 %q", preAssignOut)
 	}
+	e.waitFor("Hub 收到展开后的 MCP 工具名与参数简述", func() bool {
+		s := e.session(agyKey)
+		return s.LastTool == "kitestring__req_assign · "+req.Code+" · claude:s-dev"
+	})
 	argsHash := protocol.CanonicalArgsHash(json.RawMessage(`{"requirement":"` + req.Code + `","to":"claude:s-dev"}`))
 	var sessLookup struct {
 		SessionKey string `json:"session_key"`
@@ -240,36 +253,72 @@ func TestAgyCrossAgentCollaborationLifecycle(t *testing.T) {
 	}
 	woke(t, agyWait, "方案已复核通过")
 
-	// 5. invoke_subagent PostToolUse + SubagentStop 归因子代理 transcript
+	// 5. 子代理以独立 conversationId 触发全局 hook，路由至父会话子泳道与 MCP agent_id，且不创建独立会话卡
 	writeAgyTranscriptFile(t, appDir, childCID, []string{
-		`{"step_index":0,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-11-22T10:02:00Z","model":"gemini-4-carbon-high","input_tokens":50,"cache_read_tokens":200,"cache_write_tokens":0,"output_tokens":20,"content":"子代理审计通过"}`,
+		`{"step_index":0,"source":"SYSTEM","type":"SYSTEM_MESSAGE","created_at":"2026-11-22T10:02:00Z","content":"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-22T10:02:00Z sender=` + cidPM + ` priority=MESSAGE_PRIORITY_HIGH content=check auth\n</SYSTEM_MESSAGE>"}`,
 	})
 	hookAgy(t, "PreToolUse", map[string]any{
 		"hookEventName":  "PreToolUse",
 		"conversationId": cidPM,
 		"workspacePath":  cwd,
-		"toolName":       "invoke_subagent",
-		"toolInput":      map[string]any{"Role": "Code Reviewer", "TypeName": "research", "Prompt": "check auth"},
+		"toolCall": map[string]any{
+			"id":   "call_sub_e2e",
+			"name": "invoke_subagent",
+			"args": map[string]any{"Role": "Code Reviewer", "TypeName": "research", "Prompt": "check auth"},
+		},
 	})
-	hookAgy(t, "PostToolUse", map[string]any{
-		"hookEventName":  "PostToolUse",
-		"conversationId": cidPM,
+	hookAgy(t, "SessionStart", map[string]any{
+		"hookEventName":  "SessionStart",
+		"conversationId": childCID,
 		"workspacePath":  cwd,
-		"toolName":       "invoke_subagent",
-		"toolOutput":     "Launched subagent conversationId: " + childCID,
 	})
-	hookAgy(t, "SubagentStop", map[string]any{
-		"hookEventName":  "SubagentStop",
-		"conversationId": cidPM,
+	hookAgy(t, "PreToolUse", map[string]any{
+		"hookEventName":  "PreToolUse",
+		"conversationId": childCID,
 		"workspacePath":  cwd,
+		"toolCall": map[string]any{
+			"id":   "call_child_read",
+			"name": "read_file",
+			"args": map[string]any{"Path": filepath.Join(cwd, "README.md")},
+		},
+	})
+	e.waitFor("子代理泳道在父会话激活且记录最近动作", func() bool {
+		s := e.session(agyKey)
+		if s.Subagents != 1 {
+			return false
+		}
+		for _, tk := range s.Tasks {
+			if tk.Kind == "agent" && tk.ID == childCID && tk.LastAction == "read_file · README.md" {
+				return true
+			}
+		}
+		return false
+	})
+	writeAgyTranscriptFile(t, appDir, childCID, []string{
+		`{"step_index":0,"source":"SYSTEM","type":"SYSTEM_MESSAGE","created_at":"2026-11-22T10:02:00Z","content":"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-22T10:02:00Z sender=` + cidPM + ` priority=MESSAGE_PRIORITY_HIGH content=check auth\n</SYSTEM_MESSAGE>"}`,
+		`{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-11-22T10:02:05Z","model":"gemini-4-carbon-high","input_tokens":50,"cache_read_tokens":200,"cache_write_tokens":0,"output_tokens":20,"content":"子代理审计通过"}`,
+	})
+	hookAgy(t, "Stop", map[string]any{
+		"hookEventName":  "Stop",
+		"conversationId": childCID,
+		"workspacePath":  cwd,
+	})
+	e.waitFor("子代理 Stop 自动路由为 SubagentStop", func() bool {
+		s := e.session(agyKey)
+		return s.Subagents == 0 && e.session(protocol.SessionKey(protocol.ToolAgy, childCID)).Key == ""
 	})
 
-	// 6. compact（initialNumSteps 回落）经 PreInvocation 触发 injectSteps 重投角色与 AGY 沙箱指引
+	// 6. compact（CHECKPOINT 步骤与 initialNumSteps 回落）经 PreInvocation 触发 PreCompact + injectSteps 重投角色与 AGY 沙箱指引
+	writeAgyTranscriptFile(t, appDir, cidPM, []string{
+		`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-11-22T10:00:00Z","content":"<USER_REQUEST>\n协调 Claude Dev、Codex Rev 与 DSH Aide 完成登录改造\n</USER_REQUEST>"}`,
+		`{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-11-22T10:00:05Z","model":"gemini-4-carbon-high","input_tokens":200,"cache_read_tokens":1000,"cache_write_tokens":0,"output_tokens":45,"content":"已派工给 Claude Dev，并同步 Codex Rev 与 DSH Aide。"}`,
+		`{"step_index":2,"source":"SYSTEM","type":"CHECKPOINT","created_at":"2026-11-22T10:03:00Z","content":"# Resuming from a compaction"}`,
+	})
 	compactOut := hookAgy(t, "PreInvocation", map[string]any{
 		"hookEventName":   "PreInvocation",
 		"conversationId":  cidPM,
 		"workspacePath":   cwd,
-		"initialNumSteps": 1, // 从 lastNumSteps=2 回落，判定为 compact
+		"initialNumSteps": 1,
 	})
 	var injectResp struct {
 		InjectSteps []struct {
@@ -285,4 +334,88 @@ func TestAgyCrossAgentCollaborationLifecycle(t *testing.T) {
 	if !strings.Contains(injected, "主调度（PM）") || !strings.Contains(injected, "BypassSandbox=true") {
 		t.Fatalf("compact 重投内容缺少 PM 身份或 AGY 沙箱说明：%s", injected)
 	}
+	e.waitFor("Hub 累计上下文压缩次数", func() bool {
+		return e.session(agyKey).Compactions == 1
+	})
+
+	// 7. Antigravity 后台任务结束唤醒消息与 Stop fullyIdle=false 进入后台态（使用非阻塞工作会话）
+	cidWorker := "66666666-6666-6666-6666-666666666666"
+	workerKey := protocol.SessionKey(protocol.ToolAgy, cidWorker)
+	bgLog := filepath.Join(appDir, "task-9.log")
+	_ = os.WriteFile(bgLog, []byte("step 1 ok\n"), 0o600)
+	bgURI := "file://" + filepath.ToSlash(bgLog)
+	if !strings.HasPrefix(bgURI, "file:///") {
+		bgURI = "file:///" + filepath.ToSlash(bgLog)
+	}
+	writeAgyTranscriptFile(t, appDir, cidWorker, []string{
+		`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-11-22T10:04:00Z","content":"<USER_REQUEST>\n跑全量测试\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nnow\n</ADDITIONAL_METADATA>"}`,
+	})
+	hookAgy(t, "SessionStart", map[string]any{
+		"hookEventName":  "SessionStart",
+		"conversationId": cidWorker,
+		"workspacePath":  cwd,
+	})
+	hookAgy(t, "PreInvocation", map[string]any{
+		"hookEventName":   "PreInvocation",
+		"conversationId":  cidWorker,
+		"workspacePath":   cwd,
+		"initialNumSteps": 1,
+		"lastUserInput":   "跑全量测试",
+	})
+	e.waitFor("工作会话清洗后的提问入库", func() bool {
+		s := e.session(workerKey)
+		return s.Turns == 1 && s.LastPrompt == "跑全量测试"
+	})
+	hookAgy(t, "PreToolUse", map[string]any{
+		"hookEventName":  "PreToolUse",
+		"conversationId": cidWorker,
+		"workspacePath":  cwd,
+		"toolCall": map[string]any{
+			"id":   "call_bg_e2e",
+			"name": "run_command",
+			"args": map[string]any{"CommandLine": "go test ./...", "WaitMsBeforeAsync": 500, "toolSummary": "Run tests"},
+		},
+	})
+	writeAgyTranscriptFile(t, appDir, cidWorker, []string{
+		`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-11-22T10:04:00Z","content":"<USER_REQUEST>\n跑全量测试\n</USER_REQUEST>"}`,
+		fmt.Sprintf(`{"step_index":1,"source":"SYSTEM","type":"GENERIC","created_at":%q,"content":"Tool is running as a background task with task id: %s/task-9\nTask Description: go test ./...\nTask logs are available at: %s"}`, time.Now().UTC().Format(time.RFC3339), cidWorker, bgURI),
+	})
+	hookAgy(t, "PostToolUse", map[string]any{
+		"hookEventName":  "PostToolUse",
+		"conversationId": cidWorker,
+		"workspacePath":  cwd,
+		"toolCall": map[string]any{
+			"id":   "call_bg_e2e",
+			"name": "run_command",
+			"args": map[string]any{"CommandLine": "go test ./...", "WaitMsBeforeAsync": 500},
+		},
+	})
+	hookAgy(t, "Stop", map[string]any{
+		"hookEventName":  "Stop",
+		"conversationId": cidWorker,
+		"workspacePath":  cwd,
+		"fullyIdle":      false,
+	})
+	e.waitFor("fullyIdle=false 时进入后台运行状态", func() bool {
+		s := e.session(workerKey)
+		return s.State == store.StateBackground && s.StateDetail == "Run tests"
+	})
+
+	// 任务完成通知自动唤醒 -> 不覆盖 LastPrompt，不增加用户轮数
+	writeAgyTranscriptFile(t, appDir, cidWorker, []string{
+		`{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-11-22T10:04:00Z","content":"<USER_REQUEST>\n跑全量测试\n</USER_REQUEST>"}`,
+		fmt.Sprintf(`{"step_index":1,"source":"SYSTEM","type":"GENERIC","created_at":%q,"content":"Tool is running as a background task with task id: %s/task-9\nTask Description: go test ./...\nTask logs are available at: %s"}`, time.Now().UTC().Format(time.RFC3339), cidWorker, bgURI),
+		fmt.Sprintf(`{"step_index":2,"source":"SYSTEM","type":"SYSTEM_MESSAGE","created_at":%q,"content":"<SYSTEM_MESSAGE>\n[Message] timestamp=2026-11-22T10:04:10Z sender=%s/task-9 priority=MESSAGE_PRIORITY_HIGH content=Task id \"%s/task-9\" finished with result:\nCommand exited with code 0.\n</SYSTEM_MESSAGE>"}`, time.Now().UTC().Format(time.RFC3339), cidWorker, cidWorker),
+	})
+	hookAgy(t, "PreInvocation", map[string]any{
+		"hookEventName":   "PreInvocation",
+		"conversationId":  cidWorker,
+		"workspacePath":   cwd,
+		"initialNumSteps": 3,
+		"lastUserInput":   "跑全量测试",
+	})
+	e.waitFor("后台任务完成唤醒会话但不篡改用户输入", func() bool {
+		s := e.session(workerKey)
+		return s.State == store.StateRunning && s.Turns == 1 && s.LastPrompt == "跑全量测试"
+	})
 }

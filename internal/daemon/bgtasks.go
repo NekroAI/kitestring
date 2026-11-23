@@ -103,18 +103,7 @@ func (d *Daemon) noteTaskEvent(key string, p map[string]any, ev *protocol.Event)
 			if cmd == "" {
 				return
 			}
-			bg, _ := in["run_in_background"].(bool)
-			if !bg {
-				if isDaemon, _ := in["IsDaemon"].(bool); isDaemon {
-					bg = true
-				} else if w, ok := firstInt(in, "WaitMsBeforeAsync"); ok && w > 0 && w <= 1000 {
-					bg = true
-				}
-			}
-			desc := str(in, "description")
-			if desc == "" {
-				desc = str(in, "toolSummary")
-			}
+			bg, desc := isBgShellInput(in)
 			if t.calls[key] == nil {
 				t.calls[key] = map[string]*shellCall{}
 			}
@@ -136,6 +125,12 @@ func (d *Daemon) noteTaskEvent(key string, p map[string]any, ev *protocol.Event)
 			}
 		}
 	case "PostToolUse", "PostToolUseFailure":
+		if ev.Name == "PostToolUseFailure" || str(p, "error") != "" {
+			if c := t.calls[key][ev.ToolUseID]; c != nil {
+				delete(t.calls[key], ev.ToolUseID)
+			}
+			return
+		}
 		if c := t.calls[key][ev.ToolUseID]; c != nil && !c.bg {
 			delete(t.calls[key], ev.ToolUseID)
 		}
@@ -143,7 +138,9 @@ func (d *Daemon) noteTaskEvent(key string, p map[string]any, ev *protocol.Event)
 		q := d.agentQueue(key, now)
 		for i, a := range q {
 			if a.typ == "" || ev.AgentType == "" || a.typ == ev.AgentType {
-				ev.ToolBrief = summary.Truncate(strings.Join(strings.Fields(a.desc), " "), 80)
+				if ev.ToolBrief == "" && strings.TrimSpace(a.desc) != "" {
+					ev.ToolBrief = summary.Truncate(strings.Join(strings.Fields(a.desc), " "), 80)
+				}
 				if d.q != nil {
 					d.q.agentCallDel(a.seq)
 				} else {
@@ -467,6 +464,10 @@ func (d *Daemon) scanTasks(now time.Time, ps []proc) {
 	}
 	d.mu.Unlock()
 	if len(byPid) == 0 {
+		if d.shells != nil {
+			d.shells.tick(now, ps, nil)
+			d.sendShells()
+		}
 		return
 	}
 	children := map[int][]proc{}

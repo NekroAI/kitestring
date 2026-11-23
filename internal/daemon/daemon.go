@@ -73,9 +73,10 @@ type Daemon struct {
 	shells        *shellTracker // 后台命令（R-208）
 	assetMu       sync.Mutex    // 资源库推送（R-351）：同一时间只推一批
 	assetKick     chan struct{}
-	agyTurns      map[string]*agyTurnState
-	agySubs       map[string]*agySubInfo
-	agyMCP        map[string][]*agyPendingMCP
+	agyTurns       map[string]*agyTurnState
+	agySubs        map[string]*agySubInfo
+	agyPendingSubs map[string][]*agySubInfo
+	agyMCP         map[string][]*agyPendingMCP
 }
 
 type toolUse struct {
@@ -108,7 +109,7 @@ func New(cfg Config, log *slog.Logger) (*Daemon, error) {
 	if err != nil {
 		return nil, fmt.Errorf("hub_url 无效：%w", err)
 	}
-	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1), assetKick: make(chan struct{}, 1), agyTurns: map[string]*agyTurnState{}, agySubs: map[string]*agySubInfo{}, agyMCP: map[string][]*agyPendingMCP{}}
+	d := &Daemon{cfg: cfg, log: log, q: q, git: newGitCache(), commits: newCommitScan(), kick: make(chan struct{}, 1), sessions: map[string]*sessionInfo{}, toolUses: map[string]toolUse{}, instances: map[string]string{}, dshInst: map[string]map[string]bool{}, seeded: map[string][]string{}, latest: map[string]string{}, staleWarn: map[string]bool{}, waiting: map[string]int64{}, stopBlocks: map[string]int{}, liteRound: map[string]string{}, heldReply: map[string]string{}, tools: newToolsState(), tasks: newTaskState(), direct: make(chan protocol.Envelope, 8), orphanKick: make(chan struct{}, 1), assetKick: make(chan struct{}, 1), agyTurns: map[string]*agyTurnState{}, agySubs: map[string]*agySubInfo{}, agyPendingSubs: map[string][]*agySubInfo{}, agyMCP: map[string][]*agyPendingMCP{}}
 	d.toolCond = sync.NewCond(&d.mu)
 	if d.usage, err = openUsage(q.db); err != nil {
 		q.close()
@@ -397,12 +398,18 @@ func (d *Daemon) handleHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.mergeHeldReply(&ev)
-	if ev.Name == "Stop" {
-		if ev.Tool == protocol.ToolAgy {
+	if ev.Name == "Stop" || ev.Name == "Interrupt" {
+		if ev.Tool == protocol.ToolAgy && ev.AgentID == "" {
 			d.mu.Lock()
-			d.finishAgyStopLocked(protocol.SessionKey(ev.Tool, ev.SessionID))
+			tp := ""
+			if info := d.sessions[protocol.SessionKey(ev.Tool, ev.SessionID)]; info != nil {
+				tp = info.transcript
+			}
+			d.finishAgyStopLocked(protocol.SessionKey(ev.Tool, ev.SessionID), tp)
 			d.mu.Unlock()
 		}
+	}
+	if ev.Name == "Stop" {
 		// 常驻会话的 Stop 可能在宽限期里等了一会儿 ks wait 登记；这期间上报的 KsWait 时间更晚，
 		// Stop 若仍用收到时的时间，到了 Hub 会被当成乱序的旧事件丢掉，状态停在“运行中”（R-108）。
 		// ID 也要重取：上送队列按 ID（ULID，按生成时刻）排序，沿用收到时的 ID 会排在 KsWait 前面先发，
@@ -488,27 +495,72 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		}
 	}
 	agyFoldedSkip := false
-	if req.Tool == protocol.ToolAgy && name == "PreInvocation" {
+	var extraEvents []protocol.Event
+	var agySub *agySubInfo
+	var agyWakeTaskDesc string
+	if req.Tool == protocol.ToolAgy {
 		d.mu.Lock()
-		folded, src, prompt, skip := d.foldAgyPreInvocationLocked(key, ev.Instance, p, str(p, "transcript_path"))
+		var routedName string
+		var routedExtra []protocol.Event
+		var routedDrop bool
+		agySub, routedName, routedExtra, routedDrop = d.routeAgyChildLocked(sid, name, p, req.Env)
 		d.mu.Unlock()
-		if skip {
-			agyFoldedSkip = true
-		} else {
-			name = folded
+		if routedDrop {
+			return protocol.Event{}, false
+		}
+		if agySub != nil {
+			sid = agySub.parentSID
+			key = agySub.parentKey
+			name = routedName
 			ev.Name = name
-			if src != "" && ev.Source == "" {
-				ev.Source = src
+			ev.SessionID = sid
+			ev.AgentID = agySub.childCID
+			ev.AgentType = agySub.agentType()
+			ev.Instance = ""
+			if name == "SubagentStart" {
+				ev.ToolBrief = agySub.label()
+				ev.Source = ""
+				ev.Prompt = ""
 			}
-			if prompt != "" && str(p, "prompt") == "" {
-				p["prompt"] = prompt
+			if name == "SubagentStop" {
+				ev.LastReply = summary.Truncate(agySubagentSummary(agySub, p), 1500)
+			}
+			if d.usage != nil && agySub.transcript != "" {
+				d.usage.trackSubagent(key, agySub.childCID, agySub.transcript)
+			}
+			extraEvents = append(extraEvents, routedExtra...)
+		} else if name == "PreInvocation" {
+			d.mu.Lock()
+			fold := d.foldAgyPreInvocationLocked(key, ev.Instance, p, str(p, "transcript_path"))
+			d.mu.Unlock()
+			if fold.skip {
+				agyFoldedSkip = true
+			} else {
+				name = fold.event
+				ev.Name = name
+				if fold.source != "" && ev.Source == "" {
+					ev.Source = fold.source
+				}
+				if fold.prompt != "" && str(p, "prompt") == "" {
+					p["prompt"] = fold.prompt
+				}
+				agyWakeTaskDesc = fold.wakeNoteHint
+				if fold.emitCompact {
+					extraEvents = append(extraEvents, protocol.Event{
+						ID:        eventID(),
+						Time:      time.Now().UTC(),
+						Tool:      req.Tool,
+						Name:      "PreCompact",
+						SessionID: sid,
+					})
+				}
 			}
 		}
 	}
 	if ev.Instance != "" {
 		d.mu.Lock()
 		d.instances[ev.Instance] = key
-		if req.Tool == protocol.ToolDSH || req.Tool == protocol.ToolAgy {
+		if req.Tool == protocol.ToolDSH || (req.Tool == protocol.ToolAgy && ev.AgentID == "") {
 			d.noteDSHInstanceLocked(ev.Instance, key, name == "SessionEnd")
 		}
 		d.mu.Unlock()
@@ -517,31 +569,70 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		raw := str(p, "prompt")
 		text, auto := protocol.CleanPrompt(raw)
 		ev.Prompt = summary.Truncate(text, 200)
-		if auto {
+		if auto || ev.Source == protocol.SourceAuto {
 			ev.Source = protocol.SourceAuto
-			ev.Wake, ev.WakeNote = protocol.AutoKind(raw)
+			w, wn := protocol.AutoKind(raw)
+			if w != "" {
+				ev.Wake = w
+			}
+			if wn != "" {
+				ev.WakeNote = wn
+			}
+			if agyWakeTaskDesc != "" && (ev.Wake == "" || ev.Wake == protocol.WakeBg) {
+				ev.Wake = protocol.WakeBg
+				ev.WakeNote = summary.Truncate(strings.Join(strings.Fields(agyWakeTaskDesc), " "), 80)
+			} else if req.Tool == protocol.ToolAgy && ev.Wake == protocol.WakeAgent && agyUUIDStrictRe.MatchString(ev.WakeNote) {
+				d.mu.Lock()
+				if sub := d.agySubs[ev.WakeNote]; sub != nil {
+					if lbl := sub.label(); lbl != "" {
+						ev.WakeNote = lbl
+					}
+					if !sub.stopped {
+						sub.stopped = true
+						extraEvents = append(extraEvents, protocol.Event{
+							ID:        eventID(),
+							Time:      time.Now().UTC(),
+							Tool:      req.Tool,
+							Name:      "SubagentStop",
+							SessionID: sub.parentSID,
+							AgentID:   sub.childCID,
+							AgentType: sub.agentType(),
+							LastReply: summary.Truncate(agySubagentSummary(sub, nil), 1500),
+						})
+					}
+				}
+				d.mu.Unlock()
+			}
 		}
 	}
 	if req.Tool == protocol.ToolAgy {
 		switch name {
 		case "PreToolUse":
 			d.mu.Lock()
-			d.rememberAgyMCPLocked(key, sid, ev.ToolName, p["tool_input"])
+			d.rememberAgyMCPLocked(key, ev.AgentID, sid, ev.ToolName, p["tool_input"])
+			if ev.AgentID == "" && ev.ToolName == "invoke_subagent" {
+				d.noteAgySubagentPreLocked(key, sid, p)
+			}
 			d.mu.Unlock()
 		case "PostToolUse", "PostToolUseFailure":
 			d.mu.Lock()
 			d.releaseAgyMCPLocked(key, ev.ToolName, p["tool_input"])
-			if ev.ToolName == "invoke_subagent" {
-				if sub := d.noteAgySubagentToolLocked(key, sid, str(p, "transcript_path"), p, req.Env); sub != nil {
-					if ev.AgentID == "" {
-						ev.AgentID = sub.childCID
-					}
-					if ev.AgentType == "" {
-						if sub.role != "" {
-							ev.AgentType = sub.role
-						} else {
-							ev.AgentType = sub.typeName
-						}
+			if ev.AgentID == "" && ev.ToolName == "invoke_subagent" {
+				if ev.Name == "PostToolUseFailure" || str(p, "error") != "" {
+					d.discardAgySubagentPreLocked(sid, p)
+				} else if sub := d.noteAgySubagentToolLocked(key, sid, str(p, "transcript_path"), p, req.Env); sub != nil {
+					if !sub.startedSent {
+						sub.startedSent = true
+						extraEvents = append(extraEvents, protocol.Event{
+							ID:        eventID(),
+							Time:      time.Now().UTC(),
+							Tool:      req.Tool,
+							Name:      "SubagentStart",
+							SessionID: sid,
+							AgentID:   sub.childCID,
+							AgentType: sub.agentType(),
+							ToolBrief: sub.label(),
+						})
 					}
 					if d.usage != nil && sub.transcript != "" {
 						d.usage.trackSubagent(key, sub.childCID, sub.transcript)
@@ -558,11 +649,7 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 					ev.AgentID = sub.childCID
 				}
 				if ev.AgentType == "" {
-					if sub.role != "" {
-						ev.AgentType = sub.role
-					} else {
-						ev.AgentType = sub.typeName
-					}
+					ev.AgentType = sub.agentType()
 				}
 				if ev.LastReply == "" {
 					ev.LastReply = summary.Truncate(agySubagentSummary(sub, p), 1500)
@@ -603,10 +690,12 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	}
 	cfg := d.devCfg
 	needClient := info.client == ""
-	needModel := ev.Model == "" && (req.Tool == protocol.ToolClaude || req.Tool == protocol.ToolAgy) && (info.model == "" || name == "Stop" || name == "PreInvocation")
+	needModel := ev.Model == "" && (req.Tool == protocol.ToolClaude || req.Tool == protocol.ToolAgy) && ((ev.AgentID == "" && (info.model == "" || name == "Stop" || name == "PreInvocation")) || info.model == "")
 	tpHint := str(p, "transcript_path")
-	if tpHint == "" {
-		tpHint = info.transcript
+	if tpHint == "" || ev.AgentID != "" {
+		if info.transcript != "" {
+			tpHint = info.transcript
+		}
 	}
 	d.mu.Unlock()
 
@@ -631,10 +720,10 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	if client != "" {
 		info.client = client
 	}
-	if model != "" {
+	if model != "" && (ev.AgentID == "" || info.model == "") {
 		info.model = model
 	}
-	if tp := str(p, "transcript_path"); tp != "" {
+	if tp := str(p, "transcript_path"); tp != "" && ev.AgentID == "" {
 		info.transcript = tp
 	}
 	transcript := info.transcript
@@ -661,6 +750,24 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 	}
 	if name == "Stop" {
 		ev.BgTasks, ev.BgBrief = backgroundTasks(p)
+		if ev.BgTasks == 0 && req.Tool == protocol.ToolAgy {
+			if fullyIdle, ok := p["fullyIdle"].(bool); ok && !fullyIdle {
+				shellN, shellBrief := d.shells.runningInfo(key)
+				d.mu.Lock()
+				subN, subBrief := d.activeAgySubsLocked(key)
+				d.mu.Unlock()
+				total := shellN + subN
+				if total == 0 {
+					total = 1
+				}
+				brief := shellBrief
+				if brief == "" {
+					brief = subBrief
+				}
+				ev.BgTasks = total
+				ev.BgBrief = summary.Truncate(strings.Join(strings.Fields(brief), " "), 80)
+			}
+		}
 		if req.Tool == protocol.ToolDSH {
 			// DSH 没有 transcript：上下文数字由插件在 Stop 里直接给。
 			ev.Context, ev.ContextMax = intField(p, "context"), intField(p, "context_max")
@@ -681,9 +788,36 @@ func (d *Daemon) buildEvent(req protocol.HookRequest) (protocol.Event, bool) {
 		}
 		ev.LastReply = summary.Truncate(last, 1500)
 	}
+	for i := range extraEvents {
+		ex := &extraEvents[i]
+		if ex.Cwd == "" {
+			ex.Cwd = ev.Cwd
+		}
+		if ex.Client == "" {
+			ex.Client = ev.Client
+		}
+		if ex.Model == "" {
+			ex.Model = ev.Model
+		}
+		if ex.Git == nil {
+			ex.Git = ev.Git
+		}
+		if ex.Name == "SubagentStart" {
+			d.noteTaskEvent(key, p, ex)
+		}
+		if d.q != nil {
+			if err := d.q.pushEvent(*ex); err != nil {
+				d.log.Warn("事件入队失败", "err", err)
+			}
+		}
+	}
+	if len(extraEvents) > 0 {
+		ev.ID = eventID()
+		ev.Time = time.Now().UTC()
+	}
 	d.noteTaskEvent(key, p, &ev)
 	d.shells.onHook(key, p, &ev)
-	if d.usage != nil {
+	if d.usage != nil && ev.AgentID == "" {
 		d.usage.track(key, transcript)
 	}
 	return ev, true
@@ -1231,7 +1365,7 @@ func (d *Daemon) handleSessionLookup(w http.ResponseWriter, r *http.Request) {
 		} else if mcpTool := q.Get("mcp_tool"); mcpTool != "" {
 			argsHash := q.Get("args_hash")
 			d.mu.Lock()
-			key = d.claimAgyMCPLocked(mcpTool, argsHash)
+			key, agent = d.claimAgyMCPLocked(mcpTool, argsHash)
 			d.mu.Unlock()
 			if key != "" {
 				d.noteTools(key, r.Header.Get(versionHeader))
@@ -1267,7 +1401,7 @@ func (d *Daemon) claimTell(key string) string {
 
 var patchFileRe = regexp.MustCompile(`(?m)^\*\*\* (?:Update|Add|Delete) File: (.+)$`)
 
-// toolBrief 从工具输入中提取一句动作简述：命令截断、文件名、搜索词等，不含文件内容（D3）。
+// toolBrief 从工具输入中提取一句动作简述：命令截断、文件名、搜索词等，不含文件内容与密钥（D3 / D13）。
 func toolBrief(tool string, in map[string]any) string {
 	clean := func(s string, n int) string { return summary.Truncate(strings.Join(strings.Fields(s), " "), n) }
 	base := func(p string) string {
@@ -1293,9 +1427,19 @@ func toolBrief(tool string, in map[string]any) string {
 			}
 			return clean(strings.Join(parts, " "), 200)
 		}
-	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit", "read_file", "write_file", "edit_file":
-		for _, k := range []string{"file_path", "Path", "TargetFile", "notebook_path"} {
+		if ts := str(in, "toolSummary"); ts != "" {
+			return clean(ts, 60)
+		}
+	case "Edit", "Write", "MultiEdit", "Read", "NotebookEdit",
+		"read_file", "write_file", "edit_file", "view_file",
+		"replace_file_content", "multi_replace_file_content", "view_file_outline", "view_code_item":
+		for _, k := range []string{"file_path", "Path", "TargetFile", "AbsolutePath", "File", "notebook_path"} {
 			if f := str(in, k); f != "" {
+				if tool == "view_code_item" {
+					if node := str(in, "NodePath"); node != "" {
+						return clean(base(f)+" · "+node, 60)
+					}
+				}
 				return base(f)
 			}
 		}
@@ -1313,14 +1457,37 @@ func toolBrief(tool string, in map[string]any) string {
 		default:
 			return fmt.Sprintf("%s 等 %d 个文件", base(strings.TrimSpace(files[0][1])), len(files))
 		}
-	case "Grep", "Glob":
-		return clean(str(in, "pattern"), 60)
-	case "WebFetch":
-		if u, err := url.Parse(str(in, "url")); err == nil {
+	case "Grep", "Glob", "grep_search", "find_by_name":
+		for _, k := range []string{"pattern", "Query", "Pattern"} {
+			if p := str(in, k); p != "" {
+				return clean(p, 60)
+			}
+		}
+		for _, k := range []string{"SearchPath", "SearchDirectory"} {
+			if p := str(in, k); p != "" {
+				return base(p)
+			}
+		}
+	case "list_dir":
+		for _, k := range []string{"DirectoryPath", "Path", "path"} {
+			if d := str(in, k); d != "" {
+				return base(d)
+			}
+		}
+	case "WebFetch", "read_url_content":
+		rawURL := str(in, "url")
+		if rawURL == "" {
+			rawURL = str(in, "Url")
+		}
+		if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
 			return u.Host
 		}
 	case "WebSearch", "search_web":
-		return clean(str(in, "query"), 60)
+		q := str(in, "query")
+		if q == "" {
+			q = str(in, "Query")
+		}
+		return clean(q, 60)
 	case "AskUserQuestion", "ask_question":
 		if qs, ok := in["questions"].([]any); ok && len(qs) > 0 {
 			if q, ok := qs[0].(map[string]any); ok {
@@ -1328,22 +1495,173 @@ func toolBrief(tool string, in map[string]any) string {
 			}
 		}
 		return clean(str(in, "question"), 80)
-	case "ExitPlanMode", "exit_plan_mode":
+	case "enter_plan_mode":
 		return clean(str(in, "reason"), 60)
+	case "ExitPlanMode", "exit_plan_mode":
+		if r := str(in, "reason"); r != "" {
+			return clean(r, 60)
+		}
+		if plan := str(in, "plan"); plan != "" {
+			for _, ln := range strings.Split(plan, "\n") {
+				ln = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(ln), "#"))
+				if ln != "" {
+					return clean(ln, 60)
+				}
+			}
+		}
 	case "Task", "Agent":
 		return clean(str(in, "description"), 60)
 	case "invoke_subagent":
-		role := str(in, "Role")
-		if role == "" {
-			role = str(in, "TypeName")
-		}
-		if role != "" {
+		if role := str(in, "Role"); role != "" {
 			return clean(role, 60)
 		}
+		if typ := str(in, "TypeName"); typ != "" {
+			return clean(typ, 60)
+		}
 		return clean(str(in, "Prompt"), 60)
+	case "define_subagent":
+		if name := str(in, "Name"); name != "" {
+			return clean(name, 60)
+		}
+		return clean(str(in, "Description"), 60)
+	case "manage_subagents":
+		return clean(str(in, "Action"), 60)
+	case "manage_task":
+		act := str(in, "Action")
+		tid := shortAgyTaskID(str(in, "TaskId"))
+		switch {
+		case act != "" && tid != "":
+			return clean(act+" · "+tid, 60)
+		case act != "":
+			return clean(act, 60)
+		default:
+			return clean(tid, 60)
+		}
+	case "schedule":
+		if cron := str(in, "CronExpression"); cron != "" {
+			return clean(cron, 60)
+		}
+		if sec, ok := firstInt(in, "DurationSeconds"); ok && sec > 0 {
+			if p := clean(str(in, "Prompt"), 45); p != "" {
+				return fmt.Sprintf("%ds · %s", sec, p)
+			}
+			return fmt.Sprintf("%ds", sec)
+		}
+		return clean(str(in, "Prompt"), 60)
+	case "send_message":
+		rec := strings.TrimSpace(str(in, "Recipient"))
+		if agyUUIDStrictRe.MatchString(rec) {
+			return rec[:8]
+		}
+		return clean(rec, 60)
+	case "generate_image":
+		if n := str(in, "ImageName"); n != "" {
+			return clean(n, 60)
+		}
+		return clean(str(in, "Prompt"), 60)
+	case "run_workflow":
+		if d := str(in, "Description"); d != "" {
+			return clean(d, 60)
+		}
+		return base(str(in, "ScriptPath"))
+	case "list_resources", "read_resource":
+		srv := str(in, "ServerName")
+		uri := str(in, "Uri")
+		if srv != "" && uri != "" {
+			return clean(srv+" · "+uri, 60)
+		}
+		if srv != "" {
+			return clean(srv, 60)
+		}
+		return clean(uri, 60)
+	case "swarm":
+		act := str(in, "action")
+		name := str(in, "name")
+		if name == "" {
+			name = str(in, "title")
+		}
+		if act != "" && name != "" {
+			return clean(act+" · "+name, 60)
+		}
+		if act != "" {
+			return clean(act, 60)
+		}
+		return clean(name, 60)
+	case "call_mcp_tool":
+		if tn := str(in, "ToolName"); tn != "" {
+			if args, ok := in["Arguments"].(map[string]any); ok {
+				if b := mcpToolBrief(args, clean); b != "" {
+					return clean(tn+" · "+b, 60)
+				}
+			}
+			return clean(tn, 60)
+		}
+	}
+	if _, isKS := protocol.NormalizeMCPToolName(tool); isKS || strings.HasPrefix(tool, "mcp__") {
+		if b := mcpToolBrief(in, clean); b != "" {
+			return b
+		}
 	}
 	if d := str(in, "description"); d != "" {
 		return clean(d, 60)
+	}
+	return ""
+}
+
+// mcpToolBrief 从 MCP 工具参数中仅提取安全的标识、目标和状态元数据，不读取秘密值与正文（D3 / D13）。
+func mcpToolBrief(in map[string]any, clean func(string, int) string) string {
+	if len(in) == 0 {
+		return ""
+	}
+	firstStr := func(keys ...string) string {
+		for _, k := range keys {
+			if v := strings.TrimSpace(str(in, k)); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	primary := firstStr("ref", "id", "code", "req", "requirement", "decision", "plan", "stage", "batch")
+	if primary == "" {
+		if sha := firstStr("sha"); sha != "" {
+			if len(sha) > 8 {
+				sha = sha[:8]
+			}
+			primary = sha
+		}
+	}
+	target := firstStr("to", "to_session", "session", "role", "reply_to")
+	if target == "" {
+		if arr, ok := in["roles"].([]any); ok && len(arr) > 0 {
+			var parts []string
+			for _, a := range arr {
+				if s, ok := a.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, strings.TrimSpace(s))
+				}
+			}
+			target = strings.Join(parts, ",")
+		}
+	}
+	state := firstStr("status", "verdict")
+	desc := firstStr("title", "question", "name", "label", "summary")
+
+	switch {
+	case primary != "" && state != "":
+		return clean(primary+" · "+state, 60)
+	case primary != "" && target != "":
+		return clean(primary+" · "+target, 60)
+	case primary != "" && desc != "":
+		return clean(primary+" · "+desc, 60)
+	case primary != "":
+		return clean(primary, 60)
+	case target != "" && desc != "":
+		return clean(target+" · "+desc, 60)
+	case target != "":
+		return clean(target, 60)
+	case state != "":
+		return clean(state, 60)
+	case desc != "":
+		return clean(desc, 60)
 	}
 	return ""
 }

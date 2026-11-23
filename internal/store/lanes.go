@@ -108,7 +108,12 @@ func unixMinute(t time.Time) int64 { return t.Unix() / 60 }
 func ms(t time.Time) int64 { return t.UnixMilli() }
 
 func toolSpanLabel(ev protocol.Event) string {
-	name := strings.TrimPrefix(ev.ToolName, "mcp__")
+	name := ev.ToolName
+	if bare, ok := protocol.NormalizeMCPToolName(ev.ToolName); ok {
+		name = "kitestring__" + bare
+	} else {
+		name = strings.TrimPrefix(ev.ToolName, "mcp__")
+	}
 	if ev.ToolBrief == "" {
 		return name
 	}

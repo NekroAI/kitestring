@@ -13,7 +13,14 @@ var (
 	cmdNameRe     = regexp.MustCompile(`(?s)<command-name>\s*(.*?)\s*</command-name>`)
 	cmdArgsRe     = regexp.MustCompile(`(?s)<command-args>\s*(.*?)\s*</command-args>`)
 	cmdTagsRe     = regexp.MustCompile(`(?s)<command-(message|name|args)>.*?</command-(message|name|args)>`)
-	bashInputRe   = regexp.MustCompile(`(?s)<bash-input>\s*(.*?)\s*</bash-input>`)
+	bashInputRe = regexp.MustCompile(`(?s)<bash-input>\s*(.*?)\s*</bash-input>`)
+	// Antigravity (agy) transcript/prompt envelopes: user input is wrapped in <USER_REQUEST>,
+	// followed by <ADDITIONAL_METADATA>, <USER_SETTINGS_CHANGE>, or compaction <CONTEXT_SUMMARY>.
+	agyUserReqRe    = regexp.MustCompile(`(?s)<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>`)
+	agyNoiseBlockRe = regexp.MustCompile(`(?s)<(?:ADDITIONAL_METADATA|USER_SETTINGS_CHANGE|CONTEXT_SUMMARY|SYSTEM_MESSAGE)>.*?</(?:ADDITIONAL_METADATA|USER_SETTINGS_CHANGE|CONTEXT_SUMMARY|SYSTEM_MESSAGE)>`)
+	agySysMsgRe     = regexp.MustCompile(`(?s)<SYSTEM_MESSAGE>\s*\[Message\][^\n]*?sender=([^\s]+)[^\n]*?content=(.*?)\s*</SYSTEM_MESSAGE>`)
+	agyTaskDoneRe   = regexp.MustCompile(`Task id "[^"]*/(task-\d+)" finished`)
+	agyUUIDOnlyRe   = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 )
 
 // SourceAuto 标记由 agent 自动注入（非用户输入）的 UserPromptSubmit。
@@ -36,6 +43,20 @@ var (
 // AutoKind 判断一条自动注入消息的来源，并取出一句说明（后台命令 / 监视 / 子任务的描述，截到 80 字）。
 // 不是自动注入的消息返回空。
 func AutoKind(p string) (kind, note string) {
+	if m := agySysMsgRe.FindStringSubmatch(p); m != nil {
+		sender := strings.TrimSpace(m[1])
+		body := strings.TrimSpace(m[2])
+		if idx := strings.LastIndex(sender, "/task-"); idx >= 0 {
+			return WakeBg, truncateRunes(sender[idx+1:], 80)
+		}
+		if tm := agyTaskDoneRe.FindStringSubmatch(body); tm != nil {
+			return WakeBg, truncateRunes(tm[1], 80)
+		}
+		if agyUUIDOnlyRe.MatchString(sender) {
+			return WakeAgent, sender
+		}
+		return WakeBg, ""
+	}
 	m := autoPromptRe.FindStringSubmatch(p)
 	if m == nil {
 		return "", ""
@@ -52,15 +73,19 @@ func AutoKind(p string) (kind, note string) {
 		sum = s[1]
 	}
 	if q := wakeQuotedRe.FindStringSubmatch(sum); q != nil {
-		note = q[1]
-		if r := []rune(note); len(r) > 80 {
-			note = string(r[:80]) + "…"
-		}
+		note = truncateRunes(q[1], 80)
 	}
 	if strings.HasPrefix(sum, "Agent ") {
 		return WakeAgent, note
 	}
 	return WakeBg, note
+}
+
+func truncateRunes(s string, maxLen int) string {
+	if r := []rune(s); len(r) > maxLen {
+		return string(r[:maxLen]) + "…"
+	}
+	return s
 }
 
 // SourceStandby 标在 DSH 插件的 Stop / Interrupt 上：插件开着待命，这一轮结束后马上挂 /wait，
@@ -73,7 +98,19 @@ func CleanPrompt(p string) (text string, auto bool) {
 	if autoPromptRe.MatchString(p) {
 		return "", true
 	}
+	if matches := agyUserReqRe.FindAllStringSubmatch(p, -1); len(matches) > 0 {
+		var parts []string
+		for _, m := range matches {
+			if s := strings.TrimSpace(m[1]); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		p = strings.Join(parts, "\n")
+	} else if agySysMsgRe.MatchString(p) || (strings.Contains(p, "<SYSTEM_MESSAGE>") && strings.TrimSpace(agyNoiseBlockRe.ReplaceAllString(systemBlockRe.ReplaceAllString(p, ""), "")) == "") {
+		return "", true
+	}
 	p = systemBlockRe.ReplaceAllString(p, "")
+	p = agyNoiseBlockRe.ReplaceAllString(p, "")
 	if m := bashInputRe.FindStringSubmatch(p); m != nil {
 		return "! " + strings.TrimSpace(m[1]), false
 	}
