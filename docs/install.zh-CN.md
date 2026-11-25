@@ -2,7 +2,7 @@
 
 [English](install.md) · 中文
 
-Kitestring 是一个二进制 `ks`，支持 macOS、Linux 与 Windows（arm64 / x64；Windows 见 [Windows](#windows)）。一台常开的机器运行 **Hub**；每台跑 Claude Code 或 Codex 的机器运行 **daemon**。
+Kitestring 是一个二进制 `ks`，支持 macOS、Linux 与 Windows（arm64 / x64；Windows 见 [Windows](#windows)）。一台常开的机器运行 **Hub**；每台跑 Claude Code、Codex 或 Antigravity 的机器运行 **daemon**。
 
 ## 1. 安装 `ks`
 
@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/ins
 
 ```sh
 ks hub passwd                                                  # 设置网页登录密码
-ks install --hub --claude=false --codex=false --daemon=false   # 注册为常驻服务，监听 0.0.0.0:7310
+ks install --hub                                               # 注册为常驻服务，监听 0.0.0.0:7310
 ```
 
 浏览器打开 `http://<hub 地址>:7310` 登录。要从外网访问，请放在带 HTTPS 的反向代理后面，或自行映射端口。
@@ -29,7 +29,7 @@ ks install --hub --claude=false --codex=false --daemon=false   # 注册为常驻
 
 ```sh
 mkdir -p /Volumes/DataSSD/kitestring-files                     # 目录要先建好
-ks install --hub --claude=false --codex=false --daemon=false \
+ks install --hub \
   --hub-files-dir /Volumes/DataSSD/kitestring-files            # 写进常驻服务的 --files-dir
 ```
 
@@ -53,7 +53,7 @@ macOS 上 Hub 常驻服务经一个固定的小启动器运行：`~/.kitestring/
 - **不能替换**：`ks install` 和 `scripts/deploy.sh` 都只在它不存在时安装，已有的绝不替换（和新构建的内容不同也只提示）。不要手动覆盖它；`ks uninstall` 也不删它。
 - **被删或换掉之后**：重跑 `ks install --hub`（或部署）会装一份新的，要按上面的办法重新授权一次，并在「系统设置」里删掉旧的那条。
 
-已注册过 Hub 服务的机器切换到启动器：部署（或升级）后运行一次 `ks install --hub --claude=false --codex=false --daemon=false`，附件目录沿用原来的配置；然后按上面的办法授权。
+已注册过 Hub 服务的机器切换到启动器：部署（或升级）后运行一次 `ks install --hub`，附件目录沿用原来的配置；然后按上面的办法授权。
 
 ### 把附件和部署备份搬到别的磁盘
 
@@ -66,7 +66,7 @@ mkdir /Volumes/DataSSD/kitestring                                        # 上�
 scripts/migrate-storage.sh copy ~/.kitestring/files   /Volumes/DataSSD/kitestring/files
 scripts/migrate-storage.sh copy ~/.kitestring/backups /Volumes/DataSSD/kitestring/backups
 # 两个都显示「结果：通过」后切换配置
-ks install --hub --claude=false --codex=false --daemon=false --hub-files-dir /Volumes/DataSSD/kitestring/files
+ks install --hub --hub-files-dir /Volumes/DataSSD/kitestring/files
 echo /Volumes/DataSSD/kitestring/backups > ~/.kitestring/backup-dir
 # 在「设置 → 账户 → 附件存储」确认位置，打开几个新旧附件看看；再拷一次补上期间新增的文件
 scripts/migrate-storage.sh copy ~/.kitestring/files /Volumes/DataSSD/kitestring/files
@@ -127,7 +127,7 @@ nohup ks daemon >> ~/.kitestring/daemon.log 2>&1 &
 ks status
 ```
 
-输出里有 `"connected": true` 就连上了。网页设备列表里这台设备变成「在线」，带上主机名、平台和版本。之后开一个 Claude Code 或 Codex 会话，几秒内出现在工作台。
+输出里有 `"connected": true` 就连上了。网页设备列表里这台设备变成「在线」，带上主机名、平台和版本。之后开一个 Claude Code、Codex 或 Antigravity 会话，几秒内出现在工作台。
 
 - 报连不上 `daemon.sock`：daemon 没启动，回到第 3 步（容器里用 `nohup` 那行）。
 - `"connected": false`：Hub 地址或令牌不对。日志在 `~/.kitestring/logs/daemon.log`（macOS），Linux 用 `journalctl --user -u kitestring-daemon -n 50`。
@@ -150,7 +150,7 @@ irm https://raw.githubusercontent.com/NekroAI/kitestring/main/scripts/install.ps
 
 ```powershell
 ks hub passwd
-ks install --hub --claude=false --codex=false --daemon=false   # Hub 常驻
+ks install --hub   # Hub 常驻
 ```
 
 浏览器打开 `http://127.0.0.1:7310` 登录，在「设置 → 设备」接入这台电脑本身，按指引里的 Windows 命令执行（`ks login --hub http://127.0.0.1:7310 --token …` 后 `ks install`）。要用手机访问，第一次启动 Hub 时 Windows 防火墙会询问是否允许 ks 访问网络，选允许（局域网用「专用网络」），手机上打开 `http://<电脑的局域网地址>:7310`。
@@ -222,7 +222,7 @@ web profile 会自己热重载 profile patch；没有热重载时重启 `dsh --p
 
 ## 会话交接
 
-压缩或换会话时可以交接：在网页会话上点「交接」，旧会话写下结构化交接；在项目目录运行 `ks takeover <身份>`（如 `ks takeover pm`，`--tool codex` 用 Codex 开，`--print` 只打印命令）启动接任会话。旧版 MCP 没有 `handoff_write` 时，旧会话可用 `ks handoff --doing … --next …` 写交接。流程详见 [roles.md](roles.md)。
+压缩或换会话时可以交接：在网页会话上点「交接」，旧会话写下结构化交接；在项目目录运行 `ks takeover <身份>`（如 `ks takeover pm`，`--tool codex` 或 `--tool agy` 分别用 Codex 或 Antigravity 开，`--print` 只打印命令）启动接任会话。旧版 MCP 没有 `handoff_write` 时，旧会话可用 `ks handoff --doing … --next …` 写交接。流程详见 [roles.md](roles.md)。
 
 ## 升级
 

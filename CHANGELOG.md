@@ -2,7 +2,9 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] — 2026-11-25
+
+0.4.0 之后的版本，按 git log 归纳主要变化。
 
 ### Windows
 - Hub 和设备端都能在 Windows 10 1809 及以上、Windows 11（x64 / arm64）上原生运行，只有一台 Windows 电脑时两者装在一起即可（R-330）。
@@ -11,6 +13,32 @@ All notable changes to this project are documented here. The format is based on 
 - `ks update` 能替换正在运行的 `ks.exe` 并重启服务；`ks install` 给 Claude Code 写成直接启动 `ks.exe` 的 hook（Git Bash、PowerShell 都能用），Codex 按 cmd 的规则写。
 - 认会话、后台命令、残留进程在 Windows 上照常工作（进程表、环境、监听端口换成 Windows 的实现）；网页设备接入指引加 Windows 一栏。
 - 顺带修正：Windows 设备的路径在 Hub 上取项目名、判定 `ks secret run` 的程序路径时按 Windows 写法处理；Windows 上写了 `.\x` 这类路径的命令不再被当作按 PATH 找到的程序；凭据主密钥、`ks secret write` 写出的文件在 Windows 上设成只有本人能访问。
+
+### Google Antigravity（agy）与设备接入
+- 接入 Google Antigravity（`agy`）多端与跨 Agent 协同：原生插件与权限配置、Hook / MCP 42 个工具、参数简述与图标、子代理归因与父会话子泳道路由、后台命令日志与退出码对接、`CHECKPOINT` 压缩与跨终端 resume 识别、工作台图标与接入指引；支持 `ks mcp --client agy`、`ks role`、`ks takeover --tool agy`。
+- 调整 `ks install` / `ks uninstall` 目标选择语义：不带目标时默认处理全部设备端组件（`claude` / `codex` / `agy` / `daemon`）；指定目标名（如 `ks install agy`）或显式开关（如 `ks install --hub` / `--agy`）时仅处理所选目标，不动其他组件。
+
+### 资源库（Assets）
+- 新增资源库体系：以素材 ID 为主，按 `asset.json` 推送（`ks asset push` / MCP `asset_push`），推送前本地逐件校验与 `--dry-run`，按 sha256 去重并支持断网排队补传；提供 `ks asset list` / `get` / `help` 查询与说明。
+- 图片墙与目录浏览：左侧目录按类别 → 细类分层（支持 `.kitestring/assets.json` 配置类别/细类中文名及素材可选中文名 `display.name`）、工具栏排序与文件类型筛选、宽屏右侧固定详情栏、项目元数据表格化展示。
+- 3D 查看器与多类型素材：支持 GLB 自动生成缩略图、动作动画播放与按帧留意见、组合预览（`display.attach` 挂点挂件、`display.refs` 比例参照、`display.events` 动作事件）及触控板/触屏手势；新增音效（OGG / WAV，含时长、响度、峰值与波形试听）、字体（TTF / OTF / WOFF2 字形预览）和沙箱化 SVG 素材。
+- 变体、取代与审核：支持具名变体（`id@变体名`）、`ks asset supersede --map` 取代关系与网页删除；支持单件审片模式与图片墙多选批量审核（预检、3 秒撤销期、撤回最近一次、`--baseline` 标为已在用、授权会话 `ks asset review`）。
+- 资源库分享：分享可挂批次、类别或单个素材，访客凭链接看图片墙、3D、音效、字体、SVG 与版本对比，按权限留意见或上传新版本，均进入待收队列由你放入或收下。
+
+### 会话、团队与需求
+- 新增轻接入（`ks role lite`），MCP 说明缩成短入口，流程规矩收进身份提示词。
+- 会话支持自报名字与说明（`ks role --name` / `--note`、`ks session name`），未自报时默认定名「目录名-工具」；工作台泳道、会话详情、通讯页与 `ks team sessions` 一律名字优先，`ks team tell --to` 可按名字寻址。
+- 支持跨项目协作：主调度 / 主助理可用 `ks team tell --project` 跨项目发团队消息，`ks req create --project` / `req_create` 可把需求记进其他项目。
+- 决策的每个选项支持放多张效果图（`--option-images`）；会话不能直接修改或重开已搁置的需求（须用 `ks req request` 申请）。
+
+### 存储、部署与性能
+- Hub 附件目录支持指定到外置硬盘（`--hub-files-dir` / `KS_FILES_DIR`），目录不可用时不阻塞启动、拒收上传并在设置页提示；macOS 上 Hub 经固定启动器 `ks-launcher` 运行以保持外置磁盘授权；部署备份目录可配置（`KS_BACKUP_DIR` / `~/.kitestring/backup-dir`），新增 `scripts/migrate-storage.sh` 安全搬迁与校验脚本。
+- 设置页新增「加速地址」配置：可用时静态文件、附件、缩略图、原型和资源库文件从加速地址加载，不可用时自动回退主地址。
+- 性能与可观测性：Hub 数据库读写分离、daemon 收发拆分、决策/证据/泳道补索引、列表接口改为批量查库、新增慢请求与慢查询日志（`--slow` / `KS_SLOW`）、本地构建与测试降优先级、`launchd` 设 `ProcessType Interactive`。
+
+### 修复与规范
+- 修复同一设备决策全集下发并发乱序、素材补传后暂存文件清理与残留回收、Windows 下测试路径/时钟合并/CRLF 换行导致字数超限等 CI 与稳定性问题。
+- 部署与回滚后 macOS daemon 改用 `bootout + bootstrap` 重启并记录核对日志；文案规范新增保留示例域名/IP 自动检查规则。
 
 ## [0.4.0] — 2026-11-10
 

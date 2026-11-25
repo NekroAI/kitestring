@@ -5,7 +5,7 @@
 <h1 align="center">Kitestring</h1>
 
 <p align="center">
-  <strong>One board for every Claude Code and Codex session on every machine you own.</strong><br>
+  <strong>One board for every Claude Code, Codex and Antigravity session on every machine you own.</strong><br>
   See what each agent is doing, answer what it's waiting on, and hand it the next task — from your desk or your phone.
 </p>
 
@@ -70,8 +70,10 @@ Circle, box, point and write right on the agent's screenshots. The pen follows p
 
 ## More highlights
 
-- **A team of roles, not one chat.** Tell a session who it is — manager (PM), aide, advisor, reviewer, developer (`ks role`) — and each knows its job: the PM schedules and merges, the aide judges and answers for you within the limits you set, the reviewer checks work before it reaches you, developers implement. Sub-tasks run in the background and show up in the lanes.
-- **Sessions talk to each other.** Leave a comment under a requirement, message one session or broadcast to many, see who is online and whether a message was delivered — all on the read-only **Comms** page. "Act on this" messages wake a session; "FYI" ones don't.
+- **A team of roles, not one chat.** Tell a session who it is — manager (PM), aide, advisor, reviewer, developer or lite (`ks role`) — and each knows its job: the PM schedules and merges, the aide judges and answers for you within the limits you set, the reviewer checks work before it reaches you, developers implement, and `ks role lite` keeps quick sessions lightweight. Give sessions custom names and notes (`--name` / `--note`, `ks session name`) that appear across lanes and team messages. Sub-tasks run in the background and show up in the lanes.
+- **Sessions talk to each other.** Leave a comment under a requirement, message one session (including by name or across projects with `--project`) or broadcast to many, see who is online and whether a message was delivered — all on the read-only **Comms** page. "Act on this" messages wake a session; "FYI" ones don't.
+- **Asset library for images, 3D, audio, fonts and SVG.** Push project assets via `asset.json` (`ks asset push` / MCP `asset_push`, deduplicated with offline catch-up), browse by category and subtype, inspect 3D models with animation playback, attachments, reference scale and frame-level notes, audition audio waveforms and loudness, preview fonts and sandboxed SVGs, review individually or in batch, and share with visitors who can leave feedback or upload candidates into your inbox.
+- **Secret vault with scoped grants.** Sessions request third-party credentials (`ks secret request` / `secret_request`); you fill the value and set allowed projects, commands, expiry and disk-write rules in the web UI. `ks secret run` injects values only within the grant and scrubs known secrets from logs, pushes and shares.
 - **Share with people you trust.** Pick plans, requirements and sessions, and hand out a named visitor link with an optional password and expiry. Visitors get a live, read-only view; what they write is held in a queue until you put it into the requirement (as it is or reworded) — nothing reaches the agents without you.
 - **Prototypes you can open right here.** An agent can attach an interactive prototype (an HTML page with its assets) to a requirement or to each option of a decision. It opens full screen in Kitestring, in a sandbox that cannot touch your login or the API, with width presets for phone, tablet and desktop. `ks proto check` self-checks a package before it is handed in.
 - **Update with one command.** `ks update` pulls the latest release, verifies it, replaces `ks` and restarts the Hub and background services.
@@ -91,6 +93,7 @@ Circle, box, point and write right on the agent's screenshots. The pen follows p
 - **One undo window, kept drafts.** Every verdict shares the same undo window and takes effect immediately; every input box keeps its draft across closing a drawer, refreshing or switching items.
 - **One project across machines.** Sessions are grouped by git remote, so the same repo on your laptop and your Mac mini is one project.
 - **Never in the way.** Hooks time out in 1.5 s and fail open; offline machines buffer events and catch up later.
+- **External storage and accelerator URL.** Store attachments and assets on an external drive (on macOS, the fixed `ks-launcher` keeps disk permissions across upgrades, with `scripts/migrate-storage.sh` to move existing data safely), and optionally configure an accelerator URL in Settings for faster static file and attachment loading.
 
 ## How it works
 
@@ -114,7 +117,7 @@ On Windows, run `irm https://raw.githubusercontent.com/NekroAI/kitestring/main/s
 **2. Start the Hub** on one always-on machine, then open `http://<hub>:7310`:
 
 ```bash
-ks hub passwd && ks install --hub --claude=false --codex=false --daemon=false
+ks hub passwd && ks install --hub
 ```
 
 **3. Connect each machine**: click **Add device** under **Settings → Devices**; the guide that opens has the full commands for your platform (PATH, background service, check). The core of it:
@@ -123,13 +126,13 @@ ks hub passwd && ks install --hub --claude=false --codex=false --daemon=false
 ks login --hub http://<hub>:7310 --token kst_xxx && ks install
 ```
 
-When `ks status` shows `"connected": true`, open Claude Code or Codex and your session appears on the workbench. Step by step, Linux services, DSH and building from source: [Install guide](docs/install.md#3-every-development-machine).
+When `ks status` shows `"connected": true`, open Claude Code, Codex or Antigravity and your session appears on the workbench. Step by step, Linux services, DSH and building from source: [Install guide](docs/install.md#3-every-development-machine).
 
 **Updating.** Run `ks update` on each machine: it downloads the latest release, verifies it against `SHA256SUMS.txt`, replaces `ks` and restarts the Hub and daemon services that run it (`ks update --check` only looks). Versions 0.2.0 and earlier don't have it yet — re-run the install script once; see [Updating](docs/install.md#updating).
 
 ## Safe for your subscription
 
-Kitestring only uses the extension points Claude Code and Codex document officially. It never touches your login credentials, never proxies model traffic, never consumes your subscription and never drives agents on its own. [Read more](docs/how-it-works.md#account-safety).
+Kitestring only uses the extension points Claude Code, Codex and Antigravity document officially. It never touches your login credentials, never proxies model traffic, never consumes your subscription and never drives agents on its own. [Read more](docs/how-it-works.md#account-safety).
 
 ## Contributing
 

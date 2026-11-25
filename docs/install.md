@@ -2,7 +2,7 @@
 
 English · [中文](https://github.com/NekroAI/kitestring/blob/main/docs/install.zh-CN.md)
 
-Kitestring is a single binary, `ks`, for macOS, Linux and Windows (arm64 and x64; for Windows see [Windows](#windows)). One always-on machine runs the **Hub**; every machine where you run Claude Code or Codex runs the **daemon**.
+Kitestring is a single binary, `ks`, for macOS, Linux and Windows (arm64 and x64; for Windows see [Windows](#windows)). One always-on machine runs the **Hub**; every machine where you run Claude Code, Codex or Antigravity runs the **daemon**.
 
 ## 1. Install `ks`
 
@@ -18,7 +18,7 @@ Prefer to do it by hand? Download `kitestring-<version>-<darwin|linux>-<arm64|am
 
 ```sh
 ks hub passwd                                              # set the web login password
-ks install --hub --claude=false --codex=false --daemon=false   # run the Hub as a service on 0.0.0.0:7310
+ks install --hub   # run the Hub as a service on 0.0.0.0:7310
 ```
 
 Open `http://<hub address>:7310` in a browser and sign in. To reach the Hub from outside your network, put it behind a reverse proxy with HTTPS or forward the port yourself.
@@ -29,7 +29,7 @@ Attachments, prototype bundles and thumbnails live in `~/.kitestring/files` next
 
 ```sh
 mkdir -p /Volumes/DataSSD/kitestring-files                     # the directory must exist
-ks install --hub --claude=false --codex=false --daemon=false \
+ks install --hub \
   --hub-files-dir /Volumes/DataSSD/kitestring-files            # passed to the service as --files-dir
 ```
 
@@ -53,7 +53,7 @@ On macOS the Hub service runs through a small, fixed launcher: `~/.kitestring/bi
 - **Never replace it**: `ks install` and `scripts/deploy.sh` install it only when it is missing and never replace an existing one (if it differs from a fresh build they only print a note). Do not overwrite it by hand; `ks uninstall` leaves it in place too.
 - **If it is deleted or replaced**: re-running `ks install --hub` (or a deploy) installs a new one, which has to be granted access again as above; remove the old entry in System Settings.
 
-To switch a machine whose Hub service is already registered: after deploying (or upgrading), run `ks install --hub --claude=false --codex=false --daemon=false` once. The attachment directory configured before is kept. Then grant access as above.
+To switch a machine whose Hub service is already registered: after deploying (or upgrading), run `ks install --hub` once. The attachment directory configured before is kept. Then grant access as above.
 
 ### Moving attachments and deployment backups to another disk
 
@@ -66,7 +66,7 @@ mkdir /Volumes/DataSSD/kitestring                                        # the p
 scripts/migrate-storage.sh copy ~/.kitestring/files   /Volumes/DataSSD/kitestring/files
 scripts/migrate-storage.sh copy ~/.kitestring/backups /Volumes/DataSSD/kitestring/backups
 # once both say the check passed, switch the configuration
-ks install --hub --claude=false --codex=false --daemon=false --hub-files-dir /Volumes/DataSSD/kitestring/files
+ks install --hub --hub-files-dir /Volumes/DataSSD/kitestring/files
 echo /Volumes/DataSSD/kitestring/backups > ~/.kitestring/backup-dir
 # check Settings → Account → Attachment storage and open a few old and new attachments; copy again to pick up files added meanwhile
 scripts/migrate-storage.sh copy ~/.kitestring/files /Volumes/DataSSD/kitestring/files
@@ -127,7 +127,7 @@ nohup ks daemon >> ~/.kitestring/daemon.log 2>&1 &
 ks status
 ```
 
-`"connected": true` means you're connected; the device turns **online** in the web device list, with its hostname, platform and version. Start a Claude Code or Codex session and it shows up within seconds.
+`"connected": true` means you're connected; the device turns **online** in the web device list, with its hostname, platform and version. Start a Claude Code, Codex or Antigravity session and it shows up within seconds.
 
 - Can't reach `daemon.sock`: the daemon isn't running — go back to step 3 (in a container, use the `nohup` line).
 - `"connected": false`: wrong Hub address or token. Logs: `~/.kitestring/logs/daemon.log` on macOS, `journalctl --user -u kitestring-daemon -n 50` on Linux.
@@ -150,7 +150,7 @@ It installs `~\.local\bin\ks.exe` and adds that folder to your user PATH (new te
 
 ```powershell
 ks hub passwd
-ks install --hub --claude=false --codex=false --daemon=false   # run the Hub as a service
+ks install --hub   # run the Hub as a service
 ```
 
 Open `http://127.0.0.1:7310`, sign in, and add this computer under Settings → Devices; follow the Windows commands in the guide (`ks login --hub http://127.0.0.1:7310 --token …`, then `ks install`). To use your phone, allow ks through Windows Firewall when it asks on the Hub's first start (Private networks for your LAN), then open `http://<your computer's LAN address>:7310` on the phone.
@@ -222,7 +222,7 @@ The plugin reports token usage and context size (the session ring), and ends eve
 
 ## Handoff
 
-When compacting or switching sessions, hand off: click "Hand off" on a session in the web UI so the old session writes a structured handoff, then run `ks takeover <role>` in the project directory (for example `ks takeover pm`; `--tool codex` starts it in Codex, `--print` only prints the command). If the old session's MCP lacks `handoff_write`, it can use `ks handoff --doing … --next …` instead. See [roles.md](roles.md) for the full flow.
+When compacting or switching sessions, hand off: click "Hand off" on a session in the web UI so the old session writes a structured handoff, then run `ks takeover <role>` in the project directory (for example `ks takeover pm`; `--tool codex` or `--tool agy` starts it in Codex or Antigravity, `--print` only prints the command). If the old session's MCP lacks `handoff_write`, it can use `ks handoff --doing … --next …` instead. See [roles.md](roles.md) for the full flow.
 
 ## Updating
 
