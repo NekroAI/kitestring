@@ -5,12 +5,13 @@ package main
 import (
 	"context"
 	"os"
-	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 func redirectStderr(f *os.File) error {
 	os.Stdout, os.Stderr = f, f
-	return syscall.Dup2(int(f.Fd()), 2)
+	return unix.Dup2(int(f.Fd()), 2)
 }
 
 // exitWithParent：launchd / systemd 自己管进程，不用跟着父进程退出。
